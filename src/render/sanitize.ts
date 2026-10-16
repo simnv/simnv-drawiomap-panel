@@ -59,6 +59,7 @@ const PURIFY_CONFIG: Config = {
     'math',
     'audio',
     'video',
+    'style',
   ],
   FORBID_ATTR: ['srcdoc', 'formaction', 'action', 'ping'],
   ADD_DATA_URI_TAGS: ['image'],
@@ -89,11 +90,11 @@ export function sanitizeSvg(text: string): SanitizeResult {
       removed.elements++;
     }
   }
+  // A <style> element applies to the whole page, not only to the SVG: it can hide or restyle Grafana.
+  // draw.io writes inline style attributes only, so remove every <style> element.
   for (const st of Array.from(root.querySelectorAll('style'))) {
-    if (hasExternalUrl(st.textContent ?? '')) {
-      st.remove();
-      removed.elements++;
-    }
+    st.remove();
+    removed.elements++;
   }
   for (const el of [root, ...Array.from(root.querySelectorAll('[style]'))]) {
     const style = el.getAttribute('style');

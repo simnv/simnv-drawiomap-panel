@@ -53,9 +53,23 @@ describe('sanitizeSvg: adversarial input', () => {
       )
     );
     expect(r.svg).not.toContain('evil.example');
-    expect(r.svg).toContain('.a{fill:red}');
     expect(r.svg).toContain('url(#grad)');
     expect(r.svg).toContain('light-dark(');
+  });
+  it('removes every <style> element, also inside foreignObject, and keeps inline style attributes', () => {
+    // A stylesheet is global to the page: it can hide or change Grafana elements outside the panel.
+    const r = sanitizeSvg(
+      wrap(
+        '<style>.a{fill:red}</style><switch><foreignObject width="10" height="10"><div xmlns="http://www.w3.org/1999/xhtml"><style>body .grafana-app { display: none !important }</style><STYLE>.x{color:blue}</STYLE><div style="color: red">label</div></div></foreignObject></switch><defs><style type="text/css">svg ~ * { visibility: hidden }</style></defs>'
+      )
+    );
+    expect(r.svg).not.toMatch(/<style/i);
+    expect(r.svg).not.toContain('display: none');
+    expect(r.svg).not.toContain('visibility');
+    expect(r.svg).not.toContain('.a{fill:red}');
+    expect(r.svg).toContain('style="color: red"');
+    expect(r.svg).toContain('label');
+    expect(r.removed.elements).toBeGreaterThanOrEqual(3);
   });
   it('keeps data URI images and drops nothing that is needed', () => {
     const r = sanitizeSvg(wrap('<image href="data:image/png;base64,iVBORw0KGgo=" width="1" height="1"/>'));
