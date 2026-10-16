@@ -1,117 +1,191 @@
-# Grafana panel plugin template
+# draw.io map panel for Grafana
 
-This template is a starting point for building a panel plugin for Grafana.
+A Grafana panel plugin (`simnv-drawiomap-panel`). It shows a draw.io diagram as a network weathermap.
 
-## What are Grafana panel plugins?
+"draw.io" is a trademark of JGraph Ltd. This plugin is not affiliated with JGraph Ltd or with the draw.io project.
 
-Panel plugins allow you to add new types of visualizations to your dashboard, such as maps, clocks, pie charts, lists, and more.
+## What it does
 
-Use panel plugins when you want to do things like visualize data returned by data source queries, navigate between dashboards, or control external systems (such as smart home devices).
+- It colours each link by traffic, for each direction. It shows the value and the percent of capacity on each half of the link.
+- It colours shapes by state (for example, `up`). It draws sparklines near shapes and in the tooltip.
+- A click on a link or a shape opens a menu with the rule URL and the field data links. The real draw.io editor opens in a modal.
 
-## Getting started
+View mode loads no draw.io code. The panel stores the diagram XML and the SVG that draw.io exported. The panel shows the SVG and writes colours into it.
 
-### Frontend
+## Requirements
 
-1. Install dependencies
+- Grafana 12.4 or later (`>=12.4.0`). Tested on 12.4.13 and 13.2.4.
+- The plugin is not signed. Set `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel` (or `allow_loading_unsigned_plugins` in `grafana.ini`).
+- A draw.io editor URL for edit mode. Use the self-hosted `jgraph/drawio` image (the compose stack starts one) or `https://embed.diagrams.net`.
+- A data source with time series. The demo uses VictoriaMetrics.
 
-   ```bash
-   npm install
-   ```
+## Quick start
 
-2. Build plugin in development mode and run in watch mode
+You need Node.js and Docker.
 
-   ```bash
-   npm run dev
-   ```
+```bash
+npm install
+npm run build
+npm run stack:up
+npm run stack:smoke
+```
 
-3. Build plugin in production mode
+The stack starts these services:
 
-   ```bash
-   npm run build
-   ```
+| Service         | URL                   |
+| --------------- | --------------------- |
+| Grafana 12.4.13 | http://localhost:3012 |
+| Grafana 13.2.4  | http://localhost:3013 |
+| draw.io editor  | http://localhost:8080 |
+| VictoriaMetrics | http://localhost:8428 |
 
-4. Run the tests (using Jest)
+A generator pushes synthetic traffic series. Open the demo dashboard: http://localhost:3012/d/drawiomap-demo (or port 3013). Anonymous access is on, with the Admin role.
 
-   ```bash
-   # Runs the tests and watches for changes, requires git init first
-   npm run test
+You see the demo-lab diagram. The links have colours from the synthetic traffic. The `lte` node is red because its `up` series is 0. Sparklines show under the nodes.
 
-   # Exits after running all the tests
-   npm run test:ci
-   ```
+Stop the stack with `npm run stack:down`. This command also deletes the volumes.
 
-5. Spin up a Grafana instance and run the plugin inside it (using Docker)
+## Diagram import
 
-   ```bash
-   npm run server
-   ```
+Open the panel editor and go to **Diagram**. There are three ways to add a diagram:
 
-6. Run the E2E tests (using Playwright)
+1. **Import .drawio.** Choose a `.drawio` file, for example a portograph export. The panel loads the file in the editor modal. The editor exports the SVG and the modal closes. The panel stores the XML and the SVG.
+2. **Paste draw.io XML.** Paste the XML (from **Extras > Edit Diagram** in draw.io) and select **Apply pasted XML**. The panel accepts an `<mxfile>`, an `<mxGraphModel>`, or an SVG that has an embedded copy of the diagram.
+3. **Open editor.** Draw or change the diagram in the real draw.io editor. **Save** and **Save & Exit** store the XML and the SVG.
 
-   ```bash
-   # Spins up a Grafana instance first that we tests against
-   npm run server
+The panel uses these cell attributes to find cells:
 
-   # If you wish to start a certain Grafana version. If not specified will use latest by default
-   GRAFANA_VERSION=11.3.0 npm run server
+- Portograph diagrams use the `pg-*` attributes (`pg-id`, `pg-kind`, `pg-from`, `pg-to`). The contract is in `docs/research/portograph-contract.md`.
+- For a hand-drawn diagram, a cell has its draw.io `id` and its label text. See `demo/rules-hand.yaml`.
 
-   # Starts the tests
-   npm run e2e
-   ```
+Only page 1 of a multi-page diagram is shown. The panel shows a warning.
 
-7. Run the linter
+## Rules
 
-   ```bash
-   npm run lint
+Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `demo/rules.yaml` as a start:
 
-   # or
+```yaml
+- name: links
+  select: { kind: link }
+  link:
+    a2b: { refId: A, match: { job: 'node-${from.node}', device: '${from.port}' } }
+    b2a: { refId: A, match: { job: 'node-${to.node}', device: '${to.port}' } }
+    capacity: 1000000000
+  reducer: last
+  label: '${value} · ${percent}'
+  url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}'
+- name: wan uplinks 100M
+  select: { kind: link, attrs: { pg-to: '/^rtr-a:(wan1|wan2|lte)$/' } }
+  link: { capacity: 100000000 }
+  thresholds: { mode: percent, steps: [[0, green], [60, yellow], [85, red]] }
+- name: node up
+  select: { kind: node }
+  shape:
+    series: { refId: C, match: { job: 'node-${cell.pg-id}' } }
+    fill: true
+    sparkline: { refId: D, match: { job: 'node-${cell.pg-id}' }, position: bottom }
+  thresholds: { mode: absolute, steps: [[0, red], [1, green]] }
+  url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}'
+```
 
-   npm run lint:fix
-   ```
+Rules are an ordered list. A later rule overrides an earlier rule for the same property of the same cell. In the example, the second rule changes the capacity and the thresholds of the WAN links.
 
-# Distributing your plugin
+### Rule fields
 
-When distributing a Grafana plugin either within the community or privately the plugin must be signed so the Grafana application can verify its authenticity. This can be done with the `@grafana/sign-plugin` package.
+| Field        | Meaning                                                                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Name of the rule. The click menu shows it next to the rule URL.                                                                                                                                   |
+| `select`     | Which cells the rule applies to. See below.                                                                                                                                                       |
+| `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (a number or a template).                                                                                 |
+| `shape`      | For shapes. `series` selects the series. `fill`, `stroke` and `text` choose what the colour changes. `sparkline` selects a series for a sparkline. Its `position` is `bottom`, `top` or `inside`. |
+| `reducer`    | `last` (default), `mean`, `max` or `min`. Reduces the series to one value.                                                                                                                        |
+| `label`      | Label template. The default for links is `${value} · ${percent}`. The default for shapes is `${value}`.                                                                                           |
+| `thresholds` | `mode: percent` or `absolute`. `steps` is a list of `[threshold, colour]`, ascending. If you omit it, the panel uses the field config of Grafana.                                                 |
+| `url`        | Link for the click menu. It can use templates and dashboard variables.                                                                                                                            |
 
-_Note: It's not necessary to sign a plugin during development. The docker development environment that is scaffolded with `@grafana/create-plugin` caters for running the plugin without a signature._
+A series selector has `refId` (the query), `name` and `match` (a map of label name to matcher).
 
-## Initial steps
+### Cell selectors (`select`)
 
-Before signing a plugin please read the Grafana [plugin publishing and signing criteria](https://grafana.com/legal/plugins/#plugin-publishing-and-signing-criteria) documentation carefully.
+| Key       | Meaning                                                                        |
+| --------- | ------------------------------------------------------------------------------ |
+| `kind`    | `node`, `port`, `link`, `link-label`, `other` or `any`.                        |
+| `ids`     | A list of cell ids or `pg-id` values.                                          |
+| `attrs`   | A map of attribute name to matcher (the `data-meta-*` attributes of the cell). |
+| `label`   | A matcher for the label text.                                                  |
+| `between` | `[a, b]`. A link between two nodes, in any direction.                          |
 
-`@grafana/create-plugin` has added the necessary commands and workflows to make signing and distributing a plugin via the grafana plugins catalog as straightforward as possible.
+A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:(wan1|lte)$/`.
 
-Before signing a plugin for the first time please consult the Grafana [plugin signature levels](https://grafana.com/legal/plugins/#what-are-the-different-classifications-of-plugins) documentation to understand the differences between the types of signature level.
+### Templates
 
-1. Create a [Grafana Cloud account](https://grafana.com/signup).
-2. Make sure that the first part of the plugin ID matches the slug of your Grafana Cloud account.
-   - _You can find the plugin ID in the `plugin.json` file inside your plugin directory. For example, if your account slug is `acmecorp`, you need to prefix the plugin ID with `acmecorp-`._
-3. Create a Grafana Cloud API key with the `PluginPublisher` role.
-4. Keep a record of this API key as it will be required for signing a plugin
+| Template                       | Value                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| `${cell.<attr>}`               | Any attribute of the cell, for example `${cell.pg-id}` or `${cell.capacity}`. |
+| `${from.node}`, `${from.port}` | The first end of a link (from `pg-from`).                                     |
+| `${to.node}`, `${to.port}`     | The second end of a link (from `pg-to`).                                      |
+| `${labels.<name>}`             | A label of the matched series. Use it in `url`.                               |
+| `${value}`                     | The value, formatted with the unit and decimals of the field config.          |
+| `${percent}`                   | The value as a percent of the capacity.                                       |
 
-## Signing a plugin
+Grafana dashboard variables also resolve in `url`. If a template in a series selector does not resolve, the cell is "unbound". It is grey and the panel shows a warning.
 
-### Using Github actions release workflow
+A missing series gives a grey "no data" state. It is never green.
 
-If the plugin is using the github actions supplied with `@grafana/create-plugin` signing a plugin is included out of the box. The [release workflow](./.github/workflows/release.yml) can prepare everything to make submitting your plugin to Grafana as easy as possible. Before being able to sign the plugin however a secret needs adding to the Github repository.
+Colour, unit, decimals, value mappings and data links come from the Grafana field config. A rule `thresholds` setting overrides the colour.
 
-1. Please navigate to "settings > secrets > actions" within your repo to create secrets.
-2. Click "New repository secret"
-3. Name the secret "GRAFANA_API_KEY"
-4. Paste your Grafana Cloud API key in the Secret field
-5. Click "Add secret"
+## Zoom options
 
-#### Push a version tag
+In the **View** group of the panel options:
 
-To trigger the workflow we need to push a version tag to github. This can be achieved with the following steps:
+| Option               | Meaning                                                               |
+| -------------------- | --------------------------------------------------------------------- |
+| Zoom: Fit            | The whole diagram fits in the panel. This is the default.             |
+| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.        |
+| Zoom: Original       | The diagram has its original size.                                    |
+| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                     |
+| Wheel zoom           | The mouse wheel zooms the view. Off by default.                       |
+| Drag pan             | A mouse drag moves the view. Off by default.                          |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load. |
 
-1. Run `npm version <major|minor|patch>`
-2. Run `git push origin main --follow-tags`
+## Editor URL option
 
-## Learn more
+**Diagram > Editor URL** sets the draw.io editor for edit mode. The default is `http://localhost:8080` (the self-hosted editor in the compose stack). You can use `https://embed.diagrams.net` or your own server.
 
-Below you can find source code for existing app plugins and other related documentation.
+The panel opens the editor in an iframe inside a modal, in embed mode. No draw.io code loads in view mode. The editor is the only place that has an iframe. A browser must reach the editor URL.
 
-- [Basic panel plugin example](https://github.com/grafana/grafana-plugin-examples/tree/master/examples/panel-basic#readme)
-- [`plugin.json` documentation](https://grafana.com/developers/plugin-tools/reference/plugin-json)
-- [How to sign a plugin?](https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin)
+## Grafana 12 and 13
+
+The plugin targets Grafana `>=12.4.0` and builds against `@grafana/*` 12.4.x. React comes from Grafana (it is not bundled). The same `dist/` runs on Grafana 12.4.13 and 13.2.4. Playwright tests pass on both versions: see `docs/acceptance.md`.
+
+## Development
+
+```bash
+npm run dev               # webpack in watch mode
+npm test                  # Vitest unit tests (jsdom, real SVG fixtures)
+npm run typecheck && npm run lint
+npm run check:bundle      # fails if draw.io runtime code is in the bundle
+npm run e2e:12            # Playwright on Grafana 12 (the stack must run)
+npm run e2e:13            # Playwright on Grafana 13
+npm run e2e:matrix        # both
+npm run build:dashboard   # rebuild provisioning/dashboards/drawiomap-demo.json
+./scripts/export-fixtures.sh   # export fixtures/**/*.drawio to fixtures/svg/*.svg
+```
+
+The acceptance results are in `docs/acceptance.md`.
+
+## Known limits (out of scope for the PoC)
+
+- No signing and no catalogue entry.
+- No rules embedded in the diagram (`pg-rules`).
+- No click-to-bind in the diagram.
+- No sparklines on links.
+- No animated flow.
+- No diagrams loaded from a URL.
+- No multi-page diagrams. The panel renders page 1 and shows a warning.
+- The editor does not work with the Grafana frontend sandbox (see `docs/acceptance.md`). View mode works in the sandbox.
+- HTML labels (`foreignObject`) make the SVG big (about 180 KB for the demo). Set `convertToSvg=1` on labels in the generator for a smaller SVG.
+
+## Licence
+
+Apache-2.0. See `LICENSE`.
