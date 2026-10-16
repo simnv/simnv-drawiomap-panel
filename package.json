@@ -14,6 +14,10 @@
     "e2e:13": "GRAFANA_URL=http://localhost:3013 playwright test",
     "e2e:matrix": "npm run e2e:12 && npm run e2e:13",
     "build:dashboard": "tsx scripts/build-dashboard.ts",
+    "check:bundle": "./scripts/check-bundle.sh",
+    "stack:up": "docker compose up -d",
+    "stack:down": "docker compose down -v",
+    "stack:smoke": "./scripts/stack-smoke.sh",
     "sign": "sign-plugin"
   },
   "author": "Simnv",
