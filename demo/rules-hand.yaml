@@ -1,0 +1,7 @@
+- name: hand links
+  select: { ids: [edge-ab, edge-cd] }
+  link:
+    a2b: { refId: A, match: { job: node-wan1, device: pppoe } }
+    b2a: { refId: A, match: { job: node-rtr-a, device: wan1 } }
+    capacity: "${cell.capacity}"
+  url: "/d/drawiomap-demo?cell=${cell.id}"

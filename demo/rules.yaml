@@ -1,0 +1,22 @@
+# Demo rules for the l3-routing fixture. Series come from stack/metrics-gen/gen.py.
+- name: links
+  select: { kind: link }
+  link:
+    a2b: { refId: A, match: { job: "node-${from.node}", device: "${from.port}" } }
+    b2a: { refId: A, match: { job: "node-${to.node}", device: "${to.port}" } }
+    capacity: 1000000000
+  reducer: last
+  label: "${value} · ${percent}"
+  url: "/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}"
+- name: wan uplinks 100M
+  select: { kind: link, attrs: { pg-to: "/^rtr-a:(wan1|wan2|lte)$/" } }
+  link: { capacity: 100000000 }
+  thresholds: { mode: percent, steps: [[0, green], [60, yellow], [85, red]] }
+- name: node up
+  select: { kind: node }
+  shape:
+    series: { refId: C, match: { job: "node-${cell.pg-id}" } }
+    fill: true
+    sparkline: { refId: D, match: { job: "node-${cell.pg-id}" }, position: bottom }
+  thresholds: { mode: absolute, steps: [[0, red], [1, green]] }
+  url: "/d/drawiomap-demo?var-job=node-${cell.pg-id}"
