@@ -1,0 +1,138 @@
+import { describe, expect, it } from 'vitest';
+import { cellMetaFromAttrs } from '../adapter/portograph';
+import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
+import { applyPatches } from './applier';
+
+const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30" fill="#fff" style="fill: light-dark(#fff, #111); stroke: #000;"/></g><g><text><tspan>rtr-a</tspan></text></g></g>
+  <g data-cell-id="n2"><g><rect x="10" y="50" width="50" height="30"/></g><g><switch><foreignObject><div xmlns="http://www.w3.org/1999/xhtml"><div>old</div></div></foreignObject></switch></g></g>
+  <g data-cell-id="e1"><g><path d="M 60 25 L 150 25" fill="none" stroke="#333" stroke-width="2" pointer-events="stroke"/><path d="M 150 20 L 160 25 L 150 30 Z" fill="#333" pointer-events="all"/></g></g>
+</svg>`;
+
+function build(): CellIndex {
+  const host = document.createElement('div');
+  host.innerHTML = SVG;
+  const index: CellIndex = new Map();
+  const g = (id: string) => host.querySelector(`[data-cell-id="${id}"]`) as SVGGElement;
+  const n1 = g('n1');
+  index.set('n1', {
+    meta: cellMetaFromAttrs('n1', {}, false, 'rtr-a'),
+    group: n1,
+    shape: n1.querySelector('rect')!,
+    arrows: [],
+    label: n1.querySelector('text')!,
+    original: {
+      fill: n1.querySelector('rect')!.style.fill,
+      stroke: n1.querySelector('rect')!.style.stroke,
+      text: 'rtr-a',
+    },
+  });
+  const n2 = g('n2');
+  index.set('n2', {
+    meta: cellMetaFromAttrs('n2', {}, false, 'old'),
+    group: n2,
+    shape: n2.querySelector('rect')!,
+    arrows: [],
+    label: n2.querySelector('foreignObject')!,
+    original: { fill: '', text: 'old' },
+  });
+  const e1 = g('e1');
+  const paths = Array.from(e1.querySelectorAll('path'));
+  index.set('e1', {
+    meta: cellMetaFromAttrs('e1', {}, true),
+    group: e1,
+    line: paths[0],
+    arrows: [paths[1]],
+    original: { stroke: '', strokeWidth: '' },
+  });
+  return index;
+}
+
+const ok = (over: Partial<HalfState> = {}): HalfState => ({
+  status: 'ok',
+  color: '#00ff00',
+  width: 4,
+  label: '41 Mb/s',
+  stepIndex: 1,
+  ...over,
+});
+const shape = (over: Partial<ShapeState> = {}): ShapeState => ({
+  status: 'ok',
+  color: '#ff0000',
+  fill: true,
+  stroke: false,
+  stepIndex: 0,
+  ...over,
+});
+/** jsdom keeps '#ff0000' as written; browsers read it back as 'rgb(255, 0, 0)'. */
+const RED = /^(#ff0000|rgb\(255, 0, 0\))$/;
+const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
+  cellId,
+  ruleNames: ['r'],
+  scope: { cell: {} },
+  urls: [],
+  warnings: [],
+  ...p,
+});
+
+describe('applyPatches', () => {
+  it('fills a shape through style and tags the group', () => {
+    const index = build();
+    const patches: PatchMap = new Map([['n1', patch('n1', { shape: shape() })]]);
+    const done = applyPatches(index, patches, new Set());
+    const rect = index.get('n1')!.shape as SVGElement;
+    expect(rect.style.fill).toMatch(RED);
+    expect(rect.getAttribute('fill')).toBe('#fff');
+    expect(index.get('n1')!.group.getAttribute('data-dmap-status')).toBe('ok');
+    expect(index.get('n1')!.group.getAttribute('data-dmap-step')).toBe('0');
+    expect([...done]).toEqual(['n1']);
+  });
+  it('strokes and writes text into tspan and foreignObject', () => {
+    const index = build();
+    const patches: PatchMap = new Map([
+      ['n1', patch('n1', { shape: shape({ fill: false, stroke: true, text: 'rtr-a 1' }) })],
+      ['n2', patch('n2', { shape: shape({ text: 'new' }) })],
+    ]);
+    applyPatches(index, patches, new Set());
+    expect((index.get('n1')!.shape as SVGElement).style.stroke).toMatch(RED);
+    expect((index.get('n1')!.shape as SVGElement).style.fill).not.toMatch(RED);
+    expect(index.get('n1')!.label!.textContent).toBe('rtr-a 1');
+    expect(index.get('n2')!.label!.textContent).toBe('new');
+  });
+  it('hides the original edge stroke when a link patch exists', () => {
+    const index = build();
+    const patches: PatchMap = new Map([
+      ['e1', patch('e1', { link: { a2b: ok(), b2a: ok({ status: 'nodata', stepIndex: -1 }) } })],
+    ]);
+    applyPatches(index, patches, new Set());
+    const e = index.get('e1')!;
+    expect(e.line!.style.strokeOpacity).toBe('0');
+    expect(e.arrows[0].style.opacity).toBe('0');
+    expect(e.group.getAttribute('data-dmap-status')).toBe('ok');
+    expect(e.group.getAttribute('data-dmap-step')).toBe('1');
+  });
+  it('reports nodata when no half has data', () => {
+    const index = build();
+    const patches: PatchMap = new Map([
+      ['e1', patch('e1', { link: { a2b: ok({ status: 'nodata', stepIndex: -1 }) } })],
+    ]);
+    applyPatches(index, patches, new Set());
+    expect(index.get('e1')!.group.getAttribute('data-dmap-status')).toBe('nodata');
+    expect(index.get('e1')!.group.getAttribute('data-dmap-step')).toBe('-1');
+  });
+  it('resets cells that are no longer patched', () => {
+    const index = build();
+    const first: PatchMap = new Map([
+      ['n1', patch('n1', { shape: shape({ text: 'x' }) })],
+      ['e1', patch('e1', { link: { a2b: ok() } })],
+    ]);
+    const prev = applyPatches(index, first, new Set());
+    const done = applyPatches(index, new Map(), prev);
+    expect(done.size).toBe(0);
+    const rect = index.get('n1')!.shape as SVGElement;
+    expect(rect.style.fill).toBe(index.get('n1')!.original.fill ?? '');
+    expect(index.get('n1')!.label!.textContent).toBe('rtr-a');
+    expect(index.get('n1')!.group.hasAttribute('data-dmap-status')).toBe(false);
+    expect(index.get('e1')!.line!.style.strokeOpacity).toBe('');
+  });
+});
