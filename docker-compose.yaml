@@ -14,22 +14,22 @@ x-grafana-volumes: &grafana-volumes
 services:
   grafana12:
     image: grafana/grafana:12.4.13
-    ports: ["3012:3000"]
+    ports: ["127.0.0.1:3012:3000"]
     environment: *grafana-env
     volumes: *grafana-volumes
     depends_on: [victoriametrics]
   grafana13:
     image: grafana/grafana:13.2.4
-    ports: ["3013:3000"]
+    ports: ["127.0.0.1:3013:3000"]
     environment: *grafana-env
     volumes: *grafana-volumes
     depends_on: [victoriametrics]
   drawio:
     image: jgraph/drawio:32.4.1
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.126.0
-    ports: ["8428:8428"]
+    ports: ["127.0.0.1:8428:8428"]
     command: ["-retentionPeriod=2d", "-search.latencyOffset=0s"]
   metrics-gen:
     image: python:3.12-alpine
