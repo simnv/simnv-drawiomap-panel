@@ -1,0 +1,42 @@
+<mxfile host="hand" version="32.4.1">
+  <diagram id="hand-1" name="hand">
+    <mxGraphModel dx="800" dy="500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <object id="node-a" label="rtr-b" host="rtr-b" job="node-rtr-b">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+            <mxGeometry x="80" y="80" width="120" height="60" as="geometry"/>
+          </mxCell>
+        </object>
+        <mxCell id="node-b" value="rtr-a" style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="80" width="120" height="60" as="geometry"/>
+        </mxCell>
+        <object id="edge-ab" label="" kind="wan" capacity="100000000">
+          <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeWidth=2;" edge="1" parent="1" source="node-a" target="node-b">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+        <mxCell id="lbl-ab" value="10G" style="edgeLabel;html=1;convertToSvg=1;align=center;verticalAlign=middle;resizable=0;" vertex="1" connectable="0" parent="edge-ab">
+          <mxGeometry relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="grp" value="" style="group" vertex="1" connectable="0" parent="1">
+          <mxGeometry x="80" y="220" width="440" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="node-c" value="c" style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;" vertex="1" parent="grp">
+          <mxGeometry x="0" y="0" width="100" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="node-d" value="d" style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;" vertex="1" parent="grp">
+          <mxGeometry x="340" y="90" width="100" height="50" as="geometry"/>
+        </mxCell>
+        <object id="edge-cd" label="" kind="lan" capacity="1000000000">
+          <mxCell style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=1;html=1;endArrow=none;strokeWidth=2;" edge="1" parent="grp" source="node-c" target="node-d">
+            <mxGeometry relative="1" as="geometry">
+              <Array as="points"><mxPoint x="220" y="25"/><mxPoint x="220" y="115"/></Array>
+            </mxGeometry>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
