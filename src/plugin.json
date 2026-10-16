@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "panel",
+  "name": "draw.io map",
+  "id": "simnv-drawiomap-panel",
+  "info": {
+    "keywords": [
+      "panel",
+      "drawio",
+      "weathermap",
+      "network",
+      "diagram"
+    ],
+    "description": "Shows a draw.io diagram as a network weathermap. Links and shapes follow the panel queries.",
+    "author": {
+      "name": "simnv"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=12.4.0",
+    "plugins": []
+  }
+}
