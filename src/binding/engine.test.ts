@@ -226,3 +226,148 @@ describe('bind', () => {
     expect(p.link?.a2b?.label).toBe('41 Mb/s');
   });
 });
+
+describe('bind review fixes', () => {
+  const withUnit = (unit: string | undefined, value: number): SeriesInfo => ({
+    ...mk('U', { job: 'node-wan1', device: 'pppoe' }, [value]),
+    field: { name: 'v', type: FieldType.number, config: unit ? { unit } : {}, values: [value] } as Field,
+  });
+  const linkCell = cells[0];
+  const capRule = (extra: Partial<Rule> = {}): Rule => ({
+    name: 'cap',
+    select: { kind: 'link' },
+    link: { a2b: { refId: 'U', match: { device: 'pppoe' } }, capacity: 1e8 },
+    ...extra,
+  });
+  const pctFor = (unit: string | undefined, value: number) =>
+    bind([capRule()], [linkCell], [withUnit(unit, value)], ctx).patches.get(linkCell.id)!.link!.a2b!.percent;
+
+  it('finding 1: an invalid regex in a selector does not crash bind and gives a warning', () => {
+    const r = bind([{ name: 'bad', select: { label: '/[/' }, shape: { fill: true } }], cells, series, ctx);
+    expect(r.patches.size).toBe(0);
+    expect(r.warnings.join(' ')).toMatch(/bad.*invalid regex \/\[\//);
+  });
+  it('finding 3: byte-rate units convert to bit/s before the capacity percent', () => {
+    expect(pctFor('Bps', 5e6)).toBeCloseTo(40);
+    expect(pctFor('KBs', 5e3)).toBeCloseTo(40);
+    expect(pctFor('MBs', 5)).toBeCloseTo(40);
+    expect(pctFor('GBs', 0.005)).toBeCloseTo(40);
+    expect(pctFor('binBps', 5e6)).toBeCloseTo(40);
+    expect(pctFor('KiBs', 1000)).toBeCloseTo((1000 * 1024 * 8 * 100) / 1e8);
+    expect(pctFor('MiBs', 1)).toBeCloseTo((1024 ** 2 * 8 * 100) / 1e8);
+    expect(pctFor('GiBs', 0.01)).toBeCloseTo((0.01 * 1024 ** 3 * 8 * 100) / 1e8);
+  });
+  it('finding 3: bit-rate units scale to bit/s', () => {
+    expect(pctFor('bps', 4e7)).toBeCloseTo(40);
+    expect(pctFor('binbps', 4e7)).toBeCloseTo(40);
+    expect(pctFor('Kbits', 4e4)).toBeCloseTo(40);
+    expect(pctFor('Mbits', 40)).toBeCloseTo(40);
+    expect(pctFor('Gbits', 0.04)).toBeCloseTo(40);
+    expect(pctFor('Mibits', 1)).toBeCloseTo((1024 ** 2 * 100) / 1e8);
+    expect(pctFor(undefined, 4e7)).toBeCloseTo(40);
+  });
+  it('finding 3: an unknown unit uses the raw value and gives a warning', () => {
+    const r = bind([capRule()], [linkCell], [withUnit('percent', 4e7)], ctx);
+    expect(r.patches.get(linkCell.id)!.link!.a2b!.percent).toBeCloseTo(40);
+    expect(r.warnings.join(' ')).toMatch(/cap.*unit "percent"/);
+  });
+  it('finding 5: a text-only shape shows "no data" in grey when the series is missing', () => {
+    const r = bind(
+      [{ name: 't', select: { kind: 'node' }, shape: { series: { refId: 'Z' }, text: true } }],
+      cells,
+      series,
+      ctx
+    );
+    const sh = r.patches.get('pg-node~rtr-a')!.shape!;
+    expect(sh.status).toBe('nodata');
+    expect(sh.text).toBe('no data');
+    expect(sh.color).toBe(theme.colors.text.disabled);
+    expect(sh.fill).toBe(false);
+  });
+  it('finding 5: a text-only shape shows "unbound" in grey when the series template is unbound', () => {
+    const r = bind(
+      [{ name: 't', select: { kind: 'node' }, shape: { series: { match: { job: '${cell.nope}' } }, text: true } }],
+      cells,
+      series,
+      ctx
+    );
+    const sh = r.patches.get('pg-node~rtr-a')!.shape!;
+    expect(sh.status).toBe('unbound');
+    expect(sh.text).toBe('unbound');
+    expect(sh.color).toBe(theme.colors.text.disabled);
+  });
+  it('finding 6: an unresolved link label placeholder makes the half unbound', () => {
+    const r = bind([capRule({ label: '${value} ${labels.nope}' })], [linkCell], [withUnit('bps', 4e7)], ctx);
+    const h = r.patches.get(linkCell.id)!.link!.a2b!;
+    expect(h.status).toBe('unbound');
+    expect(h.color).toBe(theme.colors.text.disabled);
+    expect(h.label).toBe('unbound');
+    expect(h.stepIndex).toBe(-1);
+    expect(r.warnings.join(' ')).toMatch(/labels\.nope/);
+  });
+  it('finding 6: ${percent} without a capacity makes the half unbound', () => {
+    const r = bind(
+      [{ name: 'np', select: { kind: 'link' }, link: { a2b: { refId: 'U' } }, label: '${percent}' }],
+      [linkCell],
+      [withUnit('bps', 4e7)],
+      ctx
+    );
+    expect(r.patches.get(linkCell.id)!.link!.a2b!.status).toBe('unbound');
+    expect(r.warnings.join(' ')).toMatch(/percent/);
+  });
+  it('finding 6: an unresolved shape text placeholder makes the shape unbound', () => {
+    const r = bind(
+      [
+        {
+          name: 'st',
+          select: { kind: 'node' },
+          shape: { series: { refId: 'C', match: { job: 'node-${cell.pg-id}' } }, text: true, fill: true },
+          label: '${labels.nope}',
+        },
+      ],
+      cells,
+      series,
+      ctx
+    );
+    const sh = r.patches.get('pg-node~rtr-a')!.shape!;
+    expect(sh.status).toBe('unbound');
+    expect(sh.text).toBe('unbound');
+    expect(sh.color).toBe(theme.colors.text.disabled);
+    expect(sh.stepIndex).toBe(-1);
+  });
+
+  const hostCell = cellMetaFromAttrs(
+    'h1',
+    { host: 'a&b=c d/e', evil: 'javascript:alert(1)', 'pg-kind': 'node', 'pg-id': 'h1' },
+    false,
+    'Host'
+  );
+  const urlOf = (url: string) => bind([{ name: 'u', select: { ids: ['h1'] }, url }], [hostCell], [], ctx);
+  it('finding 7: url template values are percent-encoded', () => {
+    expect(urlOf('/d/x?var-host=${cell.host}').patches.get('h1')!.urls[0].url).toBe('/d/x?var-host=a%26b%3Dc%20d%2Fe');
+    expect(urlOf('https://g/d/${cell.host}?x=${__url_time_range}').patches.get('h1')!.urls[0].url).toBe(
+      'https://g/d/a%26b%3Dc%20d%2Fe?x=${__url_time_range}'
+    );
+    expect(urlOf('${cell.evil}').patches.get('h1')!.urls[0].url).toBe('javascript%3Aalert(1)');
+  });
+  it('finding 7: urls with a scheme other than http or https are dropped with a warning', () => {
+    for (const bad of [
+      'javascript:alert(${cell.pg-id})',
+      ' JavaScript:alert(1)',
+      'java\tscript:x',
+      'data:text/html,x',
+    ]) {
+      const r = urlOf(bad);
+      expect(r.patches.get('h1')?.urls ?? []).toEqual([]);
+      expect(r.warnings.join(' ')).toMatch(/u.*h1.*scheme/);
+    }
+    for (const ok of ['http://a/b', 'HTTPS://a/b', '/d/x', 'd/x', '?a=1', '//host/x']) {
+      expect(urlOf(ok).patches.get('h1')!.urls[0].url).toBe(ok);
+    }
+  });
+  it('finding 8: a rule with only a url keeps its patch', () => {
+    const p = urlOf('/d/x').patches.get('h1');
+    expect(p).toBeDefined();
+    expect(p!.urls).toEqual([{ title: 'u', url: '/d/x' }]);
+  });
+});

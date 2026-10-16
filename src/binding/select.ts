@@ -1,17 +1,49 @@
 import type { CellMeta, CellSelector, Matcher } from '../types';
 
+const REGEX = /^\/(.+)\/([a-z]*)$/;
+/** g and y make RegExp.test() stateful (lastIndex), so a cached matcher would alternate true/false. */
+const STATEFUL_FLAGS = /[gy]/;
+const NEVER = (): boolean => false;
+
 const cache = new Map<string, (v: string) => boolean>();
 
-/** "/re/flags" becomes a RegExp test; any other string is an exact match. */
+/**
+ * Returns a message when the matcher is a "/re/flags" string that is not a valid, stateless regex.
+ * A matcher with a ${...} template is checked for flags only: its pattern is known after resolution.
+ */
+export function matcherError(m: Matcher): string | undefined {
+  const re = REGEX.exec(m);
+  if (!re) {
+    return undefined;
+  }
+  if (STATEFUL_FLAGS.test(re[2])) {
+    return `invalid regex ${m}: do not use the g or y flag`;
+  }
+  if (m.includes('${')) {
+    return undefined;
+  }
+  try {
+    new RegExp(re[1], re[2]);
+    return undefined;
+  } catch (e) {
+    return `invalid regex ${m}: ${(e as Error).message}`;
+  }
+}
+
+/** "/re/flags" becomes a RegExp test; any other string is an exact match. An invalid regex matches nothing. */
 export function compileMatcher(m: Matcher): (v: string) => boolean {
   let fn = cache.get(m);
   if (fn) {
     return fn;
   }
-  const re = /^\/(.+)\/([a-z]*)$/.exec(m);
+  const re = REGEX.exec(m);
   if (re) {
-    const rx = new RegExp(re[1], re[2]);
-    fn = (v) => rx.test(v);
+    try {
+      const rx = new RegExp(re[1], re[2].replace(/[gy]/g, ''));
+      fn = (v) => rx.test(v);
+    } catch {
+      fn = NEVER;
+    }
   } else {
     fn = (v) => v === m;
   }

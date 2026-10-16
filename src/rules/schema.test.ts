@@ -49,3 +49,30 @@ describe('parseRulesYaml', () => {
     expect(ruleSchema.safeParse({ name: 'x', select: {}, bogus: 1 }).success).toBe(false);
   });
 });
+
+describe('matcher validation', () => {
+  const rule = (select: object, extra: object = {}) => ({ name: 'x', select, ...extra });
+  it('finding 1: rejects an invalid regex with a clear message and path', () => {
+    const r = parseRulesYaml('- name: x\n  select: { label: "/[/" }\n');
+    expect(r.rules).toBeUndefined();
+    expect(r.errors[0]).toMatch(/\[0\]\.select\.label: .*invalid regex/i);
+    expect(ruleSchema.safeParse(rule({ attrs: { a: '/(/' } })).success).toBe(false);
+    expect(ruleSchema.safeParse(rule({ attrs: { a: '/x/z' } })).success).toBe(false);
+    expect(ruleSchema.safeParse(rule({ kind: 'node' }, { shape: { series: { name: '/(/' } } })).success).toBe(false);
+    expect(ruleSchema.safeParse(rule({ kind: 'node' }, { shape: { series: { match: { job: '/[/' } } } })).success).toBe(
+      false
+    );
+  });
+  it('finding 2: rejects the stateful g and y flags', () => {
+    const r = parseRulesYaml('- name: x\n  select: { attrs: { host: "/router/g" } }\n');
+    expect(r.errors[0]).toMatch(/\[0\]\.select\.attrs\.host: .*flag/i);
+    expect(ruleSchema.safeParse(rule({ label: '/router/y' })).success).toBe(false);
+  });
+  it('accepts valid regexes, plain strings and templates', () => {
+    expect(ruleSchema.safeParse(rule({ label: '/^r[0-9]+$/i', attrs: { a: 'plain [' } })).success).toBe(true);
+    expect(
+      ruleSchema.safeParse(rule({ kind: 'node' }, { shape: { series: { match: { job: 'node-${cell.pg-id}' } } } }))
+        .success
+    ).toBe(true);
+  });
+});

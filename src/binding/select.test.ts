@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
-import { compileMatcher, selectCells } from './select';
+import { compileMatcher, matcherError, selectCells } from './select';
 
 const link = cellMetaFromAttrs(
   'pg-link~a:p1->b:p2',
@@ -48,5 +48,28 @@ describe('selectCells', () => {
   it('by between in either direction', () => {
     expect(selectCells({ between: ['b', 'a'] }, cells)).toEqual([link]);
     expect(selectCells({ between: ['a', 'c'] }, cells)).toEqual([]);
+  });
+});
+
+describe('compileMatcher review fixes', () => {
+  it('finding 1: an invalid regex does not throw and matches nothing', () => {
+    expect(() => compileMatcher('/[/')).not.toThrow();
+    expect(compileMatcher('/[/')('[')).toBe(false);
+    expect(compileMatcher('/a/z')('a')).toBe(false);
+    expect(matcherError('/[/')).toMatch(/invalid regex/i);
+    expect(matcherError('/a/z')).toMatch(/invalid regex/i);
+    expect(matcherError('/^ok$/i')).toBeUndefined();
+    expect(matcherError('plain [')).toBeUndefined();
+  });
+  it('finding 1: selectCells skips cells for an invalid regex instead of a crash', () => {
+    expect(selectCells({ label: '/[/' }, cells)).toEqual([]);
+  });
+  it('finding 2: g and y flags are stripped so repeated tests are stable', () => {
+    const g = compileMatcher('/router/g');
+    expect([g('router'), g('router'), g('router')]).toEqual([true, true, true]);
+    const y = compileMatcher('/router/y');
+    expect([y('router'), y('router')]).toEqual([true, true]);
+    expect(matcherError('/router/g')).toMatch(/flag/i);
+    expect(matcherError('/router/gy')).toMatch(/flag/i);
   });
 });

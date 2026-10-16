@@ -1,8 +1,15 @@
 import { z } from 'zod';
 import yaml from 'js-yaml';
+import { matcherError } from '../binding/select';
 import type { Rule } from '../types';
 
-const matcher = z.string();
+/** Exact string or "/re/flags". The regex must compile and must not use the stateful g or y flag. */
+const matcher = z.string().superRefine((m, ctx) => {
+  const err = matcherError(m);
+  if (err) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+  }
+});
 const seriesSelector = z
   .object({ refId: z.string().optional(), name: matcher.optional(), match: z.record(matcher).optional() })
   .strict();

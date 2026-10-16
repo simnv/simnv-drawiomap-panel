@@ -11,8 +11,13 @@ export interface ResolveResult {
 /**
  * Replaces ${cell.x}, ${from.x}, ${to.x}, ${labels.x}, ${value}, ${percent}.
  * Unknown roots (dashboard variables such as ${__url_time_range}) stay as they are and are not reported.
+ * `encode` applies to each substituted value only (for example encodeURIComponent in URLs).
  */
-export function resolveTemplate(tpl: string, scope: TemplateScope): ResolveResult {
+export function resolveTemplate(
+  tpl: string,
+  scope: TemplateScope,
+  encode: (v: string) => string = (v) => v
+): ResolveResult {
   const unresolved: string[] = [];
   const text = tpl.replace(PLACEHOLDER, (whole, root: string, path: string | undefined) => {
     if (!SCOPE_ROOTS.has(root)) {
@@ -24,7 +29,7 @@ export function resolveTemplate(tpl: string, scope: TemplateScope): ResolveResul
         unresolved.push(root);
         return whole;
       }
-      return v;
+      return encode(v);
     }
     const obj = scope[root as 'cell' | 'from' | 'to' | 'labels'];
     const key = path ?? '';
@@ -33,7 +38,7 @@ export function resolveTemplate(tpl: string, scope: TemplateScope): ResolveResul
       unresolved.push(`${root}.${key}`);
       return whole;
     }
-    return v;
+    return encode(v);
   });
   return { text, unresolved };
 }

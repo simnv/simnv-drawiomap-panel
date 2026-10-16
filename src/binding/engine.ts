@@ -20,9 +20,21 @@ import type {
 } from '../types';
 import { colorFor, noDataColor, widthFor } from './color';
 import { reduceValues } from './reduce';
-import { cellMatches } from './select';
+import { cellMatches, matcherError } from './select';
 import { findSeries } from './series';
 import { resolveTemplate } from './template';
+import { toBitsPerSecond } from './units';
+import { isAllowedUrl } from './url';
+
+const UNBOUND = (ctx: BindContext): HalfState => ({
+  status: 'unbound',
+  color: noDataColor(ctx.theme),
+  width: ctx.linkWidth.min,
+  label: 'unbound',
+  stepIndex: -1,
+});
+
+const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound' } as const;
 
 interface Effective {
   ruleNames: string[];
@@ -105,7 +117,7 @@ function half(
   scope: TemplateScope,
   series: SeriesInfo[],
   ctx: BindContext
-): { state: HalfState; unresolved: string[] } {
+): { state: HalfState; unresolved: string[]; notes: string[] } {
   const r = resolveSeries(sel, series, scope, eff.reducer ?? 'last');
   if (r.status !== 'ok' || r.value === undefined || !r.series) {
     return {
@@ -117,9 +129,19 @@ function half(
         stepIndex: -1,
       },
       unresolved: r.unresolved,
+      notes: [],
     };
   }
-  const percent = capacity ? (r.value / capacity) * 100 : undefined;
+  const notes: string[] = [];
+  let percent: number | undefined;
+  if (capacity) {
+    // capacity is in bit/s; the field unit tells how to read the value
+    const rate = toBitsPerSecond(r.value, r.series.field.config?.unit);
+    if (rate.unknownUnit) {
+      notes.push(`unit "${rate.unknownUnit}" is not a data rate, the raw value is used as bit/s`);
+    }
+    percent = (rate.bits / capacity) * 100;
+  }
   const display = ctx.display(r.series, r.value);
   const { color, stepIndex } = colorFor(
     r.value,
@@ -137,6 +159,10 @@ function half(
     percent: percent === undefined ? undefined : `${Math.round(percent)}%`,
   };
   const label = resolveTemplate(tpl, labelScope);
+  if (label.unresolved.length) {
+    // spec: a template that does not resolve makes the binding unbound (grey, warning in edit mode)
+    return { state: { ...UNBOUND(ctx), series: r.series }, unresolved: label.unresolved, notes };
+  }
   return {
     state: {
       status: 'ok',
@@ -149,17 +175,10 @@ function half(
       display,
       series: r.series,
     },
-    unresolved: label.unresolved,
+    unresolved: [],
+    notes,
   };
 }
-
-const UNBOUND = (ctx: BindContext): HalfState => ({
-  status: 'unbound',
-  color: noDataColor(ctx.theme),
-  width: ctx.linkWidth.min,
-  label: 'unbound',
-  stepIndex: -1,
-});
 
 function capacityOf(link: LinkRule, scope: TemplateScope): { capacity?: number; unresolved: string[] } {
   if (link.capacity === undefined) {
@@ -202,6 +221,7 @@ function shape(
         ctx.theme
       );
       let text: string | undefined;
+      let textUnresolved = false;
       if (sh.text) {
         const t = resolveTemplate(eff.label ?? '${value}', {
           ...scope,
@@ -210,20 +230,40 @@ function shape(
         });
         unresolved.push(...t.unresolved);
         text = t.text;
+        textUnresolved = t.unresolved.length > 0;
       }
+      state = textUnresolved
+        ? {
+            status: 'unbound',
+            color: noDataColor(ctx.theme),
+            fill: wantFill,
+            stroke: !!sh.stroke,
+            stepIndex: -1,
+            text: STATUS_TEXT.unbound,
+            series: r.series,
+          }
+        : {
+            status: 'ok',
+            color,
+            fill: wantFill,
+            stroke: !!sh.stroke,
+            stepIndex,
+            text,
+            value: r.value,
+            display,
+            series: r.series,
+          };
+    } else {
+      const status = r.status === 'ok' ? 'nodata' : r.status;
       state = {
-        status: 'ok',
-        color,
+        status,
+        color: noDataColor(ctx.theme),
         fill: wantFill,
         stroke: !!sh.stroke,
-        stepIndex,
-        text,
-        value: r.value,
-        display,
-        series: r.series,
+        stepIndex: -1,
+        // a text-only binding has no colour to show the state, so the text says it
+        text: sh.text ? STATUS_TEXT[status] : undefined,
       };
-    } else {
-      state = { status: r.status, color: noDataColor(ctx.theme), fill: wantFill, stroke: !!sh.stroke, stepIndex: -1 };
     }
   }
   let spark: SparklineState | undefined;
@@ -243,9 +283,31 @@ function shape(
   return { state, spark, unresolved };
 }
 
+function ruleMatchers(r: Rule): string[] {
+  const out: string[] = [...Object.values(r.select.attrs ?? {})];
+  if (r.select.label) {
+    out.push(r.select.label);
+  }
+  for (const sel of [r.link?.a2b, r.link?.b2a, r.shape?.series, r.shape?.sparkline]) {
+    if (sel?.name) {
+      out.push(sel.name);
+    }
+    out.push(...Object.values(sel?.match ?? {}));
+  }
+  return out;
+}
+
 export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx: BindContext): BindResult {
   const patches: PatchMap = new Map();
   const warnings: string[] = [];
+  for (const r of rules) {
+    for (const m of new Set(ruleMatchers(r))) {
+      const err = matcherError(m);
+      if (err) {
+        warnings.push(`${r.name}: ${err}`);
+      }
+    }
+  }
   for (const cell of cells) {
     const eff = merge(rules, cell);
     if (!eff) {
@@ -254,6 +316,7 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
     const scope = scopeFor(cell);
     const patch: CellPatch = { cellId: cell.id, ruleNames: eff.ruleNames, scope, urls: [], warnings: [] };
     const unresolved: string[] = [];
+    const notes: string[] = [];
     let primary: SeriesInfo | undefined;
 
     if (eff.link && (cell.isEdge || cell.kind === 'link')) {
@@ -272,12 +335,14 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
         const h = half(eff.link.a2b, cap.capacity, eff, scope, series, ctx);
         patch.link.a2b = h.state;
         unresolved.push(...h.unresolved);
+        notes.push(...h.notes);
         primary = primary ?? h.state.series;
       }
       if (!cap.unresolved.length && eff.link.b2a) {
         const h = half(eff.link.b2a, cap.capacity, eff, scope, series, ctx);
         patch.link.b2a = h.state;
         unresolved.push(...h.unresolved);
+        notes.push(...h.notes);
         primary = primary ?? h.state.series;
       }
     }
@@ -289,18 +354,22 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
       primary = primary ?? s.state?.series;
     }
     if (eff.url) {
-      const u = resolveTemplate(eff.url, { ...scope, labels: primary?.labels ?? {} });
+      const u = resolveTemplate(eff.url, { ...scope, labels: primary?.labels ?? {} }, encodeURIComponent);
       unresolved.push(...u.unresolved);
-      if (!u.unresolved.length) {
+      if (!u.unresolved.length && isAllowedUrl(u.text)) {
         patch.urls.push({ title: eff.urlRule ?? eff.ruleNames[eff.ruleNames.length - 1], url: u.text });
+      } else if (!u.unresolved.length) {
+        notes.push('url scheme is not http, https or relative, the url is dropped');
       }
     }
+    const prefix = `${eff.ruleNames.join('+')} / ${cell.id}`;
+    const msgs = [...new Set(notes)].map((n) => `${prefix}: ${n}`);
     if (unresolved.length) {
-      const msg = `${eff.ruleNames.join('+')} / ${cell.id}: unresolved ${[...new Set(unresolved)].join(', ')}`;
-      patch.warnings.push(msg);
-      warnings.push(msg);
+      msgs.unshift(`${prefix}: unresolved ${[...new Set(unresolved)].join(', ')}`);
     }
-    if (patch.link || patch.shape || patch.sparkline) {
+    patch.warnings.push(...msgs);
+    warnings.push(...msgs);
+    if (patch.link || patch.shape || patch.sparkline || patch.urls.length) {
       patches.set(cell.id, patch);
     }
   }
