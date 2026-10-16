@@ -119,5 +119,10 @@ export function sanitizeSvg(text: string): SanitizeResult {
       `${foreignObjects} HTML labels (foreignObject). Set convertToSvg=1 on labels for smaller, native text.`
     );
   }
-  return { svg: svg.outerHTML, removed, foreignObjects, warnings };
+  // XML serialisation: the output must parse again as image/svg+xml (stored diagrams are sanitised twice).
+  // Literal xmlns attributes (e.g. on HTML label divs) make XMLSerializer write xmlns twice; it declares namespaces itself.
+  for (const el of [svg, ...Array.from(svg.querySelectorAll('*'))]) {
+    el.removeAttribute('xmlns');
+  }
+  return { svg: new XMLSerializer().serializeToString(svg), removed, foreignObjects, warnings };
 }

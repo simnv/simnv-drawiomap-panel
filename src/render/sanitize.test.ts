@@ -75,7 +75,7 @@ describe('sanitizeSvg: draw.io export', () => {
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
     expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(100);
-    expect(r.svg).toContain('data-meta-pg-id="wan1:pppoe->rtr-a:wan1"');
+    expect(r.svg).toContain('data-meta-pg-id="wan1:pppoe-&gt;rtr-a:wan1"');
     expect(r.svg).toContain('pointer-events="stroke"');
     expect(r.svg).toContain('light-dark(');
     expect(r.svg).toMatch(/<svg[^>]*viewBox="0 0 /);
@@ -90,5 +90,15 @@ describe('sanitizeSvg: draw.io export', () => {
   it('throws on a non-SVG document', () => {
     expect(() => sanitizeSvg('<html><body/></html>')).toThrow(/Not an SVG/);
     expect(() => sanitizeSvg('not xml <')).toThrow(/Not an SVG/);
+  });
+});
+
+describe('sanitizeSvg: idempotence', () => {
+  it('produces output that sanitizes again without a parse error', () => {
+    const once = sanitizeSvg(l3);
+    const twice = sanitizeSvg(once.svg);
+    expect(twice.warnings.join(' ')).not.toMatch(/Not an SVG/i);
+    expect(twice.svg).toContain('data-cell-id="pg-node~rtr-a"');
+    expect(twice.foreignObjects).toBe(once.foreignObjects);
   });
 });
