@@ -1,6 +1,16 @@
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, HalfState, PatchMap, SparklineState } from '../types';
-import { parsePathPoints, PathGeom, pathGeometry, Point } from './geometry';
+import {
+  applyMatrix,
+  IDENTITY,
+  invert,
+  Matrix,
+  multiply,
+  parsePathPoints,
+  PathGeom,
+  pathGeometry,
+  Point,
+} from './geometry';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
 const NS = 'http://www.w3.org/2000/svg';
@@ -188,11 +198,39 @@ export function bboxOf(shape: SVGGraphicsElement): { x: number; y: number; w: nu
   };
 }
 
+function ctmOf(el: SVGGraphicsElement): Matrix {
+  const m = typeof el.getCTM === 'function' ? el.getCTM() : null;
+  return m ? { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f } : IDENTITY;
+}
+
+/**
+ * Axis-aligned box of `shape` in `target` coordinates: the four corners of the local box are
+ * mapped with target.getCTM()^-1 × shape.getCTM(). jsdom has no getCTM, so the transform is identity there.
+ */
+export function boundsIn(shape: SVGGraphicsElement, target: SVGGraphicsElement) {
+  const b = bboxOf(shape);
+  if (!b) {
+    return undefined;
+  }
+  const M = multiply(invert(ctmOf(target)), ctmOf(shape));
+  const corners = [
+    { x: b.x, y: b.y },
+    { x: b.x + b.w, y: b.y },
+    { x: b.x, y: b.y + b.h },
+    { x: b.x + b.w, y: b.y + b.h },
+  ].map((p) => applyMatrix(M, p));
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
 function drawSparkline(layer: SVGGElement, entry: CellEntry, s: SparklineState, o: Required<OverlayOptions>): void {
   if (!entry.shape || s.values.length < 2) {
     return;
   }
-  const b = bboxOf(entry.shape);
+  const b = boundsIn(entry.shape, layer);
   if (!b) {
     return;
   }

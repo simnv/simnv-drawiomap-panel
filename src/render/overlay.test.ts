@@ -114,6 +114,50 @@ describe('renderOverlay', () => {
     expect(pts.every(([, y]) => y >= 42 && y <= 56)).toBe(true);
     expect(pts[1][1]).toBeLessThan(pts[0][1]);
   });
+  it('maps sparkline bounds through the shape transform into overlay coordinates', () => {
+    const { root, index } = build();
+    const rect = index.get('n1')!.shape!;
+    // jsdom has no layout. Simulate a shape group with transform="translate(100, 50)" and an overlay at identity.
+    const ctm = (e: number, f: number) => () => ({ a: 1, b: 0, c: 0, d: 1, e, f }) as DOMMatrix;
+    (rect as unknown as { getCTM: () => DOMMatrix }).getCTM = ctm(100, 50);
+    const layer = ensureOverlay(root);
+    (layer as unknown as { getCTM: () => DOMMatrix }).getCTM = ctm(0, 0);
+    renderOverlay(
+      root,
+      index,
+      new Map([['n1', patch('n1', { sparkline: { values: [0, 1, 0.5], color: '#0000ff', position: 'bottom' } })]]),
+      opts
+    );
+    const pts = root
+      .querySelector('polyline.dmap-spark')!
+      .getAttribute('points')!
+      .split(' ')
+      .map((p) => p.split(',').map(Number));
+    expect(pts[0][0]).toBe(110);
+    expect(pts[2][0]).toBe(160);
+    expect(pts.every(([, y]) => y >= 92 && y <= 106)).toBe(true);
+  });
+  it('maps sparkline bounds of a rotated shape to its axis-aligned overlay box', () => {
+    const { root, index } = build();
+    const rect = index.get('n1')!.shape!;
+    // rotate(90) about the origin: (x, y) -> (-y, x). Rect 10..60 x 10..40 becomes -40..-10 x 10..60.
+    (rect as unknown as { getCTM: () => DOMMatrix }).getCTM = () =>
+      ({ a: 0, b: 1, c: -1, d: 0, e: 0, f: 0 }) as DOMMatrix;
+    renderOverlay(
+      root,
+      index,
+      new Map([['n1', patch('n1', { sparkline: { values: [0, 1], color: '#0000ff', position: 'bottom' } })]]),
+      opts
+    );
+    const pts = root
+      .querySelector('polyline.dmap-spark')!
+      .getAttribute('points')!
+      .split(' ')
+      .map((p) => p.split(',').map(Number));
+    expect(pts[0][0]).toBe(-40);
+    expect(pts[1][0]).toBe(-10);
+    expect(pts.every(([, y]) => y >= 62 && y <= 76)).toBe(true);
+  });
   it('clears the previous render', () => {
     const { root, index } = build();
     const p: PatchMap = new Map([['e1', patch('e1', { link: { a2b: half() } })]]);
