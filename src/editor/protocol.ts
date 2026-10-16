@@ -95,6 +95,57 @@ export function parseMessage(data: unknown): EditorMessage | undefined {
   }
 }
 
+/**
+ * Window of the editor iframe. Undefined when it is unknown: the Grafana frontend sandbox
+ * throws on every read of iframe.contentWindow.
+ */
+export function frameWindow(frame: HTMLIFrameElement | null): Window | null | undefined {
+  try {
+    return frame ? frame.contentWindow : null;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Sender window of a message event. Undefined when it is unknown: in the Grafana frontend sandbox,
+ * near-membrane throws a SecurityError when it wraps a cross-origin window.
+ */
+export function eventSource(e: { source: unknown }): unknown {
+  try {
+    return e.source ?? null;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Validates a message event from the editor and parses it. The origin must be the editor origin and the
+ * payload must be a JSON event. The sender is compared only when it is readable:
+ * `expected` is the frame window (undefined in the sandbox), `pinned` is the sender of the first accepted message.
+ */
+export function acceptEditorMessage(
+  e: { origin: string; source: unknown; data: unknown },
+  origin: string,
+  expected: unknown,
+  pinned: unknown
+): EditorMessage | undefined {
+  if (e.origin !== origin) {
+    return undefined;
+  }
+  const source = eventSource(e);
+  if (source === null) {
+    return undefined;
+  }
+  if (
+    source !== undefined &&
+    ((expected !== undefined && source !== expected) || (pinned !== undefined && source !== pinned))
+  ) {
+    return undefined;
+  }
+  return parseMessage(e.data);
+}
+
 const EXPORT: EditorAction = {
   action: 'export',
   format: 'xmlsvg',

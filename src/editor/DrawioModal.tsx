@@ -1,8 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { Modal } from '@grafana/ui';
+import { Alert, Modal } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
-import { buildEditorUrl, editorOrigin, handleMessage, initialState, parseMessage, ProtocolState } from './protocol';
+import {
+  acceptEditorMessage,
+  buildEditorUrl,
+  editorOrigin,
+  eventSource,
+  frameWindow,
+  handleMessage,
+  initialState,
+  ProtocolState,
+} from './protocol';
 
 const styles = {
   modal: css`
@@ -21,6 +30,7 @@ const styles = {
     flex: 1;
     min-height: 0;
     display: flex;
+    flex-direction: column;
   `,
   frame: css`
     flex: 1;
@@ -39,22 +49,30 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
   const src = useMemo(() => buildEditorUrl(editorUrl, isDark), [editorUrl, isDark]);
   const origin = useMemo(() => editorOrigin(editorUrl), [editorUrl]);
 
+  // The editor sends the first message. Replies go to the sender of the first accepted message.
+  const sourceRef = useRef<Window | undefined>(undefined);
+  // The Grafana frontend sandbox blocks iframe.contentWindow and event.source (cross-origin window),
+  // so the host cannot reply to the editor.
+  const [blocked, setBlocked] = useState(false);
   const post = useCallback(
     (action: unknown) => {
-      frameRef.current?.contentWindow?.postMessage(JSON.stringify(action), origin);
+      sourceRef.current?.postMessage(JSON.stringify(action), origin);
     },
     [origin]
   );
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      if (e.origin !== origin || e.source !== frameRef.current?.contentWindow) {
-        return;
-      }
-      const msg = parseMessage(e.data);
+      const msg = acceptEditorMessage(e, origin, frameWindow(frameRef.current), sourceRef.current);
       if (!msg) {
         return;
       }
+      const source = eventSource(e);
+      if (!source) {
+        setBlocked(true);
+        return;
+      }
+      sourceRef.current = source as Window;
       const step = handleMessage(stateRef.current, msg, { mode, title, isDark });
       stateRef.current = step.state;
       setPhase(step.state.phase);
@@ -79,7 +97,19 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
       contentClassName={styles.content}
       closeOnBackdropClick={false}
     >
-      <div className={styles.body} data-testid="dmap-editor-modal" data-dmap-editor-phase={phase}>
+      <div
+        className={styles.body}
+        data-testid="dmap-editor-modal"
+        data-dmap-editor-phase={phase}
+        data-dmap-editor-blocked={blocked || undefined}
+      >
+        {blocked ? (
+          <Alert severity="error" title="The draw.io editor cannot start" data-testid="dmap-editor-blocked">
+            The Grafana frontend sandbox is on for this plugin. The sandbox does not let the panel send messages to the
+            draw.io frame on another origin. Remove simnv-drawiomap-panel from enable_frontend_sandbox_for_plugins to
+            edit the diagram.
+          </Alert>
+        ) : null}
         <iframe
           ref={frameRef}
           data-testid="dmap-editor-frame"

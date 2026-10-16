@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildEditorUrl, editorOrigin, handleMessage, initialState, parseMessage } from './protocol';
+import {
+  acceptEditorMessage,
+  buildEditorUrl,
+  editorOrigin,
+  eventSource,
+  frameWindow,
+  handleMessage,
+  initialState,
+  parseMessage,
+} from './protocol';
 
 const xml = '<mxfile><diagram/></mxfile>';
 const svgB64 = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`;
@@ -27,6 +36,62 @@ describe('parseMessage', () => {
     expect(parseMessage('nope')).toBeUndefined();
     expect(parseMessage(42)).toBeUndefined();
     expect(parseMessage('{"x":1}')).toBeUndefined();
+  });
+});
+
+describe('frameWindow / acceptEditorMessage', () => {
+  const editor = { name: 'editor frame' };
+  const other = { name: 'other frame' };
+  const ORIGIN = 'http://localhost:8080';
+  const ev = (over: Partial<{ origin: string; source: unknown; data: unknown }> = {}) => ({
+    origin: ORIGIN,
+    source: editor,
+    data: '{"event":"init"}',
+    ...over,
+  });
+
+  it('returns the frame window, or undefined when the frontend sandbox forbids iframe.contentWindow', () => {
+    expect(frameWindow({ contentWindow: editor } as never)).toBe(editor);
+    expect(frameWindow(null)).toBeNull();
+    const sandboxed = {
+      get contentWindow(): Window {
+        throw new Error('iframe.contentWindow is not allowed in sandboxed plugins');
+      },
+    };
+    expect(frameWindow(sandboxed as never)).toBeUndefined();
+  });
+  it('accepts an editor event from the editor origin when the frame window is unknown (sandbox)', () => {
+    expect(acceptEditorMessage(ev(), ORIGIN, undefined, undefined)).toEqual({ event: 'init' });
+  });
+  it('rejects a wrong origin, a missing source and a payload without a JSON event', () => {
+    expect(acceptEditorMessage(ev({ origin: 'https://evil.example' }), ORIGIN, undefined, undefined)).toBeUndefined();
+    expect(acceptEditorMessage(ev({ source: null }), ORIGIN, undefined, undefined)).toBeUndefined();
+    expect(acceptEditorMessage(ev({ data: 'GrafanaAppInit' }), ORIGIN, undefined, undefined)).toBeUndefined();
+    expect(acceptEditorMessage(ev({ data: { event: 'init' } }), ORIGIN, undefined, undefined)).toBeUndefined();
+  });
+  it('compares the source with the frame window when the window is readable', () => {
+    expect(acceptEditorMessage(ev(), ORIGIN, editor, undefined)).toEqual({ event: 'init' });
+    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, editor, undefined)).toBeUndefined();
+    expect(acceptEditorMessage(ev(), ORIGIN, null, undefined)).toBeUndefined();
+  });
+  it('accepts by origin and shape when the sandbox blocks event.source, and reports the source as unknown', () => {
+    // near-membrane throws a SecurityError when it wraps a cross-origin window.
+    const blocked = (origin = ORIGIN) => ({
+      origin,
+      data: '{"event":"configure"}',
+      get source(): unknown {
+        throw new Error('SecurityError: Blocked a frame from accessing a cross-origin frame.');
+      },
+    });
+    expect(eventSource(blocked())).toBeUndefined();
+    expect(eventSource(ev())).toBe(editor);
+    expect(eventSource(ev({ source: null }))).toBeNull();
+    expect(acceptEditorMessage(blocked(), ORIGIN, undefined, undefined)).toEqual({ event: 'configure' });
+    expect(acceptEditorMessage(blocked('https://evil.example'), ORIGIN, undefined, undefined)).toBeUndefined();
+  });
+  it('accepts later messages only from the source of the first accepted message', () => {
+    expect(acceptEditorMessage(ev(), ORIGIN, undefined, editor)).toEqual({ event: 'init' });
+    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, undefined, editor)).toBeUndefined();
   });
 });
 
