@@ -4,7 +4,7 @@ import { DiagramEditor } from './options/DiagramEditor';
 import { RulesEditor } from './options/RulesEditor';
 import { DEFAULT_OPTIONS, Options } from './types';
 
-export const plugin = new PanelPlugin<Options>(DrawioMapPanel as never)
+export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
   .setNoPadding()
   .useFieldConfig({
     standardOptions: {
