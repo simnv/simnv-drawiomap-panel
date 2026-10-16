@@ -8,5 +8,7 @@ export default defineConfig({
     exclude: ['node_modules', 'dist', 'tests'],
     globals: false,
     css: false,
+    // @grafana/* ESM builds import CJS moment-timezone and extensionless @rc-component files.
+    server: { deps: { inline: [/@rc-component/, /@grafana\//, /moment/] } },
   },
 });
