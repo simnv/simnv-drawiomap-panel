@@ -1,0 +1,99 @@
+import { attachLinkLabels, cellMetaFromAttrs } from '../adapter/portograph';
+import type { CellEntry, CellIndex, CellMeta } from '../types';
+
+const SHAPE_TAGS = new Set(['rect', 'path', 'ellipse', 'circle', 'polygon', 'image']);
+
+/**
+ * Parse the sanitised SVG text (HTML serialisation from sanitizeSvg) and make it the only child
+ * of the container. A <template> uses the HTML parser, which handles SVG foreign content and
+ * the HTML inside foreignObject labels.
+ */
+export function mountSvg(container: HTMLElement, svgText: string): SVGSVGElement {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = svgText;
+  const root = tpl.content.querySelector('svg');
+  if (!root) {
+    throw new Error('Not an SVG document');
+  }
+  container.replaceChildren(root);
+  root.style.display = 'block';
+  return root;
+}
+
+/** True when `el` sits inside a nested cell group below `group`. */
+function insideNestedCell(el: Element, group: Element): boolean {
+  let p = el.parentElement;
+  while (p && p !== group) {
+    if (p.hasAttribute('data-cell-id')) {
+      return true;
+    }
+    p = p.parentElement;
+  }
+  return false;
+}
+
+function ownDescendants(group: Element, selector: string): Element[] {
+  return Array.from(group.querySelectorAll(selector)).filter((el) => !insideNestedCell(el, group));
+}
+
+function metaAttrs(group: Element): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  for (const a of Array.from(group.attributes)) {
+    if (a.name.startsWith('data-meta-')) {
+      attrs[a.name.slice('data-meta-'.length)] = a.value;
+    }
+  }
+  return attrs;
+}
+
+function labelOf(group: Element): { el?: Element; text: string } {
+  const text = ownDescendants(group, 'text')[0];
+  if (text) {
+    return { el: text, text: (text.textContent ?? '').replace(/\s+/g, ' ').trim() };
+  }
+  const fo = ownDescendants(group, 'foreignObject')[0];
+  if (fo) {
+    return { el: fo, text: (fo.textContent ?? '').replace(/\s+/g, ' ').trim() };
+  }
+  return { text: '' };
+}
+
+export function buildCellIndex(root: SVGSVGElement): CellIndex {
+  const index: CellIndex = new Map();
+  for (const group of Array.from(root.querySelectorAll('g[data-cell-id]')) as SVGGElement[]) {
+    const id = group.getAttribute('data-cell-id')!;
+    const paths = ownDescendants(group, 'path') as SVGPathElement[];
+    // draw.io edge polylines carry fill="none" AND pointer-events="stroke"; stencil outlines have fill="none" only.
+    const line = paths.find((p) => p.getAttribute('fill') === 'none' && p.getAttribute('pointer-events') === 'stroke');
+    const arrows = line ? paths.filter((p) => p !== line && p.getAttribute('pointer-events') === 'all') : [];
+    let shape: SVGGraphicsElement | undefined;
+    if (!line) {
+      shape = ownDescendants(group, Array.from(SHAPE_TAGS).join(',')).find(
+        (el) => SHAPE_TAGS.has(el.localName) && !el.closest('switch, foreignObject')
+      ) as SVGGraphicsElement | undefined;
+    }
+    const label = labelOf(group);
+    const meta = cellMetaFromAttrs(id, metaAttrs(group), !!line, label.text || undefined);
+    const entry: CellEntry = {
+      meta,
+      group,
+      shape,
+      line,
+      arrows,
+      label: label.el,
+      original: {
+        fill: shape?.style.fill,
+        stroke: shape?.style.stroke ?? line?.style.stroke,
+        strokeWidth: line?.style.strokeWidth,
+        text: label.text,
+      },
+    };
+    index.set(id, entry);
+  }
+  attachLinkLabels(cellMetas(index));
+  return index;
+}
+
+export function cellMetas(index: CellIndex): CellMeta[] {
+  return Array.from(index.values(), (e) => e.meta);
+}
