@@ -57,6 +57,13 @@ describe('buildCellIndex on l3-routing', () => {
     const n = index.get('pg-node~rtr-a')!;
     expect(n.original).toHaveProperty('fill');
   });
+  it('records detached clones of the label markup', () => {
+    const n = index.get('pg-node~rtr-a')!;
+    const nodes = n.original.labelNodes!;
+    expect(nodes.length).toBeGreaterThan(0);
+    expect(nodes[0].parentNode).toBeNull();
+    expect(nodes.map((x) => (x as Element).outerHTML ?? x.textContent).join('')).toBe(n.label!.innerHTML);
+  });
 });
 
 describe('buildCellIndex on hand-drawn', () => {

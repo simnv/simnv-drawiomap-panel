@@ -1,7 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
 import { applyPatches } from './applier';
+import { sanitizeSvg } from './sanitize';
+import { buildCellIndex, mountSvg } from './svgStage';
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30" fill="#fff" style="fill: light-dark(#fff, #111); stroke: #000;"/></g><g><text><tspan>rtr-a</tspan></text></g></g>
@@ -134,5 +138,40 @@ describe('applyPatches', () => {
     expect(index.get('n1')!.label!.textContent).toBe('rtr-a');
     expect(index.get('n1')!.group.hasAttribute('data-dmap-status')).toBe(false);
     expect(index.get('e1')!.line!.style.strokeOpacity).toBe('');
+  });
+});
+
+describe('applyPatches on a multi-line foreignObject label (l3-routing)', () => {
+  const load = () => {
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
+    const root = mountSvg(document.createElement('div'), sanitizeSvg(raw).svg);
+    const index = buildCellIndex(root);
+    const entry = index.get('pg-node~rtr-a')!;
+    return { index, entry, before: entry.label!.innerHTML };
+  };
+  const lines = (label: Element) =>
+    Array.from(label.querySelectorAll('div'))
+      .filter((d) => d.children.length === 0)
+      .map((d) => d.textContent);
+
+  it('keeps the line structure over two refreshes without a text patch', () => {
+    const { index, entry, before } = load();
+    expect(lines(entry.label!)).toEqual(['rtr-a', 'mwan3 + PBR']);
+    const round = () => new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape() })]]);
+    const prev = applyPatches(index, round(), new Set());
+    applyPatches(index, round(), prev);
+    expect(entry.label!.innerHTML).toBe(before);
+    expect(lines(entry.label!)).toEqual(['rtr-a', 'mwan3 + PBR']);
+  });
+  it('restores the exact markup after a text patch', () => {
+    const { index, entry, before } = load();
+    const round = (text: string) =>
+      new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape({ text }) })]]);
+    let prev = applyPatches(index, round('up 1'), new Set());
+    prev = applyPatches(index, round('up 2'), prev);
+    expect(entry.label!.textContent).toBe('up 2');
+    applyPatches(index, new Map(), prev);
+    expect(entry.label!.innerHTML).toBe(before);
+    expect(lines(entry.label!)).toEqual(['rtr-a', 'mwan3 + PBR']);
   });
 });

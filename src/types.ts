@@ -39,7 +39,14 @@ export interface CellEntry {
   arrows: SVGPathElement[];
   /** Text or foreignObject label element. */
   label?: Element;
-  original: { fill?: string; stroke?: string; strokeWidth?: string; text?: string };
+  original: {
+    fill?: string;
+    stroke?: string;
+    strokeWidth?: string;
+    text?: string;
+    /** Deep clones of the label child nodes. Reset puts copies of them back after a text patch. */
+    labelNodes?: Node[];
+  };
 }
 
 /** Keyed by cell id (data-cell-id). */

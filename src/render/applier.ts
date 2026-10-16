@@ -1,9 +1,13 @@
 import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 
+/** Labels that a patch wrote text into. Only these need a label reset. */
+const written = new WeakSet<Element>();
+
 function setText(label: Element | undefined, text: string): void {
   if (!label) {
     return;
   }
+  written.add(label);
   if (label.localName === 'text') {
     const spans = label.querySelectorAll('tspan');
     if (spans.length) {
@@ -87,8 +91,16 @@ function reset(entry: CellEntry): void {
   for (const a of entry.arrows) {
     a.style.opacity = '';
   }
-  if (entry.original.text !== undefined && entry.label) {
-    setText(entry.label, entry.original.text);
+  const label = entry.label;
+  if (label && written.has(label)) {
+    const nodes = entry.original.labelNodes;
+    if (nodes) {
+      // Put back the exact markup: a text write flattens the HTML lines of a foreignObject label.
+      label.replaceChildren(...nodes.map((n) => n.cloneNode(true)));
+    } else if (entry.original.text !== undefined) {
+      setText(label, entry.original.text);
+    }
+    written.delete(label);
   }
   entry.group.removeAttribute('data-dmap-status');
   entry.group.removeAttribute('data-dmap-step');

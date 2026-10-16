@@ -86,6 +86,7 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
         stroke: shape?.style.stroke ?? line?.style.stroke,
         strokeWidth: line?.style.strokeWidth,
         text: label.text,
+        labelNodes: label.el && Array.from(label.el.childNodes, (n) => n.cloneNode(true)),
       },
     };
     index.set(id, entry);
