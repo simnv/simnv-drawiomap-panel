@@ -45,3 +45,31 @@ test('curved edge halves follow the real path geometry (getPointAtLength + CTM)'
   expect(result.delta).toBeLessThan(1);
   expect(result.samples).toBeGreaterThan(4);
 });
+
+// draw.io writes color-scheme: light dark on the SVG root. Without an override, light-dark() colours follow
+// the OS preference. The panel must follow the Grafana theme. Emulate the opposite OS preference each time.
+for (const [theme, osScheme, dark] of [
+  ['dark', 'light', true],
+  ['light', 'dark', false],
+] as const) {
+  test(`diagram background follows the Grafana ${theme} theme, not the OS preference`, async ({
+    gotoDashboardPage,
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: osScheme });
+    const dashboardPage = await gotoDashboardPage({
+      uid: 'drawiomap-demo',
+      queryParams: new URLSearchParams({ theme }),
+    });
+    const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
+    const root = panel.locator.locator('[data-testid="dmap-panel"] svg').first();
+    await expect(root).toHaveCSS('color-scheme', theme);
+    const luminance = await root.evaluate((el) => {
+      const [r, g, b] = getComputedStyle(el)
+        .backgroundColor.match(/\d+(\.\d+)?/g)!
+        .map(Number);
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    });
+    expect(luminance < 0.5).toBe(dark);
+  });
+}

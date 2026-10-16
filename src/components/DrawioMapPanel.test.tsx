@@ -3,7 +3,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { FieldType, LoadingState, PanelProps, ThresholdsMode, toDataFrame, getDefaultTimeRange } from '@grafana/data';
+import {
+  createTheme,
+  FieldType,
+  getDefaultTimeRange,
+  LoadingState,
+  PanelProps,
+  ThemeContext,
+  ThresholdsMode,
+  toDataFrame,
+} from '@grafana/data';
 import { DrawioMapPanel } from './DrawioMapPanel';
 import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
@@ -150,6 +159,19 @@ describe('DrawioMapPanel', () => {
     expect(container.querySelector('[data-cell-id="pg-node~lte"]')!.getAttribute('data-dmap-step')).toBe('0');
     expect(container.querySelector('[data-cell-id="pg-node~rtr-a"]')!.getAttribute('data-dmap-step')).toBe('1');
     expect(container.querySelector('svg')!.getAttribute('width')).toBe('100%');
+  });
+  it('sets the svg root color-scheme from the Grafana theme, not from the OS preference', () => {
+    // draw.io writes color-scheme: light dark on the root, so light-dark() colours follow the OS.
+    const themed = (mode: 'dark' | 'light') => (
+      <ThemeContext.Provider value={createTheme({ colors: { mode } })}>
+        <DrawioMapPanel {...props()} />
+      </ThemeContext.Provider>
+    );
+    const { container, rerender } = render(themed('dark'));
+    const root = container.querySelector('svg') as SVGSVGElement;
+    expect(root.style.colorScheme).toBe('dark');
+    rerender(themed('light'));
+    expect(root.style.colorScheme).toBe('light');
   });
   it('opens a menu with the resolved rule url on the first click and switches between cells', async () => {
     const { container } = render(<DrawioMapPanel {...props()} />);

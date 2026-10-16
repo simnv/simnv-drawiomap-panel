@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { getDisplayProcessor, LinkModel, PanelProps } from '@grafana/data';
 import { ContextMenu, MenuItem, useTheme2 } from '@grafana/ui';
@@ -115,6 +115,15 @@ export function DrawioMapPanel({
       opts.linkWidth.max,
     ]
   );
+
+  // draw.io writes color-scheme: light dark on the root, so light-dark() colours follow the OS preference.
+  // Override it with the Grafana theme.
+  const isDark = theme.isDark;
+  useLayoutEffect(() => {
+    if (stage.root) {
+      stage.root.style.colorScheme = isDark ? 'dark' : 'light';
+    }
+  }, [stage.root, isDark]);
 
   // Apply patches and redraw the overlay once per frame.
   useEffect(() => {
