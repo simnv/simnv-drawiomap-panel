@@ -120,8 +120,9 @@ export function DrawioMapPanel({
   // Override it with the Grafana theme.
   const isDark = theme.isDark;
   useLayoutEffect(() => {
-    if (stage.root) {
-      stage.root.style.colorScheme = isDark ? 'dark' : 'light';
+    const root = containerRef.current?.querySelector<SVGSVGElement>(':scope > svg');
+    if (root) {
+      root.style.colorScheme = isDark ? 'dark' : 'light';
     }
   }, [stage.root, isDark]);
 
