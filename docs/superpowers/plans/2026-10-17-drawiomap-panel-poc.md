@@ -16,6 +16,7 @@
 - Build against `@grafana/data`, `@grafana/ui`, `@grafana/runtime`, `@grafana/schema` at the latest `12.4.x`. `react`, `react-dom` `18.3.x`, `@types/react`, `@types/react-dom` `18.3.x`. Do not bundle React. No React 19-only APIs. No `findDOMNode`, string refs, `defaultProps` on function components.
 - Do not import `Graph`, `GraphWithLegend`, `GraphContextMenu`, `GraphSeriesToggler` from `@grafana/ui`. Do not use `config.apps` / `config.panels` from `@grafana/runtime`.
 - View mode must load no draw.io scripts: no `mxgraph`, no `maxgraph`, no `viewer-static`, no iframe outside the editor modal.
+- Sanitise every SVG with DOMPurify (`svg`, `svgFilters`, `html` profiles) plus the structural pass in `src/render/sanitize.ts`. Keep `data-cell-id` and `data-meta-*`. No `iframe`, `object`, `embed`, `script`, external `<use>`, or CSS `url()` to external resources.
 - Recolour SVG elements through `element.style.fill` / `element.style.stroke` / `element.style.strokeWidth`, never through the `fill` / `stroke` attributes (draw.io emits a `style` attribute that wins).
 - A missing series renders grey "no data" (`theme.colors.text.disabled`), never green.
 - Unsigned plugin. Grafana loads it with `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel`.
@@ -33,7 +34,7 @@
 ```
 simnv-drawiomap-panel/
   package.json, tsconfig.json, .config/            create-plugin scaffold (Task 0)
-  vitest.config.ts                                 unit test config (Task 0)
+  vitest.config.ts, vitest.setup.ts                unit test config; afterEach(cleanup) (Task 0)
   playwright.config.ts                             e2e config (Task 0 scaffold; Task 14 edits)
   docker-compose.yaml                              grafana12, grafana13, drawio, victoriametrics, metrics-gen (Task 2)
   stack/metrics-gen/gen.py                         synthetic Prometheus series pushed to VictoriaMetrics (Task 2)
@@ -44,7 +45,7 @@ simnv-drawiomap-panel/
   scripts/build-dashboard.ts                       fixtures + demo/rules.yaml -> dashboard JSON (Task 12)
   scripts/stack-smoke.sh                           waits for the stack and checks the synthetic series (Task 2)
   scripts/check-bundle.sh                          fails on draw.io runtime code in dist/module.js (Task 13)
-  demo/rules.yaml, demo/dashboard.template.json    (Task 12)
+  demo/rules.yaml, demo/rules-hand.yaml, demo/dashboard.template.json   (Task 12)
   fixtures/portograph/*.drawio, *.yaml             committed portograph demo-lab sources (do not edit)
   fixtures/hand/hand-drawn.drawio                  synthetic hand-drawn diagram (Task 3)
   fixtures/svg/*.svg                               real draw.io SVG exports of all fixtures (Task 3)
@@ -60,11 +61,11 @@ simnv-drawiomap-panel/
   src/binding/reduce.ts                            last|mean|max|min (Task 4)
   src/binding/color.ts                             colorFor, widthFor (Task 4)
   src/binding/engine.ts                            bind(rules, cells, series, ctx) -> patches (Task 4)
-  src/render/sanitize.ts                           DOMPurify-free SVG sanitiser (strip scripts, handlers, PNG label fallbacks, content attr) (Task 5)
+  src/render/sanitize.ts                           structural pass (PNG fallbacks, content attr, external use/url) + DOMPurify (Task 5)
   src/render/svgStage.ts                           mountSvg, buildCellIndex (Task 5)
   src/render/zoom.ts                               viewBox maths, applyZoom, wheel/pan (Task 5)
   src/render/applier.ts                            applyPatches(index, patches) shape/link base styles (Task 6)
-  src/render/geometry.ts                           parse path d, polyline length, pointAt, split (Task 7)
+  src/render/geometry.ts                           pathGeometry: getPointAtLength + CTMs in the browser, parsed polyline in jsdom (Task 7)
   src/render/overlay.ts                            half-links, arrows, labels, sparklines (Task 7)
   src/editor/protocol.ts                           pure embed-protocol state machine (Task 8)
   src/editor/decode.ts                             data URI -> string (Task 8)
@@ -142,7 +143,7 @@ V=$(npm view @grafana/data versions --json | tr -d '", ' | grep '^12\.4\.' | tai
 npm install --save-exact "@grafana/data@$V" "@grafana/ui@$V" "@grafana/runtime@$V" "@grafana/schema@$V"
 npm install --save-exact react@18.3.1 react-dom@18.3.1
 npm install --save-dev --save-exact @types/react@18.3.12 @types/react-dom@18.3.1
-npm install --save-exact zod@3.23.8 js-yaml@4.1.0
+npm install --save-exact zod@3.23.8 js-yaml@4.1.0 dompurify@3.2.6
 npm install --save-dev --save-exact @types/js-yaml@4.0.9
 npm ls @grafana/data react @types/react | head
 ```
@@ -166,11 +167,23 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['node_modules', 'dist', 'tests'],
     globals: false,
     css: false,
   },
+});
+```
+
+Create `vitest.setup.ts` (unmounts React trees between tests; add `@testing-library/jest-dom/vitest` here only if a test uses its matchers):
+
+```ts
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+
+afterEach(() => {
+  cleanup();
 });
 ```
 
@@ -1205,7 +1218,7 @@ done
 
 - [ ] **Step 2: Write the hand-drawn fixture**
 
-`fixtures/hand/hand-drawn.drawio` (no `pg-*` attributes; one `<object>` vertex with custom attrs, one plain `mxCell` vertex, one `<object>` edge with an edge-label child; `convertToSvg=1` labels so the SVG has `<text>`):
+`fixtures/hand/hand-drawn.drawio` (no `pg-*` attributes; one `<object>` vertex with custom attrs, one plain `mxCell` vertex, one `<object>` edge with an edge-label child, plus a group that holds two vertices and a curved edge with waypoints; `convertToSvg=1` labels so the SVG has `<text>`):
 
 ```xml
 <mxfile host="hand" version="32.4.1">
@@ -1230,6 +1243,22 @@ done
         <mxCell id="lbl-ab" value="10G" style="edgeLabel;html=1;convertToSvg=1;align=center;verticalAlign=middle;resizable=0;" vertex="1" connectable="0" parent="edge-ab">
           <mxGeometry relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
         </mxCell>
+        <mxCell id="grp" value="" style="group" vertex="1" connectable="0" parent="1">
+          <mxGeometry x="80" y="220" width="440" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="node-c" value="c" style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;" vertex="1" parent="grp">
+          <mxGeometry x="0" y="0" width="100" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="node-d" value="d" style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;" vertex="1" parent="grp">
+          <mxGeometry x="340" y="90" width="100" height="50" as="geometry"/>
+        </mxCell>
+        <object id="edge-cd" label="" kind="lan" capacity="1000000000">
+          <mxCell style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=1;html=1;endArrow=none;strokeWidth=2;" edge="1" parent="grp" source="node-c" target="node-d">
+            <mxGeometry relative="1" as="geometry">
+              <Array as="points"><mxPoint x="220" y="25"/><mxPoint x="220" y="115"/></Array>
+            </mxGeometry>
+          </mxCell>
+        </object>
       </root>
     </mxGraphModel>
   </diagram>
@@ -1246,7 +1275,7 @@ l1-physical     >100000 bytes, >100 cells
 l2-link         >100000 bytes, >100 cells
 l3-routing       438680 bytes, 100 cells
 l4-exits        >100000 bytes, >100 cells
-hand-drawn        ~4000 bytes,   6 cells
+hand-drawn        ~6000 bytes,  10 cells
 ```
 
 - [ ] **Step 4: Fixture facts test**
@@ -1282,7 +1311,10 @@ describe('fixtures', () => {
     expect(s).toContain('data-meta-host="rtr-b"');
     expect(s).toContain('data-meta-capacity="100000000"');
     expect(s).not.toContain('data-meta-pg-kind');
-    expect(count(s, /<text/g)).toBeGreaterThanOrEqual(3);
+    expect(count(s, /<text/g)).toBeGreaterThanOrEqual(5);
+    expect(count(s, /data-cell-id="/g)).toBe(10);
+    // the curved edge inside the group exports with Bezier commands
+    expect(s).toMatch(/data-cell-id="edge-cd"[^]*?<path d="[^"]*[QC][^"]*"/);
   });
   it('all fixtures are draw.io SVG with a viewBox', () => {
     for (const n of ['l1-physical', 'l2-link', 'l3-routing', 'l4-exits', 'hand-drawn']) {
@@ -1321,7 +1353,8 @@ All seven tasks of this wave code against `src/types.ts` and `src/adapter/portog
   - `extractSeries(frames: DataFrame[]): SeriesInfo[]`
   - `findSeries(sel: SeriesSelector, series: SeriesInfo[], scope: TemplateScope): { series?: SeriesInfo; unresolved: string[] }`
   - `reduceValues(values: number[], reducer: ReducerName): number | undefined`
-  - `colorFor(value, percent, rule, field, theme): { color: string; stepIndex: number }`, `widthFor(percent, linkWidth): number`, `noDataColor(theme): string`
+  - `colorFor(value, percent, rule, display, fieldThresholds, theme): { color: string; stepIndex: number }`, `DEFAULT_PERCENT_STEPS`, `widthFor(percent, linkWidth): number`, `noDataColor(theme): string`
+  - Colour precedence: rule thresholds (percent or absolute) → default percent steps when a capacity exists → the matched field's `display.color` (effective field config with overrides). Labels come from `formattedValueToString(display)` (prefix + text + suffix).
   - `bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx: BindContext): BindResult`
   - `scopeFor(cell: CellMeta): TemplateScope`
 
@@ -1697,8 +1730,8 @@ describe('reduceValues', () => {
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { createTheme, ThresholdsMode } from '@grafana/data';
-import { colorFor, noDataColor, widthFor } from './color';
+import { createTheme, DisplayValue, ThresholdsMode } from '@grafana/data';
+import { colorFor, DEFAULT_PERCENT_STEPS, noDataColor, widthFor } from './color';
 
 const theme = createTheme();
 const rule = { mode: 'percent' as const, steps: [[0, 'green'], [60, 'yellow'], [85, 'red']] as Array<[number, string]> };
@@ -1709,30 +1742,35 @@ const field = {
     { value: 50, color: 'orange' },
   ],
 };
+const display: DisplayValue = { text: '99', numeric: 99, color: '#abcdef' };
 
 describe('colorFor', () => {
   it('uses rule percent steps', () => {
-    expect(colorFor(41e6, 41, rule, field, theme)).toEqual({ color: theme.visualization.getColorByName('green'), stepIndex: 0 });
-    expect(colorFor(90e6, 90, rule, field, theme).stepIndex).toBe(2);
-    expect(colorFor(60e6, 60, rule, field, theme).stepIndex).toBe(1);
+    expect(colorFor(41e6, 41, rule, display, field, theme)).toEqual({ color: theme.visualization.getColorByName('green'), stepIndex: 0 });
+    expect(colorFor(90e6, 90, rule, display, field, theme).stepIndex).toBe(2);
+    expect(colorFor(60e6, 60, rule, display, field, theme).stepIndex).toBe(1);
   });
-  it('falls back to field thresholds on percent when a capacity exists', () => {
-    expect(colorFor(1, 70, undefined, field, theme)).toEqual({ color: theme.visualization.getColorByName('orange'), stepIndex: 1 });
+  it('uses the default percent steps when a capacity exists and the rule has no thresholds', () => {
+    expect(DEFAULT_PERCENT_STEPS).toEqual([[0, 'green'], [60, 'yellow'], [85, 'red']]);
+    expect(colorFor(1, 70, undefined, display, field, theme)).toEqual({ color: theme.visualization.getColorByName('yellow'), stepIndex: 1 });
   });
-  it('uses field thresholds on the raw value without a capacity', () => {
-    expect(colorFor(10, undefined, undefined, field, theme).stepIndex).toBe(0);
-    expect(colorFor(99, undefined, undefined, field, theme).stepIndex).toBe(1);
+  it('uses the field display colour and the field thresholds index without a capacity', () => {
+    expect(colorFor(99, undefined, undefined, display, field, theme)).toEqual({ color: '#abcdef', stepIndex: 1 });
+    expect(colorFor(10, undefined, undefined, display, field, theme).stepIndex).toBe(0);
+  });
+  it('falls back to theme green when there is no display colour', () => {
+    expect(colorFor(10, undefined, undefined, undefined, undefined, theme)).toEqual({ color: theme.visualization.getColorByName('green'), stepIndex: 0 });
   });
   it('absolute rule steps ignore percent', () => {
     const abs = { mode: 'absolute' as const, steps: [[0, 'red'], [1, 'green']] as Array<[number, string]> };
-    expect(colorFor(0, 500, abs, field, theme).stepIndex).toBe(0);
-    expect(colorFor(1, undefined, abs, field, theme).stepIndex).toBe(1);
+    expect(colorFor(0, 500, abs, display, field, theme).stepIndex).toBe(0);
+    expect(colorFor(1, undefined, abs, display, field, theme).stepIndex).toBe(1);
   });
   it('grey with stepIndex -1 when the value is missing', () => {
-    expect(colorFor(undefined, undefined, rule, field, theme)).toEqual({ color: noDataColor(theme), stepIndex: -1 });
+    expect(colorFor(undefined, undefined, rule, display, field, theme)).toEqual({ color: noDataColor(theme), stepIndex: -1 });
   });
-  it('accepts hex colours', () => {
-    expect(colorFor(5, 5, { mode: 'percent', steps: [[0, '#123456']] }, undefined, theme).color).toBe('#123456');
+  it('accepts hex colours in rule steps', () => {
+    expect(colorFor(5, 5, { mode: 'percent', steps: [[0, '#123456']] }, undefined, undefined, theme).color).toBe('#123456');
   });
 });
 
@@ -1774,7 +1812,7 @@ export function reduceValues(values: number[], reducer: ReducerName): number | u
 
 ```ts
 // src/binding/color.ts
-import type { GrafanaTheme2, ThresholdsConfig } from '@grafana/data';
+import type { DisplayValue, GrafanaTheme2, ThresholdsConfig } from '@grafana/data';
 import type { RuleThresholds } from '../types';
 
 export interface ColorResult {
@@ -1782,51 +1820,66 @@ export interface ColorResult {
   stepIndex: number;
 }
 
+/** Used for percent-of-capacity colouring when the rule sets no thresholds. */
+export const DEFAULT_PERCENT_STEPS: Array<[number, string]> = [
+  [0, 'green'],
+  [60, 'yellow'],
+  [85, 'red'],
+];
+
 export function noDataColor(theme: GrafanaTheme2): string {
   return theme.colors.text.disabled;
 }
 
-function toColor(name: string, theme: GrafanaTheme2): string {
-  return theme.visualization.getColorByName(name);
-}
-
-/**
- * Pick a colour from the rule thresholds, else from the field thresholds.
- * Percent mode applies to `percent` (0..100); absolute mode applies to `value`.
- * Without rule thresholds, the field steps apply to percent when a percent exists, else to value.
- */
-export function colorFor(
-  value: number | undefined,
-  percent: number | undefined,
-  rule: RuleThresholds | undefined,
-  field: ThresholdsConfig | undefined,
-  theme: GrafanaTheme2
-): ColorResult {
-  if (value === undefined || !Number.isFinite(value)) {
-    return { color: noDataColor(theme), stepIndex: -1 };
-  }
-  let steps: Array<[number, string]>;
-  let input: number;
-  if (rule) {
-    steps = rule.steps;
-    input = rule.mode === 'percent' && percent !== undefined ? percent : value;
-  } else if (field?.steps?.length) {
-    steps = field.steps.map((s) => [s.value === null || s.value === undefined ? -Infinity : s.value, s.color]);
-    input = percent !== undefined ? percent : value;
-  } else {
-    steps = [[-Infinity, 'green']];
-    input = value;
-  }
+/** Index of the last step whose threshold is <= input (steps ascending). */
+export function stepIndexOf(input: number, steps: Array<[number, string]>): number {
   let idx = -1;
   for (let i = 0; i < steps.length; i++) {
     if (input >= steps[i][0]) {
       idx = i;
     }
   }
-  if (idx < 0) {
-    idx = 0;
+  return Math.max(0, idx);
+}
+
+function fieldSteps(t: ThresholdsConfig | undefined): Array<[number, string]> | undefined {
+  if (!t?.steps?.length) {
+    return undefined;
   }
-  return { color: toColor(steps[idx][1], theme), stepIndex: idx };
+  return t.steps.map((s) => [s.value === null || s.value === undefined ? -Infinity : s.value, s.color]);
+}
+
+/**
+ * Precedence:
+ * 1. rule thresholds: percent mode applies to `percent` (0..100), absolute mode to `value`;
+ * 2. a capacity exists (percent defined): DEFAULT_PERCENT_STEPS on percent;
+ * 3. the matched field's display colour (effective field config incl. overrides); the step index
+ *    comes from the field thresholds so the overlay can expose it as data-dmap-step.
+ */
+export function colorFor(
+  value: number | undefined,
+  percent: number | undefined,
+  rule: RuleThresholds | undefined,
+  display: DisplayValue | undefined,
+  fieldThresholds: ThresholdsConfig | undefined,
+  theme: GrafanaTheme2
+): ColorResult {
+  if (value === undefined || !Number.isFinite(value)) {
+    return { color: noDataColor(theme), stepIndex: -1 };
+  }
+  if (rule) {
+    const input = rule.mode === 'percent' && percent !== undefined ? percent : value;
+    const idx = stepIndexOf(input, rule.steps);
+    return { color: theme.visualization.getColorByName(rule.steps[idx][1]), stepIndex: idx };
+  }
+  if (percent !== undefined) {
+    const idx = stepIndexOf(percent, DEFAULT_PERCENT_STEPS);
+    return { color: theme.visualization.getColorByName(DEFAULT_PERCENT_STEPS[idx][1]), stepIndex: idx };
+  }
+  const steps = fieldSteps(fieldThresholds);
+  const idx = steps ? stepIndexOf(value, steps) : 0;
+  const color = display?.color ?? (steps ? theme.visualization.getColorByName(steps[idx][1]) : theme.visualization.getColorByName('green'));
+  return { color, stepIndex: idx };
 }
 
 export function widthFor(percent: number | undefined, w: { min: number; max: number }): number {
@@ -1838,7 +1891,7 @@ export function widthFor(percent: number | undefined, w: { min: number; max: num
 }
 ```
 
-Run: `npx vitest run src/binding/reduce src/binding/color` — Expected: PASS (10).
+Run: `npx vitest run src/binding/reduce src/binding/color` — Expected: PASS (11).
 
 - [ ] **Step 9: Engine tests**
 
@@ -1846,7 +1899,7 @@ Run: `npx vitest run src/binding/reduce src/binding/color` — Expected: PASS (1
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { createTheme, DisplayValue, Field, ThresholdsMode } from '@grafana/data';
+import { createTheme, DisplayValue, Field, FieldType, getDisplayProcessor, ThresholdsMode } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, Rule, SeriesInfo } from '../types';
 import { bind } from './engine';
@@ -1905,7 +1958,7 @@ const ctx: BindContext = {
   theme,
   fieldThresholds: { mode: ThresholdsMode.Absolute, steps: [{ value: -Infinity, color: 'green' }, { value: 60, color: 'yellow' }, { value: 85, color: 'red' }] },
   replaceVariables: (s) => s,
-  display: (_s, v): DisplayValue => ({ text: `${v / 1e6} Mb/s`, numeric: v }),
+  display: (_s, v): DisplayValue => ({ text: `${v / 1e6}`, suffix: ' Mb/s', numeric: v, color: '#abcdef' }),
   linkWidth: { min: 2, max: 10 },
 };
 
@@ -1956,6 +2009,28 @@ describe('bind', () => {
     expect(r.patches.get('pg-node~rtr-a')!.shape?.status).toBe('unbound');
     expect(r.warnings[0]).toMatch(/x.*pg-node~rtr-a.*cell\.nope/);
   });
+  it('marks both halves unbound when the capacity template cannot resolve', () => {
+    const r = bind([{ name: 'cap', select: { kind: 'link' }, link: { a2b: rules[0].link!.a2b, b2a: rules[0].link!.b2a, capacity: '${cell.capacity}' } }], cells, series, ctx);
+    const p = r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    expect(p.link?.a2b?.status).toBe('unbound');
+    expect(p.link?.b2a?.status).toBe('unbound');
+    expect(p.link?.a2b?.color).toBe(theme.colors.text.disabled);
+    expect(p.link?.a2b?.label).toBe('unbound');
+    expect(r.warnings[0]).toMatch(/cap.*cell\.capacity/);
+  });
+  it('uses the field display colour for shapes without rule thresholds', () => {
+    const r = bind([{ name: 'disp', select: { kind: 'node' }, shape: { series: { refId: 'C', match: { job: 'node-${cell.pg-id}' } } } }], cells, series, ctx);
+    const sh = r.patches.get('pg-node~rtr-a')!.shape!;
+    expect(sh.color).toBe('#abcdef');
+    expect(sh.stepIndex).toBe(0); // 1 against the ctx field thresholds (-Inf, 60, 85)
+  });
+  it('formats labels with a real display processor (unit, decimals, suffix)', () => {
+    const field: Field = { name: 'v', type: FieldType.number, config: { unit: 'bps', decimals: 1 }, values: [] };
+    const proc = getDisplayProcessor({ field, theme });
+    const r = bind(rules, cells, series, { ...ctx, display: (_s, v) => proc(v) });
+    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe('41.0 Mb/s · 41%');
+    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe('10.0 Mb/s · 10%');
+  });
   it('a link with one series keeps the other half undefined', () => {
     const r = bind([{ name: 'one', select: { ids: ['pg-link~wan1:pppoe->rtr-a:wan1'] }, link: { a2b: { refId: 'A', match: { device: 'pppoe' } } } }], cells, series, ctx);
     const p = r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
@@ -1972,6 +2047,7 @@ Run: `npx vitest run src/binding/engine` — Expected: FAIL.
 - [ ] **Step 10: Implement `src/binding/engine.ts`**
 
 ```ts
+import { formattedValueToString } from '@grafana/data';
 import { endpointScope } from '../adapter/portograph';
 import type {
   BindContext, BindResult, CellMeta, CellPatch, HalfState, LinkRule, PatchMap, ReducerName, Rule,
@@ -2062,15 +2138,17 @@ function half(sel: SeriesSelector, capacity: number | undefined, eff: Effective,
   }
   const percent = capacity ? (r.value / capacity) * 100 : undefined;
   const display = ctx.display(r.series, r.value);
-  const { color, stepIndex } = colorFor(r.value, percent, eff.thresholds, ctx.fieldThresholds, ctx.theme);
+  const { color, stepIndex } = colorFor(r.value, percent, eff.thresholds, display, r.series.field.config?.thresholds ?? ctx.fieldThresholds, ctx.theme);
   const tpl = eff.label ?? (percent === undefined ? '${value}' : '${value} · ${percent}');
-  const labelScope: TemplateScope = { ...scope, labels: r.series.labels, value: display.text, percent: percent === undefined ? undefined : `${Math.round(percent)}%` };
+  const labelScope: TemplateScope = { ...scope, labels: r.series.labels, value: formattedValueToString(display), percent: percent === undefined ? undefined : `${Math.round(percent)}%` };
   const label = resolveTemplate(tpl, labelScope);
   return {
     state: { status: 'ok', color, width: widthFor(percent, ctx.linkWidth), label: label.text, stepIndex, value: r.value, percent, display, series: r.series },
     unresolved: label.unresolved,
   };
 }
+
+const UNBOUND = (ctx: BindContext): HalfState => ({ status: 'unbound', color: noDataColor(ctx.theme), width: ctx.linkWidth.min, label: 'unbound', stepIndex: -1 });
 
 function capacityOf(link: LinkRule, scope: TemplateScope): { capacity?: number; unresolved: string[] } {
   if (link.capacity === undefined) {
@@ -2096,10 +2174,10 @@ function shape(sh: ShapeRule, eff: Effective, scope: TemplateScope, series: Seri
     unresolved.push(...r.unresolved);
     if (r.status === 'ok' && r.value !== undefined && r.series) {
       const display = ctx.display(r.series, r.value);
-      const { color, stepIndex } = colorFor(r.value, undefined, eff.thresholds, ctx.fieldThresholds, ctx.theme);
+      const { color, stepIndex } = colorFor(r.value, undefined, eff.thresholds, display, r.series.field.config?.thresholds ?? ctx.fieldThresholds, ctx.theme);
       let text: string | undefined;
       if (sh.text) {
-        const t = resolveTemplate(eff.label ?? '${value}', { ...scope, labels: r.series.labels, value: display.text });
+        const t = resolveTemplate(eff.label ?? '${value}', { ...scope, labels: r.series.labels, value: formattedValueToString(display) });
         unresolved.push(...t.unresolved);
         text = t.text;
       }
@@ -2137,13 +2215,21 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
       const cap = capacityOf(eff.link, scope);
       unresolved.push(...cap.unresolved);
       patch.link = {};
-      if (eff.link.a2b) {
+      if (cap.unresolved.length) {
+        // spec: a template that does not resolve makes the binding unbound (grey, warning in edit mode)
+        if (eff.link.a2b) {
+          patch.link.a2b = UNBOUND(ctx);
+        }
+        if (eff.link.b2a) {
+          patch.link.b2a = UNBOUND(ctx);
+        }
+      } else if (eff.link.a2b) {
         const h = half(eff.link.a2b, cap.capacity, eff, scope, series, ctx);
         patch.link.a2b = h.state;
         unresolved.push(...h.unresolved);
         primary = primary ?? h.state.series;
       }
-      if (eff.link.b2a) {
+      if (!cap.unresolved.length && eff.link.b2a) {
         const h = half(eff.link.b2a, cap.capacity, eff, scope, series, ctx);
         patch.link.b2a = h.state;
         unresolved.push(...h.unresolved);
@@ -2177,7 +2263,7 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
 }
 ```
 
-Run: `npx vitest run src/binding` — Expected: PASS (all engine tests). If the `unbound` test fails because `scope.cell.nope` resolves, check that `scopeFor` does not add a `nope` key.
+Run: `npx vitest run src/binding` — Expected: PASS (all engine tests). If the `unbound` test fails because `scope.cell.nope` resolves, check that `scopeFor` does not add a `nope` key. The mock `display` in the tests returns `text` plus `suffix`; `formattedValueToString` joins prefix, text and suffix, which is why the expected label is `41 Mb/s · 41%`.
 
 - [ ] **Step 11: Verify and commit**
 
@@ -2201,7 +2287,7 @@ git commit -m "feat: pure binding engine with templates, selectors, series match
 **Interfaces:**
 - Consumes: `CellIndex`, `CellEntry`, `CellMeta`, `ZoomOptions` from `src/types.ts`; `cellMetaFromAttrs`, `attachLinkLabels` from `src/adapter/portograph.ts`; fixtures from `fixtures/svg/`.
 - Produces (Tasks 11 and 12 call these):
-  - `sanitizeSvg(text: string): { svg: string; removed: { scripts: number; handlers: number; images: number }; foreignObjects: number; warnings: string[] }` (throws `Error('Not an SVG document')` on parse failure)
+  - `sanitizeSvg(text: string): { svg: string; removed: { elements: number; attributes: number; images: number }; foreignObjects: number; warnings: string[] }` (throws `Error('Not an SVG document')` on parse failure). Output is HTML-serialised SVG (`outerHTML`), because DOMPurify runs in HTML parsing mode; `mountSvg` parses it with a `<template>`.
   - `mountSvg(container: HTMLElement, svgText: string): SVGSVGElement`
   - `buildCellIndex(root: SVGSVGElement): CellIndex`
   - `cellMetas(index: CellIndex): CellMeta[]`
@@ -2218,19 +2304,53 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeSvg } from './sanitize';
 
 const l3 = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
+const wrap = (inner: string, rootAttrs = '') => `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10" ${rootAttrs}>${inner}</svg>`;
 
-describe('sanitizeSvg', () => {
-  it('removes scripts, event handlers and javascript: hrefs', () => {
-    const r = sanitizeSvg(
-      '<svg xmlns="http://www.w3.org/2000/svg" onload="x()"><script>1</script><a href="javascript:alert(1)"><rect onclick="y()"/></a></svg>'
-    );
+describe('sanitizeSvg: adversarial input', () => {
+  it('removes scripts and event handlers', () => {
+    const r = sanitizeSvg(wrap('<script>alert(1)</script><rect onclick="y()" width="1" height="1"/>', 'onload="x()"'));
     expect(r.svg).not.toContain('<script');
     expect(r.svg).not.toContain('onload');
     expect(r.svg).not.toContain('onclick');
-    expect(r.svg).not.toContain('javascript:');
-    expect(r.removed.scripts).toBe(1);
-    expect(r.removed.handlers).toBe(2);
+    expect(r.removed.elements).toBeGreaterThanOrEqual(1);
+    expect(r.removed.attributes).toBeGreaterThanOrEqual(2);
   });
+  it('removes javascript: hrefs but keeps safe links', () => {
+    const r = sanitizeSvg(wrap('<a href="javascript:alert(1)"><rect width="1" height="1"/></a><a href="https://example.org/x"><rect width="1" height="1"/></a>'));
+    expect(r.svg).not.toContain('javascript:');
+    expect(r.svg).toContain('https://example.org/x');
+  });
+  it('removes iframe, object and embed inside foreignObject but keeps the HTML label', () => {
+    const r = sanitizeSvg(
+      wrap('<switch><foreignObject width="10" height="10"><div xmlns="http://www.w3.org/1999/xhtml"><iframe srcdoc="&lt;script&gt;1&lt;/script&gt;"></iframe><object data="x.swf"></object><embed src="x"/><div>label</div></div></foreignObject><image href="data:image/png;base64,AAAA"/></switch>')
+    );
+    expect(r.svg).not.toMatch(/<iframe|<object|<embed|srcdoc/);
+    expect(r.svg).toContain('<foreignObject');
+    expect(r.svg).toContain('label');
+    expect(r.foreignObjects).toBe(1);
+  });
+  it('removes external <use> references and keeps local ones', () => {
+    const r = sanitizeSvg(wrap('<defs><rect id="ok" width="1" height="1"/></defs><use href="#ok"/><use xlink:href="https://evil.example/x.svg#a"/><use href="x.svg#b"/>'));
+    expect(r.svg).toContain('href="#ok"');
+    expect(r.svg).not.toContain('evil.example');
+    expect(r.svg).not.toContain('x.svg#b');
+  });
+  it('removes styles with external url() or @import and keeps local url(#id)', () => {
+    const r = sanitizeSvg(
+      wrap('<style>@import url(https://evil.example/a.css);</style><style>.a{fill:red}</style><rect style="fill: url(http://evil.example/p.svg#g)" width="1" height="1"/><rect style="fill: url(#grad); stroke: light-dark(#000, #fff)" width="1" height="1"/>')
+    );
+    expect(r.svg).not.toContain('evil.example');
+    expect(r.svg).toContain('.a{fill:red}');
+    expect(r.svg).toContain('url(#grad)');
+    expect(r.svg).toContain('light-dark(');
+  });
+  it('keeps data URI images and drops nothing that is needed', () => {
+    const r = sanitizeSvg(wrap('<image href="data:image/png;base64,iVBORw0KGgo=" width="1" height="1"/>'));
+    expect(r.svg).toContain('data:image/png;base64,iVBORw0KGgo=');
+  });
+});
+
+describe('sanitizeSvg: draw.io export', () => {
   it('drops PNG label fallbacks inside <switch> and keeps foreignObject', () => {
     const r = sanitizeSvg(l3);
     expect(r.removed.images).toBe(53);
@@ -2239,11 +2359,13 @@ describe('sanitizeSvg', () => {
     expect(r.warnings[0]).toMatch(/foreignObject/);
     expect(r.svg.length).toBeLessThan(l3.length / 2);
   });
-  it('keeps data-cell-id and data-meta-* and light-dark styles', () => {
+  it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
     expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(100);
-    expect(r.svg).toContain('data-meta-pg-id="wan1:pppoe-&gt;rtr-a:wan1"');
+    expect(r.svg).toContain('data-meta-pg-id="wan1:pppoe->rtr-a:wan1"');
+    expect(r.svg).toContain('pointer-events="stroke"');
     expect(r.svg).toContain('light-dark(');
+    expect(r.svg).toMatch(/<svg[^>]*viewBox="0 0 /);
   });
   it('strips the embedded diagram copy and the XML prolog', () => {
     const r = sanitizeSvg('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" content="&lt;mxfile&gt;"><g/></svg>');
@@ -2261,10 +2383,14 @@ Run: `npx vitest run src/render/sanitize` — Expected: FAIL.
 
 - [ ] **Step 2: Implement `src/render/sanitize.ts`**
 
+Two passes. Pass 1 (XML DOM): structural clean-up that DOMPurify does not do. Pass 2: DOMPurify in its default HTML parsing mode (the HTML parser fixes SVG camelCase tags such as `foreignObject` and `linearGradient` and parses the label HTML inside `foreignObject`), returning a DOM.
+
 ```ts
+import DOMPurify from 'dompurify';
+
 export interface SanitizeResult {
   svg: string;
-  removed: { scripts: number; handlers: number; images: number };
+  removed: { elements: number; attributes: number; images: number };
   foreignObjects: number;
   warnings: string[];
 }
@@ -2280,47 +2406,94 @@ export function parseSvg(text: string): SVGSVGElement {
   return root as unknown as SVGSVGElement;
 }
 
-/**
- * Removes active content and dead weight from a draw.io SVG export.
- * Keeps data-* attributes, foreignObject labels and light-dark() styles.
- */
+/** true when a CSS text references anything that is not a local #id */
+function hasExternalUrl(cssText: string): boolean {
+  if (/@import/i.test(cssText)) {
+    return true;
+  }
+  const re = /url\(\s*['"]?([^'")]+)['"]?\s*\)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cssText))) {
+    if (!m[1].trim().startsWith('#')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const PURIFY_CONFIG: DOMPurify.Config = {
+  USE_PROFILES: { svg: true, svgFilters: true, html: true },
+  // DOMPurify forbids foreignObject by default; the spec keeps HTML labels. The html profile
+  // sanitises their content; iframe/object/embed/script are forbidden below.
+  ADD_TAGS: ['foreignObject', 'switch'],
+  ADD_ATTR: ['data-cell-id', 'pointer-events', 'requiredFeatures', 'color-scheme', 'xml:space'],
+  FORBID_TAGS: ['iframe', 'object', 'embed', 'script', 'form', 'input', 'button', 'textarea', 'select', 'link', 'meta', 'base', 'template', 'math', 'audio', 'video'],
+  FORBID_ATTR: ['srcdoc', 'formaction', 'action', 'ping'],
+  ADD_DATA_URI_TAGS: ['image'],
+  ALLOW_DATA_ATTR: true,
+  RETURN_DOM: true,
+};
+
 export function sanitizeSvg(text: string): SanitizeResult {
   const root = parseSvg(text);
-  const removed = { scripts: 0, handlers: 0, images: 0 };
+  const removed = { elements: 0, attributes: 0, images: 0 };
 
-  for (const s of Array.from(root.querySelectorAll('script'))) {
-    s.remove();
-    removed.scripts++;
-  }
-  for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
-    for (const a of Array.from(el.attributes)) {
-      const n = a.name.toLowerCase();
-      if (n.startsWith('on')) {
-        el.removeAttribute(a.name);
-        removed.handlers++;
-      } else if ((n === 'href' || n === 'xlink:href') && /^\s*javascript:/i.test(a.value)) {
-        el.removeAttribute(a.name);
-        removed.handlers++;
+  // Pass 1: structural.
+  // draw.io 32 writes <switch><foreignObject>HTML</foreignObject><image href="data:image/png..."/></switch>;
+  // browsers take the foreignObject branch, so the PNG is dead weight.
+  for (const sw of Array.from(root.querySelectorAll('switch'))) {
+    for (const child of Array.from(sw.children)) {
+      if (child.localName === 'image') {
+        child.remove();
+        removed.images++;
       }
     }
   }
-  // draw.io 32 writes <switch><foreignObject>HTML</foreignObject><image href="data:image/png..."/></switch>.
-  // Browsers take the foreignObject branch, so the PNG is dead weight.
-  for (const img of Array.from(root.querySelectorAll('switch > image'))) {
-    img.remove();
-    removed.images++;
+  root.removeAttribute('content'); // embedded copy of the diagram XML (xmlsvg export)
+  for (const use of Array.from(root.querySelectorAll('use'))) {
+    const href = use.getAttribute('href') ?? use.getAttribute('xlink:href') ?? '';
+    if (!href.startsWith('#')) {
+      use.remove();
+      removed.elements++;
+    }
   }
-  root.removeAttribute('content');
-  const foreignObjects = root.querySelectorAll('foreignObject').length;
+  for (const st of Array.from(root.querySelectorAll('style'))) {
+    if (hasExternalUrl(st.textContent ?? '')) {
+      st.remove();
+      removed.elements++;
+    }
+  }
+  for (const el of [root, ...Array.from(root.querySelectorAll('[style]'))]) {
+    const style = el.getAttribute('style');
+    if (style && hasExternalUrl(style)) {
+      el.removeAttribute('style');
+      removed.attributes++;
+    }
+  }
+
+  // Pass 2: DOMPurify.
+  const serialized = new XMLSerializer().serializeToString(root);
+  const body = DOMPurify.sanitize(serialized, PURIFY_CONFIG) as unknown as HTMLElement;
+  removed.elements += DOMPurify.removed.filter((r) => 'element' in r).length;
+  removed.attributes += DOMPurify.removed.filter((r) => 'attribute' in r).length;
+  const svg = body.querySelector('svg');
+  if (!svg) {
+    throw new Error('Not an SVG document');
+  }
+  const foreignObjects = svg.querySelectorAll('foreignObject').length;
   const warnings: string[] = [];
   if (foreignObjects) {
     warnings.push(`${foreignObjects} HTML labels (foreignObject). Set convertToSvg=1 on labels for smaller, native text.`);
   }
-  return { svg: new XMLSerializer().serializeToString(root), removed, foreignObjects, warnings };
+  return { svg: svg.outerHTML, removed, foreignObjects, warnings };
 }
 ```
 
-Run: `npx vitest run src/render/sanitize` — Expected: PASS (5). If `switch > image` finds 0 in jsdom, iterate `root.querySelectorAll('switch')` and remove child elements with `localName === 'image'`.
+Run: `npx vitest run src/render/sanitize` — Expected: PASS (10). Notes for the implementer:
+- If DOMPurify strips `foreignObject`, check `DOMPurify.removed` in the test output and add the missing tag to `ADD_TAGS` (DOMPurify lower-cases tag names in HTML mode, so `foreignobject` is equivalent).
+- If `requiredFeatures` or `xml:space` are dropped, that is harmless; remove them from `ADD_ATTR` only if DOMPurify rejects the config.
+- Do not switch to `PARSER_MEDIA_TYPE: 'application/xhtml+xml'`: in that mode DOMPurify compares case-sensitive tag names against its lowercase SVG list and strips `linearGradient`, `clipPath`, etc.
+- The output is HTML serialisation. Attribute values keep `>` unescaped; `&` and `"` are escaped. Downstream code never re-parses it as XML.
 
 - [ ] **Step 3: Stage tests**
 
@@ -2406,14 +2579,21 @@ Run: `npx vitest run src/render/svgStage` — Expected: FAIL.
 ```ts
 import { attachLinkLabels, cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
-import { parseSvg } from './sanitize';
 
 const SHAPE_TAGS = new Set(['rect', 'path', 'ellipse', 'circle', 'polygon', 'image']);
 
-/** Parse the (already sanitised) SVG text and make it the only child of the container. */
+/**
+ * Parse the sanitised SVG text (HTML serialisation from sanitizeSvg) and make it the only child
+ * of the container. A <template> uses the HTML parser, which handles SVG foreign content and
+ * the HTML inside foreignObject labels.
+ */
 export function mountSvg(container: HTMLElement, svgText: string): SVGSVGElement {
-  const parsed = parseSvg(svgText);
-  const root = document.importNode(parsed, true) as SVGSVGElement;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = svgText;
+  const root = tpl.content.querySelector('svg');
+  if (!root) {
+    throw new Error('Not an SVG document');
+  }
   container.replaceChildren(root);
   root.style.display = 'block';
   return root;
@@ -2898,7 +3078,8 @@ git commit -m "feat: patch applier writes shape and link styles into the SVG DOM
 **Interfaces:**
 - Consumes: `CellIndex`, `CellEntry`, `PatchMap`, `HalfState`, `SparklineState` from `src/types.ts`; `GrafanaTheme2`.
 - Produces:
-  - `parsePathPoints(d: string): Point[]`, `polylineLength(pts): number`, `pointAt(pts, dist): { x; y; angle }`, `slicePolyline(pts, from, to): Point[]`
+  - `parsePathPoints(d: string): Point[]`, `polylineLength(pts): number`, `pointAt(pts, dist): { x; y; angle }`, `slicePolyline(pts, from, to): Point[]` (pure; jsdom fallback)
+  - `pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): PathGeom` where `PathGeom = { length: number; pointAt(d): { x; y; angle }; polyline(from, to): Point[] }`. In the browser it uses `getTotalLength`/`getPointAtLength` on the real edge path and converts points into the `target` (overlay) coordinate system with `target.getCTM()^-1 × line.getCTM()`. In jsdom (no `getTotalLength`) it falls back to the parsed polyline. The overlay only calls `pathGeometry`.
   - `ensureOverlay(root: SVGSVGElement): SVGGElement` (a `<g class="dmap-overlay">` as the last child of the root)
   - `renderOverlay(root: SVGSVGElement, index: CellIndex, patches: PatchMap, opts: OverlayOptions): void`
   - Overlay element contract (Task 9 and Task 14 read these): halves are `<polyline class="dmap-half" data-dmap-cell="<cell id>" data-dmap-half="a2b|b2a" data-dmap-status data-dmap-step stroke stroke-width>`; arrows `<polygon class="dmap-arrow" data-dmap-cell data-dmap-half>`; labels `<g class="dmap-label" data-dmap-cell data-dmap-half><rect/><text/></g>`; sparklines `<polyline class="dmap-spark" data-dmap-cell>`.
@@ -2909,7 +3090,7 @@ git commit -m "feat: patch applier writes shape and link styles into the SVG DOM
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { parsePathPoints, pointAt, polylineLength, slicePolyline } from './geometry';
+import { parsePathPoints, pathGeometry, pointAt, polylineLength, slicePolyline } from './geometry';
 
 describe('parsePathPoints', () => {
   it('parses M/L absolute', () => {
@@ -2940,6 +3121,44 @@ describe('length, pointAt, slice', () => {
   it('slice', () => {
     expect(slicePolyline(pts, 0, 75)).toEqual([{ x: 0, y: 0 }, { x: 75, y: 0 }]);
     expect(slicePolyline(pts, 75, 150)).toEqual([{ x: 75, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }]);
+  });
+});
+
+describe('pathGeometry', () => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const mk = () => {
+    const svg = document.createElementNS(NS, 'svg');
+    const g = document.createElementNS(NS, 'g') as SVGGElement;
+    const p = document.createElementNS(NS, 'path') as SVGPathElement;
+    p.setAttribute('d', 'M 0 0 L 100 0 L 100 50');
+    svg.append(p, g);
+    return { g, p };
+  };
+  it('falls back to the parsed polyline when the browser API is missing (jsdom)', () => {
+    const { g, p } = mk();
+    const geo = pathGeometry(p, g);
+    expect(geo.length).toBe(150);
+    expect(geo.pointAt(75)).toEqual({ x: 75, y: 0, angle: 0 });
+    expect(geo.polyline(75, 150)).toEqual([{ x: 75, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }]);
+  });
+  it('uses getTotalLength/getPointAtLength and converts through the CTMs', () => {
+    const { g, p } = mk();
+    Object.assign(p, {
+      getTotalLength: () => 150,
+      getPointAtLength: (d: number) => (d <= 100 ? { x: d, y: 0 } : { x: 100, y: d - 100 }),
+      getCTM: () => ({ a: 1, b: 0, c: 0, d: 1, e: 10, f: 5 }),
+    });
+    Object.assign(g, { getCTM: () => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 }) });
+    const geo = pathGeometry(p, g);
+    expect(geo.length).toBe(150);
+    const m = geo.pointAt(75);
+    expect(m.x).toBeCloseTo(42.5); // ((75 + 10) / 2)
+    expect(m.y).toBeCloseTo(2.5);
+    expect(m.angle).toBeCloseTo(0);
+    const poly = geo.polyline(0, 150);
+    expect(poly.length).toBeGreaterThan(10);
+    expect(poly[0]).toEqual({ x: 5, y: 2.5 });
+    expect(poly[poly.length - 1]).toEqual({ x: 55, y: 27.5 });
   });
 });
 ```
@@ -3062,9 +3281,106 @@ export function slicePolyline(pts: Point[], from: number, to: number): Point[] {
   out.push({ x: end.x, y: end.y });
   return out;
 }
+
+/* ---------- affine matrices (plain objects; no DOMMatrix so jsdom tests work) ---------- */
+
+export interface Matrix {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+}
+
+export const IDENTITY: Matrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+export function multiply(m: Matrix, n: Matrix): Matrix {
+  return {
+    a: m.a * n.a + m.c * n.b,
+    b: m.b * n.a + m.d * n.b,
+    c: m.a * n.c + m.c * n.d,
+    d: m.b * n.c + m.d * n.d,
+    e: m.a * n.e + m.c * n.f + m.e,
+    f: m.b * n.e + m.d * n.f + m.f,
+  };
+}
+
+export function invert(m: Matrix): Matrix {
+  const det = m.a * m.d - m.b * m.c || 1;
+  return {
+    a: m.d / det,
+    b: -m.b / det,
+    c: -m.c / det,
+    d: m.a / det,
+    e: (m.c * m.f - m.d * m.e) / det,
+    f: (m.b * m.e - m.a * m.f) / det,
+  };
+}
+
+export function applyMatrix(m: Matrix, p: Point): Point {
+  return { x: m.a * p.x + m.c * p.y + m.e, y: m.b * p.x + m.d * p.y + m.f };
+}
+
+/* ---------- path geometry: browser API first, parsed polyline as fallback ---------- */
+
+export interface PathGeom {
+  /** arc length in the path's own user units */
+  length: number;
+  /** point and tangent angle at arc length d, in `target` coordinates */
+  pointAt(d: number): { x: number; y: number; angle: number };
+  /** sampled points between two arc lengths, in `target` coordinates */
+  polyline(from: number, to: number): Point[];
+}
+
+type PathApi = SVGPathElement & { getTotalLength(): number; getPointAtLength(d: number): { x: number; y: number } };
+
+/**
+ * Geometry of an edge path expressed in the coordinate system of `target` (the overlay group).
+ * Browser: getTotalLength/getPointAtLength on the real path, points mapped with
+ * target.getCTM()^-1 × line.getCTM(), so transforms on the edge or its ancestors are respected.
+ * jsdom: pure parser on the d attribute (M/L exact, curves approximated); identity transform.
+ */
+export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): PathGeom {
+  const api = line as PathApi;
+  const hasApi = typeof api.getTotalLength === 'function' && typeof api.getPointAtLength === 'function' && typeof line.getCTM === 'function';
+  if (!hasApi) {
+    const pts = parsePathPoints(line.getAttribute('d') ?? '');
+    return {
+      length: polylineLength(pts),
+      pointAt: (d) => pointAt(pts, d),
+      polyline: (from, to) => slicePolyline(pts, from, to),
+    };
+  }
+  const toM = (m: Matrix | null | undefined): Matrix => (m ? { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f } : IDENTITY);
+  const M = multiply(invert(toM(target.getCTM())), toM(line.getCTM()));
+  const length = api.getTotalLength();
+  const clamp = (d: number) => Math.min(length, Math.max(0, d));
+  const at = (d: number): Point => {
+    const p = api.getPointAtLength(clamp(d));
+    return applyMatrix(M, { x: p.x, y: p.y });
+  };
+  return {
+    length,
+    pointAt(d) {
+      const p = at(d);
+      const fwd = at(d + 0.5);
+      const back = at(d - 0.5);
+      return { x: p.x, y: p.y, angle: Math.atan2(fwd.y - back.y, fwd.x - back.x) };
+    },
+    polyline(from, to) {
+      const n = Math.max(2, Math.ceil(Math.abs(to - from) / 4));
+      const out: Point[] = [];
+      for (let i = 0; i <= n; i++) {
+        out.push(at(from + ((to - from) * i) / n));
+      }
+      return out;
+    },
+  };
+}
 ```
 
-Run: `npx vitest run src/render/geometry` — Expected: PASS (7).
+Run: `npx vitest run src/render/geometry` — Expected: PASS (9).
 
 - [ ] **Step 3: Overlay tests**
 
@@ -3167,7 +3483,7 @@ Run: `npx vitest run src/render/overlay` — Expected: FAIL.
 ```ts
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, HalfState, PatchMap, SparklineState } from '../types';
-import { parsePathPoints, Point, pointAt, polylineLength, slicePolyline } from './geometry';
+import { parsePathPoints, PathGeom, pathGeometry, Point } from './geometry';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
 const NS = 'http://www.w3.org/2000/svg';
@@ -3202,7 +3518,7 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
 const fmt = (n: number) => String(Math.round(n * 100) / 100);
 const pointsAttr = (pts: Point[]) => pts.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(' ');
 
-function drawHalf(layer: SVGGElement, cellId: string, which: 'a2b' | 'b2a', pts: Point[], state: HalfState, arrowAt: number, forward: boolean, labelAt: number, o: Required<OverlayOptions>): void {
+function drawHalf(layer: SVGGElement, cellId: string, which: 'a2b' | 'b2a', geo: PathGeom, pts: Point[], state: HalfState, arrowAt: number, forward: boolean, labelAt: number, o: Required<OverlayOptions>): void {
   layer.appendChild(
     el('polyline', {
       class: 'dmap-half',
@@ -3219,7 +3535,7 @@ function drawHalf(layer: SVGGElement, cellId: string, which: 'a2b' | 'b2a', pts:
       'pointer-events': 'stroke',
     })
   );
-  const tip = pointAt(pts, arrowAt);
+  const tip = geo.pointAt(arrowAt);
   const ang = forward ? tip.angle : tip.angle + Math.PI;
   const s = o.arrowSize;
   const tri: Point[] = [
@@ -3229,7 +3545,7 @@ function drawHalf(layer: SVGGElement, cellId: string, which: 'a2b' | 'b2a', pts:
   ];
   layer.appendChild(el('polygon', { class: 'dmap-arrow', 'data-dmap-cell': cellId, 'data-dmap-half': which, points: pointsAttr(tri), fill: state.color, 'pointer-events': 'none' }));
 
-  const lp = pointAt(pts, labelAt);
+  const lp = geo.pointAt(labelAt);
   const nx = -Math.sin(lp.angle);
   const ny = Math.cos(lp.angle);
   const cx = lp.x + nx * o.labelOffset;
@@ -3245,29 +3561,28 @@ function drawHalf(layer: SVGGElement, cellId: string, which: 'a2b' | 'b2a', pts:
 }
 
 function drawLink(layer: SVGGElement, entry: CellEntry, link: { a2b?: HalfState; b2a?: HalfState }, o: Required<OverlayOptions>): void {
-  const d = entry.line?.getAttribute('d');
-  if (!d) {
+  if (!entry.line) {
     return;
   }
-  const pts = parsePathPoints(d);
-  if (pts.length < 2) {
+  const geo = pathGeometry(entry.line, layer);
+  const L = geo.length;
+  if (!(L > 0)) {
     return;
   }
-  const L = polylineLength(pts);
   const id = entry.meta.id;
   if (link.a2b && link.b2a) {
-    drawHalf(layer, id, 'a2b', slicePolyline(pts, 0, L / 2), link.a2b, L / 2, true, L / 4, o);
-    drawHalf(layer, id, 'b2a', slicePolyline(pts, L / 2, L), link.b2a, 0, false, L / 4, o);
+    drawHalf(layer, id, 'a2b', geo, geo.polyline(0, L / 2), link.a2b, L / 2, true, L / 4, o);
+    drawHalf(layer, id, 'b2a', geo, geo.polyline(L / 2, L), link.b2a, L / 2, false, (3 * L) / 4, o);
     return;
   }
   if (link.a2b) {
-    drawHalf(layer, id, 'a2b', pts, link.a2b, L, true, L / 2, o);
+    drawHalf(layer, id, 'a2b', geo, geo.polyline(0, L), link.a2b, L, true, L / 2, o);
   } else if (link.b2a) {
-    drawHalf(layer, id, 'b2a', pts, link.b2a, 0, false, L / 2, o);
+    drawHalf(layer, id, 'b2a', geo, geo.polyline(0, L), link.b2a, 0, false, L / 2, o);
   }
 }
 
-/** Bounding box in user units. getBBox when the browser has it, else attributes or path points. */
+/** Bounding box in the shape's own user units. getBBox when the browser has it, else attributes or path points. */
 export function bboxOf(shape: SVGGraphicsElement): { x: number; y: number; w: number; h: number } | undefined {
   if (typeof shape.getBBox === 'function') {
     try {
@@ -3359,7 +3674,7 @@ git commit -m "feat: overlay with half-links, arrows, labels and sparklines from
 **Interfaces:**
 - Consumes: `DrawioModalProps` from `src/types.ts`.
 - Produces:
-  - `buildEditorUrl(base: string): string`, `editorOrigin(base: string): string`
+  - `buildEditorUrl(base: string, isDark?: boolean): string` (merges `embed`, `proto`, `configure`, `spin`, `libraries`, `ui`, `saveAndExit`, `noExitBtn` one by one with `URLSearchParams`; sets `dark` from the theme), `editorOrigin(base: string): string`
   - `initialState(xml: string): ProtocolState`, `parseMessage(data: unknown): EditorMessage | undefined`, `handleMessage(state, msg, opts): Step`
   - `decodeDataUri(uri: string): string`
   - `DrawioModal(props: DrawioModalProps)` React component. DOM contract for e2e: modal root `data-testid="dmap-editor-modal"`, iframe `data-testid="dmap-editor-frame"`, wrapper attribute `data-dmap-editor-phase="init|loaded|exporting|done"`.
@@ -3419,10 +3734,17 @@ const svgB64 = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base
 const opts = { mode: 'edit' as const, title: 'map', isDark: false };
 
 describe('buildEditorUrl / editorOrigin', () => {
-  it('adds the embed parameters once', () => {
-    const u = buildEditorUrl('http://localhost:8080');
-    expect(u).toBe('http://localhost:8080/?embed=1&proto=json&configure=1&spin=1&libraries=1&ui=min&dark=auto&saveAndExit=1&noExitBtn=0');
-    expect(buildEditorUrl('https://embed.diagrams.net/?lang=en')).toContain('lang=en&embed=1');
+  it('merges each embed parameter separately and sets dark from the theme', () => {
+    expect(buildEditorUrl('http://localhost:8080', false)).toBe(
+      'http://localhost:8080/?embed=1&proto=json&configure=1&spin=1&libraries=1&ui=min&saveAndExit=1&noExitBtn=0&dark=0'
+    );
+    const u = new URL(buildEditorUrl('https://embed.diagrams.net/?ui=sketch&embed=1&lang=en', true));
+    expect(u.searchParams.get('ui')).toBe('sketch');
+    expect(u.searchParams.get('lang')).toBe('en');
+    expect(u.searchParams.get('proto')).toBe('json');
+    expect(u.searchParams.get('configure')).toBe('1');
+    expect(u.searchParams.get('dark')).toBe('1');
+    expect(u.searchParams.getAll('embed')).toEqual(['1']);
     expect(editorOrigin('http://localhost:8080/?x=1')).toBe('http://localhost:8080');
   });
 });
@@ -3499,15 +3821,27 @@ Run: `npx vitest run src/editor/protocol` — Expected: FAIL.
 ```ts
 import { decodeDataUri } from './decode';
 
-export const EMBED_PARAMS = 'embed=1&proto=json&configure=1&spin=1&libraries=1&ui=min&dark=auto&saveAndExit=1&noExitBtn=0';
+/** Required embed parameters. A parameter already present in the configured URL wins (for example ui=sketch). */
+export const EMBED_PARAMS: Record<string, string> = {
+  embed: '1',
+  proto: 'json',
+  configure: '1',
+  spin: '1',
+  libraries: '1',
+  ui: 'min',
+  saveAndExit: '1',
+  noExitBtn: '0',
+};
 
-export function buildEditorUrl(base: string): string {
+export function buildEditorUrl(base: string, isDark = false): string {
   const u = new URL(base);
-  if (u.searchParams.has('embed')) {
-    return u.toString();
+  for (const [k, v] of Object.entries(EMBED_PARAMS)) {
+    if (!u.searchParams.has(k)) {
+      u.searchParams.set(k, v);
+    }
   }
-  const sep = u.search ? '&' : '?';
-  return `${u.origin}${u.pathname}${u.search}${sep}${EMBED_PARAMS}`;
+  u.searchParams.set('dark', isDark ? '1' : '0');
+  return u.toString();
 }
 
 export function editorOrigin(base: string): string {
@@ -3647,7 +3981,7 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stateRef = useRef<ProtocolState>(initialState(xml));
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');
-  const src = useMemo(() => buildEditorUrl(editorUrl), [editorUrl]);
+  const src = useMemo(() => buildEditorUrl(editorUrl, isDark), [editorUrl, isDark]);
   const origin = useMemo(() => editorOrigin(editorUrl), [editorUrl]);
 
   const post = useCallback(
@@ -3716,7 +4050,7 @@ git commit -m "feat: draw.io embed protocol state machine and editor modal"
 - Produces (Task 11 uses these):
   - `primaryOf(patch: CellPatch): Primary` where `Primary = { status: BindStatus; series?: SeriesInfo; display?: DisplayValue; value?: number; percent?: number; label?: string }` (the a2b half, else b2a, else the shape)
   - `buildScopedVars(patch: CellPatch, primary: Primary): ScopedVars`
-  - `resolveLinks(patch: CellPatch, primary: Primary, replaceVariables): LinkModel[]` (rule URLs first, then the field data links of the primary series)
+  - `resolveLinks(patch: CellPatch, primary: Primary, replaceVariables): LinkModel[]` (rule URLs first, then the field data links of the primary series). The panel (Task 11) renders these with `@grafana/ui` `ContextMenu` + `MenuItem`, not with `DataLinksContextMenu`: that component needs a React child per clickable element, and our cells are raw SVG DOM.
   - `patchAt(target: EventTarget | null, stop: Element, patches: PatchMap): CellPatch | undefined` (walks up through `data-dmap-cell` and `data-cell-id`)
   - `Tooltip({ x, y, patch, width, height }: TooltipProps)` React component rendered absolutely inside the panel wrapper.
 
@@ -4126,7 +4460,7 @@ export function DiagramEditor({ value, onChange, context }: Props) {
 
   return (
     <div>
-      <div style={{ marginBottom: theme.spacing(1) }}>
+      <div style={{ marginBottom: theme.spacing(1) }} data-testid="dmap-diagram-status" data-dmap-hash={value?.hash ?? ''}>
         {value?.svg ? `Diagram ${value.hash}, ${Math.round(value.svg.length / 1024)} KB, saved ${value.updatedAt}` : 'No diagram'}
       </div>
       <HorizontalGroup>
@@ -4141,7 +4475,7 @@ export function DiagramEditor({ value, onChange, context }: Props) {
         <TextArea rows={3} value={paste} onChange={(e) => setPaste(e.currentTarget.value)} data-testid="dmap-paste-xml" />
       </Field>
       <Button size="sm" variant="secondary" disabled={!paste.trim()} onClick={() => startImport(paste)}>Apply pasted XML</Button>
-      {message ? <div style={{ marginTop: theme.spacing(1), color: theme.colors.text.secondary }}>{message}</div> : null}
+      {message ? <div style={{ marginTop: theme.spacing(1), color: theme.colors.text.secondary }} data-testid="dmap-diagram-message">{message}</div> : null}
       {modal ? (
         <DrawioModal editorUrl={editorUrl} xml={xmlForModal} title="draw.io map" mode={modal} isDark={theme.isDark} onSave={save} onClose={() => setModal(null)} />
       ) : null}
@@ -4399,7 +4733,7 @@ git commit -m "feat: diagram and rules option editors, panel options and field c
 
 **Interfaces:**
 - Consumes: everything from Waves 1 and 2 (exact names in each task's Interfaces block).
-- Produces: `DrawioMapPanel(props: PanelProps<Options>)`. DOM contract for e2e: wrapper `data-testid="dmap-panel"`, `data-dmap-cells="<count>"`, `data-dmap-patched="<count>"`, `data-dmap-warnings="<count>"`; SVG root inside; empty state `data-testid="dmap-empty"`.
+- Produces: `DrawioMapPanel(props: PanelProps<Options>)`. DOM contract for e2e: wrapper `data-testid="dmap-panel"`, `data-dmap-cells="<count>"`, `data-dmap-patched="<count>"`, `data-dmap-warnings="<count>"`, `data-dmap-hash="<diagram hash>"`; SVG root inside; empty state `data-testid="dmap-empty"`; click menu = `@grafana/ui` `ContextMenu` with `MenuItem` entries (`role="menuitem"`, `href` = resolved URL).
 
 - [ ] **Step 1: Failing integration test**
 
@@ -4410,7 +4744,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { FieldType, LoadingState, PanelProps, ThresholdsMode, toDataFrame, getDefaultTimeRange } from '@grafana/data';
 import { DrawioMapPanel } from './DrawioMapPanel';
 import { fnv1a } from '../util/hash';
@@ -4483,6 +4817,22 @@ describe('DrawioMapPanel', () => {
     expect(container.querySelector('[data-cell-id="pg-node~rtr-a"]')!.getAttribute('data-dmap-step')).toBe('1');
     expect(container.querySelector('svg')!.getAttribute('width')).toBe('100%');
   });
+  it('opens a menu with the resolved rule url on the first click and switches between cells', async () => {
+    const { container } = render(<DrawioMapPanel {...props()} />);
+    await waitFor(() => expect(container.querySelector('polyline.dmap-half')).not.toBeNull());
+    const half = (cell: string) => container.querySelector(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${cell}"]`)!;
+    fireEvent.click(half('pg-link~wan1:pppoe->rtr-a:wan1'), { clientX: 10, clientY: 10 });
+    const item = await screen.findByRole('menuitem', { name: 'links' });
+    expect(item.getAttribute('href')).toBe('/d/x?job=wan1');
+    fireEvent.click(half('pg-link~wan2:dhcp->rtr-a:wan2'), { clientX: 20, clientY: 20 });
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'links' }).getAttribute('href')).toBe('/d/x?job=wan2'));
+  });
+  it('does not open a menu for a cell without links', async () => {
+    const { container } = render(<DrawioMapPanel {...props()} />);
+    await waitFor(() => expect(container.querySelector('polyline.dmap-half')).not.toBeNull());
+    fireEvent.click(container.querySelector('[data-cell-id="pg-node~rtr-a"]')!, { clientX: 5, clientY: 5 });
+    expect(screen.queryByRole('menuitem')).toBeNull();
+  });
   it('contains no draw.io runtime', () => {
     const { container } = render(<DrawioMapPanel {...props()} />);
     expect(container.querySelector('iframe')).toBeNull();
@@ -4491,7 +4841,7 @@ describe('DrawioMapPanel', () => {
 });
 ```
 
-Run: `npx vitest run src/components` — Expected: FAIL (the stub has no `dmap-empty`).
+Run: `npx vitest run src/components` — Expected: FAIL (the stub has no `dmap-empty`). The `node up` rule in this test has no `url`, so the node click must not open a menu; the field `getLinks` is absent on `toDataFrame` fields.
 
 - [ ] **Step 2: Stage hook `src/components/useStage.ts`**
 
@@ -4546,9 +4896,9 @@ export function useStage(containerRef: React.RefObject<HTMLDivElement>, svg: str
 
 ```tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { css, cx } from '@emotion/css';
+import { css } from '@emotion/css';
 import { getDisplayProcessor, LinkModel, PanelProps } from '@grafana/data';
-import { DataLinksContextMenu, useTheme2 } from '@grafana/ui';
+import { ContextMenu, MenuItem, useTheme2 } from '@grafana/ui';
 import { bind } from '../binding/engine';
 import { extractSeries } from '../binding/series';
 import { patchAt } from '../interact/hit';
@@ -4592,8 +4942,11 @@ const styles = {
   `,
 };
 
-type MenuApi = { openMenu?: React.MouseEventHandler<HTMLOrSVGElement>; targetClassName?: string };
-const LinksMenu = DataLinksContextMenu as unknown as React.ComponentType<{ links: () => LinkModel[]; children: (api: MenuApi) => React.ReactElement }>;
+interface MenuState {
+  x: number;
+  y: number;
+  links: LinkModel[];
+}
 
 export function DrawioMapPanel({ options, data, width, height, fieldConfig, replaceVariables, timeZone }: PanelProps<Options>) {
   const theme = useTheme2();
@@ -4601,13 +4954,14 @@ export function DrawioMapPanel({ options, data, width, height, fieldConfig, repl
   const containerRef = useRef<HTMLDivElement>(null);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
   const patchedRef = useRef<Set<string>>(new Set());
-  const linksRef = useRef<LinkModel[]>([]);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number; patch: CellPatch } | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
 
   const series = useMemo(() => extractSeries(data.series), [data.series]);
+  // Grafana attaches field.display (effective config incl. overrides) to panel data; fall back for tests.
   const display = useCallback(
-    (s: SeriesInfo, v: number) => getDisplayProcessor({ field: s.field, theme, timeZone })(v),
+    (s: SeriesInfo, v: number) => (s.field.display ?? getDisplayProcessor({ field: s.field, theme, timeZone }))(v),
     [theme, timeZone]
   );
   const result = useMemo(
@@ -4648,9 +5002,23 @@ export function DrawioMapPanel({ options, data, width, height, fieldConfig, repl
     }
   }, [stage.root, stage.base, opts.zoom.mode, opts.zoom.percent, width, height, view]);
 
-  // Reset custom view when the diagram changes.
-  useEffect(() => setView(null), [opts.diagram?.hash]);
+  // Reset the custom view and close the menu when the diagram changes.
+  useEffect(() => {
+    setView(null);
+    setMenu(null);
+  }, [opts.diagram?.hash]);
 
+  const onClick = (e: React.MouseEvent) => {
+    const wrapper = containerRef.current;
+    const patch = wrapper ? patchAt(e.target, wrapper, result.patches) : undefined;
+    if (!patch) {
+      setMenu(null);
+      return;
+    }
+    // Resolve the links first, then open the menu with them in state: the first click must show the right items.
+    const links = resolveLinks(patch, primaryOf(patch), replaceVariables);
+    setMenu(links.length ? { x: e.clientX, y: e.clientY, links } : null);
+  };
   const onWheel = (e: React.WheelEvent) => {
     if (!opts.zoom.wheel || !stage.root) {
       return;
@@ -4697,52 +5065,54 @@ export function DrawioMapPanel({ options, data, width, height, fieldConfig, repl
   const warnings = [...stage.warnings, ...result.warnings];
 
   return (
-    <LinksMenu links={() => linksRef.current}>
-      {(api) => (
-        <div
-          className={cx(styles.wrapper, api.targetClassName)}
-          data-testid="dmap-panel"
-          data-dmap-cells={stage.index.size}
-          data-dmap-patched={result.patches.size}
-          data-dmap-warnings={warnings.length}
-          style={{ colorScheme: theme.isDark ? 'dark' : 'light' }}
-          onClick={(e) => {
-            const wrapper = containerRef.current;
-            const patch = wrapper ? patchAt(e.target, wrapper, result.patches) : undefined;
-            if (!patch) {
-              return;
-            }
-            linksRef.current = resolveLinks(patch, primaryOf(patch), replaceVariables);
-            if (linksRef.current.length) {
-              api.openMenu?.(e);
-            }
-          }}
-          onWheel={onWheel}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={() => { setHover(null); drag.current = null; }}
-        >
-          <div ref={containerRef} className={styles.stage} />
-          {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
-          {warnings.length ? (
-            <div className={styles.badge} style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }} title={warnings.join('\n')} data-testid="dmap-warning-badge">
-              {warnings.length} warning{warnings.length > 1 ? 's' : ''}
-            </div>
-          ) : null}
-          {hover ? <Tooltip x={hover.x} y={hover.y} patch={hover.patch} width={width} height={height} /> : null}
+    <div
+      className={styles.wrapper}
+      data-testid="dmap-panel"
+      data-dmap-cells={stage.index.size}
+      data-dmap-patched={result.patches.size}
+      data-dmap-warnings={warnings.length}
+      data-dmap-hash={opts.diagram.hash}
+      style={{ colorScheme: theme.isDark ? 'dark' : 'light' }}
+      onClick={onClick}
+      onWheel={onWheel}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={() => {
+        setHover(null);
+        drag.current = null;
+      }}
+    >
+      <div ref={containerRef} className={styles.stage} />
+      {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
+      {warnings.length ? (
+        <div className={styles.badge} style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }} title={warnings.join('\n')} data-testid="dmap-warning-badge">
+          {warnings.length} warning{warnings.length > 1 ? 's' : ''}
         </div>
-      )}
-    </LinksMenu>
+      ) : null}
+      {hover && !menu ? <Tooltip x={hover.x} y={hover.y} patch={hover.patch} width={width} height={height} /> : null}
+      {menu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          renderMenuItems={() =>
+            menu.links.map((l, i) => (
+              <MenuItem key={`${i}-${l.href}`} label={l.title} url={l.href} target={l.target} onClick={l.onClick ? (ev) => l.onClick!(ev) : undefined} />
+            ))
+          }
+        />
+      ) : null}
+    </div>
   );
 }
 ```
 
-If `DataLinksContextMenu` in 12.4 has a different `children` signature, keep the cast and match the shape from `node_modules/@grafana/ui/dist/index.d.ts` (search `DataLinksContextMenuApi`).
+`ContextMenu` and `MenuItem` are stable exports of `@grafana/ui` since 8.x (verify in `node_modules/@grafana/ui/dist/index.d.ts`; `MenuItem` renders an `<a role="menuitem" href>` when `url` is set). `DataLinksContextMenu` is not used: it needs a React child per clickable element, and our cells are raw SVG DOM, so it cannot hold the links for the first click. The links are computed into state before the menu renders.
 
 - [ ] **Step 4: Run the tests**
 
-Run: `npx vitest run src/components` — Expected: PASS (3). If the `requestAnimationFrame` callback did not run before the assertions, replace the single `await new Promise(requestAnimationFrame)` with `await waitFor(() => expect(container.querySelector('polyline.dmap-half')).not.toBeNull())` from `@testing-library/react`.
+Run: `npx vitest run src/components` — Expected: PASS (5). If the `requestAnimationFrame` callback did not run before the assertions in the second test, replace `await new Promise(requestAnimationFrame)` with `await waitFor(() => expect(container.querySelector('polyline.dmap-half')).not.toBeNull())`. If `screen.findByRole('menuitem', ...)` finds nothing, inspect `document.body.innerHTML` (the `ContextMenu` renders in a portal) and match the element `MenuItem` emits (`a[role="menuitem"]` or `button[role="menuitem"]`).
 
 - [ ] **Step 5: Manual check on both Grafana versions**
 
@@ -4765,11 +5135,11 @@ git commit -m "feat: panel component integrates stage, binding, overlay, zoom an
 **Model:** sonnet
 
 **Files:**
-- Create: `scripts/build-dashboard.ts`, `demo/rules.yaml`, `demo/dashboard.template.json`, `provisioning/dashboards/drawiomap-demo.json` (generated, committed)
+- Create: `scripts/build-dashboard.ts`, `demo/rules.yaml`, `demo/rules-hand.yaml`, `demo/dashboard.template.json`, `provisioning/dashboards/drawiomap-demo.json` (generated, committed)
 
 **Interfaces:**
 - Consumes: `sanitizeSvg` (Task 5), `parseRulesYaml` (Task 1), `fnv1a` (Task 1), `fixtures/svg/l3-routing.svg`, `fixtures/portograph/l3-routing.drawio`, the series from Task 2.
-- Produces: dashboard uid `drawiomap-demo`, panel id `1`, title `demo-lab L3`, datasource uid `victoriametrics`. Task 14 depends on these values and on the rule names `links`, `wan uplinks 100M`, `node up`.
+- Produces: dashboard uid `drawiomap-demo`, panel id `1` titled `demo-lab L3` (l3-routing fixture, `demo/rules.yaml`) and panel id `2` titled `hand-drawn` (hand-drawn fixture with the curved edge, `demo/rules-hand.yaml`), datasource uid `victoriametrics`. Task 14 depends on these values and on the rule names `links`, `wan uplinks 100M`, `node up`, `hand links`.
 
 - [ ] **Step 1: `demo/rules.yaml`**
 
@@ -4798,7 +5168,21 @@ git commit -m "feat: panel component integrates stage, binding, overlay, zoom an
   url: "/d/drawiomap-demo?var-job=node-${cell.pg-id}"
 ```
 
-- [ ] **Step 2: `demo/dashboard.template.json`**
+- [ ] **Step 2: `demo/rules-hand.yaml` and `demo/dashboard.template.json`**
+
+`demo/rules-hand.yaml` (binds the two hand-drawn edges to the wan1 series so the curved edge gets halves):
+
+```yaml
+- name: hand links
+  select: { ids: [edge-ab, edge-cd] }
+  link:
+    a2b: { refId: A, match: { job: node-wan1, device: pppoe } }
+    b2a: { refId: A, match: { job: node-rtr-a, device: wan1 } }
+    capacity: "${cell.capacity}"
+  url: "/d/drawiomap-demo?cell=${cell.id}"
+```
+
+`demo/dashboard.template.json`:
 
 ```json
 {
@@ -4840,6 +5224,22 @@ git commit -m "feat: panel component integrates stage, binding, overlay, zoom an
         "rules": [],
         "diagram": null
       }
+    },
+    {
+      "id": 2,
+      "type": "simnv-drawiomap-panel",
+      "title": "hand-drawn",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 10 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "targets": [{ "refId": "A", "expr": "rate(node_network_transmit_bytes_total[1m]) * 8", "legendFormat": "{{job}} {{device}}" }],
+      "fieldConfig": { "defaults": { "unit": "bps", "decimals": 1 }, "overrides": [] },
+      "options": {
+        "editorUrl": "http://localhost:8080",
+        "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false },
+        "linkWidth": { "min": 2, "max": 10 },
+        "rules": [],
+        "diagram": null
+      }
     }
   ]
 }
@@ -4858,27 +5258,43 @@ import { JSDOM } from 'jsdom';
 
 const root = process.cwd(); // npm scripts run from the repo root
 const dom = new JSDOM('');
-Object.assign(globalThis, { DOMParser: dom.window.DOMParser, XMLSerializer: dom.window.XMLSerializer, document: dom.window.document });
+// DOMPurify picks up `window` when its module loads, so set the globals before the dynamic imports.
+Object.assign(globalThis, {
+  window: dom.window,
+  document: dom.window.document,
+  DOMParser: dom.window.DOMParser,
+  XMLSerializer: dom.window.XMLSerializer,
+  Node: dom.window.Node,
+  Element: dom.window.Element,
+});
+
+const PANELS = [
+  { id: 1, svg: 'fixtures/svg/l3-routing.svg', xml: 'fixtures/portograph/l3-routing.drawio', rules: 'demo/rules.yaml' },
+  { id: 2, svg: 'fixtures/svg/hand-drawn.svg', xml: 'fixtures/hand/hand-drawn.drawio', rules: 'demo/rules-hand.yaml' },
+];
 
 async function main() {
   const { sanitizeSvg } = await import('../src/render/sanitize');
   const { parseRulesYaml } = await import('../src/rules/schema');
   const { fnv1a } = await import('../src/util/hash');
 
-  const svgRaw = readFileSync(resolve(root, 'fixtures/svg/l3-routing.svg'), 'utf8');
-  const xml = readFileSync(resolve(root, 'fixtures/portograph/l3-routing.drawio'), 'utf8');
-  const rules = parseRulesYaml(readFileSync(resolve(root, 'demo/rules.yaml'), 'utf8'));
-  if (!rules.rules) {
-    throw new Error(`demo/rules.yaml: ${rules.errors.join('; ')}`);
-  }
-  const clean = sanitizeSvg(svgRaw);
   const dashboard = JSON.parse(readFileSync(resolve(root, 'demo/dashboard.template.json'), 'utf8'));
-  const panel = dashboard.panels[0];
-  panel.options.rules = rules.rules;
-  panel.options.diagram = { xml, svg: clean.svg, hash: fnv1a(clean.svg + xml), updatedAt: '2026-10-17T00:00:00.000Z' };
+  for (const spec of PANELS) {
+    const svgRaw = readFileSync(resolve(root, spec.svg), 'utf8');
+    const xml = readFileSync(resolve(root, spec.xml), 'utf8');
+    const rules = parseRulesYaml(readFileSync(resolve(root, spec.rules), 'utf8'));
+    if (!rules.rules) {
+      throw new Error(`${spec.rules}: ${rules.errors.join('; ')}`);
+    }
+    const clean = sanitizeSvg(svgRaw);
+    const panel = dashboard.panels.find((p: { id: number }) => p.id === spec.id);
+    panel.options.rules = rules.rules;
+    panel.options.diagram = { xml, svg: clean.svg, hash: fnv1a(clean.svg + xml), updatedAt: '2026-10-17T00:00:00.000Z' };
+    console.log(`panel ${spec.id}: svg ${Math.round(clean.svg.length / 1024)} KB (from ${Math.round(svgRaw.length / 1024)} KB), ${rules.rules.length} rules`);
+  }
   const out = resolve(root, 'provisioning/dashboards/drawiomap-demo.json');
   writeFileSync(out, JSON.stringify(dashboard, null, 2) + '\n');
-  console.log(`${out}: svg ${Math.round(clean.svg.length / 1024)} KB (from ${Math.round(svgRaw.length / 1024)} KB), ${rules.rules.length} rules`);
+  console.log(out);
 }
 
 main().catch((e) => {
@@ -4890,7 +5306,13 @@ main().catch((e) => {
 - [ ] **Step 4: Build and verify in Grafana**
 
 Run: `npm run build:dashboard`
-Expected: `provisioning/dashboards/drawiomap-demo.json: svg ~180 KB (from 428 KB), 3 rules`.
+Expected:
+
+```
+panel 1: svg ~180 KB (from 428 KB), 3 rules
+panel 2: svg ~6 KB (from 6 KB), 1 rules
+<repo>/provisioning/dashboards/drawiomap-demo.json
+```
 
 Run (stack up from Task 2; provisioning reloads within 10 s):
 
@@ -4929,14 +5351,31 @@ git commit -m "feat: provisioned demo dashboard built from the l3-routing fixtur
 
 ```bash
 #!/usr/bin/env bash
-# Spec section 6 item 6: view mode must load no draw.io scripts. The bundle must not contain them either.
+# Spec section 6 item 6: view mode must load no draw.io scripts.
+# The importer legitimately parses <mxGraphModel>, so do not grep for "mxGraph". Check instead:
+#  1. no draw.io / maxGraph package in the dependency tree,
+#  2. no draw.io runtime globals in dist/module.js (GraphViewer, mxClient, viewer-static, @maxgraph),
+#  3. the bundle stays small,
+#  4. @grafana/react-detect finds no React 19 breakers.
+# The runtime check (no request to the editor origin in view mode) is tests/no-drawio.spec.ts.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 f="$root/dist/module.js"
 [ -f "$f" ] || { echo "run npm run build first"; exit 1; }
 bad=0
-for token in mxGraph maxgraph viewer-static GraphViewer mxClient; do
-  if grep -q "$token" "$f"; then
+deps=$(node -e 'const p=require(process.argv[1]); console.log(Object.keys({...p.dependencies,...p.devDependencies}).join("\n"))' "$root/package.json")
+for pkg in @maxgraph/core mxgraph drawio @drawio/mcp; do
+  if printf '%s\n' "$deps" | grep -qx "$pkg"; then
+    echo "FAIL: dependency $pkg is a draw.io runtime"
+    bad=1
+  fi
+done
+if npm ls @maxgraph/core mxgraph 2>/dev/null | grep -qE '@maxgraph/core@|mxgraph@'; then
+  echo "FAIL: transitive maxGraph/mxGraph package"
+  bad=1
+fi
+for token in GraphViewer mxClient viewer-static '@maxgraph' 'maxgraph/core'; do
+  if grep -q -- "$token" "$f"; then
     echo "FAIL: $token found in dist/module.js"
     bad=1
   fi
@@ -5014,6 +5453,25 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
   const label = panel.locator.locator('g.dmap-label[data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"][data-dmap-half="a2b"] text');
   await expect(label).toHaveText(/41(\.\d)? Mb\/s · 41%/);
 });
+
+test('curved edge halves follow the real path geometry (getPointAtLength + CTM)', async ({ gotoDashboardPage }) => {
+  const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
+  const panel = await dashboardPage.getPanelByTitle('hand-drawn');
+  const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="edge-cd"]');
+  await expect(half).toHaveAttribute('data-dmap-status', 'ok');
+  const result = await half.evaluate((el) => {
+    const poly = el as SVGPolylineElement;
+    const svg = poly.ownerSVGElement!;
+    const path = svg.querySelector('[data-cell-id="edge-cd"] path[pointer-events="stroke"]') as SVGPathElement;
+    const start = path.getPointAtLength(0).matrixTransform(path.getCTM()!);
+    const [x, y] = (poly.getAttribute('points') || '').split(' ')[0].split(',').map(Number);
+    const first = new DOMPoint(x, y).matrixTransform((poly.parentNode as SVGGElement).getCTM()!);
+    return { delta: Math.hypot(start.x - first.x, start.y - first.y), samples: (poly.getAttribute('points') || '').split(' ').length, curved: /[QC]/.test(path.getAttribute('d') || '') };
+  });
+  expect(result.curved).toBe(true);
+  expect(result.delta).toBeLessThan(1);
+  expect(result.samples).toBeGreaterThan(4);
+});
 ```
 
 - [ ] **Step 3: `tests/links.spec.ts`**
@@ -5026,12 +5484,15 @@ test('clicking a link opens a menu with the rule url and the field link', async 
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
   const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
-  await half.dispatchEvent('click', { bubbles: true, clientX: 10, clientY: 10 });
-  const menu = page.locator('[role="menu"], [data-testid*="context-menu"], ul').filter({ hasText: 'links' }).first();
-  await expect(menu).toBeVisible();
-  const rule = page.getByRole('link', { name: 'links' }).or(page.getByRole('menuitem', { name: 'links' })).first();
+  await half.click({ force: true });
+  const rule = page.getByRole('menuitem', { name: 'links' });
+  await expect(rule).toBeVisible();
   await expect(rule).toHaveAttribute('href', /var-job=node-wan1&var-device=pppoe/);
-  await expect(page.getByText('Field link')).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Field link' })).toBeVisible();
+  // switching cells replaces the items
+  await page.keyboard.press('Escape');
+  await panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan2:dhcp->rtr-a:wan2"]').click({ force: true });
+  await expect(page.getByRole('menuitem', { name: 'links' })).toHaveAttribute('href', /var-job=node-wan2&var-device=dhcp/);
 });
 
 test('hovering shows the tooltip with both directions', async ({ gotoDashboardPage, page }) => {
@@ -5045,30 +5506,56 @@ test('hovering shows the tooltip with both directions', async ({ gotoDashboardPa
 });
 ```
 
-If the first menu locator is brittle on one Grafana version, read the rendered DOM with `await page.content()` once, and replace it with the stable attribute you find (`DataLinksContextMenu` renders `ContextMenu` with `MenuItem` anchors).
+If `getByRole('menuitem')` is brittle on one Grafana version, read the rendered DOM with `await page.content()` once and match what `@grafana/ui` `MenuItem` emits there.
 
 - [ ] **Step 4: `tests/editor.spec.ts`**
+
+The editor iframe is cross-origin (`http://localhost:8080` vs `:3012`); Playwright's `frameLocator` can still drive it. The test changes the diagram inside draw.io, saves with Ctrl+S (the embed `save` event), and checks that the panel diagram hash changed.
 
 ```ts
 import { expect, test } from '@grafana/plugin-e2e';
 
-test('edit mode opens the self-hosted draw.io editor and completes the handshake', async ({ gotoPanelEditPage, page }) => {
-  await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
-  const open = page.getByTestId('dmap-open-editor');
-  if (!(await open.isVisible())) {
+test('edit mode opens the self-hosted draw.io editor, saves, and the panel updates', async ({ gotoPanelEditPage, page }) => {
+  await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '2' });
+  const status = page.getByTestId('dmap-diagram-status');
+  if (!(await status.isVisible())) {
     // the option group is collapsed on this Grafana version
     await page.getByText('Diagram', { exact: true }).first().click();
   }
-  await open.click();
-  const frame = page.getByTestId('dmap-editor-frame');
-  await expect(frame).toBeAttached();
-  await expect(frame).toHaveAttribute('src', /localhost:8080\/\?embed=1&proto=json&configure=1/);
+  const hashBefore = await status.getAttribute('data-dmap-hash');
+  expect(hashBefore).toBeTruthy();
+
+  await page.getByTestId('dmap-open-editor').click();
+  const frameEl = page.getByTestId('dmap-editor-frame');
+  await expect(frameEl).toBeAttached();
+  await expect(frameEl).toHaveAttribute('src', /localhost:8080\/\?embed=1&proto=json&configure=1/);
   await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', { timeout: 60_000 });
-  await expect(page.frameLocator('[data-testid="dmap-editor-frame"]').locator('.geDiagramContainer')).toBeVisible({ timeout: 60_000 });
+
+  const frame = page.frameLocator('[data-testid="dmap-editor-frame"]');
+  const canvas = frame.locator('.geDiagramContainer');
+  await expect(canvas).toBeVisible({ timeout: 60_000 });
+
+  // Minimal edit: double-click empty canvas opens the quick-insert picker; the first item inserts a rectangle.
+  const box = (await canvas.boundingBox())!;
+  await canvas.dblclick({ position: { x: box.width - 60, y: box.height - 60 } });
+  await frame.locator('.geSidebar .geItem, .geSidebarContainer .geItem').first().click({ timeout: 10_000 });
+
+  // Ctrl+S in embed mode posts {event:'save'}; the host answers with export, stores {xml, svg}.
+  await canvas.click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+KeyS' : 'Control+KeyS');
+
+  await expect(page.getByTestId('dmap-diagram-message')).toContainText('Saved', { timeout: 60_000 });
+  await expect(status).not.toHaveAttribute('data-dmap-hash', hashBefore!);
+  await expect(page.getByTestId('dmap-panel')).not.toHaveAttribute('data-dmap-hash', hashBefore!);
+  // the modal stays open after a plain save; close it
+  await page.keyboard.press('Escape');
 });
 ```
 
-The save path is cross-origin and is covered manually in `docs/acceptance.md` (Task 15). Check the fixture names (`gotoDashboardPage`, `gotoPanelEditPage`, `dashboardPage.getPanelByTitle`) against `node_modules/@grafana/plugin-e2e/dist/index.d.ts` before you run; the names above are from plugin-e2e 3.x.
+Notes:
+- If the quick-insert picker selector does not match your draw.io version, open `http://localhost:8080/?embed=1&proto=json&ui=min` manually, double-click the canvas and read the class names of the picker items; fix the selector. A keyboard-only alternative inside the frame: `Control+A` then `Control+C`, `Control+V` (duplicates the selection, which also modifies the diagram).
+- If Ctrl+S does not trigger the embed save on your draw.io version, click the "Save" button in the editor toolbar: `frame.getByRole('button', { name: /^Save/ })`.
+- Manual fallback (documented in `docs/acceptance.md`): open the editor, move a node, click Save, confirm the panel updates.
 
 - [ ] **Step 5: `tests/no-drawio.spec.ts`**
 
@@ -5096,7 +5583,7 @@ npm run e2e:12
 npm run e2e:13
 ```
 
-Expected: every spec passes on both (`5 passed` per run). On failure, run `npx playwright test --headed --project=run-tests tests/<spec>` against the failing port and use `page.pause()`; fix selectors, not the panel, unless the panel has a real bug.
+Expected: every spec passes on both (`6 passed` per run: view 2, links 2, editor 1, no-drawio 1). On failure, run `npx playwright test --headed --project=run-tests tests/<spec>` against the failing port and use `page.pause()`; fix selectors, not the panel, unless the panel has a real bug.
 
 - [ ] **Step 7: Commit**
 
@@ -5131,10 +5618,10 @@ Date: <today>. Grafana 12.4.13 and 13.2.4. draw.io 32.4.1.
 |---|---|---|---|
 | 1 | build, typecheck, lint, test | `npm run build && npm run typecheck && npm run lint && npm test` | |
 | 2 | stack and demo dashboard | `npm run stack:up && npm run stack:smoke`; open http://localhost:3012/d/drawiomap-demo and http://localhost:3013/d/drawiomap-demo | links coloured (wan1 green, wan2 red, lte grey), `lte` node red, sparklines under nodes |
-| 3 | editor round trip (manual) | Edit panel > Diagram > Open editor; move a node; Save & Exit | the view updates, the Diagram status shows a new hash |
+| 3 | editor round trip | automated in `tests/editor.spec.ts`; manual fallback: Edit panel > Diagram > Open editor; move a node; Save & Exit | the view updates, the Diagram status shows a new hash |
 | 4 | click menu | click the wan1 link | menu shows the `links` rule URL and `Field link` |
 | 5 | e2e both versions | `npm run e2e:12 && npm run e2e:13` | |
-| 6 | no draw.io scripts in view | `npm run check:bundle`; `tests/no-drawio.spec.ts` | |
+| 6 | no draw.io scripts in view | `npm run check:bundle` (dependency tree + runtime globals); `tests/no-drawio.spec.ts` (no request to the editor origin, no iframe) | |
 
 ## Notes
 - Known limitations: HTML labels (foreignObject) from portograph make the SVG about 180 KB after sanitising; `convertToSvg=1` in the generator would cut this to a few KB.
@@ -5163,12 +5650,12 @@ git commit -m "docs: PoC acceptance results and README"
 | 2 Grafana 12.4/13.2, `>=12.4.0`, `@grafana/* 12.4`, no bundled React | 0, 2, 13, 14 |
 | 2 Unsigned with allow-list | 2 |
 | 2 Diagram inline `{xml, svg, hash, updatedAt}`, import by paste/upload, SVG through the editor | 1, 8, 10 |
-| 2 Editor embed mode in a ~95vw×90vh modal, editor URL option, `xmlsvg` export | 8, 10 |
+| 2 Editor embed mode in a ~95vw×90vh modal, editor URL option, `xmlsvg` export; save round trip | 8, 10, 14 |
 | 2 View renderer: SVG once, memoised by hash, cell index by `data-cell-id`/`data-meta-*`, style patches, overlay `<g>` | 5, 6, 7, 11 |
 | 2 Data: panel queries, `refId` + label matchers | 4 |
 | 2 Rules in `options.rules`, form + YAML | 1, 10 |
-| 2 Two halves, arrowhead at midpoint, own label; one series colours the whole edge | 7 |
-| 2 Label `${value} · ${percent}`, percent colour with capacity, else absolute | 4 |
+| 2 Two halves, arrowhead at midpoint, own label; one series colours the whole edge; real path geometry with transforms | 7, 14 |
+| 2 Label `${value} · ${percent}` from the display processor (unit, decimals); percent colour with capacity, else field display colour | 4 |
 | 2 No data grey, never green | 4, 6, 7 |
 | 2 One adaptive SVG, `color-scheme` from theme | 5 (keeps light-dark), 11 |
 | 2 Sparklines near shapes and in tooltip | 7, 9 |
