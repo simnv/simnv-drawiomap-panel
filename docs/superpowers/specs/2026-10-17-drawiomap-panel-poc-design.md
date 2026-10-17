@@ -114,3 +114,17 @@ Tests:
 - Animated flow.
 - Diagrams loaded from a URL.
 - Multi-page diagrams. Render page 1 and warn.
+
+## 8. Superseded decisions
+
+Date: 2026-10-17. The implementation changed these decisions of sections 2, 5 and 6. The rows below take
+precedence over the text above. `docs/acceptance.md` has the current results.
+
+| Topic | Decision above | Current decision | Reason | Record |
+|---|---|---|---|---|
+| Editor | The editor URL is a plugin option. Default: the self-hosted `jgraph/drawio` from compose; fallback `embed.diagrams.net`. | The plugin bundles draw.io in `dist/drawio`. The editor runs only from the bundle, in an opaque-origin iframe. No editor URL option; an old `editorUrl` value is ignored. | A diagram can run script in the editor frame. An editor on the Grafana origin or on an external host gets the session of the user. The bundle also works offline. | `docs/adr/0001-bundled-editor-opaque-origin.md`, `docs/security.md` |
+| Label | Each link half has a label on the canvas, for example `412 Mb/s · 41%`. A rule can set a template. | The canvas shows colours only. The values show in a hover card; a click or a tap pins it. | Labels on the canvas covered the diagram on dense maps and on phones. | README, "Hover card" |
+| Thresholds | A rule can set `thresholds` (mode and steps). Else the field config applies. | Rules set no colours. The colours, thresholds, Max and overrides come from the Grafana field config. The link capacity has four sources: a series, a cell attribute, a number, the field Max. | One colour model, the same as in all Grafana panels. Overrides give each kind of link its own scale. | `docs/adr/0002-grafana-native-colours.md`, README, "How colours and thresholds work" |
+| Dev stack | The compose stack has a self-hosted `drawio` service (`jgraph/drawio`, port 8080). | No `drawio` service. The bundled editor needs no server. | See the row "Editor". | `docker-compose.yaml` |
+| Sparklines | Sparklines show inside or near shapes, and in the hover tooltip. | Sparklines show in the hover card only, at the full card width, with min and max. | Same reason as the row "Label". | README, "Hover card" |
+| Contract version | (not in the spec) | The panel reads `pg-schema="1"` from the root cell. No `pg-schema`: generic cells. A higher version: a warning in the Diagram options, and the cells are read as version 1. | A reader must not misread a later contract without a sign to the editor. | `src/adapter/portograph.ts` |

@@ -300,7 +300,7 @@ The panel sets `touch-action: pan-x pan-y` at the configured zoom: one finger sc
 
 ## Editor
 
-The plugin includes the draw.io editor (`dist/drawio`). Edit mode opens it in an iframe inside a modal, in embed mode. The iframe has an opaque origin, so the editor cannot reach the Grafana page (see `docs/security.md`). The plugin has no option for another editor URL. An `editorUrl` value that an older version saved is ignored. No draw.io code loads in view mode.
+The plugin includes the draw.io editor (`dist/drawio`). Edit mode opens it in an iframe inside a modal, in embed mode. The iframe has an opaque origin, so the editor cannot reach the Grafana page (see `docs/security.md` and `docs/adr/0001-bundled-editor-opaque-origin.md`). The editor works with and without the Grafana frontend sandbox, with `content_security_policy = true`, and with `app_sub_url`. The plugin has no option for another editor URL. An `editorUrl` value that an older version saved is ignored. No draw.io code loads in view mode.
 
 ![Diagram options](docs/screenshots/options-diagram.png)
 
@@ -318,13 +318,29 @@ npm run check:bundle      # fails if draw.io runtime code is in the bundle
 npm run e2e:12            # Playwright on Grafana 12 (the stack must run)
 npm run e2e:13            # Playwright on Grafana 13
 npm run e2e:matrix        # both
+npm run stack:wait        # wait for the demo series, Grafana health and the plugin (bounded, no fixed sleep)
+npm run package           # artifacts/simnv-drawiomap-panel-<version>.zip (run npm run build first)
+npm run ci:local          # all CI steps in order: install, checks, build, package, e2e on both versions
 npm run build:dashboard   # rebuild provisioning/dashboards/drawiomap-demo.json
 ./scripts/export-fixtures.sh   # export fixtures/**/*.drawio to fixtures/svg/*.svg
 ```
 
-The acceptance results are in `docs/acceptance.md`.
+The acceptance results are in `docs/acceptance.md`. The decision records are in `docs/adr/`.
+
+### CI
+
+`.forgejo/workflows/ci.yml` runs on Forgejo Actions:
+
+1. `build-test`: `npm ci`, typecheck, lint, unit tests, build, `check:bundle`, `package`. It caches `.drawio/cache` (the draw.io release file) with a key from `DRAWIO_VERSION` and `DRAWIO_SHA256` in `scripts/vendor-drawio.sh`. It uploads `dist/` and the plugin zip as artifacts.
+2. `e2e`: one job for each Grafana version (12.4.13, 13.2.4). It starts the compose stack with `docker compose up -d --force-recreate --wait`, runs `scripts/wait-stack.sh`, and then Playwright. When a test fails, it uploads the Playwright report.
+
+The jobs use the runner label in the Actions variable `CI_RUNNER` (default `docker`). The e2e job needs the docker CLI with compose v2 in the job, bind mounts of the workspace, and the published ports on `localhost` (for example, a runner in host mode). The actions come from the `https://data.forgejo.org/actions/...` mirrors, so the jobs do not need github.com.
+
+`npm run ci:local` runs the same steps on your machine, without the caches and the uploads. `SKIP_INSTALL=1` keeps `node_modules`. `SKIP_E2E=1` stops after the package step. The e2e steps stop the compose stack at the end (`docker compose down -v`).
 
 ## Known limits (out of scope for the PoC)
+
+Baseline: 2026-10-17. The results are in `docs/acceptance.md`.
 
 - No signing and no catalogue entry.
 - No rules embedded in the diagram (`pg-rules`).
@@ -333,8 +349,8 @@ The acceptance results are in `docs/acceptance.md`.
 - No animated flow.
 - No diagrams loaded from a URL.
 - No multi-page diagrams. The panel renders page 1 and shows a warning.
-- The editor does not work with the Grafana frontend sandbox (see `docs/acceptance.md`). View mode works in the sandbox.
-- HTML labels (`foreignObject`) make the SVG big (about 180 KB for the demo). Set `convertToSvg=1` on labels in the generator for a smaller SVG.
+- The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes, and rules select its cells by id, label and other attributes.
+- With the Grafana frontend sandbox on, one e2e test fails: on a phone viewport, the fitted diagram fills the full panel height (no gap below the diagram). All other e2e tests pass in the sandbox, the editor tests too.
 
 ## Licence
 

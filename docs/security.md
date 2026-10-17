@@ -84,19 +84,20 @@ The plugin has no external editor. An `editorUrl` value that an older version sa
 
 ## Test results
 
-`tests/editor.spec.ts` has 2 tests: edit and save with the isolation probes, and image embedding. The sandbox and
-CSP rows use `docker-compose.spike.yaml` with a separate compose project
-(`docker compose -p drawiomap-iso -f docker-compose.spike.yaml up -d <service>`).
+Baseline: 2026-10-17. `tests/editor.spec.ts` has 2 tests: edit and save with the isolation probes, and image
+embedding. The sandbox, CSP and sub-path rows use the services of the compose profile `isolation`
+(`docker compose --profile isolation up -d --wait <service>`, see `docker-compose.yaml`). Each row is one run of
+`GRAFANA_URL=<url> npx playwright test tests/editor.spec.ts` as part of the full e2e run (see `docs/acceptance.md`).
+"3 passed" is the login setup and the 2 editor tests.
 
-| Grafana | Setting | Port | Result |
+| Grafana | Setting | URL | Editor tests |
 |---|---|---|---|
-| 12.4.13 | default | 3012 | 3 passed |
-| 13.2.4 | default | 3013 | 3 passed |
-| 12.4.13 | frontend sandbox | 3122 | 3 passed |
-| 13.2.4 | frontend sandbox | 3123 | 3 passed |
-| 13.2.4 | `content_security_policy = true` | 3133 | 3 passed |
-| 13.2.4 | frontend sandbox + CSP | 3143 | 3 passed |
-| 13.2.4 | `app_sub_url = /grafana` | 3153 | 3 passed |
+| 12.4.13 | default | http://localhost:3012 | 3 passed |
+| 13.2.4 | default | http://localhost:3013 | 3 passed |
+| 12.4.13 | frontend sandbox | http://localhost:3122 | 3 passed |
+| 13.2.4 | frontend sandbox | http://localhost:3123 | 3 passed |
+| 13.2.4 | `content_security_policy = true` | http://localhost:3133 | 3 passed |
+| 13.2.4 | frontend sandbox + CSP | http://localhost:3143 | 3 passed |
+| 13.2.4 | `app_sub_url = /grafana` | http://localhost:3153/grafana | 3 passed |
 
-The table is from the time when the file had a third test, for the removed external editor. That test is deleted. The
-bundled editor works with the frontend sandbox.
+The design record is `docs/adr/0001-bundled-editor-opaque-origin.md`.
