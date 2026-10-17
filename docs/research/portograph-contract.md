@@ -1,4 +1,4 @@
-<!-- Copy of portograph docs/drawio-binding-contract.md, branch feat/binding-metadata, commit 350a89c. Edit the source, not this copy. -->
+<!-- Copy of portograph docs/drawio-binding-contract.md, branch feat/binding-metadata, commit 184837b. Edit the source, not this copy. -->
 
 # draw.io binding contract
 
@@ -15,7 +15,7 @@ rule in this document. A change to a rule increments the schema version.
 - A bound cell is an `<object>` element around an `<mxCell>`. The `<object>` holds the cell `id`,
   the `label` (the old `value`) and the binding attributes. The inner `<mxCell>` holds `style`,
   `vertex` or `edge`, `parent`, `source`, `target` and the geometry. It has no `id` and no `value`.
-- All other cells (groups, icons, legend, mesh buses, overlay marks, layers) are bare `<mxCell>`
+- All other cells (groups, icon tiles, legend, mesh buses, overlay marks, layers) are bare `<mxCell>`
   elements, as before.
 
 ```xml
@@ -41,6 +41,7 @@ keeps `pg-id`. The cell `id` follows from `pg-id` and is for convenience only.
 | port | `<node>:<port>`: `sw1:eth2`; `<node>:<port>#<n>` for the n-th port of one name, n > 1 | `pg-port~sw1~eth2~1` |
 | link | see section 2.1 | `pg-link~<link id>`; `pg-link~<link id>~<i>` for run i of a split link |
 | link label | — (the cell has `pg-of`) | `pg-linkLabel~<link id>` |
+| node icon | — (the cell has `pg-of`) | `pg-icon~<node>` |
 
 In a cell `id`, the separator is `~`. The export writes a `%` or a `~` inside a part as `%25` or
 `%7e`, so two different things cannot get the same cell `id`.
@@ -79,7 +80,7 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | Attribute | On | Value |
 | --- | --- | --- |
 | `pg-schema` | root cell `id="0"` | `1` |
-| `pg-kind` | every bound cell | `node`, `port`, `link` or `link-label` |
+| `pg-kind` | every bound cell | `node`, `port`, `link`, `link-label` or `node-icon` |
 | `pg-id` | node, port, link | the id from section 2 |
 | `pg-node` | port | the node id |
 | `pg-port` | port | the port name. For a network diagram this is the OS interface name, for example `eth2` |
@@ -87,7 +88,7 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | `pg-to` | link | the `to` end, in the same form |
 | `pg-run` | link, split into runs only | the index of this run, from `0` |
 | `pg-runs` | link, split into runs only | the number of runs |
-| `pg-of` | link label | the `pg-id` of the link that owns the label |
+| `pg-of` | link label, node icon | the `pg-id` of the link that owns the label, or of the node that owns the icon |
 | `pg-rules` | root cell `id="0"` | reserved, not written in version 1. It will hold binding rules as one YAML or JSON string, versioned with `pg-schema` |
 
 A link from `pg-from` to `pg-to` has the YAML direction. Use it to select the counter for each
@@ -107,8 +108,13 @@ A link label is in one of two places:
 To find the label of a link, look for a `link-label` cell with its `pg-of` first. If there is no
 such cell, use the `label` of the link object. A split link carries its label on one run only.
 
-The labels are HTML (`html=1` in the style). The export does not set `placeholders`, so draw.io
+The labels are plain text: the style has no `html` key, and a label of more than one line has its
+lines one newline (`&#10;`) apart. An SVG export of the file draws each line as a native `<text>`,
+not as a `<foreignObject>` with a PNG fallback. The export does not set `placeholders`, so draw.io
 shows a `%name%` in a label as it is.
+
+A node's `label` is its name only. Plain text has one font per cell, so a node's description is a
+separate, unbound text cell (`pg-nodeDescription~<node>`), a child of the node cell.
 
 ## 4. Author metadata
 

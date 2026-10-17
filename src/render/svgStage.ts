@@ -49,7 +49,11 @@ function metaAttrs(group: Element): Record<string, string> {
 function labelOf(group: Element): { el?: Element; text: string } {
   const text = ownDescendants(group, 'text')[0];
   if (text) {
-    return { el: text, text: (text.textContent ?? '').replace(/\s+/g, ' ').trim() };
+    // A plain-text label of several lines is one <text> per line inside one <g>; the label is that <g>.
+    const parent = text.parentElement;
+    const lines = parent ? Array.from(parent.children).filter((el) => el.localName === 'text') : [text];
+    const el = lines.length > 1 && parent ? parent : text;
+    return { el, text: lines.map((l) => l.textContent ?? '').join(' ').replace(/\s+/g, ' ').trim() };
   }
   const fo = ownDescendants(group, 'foreignObject')[0];
   if (fo) {

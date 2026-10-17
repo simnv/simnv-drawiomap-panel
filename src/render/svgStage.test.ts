@@ -23,7 +23,7 @@ describe('buildCellIndex on l3-routing', () => {
   const root = mountSvg(c, fixture('l3-routing'));
   const index = buildCellIndex(root);
   it('indexes every data-cell-id group', () => {
-    expect(index.size).toBe(100);
+    expect(index.size).toBe(108);
   });
   it('maps pg kinds', () => {
     const kinds = cellMetas(index).reduce<Record<string, number>>(
@@ -63,6 +63,23 @@ describe('buildCellIndex on l3-routing', () => {
     expect(nodes.length).toBeGreaterThan(0);
     expect(nodes[0].parentNode).toBeNull();
     expect(nodes.map((x) => (x as Element).outerHTML ?? x.textContent).join('')).toBe(n.label!.innerHTML);
+  });
+});
+
+describe('buildCellIndex on plain-text labels', () => {
+  it('reads a node name as one native <text> and its description as a cell of its own', () => {
+    const index = buildCellIndex(mountSvg(document.createElement('div'), fixture('l3-routing')));
+    const n = index.get('pg-node~rtr-a')!;
+    expect(n.label?.localName).toBe('text');
+    expect(n.meta.labelText).toBe('rtr-a');
+    expect(index.get('pg-nodeDescription~rtr-a')?.meta).toMatchObject({ kind: 'other', labelText: 'mwan3 + PBR' });
+  });
+  it('joins the lines of a multi-line label and keeps their <g> as the label', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><rect width="5" height="5"/></g><g><g fill="#000"><text x="1" y="2">first</text><text x="1" y="4">second</text></g></g></g></svg>`;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    const n = index.get('n')!;
+    expect(n.label?.localName).toBe('g');
+    expect(n.meta.labelText).toBe('first second');
   });
 });
 

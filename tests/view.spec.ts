@@ -3,7 +3,7 @@ import { expect, test } from '@grafana/plugin-e2e';
 test('renders the diagram and colours links from synthetic traffic', async ({ gotoDashboardPage }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
-  await expect(panel.locator.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '100');
+  await expect(panel.locator.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
   const half = (cell: string, dir: string) =>
     panel.locator.locator(`polyline.dmap-half[data-dmap-half="${dir}"][data-dmap-cell="${cell}"]`);
   await expect(half('pg-link~wan1:pppoe->rtr-a:wan1', 'a2b')).toHaveAttribute('data-dmap-step', '0');

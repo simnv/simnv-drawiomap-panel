@@ -8,6 +8,14 @@ function setText(label: Element | undefined, text: string): void {
     return;
   }
   written.add(label);
+  if (label.localName === 'g') {
+    // A multi-line plain-text label: the first line takes the text, the others are removed. Reset
+    // puts the original lines back from the clones.
+    const lines = Array.from(label.children).filter((el) => el.localName === 'text');
+    lines.slice(1).forEach((l) => l.remove());
+    setText(lines[0], text);
+    return;
+  }
   if (label.localName === 'text') {
     const spans = label.querySelectorAll('tspan');
     if (spans.length) {

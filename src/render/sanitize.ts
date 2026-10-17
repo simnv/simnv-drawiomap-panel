@@ -117,7 +117,7 @@ export function sanitizeSvg(text: string): SanitizeResult {
   const warnings: string[] = [];
   if (foreignObjects) {
     warnings.push(
-      `${foreignObjects} HTML labels (foreignObject). Set convertToSvg=1 on labels for smaller, native text.`
+      `${foreignObjects} HTML labels (foreignObject). Turn off Formatted Text (html=0) on labels for smaller, native text.`
     );
   }
   // XML serialisation: the output must parse again as image/svg+xml (stored diagrams are sanitised twice).

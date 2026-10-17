@@ -37,7 +37,7 @@ export interface CellEntry {
   line?: SVGPathElement;
   /** Edge arrow heads: later paths with pointer-events="all". */
   arrows: SVGPathElement[];
-  /** Text or foreignObject label element. */
+  /** Label element: a <text>, the <g> around the <text> lines of a multi-line label, or a foreignObject. */
   label?: Element;
   original: {
     fill?: string;

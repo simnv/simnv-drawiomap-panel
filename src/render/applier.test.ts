@@ -141,9 +141,35 @@ describe('applyPatches', () => {
   });
 });
 
-describe('applyPatches on a multi-line foreignObject label (l3-routing)', () => {
-  const load = () => {
+describe('applyPatches on a native text label (l3-routing)', () => {
+  it('writes the text and restores it on reset', () => {
     const raw = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(raw).svg));
+    const entry = index.get('pg-node~rtr-a')!;
+    expect(entry.label!.localName).toBe('text');
+    const before = entry.label!.outerHTML;
+    const round = (text: string) =>
+      new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape({ text }) })]]);
+    const prev = applyPatches(index, round('up 1'), new Set());
+    expect(entry.label!.textContent).toBe('up 1');
+    applyPatches(index, new Map(), prev);
+    expect(entry.label!.outerHTML).toBe(before);
+  });
+  it('writes a multi-line label into its first line and restores every line on reset', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><rect width="5" height="5"/></g><g><g fill="#000"><text x="1" y="2">first</text><text x="1" y="4">second</text></g></g></g></svg>`;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    const label = index.get('n')!.label!;
+    const before = label.innerHTML;
+    const prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up' }) })]]), new Set());
+    expect(Array.from(label.querySelectorAll('text'), (t) => t.textContent)).toEqual(['up']);
+    applyPatches(index, new Map(), prev);
+    expect(label.innerHTML).toBe(before);
+  });
+});
+
+describe('applyPatches on a multi-line foreignObject label (legacy-html-labels)', () => {
+  const load = () => {
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/svg/legacy-html-labels.svg'), 'utf8');
     const root = mountSvg(document.createElement('div'), sanitizeSvg(raw).svg);
     const index = buildCellIndex(root);
     const entry = index.get('pg-node~rtr-a')!;
