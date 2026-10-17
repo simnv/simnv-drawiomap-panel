@@ -100,6 +100,7 @@ export function DrawioMapPanel({
   const zoomPercent = opts.zoom.percent;
   const wheelZoom = opts.zoom.wheel;
   const dragPan = opts.zoom.pan;
+  const align = opts.zoom.align ?? 'top';
 
   // Reset the custom view and close the card when the diagram changes (state adjustment during render).
   const hash = opts.diagram?.hash;
@@ -110,7 +111,7 @@ export function DrawioMapPanel({
     setCard(null);
   }
   // A new panel size or a new zoom option resets the live view to the configured view.
-  const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}`;
+  const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}|${align}`;
   const [lastViewKey, setLastViewKey] = useState(viewKey);
   if (lastViewKey !== viewKey) {
     setLastViewKey(viewKey);
@@ -239,15 +240,16 @@ export function DrawioMapPanel({
     if (!stage.root || !stage.base) {
       return;
     }
-    const layout = viewBoxFor({ ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent }, view ?? stage.base, {
-      width,
-      height,
-    });
+    const layout = viewBoxFor(
+      { ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align },
+      view ?? stage.base,
+      { width, height }
+    );
     applyLayout(stage.root, layout);
     if (containerRef.current) {
       containerRef.current.style.overflow = layout.overflow;
     }
-  }, [stage.root, stage.base, zoomMode, zoomPercent, width, height, view]);
+  }, [stage.root, stage.base, zoomMode, zoomPercent, align, width, height, view]);
 
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();
@@ -263,6 +265,7 @@ export function DrawioMapPanel({
     setView,
     wheel: wheelZoom,
     dragPan,
+    align,
     ignore: (t) => inCard(t) || (t instanceof Node && !!corner.current?.contains(t)),
   });
 

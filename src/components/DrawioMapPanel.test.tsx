@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
   createTheme,
+  dateTime,
   FieldType,
   getDefaultTimeRange,
   LoadingState,
@@ -253,7 +254,12 @@ describe('DrawioMapPanel hover card', () => {
     expect(rows[0].tagName).toBe('A');
     expect(rows[0].getAttribute('href')).toBe('/d/x?job=wan1');
     expect(rows[0].getAttribute('target')).toBe('_blank');
-    expect(screen.getByRole('link', { name: 'links' }).getAttribute('href')).toBe('/d/x?job=wan1');
+    // a rule url without urlTitle to a dashboard path: "Open dashboard", a small link button with an external icon
+    const footer = screen.getByRole('link', { name: 'Open dashboard' });
+    expect(footer.getAttribute('href')).toBe('/d/x?job=wan1');
+    expect(footer.getAttribute('target')).toBe('_blank');
+    expect(footer.getAttribute('data-testid')).toBe('dmap-card-link');
+    // the external-link icon: Icon renders no svg in jsdom, the e2e test checks it
     const close = screen.getByRole('button', { name: 'Close' });
     close.focus();
     expect(document.activeElement).toBe(close);
@@ -348,6 +354,37 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toBeTruthy();
   });
+  it('a rule urlTitle names the footer link', async () => {
+    const rules = options.rules.map((r) => (r.name === 'links' ? { ...r, urlTitle: 'Port ${from.port}' } : r));
+    const { half } = await setup(props({ options: { ...options, rules } }));
+    fireEvent.click(half(linkId));
+    await screen.findByRole('dialog');
+    expect(screen.getByRole('link', { name: 'Port pppoe' }).getAttribute('href')).toBe('/d/x?job=wan1');
+  });
+  it('each row has its head line and below it a sparkline at the full row width', async () => {
+    // the data covers 0..2 ms of the 0..100 ms range: the line still fills the width
+    const range = { from: dateTime(0), to: dateTime(100), raw: { from: 'now-1h', to: 'now' } };
+    const { cell } = await setup(withCpu({ timeRange: range }));
+    fireEvent.click(cell('pg-node~rtr-b'));
+    await screen.findByRole('dialog');
+    const row = screen.getAllByTestId('dmap-card-row')[0];
+    const [head, spark, minMax] = Array.from(row.children);
+    expect(head.textContent).toContain('CPU');
+    expect(head.textContent).toContain('42%');
+    // the sparkline is a block below the head line: a stretched viewBox at 100 % of the row width
+    expect(spark.getAttribute('data-testid')).toBe('dmap-card-spark');
+    expect(spark.getAttribute('preserveAspectRatio')).toBe('none');
+    expect(spark.getAttribute('viewBox')).toBe('0 0 200 40');
+    expect(getComputedStyle(spark).width).toBe('100%');
+    expect(getComputedStyle(spark).display).toBe('block');
+    // the line goes from the left edge to the right edge of the viewBox
+    const pts = spark.querySelector('polyline')!.getAttribute('points')!.split(' ');
+    expect(pts[0].split(',')[0]).toBe('0');
+    expect(pts[pts.length - 1].split(',')[0]).toBe('200');
+    expect(spark.querySelector('line')).not.toBeNull();
+    expect(minMax.getAttribute('data-testid')).toBe('dmap-card-range');
+    expect(minMax.textContent).toBe('min 12%max 42%');
+  });
   it('a narrow panel shows the card as a bottom sheet', async () => {
     const { half } = await setup(props({ width: 400 }));
     fireEvent.click(half(linkId));
@@ -400,6 +437,14 @@ describe('DrawioMapPanel live zoom', () => {
     el.dispatchEvent(ev);
     return ev;
   };
+
+  it('a fitted diagram goes to the top by default, to the centre with Align: center', async () => {
+    const { svgEl, rerender } = await setup();
+    expect(svgEl.getAttribute('preserveAspectRatio')).toBe('xMidYMin meet');
+    const p = props({ options: { ...options, zoom: { ...options.zoom, align: 'center' } } });
+    rerender(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(svgEl.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet'));
+  });
 
   it('Ctrl+wheel (a trackpad pinch) zooms with Wheel zoom off; the plain wheel does not', async () => {
     const { wrapper, svgEl, base } = await setup();

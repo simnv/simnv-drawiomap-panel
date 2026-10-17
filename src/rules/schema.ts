@@ -67,6 +67,7 @@ export const ruleSchema = z
     label: z.string().optional(),
     thresholds: thresholds.optional(),
     url: z.string().optional(),
+    urlTitle: z.string().optional(),
   })
   .strict();
 

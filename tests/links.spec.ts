@@ -39,11 +39,23 @@ test.describe('hover card', () => {
     const dialog = panel.locator.getByRole('dialog');
     await expect(dialog).toContainText('wan1 ↔ rtr-a');
     await expect(dialog).toContainText(/41(\.\d)? Mb\/s · 41%/);
-    await expect(dialog.getByRole('link', { name: 'links' })).toHaveAttribute(
+    // the footer: the rule url with its urlTitle, then the data link of the field with its title
+    const footer = dialog.getByTestId('dmap-card-link');
+    await expect(footer).toHaveText(['Traffic of wan1:pppoe', 'Interface details']);
+    await expect(dialog.getByRole('link', { name: 'Traffic of wan1:pppoe' })).toHaveAttribute(
       'href',
       /var-job=node-wan1&var-device=pppoe/
     );
-    await expect(dialog.getByRole('link', { name: 'Field link' })).toBeVisible();
+    await expect(dialog.getByRole('link', { name: 'Interface details' })).toHaveAttribute('target', '_blank');
+    // both open in a new tab: each has the external-link icon
+    await expect(footer.first().locator('svg')).toBeVisible();
+    await expect(footer.nth(1).locator('svg')).toBeVisible();
+    // each sparkline has the full width of its row
+    for (const row of await dialog.getByTestId('dmap-card-row').all()) {
+      const r = (await row.boundingBox())!;
+      const s = (await row.getByTestId('dmap-card-spark').boundingBox())!;
+      expect(Math.abs(s.width - (r.width - 8))).toBeLessThanOrEqual(1);
+    }
     // a pinned card stays when the pointer moves away
     await page.mouse.move(1, 1);
     await expect(dialog).toBeVisible();
@@ -85,9 +97,7 @@ const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
 test.describe('hover card on a phone', () => {
   test.use(iPhone);
 
-  test('a tap pins the card as a bottom sheet; a tap on the close button closes it', async ({
-    gotoDashboardPage,
-  }) => {
+  test('a tap pins the card as a bottom sheet; a tap on the close button closes it', async ({ gotoDashboardPage }) => {
     const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
     const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
     const half = panel.locator.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${WAN1}"]`);
@@ -98,6 +108,12 @@ test.describe('hover card on a phone', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAttribute('data-sheet', 'true');
     await expect(dialog).toContainText('wan1 → rtr-a');
+    // the sparkline is responsive: it has the full width of the sheet row
+    const row = dialog.getByTestId('dmap-card-row').first();
+    const r = (await row.boundingBox())!;
+    const s = (await row.getByTestId('dmap-card-spark').boundingBox())!;
+    expect(Math.abs(s.width - (r.width - 8))).toBeLessThanOrEqual(1);
+    expect(s.width).toBeGreaterThan(300);
     if (SHOTS) {
       await panel.locator.screenshot({ path: `${SHOTS}/card-mobile-sheet.png` });
     }

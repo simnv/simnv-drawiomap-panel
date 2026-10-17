@@ -3,6 +3,24 @@ import { type DashboardPage, expect, test } from '@grafana/plugin-e2e';
 
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 
+/** The gaps in px between the diagram (the viewBox on the screen) and the edges of the svg box. */
+const gaps = (panel: Locator) =>
+  panel
+    .locator('[data-testid="dmap-panel"] svg')
+    .first()
+    .evaluate((el) => {
+      const svg = el as SVGSVGElement;
+      const m = svg.getScreenCTM()!;
+      const vb = svg.viewBox.baseVal;
+      const r = svg.getBoundingClientRect();
+      return {
+        top: vb.y * m.d + m.f - r.top,
+        bottom: r.bottom - ((vb.y + vb.height) * m.d + m.f),
+        left: vb.x * m.a + m.e - r.left,
+        right: r.right - ((vb.x + vb.width) * m.a + m.e),
+      };
+    });
+
 const viewBox = (panel: Locator) => panel.locator('[data-testid="dmap-panel"] svg').first().getAttribute('viewBox');
 const width = (vb: string | null) => Number((vb ?? '').split(' ')[2]);
 
@@ -47,6 +65,13 @@ test.describe('live zoom on the desktop', () => {
     await reset.click();
     await expect(reset).toHaveCount(0);
     expect(await viewBox(panel)).toBe(base);
+  });
+
+  test('a wide panel centres the fitted diagram horizontally, its top at the top', async ({ gotoDashboardPage }) => {
+    const panel = await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
+    const g = await gaps(panel);
+    expect(Math.abs(g.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(g.left - g.right)).toBeLessThanOrEqual(1);
   });
 });
 
@@ -118,5 +143,17 @@ test.describe('live zoom on a phone', () => {
     await reset.tap();
     await expect(reset).toHaveCount(0);
     expect(await viewBox(panel)).toBe(base);
+  });
+
+  test('the fitted diagram is at the top of a tall panel and centred horizontally', async ({ gotoDashboardPage }) => {
+    const panel = await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
+    await expect(panel.locator('[data-testid="dmap-panel"] svg').first()).toHaveAttribute(
+      'preserveAspectRatio',
+      'xMidYMin meet'
+    );
+    const g = await gaps(panel);
+    expect(Math.abs(g.top)).toBeLessThanOrEqual(1);
+    expect(g.bottom).toBeGreaterThan(50);
+    expect(Math.abs(g.left - g.right)).toBeLessThanOrEqual(1);
   });
 });

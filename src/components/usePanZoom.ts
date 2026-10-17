@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { clampFactor, clientToView, isDefaultView, pinchView, Point, Rect, ViewBox, zoomAt } from '../render/zoom';
+import type { ZoomAlign } from '../types';
 
 /** A tap moves less than this distance, in CSS pixels. */
 const TAP_SLOP = 6;
@@ -17,6 +18,8 @@ interface Args {
   wheel: boolean;
   /** The "Drag pan" option: a mouse drag pans also at the configured view. */
   dragPan: boolean;
+  /** The "Align" option: the gesture math uses the letterbox position of the svg. */
+  align: ZoomAlign;
   /** Events on these targets (the card) are not gestures. */
   ignore: (t: EventTarget | null) => boolean;
 }
@@ -34,6 +37,7 @@ interface Gesture {
   rect: Rect;
   anchor: Point;
   dist: number;
+  align: ZoomAlign;
 }
 
 const rectOf = (el: Element): Rect => {
@@ -54,10 +58,10 @@ const distOf = (pts: Pointer[]) => (pts.length > 1 ? Math.hypot(pts[0].x - pts[1
  * - Mouse or pen: a drag pans when the view is zoomed or "Drag pan" is on.
  * - Ctrl+wheel (a trackpad pinch) zooms. The plain wheel zooms only when "Wheel zoom" is on.
  */
-export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragPan, ignore }: Args) {
-  const latest = useRef({ view, wheel, dragPan, ignore });
+export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragPan, align, ignore }: Args) {
+  const latest = useRef({ view, wheel, dragPan, align, ignore });
   useLayoutEffect(() => {
-    latest.current = { view, wheel, dragPan, ignore };
+    latest.current = { view, wheel, dragPan, align, ignore };
   });
   const state = useRef({
     pointers: new Map<number, Pointer>(),
@@ -90,7 +94,8 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       const start = latest.current.view ?? base;
       const rect = rectOf(root);
       const mid = midOf(pts);
-      s.gesture = { start, rect, anchor: clientToView(start, rect, mid.x, mid.y), dist: distOf(pts) };
+      const anchor = clientToView(start, rect, mid.x, mid.y, latest.current.align);
+      s.gesture = { start, rect, anchor, dist: distOf(pts), align: latest.current.align };
     };
     const end = (e: PointerEvent) => {
       if (!s.pointers.delete(e.pointerId)) {
@@ -146,7 +151,7 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       const pts = [...s.pointers.values()];
       const ratio = g.dist && pts.length > 1 ? distOf(pts) / g.dist : 1;
       s.applied = true;
-      setView(pinchView(g.start, base, g.rect, g.anchor, midOf(pts), ratio));
+      setView(pinchView(g.start, base, g.rect, g.anchor, midOf(pts), ratio, g.align));
     };
     // A mouse that leaves the panel without capture does not send pointerup to the panel.
     const onLeave = (e: PointerEvent) => {
@@ -179,7 +184,7 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       const rect = rectOf(root);
       setView((v) => {
         const cur = v ?? base;
-        const c = clientToView(cur, rect, e.clientX, e.clientY);
+        const c = clientToView(cur, rect, e.clientX, e.clientY, latest.current.align);
         return zoomAt(cur, clampFactor(cur, factor, base), c.x, c.y);
       });
     };

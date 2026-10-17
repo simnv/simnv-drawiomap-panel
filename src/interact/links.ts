@@ -53,10 +53,21 @@ export function buildScopedVars(patch: CellPatch, primary: Primary): ScopedVars 
   return vars;
 }
 
+/** The path of a Grafana dashboard: /d/<uid>, also below a sub path and on another host. */
+const DASHBOARD_PATH = /(?:^|\/)d\/[^/]+/;
+
+/** The footer title of a rule url without urlTitle: "Open dashboard" for a dashboard url, else "Open <card title>". */
+export function defaultUrlTitle(href: string, cardTitle: string): string {
+  // remove the scheme and host, then the query and the fragment
+  const path = href.replace(/^(?:[a-z][a-z0-9+.-]*:)?\/\/[^/?#]*/i, '').replace(/[?#].*$/, '');
+  return DASHBOARD_PATH.test(path) ? 'Open dashboard' : `Open ${cardTitle}`;
+}
+
 export function resolveLinks(
   patch: CellPatch,
   primary: Primary,
-  replaceVariables: (s: string, v?: ScopedVars) => string
+  replaceVariables: (s: string, v?: ScopedVars) => string,
+  cardTitle: string
 ): LinkModel[] {
   const vars = buildScopedVars(patch, primary);
   const out: LinkModel[] = [];
@@ -64,7 +75,8 @@ export function resolveLinks(
     // a dashboard variable can put a scheme into the url, so check the final text again
     const href = replaceVariables(u.url, vars);
     if (isAllowedUrl(href)) {
-      out.push({ title: u.title, href, target: '_blank', origin: patch });
+      const title = u.title !== undefined ? replaceVariables(u.title, vars) : defaultUrlTitle(href, cardTitle);
+      out.push({ title, href, target: '_blank', origin: patch });
     }
   }
   const field = primary.series?.field;

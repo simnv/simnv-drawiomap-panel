@@ -75,6 +75,7 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
     card: { title: '${from.node} ↔ ${to.node}' }
   reducer: last
   url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}'
+  urlTitle: 'Traffic of ${from.node}:${from.port}'
 - name: wan uplinks 100M
   select: { kind: link, attrs: { pg-to: '/^rtr-a:(wan1|wan2|lte)$/' } }
   link: { capacity: 100000000 }
@@ -89,6 +90,7 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
       - { title: load 1m, refId: D, match: { job: 'node-${cell.pg-id}' } }
   thresholds: { mode: absolute, steps: [[0, red], [1, green]] }
   url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}'
+  urlTitle: 'Host ${cell.pg-id}'
 - name: router cpu
   select: { ids: [rtr-a, rtr-b] }
   shape:
@@ -108,7 +110,7 @@ Rules are an ordered list. A later rule overrides an earlier rule for the same p
 
 | Field        | Meaning                                                                                                                                           |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`       | Name of the rule. The card footer shows it as the title of the rule URL.                                                                          |
+| `name`       | Name of the rule. The rule editor and the warnings show it.                                                                                       |
 | `select`     | Which cells the rule applies to. See below.                                                                                                       |
 | `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (a number or a template). `card` sets the card of links.  |
 | `shape`      | For shapes. See below.                                                                                                                            |
@@ -116,6 +118,7 @@ Rules are an ordered list. A later rule overrides an earlier rule for the same p
 | `label`      | Template of the text that `shape.text` writes into the node label. The default is `${value}`. Links ignore it (the panel shows a warning).        |
 | `thresholds` | `mode: percent` or `absolute`. `steps` is a list of `[threshold, colour]`, ascending. If you omit it, the panel uses the field config of Grafana. |
 | `url`        | Link in the card footer, and the click target of card rows without their own URL. It can use templates and dashboard variables.                   |
+| `urlTitle`   | Title of the `url` link in the card footer (a template). The default is `Open dashboard` for a `/d/<uid>` URL, else `Open <card title>`.          |
 
 A series selector has `refId` (the query), `name` and `match` (a map of label name to matcher).
 
@@ -197,7 +200,9 @@ The canvas shows only colours. The values show in a card:
 
 The card stays inside the panel. It scrolls when it is too long. In a panel narrower than 480 px, the card is a sheet at the bottom of the panel.
 
-A card row has a title, the current value with its unit (for example `wan1 → rtr-a   41 Mb/s · 41%`) and a sparkline over the dashboard time range. The footer has the rule URL and the data links of the field config.
+A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `wan1 → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
+
+The footer has the rule URL (title: `urlTitle`) and the data links of the field config (title: the data link title). A link that opens in a new tab has an external-link icon.
 
 The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button is a normal button. Each bound cell is a button for the keyboard (`tabindex="0"`). The panel builds the card only when it opens, and only for one cell.
 
@@ -205,15 +210,16 @@ The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button
 
 In the **View** group of the panel options:
 
-| Option               | Meaning                                                               |
-| -------------------- | --------------------------------------------------------------------- |
-| Zoom: Fit            | The whole diagram fits in the panel. This is the default.             |
-| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.        |
-| Zoom: Original       | The diagram has its original size.                                    |
-| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                     |
-| Wheel zoom           | The mouse wheel zooms the view. Off by default.                       |
-| Drag pan             | A mouse drag moves the view. Off by default.                          |
-| Link width min, max  | The range of the link width in pixels. The width grows with the load. |
+| Option               | Meaning                                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                       |
+| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                  |
+| Zoom: Original       | The diagram has its original size.                                                                                                                                              |
+| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                               |
+| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally. |
+| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                 |
+| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                    |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load.                                                                                                           |
 
 ### Live zoom
 

@@ -26,10 +26,17 @@
           "unit": "bps",
           "decimals": 1,
           "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 85 }] },
-          "links": [{ "title": "Field link", "url": "/explore?left=${__url_time_range}", "targetBlank": true }]
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 85 }] }
         },
         "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [{ "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [{ "id": "links", "value": [{ "title": "Host overview", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&${__url_time_range}", "targetBlank": true }] }]
+          },
           {
             "matcher": { "id": "byFrameRefID", "options": "C" },
             "properties": [
@@ -37,12 +44,16 @@
               { "id": "mappings", "value": [{ "type": "value", "options": { "0": { "text": "down", "index": 0 }, "1": { "text": "up", "index": 1 } } }] }
             ]
           },
-          { "matcher": { "id": "byFrameRefID", "options": "D" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] }
+          { "matcher": { "id": "byFrameRefID", "options": "D" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "E" },
+            "properties": [{ "id": "links", "value": [{ "title": "Host overview", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&${__url_time_range}", "targetBlank": true }] }]
+          }
         ]
       },
       "options": {
         "editorUrl": "",
-        "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false },
+        "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false, "align": "top" },
         "linkWidth": { "min": 2, "max": 10 },
         "rules": [],
         "diagram": null
@@ -58,7 +69,7 @@
       "fieldConfig": { "defaults": { "unit": "bps", "decimals": 1 }, "overrides": [] },
       "options": {
         "editorUrl": "",
-        "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false },
+        "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false, "align": "top" },
         "linkWidth": { "min": 2, "max": 10 },
         "rules": [],
         "diagram": null

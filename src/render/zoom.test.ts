@@ -14,13 +14,17 @@ const base = { x: 0, y: 0, w: 1000, h: 500 };
 const box = { width: 400, height: 300 };
 
 describe('viewBoxFor', () => {
-  it('fit keeps the base viewBox and fills the box', () => {
+  it('fit keeps the base viewBox and fills the box; the diagram goes to the top by default', () => {
     expect(viewBoxFor({ mode: 'fit', percent: 100, wheel: false, pan: false }, base, box)).toEqual({
       viewBox: base,
       width: '100%',
       height: '100%',
       overflow: 'hidden',
+      align: 'top',
     });
+    expect(viewBoxFor({ mode: 'fit', percent: 100, wheel: false, pan: false, align: 'center' }, base, box).align).toBe(
+      'center'
+    );
   });
   it('fit-width scales to the box width', () => {
     expect(viewBoxFor({ mode: 'fit-width', percent: 100, wheel: false, pan: false }, base, box)).toEqual({
@@ -28,6 +32,7 @@ describe('viewBoxFor', () => {
       width: '400px',
       height: '200px',
       overflow: 'auto',
+      align: 'top',
     });
   });
   it('original and custom use pixels', () => {
@@ -51,11 +56,14 @@ describe('readViewBox and applyLayout', () => {
     const root = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     root.setAttribute('viewBox', '0 0 10 20');
     expect(readViewBox(root)).toEqual({ x: 0, y: 0, w: 10, h: 20 });
-    applyLayout(root, { viewBox: { x: 1, y: 2, w: 3, h: 4 }, width: '100%', height: '50px', overflow: 'auto' });
+    const layout = { viewBox: { x: 1, y: 2, w: 3, h: 4 }, width: '100%', height: '50px', overflow: 'auto' } as const;
+    applyLayout(root, { ...layout, align: 'center' });
     expect(root.getAttribute('viewBox')).toBe('1 2 3 4');
     expect(root.getAttribute('width')).toBe('100%');
     expect(root.getAttribute('height')).toBe('50px');
     expect(root.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet');
+    applyLayout(root, { ...layout, align: 'top' });
+    expect(root.getAttribute('preserveAspectRatio')).toBe('xMidYMin meet');
   });
   it('falls back to width/height when viewBox is missing', () => {
     const root = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -70,27 +78,27 @@ describe('pinch and pan math', () => {
   const rect = { left: 100, top: 50, width: 400, height: 200 };
 
   it('maps client pixels to viewBox units with xMidYMid meet letterboxing', () => {
-    expect(clientToView(base, rect, 100, 50)).toEqual({ x: 0, y: 0 });
-    expect(clientToView(base, rect, 300, 150)).toEqual({ x: 500, y: 250 });
+    expect(clientToView(base, rect, 100, 50, 'center')).toEqual({ x: 0, y: 0 });
+    expect(clientToView(base, rect, 300, 150, 'center')).toEqual({ x: 500, y: 250 });
     // a square viewBox in the same box: 200 px wide, centred, so it starts at x = 200 px
     const sq = { x: 0, y: 0, w: 100, h: 100 };
-    expect(clientToView(sq, rect, 200, 50)).toEqual({ x: 0, y: 0 });
-    expect(clientToView(sq, rect, 400, 250)).toEqual({ x: 100, y: 100 });
+    expect(clientToView(sq, rect, 200, 50, 'center')).toEqual({ x: 0, y: 0 });
+    expect(clientToView(sq, rect, 400, 250, 'center')).toEqual({ x: 100, y: 100 });
   });
 
   it('a pinch keeps the content point under the gesture midpoint', () => {
-    const anchor = clientToView(base, rect, 200, 100);
-    const v = pinchView(base, base, rect, anchor, { x: 200, y: 100 }, 2);
+    const anchor = clientToView(base, rect, 200, 100, 'center');
+    const v = pinchView(base, base, rect, anchor, { x: 200, y: 100 }, 2, 'center');
     expect(v.w).toBeCloseTo(500);
     expect(v.h).toBeCloseTo(250);
-    const back = clientToView(v, rect, 200, 100);
+    const back = clientToView(v, rect, 200, 100, 'center');
     expect(back.x).toBeCloseTo(anchor.x);
     expect(back.y).toBeCloseTo(anchor.y);
   });
 
   it('a moving midpoint pans the view with the fingers', () => {
-    const anchor = clientToView(base, rect, 200, 100);
-    const v = pinchView(base, base, rect, anchor, { x: 240, y: 120 }, 1);
+    const anchor = clientToView(base, rect, 200, 100, 'center');
+    const v = pinchView(base, base, rect, anchor, { x: 240, y: 120 }, 1, 'center');
     // 40 px right at 0.4 px per unit: the content moves 100 units right, the view origin 100 units left
     expect(v).toEqual({ x: -100, y: -50, w: 1000, h: 500 });
   });
@@ -98,11 +106,35 @@ describe('pinch and pan math', () => {
   it('clamps the scale to 0.2x..10x of the base', () => {
     const anchor = { x: 500, y: 250 };
     const mid = { x: 300, y: 150 };
-    expect(pinchView(base, base, rect, anchor, mid, 100).w).toBeCloseTo(100);
-    expect(pinchView(base, base, rect, anchor, mid, 0.01).w).toBeCloseTo(5000);
+    expect(pinchView(base, base, rect, anchor, mid, 100, 'center').w).toBeCloseTo(100);
+    expect(pinchView(base, base, rect, anchor, mid, 0.01, 'center').w).toBeCloseTo(5000);
     expect(clampFactor(base, 0.01, base)).toBeCloseTo(0.1);
     expect(clampFactor({ ...base, w: 100, h: 50 }, 0.5, base)).toBeCloseTo(1);
     expect(clampFactor(base, 1.1, base)).toBeCloseTo(1.1);
+  });
+
+  it('maps client pixels with xMidYMin meet: the letterbox is below the diagram', () => {
+    // a tall box: the base viewBox 1000x500 fills the width at 0.4 px per unit, 200 px high, at the top
+    const tall = { left: 100, top: 50, width: 400, height: 600 };
+    expect(clientToView(base, tall, 100, 50, 'top')).toEqual({ x: 0, y: 0 });
+    expect(clientToView(base, tall, 300, 150, 'top')).toEqual({ x: 500, y: 250 });
+    expect(clientToView(base, tall, 300, 350, 'center')).toEqual({ x: 500, y: 250 });
+    // a wide box: the diagram is centred horizontally in both alignments
+    const wide = { left: 0, top: 0, width: 800, height: 200 };
+    expect(clientToView(base, wide, 200, 0, 'top')).toEqual({ x: 0, y: 0 });
+    expect(clientToView(base, wide, 200, 0, 'center')).toEqual({ x: 0, y: 0 });
+  });
+
+  it('a top-aligned pinch keeps the content point under the midpoint', () => {
+    const tall = { left: 100, top: 50, width: 400, height: 600 };
+    const anchor = clientToView(base, tall, 200, 100, 'top');
+    const v = pinchView(base, base, tall, anchor, { x: 260, y: 140 }, 1.5, 'top');
+    const back = clientToView(v, tall, 260, 140, 'top');
+    expect(back.x).toBeCloseTo(anchor.x);
+    expect(back.y).toBeCloseTo(anchor.y);
+    // a drag with no movement at the default view gives the default view back
+    const still = pinchView(base, base, tall, anchor, { x: 200, y: 100 }, 1, 'top');
+    expect(isDefaultView(still, base)).toBe(true);
   });
 
   it('isDefaultView is true for no view and for the base view only', () => {

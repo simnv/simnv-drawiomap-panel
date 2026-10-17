@@ -5,3 +5,4 @@
     b2a: { refId: A, match: { job: node-rtr-a, device: wan1 } }
     capacity: "${cell.capacity}"
   url: "/d/drawiomap-demo?cell=${cell.id}"
+  urlTitle: "Link ${cell.id}"

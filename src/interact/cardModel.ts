@@ -18,6 +18,9 @@ export interface CardRowModel {
   times?: number[];
   /** click target after template and dashboard variable resolution */
   href?: string;
+  /** smallest and largest value of the series, formatted like the value */
+  min?: string;
+  max?: string;
 }
 
 export interface CardModel {
@@ -42,6 +45,19 @@ export interface CardContext {
 
 const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound' } as const;
 
+/** The formatted min and max of the finite values; nothing for a row without values. */
+function minMax(values: number[], format: (v: number) => string): Pick<CardRowModel, 'min' | 'max'> {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const v of values) {
+    if (Number.isFinite(v)) {
+      min = Math.min(min, v);
+      max = Math.max(max, v);
+    }
+  }
+  return min <= max ? { min: format(min), max: format(max) } : {};
+}
+
 /** Row url: the row template (resolved with the row series labels, encoded), else the first rule url. */
 function rowHref(patch: CellPatch, tpl: string | undefined, primary: Primary, ctx: CardContext): string | undefined {
   let url: string | undefined = patch.urls[0]?.url;
@@ -61,15 +77,18 @@ function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardCo
   const { from, to } = patch.scope;
   const [a, b] = key === 'a2b' ? [from?.node ?? 'A', to?.node ?? 'B'] : [to?.node ?? 'B', from?.node ?? 'A'];
   const primary: Primary = { status: h.status, series: h.series, display: h.display, value: h.value };
+  const s = h.status === 'ok' ? h.series : undefined;
+  const values = s?.values ?? [];
   return {
     key,
     title: `${a} → ${b}`,
     text: h.label,
     status: h.status,
     color: h.color,
-    values: h.status === 'ok' ? (h.series?.values ?? []) : [],
-    times: h.status === 'ok' ? h.series?.times : undefined,
+    values,
+    times: s?.times,
     href: rowHref(patch, patch.card?.url, primary, ctx),
+    ...(s ? minMax(values, (v) => formattedValueToString(ctx.display(s, v))) : {}),
   };
 }
 
@@ -106,6 +125,7 @@ function seriesRow(patch: CellPatch, row: CardRow, i: number, ctx: CardContext):
     values: f.series.values,
     times: f.series.times,
     href: rowHref(patch, row.url, primary, ctx),
+    ...minMax(f.series.values, (v) => formattedValueToString(ctx.display(f.series!, v, override))),
   };
 }
 
@@ -116,6 +136,7 @@ function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined 
     return undefined;
   }
   const primary: Primary = { status: s.status, series: s.series, display: s.display, value: s.value };
+  const series = s.status === 'ok' ? s.series : undefined;
   return {
     key: 'shape',
     title: s.series?.name ?? 'state',
@@ -125,9 +146,10 @@ function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined 
         : STATUS_TEXT[s.status === 'ok' ? 'nodata' : s.status],
     status: s.status,
     color: s.color,
-    values: s.status === 'ok' ? (s.series?.values ?? []) : [],
-    times: s.status === 'ok' ? s.series?.times : undefined,
+    values: series?.values ?? [],
+    times: series?.times,
     href: rowHref(patch, undefined, primary, ctx),
+    ...(series ? minMax(series.values, (v) => formattedValueToString(ctx.display(series, v))) : {}),
   };
 }
 
@@ -159,12 +181,14 @@ export function buildCard(patch: CellPatch, ctx: CardContext): CardModel {
       rows.push(r);
     }
   }
-  return { title: titleOf(patch), rows, links: resolveLinks(patch, primaryOf(patch), ctx.replaceVariables) };
+  const title = titleOf(patch);
+  return { title, rows, links: resolveLinks(patch, primaryOf(patch), ctx.replaceVariables, title) };
 }
 
 /**
- * Polyline points of a sparkline in a w × h box with 1 px padding. Times map over the dashboard range;
- * without times or range the index is used. Values that are not finite are skipped.
+ * Polyline points of a sparkline in a w × h box with 1 px padding. Values that are not finite are skipped.
+ * Times map over the part of the dashboard range that has data (first to last sample), so the line fills
+ * the width also when the series starts late or stops early. Without times or range the index is used.
  */
 export function sparkPoints(
   values: number[],
@@ -193,9 +217,17 @@ export function sparkPoints(
     return '';
   }
   const span = max - min;
-  const useTime = !!times && !!range && range.to > range.from;
-  const x = (i: number) =>
-    useTime ? ((times![i] - range!.from) / (range!.to - range!.from)) * w : (i / (values.length - 1)) * w;
+  let t0 = 0;
+  let t1 = 0;
+  if (times && range && range.to > range.from) {
+    t0 = Math.max(range.from, times[idx[0]]);
+    t1 = Math.min(range.to, times[idx[idx.length - 1]]);
+    if (!(t1 > t0)) {
+      [t0, t1] = [range.from, range.to];
+    }
+  }
+  const useTime = t1 > t0;
+  const x = (i: number) => (useTime ? ((times![i] - t0) / (t1 - t0)) * w : (i / (values.length - 1)) * w);
   const y = (v: number) => (span ? 1 + (1 - (v - min) / span) * (h - 2) : h / 2);
   // points outside the dashboard range (a time shift, a late sample) stay on the edge
   const r = (n: number, max: number) => Math.round(Math.min(Math.max(n, 0), max) * 10) / 10;

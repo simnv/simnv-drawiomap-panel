@@ -9,6 +9,7 @@
     card: { title: "${from.node} ↔ ${to.node}" }
   reducer: last
   url: "/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}"
+  urlTitle: "Traffic of ${from.node}:${from.port}"
 - name: wan uplinks 100M
   select: { kind: link, attrs: { pg-to: "/^rtr-a:(wan1|wan2|lte)$/" } }
   link: { capacity: 100000000 }
@@ -23,6 +24,7 @@
       - { title: load 1m, refId: D, match: { job: "node-${cell.pg-id}" } }
   thresholds: { mode: absolute, steps: [[0, red], [1, green]] }
   url: "/d/drawiomap-demo?var-job=node-${cell.pg-id}"
+  urlTitle: "Host ${cell.pg-id}"
 - name: router cpu
   select: { ids: [rtr-a, rtr-b] }
   shape:

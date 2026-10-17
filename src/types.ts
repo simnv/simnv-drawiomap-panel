@@ -80,11 +80,16 @@ export interface Diagram {
 
 export type ZoomMode = 'fit' | 'fit-width' | 'original' | 'custom';
 
+/** Where a fitted diagram goes when the panel has a different aspect: top (centred horizontally) or centre. */
+export type ZoomAlign = 'top' | 'center';
+
 export interface ZoomOptions {
   mode: ZoomMode;
   percent: number;
   wheel: boolean;
   pan: boolean;
+  /** Default: top. */
+  align?: ZoomAlign;
 }
 
 export interface Options {
@@ -98,7 +103,7 @@ export interface Options {
 export const DEFAULT_OPTIONS: Options = {
   rules: [],
   editorUrl: '',
-  zoom: { mode: 'fit', percent: 100, wheel: false, pan: false },
+  zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
 };
 
@@ -185,6 +190,8 @@ export interface Rule {
   label?: string;
   thresholds?: RuleThresholds;
   url?: string;
+  /** title of the url in the card footer (template). Default: "Open dashboard" or "Open <card title>". */
+  urlTitle?: string;
 }
 
 /* ---------- binding output ---------- */
@@ -227,7 +234,8 @@ export interface ShapeState {
 }
 
 export interface LinkTarget {
-  title: string;
+  /** the resolved urlTitle; without it the card gives a default title */
+  title?: string;
   url: string;
 }
 

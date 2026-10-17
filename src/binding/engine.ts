@@ -44,7 +44,7 @@ interface Effective {
   label?: string;
   thresholds?: RuleThresholds;
   url?: string;
-  urlRule?: string;
+  urlTitle?: string;
 }
 
 /** Later rules override earlier ones per property. */
@@ -70,9 +70,12 @@ function merge(rules: Rule[], cell: CellMeta): Effective | undefined {
     if (r.thresholds) {
       eff.thresholds = r.thresholds;
     }
+    // the title goes with the url of the same rule; a later rule can change only the title
+    if (r.url !== undefined || r.urlTitle !== undefined) {
+      eff.urlTitle = r.urlTitle;
+    }
     if (r.url !== undefined) {
       eff.url = r.url;
-      eff.urlRule = r.name;
     }
   }
   return eff.ruleNames.length ? eff : undefined;
@@ -345,10 +348,13 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
       patch.card = { reducer: eff.reducer ?? 'last', ...(eff.shape.card ? { rows: eff.shape.card } : {}) };
     }
     if (eff.url) {
-      const u = resolveTemplate(eff.url, { ...scope, labels: primary?.labels ?? {} }, encodeURIComponent);
+      const urlScope = { ...scope, labels: primary?.labels ?? {} };
+      const u = resolveTemplate(eff.url, urlScope, encodeURIComponent);
       unresolved.push(...u.unresolved);
       if (!u.unresolved.length && isAllowedUrl(u.text)) {
-        patch.urls.push({ title: eff.urlRule ?? eff.ruleNames[eff.ruleNames.length - 1], url: u.text });
+        const t = eff.urlTitle === undefined ? undefined : resolveTemplate(eff.urlTitle, urlScope);
+        // a title that does not resolve gets the default title, not a warning
+        patch.urls.push(t && !t.unresolved.length ? { title: t.text, url: u.text } : { url: u.text });
       } else if (!u.unresolved.length) {
         notes.push('url scheme is not http, https or relative, the url is dropped');
       }

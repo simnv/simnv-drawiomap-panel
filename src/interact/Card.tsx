@@ -1,7 +1,7 @@
 import React, { memo, useLayoutEffect, useMemo, useRef } from 'react';
 import { css, cx } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
-import { IconButton, useStyles2 } from '@grafana/ui';
+import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { CardModel, CardRowModel, sparkPoints } from './cardModel';
 
 /** Panels narrower than this show the card as a bottom sheet. */
@@ -9,8 +9,9 @@ export const SHEET_BELOW = 480;
 const W = 280;
 const GAP = 14;
 const EDGE = 4;
+/** The sparkline viewBox. preserveAspectRatio="none" stretches it to the full row width, the height is in px. */
 const SPARK_W = 200;
-const SPARK_H = 36;
+const SPARK_H = 40;
 
 export interface CardProps {
   model: CardModel;
@@ -107,20 +108,25 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: block;
     width: 100%;
     height: ${SPARK_H}px;
+    margin-top: ${theme.spacing(0.5)};
+  `,
+  range: css`
+    display: flex;
+    justify-content: space-between;
+    gap: ${theme.spacing(1)};
+    font-size: ${theme.typography.pxToRem(11)};
+    line-height: 1.3;
+    color: ${theme.colors.text.secondary};
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   `,
   footer: css`
     display: flex;
     flex-wrap: wrap;
-    gap: ${theme.spacing(0.5, 1.5)};
-    margin-top: ${theme.spacing(0.5)};
-    padding-top: ${theme.spacing(0.5)};
+    gap: ${theme.spacing(0.5)};
+    margin: ${theme.spacing(0.5, -1, 0)};
+    padding: ${theme.spacing(0.5, 0, 0)};
     border-top: 1px solid ${theme.colors.border.weak};
-  `,
-  link: css`
-    color: ${theme.colors.text.link};
-    &:hover {
-      text-decoration: underline;
-    }
   `,
   hint: css`
     margin-top: ${theme.spacing(0.5)};
@@ -134,11 +140,14 @@ const Row = memo(function Row({
   from,
   to,
   styles,
+  baseline,
 }: {
   row: CardRowModel;
   from?: number;
   to?: number;
   styles: ReturnType<typeof getStyles>;
+  /** colour of the thin line at the bottom of the sparkline */
+  baseline: string;
 }) {
   const points = useMemo(
     () =>
@@ -163,22 +172,39 @@ const Row = memo(function Row({
         </span>
       </div>
       {points ? (
-        <svg
-          className={styles.spark}
-          viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
-          preserveAspectRatio="none"
-          data-testid="dmap-card-spark"
-          aria-hidden="true"
-        >
-          <polyline
-            points={points}
-            fill="none"
-            stroke={row.color}
-            strokeWidth={1.5}
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
+        <>
+          <svg
+            className={styles.spark}
+            viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+            preserveAspectRatio="none"
+            data-testid="dmap-card-spark"
+            aria-hidden="true"
+          >
+            <line
+              x1={0}
+              y1={SPARK_H - 0.5}
+              x2={SPARK_W}
+              y2={SPARK_H - 0.5}
+              stroke={baseline}
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+            <polyline
+              points={points}
+              fill="none"
+              stroke={row.color}
+              strokeWidth={1.5}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+          {row.min !== undefined && row.max !== undefined ? (
+            <div className={styles.range} data-testid="dmap-card-range">
+              <span>min {row.min}</span>
+              <span>max {row.max}</span>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </>
   );
@@ -199,6 +225,7 @@ const Row = memo(function Row({
  */
 export function Card({ model, pinned, x, y, width, height, range, onClose }: CardProps) {
   const styles = useStyles2(getStyles);
+  const theme = useTheme2();
   const ref = useRef<HTMLDivElement>(null);
   const sheet = width < SHEET_BELOW;
 
@@ -248,21 +275,31 @@ export function Card({ model, pinned, x, y, width, height, range, onClose }: Car
         {pinned ? <IconButton name="times" size="sm" aria-label="Close" onClick={onClose} /> : null}
       </div>
       {model.rows.map((r) => (
-        <Row key={r.key} row={r} from={range?.from} to={range?.to} styles={styles} />
+        <Row
+          key={r.key}
+          row={r}
+          from={range?.from}
+          to={range?.to}
+          styles={styles}
+          baseline={theme.colors.border.weak}
+        />
       ))}
       {pinned && model.links.length ? (
         <div className={styles.footer}>
           {model.links.map((l, i) => (
-            <a
+            <LinkButton
               key={`${i}-${l.href}`}
-              className={styles.link}
+              size="sm"
+              fill="text"
+              icon={l.target === '_blank' ? 'external-link-alt' : undefined}
               href={l.href}
               target={l.target}
               rel="noopener noreferrer"
               onClick={l.onClick ? (ev) => l.onClick!(ev) : undefined}
+              data-testid="dmap-card-link"
             >
               {l.title}
-            </a>
+            </LinkButton>
           ))}
         </div>
       ) : null}

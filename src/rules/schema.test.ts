@@ -110,6 +110,11 @@ describe('hover card schema', () => {
     expect(ruleSchema.safeParse(rule).success).toBe(true);
     expect(ruleSchema.safeParse({ ...rule, link: { card: { color: 'red' } } }).success).toBe(false);
   });
+  it('accepts urlTitle next to url', () => {
+    const rule = { name: 'u', select: { kind: 'node' }, url: '/d/x', urlTitle: 'Host ${cell.pg-id}' };
+    expect(ruleSchema.safeParse(rule).success).toBe(true);
+    expect(ruleSchema.safeParse({ ...rule, urlTitle: 1 }).success).toBe(false);
+  });
   it('still accepts the removed shape.sparkline and label keys (old dashboards)', () => {
     expect(parseRulesYaml(yaml).errors).toEqual([]);
   });

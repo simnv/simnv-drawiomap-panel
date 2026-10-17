@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Field, LinkModel } from '@grafana/data';
 import type { CellPatch, SeriesInfo } from '../types';
-import { buildScopedVars, primaryOf, resolveLinks } from './links';
+import { buildScopedVars, defaultUrlTitle, primaryOf, resolveLinks } from './links';
 
 const fieldLink: LinkModel<Field> = { href: '/d/field', title: 'Field link', target: '_blank', origin: {} as Field };
 const series: SeriesInfo = {
@@ -63,7 +63,7 @@ describe('buildScopedVars', () => {
 describe('resolveLinks', () => {
   it('returns rule urls through replaceVariables then field links', () => {
     const replace = vi.fn((s: string) => s.replace('${__from}', '123'));
-    const links = resolveLinks(patch, primaryOf(patch), replace);
+    const links = resolveLinks(patch, primaryOf(patch), replace, 'a ↔ b');
     expect(links).toHaveLength(2);
     expect(links[0]).toMatchObject({ title: 'links', href: '/d/iface?var-job=node-a&from=123', target: '_blank' });
     expect(links[1]).toBe(fieldLink);
@@ -74,10 +74,45 @@ describe('resolveLinks', () => {
   });
   it('drops a rule url that a dashboard variable turns into another scheme', () => {
     const p = { ...patch, urls: [{ title: 'v', url: '${target:raw}' }] };
-    expect(resolveLinks(p, primaryOf(p), () => 'javascript:alert(1)').map((l) => l.title)).toEqual(['Field link']);
+    expect(resolveLinks(p, primaryOf(p), () => 'javascript:alert(1)', 'x').map((l) => l.title)).toEqual(['Field link']);
   });
   it('works without a series', () => {
     const p = { ...patch, link: undefined };
-    expect(resolveLinks(p, primaryOf(p), (s) => s)).toHaveLength(1);
+    expect(resolveLinks(p, primaryOf(p), (s) => s, 'x')).toHaveLength(1);
+  });
+  it('a rule url title goes through replaceVariables', () => {
+    const p = { ...patch, urls: [{ title: 'Port ${__value.text}', url: '/x' }] };
+    expect(resolveLinks(p, primaryOf(p), (s) => s.replace('${__value.text}', '41'), 'x')[0].title).toBe('Port 41');
+  });
+  it('a rule url without a title gets a default from the url and the card title', () => {
+    const titles = (url: string) =>
+      resolveLinks({ ...patch, urls: [{ url }] }, primaryOf(patch), (s) => s, 'a ↔ b')[0].title;
+    expect(titles('/d/iface?var-job=x')).toBe('Open dashboard');
+    expect(titles('/explore?left=1')).toBe('Open a ↔ b');
+  });
+});
+
+describe('defaultUrlTitle', () => {
+  it('names Grafana dashboard paths "Open dashboard", other urls "Open <card title>"', () => {
+    for (const u of [
+      '/d/abc',
+      '/d/abc/slug?var-x=1',
+      '/grafana/d/abc/slug',
+      'd/abc',
+      'https://g.example/d/abc#p',
+      '//g.example/sub/d/abc',
+    ]) {
+      expect(defaultUrlTitle(u, 'Host')).toBe('Open dashboard');
+    }
+    for (const u of [
+      '/d/',
+      '/dashboards',
+      '/explore?x=/d/abc',
+      'https://d/x',
+      'https://example.com/docs/d',
+      '/x#/d/a',
+    ]) {
+      expect(defaultUrlTitle(u, 'Host')).toBe('Open Host');
+    }
   });
 });

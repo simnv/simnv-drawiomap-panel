@@ -76,6 +76,20 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         defaultValue: 100,
         showIf: (o) => o.zoom?.mode === 'custom',
       })
+      .addRadio({
+        path: 'zoom.align',
+        name: 'Align',
+        description: 'Where the fitted diagram goes when the panel has a different shape',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.zoom.align,
+        settings: {
+          options: [
+            { value: 'top', label: 'Top' },
+            { value: 'center', label: 'Center' },
+          ],
+        },
+        showIf: (o) => (o.zoom?.mode ?? 'fit') === 'fit',
+      })
       .addBooleanSwitch({ path: 'zoom.wheel', name: 'Wheel zoom', category: ['View'], defaultValue: false })
       .addBooleanSwitch({ path: 'zoom.pan', name: 'Drag pan', category: ['View'], defaultValue: false })
       .addNumberInput({

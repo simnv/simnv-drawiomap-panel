@@ -160,7 +160,7 @@ describe('bind', () => {
   });
   it('resolves rule urls', () => {
     expect(patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.urls).toEqual([
-      { title: 'links', url: '/d/iface?var-job=node-wan1&var-device=pppoe' },
+      { url: '/d/iface?var-job=node-wan1&var-device=pppoe' },
     ]);
   });
   it('skips unmatched cells', () => {
@@ -381,7 +381,30 @@ describe('bind review fixes', () => {
   it('finding 8: a rule with only a url keeps its patch', () => {
     const p = urlOf('/d/x').patches.get('h1');
     expect(p).toBeDefined();
-    expect(p!.urls).toEqual([{ title: 'u', url: '/d/x' }]);
+    expect(p!.urls).toEqual([{ url: '/d/x' }]);
+  });
+  it('resolves urlTitle as a template; a title that does not resolve gives the default', () => {
+    const titleOf = (urlTitle: string) =>
+      bind([{ name: 'u', select: { ids: ['h1'] }, url: '/d/x', urlTitle }], [hostCell], [], ctx).patches.get('h1')!
+        .urls[0];
+    expect(titleOf('Host ${cell.host}')).toEqual({ title: 'Host a&b=c d/e', url: '/d/x' });
+    expect(titleOf('Host ${cell.nope}')).toEqual({ url: '/d/x' });
+  });
+  it('urlTitle goes with the url of the same rule; a later rule can set only the title', () => {
+    const r = (rules: Rule[]) => bind(rules, [hostCell], [], ctx).patches.get('h1')!.urls;
+    const sel = { ids: ['h1'] };
+    expect(
+      r([
+        { name: 'a', select: sel, url: '/d/a', urlTitle: 'A' },
+        { name: 'b', select: sel, url: '/d/b' },
+      ])
+    ).toEqual([{ url: '/d/b' }]);
+    expect(
+      r([
+        { name: 'a', select: sel, url: '/d/a' },
+        { name: 'b', select: sel, urlTitle: 'B' },
+      ])
+    ).toEqual([{ title: 'B', url: '/d/a' }]);
   });
 });
 

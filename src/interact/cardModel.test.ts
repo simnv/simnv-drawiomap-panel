@@ -137,12 +137,26 @@ describe('buildCard for a link', () => {
     const c = buildCard(p, ctx);
     expect(c.rows).toHaveLength(1);
     expect(c.rows[0]).toMatchObject({ text: 'no data', status: 'nodata', values: [] });
+    expect(c.rows[0].min).toBeUndefined();
   });
   it('has the footer links: the rule url and the field data links', () => {
     const c = buildCard(linkPatch(), ctx);
     expect(c.links.map((l) => [l.title, l.href])).toEqual([
       ['links', '/d/rule?job=node-wan1&from=111'],
       ['Field link', '/d/field'],
+    ]);
+  });
+  it('gives a rule url without a title a default title: "Open dashboard" or "Open <card title>"', () => {
+    const dash = buildCard(linkPatch({ urls: [{ url: '/d/rule?job=x' }] }), ctx);
+    expect(dash.links[0].title).toBe('Open dashboard');
+    const other = buildCard(linkPatch({ urls: [{ url: '/explore?x=1' }] }), ctx);
+    expect(other.links[0].title).toBe('Open wan1:pppoe->rtr-a:wan1');
+  });
+  it('gives each row with a sparkline the min and max of its series', () => {
+    const c = buildCard(linkPatch(), ctx);
+    expect(c.rows.map((r) => [r.min, r.max])).toEqual([
+      ['40000000', '41000000'],
+      ['10000000', '10000000'],
     ]);
   });
 });
@@ -159,6 +173,8 @@ describe('buildCard for a node', () => {
       color: '#123456',
       values: [20, 35.25],
       href: '/d/cpu?host=node-rtr-a&from=111',
+      min: '20.0%',
+      max: '35.3%',
     });
   });
   it('uses the rule url when the row has no url, and the mean reducer when the rule says so', () => {
@@ -219,6 +235,13 @@ describe('sparkPoints', () => {
   });
   it('maps times over the dashboard range and values over min..max', () => {
     expect(sparkPoints([0, 10, 5], [0, 50, 100], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
+  });
+  it('fills the width: the x axis is the part of the range that has data', () => {
+    // data only in the last half of the range: the line still goes from edge to edge
+    expect(sparkPoints([0, 10, 5], [50, 75, 100], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
+    expect(sparkPoints([0, 10, 5], [0, 25, 50], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
+    // samples outside the range stay on the edge
+    expect(sparkPoints([0, 10, 5], [-50, 50, 150], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
   });
   it('uses the index without times and skips values that are not finite', () => {
     expect(sparkPoints([1, NaN, 3], undefined, undefined, 100, 10)).toBe('0,9 100,1');
