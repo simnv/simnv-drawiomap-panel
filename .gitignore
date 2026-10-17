@@ -46,3 +46,6 @@ ci/
 .idea
 
 .eslintcache
+
+# Vendored draw.io webapp (scripts/vendor-drawio.sh)
+.drawio/

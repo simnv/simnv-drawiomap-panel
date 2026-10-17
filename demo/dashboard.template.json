@@ -31,7 +31,7 @@
         "overrides": []
       },
       "options": {
-        "editorUrl": "http://localhost:8080",
+        "editorUrl": "",
         "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false },
         "linkWidth": { "min": 2, "max": 10 },
         "rules": [],
@@ -47,7 +47,7 @@
       "targets": [{ "refId": "A", "expr": "rate(node_network_transmit_bytes_total[1m]) * 8", "legendFormat": "{{job}} {{device}}" }],
       "fieldConfig": { "defaults": { "unit": "bps", "decimals": 1 }, "overrides": [] },
       "options": {
-        "editorUrl": "http://localhost:8080",
+        "editorUrl": "",
         "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false },
         "linkWidth": { "min": 2, "max": 10 },
         "rules": [],

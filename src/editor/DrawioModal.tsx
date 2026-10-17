@@ -2,16 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { css } from '@emotion/css';
 import { Alert, Modal } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
-import {
-  acceptEditorMessage,
-  buildEditorUrl,
-  editorOrigin,
-  eventSource,
-  frameWindow,
-  handleMessage,
-  initialState,
-  ProtocolState,
-} from './protocol';
+import { acceptEditorMessage, eventSource, frameWindow, handleMessage, initialState, ProtocolState } from './protocol';
+import { editorTarget } from './target';
 
 const styles = {
   modal: css`
@@ -46,8 +38,8 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stateRef = useRef<ProtocolState>(initialState(xml));
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');
-  const src = useMemo(() => buildEditorUrl(editorUrl, isDark), [editorUrl, isDark]);
-  const origin = useMemo(() => editorOrigin(editorUrl), [editorUrl]);
+  const target = useMemo(() => editorTarget(editorUrl, isDark), [editorUrl, isDark]);
+  const origin = target.origin;
 
   // The editor sends the first message. Replies go to the sender of the first accepted message.
   const sourceRef = useRef<Window | undefined>(undefined);
@@ -106,15 +98,17 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
         {blocked ? (
           <Alert severity="error" title="The draw.io editor cannot start" data-testid="dmap-editor-blocked">
             The Grafana frontend sandbox is on for this plugin. The sandbox does not let the panel send messages to the
-            draw.io frame on another origin. Remove simnv-drawiomap-panel from enable_frontend_sandbox_for_plugins to
-            edit the diagram.
+            draw.io frame on another origin. Clear the Editor URL to use the draw.io editor that the plugin includes, or
+            remove simnv-drawiomap-panel from enable_frontend_sandbox_for_plugins.
           </Alert>
         ) : null}
         <iframe
           ref={frameRef}
           data-testid="dmap-editor-frame"
           className={styles.frame}
-          src={src}
+          src={target.kind === 'url' ? target.src : undefined}
+          srcDoc={target.kind === 'bundled' ? target.srcDoc : undefined}
+          data-dmap-editor-kind={target.kind}
           title="draw.io"
           allow="clipboard-read; clipboard-write"
         />

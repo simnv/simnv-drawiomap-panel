@@ -92,7 +92,7 @@ export interface Options {
 
 export const DEFAULT_OPTIONS: Options = {
   rules: [],
-  editorUrl: 'http://localhost:8080',
+  editorUrl: '',
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false },
   linkWidth: { min: 2, max: 10 },
 };

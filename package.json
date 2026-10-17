@@ -2,8 +2,8 @@
   "name": "simnv-drawiomap-panel",
   "version": "1.0.0",
   "scripts": {
-    "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
-    "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
+    "build": "./scripts/vendor-drawio.sh --if-missing && webpack -c ./webpack.config.ts --env production",
+    "dev": "./scripts/vendor-drawio.sh --if-missing && webpack -w -c ./webpack.config.ts --env development",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

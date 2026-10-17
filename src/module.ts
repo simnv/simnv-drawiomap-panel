@@ -44,7 +44,8 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         name: 'Editor URL',
         category: ['Diagram'],
         defaultValue: DEFAULT_OPTIONS.editorUrl,
-        description: 'draw.io in embed mode. Self-hosted jgraph/drawio or https://embed.diagrams.net',
+        description:
+          'Empty: the draw.io editor that the plugin includes. Or the URL of a draw.io in embed mode: self-hosted jgraph/drawio or https://embed.diagrams.net',
       })
       .addCustomEditor({
         id: 'rules',
