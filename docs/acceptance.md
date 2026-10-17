@@ -33,12 +33,12 @@ Every result below is real output from this run.
 
 The canvas shows colours only: no value labels, no sparklines. The node state colours the node icon. A hover card shows the values and sparklines; a click or a tap pins it.
 
-| Check               | Command                                                 | Result                                                                  |
-| ------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
-| unit tests          | `npm test`                                              | PASS. 25 files, 222 tests.                                              |
-| typecheck, lint     | `npm run typecheck && npm run lint`                     | PASS. 0 errors (2 old warnings for `Select`).                           |
-| build, bundle check | `npm run build && npm run check:bundle`                 | PASS. `bundle OK`.                                                      |
-| e2e 12.4.13         | `GRAFANA_URL=http://localhost:3212 npx playwright test` | PASS. `12 passed`. A separate compose project (`-p hover`, ports +200). |
-| e2e 13.2.4          | `GRAFANA_URL=http://localhost:3213 npx playwright test` | PASS. `12 passed`.                                                      |
+| Check               | Command                                                 | Result                                                                     |
+| ------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------- |
+| unit tests          | `npm test`                                              | PASS. 25 files, 232 tests (after the merge of main with the new fixtures). |
+| typecheck, lint     | `npm run typecheck && npm run lint`                     | PASS. 0 errors (2 old warnings for `Select`).                              |
+| build, bundle check | `npm run build && npm run check:bundle`                 | PASS. `bundle OK`.                                                         |
+| e2e 12.4.13         | `GRAFANA_URL=http://localhost:3212 npx playwright test` | PASS. `12 passed`. A separate compose project (`-p hover`, ports +200).    |
+| e2e 13.2.4          | `GRAFANA_URL=http://localhost:3213 npx playwright test` | PASS. `12 passed`.                                                         |
 
 The e2e tests cover: hover shows the card, a click pins it (links, Esc, the pin moves to another cell, ✕), a click on a sparkline opens the row URL in a new tab, and a tap on a phone (`devices['iPhone 13']` in Chromium) pins the card as a bottom sheet. Screenshots: `docs/screenshots/card-hover-desktop.png`, `card-pinned-desktop.png`, `card-mobile-sheet.png` (set `DMAP_SCREENSHOTS=docs/screenshots` to write them again).
