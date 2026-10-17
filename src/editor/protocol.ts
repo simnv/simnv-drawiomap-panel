@@ -1,7 +1,7 @@
 import { decodeDataUri } from './decode';
 
-/** Required embed parameters. A parameter already present in the configured URL wins (for example ui=sketch). */
-export const EMBED_PARAMS: Record<string, string> = {
+/** Embed parameters of the bundled editor. */
+const EMBED_PARAMS: Record<string, string> = {
   embed: '1',
   proto: 'json',
   configure: '1',
@@ -12,19 +12,9 @@ export const EMBED_PARAMS: Record<string, string> = {
   noExitBtn: '0',
 };
 
-export function buildEditorUrl(base: string, isDark = false): string {
-  const u = new URL(base);
-  for (const [k, v] of Object.entries(EMBED_PARAMS)) {
-    if (!u.searchParams.has(k)) {
-      u.searchParams.set(k, v);
-    }
-  }
-  u.searchParams.set('dark', isDark ? '1' : '0');
-  return u.toString();
-}
-
-export function editorOrigin(base: string): string {
-  return new URL(base).origin;
+/** URL parameters (with the leading "?") for the bundled editor. dark follows the Grafana theme. */
+export function editorSearch(isDark = false): string {
+  return `?${new URLSearchParams({ ...EMBED_PARAMS, dark: isDark ? '1' : '0' }).toString()}`;
 }
 
 export interface EditorMessage {
@@ -117,51 +107,6 @@ export function eventSource(e: { source: unknown }): unknown {
   } catch {
     return undefined;
   }
-}
-
-/**
- * Result of the message filter. blocked: the message has the editor origin and is an editor event, but the host
- * cannot read the frame window or the sender (Grafana frontend sandbox). The host cannot verify such a message.
- */
-export type MessageVerdict = { kind: 'accept'; msg: EditorMessage } | { kind: 'blocked' } | { kind: 'ignore' };
-
-/**
- * Fail-closed filter for message events from the external editor. The origin must be the editor origin, the sender
- * must be the frame window, and the payload must be a JSON event. The bundled editor uses a channel instead
- * (acceptChannelHello).
- * `frame` is the window of the editor iframe: null when the frame is not mounted, undefined when it is not readable.
- * There is no fallback when the frame window or the sender is unknown.
- */
-export function classifyEditorMessage(
-  e: { origin: string; source: unknown; data: unknown },
-  origin: string,
-  frame: unknown
-): MessageVerdict {
-  if (e.origin !== origin) {
-    return { kind: 'ignore' };
-  }
-  const msg = parseMessage(e.data);
-  if (!msg) {
-    return { kind: 'ignore' };
-  }
-  const source = eventSource(e);
-  if (source === undefined || frame === undefined) {
-    return { kind: 'blocked' };
-  }
-  if (frame === null || source !== frame) {
-    return { kind: 'ignore' };
-  }
-  return { kind: 'accept', msg };
-}
-
-/** The editor message when classifyEditorMessage accepts the event, else undefined. */
-export function acceptEditorMessage(
-  e: { origin: string; source: unknown; data: unknown },
-  origin: string,
-  frame: unknown
-): EditorMessage | undefined {
-  const v = classifyEditorMessage(e, origin, frame);
-  return v.kind === 'accept' ? v.msg : undefined;
 }
 
 /**

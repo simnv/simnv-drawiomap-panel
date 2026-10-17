@@ -2,9 +2,8 @@
 # Exports every fixtures/**/*.drawio to fixtures/svg/<name>.svg with draw.io.
 # Flags: -x export, -f svg, -u uncompressed, --embed-svg-metadata (data-meta-* per <object> attribute).
 # Order of preference: local draw.io CLI (/opt/homebrew/bin/drawio), then the
-# rlespinasse/drawio-desktop-headless container. Third option (manual): open the file in the
-# compose draw.io (http://localhost:8080) and use the panel's Import button, which exports through
-# the embed protocol with the same options.
+# rlespinasse/drawio-desktop-headless container. Third option (manual): use the panel's Import button,
+# which exports through the embed protocol with the same options.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 mkdir -p "$root/fixtures/svg"

@@ -52,10 +52,7 @@ the panel cannot compare the sender with the frame window, and it cannot reply t
 
 Only the frame and script on the Grafana page can read the token. Script on the Grafana page already has full access.
 
-The external editor (Editor URL set) has its own origin. The panel accepts its messages only when `event.origin` is
-the configured editor origin and `event.source` is the frame window. Replies go to that window with the editor origin
-as target. When the frontend sandbox hides the window or the sender, the panel rejects the message and shows the alert
-"The draw.io editor cannot start" (fail closed).
+The plugin has no external editor. An `editorUrl` value that an older version saved is ignored.
 
 ## What script in the bundled editor frame can do
 
@@ -87,8 +84,8 @@ as target. When the frontend sandbox hides the window or the sender, the panel r
 
 ## Test results
 
-`tests/editor.spec.ts` has 3 tests: edit and save with the isolation probes, image embedding, and the external Editor
-URL (`http://localhost:8080`). The sandbox and CSP rows use `docker-compose.spike.yaml` with a separate compose project
+`tests/editor.spec.ts` has 2 tests: edit and save with the isolation probes, and image embedding. The sandbox and
+CSP rows use `docker-compose.spike.yaml` with a separate compose project
 (`docker compose -p drawiomap-iso -f docker-compose.spike.yaml up -d <service>`).
 
 | Grafana | Setting | Port | Result |
@@ -101,5 +98,5 @@ URL (`http://localhost:8080`). The sandbox and CSP rows use `docker-compose.spik
 | 13.2.4 | frontend sandbox + CSP | 3143 | 3 passed |
 | 13.2.4 | `app_sub_url = /grafana` | 3153 | 3 passed |
 
-With the frontend sandbox, the external editor test passes because the panel shows the "cannot start" alert (fail
-closed). The bundled editor works.
+The table is from the time when the file had a third test, for the removed external editor. That test is deleted. The
+bundled editor works with the frontend sandbox.

@@ -6,7 +6,7 @@ test('view mode loads no draw.io code', async ({ gotoDashboardPage, page }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
   await expect(panel.locator.locator('polyline.dmap-half').first()).toBeAttached();
-  const offenders = urls.filter((u) => /localhost:8080|diagrams\.net|viewer-static|mxgraph|\/drawio\//i.test(u));
+  const offenders = urls.filter((u) => /diagrams\.net|viewer-static|mxgraph|\/drawio\//i.test(u));
   expect(offenders).toEqual([]);
   // Only the panel counts: the Grafana frontend sandbox adds its own iframe to the page.
   expect(await panel.locator.locator('iframe').count()).toBe(0);

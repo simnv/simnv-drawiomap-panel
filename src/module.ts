@@ -39,14 +39,6 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['Diagram'],
         editor: DiagramEditor,
       })
-      .addTextInput({
-        path: 'editorUrl',
-        name: 'Editor URL',
-        category: ['Diagram'],
-        defaultValue: DEFAULT_OPTIONS.editorUrl,
-        description:
-          'Empty: the draw.io editor that the plugin includes. Or the URL of a draw.io in embed mode: self-hosted jgraph/drawio or https://embed.diagrams.net',
-      })
       .addCustomEditor({
         id: 'rules',
         path: 'rules',

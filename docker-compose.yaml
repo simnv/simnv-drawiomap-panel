@@ -24,9 +24,6 @@ services:
     environment: *grafana-env
     volumes: *grafana-volumes
     depends_on: [victoriametrics]
-  drawio:
-    image: jgraph/drawio:32.4.1
-    ports: ["127.0.0.1:8080:8080"]
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.126.0
     ports: ["127.0.0.1:8428:8428"]

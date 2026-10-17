@@ -30,7 +30,6 @@ test('edit mode opens the bundled draw.io editor, saves, and the panel updates',
   await page.getByTestId('dmap-open-editor').click();
   const frameEl = page.getByTestId('dmap-editor-frame');
   await expect(frameEl).toBeAttached();
-  await expect(frameEl).toHaveAttribute('data-dmap-editor-kind', 'bundled');
   await expect(frameEl).toHaveAttribute('srcdoc', /public\/plugins\/simnv-drawiomap-panel\/drawio\//);
   // Opaque origin: an iframe sandbox without allow-same-origin.
   const sandbox = (await frameEl.getAttribute('sandbox')) ?? '';
@@ -115,32 +114,4 @@ test('the bundled editor embeds image files of the plugin in the saved SVG', asy
     .first()
     .evaluate((el) => el.getAttribute('href') ?? el.getAttribute('xlink:href') ?? '');
   expect(href).toMatch(/^data:image\/png;base64,/);
-});
-
-test('an external Editor URL still opens the external draw.io', async ({ gotoPanelEditPage, page }) => {
-  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '2' });
-  const diagram = panelEditPage.getCustomOptions('Diagram');
-  await diagram.expand();
-  // jgraph/drawio of the dev stack (docker-compose.yaml).
-  await diagram.getTextInput('Editor URL').fill('http://localhost:8080');
-  await diagram.getTextInput('Editor URL').blur();
-  await page.getByTestId('dmap-open-editor').click();
-  const frameEl = page.getByTestId('dmap-editor-frame');
-  await expect(frameEl).toHaveAttribute('data-dmap-editor-kind', 'url');
-  await expect(frameEl).toHaveAttribute('src', /^http:\/\/localhost:8080\/\?embed=1/);
-  expect(await frameEl.getAttribute('sandbox')).toBeNull();
-  // With the Grafana frontend sandbox the host cannot verify the messages of another origin: it fails closed.
-  const sandboxed = await page.evaluate(() => {
-    const settings = (window as unknown as { grafanaBootData?: { settings?: Record<string, unknown> } }).grafanaBootData
-      ?.settings;
-    const list = settings?.enableFrontendSandboxForPlugins;
-    return Array.isArray(list) && list.includes('simnv-drawiomap-panel');
-  });
-  if (sandboxed) {
-    await expect(page.getByTestId('dmap-editor-blocked')).toBeVisible({ timeout: 60_000 });
-  } else {
-    await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', {
-      timeout: 60_000,
-    });
-  }
 });

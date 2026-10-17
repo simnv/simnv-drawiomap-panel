@@ -2,20 +2,19 @@ import React, { useCallback, useRef, useState } from 'react';
 import { StandardEditorProps } from '@grafana/data';
 import { Button, Field, Stack, TextArea, useTheme2 } from '@grafana/ui';
 import { DrawioModal } from '../editor/DrawioModal';
-import { Diagram, DEFAULT_OPTIONS, Options } from '../types';
+import { Diagram, Options } from '../types';
 import { fnv1a } from '../util/hash';
 import { importDiagram } from './importDiagram';
 
 type Props = StandardEditorProps<Diagram | undefined, Record<string, never>, Options>;
 
-export function DiagramEditor({ value, onChange, context }: Props) {
+export function DiagramEditor({ value, onChange }: Props) {
   const theme = useTheme2();
   const [modal, setModal] = useState<'edit' | 'export-only' | null>(null);
   const [xmlForModal, setXmlForModal] = useState('');
   const [paste, setPaste] = useState('');
   const [message, setMessage] = useState<string>('');
   const fileRef = useRef<HTMLInputElement>(null);
-  const editorUrl = context.options?.editorUrl || DEFAULT_OPTIONS.editorUrl;
 
   const save = useCallback(
     (r: { xml: string; svg: string }) => {
@@ -56,7 +55,8 @@ export function DiagramEditor({ value, onChange, context }: Props) {
           ? `Diagram ${value.hash}, ${Math.round(value.svg.length / 1024)} KB, saved ${value.updatedAt}`
           : 'No diagram'}
       </div>
-      <Stack direction="row">
+      {/* The options pane can be 300 px wide: the buttons wrap to the next row. */}
+      <Stack direction="row" wrap="wrap" gap={1}>
         <Button
           data-testid="dmap-open-editor"
           icon="edit"
@@ -101,7 +101,6 @@ export function DiagramEditor({ value, onChange, context }: Props) {
       ) : null}
       {modal ? (
         <DrawioModal
-          editorUrl={editorUrl}
           xml={xmlForModal}
           title="draw.io map"
           mode={modal}

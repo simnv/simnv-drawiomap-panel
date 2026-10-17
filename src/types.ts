@@ -95,14 +95,12 @@ export interface ZoomOptions {
 export interface Options {
   diagram?: Diagram;
   rules: Rule[];
-  editorUrl: string;
   zoom: ZoomOptions;
   linkWidth: { min: number; max: number };
 }
 
 export const DEFAULT_OPTIONS: Options = {
   rules: [],
-  editorUrl: '',
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
 };
@@ -282,7 +280,6 @@ export interface BindResult {
 /* ---------- editor ---------- */
 
 export interface DrawioModalProps {
-  editorUrl: string;
   xml: string;
   title?: string;
   /** edit: show the editor until the user saves or exits. export-only: load, export svg, close. */

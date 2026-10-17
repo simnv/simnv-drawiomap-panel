@@ -200,6 +200,9 @@ The build needs network access to GitHub for the first download (cached in `.dra
 
 ## Recommendation
 
+> Update (2026-10-17): the plugin now supports only the bundled editor. The Editor URL option and the external editor
+> code are removed. The text below is the history of the decision.
+
 **Make the bundled editor the default; keep the external Editor URL as an option.** Must-fix 2 and the dissent are
 done (opaque-origin frame, token-bound channel). Must-fix 1 and 3 are still open.
 

@@ -1,4 +1,4 @@
-import { buildEditorUrl, CHANNEL_META, editorOrigin } from './protocol';
+import { CHANNEL_META, editorSearch } from './protocol';
 
 declare const __webpack_public_path__: string | undefined;
 
@@ -11,16 +11,16 @@ const PLUGIN_PATH = 'public/plugins/simnv-drawiomap-panel/';
 export const EDITOR_SANDBOX = 'allow-scripts allow-popups allow-downloads allow-modals';
 
 /**
- * How the modal loads the editor:
- * - url: an external draw.io (src). Messages come from the editor origin. Replies go by window.postMessage to the
- *   editor origin.
- * - bundled: the bundled draw.io in a srcdoc document in a sandboxed frame (opaque origin). Its channel hello comes
- *   from origin 'null'. Replies go through the MessagePort of the hello (protocol.ts, acceptChannelHello).
- *   base is the URL of dist/drawio (bundledEditorBase).
+ * How the modal loads the editor: the bundled draw.io in a srcdoc document in a sandboxed frame (opaque origin). Its
+ * channel hello comes from origin 'null'. Replies go through the MessagePort of the hello (protocol.ts,
+ * acceptChannelHello). base is the URL of dist/drawio (bundledEditorBase).
  */
-export type EditorTarget =
-  | { kind: 'url'; src: string; origin: string }
-  | { kind: 'bundled'; srcDoc: string; origin: 'null'; sandbox: string; base: string };
+export interface EditorTarget {
+  srcDoc: string;
+  origin: 'null';
+  sandbox: string;
+  base: string;
+}
 
 /**
  * Base URL of the draw.io webapp in dist/drawio. Grafana serves it next to module.js.
@@ -85,19 +85,11 @@ export function buildEditorSrcdoc(base: string, search: string, opts: { token: s
   );
 }
 
-/**
- * An empty editor URL selects the bundled editor in an opaque-origin frame (docs/security.md). Other values are the
- * URL of an external draw.io. token is the channel token of the bundled editor.
- */
-export function editorTarget(editorUrl: string, isDark: boolean, token: string): EditorTarget {
-  const value = editorUrl.trim();
-  if (value !== '') {
-    return { kind: 'url', src: buildEditorUrl(value, isDark), origin: editorOrigin(value) };
-  }
+/** Target of the bundled editor in an opaque-origin frame (docs/security.md). token is the channel token. */
+export function editorTarget(isDark: boolean, token: string): EditorTarget {
   const base = bundledEditorBase();
-  const search = new URL(buildEditorUrl(base, isDark)).search;
-  const srcDoc = buildEditorSrcdoc(base, search, { token, nonce: cspNonce() });
-  return { kind: 'bundled', srcDoc, origin: 'null', sandbox: EDITOR_SANDBOX, base };
+  const srcDoc = buildEditorSrcdoc(base, editorSearch(isDark), { token, nonce: cspNonce() });
+  return { srcDoc, origin: 'null', sandbox: EDITOR_SANDBOX, base };
 }
 
 /**

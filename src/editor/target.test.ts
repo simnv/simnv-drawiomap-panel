@@ -33,18 +33,12 @@ describe('buildEditorSrcdoc', () => {
 });
 
 describe('editorTarget', () => {
-  it('uses the external editor for a URL', () => {
-    const ext = editorTarget('http://localhost:8080', false, 'f00dcafe');
-    expect(ext).toMatchObject({ kind: 'url', origin: 'http://localhost:8080' });
-    // The token is only for the bundled editor.
-    expect(ext.kind === 'url' && ext.src).not.toContain('f00dcafe');
-  });
-  it('uses the bundled editor in an opaque-origin frame for an empty value', () => {
-    const bundled = editorTarget('  ', true, 'f00d');
-    expect(bundled).toMatchObject({ kind: 'bundled', origin: 'null', sandbox: EDITOR_SANDBOX });
-    expect(bundled.kind === 'bundled' && bundled.base).toMatch(/\/public\/plugins\/simnv-drawiomap-panel\/drawio\/$/);
-    expect(bundled.kind === 'bundled' && bundled.srcDoc).toContain('dark=1');
-    expect(bundled.kind === 'bundled' && bundled.srcDoc).toContain('content="f00d"');
+  it('uses the bundled editor in an opaque-origin frame', () => {
+    const bundled = editorTarget(true, 'f00d');
+    expect(bundled).toMatchObject({ origin: 'null', sandbox: EDITOR_SANDBOX });
+    expect(bundled.base).toMatch(/\/public\/plugins\/simnv-drawiomap-panel\/drawio\/$/);
+    expect(bundled.srcDoc).toContain('dark=1');
+    expect(bundled.srcDoc).toContain('content="f00d"');
     expect(EDITOR_SANDBOX.split(' ')).not.toContain('allow-same-origin');
     expect(EDITOR_SANDBOX.split(' ')).toContain('allow-scripts');
   });

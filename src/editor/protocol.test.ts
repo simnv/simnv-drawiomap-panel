@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   acceptChannelHello,
-  acceptEditorMessage,
-  buildEditorUrl,
   channelHello,
-  classifyEditorMessage,
   newChannelToken,
-  editorOrigin,
+  editorSearch,
   eventSource,
   frameWindow,
   handleMessage,
@@ -18,19 +15,12 @@ const xml = '<mxfile><diagram/></mxfile>';
 const svgB64 = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`;
 const opts = { mode: 'edit' as const, title: 'map', isDark: false };
 
-describe('buildEditorUrl / editorOrigin', () => {
-  it('merges each embed parameter separately and sets dark from the theme', () => {
-    expect(buildEditorUrl('http://localhost:8080', false)).toBe(
-      'http://localhost:8080/?embed=1&proto=json&configure=1&spin=1&libraries=1&ui=min&saveAndExit=1&noExitBtn=0&dark=0'
+describe('editorSearch', () => {
+  it('sets the embed parameters and dark from the theme', () => {
+    expect(editorSearch(false)).toBe(
+      '?embed=1&proto=json&configure=1&spin=1&libraries=1&ui=min&saveAndExit=1&noExitBtn=0&dark=0'
     );
-    const u = new URL(buildEditorUrl('https://embed.diagrams.net/?ui=sketch&embed=1&lang=en', true));
-    expect(u.searchParams.get('ui')).toBe('sketch');
-    expect(u.searchParams.get('lang')).toBe('en');
-    expect(u.searchParams.get('proto')).toBe('json');
-    expect(u.searchParams.get('configure')).toBe('1');
-    expect(u.searchParams.get('dark')).toBe('1');
-    expect(u.searchParams.getAll('embed')).toEqual(['1']);
-    expect(editorOrigin('http://localhost:8080/?x=1')).toBe('http://localhost:8080');
+    expect(new URLSearchParams(editorSearch(true)).get('dark')).toBe('1');
   });
 });
 
@@ -43,16 +33,8 @@ describe('parseMessage', () => {
   });
 });
 
-describe('frameWindow / acceptEditorMessage', () => {
+describe('frameWindow / eventSource', () => {
   const editor = { name: 'editor frame' };
-  const other = { name: 'other frame' };
-  const ORIGIN = 'http://localhost:8080';
-  const ev = (over: Partial<{ origin: string; source: unknown; data: unknown }> = {}) => ({
-    origin: ORIGIN,
-    source: editor,
-    data: '{"event":"init"}',
-    ...over,
-  });
 
   it('returns the frame window, or undefined when the frontend sandbox forbids iframe.contentWindow', () => {
     expect(frameWindow({ contentWindow: editor } as never)).toBe(editor);
@@ -64,49 +46,15 @@ describe('frameWindow / acceptEditorMessage', () => {
     };
     expect(frameWindow(sandboxed as never)).toBeUndefined();
   });
-  it('reports the sender, or undefined when near-membrane throws on a cross-origin window', () => {
+  it('returns the sender window, or undefined when the frontend sandbox hides it', () => {
     const blocked = {
-      origin: ORIGIN,
       get source(): unknown {
         throw new Error('SecurityError: Blocked a frame from accessing a cross-origin frame.');
       },
     };
     expect(eventSource(blocked)).toBeUndefined();
-    expect(eventSource(ev())).toBe(editor);
-    expect(eventSource(ev({ source: null }))).toBeNull();
-  });
-  it('accepts an editor event only from the frame window and the editor origin', () => {
-    expect(classifyEditorMessage(ev(), ORIGIN, editor)).toEqual({ kind: 'accept', msg: { event: 'init' } });
-    expect(acceptEditorMessage(ev(), ORIGIN, editor)).toEqual({ event: 'init' });
-  });
-  it('rejects a wrong origin, another sender and a payload without a JSON event', () => {
-    expect(acceptEditorMessage(ev({ origin: 'https://evil.example' }), ORIGIN, editor)).toBeUndefined();
-    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, editor)).toBeUndefined();
-    expect(acceptEditorMessage(ev({ source: null }), ORIGIN, editor)).toBeUndefined();
-    expect(acceptEditorMessage(ev({ data: 'GrafanaAppInit' }), ORIGIN, editor)).toBeUndefined();
-    expect(acceptEditorMessage(ev({ data: { event: 'init' } }), ORIGIN, editor)).toBeUndefined();
-  });
-  it('fails closed when the frame window or the sender is not known: no first-sender pinning', () => {
-    // The frame is not mounted or was removed.
-    expect(acceptEditorMessage(ev(), ORIGIN, null)).toBeUndefined();
-    // The Grafana frontend sandbox forbids iframe.contentWindow.
-    expect(classifyEditorMessage(ev(), ORIGIN, undefined)).toEqual({ kind: 'blocked' });
-    // near-membrane throws on event.source.
-    const blockedSource = {
-      origin: ORIGIN,
-      data: '{"event":"configure"}',
-      get source(): unknown {
-        throw new Error('SecurityError');
-      },
-    };
-    expect(classifyEditorMessage(blockedSource, ORIGIN, editor)).toEqual({ kind: 'blocked' });
-    // Messages that are not editor events, or from another origin, never report a blocked editor.
-    expect(classifyEditorMessage(ev({ data: 'x' }), ORIGIN, undefined)).toEqual({ kind: 'ignore' });
-    expect(classifyEditorMessage(ev({ origin: 'https://evil.example' }), ORIGIN, undefined)).toEqual({
-      kind: 'ignore',
-    });
-    // A second message from the same sender is still compared with the frame window.
-    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, editor)).toBeUndefined();
+    expect(eventSource({ source: editor })).toBe(editor);
+    expect(eventSource({ source: null })).toBeNull();
   });
 });
 

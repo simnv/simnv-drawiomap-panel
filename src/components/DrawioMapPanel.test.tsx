@@ -46,7 +46,6 @@ const frame = (refId: string, labels: Record<string, string>, values: number[]) 
 
 const options: Options = {
   diagram: { xml: '<mxfile/>', svg, hash: fnv1a(svg), updatedAt: '2026-10-17T00:00:00Z' },
-  editorUrl: 'http://localhost:8080',
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false },
   linkWidth: { min: 2, max: 10 },
   rules: [
@@ -139,6 +138,11 @@ describe('DrawioMapPanel', () => {
   it('shows an empty state without a diagram', () => {
     const { getByTestId } = render(<DrawioMapPanel {...props({ options: { ...options, diagram: undefined } })} />);
     expect(getByTestId('dmap-empty')).toBeTruthy();
+  });
+  it('ignores an editorUrl value that an older version saved', async () => {
+    const legacy = { ...options, editorUrl: 'http://localhost:8080' } as Options;
+    const { findByTestId } = render(<DrawioMapPanel {...props({ options: legacy })} />);
+    expect(await findByTestId('dmap-panel')).toBeTruthy();
   });
   it('mounts the svg, binds and draws overlay halves', async () => {
     const { container, findByTestId } = render(<DrawioMapPanel {...props()} />);

@@ -17,7 +17,6 @@ View mode loads no draw.io code. The panel stores the diagram XML and the SVG th
 
 - Grafana 12.4 or later (`>=12.4.0`). Tested on 12.4.13 and 13.2.4.
 - The plugin is not signed. Set `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel` (or `allow_loading_unsigned_plugins` in `grafana.ini`).
-- A draw.io editor URL for edit mode. Use the self-hosted `jgraph/drawio` image (the compose stack starts one) or `https://embed.diagrams.net`.
 - A data source with time series. The demo uses VictoriaMetrics.
 
 ## Quick start
@@ -37,7 +36,6 @@ The stack starts these services:
 | --------------- | --------------------- |
 | Grafana 12.4.13 | http://localhost:3012 |
 | Grafana 13.2.4  | http://localhost:3013 |
-| draw.io editor  | http://localhost:8080 |
 | VictoriaMetrics | http://localhost:8428 |
 
 A generator pushes synthetic traffic series. Open the demo dashboard: http://localhost:3012/d/drawiomap-demo (or port 3013). Anonymous access is on, with the Admin role.
@@ -240,11 +238,11 @@ The panel sets `touch-action: pan-x pan-y` at the configured zoom: one finger sc
 
 ![Zoomed view with the reset button](docs/screenshots/zoomed-reset-button.png)
 
-## Editor URL option
+## Editor
 
-**Diagram > Editor URL** sets the draw.io editor for edit mode. The default is `http://localhost:8080` (the self-hosted editor in the compose stack). You can use `https://embed.diagrams.net` or your own server.
+The plugin includes the draw.io editor (`dist/drawio`). Edit mode opens it in an iframe inside a modal, in embed mode. The iframe has an opaque origin, so the editor cannot reach the Grafana page (see `docs/security.md`). The plugin has no option for another editor URL. An `editorUrl` value that an older version saved is ignored. No draw.io code loads in view mode.
 
-The panel opens the editor in an iframe inside a modal, in embed mode. No draw.io code loads in view mode. The editor is the only place that has an iframe. A browser must reach the editor URL.
+![Diagram options](docs/screenshots/options-diagram.png)
 
 ## Grafana 12 and 13
 
