@@ -236,7 +236,7 @@ export function DrawioMapPanel({
     if (inCard(e.target) || !stageEl) {
       return;
     }
-    const patch = patchAt(e.target, stageEl, result.patches);
+    const patch = patchAt(e.target, stageEl, result.patches, stage.index);
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: true } : null);
   };
   const drag = useRef<{ x: number; y: number } | null>(null);
@@ -257,7 +257,7 @@ export function DrawioMapPanel({
     if (e.pointerType === 'touch' || !canHover() || card?.pinned || !stageEl) {
       return;
     }
-    const patch = patchAt(e.target, stageEl, result.patches);
+    const patch = patchAt(e.target, stageEl, result.patches, stage.index);
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: false } : null);
   };
   const onPointerUp = () => (drag.current = null);

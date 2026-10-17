@@ -1,4 +1,4 @@
-import { attachLinkLabels, cellMetaFromAttrs, nodeIcons } from '../adapter/portograph';
+import { attachLinkLabels, cellMetaFromAttrs, iconOwners, nodeIcons } from '../adapter/portograph';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
 
 const SHAPE_TAGS = new Set(['rect', 'path', 'ellipse', 'circle', 'polygon', 'image']);
@@ -94,10 +94,12 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
   const metas = cellMetas(index);
   attachLinkLabels(metas);
   const icons = nodeIcons(metas);
+  const owners = iconOwners(metas);
   for (const entry of index.values()) {
     if (entry.meta.kind === 'node') {
       entry.iconId = icons.get(entry.meta.key);
     }
+    entry.ownerId = owners.get(entry.meta.id);
   }
   return index;
 }

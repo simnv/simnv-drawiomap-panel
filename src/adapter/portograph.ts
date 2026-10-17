@@ -99,25 +99,49 @@ export function endpointScope(e?: Endpoint): Record<string, string> | undefined 
   return { node: e.node, port: e.port ?? '', ordinal: String(e.ordinal), raw: e.raw };
 }
 
+/** Cells that draw the icon of a node: a pg-kind="node-icon" cell with pg-of, else pg-iconTile~<key> and pg-icon~<key>. */
+function iconCells(cells: CellMeta[]): { tagged: Map<string, string[]>; byId: Set<string> } {
+  const tagged = new Map<string, string[]>();
+  for (const c of cells) {
+    const of = c.attrs['pg-of'];
+    if (c.attrs['pg-kind'] === 'node-icon' && of) {
+      tagged.set(of, [...(tagged.get(of) ?? []), c.id]);
+    }
+  }
+  return { tagged, byId: new Set(cells.map((c) => c.id)) };
+}
+
 /**
  * Node key → cell id of its icon. A cell with pg-kind="node-icon" and pg-of=<node pg-id> wins.
  * Older exports have no tag: then the icon tile (the background of a glyph) is used, else the icon cell.
  */
 export function nodeIcons(cells: CellMeta[]): Map<string, string> {
-  const ids = new Set(cells.map((c) => c.id));
+  const { tagged, byId } = iconCells(cells);
   const out = new Map<string, string>();
-  for (const c of cells) {
-    if (c.attrs['pg-kind'] === 'node-icon' && c.attrs['pg-of'] && !out.has(c.attrs['pg-of'])) {
-      out.set(c.attrs['pg-of'], c.id);
-    }
-  }
   for (const c of cells) {
     if (c.kind !== 'node' || out.has(c.key)) {
       continue;
     }
-    const id = [`pg-iconTile~${c.key}`, `pg-icon~${c.key}`].find((i) => ids.has(i));
+    const id = tagged.get(c.key)?.[0] ?? [`pg-iconTile~${c.key}`, `pg-icon~${c.key}`].find((i) => byId.has(i));
     if (id) {
       out.set(c.key, id);
+    }
+  }
+  return out;
+}
+
+/** Icon cell id → node cell id, for every cell that draws a node icon. A hover on an icon is a hover on its node. */
+export function iconOwners(cells: CellMeta[]): Map<string, string> {
+  const { tagged, byId } = iconCells(cells);
+  const out = new Map<string, string>();
+  for (const c of cells) {
+    if (c.kind !== 'node') {
+      continue;
+    }
+    for (const id of [...(tagged.get(c.key) ?? []), `pg-iconTile~${c.key}`, `pg-icon~${c.key}`]) {
+      if (byId.has(id) && !out.has(id)) {
+        out.set(id, c.id);
+      }
     }
   }
   return out;

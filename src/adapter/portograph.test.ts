@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachLinkLabels, cellMetaFromAttrs, nodeIcons, parseEndpoint } from './portograph';
+import { attachLinkLabels, cellMetaFromAttrs, iconOwners, nodeIcons, parseEndpoint } from './portograph';
 
 describe('parseEndpoint', () => {
   it('parses node, node:port and node:port#n', () => {
@@ -114,5 +114,22 @@ describe('nodeIcons', () => {
   });
   it('has no entry for a node without an icon', () => {
     expect(nodeIcons([node('pg-node~c', 'c')]).has('c')).toBe(false);
+  });
+});
+
+describe('iconOwners', () => {
+  it('maps every icon cell of a node to the node cell', () => {
+    const cells = [
+      cellMetaFromAttrs('pg-node~a', { 'pg-kind': 'node', 'pg-id': 'a' }, false),
+      cellMetaFromAttrs('pg-icon~a', {}, false),
+      cellMetaFromAttrs('pg-iconTile~a', {}, false),
+      cellMetaFromAttrs('t', { 'pg-kind': 'node-icon', 'pg-of': 'a' }, false),
+      cellMetaFromAttrs('pg-icon~zz', {}, false),
+    ];
+    expect(Object.fromEntries(iconOwners(cells))).toEqual({
+      t: 'pg-node~a',
+      'pg-iconTile~a': 'pg-node~a',
+      'pg-icon~a': 'pg-node~a',
+    });
   });
 });

@@ -325,6 +325,11 @@ describe('DrawioMapPanel hover card', () => {
     expect(row.getAttribute('href')).toBe('/d/cpu?h=rtr-b');
     expect(dialog.querySelectorAll('[data-testid="dmap-card-spark"] polyline')).toHaveLength(1);
   });
+  it('a click on the node icon opens the card of the node', async () => {
+    const { cell } = await setup(withCpu());
+    fireEvent.click(cell('pg-icon~rtr-b').querySelector('ellipse, path')!);
+    expect((await screen.findByRole('dialog')).textContent).toContain('CPU');
+  });
   it('a click on a sparkline opens its url', async () => {
     const { cell } = await setup(withCpu());
     fireEvent.click(cell('pg-node~rtr-b'));

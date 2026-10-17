@@ -41,6 +41,8 @@ export interface CellEntry {
   label?: Element;
   /** Node only: the cell id of its icon (see adapter/portograph nodeIcons). */
   iconId?: string;
+  /** Icon cells only: the cell id of the node that owns the icon. */
+  ownerId?: string;
   original: {
     fill?: string;
     stroke?: string;
