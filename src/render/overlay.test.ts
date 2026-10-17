@@ -6,7 +6,9 @@ import { ensureOverlay, renderOverlay } from './overlay';
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g><g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30"/></g></g>
-  <g data-cell-id="e1"><g><path d="M 0 0 L 100 0 L 100 50" fill="none" stroke="#333" pointer-events="stroke"/></g></g></g>
+  <g data-cell-id="e1"><g><path d="M 0 0 L 100 0 L 100 50" fill="none" stroke="#333" pointer-events="stroke"/><path id="e1-arrow" d="M 100 50 L 98 46 L 102 46 Z" pointer-events="all"/></g><g id="e1-value"><text>10G</text></g>
+    <g data-cell-id="lbl1"><g><rect x="90" y="20" width="20" height="10"/><text>edge label</text></g></g></g>
+  <g data-cell-id="n2"><g><rect x="150" y="10" width="40" height="30"/></g></g></g>
 </svg>`;
 
 function build(): { root: SVGSVGElement; index: CellIndex } {
@@ -27,7 +29,7 @@ function build(): { root: SVGSVGElement; index: CellIndex } {
     meta: cellMetaFromAttrs('e1', {}, true),
     group: e1,
     line: e1.querySelector('path')!,
-    arrows: [],
+    arrows: [e1.querySelector('#e1-arrow')!],
     original: {},
   });
   return { root, index };
@@ -50,13 +52,18 @@ const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
 });
 const opts = { theme: createTheme() };
 
+const before = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
 describe('ensureOverlay', () => {
-  it('creates one overlay group as the last child of the root', () => {
-    const { root } = build();
-    const g = ensureOverlay(root);
+  it('creates one overlay group directly after the edge path and its arrow heads', () => {
+    const { root, index } = build();
+    const e1 = index.get('e1')!;
+    const g = ensureOverlay(e1);
     expect(g.getAttribute('class')).toBe('dmap-overlay');
-    expect(root.lastElementChild).toBe(g);
-    expect(ensureOverlay(root)).toBe(g);
+    expect(g.getAttribute('data-dmap-cell')).toBe('e1');
+    expect(g.previousElementSibling).toBe(root.querySelector('#e1-arrow'));
+    expect(g.parentElement).toBe(e1.line!.parentElement);
+    expect(ensureOverlay(e1)).toBe(g);
   });
 });
 
@@ -84,7 +91,7 @@ describe('renderOverlay', () => {
     expect(b2a.getAttribute('data-dmap-step')).toBe('2');
     expect(root.querySelectorAll('polygon.dmap-arrow')).toHaveLength(2);
     // the values show in the hover card only
-    expect(root.querySelectorAll('.dmap-label, text')).toHaveLength(0);
+    expect(root.querySelectorAll('.dmap-label, .dmap-overlay text')).toHaveLength(0);
   });
   it('draws the whole edge as one half when only one series is bound', () => {
     const { root, index } = build();
@@ -102,7 +109,7 @@ describe('renderOverlay', () => {
       new Map([['n1', patch('n1', { card: { reducer: 'last', rows: [{ refId: 'D' }] } })]]),
       opts
     );
-    expect(ensureOverlay(root).childElementCount).toBe(0);
+    expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(0);
   });
   it('clears the previous render', () => {
     const { root, index } = build();
@@ -110,7 +117,24 @@ describe('renderOverlay', () => {
     renderOverlay(root, index, p, opts);
     renderOverlay(root, index, p, opts);
     expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(1);
+    expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(1);
     renderOverlay(root, index, new Map(), opts);
     expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(0);
+    expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(0);
+  });
+  it('draws the halves above the edge path and below the labels and the later cells', () => {
+    const { root, index } = build();
+    const patches: PatchMap = new Map([['e1', patch('e1', { link: { a2b: half(), b2a: half() } })]]);
+    renderOverlay(root, index, patches, opts);
+    const path = index.get('e1')!.line!;
+    const items = Array.from(root.querySelectorAll('.dmap-half, .dmap-arrow'));
+    expect(items).toHaveLength(4);
+    for (const item of items) {
+      expect(before(path, item)).toBe(true);
+      // the value label of the edge, the link-label cell and a node drawn after the edge stay on top
+      expect(before(item, root.querySelector('#e1-value text')!)).toBe(true);
+      expect(before(item, root.querySelector('[data-cell-id="lbl1"] text')!)).toBe(true);
+      expect(before(item, root.querySelector('[data-cell-id="n2"]')!)).toBe(true);
+    }
   });
 });

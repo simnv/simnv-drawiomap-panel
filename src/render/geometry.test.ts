@@ -98,4 +98,18 @@ describe('pathGeometry', () => {
     expect(poly[0]).toEqual({ x: 5, y: 2.5 });
     expect(poly[poly.length - 1]).toEqual({ x: 55, y: 27.5 });
   });
+  it('keeps only the own transform of the path for a sibling target in a scaled group', () => {
+    const { g, p } = mk();
+    // parent group: scale 2, translate (100, 0); the path adds translate (10, 5)
+    Object.assign(p, {
+      getTotalLength: () => 150,
+      getPointAtLength: (d: number) => (d <= 100 ? { x: d, y: 0 } : { x: 100, y: d - 100 }),
+      getCTM: () => ({ a: 2, b: 0, c: 0, d: 2, e: 120, f: 10 }),
+    });
+    Object.assign(g, { getCTM: () => ({ a: 2, b: 0, c: 0, d: 2, e: 100, f: 0 }) });
+    const geo = pathGeometry(p, g);
+    const m = geo.pointAt(150);
+    expect(m.x).toBeCloseTo(110);
+    expect(m.y).toBeCloseTo(55);
+  });
 });

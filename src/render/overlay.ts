@@ -10,14 +10,29 @@ export interface OverlayOptions {
   arrowSize?: number;
 }
 
-export function ensureOverlay(root: SVGSVGElement): SVGGElement {
-  let g = root.querySelector(`:scope > g.${OVERLAY_CLASS}`) as SVGGElement | null;
-  if (!g) {
-    g = document.createElementNS(NS, 'g');
-    g.setAttribute('class', OVERLAY_CLASS);
-    g.setAttribute('pointer-events', 'visiblePainted');
-    root.appendChild(g);
+/**
+ * The overlay group of one link. It is the next sibling of the edge path, after the arrow heads in the same
+ * parent. Thus the halves keep the z-order of their edge: above the hidden edge stroke, below the edge label,
+ * the link-label cells and all cells that draw.io draws after the edge.
+ */
+export function ensureOverlay(entry: CellEntry): SVGGElement {
+  const line = entry.line!;
+  const parent = line.parentNode!;
+  let anchor: Element = line;
+  for (const a of entry.arrows) {
+    if (a.parentNode === parent && anchor.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      anchor = a;
+    }
   }
+  const next = anchor.nextElementSibling;
+  if (next?.localName === 'g' && next.classList.contains(OVERLAY_CLASS)) {
+    return next as SVGGElement;
+  }
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', OVERLAY_CLASS);
+  g.setAttribute('data-dmap-cell', entry.meta.id);
+  g.setAttribute('pointer-events', 'visiblePainted');
+  anchor.after(g);
   return g;
 }
 
@@ -82,18 +97,16 @@ function drawHalf(
   );
 }
 
-function drawLink(
-  layer: SVGGElement,
-  entry: CellEntry,
-  link: { a2b?: HalfState; b2a?: HalfState },
-  o: Required<OverlayOptions>
-): void {
-  if (!entry.line) {
+function drawLink(entry: CellEntry, link: { a2b?: HalfState; b2a?: HalfState }, o: Required<OverlayOptions>): void {
+  if (!entry.line || (!link.a2b && !link.b2a)) {
     return;
   }
+  const layer = ensureOverlay(entry);
+  // The layer is a sibling of the path: the conversion is identity unless the path has its own transform.
   const geo = pathGeometry(entry.line, layer);
   const L = geo.length;
   if (!(L > 0)) {
+    layer.remove();
     return;
   }
   const id = entry.meta.id;
@@ -111,15 +124,14 @@ function drawLink(
 
 export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: PatchMap, opts: OverlayOptions): void {
   const o: Required<OverlayOptions> = { arrowSize: 8, ...opts };
-  const layer = ensureOverlay(root);
-  layer.replaceChildren();
+  root.querySelectorAll(`g.${OVERLAY_CLASS}`).forEach((g) => g.remove());
   for (const [id, patch] of patches) {
     const entry = index.get(id);
     if (!entry) {
       continue;
     }
     if (patch.link) {
-      drawLink(layer, entry, patch.link, o);
+      drawLink(entry, patch.link, o);
     }
   }
 }

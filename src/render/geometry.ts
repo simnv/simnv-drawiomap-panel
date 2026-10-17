@@ -166,7 +166,7 @@ export interface PathGeom {
 type PathApi = SVGPathElement & { getTotalLength(): number; getPointAtLength(d: number): { x: number; y: number } };
 
 /**
- * Geometry of an edge path expressed in the coordinate system of `target` (the overlay group).
+ * Geometry of an edge path expressed in the coordinate system of `target` (the overlay group of the link, a sibling of the path).
  * Browser: getTotalLength/getPointAtLength on the real path, points mapped with
  * target.getCTM()^-1 × line.getCTM(), so transforms on the edge or its ancestors are respected.
  * jsdom: pure parser on the d attribute (M/L exact, curves approximated); identity transform.

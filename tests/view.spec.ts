@@ -1,5 +1,7 @@
 import { expect, test } from '@grafana/plugin-e2e';
 
+const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
+
 test('renders the diagram and colours links from synthetic traffic', async ({ gotoDashboardPage }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
@@ -14,6 +16,27 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
   await expect(panel.locator.locator('[data-cell-id="pg-node~rtr-a"]')).toHaveAttribute('data-dmap-step', '1');
   // The values and sparklines show in the hover card only.
   await expect(panel.locator.locator('.dmap-overlay text, .dmap-label, .dmap-spark')).toHaveCount(0);
+});
+
+test('link labels stay above the coloured link halves', async ({ gotoDashboardPage }) => {
+  const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
+  const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
+  const link = 'pg-link~wan1:pppoe->rtr-a:wan1';
+  await expect(panel.locator.locator(`polyline.dmap-half[data-dmap-cell="${link}"]`)).toHaveCount(2);
+  const label = panel.locator.locator(`[data-cell-id="pg-linkLabel~wan1:pppoe->rtr-a:wan1"] text`);
+  const hit = await label.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return {
+      inLabel: !!top?.closest('[data-meta-pg-kind="link-label"]'),
+      half: !!top?.closest('.dmap-half, .dmap-arrow'),
+      tag: top?.localName,
+    };
+  });
+  expect(hit).toEqual({ inLabel: true, half: false, tag: expect.any(String) });
+  if (SHOTS) {
+    await panel.locator.screenshot({ path: `${SHOTS}/labels-above-links.png` });
+  }
 });
 
 test('node state colours the node icon, not the whole node', async ({ gotoDashboardPage }) => {
