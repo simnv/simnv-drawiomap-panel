@@ -25,19 +25,19 @@ describe('parseEndpoint', () => {
 describe('cellMetaFromAttrs', () => {
   it('maps a link with the pg contract', () => {
     const m = cellMetaFromAttrs(
-      'pg-link~wan1:pppoe->rtr-a:wan1',
+      'pg-link~isp-a:pppoe->rtr-a:wan1',
       {
         label: '',
         'pg-kind': 'link',
-        'pg-id': 'wan1:pppoe->rtr-a:wan1',
-        'pg-from': 'wan1:pppoe',
+        'pg-id': 'isp-a:pppoe->rtr-a:wan1',
+        'pg-from': 'isp-a:pppoe',
         'pg-to': 'rtr-a:wan1',
       },
       true
     );
     expect(m.kind).toBe('link');
-    expect(m.key).toBe('wan1:pppoe->rtr-a:wan1');
-    expect(m.from?.node).toBe('wan1');
+    expect(m.key).toBe('isp-a:pppoe->rtr-a:wan1');
+    expect(m.from?.node).toBe('isp-a');
     expect(m.to?.port).toBe('wan1');
     expect(m.labelText).toBe('');
   });
@@ -52,13 +52,13 @@ describe('cellMetaFromAttrs', () => {
     expect(n.key).toBe('rtr-a');
     expect(n.labelText).toBe('rtr-a');
     const p = cellMetaFromAttrs(
-      'pg-port~rtr-a~lte~1',
-      { 'pg-kind': 'port', 'pg-id': 'rtr-a:lte', 'pg-node': 'rtr-a', 'pg-port': 'lte' },
+      'pg-port~rtr-a~wan3~1',
+      { 'pg-kind': 'port', 'pg-id': 'rtr-a:wan3', 'pg-node': 'rtr-a', 'pg-port': 'wan3' },
       false,
-      'lte'
+      'wan3'
     );
     expect(p.kind).toBe('port');
-    expect(p.attrs['pg-port']).toBe('lte');
+    expect(p.attrs['pg-port']).toBe('wan3');
   });
   it('falls back for hand-drawn cells without pg attributes', () => {
     const v = cellMetaFromAttrs('node-a', { host: 'rtr-b', label: 'A' }, false, 'A');

@@ -41,42 +41,42 @@ const up = (labels: Record<string, string>, values: number[]): SeriesInfo => ({
   field: { name: 'up', type: FieldType.number, config: { thresholds: upThresholds }, values } as Field,
 });
 const series = [
-  mk('A', { job: 'node-wan1', device: 'pppoe' }, [40e6, 41e6]),
+  mk('A', { job: 'node-isp-a', device: 'pppoe' }, [40e6, 41e6]),
   mk('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]),
-  mk('A', { job: 'node-wan2', device: 'dhcp' }, [90e6]),
+  mk('A', { job: 'node-radio', device: 'dhcp' }, [90e6]),
   up({ job: 'node-rtr-a' }, [1]),
   up({ job: 'node-lte' }, [0]),
   mk('D', { job: 'node-rtr-a' }, [0.5, 1.5, 1.0]),
 ];
 const cells = [
   cellMetaFromAttrs(
-    'pg-link~wan1:pppoe->rtr-a:wan1',
+    'pg-link~isp-a:pppoe->rtr-a:wan1',
     {
       'pg-kind': 'link',
-      'pg-id': 'wan1:pppoe->rtr-a:wan1',
-      'pg-from': 'wan1:pppoe',
+      'pg-id': 'isp-a:pppoe->rtr-a:wan1',
+      'pg-from': 'isp-a:pppoe',
       'pg-to': 'rtr-a:wan1',
     },
     true
   ),
   cellMetaFromAttrs(
-    'pg-link~wan2:dhcp->rtr-a:wan2',
+    'pg-link~radio:dhcp->rtr-a:wan2',
     {
       'pg-kind': 'link',
-      'pg-id': 'wan2:dhcp->rtr-a:wan2',
-      'pg-from': 'wan2:dhcp',
+      'pg-id': 'radio:dhcp->rtr-a:wan2',
+      'pg-from': 'radio:dhcp',
       'pg-to': 'rtr-a:wan2',
     },
     true
   ),
   cellMetaFromAttrs(
-    'pg-link~lte:static->rtr-a:lte',
-    { 'pg-kind': 'link', 'pg-id': 'lte:static->rtr-a:lte', 'pg-from': 'lte:static', 'pg-to': 'rtr-a:lte' },
+    'pg-link~lte:static->rtr-a:wan3',
+    { 'pg-kind': 'link', 'pg-id': 'lte:static->rtr-a:wan3', 'pg-from': 'lte:static', 'pg-to': 'rtr-a:wan3' },
     true
   ),
   cellMetaFromAttrs('pg-node~rtr-a', { 'pg-kind': 'node', 'pg-id': 'rtr-a' }, false, 'rtr-a'),
   cellMetaFromAttrs('pg-node~lte', { 'pg-kind': 'node', 'pg-id': 'lte' }, false, 'lte'),
-  cellMetaFromAttrs('pg-port~rtr-a~lte~1', { 'pg-kind': 'port', 'pg-id': 'rtr-a:lte' }, false, 'lte'),
+  cellMetaFromAttrs('pg-port~rtr-a~wan3~1', { 'pg-kind': 'port', 'pg-id': 'rtr-a:wan3' }, false, 'wan3'),
 ];
 const rules: Rule[] = [
   {
@@ -91,7 +91,7 @@ const rules: Rule[] = [
   },
   {
     name: 'wan 100M',
-    select: { kind: 'link', attrs: { 'pg-to': '/^rtr-a:(wan1|wan2|lte)$/' } },
+    select: { kind: 'link', attrs: { 'pg-to': '/^rtr-a:(wan1|wan2|wan3)$/' } },
     link: { capacity: '100000000' },
   },
   {
@@ -123,7 +123,7 @@ describe('bind', () => {
   const { patches, warnings } = bind(rules, cells, series, ctx);
 
   it('colours both halves of a link and merges capacity from a later rule', () => {
-    const p = patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const p = patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(p.ruleNames).toEqual(['links', 'wan 100M']);
     expect(p.link?.a2b?.status).toBe('ok');
     expect(p.link?.a2b?.value).toBe(41e6);
@@ -136,10 +136,10 @@ describe('bind', () => {
     expect(p.link?.a2b?.width).toBeCloseTo(2 + 8 * 0.41);
   });
   it('red at 90 percent', () => {
-    expect(patches.get('pg-link~wan2:dhcp->rtr-a:wan2')!.link?.a2b?.stepIndex).toBe(2);
+    expect(patches.get('pg-link~radio:dhcp->rtr-a:wan2')!.link?.a2b?.stepIndex).toBe(2);
   });
   it('grey no data when the series is missing', () => {
-    const h = patches.get('pg-link~lte:static->rtr-a:lte')!.link!.a2b!;
+    const h = patches.get('pg-link~lte:static->rtr-a:wan3')!.link!.a2b!;
     expect(h.status).toBe('nodata');
     expect(h.stepIndex).toBe(-1);
     expect(h.color).toBe(theme.colors.text.disabled);
@@ -164,20 +164,20 @@ describe('bind', () => {
       series,
       ctx
     );
-    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.card).toEqual({
+    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.card).toEqual({
       reducer: 'last',
       url: '/d/if?d=${from.port}',
       title: '${from.node}',
     });
-    expect(patches.get('pg-link~lte:static->rtr-a:lte')!.card).toEqual({ reducer: 'last' });
+    expect(patches.get('pg-link~lte:static->rtr-a:wan3')!.card).toEqual({ reducer: 'last' });
   });
   it('resolves rule urls', () => {
-    expect(patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.urls).toEqual([
-      { url: '/d/iface?var-job=node-wan1&var-device=pppoe' },
+    expect(patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.urls).toEqual([
+      { url: '/d/iface?var-job=node-isp-a&var-device=pppoe' },
     ]);
   });
   it('skips unmatched cells', () => {
-    expect(patches.has('pg-port~rtr-a~lte~1')).toBe(false);
+    expect(patches.has('pg-port~rtr-a~wan3~1')).toBe(false);
     expect(warnings).toEqual([]);
   });
   it('marks unbound when a template cannot resolve', () => {
@@ -203,7 +203,7 @@ describe('bind', () => {
       series,
       ctx
     );
-    const p = r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const p = r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(p.link?.a2b?.status).toBe('unbound');
     expect(p.link?.b2a?.status).toBe('unbound');
     expect(p.link?.a2b?.color).toBe(theme.colors.text.disabled);
@@ -231,10 +231,10 @@ describe('bind', () => {
     const field: Field = { name: 'v', type: FieldType.number, config: { unit: 'bps', decimals: 1 }, values: [] };
     const proc = getDisplayProcessor({ field, theme });
     const r = bind(rules, cells, series, { ...ctx, display: (_s, v) => proc(v) });
-    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe(
+    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe(
       '41.0 Mb/s · 41% of 100 Mb/s'
     );
-    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe(
+    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe(
       '10.0 Mb/s · 10% of 100 Mb/s'
     );
   });
@@ -243,7 +243,7 @@ describe('bind', () => {
       [
         {
           name: 'one',
-          select: { ids: ['pg-link~wan1:pppoe->rtr-a:wan1'] },
+          select: { ids: ['pg-link~isp-a:pppoe->rtr-a:wan1'] },
           link: { a2b: { refId: 'A', match: { device: 'pppoe' } } },
         },
       ],
@@ -251,7 +251,7 @@ describe('bind', () => {
       series,
       ctx
     );
-    const p = r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const p = r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(p.link?.a2b?.status).toBe('ok');
     expect(p.link?.b2a).toBeUndefined();
     expect(p.link?.a2b?.percent).toBeUndefined();
@@ -261,7 +261,7 @@ describe('bind', () => {
 
 describe('bind review fixes', () => {
   const withUnit = (unit: string | undefined, value: number): SeriesInfo => ({
-    ...mk('U', { job: 'node-wan1', device: 'pppoe' }, [value]),
+    ...mk('U', { job: 'node-isp-a', device: 'pppoe' }, [value]),
     field: { name: 'v', type: FieldType.number, config: unit ? { unit } : {}, values: [value] } as Field,
   });
   const linkCell = cells[0];

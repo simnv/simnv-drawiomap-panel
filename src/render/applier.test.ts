@@ -157,9 +157,9 @@ describe('applyPatches', () => {
   });
 });
 
-describe('applyPatches on a native text label (l3-routing)', () => {
+describe('applyPatches on a native text label (demo-l3)', () => {
   it('writes the text and restores it on reset', () => {
-    const raw = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8');
     const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(raw).svg));
     const entry = index.get('pg-node~rtr-a')!;
     expect(entry.label!.localName).toBe('text');
@@ -201,7 +201,7 @@ describe('applyPatches on a native text label (l3-routing)', () => {
 
 describe('applyPatches on a multi-line foreignObject label (legacy-html-labels)', () => {
   const load = () => {
-    const raw = readFileSync(resolve(__dirname, '../../fixtures/svg/legacy-html-labels.svg'), 'utf8');
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/legacy-html-labels.svg'), 'utf8');
     const root = mountSvg(document.createElement('div'), sanitizeSvg(raw).svg);
     const index = buildCellIndex(root);
     const entry = index.get('pg-node~rtr-a')!;
@@ -214,12 +214,12 @@ describe('applyPatches on a multi-line foreignObject label (legacy-html-labels)'
 
   it('keeps the line structure over two refreshes without a text patch', () => {
     const { index, entry, before } = load();
-    expect(lines(entry.label!)).toEqual(['rtr-a', 'mwan3 + PBR']);
+    expect(lines(entry.label!)).toEqual(['rtr-a', 'multi-WAN + PBR']);
     const round = () => new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape() })]]);
     const prev = applyPatches(index, round(), new Set());
     applyPatches(index, round(), prev);
     expect(entry.label!.innerHTML).toBe(before);
-    expect(lines(entry.label!)).toEqual(['rtr-a', 'mwan3 + PBR']);
+    expect(lines(entry.label!)).toEqual(['rtr-a', 'multi-WAN + PBR']);
   });
   it('restores the exact markup after a text patch', () => {
     const { index, entry, before } = load();
@@ -229,7 +229,7 @@ describe('applyPatches on a multi-line foreignObject label (legacy-html-labels)'
     expect(entry.label!.textContent).toBe('up 2');
     applyPatches(index, new Map(), prev);
     expect(entry.label!.innerHTML).toBe(before);
-    expect(lines(entry.label!)).toEqual(['rtr-a', 'mwan3 + PBR']);
+    expect(lines(entry.label!)).toEqual(['rtr-a', 'multi-WAN + PBR']);
   });
 });
 

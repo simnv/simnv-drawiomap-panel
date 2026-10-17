@@ -35,7 +35,7 @@ vi.hoisted(() => {
     window.matchMedia ?? ((() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as never);
 });
 
-const svg = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
+const svg = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8');
 /** `config`: the field config after the overrides, as Grafana gives it to the panel. */
 const frame = (refId: string, labels: Record<string, string>, values: number[], config: FieldConfig = {}) =>
   toDataFrame({
@@ -80,9 +80,9 @@ const upThresholds = {
 
 function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
   const series = [
-    frame('A', { job: 'node-wan1', device: 'pppoe' }, [41e6]),
+    frame('A', { job: 'node-isp-a', device: 'pppoe' }, [41e6]),
     frame('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]),
-    frame('A', { job: 'node-wan2', device: 'dhcp' }, [90e6]),
+    frame('A', { job: 'node-radio', device: 'dhcp' }, [90e6]),
     frame('C', { job: 'node-rtr-a' }, [1], { thresholds: upThresholds }),
     frame('C', { job: 'node-lte' }, [0], { thresholds: upThresholds }),
     frame('E', { job: 'node-rtr-b' }, [12, 30, 42]),
@@ -154,15 +154,15 @@ describe('DrawioMapPanel', () => {
     expect(container.querySelectorAll('svg g[data-cell-id]').length).toBe(108);
     expect(wrapper.getAttribute('data-dmap-cells')).toBe('108');
     const a2b = container.querySelector(
-      'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"]'
+      'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~isp-a:pppoe->rtr-a:wan1"]'
     )!;
     expect(a2b.getAttribute('data-dmap-step')).toBe('0');
     const red = container.querySelector(
-      'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan2:dhcp->rtr-a:wan2"]'
+      'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~radio:dhcp->rtr-a:wan2"]'
     )!;
     expect(red.getAttribute('data-dmap-step')).toBe('2');
     const lte = container.querySelector(
-      'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~lte:static->rtr-a:lte"]'
+      'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~lte:static->rtr-a:wan3"]'
     )!;
     expect(lte.getAttribute('data-dmap-status')).toBe('nodata');
     expect(container.querySelector('[data-cell-id="pg-node~lte"]')!.getAttribute('data-dmap-step')).toBe('0');
@@ -203,7 +203,7 @@ describe('DrawioMapPanel', () => {
 });
 
 describe('DrawioMapPanel hover card', () => {
-  const linkId = 'pg-link~wan1:pppoe->rtr-a:wan1';
+  const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
   const cpuRule = {
     name: 'router cpu',
     select: { ids: ['rtr-b'] },
@@ -241,11 +241,11 @@ describe('DrawioMapPanel hover card', () => {
     const { half, wrapper } = await setup();
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 50, clientY: 40 });
     const c = await screen.findByRole('tooltip');
-    expect(c.textContent).toContain('wan1 → rtr-a');
+    expect(c.textContent).toContain('isp-a → rtr-a');
     // the test frames have no unit; the title is the link label text
     expect(c.textContent).toContain('41000000 · 41%');
     expect(c.getAttribute('aria-label')).toBe('metric 10');
-    expect(c.textContent).toContain('rtr-a → wan1');
+    expect(c.textContent).toContain('rtr-a → isp-a');
     expect(c.getAttribute('data-pinned')).toBe('false');
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
     fireEvent.pointerLeave(wrapper, { pointerType: 'mouse' });
@@ -259,11 +259,11 @@ describe('DrawioMapPanel hover card', () => {
     const rows = screen.getAllByTestId('dmap-card-row');
     expect(rows).toHaveLength(2);
     expect(rows[0].tagName).toBe('A');
-    expect(rows[0].getAttribute('href')).toBe('/d/x?job=wan1');
+    expect(rows[0].getAttribute('href')).toBe('/d/x?job=isp-a');
     expect(rows[0].getAttribute('target')).toBe('_blank');
     // a rule url without urlTitle to a dashboard path: "Open dashboard", a small link button with an external icon
     const footer = screen.getByRole('link', { name: 'Open dashboard' });
-    expect(footer.getAttribute('href')).toBe('/d/x?job=wan1');
+    expect(footer.getAttribute('href')).toBe('/d/x?job=isp-a');
     expect(footer.getAttribute('target')).toBe('_blank');
     expect(footer.getAttribute('data-testid')).toBe('dmap-card-link');
     // the external-link icon: Icon renders no svg in jsdom, the e2e test checks it
@@ -277,7 +277,7 @@ describe('DrawioMapPanel hover card', () => {
     const { half } = await setup();
     fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });
     await screen.findByRole('dialog');
-    fireEvent.pointerMove(half('pg-link~wan2:dhcp->rtr-a:wan2'), { pointerType: 'mouse' });
+    fireEvent.pointerMove(half('pg-link~radio:dhcp->rtr-a:wan2'), { pointerType: 'mouse' });
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('metric 10');
     const grafana = vi.fn();
     document.addEventListener('keydown', grafana);
@@ -291,7 +291,7 @@ describe('DrawioMapPanel hover card', () => {
     const { half, wrapper } = await setup();
     fireEvent.click(half(linkId));
     await screen.findByRole('dialog');
-    fireEvent.click(half('pg-link~wan2:dhcp->rtr-a:wan2'));
+    fireEvent.click(half('pg-link~radio:dhcp->rtr-a:wan2'));
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('metric 20');
     // a click inside the card keeps it
     fireEvent.click(screen.getAllByTestId('dmap-card-row')[0]);
@@ -366,7 +366,7 @@ describe('DrawioMapPanel hover card', () => {
     const { half } = await setup(props({ options: { ...options, rules } }));
     fireEvent.click(half(linkId));
     await screen.findByRole('dialog');
-    expect(screen.getByRole('link', { name: 'Port pppoe' }).getAttribute('href')).toBe('/d/x?job=wan1');
+    expect(screen.getByRole('link', { name: 'Port pppoe' }).getAttribute('href')).toBe('/d/x?job=isp-a');
   });
   it('each row has its head line and below it a sparkline at the full row width', async () => {
     // the data covers 0..2 ms of the 0..100 ms range: the line still fills the width
@@ -428,7 +428,7 @@ describe('DrawioMapPanel hover card', () => {
 });
 
 describe('DrawioMapPanel live zoom', () => {
-  const linkId = 'pg-link~wan1:pppoe->rtr-a:wan1';
+  const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
   async function setup(p = props()) {
     const r = render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());

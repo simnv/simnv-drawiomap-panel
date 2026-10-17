@@ -3,7 +3,7 @@ import { resolveTemplate } from './template';
 
 const scope = {
   cell: { 'pg-id': 'rtr-a', capacity: '1000000000' },
-  from: { node: 'wan1', port: 'pppoe' },
+  from: { node: 'isp-a', port: 'pppoe' },
   to: { node: 'rtr-a', port: 'wan1' },
   labels: { job: 'node-rtr-a' },
   value: '41 Mb/s',
@@ -13,7 +13,7 @@ const scope = {
 describe('resolveTemplate', () => {
   it('resolves cell, from, to, labels, value and percent', () => {
     const r = resolveTemplate('node-${from.node} ${to.port} ${cell.pg-id} ${labels.job} ${value} · ${percent}', scope);
-    expect(r.text).toBe('node-wan1 wan1 rtr-a node-rtr-a 41 Mb/s · 41%');
+    expect(r.text).toBe('node-isp-a wan1 rtr-a node-rtr-a 41 Mb/s · 41%');
     expect(r.unresolved).toEqual([]);
   });
   it('reports missing keys and keeps the placeholder', () => {

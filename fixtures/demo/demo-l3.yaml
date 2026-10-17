@@ -1,0 +1,126 @@
+# Synthetic demo network, L3: routing and policy.
+#
+# Two sites. rtr-a at Site A has two WAN uplinks (wan1 PPPoE over fibre, wan2 over a radio
+# bridge) and an LTE backup (wan3, offline). rtr-b at Site B has one PPPoE uplink. A tunnel
+# (ts0) is the only path between the sites. Each router sends selected traffic through tun0
+# to a local proxy; the proxies chain to each other over the tunnel.
+#
+# All names and addresses are fictional: RFC 1918 LANs, RFC 6598 tunnel addresses and
+# RFC 5737 documentation addresses for the ISPs.
+portograph: 2
+profile: network
+title: "demo-lab — L3: routing and policy"
+
+css: |
+  .icon-tile.subnet  { fill: #455a64; stroke: #263238; }
+  .icon-tile.proxy   { fill: #00695c; stroke: #004d40; }
+  .icon-tile.modem   { fill: #ef6c00; stroke: #e65100; }
+  .link-line.broken  { stroke: #c62828; }
+  .link-line.idle    { stroke: #9e9e9e; }
+
+groups:
+  lans:    { tier: 0, label: "Local subnets" }
+  edge:    { tier: 1, label: "Edge routers" }
+  wan:     { tier: 2, label: "WAN uplinks" }
+  proxies: { tier: 2, label: "Proxies · tunnel entry" }
+
+nodes:
+  net-a:
+    group: lans
+    class: subnet
+    icon: server
+    label: "10.10.0.0/24"
+    ports: [lan]
+  net-b:
+    group: lans
+    class: subnet
+    icon: server
+    label: "10.20.0.0/24"
+    ports: [lan]
+
+  rtr-a:
+    group: edge
+    class: router
+    label: rtr-a
+    description: "multi-WAN + PBR"
+    ports:
+      - br-lan
+      - ts0
+      - tun0
+      - wan1
+      - wan2
+      - wan3
+    size: { width: 300, height: 70 }
+  rtr-b:
+    group: edge
+    class: router
+    label: rtr-b
+    description: "PBR"
+    ports:
+      - br-lan
+      - ts0
+      - pppoe
+      - tun0
+    size: { width: 300, height: 70 }
+
+  isp-a:
+    group: wan
+    class: provider
+    label: "ISP A"
+    description: "203.0.113.10"
+    ports: [{ name: pppoe, class: "uplink up" }]
+  radio:
+    group: wan
+    class: modem
+    icon: cloud
+    label: "Radio bridge"
+    description: "10.10.40.1"
+    ports: [{ name: dhcp, class: "uplink up" }]
+  lte:
+    group: wan
+    class: modem
+    icon: cloud
+    label: "LTE modem"
+    description: "10.10.30.1"
+    ports: [{ name: static, class: "uplink down" }]
+  isp-b:
+    group: wan
+    class: provider
+    label: "ISP B"
+    description: "198.51.100.20"
+    ports: [{ name: pppoe, class: "uplink up" }]
+
+  proxy-a:
+    group: proxies
+    class: proxy
+    icon: server
+    label: "proxy-a"
+    description: "→ exit-a.example.net"
+    ports:
+      - tun-in
+      - relay-out
+  proxy-b:
+    group: proxies
+    class: proxy
+    icon: server
+    label: "proxy-b"
+    description: "→ exit-b.example.net"
+    ports:
+      - tun-in
+      - chain-in
+
+links:
+  - [net-a.lan, rtr-a.br-lan, { label: "10.10.0.1" }]
+  - [net-b.lan, rtr-b.br-lan, { label: "10.20.0.1" }]
+
+  - [isp-a.pppoe, rtr-a.wan1, { label: "metric 10" }]
+  - [radio.dhcp, rtr-a.wan2, { label: "metric 20" }]
+  - [lte.static, rtr-a.wan3, { label: "metric 30 · offline", class: broken }]
+  - [isp-b.pppoe, rtr-b.pppoe, { label: "default route" }]
+
+  - [rtr-a.ts0, rtr-b.ts0, { label: "tunnel · 10.255.0.1 ↔ .2" }]
+
+  - [rtr-a.tun0, proxy-a.tun-in, { label: "tun0 → proxy" }]
+  - [rtr-b.tun0, proxy-b.tun-in, { label: "tun0 → proxy" }]
+
+  - [proxy-a.relay-out, proxy-b.chain-in, { label: "chain over the tunnel", class: idle }]

@@ -19,7 +19,7 @@ const frames = [
     refId: 'A',
     fields: [
       { name: 'Time', type: FieldType.time, values: [1, 2, 3] },
-      { name: 'Value', type: FieldType.number, values: [1, 2, 3], labels: { job: 'node-wan1', device: 'pppoe' } },
+      { name: 'Value', type: FieldType.number, values: [1, 2, 3], labels: { job: 'node-isp-a', device: 'pppoe' } },
     ],
   }),
   toDataFrame({
@@ -45,14 +45,14 @@ describe('extractSeries', () => {
 
 describe('findSeries', () => {
   const s = extractSeries(frames);
-  const scope = { cell: {}, from: { node: 'wan1', port: 'pppoe' }, to: { node: 'rtr-a', port: 'wan1' } };
+  const scope = { cell: {}, from: { node: 'isp-a', port: 'pppoe' }, to: { node: 'rtr-a', port: 'wan1' } };
   it('matches refId plus resolved label templates', () => {
     const r = findSeries({ refId: 'A', match: { job: 'node-${to.node}', device: '${to.port}' } }, s, scope);
     expect(r.series?.labels.device).toBe('wan1');
     expect(r.unresolved).toEqual([]);
   });
   it('supports regex label matchers and name matcher', () => {
-    expect(findSeries({ match: { job: '/^node-op/' } }, s, scope).series?.labels.job).toBe('node-wan1');
+    expect(findSeries({ match: { job: '/^node-isp/' } }, s, scope).series?.labels.job).toBe('node-isp-a');
     expect(findSeries({ name: '/node-lte/' }, s, scope).series?.refId).toBe('C');
   });
   it('returns unresolved when a template cannot resolve', () => {

@@ -3,9 +3,9 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sanitizeSvg } from './sanitize';
 
-const l3 = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
-// An l3-routing export with html=1 labels: every label is <switch><foreignObject/><image PNG/></switch>.
-const legacy = readFileSync(resolve(__dirname, '../../fixtures/svg/legacy-html-labels.svg'), 'utf8');
+const l3 = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8');
+// An html=1 variant of demo-l3: every label is <switch><foreignObject/><image PNG/></switch>.
+const legacy = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/legacy-html-labels.svg'), 'utf8');
 const wrap = (inner: string, rootAttrs = '') =>
   `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10" ${rootAttrs}>${inner}</svg>`;
 
@@ -98,7 +98,7 @@ describe('sanitizeSvg: draw.io export', () => {
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
     expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(108);
-    expect(r.svg).toContain('data-meta-pg-id="wan1:pppoe-&gt;rtr-a:wan1"');
+    expect(r.svg).toContain('data-meta-pg-id="isp-a:pppoe-&gt;rtr-a:wan1"');
     expect(r.svg).toContain('pointer-events="stroke"');
     expect(r.svg).toContain('light-dark(');
     expect(r.svg).toMatch(/<svg[^>]*viewBox="0 0 /);

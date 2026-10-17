@@ -1,0 +1,172 @@
+# Synthetic demo network, L1: physical links.
+#
+# Site A: ISP A over fibre (PPPoE), a radio bridge and an LTE modem behind rtr-a, one PoE
+# switch with a hypervisor, an access point and two radios. Site B: ISP B, rtr-b, one switch
+# with two hypervisors. All names and addresses are fictional.
+portograph: 2
+profile: network
+title: "demo-lab — L1: physical"
+
+# Binding metadata for the draw.io export. It changes no geometry.
+meta: { datasource: victoriametrics, site: demo-lab }
+
+css: |
+  .icon-tile.switch     { fill: #1565c0; stroke: #0d47a1; }
+  .icon-tile.hypervisor { fill: #6a1b9a; stroke: #4a148c; }
+  .icon-tile.modem      { fill: #ef6c00; stroke: #e65100; }
+  .icon-tile.ap         { fill: #00838f; stroke: #006064; }
+  .icon-tile.camera     { fill: #546e7a; stroke: #37474f; }
+  .link-line.poe        { stroke: #2e7d32; }
+
+groups:
+  a: { label: "Site A · 10.10.0.0/24" }
+  b: { label: "Site B · 10.20.0.0/24" }
+
+  wan-a:  { tier: 0, canton: a, label: "Provider" }
+  wan-b:  { tier: 0, canton: b, label: "Provider" }
+  edge-a: { tier: 1, canton: a, label: "Router" }
+  edge-b: { tier: 1, canton: b, label: "Router" }
+  core-a: { tier: 2, canton: a, label: "Core switch" }
+  core-b: { tier: 2, canton: b, label: "Core switch" }
+  host-a: { tier: 3, canton: a, label: "Hosts" }
+  host-b: { tier: 3, canton: b, label: "Hosts" }
+
+nodes:
+  isp-a:
+    group: wan-a
+    class: provider
+    label: "ISP A"
+    description: "PPPoE · fibre"
+    ports: [{ name: ont, class: uplink }]
+    size: { width: 280, height: 60 }
+  radio-bridge:
+    group: wan-a
+    class: modem
+    icon: cloud
+    label: "Radio bridge"
+    description: "10.10.40.1"
+    ports: [{ name: eth, class: uplink }]
+  rtr-a:
+    group: edge-a
+    class: router
+    label: rtr-a
+    description: "10.10.0.1"
+    meta: { host: rtr-a, job: node-rtr-a, instance: "rtr-a:9100", kind: openwrt }
+    ports:
+      - { name: eth0, class: uplink, meta: { device: eth0 } }
+      - { name: eth3, class: uplink, meta: { device: eth3 } }
+      - { name: eth1, class: downlink, meta: { device: eth1 } }
+      - { name: eth2, class: downlink, meta: { device: eth2 } }
+    size: { width: 280, height: 60 }
+  sw-a1:
+    group: core-a
+    class: switch
+    icon: switch
+    label: sw-a1
+    description: "Switch 16p PoE · 10.10.0.33"
+    ports:
+      - { name: p16, class: uplink }
+      - { name: p15, class: uplink }
+      - { name: p8, class: downlink }
+      - { name: p6, class: downlink }
+      - { name: p5, class: downlink }
+      - { name: p4, class: downlink }
+      - { name: p3, class: downlink }
+  hv-a:
+    group: host-a
+    class: hypervisor
+    icon: server
+    label: hv-a
+    description: "10.10.0.31"
+    meta: { host: hv-a, job: node-hv-a, instance: "hv-a:9100", kind: proxmox }
+    ports: [{ name: nic0, class: uplink, meta: { device: nic0 } }]
+  ap-a:
+    group: host-a
+    class: ap
+    icon: router
+    label: ap-a
+    description: "10.10.0.34"
+    ports: [{ name: eth, class: uplink }]
+  lte-modem:
+    group: host-a
+    class: modem
+    icon: cloud
+    label: "LTE modem"
+    description: "10.10.30.1"
+    ports: [{ name: ether1, class: uplink }]
+  cam-1: { group: host-a, class: camera, icon: default, label: cam-1, description: "10.10.0.32", ports: [{ name: eth, class: uplink }] }
+  cam-2: { group: host-a, class: camera, icon: default, label: cam-2, description: "10.10.0.35", ports: [{ name: eth, class: uplink }] }
+
+  isp-b:
+    group: wan-b
+    class: provider
+    label: "ISP B"
+    description: "PPPoE"
+    ports: [{ name: pppoe, class: uplink }]
+    size: { width: 280, height: 60 }
+  rtr-b:
+    group: edge-b
+    class: router
+    label: rtr-b
+    description: "10.20.0.1"
+    meta: { host: rtr-b, job: node-rtr-b, instance: "rtr-b:9100", kind: openwrt }
+    ports:
+      - { name: eth0, class: uplink, meta: { device: eth0 } }
+      - { name: eth1, class: downlink, meta: { device: eth1 } }
+    size: { width: 280, height: 60 }
+  sw-b:
+    group: core-b
+    class: switch
+    icon: switch
+    label: sw-b
+    description: "10.20.0.24"
+    ports:
+      - { name: ether1, class: uplink }
+      - { name: ether2, class: downlink }
+      - { name: ether3, class: downlink }
+      - { name: ether4, class: downlink }
+      - { name: ether5, class: "downlink down" }
+  hv-b:
+    group: host-b
+    class: hypervisor
+    icon: server
+    label: hv-b
+    description: "10.20.0.23"
+    meta: { host: hv-b, job: node-hv-b, instance: "hv-b:9100", kind: proxmox }
+    ports: [{ name: nic0, class: uplink, meta: { device: nic0 } }]
+  hv-b2:
+    group: host-b
+    class: hypervisor
+    icon: server
+    label: hv-b2
+    description: "10.20.0.22"
+    ports:
+      - { name: vmnic0, class: uplink }
+      - { name: vmnic1, class: uplink }
+  printer:
+    group: host-b
+    class: endpoint
+    icon: default
+    label: "Printer"
+    description: "10.20.0.21"
+    ports: [{ name: eth, class: "uplink down" }]
+
+links:
+  - [isp-a.ont, rtr-a.eth0, { label: "1G", id: wan-a, meta: { capacity: 1e9 } }]
+  - [radio-bridge.eth, rtr-a.eth3, { label: "1G", id: wan-a2, meta: { capacity: 1e9 } }]
+  # two parallel uplinks from rtr-a to the core switch
+  - [rtr-a.eth1, sw-a1.p16, { label: "1G", meta: { capacity: 1e9 } }]
+  - [rtr-a.eth2, sw-a1.p15, { label: "1G" }]
+  - [sw-a1.p8, hv-a.nic0, { label: "1G", meta: { capacity: 1e9 } }]
+  - [sw-a1.p6, lte-modem.ether1, { label: "1G", class: poe }]
+  - [sw-a1.p5, ap-a.eth, { label: "1G", class: poe }]
+  - [sw-a1.p4, cam-1.eth, { label: "100M", class: poe }]
+  - [sw-a1.p3, cam-2.eth, { label: "100M", class: poe }]
+
+  - [isp-b.pppoe, rtr-b.eth0, { label: "1G", id: wan-b, meta: { capacity: 1e9 } }]
+  - [rtr-b.eth1, sw-b.ether1, { label: "1G", meta: { capacity: 1e9 } }]
+  - [sw-b.ether2, hv-b.nic0, { label: "100M", meta: { capacity: 1e8 } }]
+  # two parallel links from the switch to one hypervisor
+  - [sw-b.ether3, hv-b2.vmnic0, { label: "1G" }]
+  - [sw-b.ether4, hv-b2.vmnic1, { label: "1G" }]
+  - [sw-b.ether5, printer.eth, { label: "no link", class: dotted }]

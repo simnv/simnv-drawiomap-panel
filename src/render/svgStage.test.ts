@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, cellMetas, mountSvg } from './svgStage';
 
-const fixture = (n: string) => sanitizeSvg(readFileSync(resolve(__dirname, `../../fixtures/svg/${n}.svg`), 'utf8')).svg;
+const fixture = (n: string) => sanitizeSvg(readFileSync(resolve(__dirname, `../../fixtures/demo/svg/${n}.svg`), 'utf8')).svg;
 
 describe('mountSvg', () => {
   it('replaces the container content with the svg root', () => {
@@ -18,9 +18,9 @@ describe('mountSvg', () => {
   });
 });
 
-describe('buildCellIndex on l3-routing', () => {
+describe('buildCellIndex on demo-l3', () => {
   const c = document.createElement('div');
-  const root = mountSvg(c, fixture('l3-routing'));
+  const root = mountSvg(c, fixture('demo-l3'));
   const index = buildCellIndex(root);
   it('indexes every data-cell-id group', () => {
     expect(index.size).toBe(108);
@@ -33,14 +33,14 @@ describe('buildCellIndex on l3-routing', () => {
     expect(kinds).toMatchObject({ link: 10, node: 10, port: 20, 'link-label': 8 });
   });
   it('finds the edge polyline and the decoded id', () => {
-    const e = index.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const e = index.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(e).toBeDefined();
     expect(e.meta.isEdge).toBe(true);
     expect(e.line?.getAttribute('d')).toMatch(/^M/);
     expect(e.line?.getAttribute('fill')).toBe('none');
-    expect(e.meta.from).toMatchObject({ node: 'wan1', port: 'pppoe' });
+    expect(e.meta.from).toMatchObject({ node: 'isp-a', port: 'pppoe' });
     expect(e.meta.to).toMatchObject({ node: 'rtr-a', port: 'wan1' });
-    expect(e.meta.attrs['pg-id']).toBe('wan1:pppoe->rtr-a:wan1');
+    expect(e.meta.attrs['pg-id']).toBe('isp-a:pppoe->rtr-a:wan1');
   });
   it('finds a vertex shape and label text', () => {
     const n = index.get('pg-node~rtr-a')!;
@@ -50,7 +50,7 @@ describe('buildCellIndex on l3-routing', () => {
     expect(n.shape).not.toBe(n.line);
   });
   it('copies link-label text onto the link', () => {
-    const e = index.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const e = index.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(e.meta.labelText).toContain('metric 10');
   });
   it('records original styles for reset', () => {
@@ -68,11 +68,11 @@ describe('buildCellIndex on l3-routing', () => {
 
 describe('buildCellIndex on plain-text labels', () => {
   it('reads a node name as one native <text> and its description as a cell of its own', () => {
-    const index = buildCellIndex(mountSvg(document.createElement('div'), fixture('l3-routing')));
+    const index = buildCellIndex(mountSvg(document.createElement('div'), fixture('demo-l3')));
     const n = index.get('pg-node~rtr-a')!;
     expect(n.label?.localName).toBe('text');
     expect(n.meta.labelText).toBe('rtr-a');
-    expect(index.get('pg-nodeDescription~rtr-a')?.meta).toMatchObject({ kind: 'other', labelText: 'mwan3 + PBR' });
+    expect(index.get('pg-nodeDescription~rtr-a')?.meta).toMatchObject({ kind: 'other', labelText: 'multi-WAN + PBR' });
   });
   it('joins the lines of a multi-line label and keeps their <g> as the label', () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><rect width="5" height="5"/></g><g><g fill="#000"><text x="1" y="2">first</text><text x="1" y="4">second</text></g></g></g></svg>`;
@@ -103,9 +103,9 @@ describe('buildCellIndex on hand-drawn', () => {
   });
 });
 
-describe('node icons on l3-routing', () => {
+describe('node icons on demo-l3', () => {
   const c = document.createElement('div');
-  const index = buildCellIndex(mountSvg(c, fixture('l3-routing')));
+  const index = buildCellIndex(mountSvg(c, fixture('demo-l3')));
   it('links each node to its icon cell, the icon tile first', () => {
     expect(index.get('pg-node~rtr-a')!.iconId).toBe('pg-icon~rtr-a');
     expect(index.get('pg-node~lte')!.iconId).toBe('pg-iconTile~lte');
@@ -125,7 +125,7 @@ describe('node icons on l3-routing', () => {
 
 describe('buildCellIndex and pg-schema', () => {
   it('reads the pg attributes as generic cells when the root cell has no pg-schema', () => {
-    const svg = fixture('l3-routing').replace(/\sdata-meta-pg-schema="1"/, '');
+    const svg = fixture('demo-l3').replace(/\sdata-meta-pg-schema="1"/, '');
     const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
     const metas = cellMetas(index);
     expect(metas.length).toBe(108);

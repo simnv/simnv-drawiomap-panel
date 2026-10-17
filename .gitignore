@@ -49,3 +49,6 @@ ci/
 
 # Vendored draw.io webapp (scripts/vendor-drawio.sh)
 .drawio/
+
+# Private local material, never committed
+local/

@@ -20,7 +20,7 @@ const mk = (refId: string, labels: Record<string, string>, values: number[], uni
   } as unknown as Field,
   frame: { fields: [], length: values.length },
 });
-const tx = mk('A', { job: 'node-wan1', device: 'pppoe' }, [40e6, 41e6]);
+const tx = mk('A', { job: 'node-isp-a', device: 'pppoe' }, [40e6, 41e6]);
 const rx = mk('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]);
 const cpu = mk('E', { job: 'node-rtr-a' }, [20, 35.25]);
 const up = mk('C', { job: 'node-rtr-a' }, [1, 1]);
@@ -48,14 +48,14 @@ const okHalf = (series: SeriesInfo, label: string, color: string): HalfState => 
   series,
 });
 const linkPatch = (over: Partial<CellPatch> = {}): CellPatch => ({
-  cellId: 'pg-link~wan1:pppoe->rtr-a:wan1',
+  cellId: 'pg-link~isp-a:pppoe->rtr-a:wan1',
   ruleNames: ['links'],
   scope: {
-    cell: { 'pg-id': 'wan1:pppoe->rtr-a:wan1', key: 'wan1:pppoe->rtr-a:wan1', label: '' },
-    from: { node: 'wan1', port: 'pppoe' },
+    cell: { 'pg-id': 'isp-a:pppoe->rtr-a:wan1', key: 'isp-a:pppoe->rtr-a:wan1', label: '' },
+    from: { node: 'isp-a', port: 'pppoe' },
     to: { node: 'rtr-a', port: 'wan1' },
   },
-  urls: [{ title: 'links', url: '/d/rule?job=node-wan1&from=${__from}' }],
+  urls: [{ title: 'links', url: '/d/rule?job=node-isp-a&from=${__from}' }],
   warnings: [],
   link: { a2b: okHalf(tx, '41 Mb/s · 41%', '#00ff00'), b2a: okHalf(rx, '10 Mb/s · 10%', '#0000ff') },
   card: { reducer: 'last' },
@@ -64,7 +64,7 @@ const linkPatch = (over: Partial<CellPatch> = {}): CellPatch => ({
 const nodePatch = (over: Partial<CellPatch> = {}): CellPatch => ({
   cellId: 'pg-node~rtr-a',
   ruleNames: ['node up', 'router cpu'],
-  scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: 'rtr-a mwan3 + PBR' } },
+  scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: 'rtr-a multi-WAN + PBR' } },
   urls: [{ title: 'node up', url: '/d/node?job=node-rtr-a' }],
   warnings: [],
   shape: {
@@ -95,10 +95,10 @@ const nodePatch = (over: Partial<CellPatch> = {}): CellPatch => ({
 describe('buildCard for a link', () => {
   it('has the a2b and b2a rows with the half text, colour and series', () => {
     const c = buildCard(linkPatch(), ctx);
-    expect(c.title).toBe('wan1:pppoe->rtr-a:wan1');
+    expect(c.title).toBe('isp-a:pppoe->rtr-a:wan1');
     expect(c.rows.map((r) => [r.title, r.text, r.color, r.status])).toEqual([
-      ['wan1 → rtr-a', '41 Mb/s · 41%', '#00ff00', 'ok'],
-      ['rtr-a → wan1', '10 Mb/s · 10%', '#0000ff', 'ok'],
+      ['isp-a → rtr-a', '41 Mb/s · 41%', '#00ff00', 'ok'],
+      ['rtr-a → isp-a', '10 Mb/s · 10%', '#0000ff', 'ok'],
     ]);
     expect(c.rows[0].values).toEqual([40e6, 41e6]);
     expect(c.rows[0].times).toEqual([1000, 1010]);
@@ -106,8 +106,8 @@ describe('buildCard for a link', () => {
   it('uses the rule url for both rows when link.card.url is not set', () => {
     const c = buildCard(linkPatch(), ctx);
     expect(c.rows.map((r) => r.href)).toEqual([
-      '/d/rule?job=node-wan1&from=111',
-      '/d/rule?job=node-wan1&from=111',
+      '/d/rule?job=node-isp-a&from=111',
+      '/d/rule?job=node-isp-a&from=111',
     ]);
   });
   it('resolves link.card.url per row with the labels of the row series, encoded', () => {
@@ -115,8 +115,8 @@ describe('buildCard for a link', () => {
       linkPatch({ card: { reducer: 'last', url: '/d/if?job=${labels.job}&dev=${labels.device}&x=${cell.pg-id}' } }),
       ctx
     );
-    expect(c.rows[0].href).toBe('/d/if?job=node-wan1&dev=pppoe&x=wan1%3Apppoe-%3Ertr-a%3Awan1');
-    expect(c.rows[1].href).toBe('/d/if?job=node-rtr-a&dev=wan1&x=wan1%3Apppoe-%3Ertr-a%3Awan1');
+    expect(c.rows[0].href).toBe('/d/if?job=node-isp-a&dev=pppoe&x=isp-a%3Apppoe-%3Ertr-a%3Awan1');
+    expect(c.rows[1].href).toBe('/d/if?job=node-rtr-a&dev=wan1&x=isp-a%3Apppoe-%3Ertr-a%3Awan1');
   });
   it('drops a row url with a bad scheme', () => {
     const c = buildCard(linkPatch({ card: { reducer: 'last', url: 'javascript:alert(1)' } }), ctx);
@@ -124,7 +124,7 @@ describe('buildCard for a link', () => {
   });
   it('uses link.card.title and the link label text as titles', () => {
     expect(buildCard(linkPatch({ card: { reducer: 'last', title: '${from.node} uplink' } }), ctx).title).toBe(
-      'wan1 uplink'
+      'isp-a uplink'
     );
     const labelled = linkPatch();
     labelled.scope.cell.label = 'pppoe 100M';
@@ -142,7 +142,7 @@ describe('buildCard for a link', () => {
   it('has the footer links: the rule url and the field data links', () => {
     const c = buildCard(linkPatch(), ctx);
     expect(c.links.map((l) => [l.title, l.href])).toEqual([
-      ['links', '/d/rule?job=node-wan1&from=111'],
+      ['links', '/d/rule?job=node-isp-a&from=111'],
       ['Field link', '/d/field'],
     ]);
   });
@@ -150,7 +150,7 @@ describe('buildCard for a link', () => {
     const dash = buildCard(linkPatch({ urls: [{ url: '/d/rule?job=x' }] }), ctx);
     expect(dash.links[0].title).toBe('Open dashboard');
     const other = buildCard(linkPatch({ urls: [{ url: '/explore?x=1' }] }), ctx);
-    expect(other.links[0].title).toBe('Open wan1:pppoe->rtr-a:wan1');
+    expect(other.links[0].title).toBe('Open isp-a:pppoe->rtr-a:wan1');
   });
   it('gives each row with a sparkline the min and max of its series', () => {
     const c = buildCard(linkPatch(), ctx);
@@ -164,7 +164,7 @@ describe('buildCard for a link', () => {
 describe('buildCard for a node', () => {
   it('resolves card rows lazily: series, reducer, unit, decimals, title template and url', () => {
     const c = buildCard(nodePatch(), ctx);
-    expect(c.title).toBe('rtr-a mwan3 + PBR');
+    expect(c.title).toBe('rtr-a multi-WAN + PBR');
     expect(c.rows).toHaveLength(1);
     expect(c.rows[0]).toMatchObject({
       title: 'CPU rtr-a',
