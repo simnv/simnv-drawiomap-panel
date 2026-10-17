@@ -1,0 +1,130 @@
+# CI for Forgejo Actions. `npm run ci:local` runs the same steps on a developer machine (scripts/ci-local.sh).
+#
+# Runner: every job runs on the label in the repository or organisation variable CI_RUNNER (Settings > Actions >
+# Variables). When CI_RUNNER is not set, the label is "docker". runs-on cannot read the workflow env, so the
+# expression `vars.CI_RUNNER || 'docker'` is the single setting.
+# The e2e job starts the compose stack (docker-compose.yaml). Its runner must give the job the docker CLI with
+# compose v2, bind mounts of the workspace, and the published ports on localhost, for example a runner in host mode.
+#
+# Actions: full URLs to the data.forgejo.org mirrors of the GitHub actions. They do not depend on the
+# DEFAULT_ACTIONS_URL setting of the Forgejo instance, and the job does not need access to github.com.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ${{ vars.CI_RUNNER || 'docker' }}
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@v4
+
+      - uses: https://data.forgejo.org/actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Pinned draw.io release
+        id: drawio
+        run: |
+          echo "version=$(sed -n 's/^DRAWIO_VERSION=//p' scripts/vendor-drawio.sh)" >>"$GITHUB_OUTPUT"
+          echo "sha256=$(sed -n 's/^DRAWIO_SHA256=//p' scripts/vendor-drawio.sh)" >>"$GITHUB_OUTPUT"
+
+      # draw.war (about 46 MB) from github.com. The build checks its sha256 again.
+      - uses: https://data.forgejo.org/actions/cache@v4
+        with:
+          path: .drawio/cache
+          key: drawio-${{ steps.drawio.outputs.version }}-${{ steps.drawio.outputs.sha256 }}
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:bundle
+      - run: npm run package
+
+      - uses: https://data.forgejo.org/actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+      - uses: https://data.forgejo.org/actions/upload-artifact@v4
+        with:
+          name: plugin-zip
+          path: artifacts/
+          retention-days: 30
+
+  e2e:
+    needs: build-test
+    runs-on: ${{ vars.CI_RUNNER || 'docker' }}
+    strategy:
+      fail-fast: false
+      # The stack publishes fixed ports (127.0.0.1:3012, :3013, :8428). One version at a time on a runner.
+      max-parallel: 1
+      matrix:
+        include:
+          # Same images as docker-compose.yaml
+          - grafana: '12.4.13'
+            service: grafana12
+            port: 3012
+          - grafana: '13.2.4'
+            service: grafana13
+            port: 3013
+    name: e2e Grafana ${{ matrix.grafana }}
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@v4
+
+      - uses: https://data.forgejo.org/actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: https://data.forgejo.org/actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - run: npm ci
+
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >>"$GITHUB_OUTPUT"
+      - uses: https://data.forgejo.org/actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # The system libraries need root: a job in a container is root, a host runner has them installed.
+      - name: Playwright browser
+        run: |
+          if [ "$(id -u)" = 0 ]; then npx playwright install --with-deps chromium; else npx playwright install chromium; fi
+
+      - name: Start the stack
+        run: docker compose up -d --force-recreate --wait victoriametrics metrics-gen ${{ matrix.service }}
+      - name: Wait for the demo series and Grafana
+        run: ./scripts/wait-stack.sh ${{ matrix.port }}
+
+      - name: Playwright
+        run: npx playwright test
+        env:
+          GRAFANA_URL: http://localhost:${{ matrix.port }}
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose logs --no-color --tail 300
+      - uses: https://data.forgejo.org/actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.grafana }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
