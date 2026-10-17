@@ -156,7 +156,7 @@ describe('applyPatches on a native text label (l3-routing)', () => {
     expect(entry.label!.outerHTML).toBe(before);
   });
   it('writes a multi-line label into its first line and restores every line on reset', () => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><rect width="5" height="5"/></g><g><g fill="#000"><text x="1" y="2">first</text><text x="1" y="4">second</text></g></g></g></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><rect width="5" height="5"/></g><g><g fill="#000"><text x="1" y="2">first</text><text x="1" y="4"><tspan fill="red">sec</tspan>ond</text></g></g></g></svg>`;
     const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
     const label = index.get('n')!.label!;
     const before = label.innerHTML;

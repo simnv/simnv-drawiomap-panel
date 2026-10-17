@@ -107,7 +107,7 @@ function reset(entry: CellEntry): void {
       const originals = nodes.filter((n) => (n as Element).localName === 'text');
       Array.from(label.children)
         .filter((el) => el.localName === 'text')
-        .forEach((line, i) => (line.textContent = originals[i]?.textContent ?? ''));
+        .forEach((line, i) => line.replaceChildren(...Array.from(originals[i]?.childNodes ?? [], (n) => n.cloneNode(true))));
     } else if (nodes) {
       // Put back the exact markup: a text write flattens the HTML lines of a foreignObject label.
       label.replaceChildren(...nodes.map((n) => n.cloneNode(true)));
