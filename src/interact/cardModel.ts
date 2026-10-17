@@ -21,6 +21,8 @@ export interface CardRowModel {
   /** smallest and largest value of the series, formatted like the value */
   min?: string;
   max?: string;
+  /** Y range of the sparkline, see sparkDomain */
+  domain?: [number, number];
 }
 
 export interface CardModel {
@@ -44,6 +46,41 @@ export interface CardContext {
 }
 
 const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound' } as const;
+
+/** Units with a fixed top: percent is 0 to 100, percentunit is 0 to 1. */
+const UNIT_TOP: Record<string, number> = { percent: 100, percentunit: 1 };
+
+/**
+ * The Y range of a sparkline.
+ * A series without negative values starts at 0, so a small change does not look like a big climb.
+ * The top is the largest value, the capacity of the row or the top of the unit (percent), whichever is largest.
+ * A series with negative values uses min to max, but the span is at least 10% of |max| (1 when max is 0),
+ * centred on the data.
+ */
+export function sparkDomain(values: number[], opts: { unit?: string; capacity?: number } = {}): [number, number] {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const v of values) {
+    if (Number.isFinite(v)) {
+      min = Math.min(min, v);
+      max = Math.max(max, v);
+    }
+  }
+  if (min > max) {
+    return [0, 1];
+  }
+  if (min < 0) {
+    const minSpan = max === 0 ? 1 : Math.abs(max) / 10;
+    if (max - min >= minSpan) {
+      return [min, max];
+    }
+    const centre = (min + max) / 2;
+    return [centre - minSpan / 2, centre + minSpan / 2];
+  }
+  const cap = opts.capacity !== undefined && opts.capacity > 0 ? opts.capacity : 0;
+  const top = Math.max(max, cap, UNIT_TOP[opts.unit ?? ''] ?? 0);
+  return [0, top > 0 ? top : 1];
+}
 
 /** The formatted min and max of the finite values; nothing for a row without values. */
 function minMax(values: number[], format: (v: number) => string): Pick<CardRowModel, 'min' | 'max'> {
@@ -79,6 +116,8 @@ function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardCo
   const primary: Primary = { status: h.status, series: h.series, display: h.display, value: h.value };
   const s = h.status === 'ok' ? h.series : undefined;
   const values = s?.values ?? [];
+  // The state keeps the percent of the capacity, so the capacity in the unit of the series is value / percent.
+  const capacity = h.value !== undefined && h.percent ? (h.value * 100) / h.percent : undefined;
   return {
     key,
     title: `${a} → ${b}`,
@@ -89,6 +128,7 @@ function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardCo
     times: s?.times,
     href: rowHref(patch, patch.card?.url, primary, ctx),
     ...(s ? minMax(values, (v) => formattedValueToString(ctx.display(s, v))) : {}),
+    ...(s ? { domain: sparkDomain(values, { unit: s.field.config?.unit, capacity }) } : {}),
   };
 }
 
@@ -126,6 +166,7 @@ function seriesRow(patch: CellPatch, row: CardRow, i: number, ctx: CardContext):
     times: f.series.times,
     href: rowHref(patch, row.url, primary, ctx),
     ...minMax(f.series.values, (v) => formattedValueToString(ctx.display(f.series!, v, override))),
+    domain: sparkDomain(f.series.values, { unit: row.unit ?? f.series.field.config?.unit }),
   };
 }
 
@@ -150,6 +191,7 @@ function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined 
     times: series?.times,
     href: rowHref(patch, undefined, primary, ctx),
     ...(series ? minMax(series.values, (v) => formattedValueToString(ctx.display(series, v))) : {}),
+    ...(series ? { domain: sparkDomain(series.values, { unit: series.field.config?.unit }) } : {}),
   };
 }
 
@@ -189,26 +231,24 @@ export function buildCard(patch: CellPatch, ctx: CardContext): CardModel {
  * Polyline points of a sparkline in a w × h box with 1 px padding. Values that are not finite are skipped.
  * Times map over the part of the dashboard range that has data (first to last sample), so the line fills
  * the width also when the series starts late or stops early. Without times or range the index is used.
+ * The Y range is the domain, by default sparkDomain of the values.
  */
 export function sparkPoints(
   values: number[],
   times: number[] | undefined,
   range: { from: number; to: number } | undefined,
   w: number,
-  h: number
+  h: number,
+  domain: [number, number] = sparkDomain(values)
 ): string {
-  // Long series: keep about two points per pixel. The loop finds the extrema (a spread call fails on big arrays).
+  // Long series: keep about two points per pixel.
   const step = Math.max(1, Math.floor(values.length / (2 * Math.max(w, 1))));
   const idx: number[] = [];
-  let min = Infinity;
-  let max = -Infinity;
   for (let i = 0; i < values.length; i++) {
     const v = values[i];
     if (!Number.isFinite(v)) {
       continue;
     }
-    min = Math.min(min, v);
-    max = Math.max(max, v);
     if (i % step === 0 || i === values.length - 1) {
       idx.push(i);
     }
@@ -216,7 +256,8 @@ export function sparkPoints(
   if (idx.length < 2) {
     return '';
   }
-  const span = max - min;
+  const [lo, hi] = domain;
+  const span = hi - lo;
   let t0 = 0;
   let t1 = 0;
   if (times && range && range.to > range.from) {
@@ -228,7 +269,7 @@ export function sparkPoints(
   }
   const useTime = t1 > t0;
   const x = (i: number) => (useTime ? ((times![i] - t0) / (t1 - t0)) * w : (i / (values.length - 1)) * w);
-  const y = (v: number) => (span ? 1 + (1 - (v - min) / span) * (h - 2) : h / 2);
+  const y = (v: number) => (span ? 1 + (1 - (v - lo) / span) * (h - 2) : h / 2);
   // points outside the dashboard range (a time shift, a late sample) stay on the edge
   const r = (n: number, max: number) => Math.round(Math.min(Math.max(n, 0), max) * 10) / 10;
   return idx.map((i) => `${r(x(i), w)},${r(y(values[i]), h)}`).join(' ');

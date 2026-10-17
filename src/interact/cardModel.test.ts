@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTheme, DisplayValue, Field, FieldType, LinkModel } from '@grafana/data';
 import type { CellPatch, HalfState, SeriesInfo } from '../types';
-import { buildCard, CardContext, sparkPoints } from './cardModel';
+import { buildCard, CardContext, sparkDomain, sparkPoints } from './cardModel';
 
 const theme = createTheme();
 const fieldLink: LinkModel<Field> = { href: '/d/field', title: 'Field link', target: '_blank', origin: {} as Field };
@@ -244,10 +244,78 @@ describe('sparkPoints', () => {
     expect(sparkPoints([0, 10, 5], [-50, 50, 150], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
   });
   it('uses the index without times and skips values that are not finite', () => {
-    expect(sparkPoints([1, NaN, 3], undefined, undefined, 100, 10)).toBe('0,9 100,1');
+    expect(sparkPoints([1, NaN, 3], undefined, undefined, 100, 10)).toBe('0,6.3 100,1');
   });
-  it('draws a flat line for a constant series and nothing for one point', () => {
-    expect(sparkPoints([2, 2], [0, 1], { from: 0, to: 1 }, 10, 10)).toBe('0,5 10,5');
+  it('draws a constant series as a flat line and nothing for one point', () => {
+    // the domain starts at 0, so a constant value is on the top and zeros are on the bottom
+    expect(sparkPoints([2, 2], [0, 1], { from: 0, to: 1 }, 10, 10)).toBe('0,1 10,1');
+    expect(sparkPoints([0, 0], [0, 1], { from: 0, to: 1 }, 10, 10)).toBe('0,9 10,9');
     expect(sparkPoints([2], [0], { from: 0, to: 1 }, 10, 10)).toBe('');
+  });
+});
+
+describe('sparkDomain', () => {
+  it('starts a non-negative series at zero, so a flat series stays flat', () => {
+    expect(sparkDomain([41, 41.2, 41])).toEqual([0, 41.2]);
+    expect(sparkDomain([3, 9, 5])).toEqual([0, 9]);
+  });
+  it('uses 0 to 100 for percent and 0 to 1 for percentunit', () => {
+    expect(sparkDomain([40, 41], { unit: 'percent' })).toEqual([0, 100]);
+    expect(sparkDomain([0.4, 0.41], { unit: 'percentunit' })).toEqual([0, 1]);
+    // a value above the scale still fits
+    expect(sparkDomain([40, 120], { unit: 'percent' })).toEqual([0, 120]);
+  });
+  it('reaches up to the capacity of the row', () => {
+    expect(sparkDomain([10, 20], { capacity: 100 })).toEqual([0, 100]);
+    // a value above the capacity still fits
+    expect(sparkDomain([10, 150], { capacity: 100 })).toEqual([0, 150]);
+    expect(sparkDomain([10, 20], { capacity: 0 })).toEqual([0, 20]);
+  });
+  it('uses min to max for a series with negative values', () => {
+    expect(sparkDomain([-10, 20, 5])).toEqual([-10, 20]);
+  });
+  it('keeps a minimum span of 10% of |max|, centred on the data', () => {
+    const [lo, hi] = sparkDomain([-100.5, -100]);
+    expect(hi - lo).toBeCloseTo(10);
+    expect((lo + hi) / 2).toBeCloseTo(-100.25);
+    // max is 0: the span is at least 1
+    const [lo0, hi0] = sparkDomain([-0.1, 0]);
+    expect(hi0 - lo0).toBeCloseTo(1);
+    expect((lo0 + hi0) / 2).toBeCloseTo(-0.05);
+  });
+  it('gives a usable domain for all zeros, one point and no finite value', () => {
+    expect(sparkDomain([0, 0, 0])).toEqual([0, 1]);
+    expect(sparkDomain([5])).toEqual([0, 5]);
+    expect(sparkDomain([NaN])).toEqual([0, 1]);
+    expect(sparkDomain([])).toEqual([0, 1]);
+  });
+});
+
+describe('sparkPoints domain', () => {
+  it('draws a nearly flat series as a flat line near the top', () => {
+    expect(sparkPoints([41, 41.2, 41], undefined, undefined, 100, 10)).toBe('0,1 50,1 100,1');
+  });
+  it('uses the given domain', () => {
+    expect(sparkPoints([10, 20], undefined, undefined, 100, 10, [0, 100])).toBe('0,8.2 100,7.4');
+  });
+});
+
+describe('card row domain', () => {
+  it('gives a link half the capacity in the unit of the series', () => {
+    // 40 Mb/s is 40% of the link, so the capacity is 100 Mb/s
+    const s = mk('A', { job: 'x' }, [10, 40], 'Mbits');
+    const half: HalfState = { ...okHalf(s, '40 Mb/s · 40%', '#0f0'), value: 40, percent: 40 };
+    const c = buildCard(linkPatch({ link: { a2b: half } }), ctx);
+    expect(c.rows[0].domain).toEqual([0, 100]);
+  });
+  it('gives a link half without capacity the range 0 to max', () => {
+    expect(buildCard(linkPatch(), ctx).rows.map((r) => r.domain)).toEqual([
+      [0, 41e6],
+      [0, 10e6],
+    ]);
+  });
+  it('uses 0 to 100 for a row with the percent unit', () => {
+    const c = buildCard(nodePatch(), ctx);
+    expect(c.rows[0].domain).toEqual([0, 100]);
   });
 });

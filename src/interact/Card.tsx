@@ -156,9 +156,10 @@ const Row = memo(function Row({
         row.times,
         from !== undefined && to !== undefined ? { from, to } : undefined,
         SPARK_W,
-        SPARK_H
+        SPARK_H,
+        row.domain
       ),
-    [row.values, row.times, from, to]
+    [row.values, row.times, row.domain, from, to]
   );
   const body = (
     <>
