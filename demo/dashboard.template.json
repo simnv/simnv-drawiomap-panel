@@ -18,7 +18,8 @@
       "targets": [
         { "refId": "A", "expr": "rate(node_network_transmit_bytes_total[1m]) * 8", "legendFormat": "{{job}} {{device}}" },
         { "refId": "C", "expr": "up", "legendFormat": "{{job}}" },
-        { "refId": "D", "expr": "node_load1", "legendFormat": "{{job}}" }
+        { "refId": "D", "expr": "node_load1", "legendFormat": "{{job}}" },
+        { "refId": "E", "expr": "node_cpu_usage_percent", "legendFormat": "{{job}}" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -28,7 +29,16 @@
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 85 }] },
           "links": [{ "title": "Field link", "url": "/explore?left=${__url_time_range}", "targetBlank": true }]
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [
+              { "id": "unit", "value": "none" },
+              { "id": "mappings", "value": [{ "type": "value", "options": { "0": { "text": "down", "index": 0 }, "1": { "text": "up", "index": 1 } } }] }
+            ]
+          },
+          { "matcher": { "id": "byFrameRefID", "options": "D" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] }
+        ]
       },
       "options": {
         "editorUrl": "http://localhost:8080",

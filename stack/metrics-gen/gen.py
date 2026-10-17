@@ -3,6 +3,7 @@
 Stdlib only. Counters grow at a constant rate from process start, so
 rate(...[1m]) * 8 is stable: wan1 41 Mb/s (41 % of 100M), wan2 90 Mb/s
 (90 % of 100M), br-lan 480 Mb/s (48 % of 1G). lte has no traffic series and up=0.
+node_cpu_usage_percent moves slowly around a base value for each host that is up.
 """
 import math
 import os
@@ -37,6 +38,12 @@ UP = {
     "node-wan1": 1, "node-wan2": 1, "node-lte": 0, "node-isp-hm": 1,
     "node-proxy-a": 1, "node-proxy-b": 1,
 }
+# base CPU usage in percent; the routers carry the traffic, so they are the busiest
+CPU = {
+    "node-rtr-a": 42, "node-rtr-b": 23, "node-net-dm": 8, "node-net-hm": 6,
+    "node-wan1": 12, "node-wan2": 18, "node-isp-hm": 10,
+    "node-proxy-a": 15, "node-proxy-b": 9,
+}
 
 
 def build(elapsed: float) -> bytes:
@@ -48,6 +55,9 @@ def build(elapsed: float) -> bytes:
         lines.append(f'up{{job="{job}"}} {up}')
         load = 1.0 + 0.8 * math.sin(elapsed / 60.0 + i)
         lines.append(f'node_load1{{job="{job}"}} {load:.3f}')
+    for i, (job, base) in enumerate(CPU.items()):
+        cpu = base * (1.0 + 0.35 * math.sin(elapsed / 45.0 + i)) + 4.0 * math.sin(elapsed / 7.0 + 2 * i)
+        lines.append(f'node_cpu_usage_percent{{job="{job}"}} {min(100.0, max(0.0, cpu)):.2f}')
     return ("\n".join(lines) + "\n").encode()
 
 
