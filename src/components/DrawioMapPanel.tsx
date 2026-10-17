@@ -1,17 +1,17 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { getDisplayProcessor, LinkModel, PanelProps } from '@grafana/data';
-import { ContextMenu, MenuItem, useTheme2 } from '@grafana/ui';
+import { getDisplayProcessor, PanelProps } from '@grafana/data';
+import { useTheme2 } from '@grafana/ui';
 import { bind } from '../binding/engine';
 import { extractSeries } from '../binding/series';
+import { buildCard, DisplayOverride } from '../interact/cardModel';
+import { Card } from '../interact/Card';
 import { patchAt } from '../interact/hit';
-import { primaryOf, resolveLinks } from '../interact/links';
-import { Tooltip } from '../interact/Tooltip';
 import { applyPatches } from '../render/applier';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, clientToViewBox, pan, viewBoxFor, ViewBox, zoomAt } from '../render/zoom';
-import { CellPatch, DEFAULT_OPTIONS, Options, SeriesInfo } from '../types';
+import { DEFAULT_OPTIONS, Options, SeriesInfo } from '../types';
 import { useStage } from './useStage';
 
 const styles = {
@@ -45,11 +45,16 @@ const styles = {
   `,
 };
 
-interface MenuState {
+interface CardState {
+  cellId: string;
+  /** pointer position in panel coordinates */
   x: number;
   y: number;
-  links: LinkModel[];
+  pinned: boolean;
 }
+
+/** Touch screens and other devices without hover: only a tap opens (and pins) the card. */
+const canHover = () => !(typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
 
 export function DrawioMapPanel({
   options,
@@ -59,6 +64,7 @@ export function DrawioMapPanel({
   fieldConfig,
   replaceVariables,
   timeZone,
+  timeRange,
 }: PanelProps<Options>) {
   const theme = useTheme2();
   const opts = {
@@ -70,21 +76,20 @@ export function DrawioMapPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
   const patchedRef = useRef<Set<string>>(new Set());
-  const [menu, setMenu] = useState<MenuState | null>(null);
-  const [hover, setHover] = useState<{ x: number; y: number; patch: CellPatch } | null>(null);
+  const [card, setCard] = useState<CardState | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const zoomMode = opts.zoom.mode;
   const zoomPercent = opts.zoom.percent;
   const wheelZoom = opts.zoom.wheel;
 
-  // Reset the custom view and close the menu when the diagram changes (state adjustment during render).
+  // Reset the custom view and close the card when the diagram changes (state adjustment during render).
   const hash = opts.diagram?.hash;
   const [viewHash, setViewHash] = useState(hash);
   if (viewHash !== hash) {
     setViewHash(hash);
     setView(null);
-    setMenu(null);
+    setCard(null);
   }
 
   const series = useMemo(() => extractSeries(data.series), [data.series]);
@@ -115,6 +120,53 @@ export function DrawioMapPanel({
       opts.linkWidth.max,
     ]
   );
+
+  // The card resolves its rows only for the open cell. A data refresh updates it in place.
+  const cardPatch = card ? result.patches.get(card.cellId) : undefined;
+  const model = useMemo(() => {
+    if (!cardPatch) {
+      return undefined;
+    }
+    const displayFor = (s: SeriesInfo, v: number, o?: DisplayOverride) => {
+      if (!o) {
+        return display(s, v);
+      }
+      const config = { ...s.field.config };
+      if (o.unit !== undefined) {
+        config.unit = o.unit;
+      }
+      if (o.decimals !== undefined) {
+        config.decimals = o.decimals;
+      }
+      return getDisplayProcessor({ field: { ...s.field, config }, theme, timeZone })(v);
+    };
+    return buildCard(cardPatch, { series, theme, display: displayFor, replaceVariables });
+  }, [cardPatch, series, theme, timeZone, display, replaceVariables]);
+  const open = !!model;
+  const pinned = !!card?.pinned && open;
+
+  // Esc closes the card. A pointer down outside the panel closes a pinned card.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setCard(null);
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      if (pinned && !wrapperRef.current?.contains(e.target as Node)) {
+        setCard(null);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [open, pinned]);
 
   // draw.io writes color-scheme: light dark on the root, so light-dark() colours follow the OS preference.
   // Override it with the Grafana theme.
@@ -171,43 +223,44 @@ export function DrawioMapPanel({
     return () => wrapper.removeEventListener('wheel', onWheel);
   }, [wheelZoom, stage.root, stage.base]);
 
+  const cardRef = useRef<HTMLDivElement>(null);
+  const local = (e: React.MouseEvent) => {
+    const r = wrapperRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const inCard = (t: EventTarget) => t instanceof Node && !!cardRef.current?.contains(t);
+
+  // A click or a tap pins the card of the cell. A click on empty space closes it.
   const onClick = (e: React.MouseEvent) => {
-    const wrapper = containerRef.current;
-    const patch = wrapper ? patchAt(e.target, wrapper, result.patches) : undefined;
-    if (!patch) {
-      setMenu(null);
+    const stageEl = containerRef.current;
+    if (inCard(e.target) || !stageEl) {
       return;
     }
-    // Resolve the links first, then open the menu with them in state: the first click must show the right items.
-    const links = resolveLinks(patch, primaryOf(patch), replaceVariables);
-    setMenu(links.length ? { x: e.clientX, y: e.clientY, links } : null);
+    const patch = patchAt(e.target, stageEl, result.patches);
+    setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: true } : null);
   };
   const drag = useRef<{ x: number; y: number } | null>(null);
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (opts.zoom.pan && stage.root) {
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (opts.zoom.pan && stage.root && e.pointerType !== 'touch' && !inCard(e.target)) {
       drag.current = clientToViewBox(stage.root, e.clientX, e.clientY);
     }
   };
-  const onMouseMove = (e: React.MouseEvent) => {
+  const onPointerMove = (e: React.PointerEvent) => {
     if (drag.current && stage.root) {
       const c = clientToViewBox(stage.root, e.clientX, e.clientY);
       const d = drag.current;
       setView((v) => pan(v ?? stage.base!, c.x - d.x, c.y - d.y));
       return;
     }
-    const wrapper = containerRef.current;
-    if (!wrapper) {
+    // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
+    const stageEl = containerRef.current;
+    if (e.pointerType === 'touch' || !canHover() || card?.pinned || !stageEl) {
       return;
     }
-    const patch = patchAt(e.target, wrapper, result.patches);
-    if (!patch) {
-      setHover(null);
-      return;
-    }
-    const r = wrapper.getBoundingClientRect();
-    setHover({ x: e.clientX - r.left, y: e.clientY - r.top, patch });
+    const patch = patchAt(e.target, stageEl, result.patches);
+    setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: false } : null);
   };
-  const onMouseUp = () => (drag.current = null);
+  const onPointerUp = () => (drag.current = null);
 
   if (!opts.diagram?.svg) {
     return (
@@ -230,12 +283,14 @@ export function DrawioMapPanel({
       data-dmap-hash={opts.diagram.hash}
       style={{ colorScheme: theme.isDark ? 'dark' : 'light' }}
       onClick={onClick}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={() => {
-        setHover(null);
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={() => {
         drag.current = null;
+        if (!card?.pinned) {
+          setCard(null);
+        }
       }}
     >
       <div ref={containerRef} className={styles.stage} />
@@ -250,24 +305,19 @@ export function DrawioMapPanel({
           {warnings.length} warning{warnings.length > 1 ? 's' : ''}
         </div>
       ) : null}
-      {hover && !menu ? <Tooltip x={hover.x} y={hover.y} patch={hover.patch} width={width} height={height} /> : null}
-      {menu ? (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          renderMenuItems={() =>
-            menu.links.map((l, i) => (
-              <MenuItem
-                key={`${i}-${l.href}`}
-                label={l.title}
-                url={l.href}
-                target={l.target}
-                onClick={l.onClick ? (ev) => l.onClick!(ev) : undefined}
-              />
-            ))
-          }
-        />
+      {model && card ? (
+        <div ref={cardRef}>
+          <Card
+            model={model}
+            pinned={pinned}
+            x={card.x}
+            y={card.y}
+            width={width}
+            height={height}
+            range={{ from: timeRange.from.valueOf(), to: timeRange.to.valueOf() }}
+            onClose={() => setCard(null)}
+          />
+        </div>
       ) : null}
     </div>
   );
