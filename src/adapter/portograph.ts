@@ -98,3 +98,27 @@ export function endpointScope(e?: Endpoint): Record<string, string> | undefined 
   }
   return { node: e.node, port: e.port ?? '', ordinal: String(e.ordinal), raw: e.raw };
 }
+
+/**
+ * Node key → cell id of its icon. A cell with pg-kind="node-icon" and pg-of=<node pg-id> wins.
+ * Older exports have no tag: then the icon tile (the background of a glyph) is used, else the icon cell.
+ */
+export function nodeIcons(cells: CellMeta[]): Map<string, string> {
+  const ids = new Set(cells.map((c) => c.id));
+  const out = new Map<string, string>();
+  for (const c of cells) {
+    if (c.attrs['pg-kind'] === 'node-icon' && c.attrs['pg-of'] && !out.has(c.attrs['pg-of'])) {
+      out.set(c.attrs['pg-of'], c.id);
+    }
+  }
+  for (const c of cells) {
+    if (c.kind !== 'node' || out.has(c.key)) {
+      continue;
+    }
+    const id = [`pg-iconTile~${c.key}`, `pg-icon~${c.key}`].find((i) => ids.has(i));
+    if (id) {
+      out.set(c.key, id);
+    }
+  }
+  return out;
+}

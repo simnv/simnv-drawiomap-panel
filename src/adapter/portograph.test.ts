@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachLinkLabels, cellMetaFromAttrs, parseEndpoint } from './portograph';
+import { attachLinkLabels, cellMetaFromAttrs, nodeIcons, parseEndpoint } from './portograph';
 
 describe('parseEndpoint', () => {
   it('parses node, node:port and node:port#n', () => {
@@ -86,5 +86,33 @@ describe('attachLinkLabels', () => {
     const out = attachLinkLabels([link, label]);
     expect(out.find((c) => c.id === 'pg-link~a->b')?.labelText).toBe('metric 10');
     expect(out).toHaveLength(2);
+  });
+});
+
+describe('nodeIcons', () => {
+  const node = (id: string, key: string) => cellMetaFromAttrs(id, { 'pg-kind': 'node', 'pg-id': key }, false);
+  const bare = (id: string, attrs: Record<string, string> = {}) => cellMetaFromAttrs(id, attrs, false);
+  it('prefers a pg-kind=node-icon cell with pg-of', () => {
+    const cells = [
+      node('pg-node~a', 'a'),
+      bare('pg-icon~a'),
+      bare('custom-icon', { 'pg-kind': 'node-icon', 'pg-of': 'a' }),
+    ];
+    expect(nodeIcons(cells).get('a')).toBe('custom-icon');
+  });
+  it('falls back to the icon tile, then to the icon cell id', () => {
+    const cells = [
+      node('pg-node~a', 'a'),
+      bare('pg-icon~a'),
+      bare('pg-iconTile~a'),
+      node('pg-node~b', 'b'),
+      bare('pg-icon~b'),
+    ];
+    const icons = nodeIcons(cells);
+    expect(icons.get('a')).toBe('pg-iconTile~a');
+    expect(icons.get('b')).toBe('pg-icon~b');
+  });
+  it('has no entry for a node without an icon', () => {
+    expect(nodeIcons([node('pg-node~c', 'c')]).has('c')).toBe(false);
   });
 });

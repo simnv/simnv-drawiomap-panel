@@ -61,7 +61,7 @@ describe('ensureOverlay', () => {
 });
 
 describe('renderOverlay', () => {
-  it('draws two halves, two arrows and two labels for a two-way link', () => {
+  it('draws two halves and two arrows for a two-way link, without value labels', () => {
     const { root, index } = build();
     const patches: PatchMap = new Map([
       [
@@ -83,8 +83,8 @@ describe('renderOverlay', () => {
     expect(b2a.getAttribute('points')).toBe('75,0 100,0 100,50');
     expect(b2a.getAttribute('data-dmap-step')).toBe('2');
     expect(root.querySelectorAll('polygon.dmap-arrow')).toHaveLength(2);
-    const labels = root.querySelectorAll('g.dmap-label text');
-    expect(Array.from(labels, (t) => t.textContent)).toEqual(['41 Mb/s · 41%', '90 Mb/s · 90%']);
+    // the values show in the hover card only
+    expect(root.querySelectorAll('.dmap-label, text')).toHaveLength(0);
   });
   it('draws the whole edge as one half when only one series is bound', () => {
     const { root, index } = build();
@@ -94,69 +94,15 @@ describe('renderOverlay', () => {
     expect(halves[0].getAttribute('data-dmap-half')).toBe('b2a');
     expect(halves[0].getAttribute('points')).toBe('0,0 100,0 100,50');
   });
-  it('draws a sparkline below a shape', () => {
+  it('draws nothing for a shape patch (no canvas sparklines)', () => {
     const { root, index } = build();
     renderOverlay(
       root,
       index,
-      new Map([['n1', patch('n1', { sparkline: { values: [0, 1, 0.5], color: '#0000ff', position: 'bottom' } })]]),
+      new Map([['n1', patch('n1', { card: { reducer: 'last', rows: [{ refId: 'D' }] } })]]),
       opts
     );
-    const s = root.querySelector('polyline.dmap-spark')!;
-    expect(s.getAttribute('data-dmap-cell')).toBe('n1');
-    const pts = s
-      .getAttribute('points')!
-      .split(' ')
-      .map((p) => p.split(',').map(Number));
-    expect(pts).toHaveLength(3);
-    expect(pts[0][0]).toBe(10);
-    expect(pts[2][0]).toBe(60);
-    expect(pts.every(([, y]) => y >= 42 && y <= 56)).toBe(true);
-    expect(pts[1][1]).toBeLessThan(pts[0][1]);
-  });
-  it('maps sparkline bounds through the shape transform into overlay coordinates', () => {
-    const { root, index } = build();
-    const rect = index.get('n1')!.shape!;
-    // jsdom has no layout. Simulate a shape group with transform="translate(100, 50)" and an overlay at identity.
-    const ctm = (e: number, f: number) => () => ({ a: 1, b: 0, c: 0, d: 1, e, f }) as DOMMatrix;
-    (rect as unknown as { getCTM: () => DOMMatrix }).getCTM = ctm(100, 50);
-    const layer = ensureOverlay(root);
-    (layer as unknown as { getCTM: () => DOMMatrix }).getCTM = ctm(0, 0);
-    renderOverlay(
-      root,
-      index,
-      new Map([['n1', patch('n1', { sparkline: { values: [0, 1, 0.5], color: '#0000ff', position: 'bottom' } })]]),
-      opts
-    );
-    const pts = root
-      .querySelector('polyline.dmap-spark')!
-      .getAttribute('points')!
-      .split(' ')
-      .map((p) => p.split(',').map(Number));
-    expect(pts[0][0]).toBe(110);
-    expect(pts[2][0]).toBe(160);
-    expect(pts.every(([, y]) => y >= 92 && y <= 106)).toBe(true);
-  });
-  it('maps sparkline bounds of a rotated shape to its axis-aligned overlay box', () => {
-    const { root, index } = build();
-    const rect = index.get('n1')!.shape!;
-    // rotate(90) about the origin: (x, y) -> (-y, x). Rect 10..60 x 10..40 becomes -40..-10 x 10..60.
-    (rect as unknown as { getCTM: () => DOMMatrix }).getCTM = () =>
-      ({ a: 0, b: 1, c: -1, d: 0, e: 0, f: 0 }) as DOMMatrix;
-    renderOverlay(
-      root,
-      index,
-      new Map([['n1', patch('n1', { sparkline: { values: [0, 1], color: '#0000ff', position: 'bottom' } })]]),
-      opts
-    );
-    const pts = root
-      .querySelector('polyline.dmap-spark')!
-      .getAttribute('points')!
-      .split(' ')
-      .map((p) => p.split(',').map(Number));
-    expect(pts[0][0]).toBe(-40);
-    expect(pts[1][0]).toBe(-10);
-    expect(pts.every(([, y]) => y >= 62 && y <= 76)).toBe(true);
+    expect(ensureOverlay(root).childElementCount).toBe(0);
   });
   it('clears the previous render', () => {
     const { root, index } = build();
