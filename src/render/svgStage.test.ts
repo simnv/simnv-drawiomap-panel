@@ -81,6 +81,13 @@ describe('buildCellIndex on plain-text labels', () => {
     expect(n.label?.localName).toBe('g');
     expect(n.meta.labelText).toBe('first second');
   });
+  it('keeps a single <text> as the label when its parent is not a draw.io label group', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><a><text>A</text><text>B</text></a></g><g data-cell-id="m"><g><path d="M0 0"/><text>C</text><text>D</text></g></g></svg>`;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    expect(index.get('n')!.label?.localName).toBe('text');
+    expect(index.get('n')!.meta.labelText).toBe('A');
+    expect(index.get('m')!.label?.localName).toBe('text');
+  });
 });
 
 describe('buildCellIndex on hand-drawn', () => {

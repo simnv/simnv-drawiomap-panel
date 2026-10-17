@@ -160,10 +160,26 @@ describe('applyPatches on a native text label (l3-routing)', () => {
     const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
     const label = index.get('n')!.label!;
     const before = label.innerHTML;
-    const prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up' }) })]]), new Set());
-    expect(Array.from(label.querySelectorAll('text'), (t) => t.textContent)).toEqual(['up']);
+    const lines = Array.from(label.querySelectorAll('text'));
+    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up' }) })]]), new Set());
+    expect(lines.map((t) => t.textContent)).toEqual(['up', '']);
+    prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up 2' }) })]]), prev);
     applyPatches(index, new Map(), prev);
     expect(label.innerHTML).toBe(before);
+    // Codex: the same elements stay in the DOM, so nothing indexed is detached by a reset.
+    expect(lines.every((t) => label.contains(t))).toBe(true);
+  });
+  it('keeps the indexed shape attached when a label background shares the label group', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><g fill="#000"><rect width="5" height="5"/><text x="1" y="2">A</text><text x="1" y="4">B</text></g></g></g></svg>`;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    const entry = index.get('n')!;
+    expect(entry.label!.localName).toBe('g');
+    const rect = entry.shape!;
+    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'x' }) })]]), new Set());
+    prev = applyPatches(index, new Map(), prev);
+    applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'y' }) })]]), prev);
+    expect(entry.group.contains(rect)).toBe(true);
+    expect(entry.label!.querySelector('rect')).toBe(rect);
   });
 });
 

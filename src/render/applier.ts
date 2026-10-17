@@ -9,11 +9,11 @@ function setText(label: Element | undefined, text: string): void {
   }
   written.add(label);
   if (label.localName === 'g') {
-    // A multi-line plain-text label: the first line takes the text, the others are removed. Reset
-    // puts the original lines back from the clones.
-    const lines = Array.from(label.children).filter((el) => el.localName === 'text');
-    lines.slice(1).forEach((l) => l.remove());
-    setText(lines[0], text);
+    // A multi-line plain-text label: the first line takes the text, the others are emptied. No
+    // element is replaced, so a reference into the group stays attached.
+    Array.from(label.children)
+      .filter((el) => el.localName === 'text')
+      .forEach((line, i) => (line.textContent = i === 0 ? text : ''));
     return;
   }
   if (label.localName === 'text') {
@@ -102,7 +102,13 @@ function reset(entry: CellEntry): void {
   const label = entry.label;
   if (label && written.has(label)) {
     const nodes = entry.original.labelNodes;
-    if (nodes) {
+    if (label.localName === 'g' && nodes) {
+      // A multi-line plain-text label: put each line's text back in place.
+      const originals = nodes.filter((n) => (n as Element).localName === 'text');
+      Array.from(label.children)
+        .filter((el) => el.localName === 'text')
+        .forEach((line, i) => (line.textContent = originals[i]?.textContent ?? ''));
+    } else if (nodes) {
       // Put back the exact markup: a text write flattens the HTML lines of a foreignObject label.
       label.replaceChildren(...nodes.map((n) => n.cloneNode(true)));
     } else if (entry.original.text !== undefined) {
