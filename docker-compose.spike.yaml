@@ -1,0 +1,77 @@
+# Spike stack for the bundled draw.io editor: Grafana 12.4 on :3112 and 13.2 on :3113, plus
+# sandbox variants on :3122 (12.4) and :3123 (13.2),
+# content_security_policy = true on :3132 (12.4) and :3133 (13.2), sandbox + CSP on :3143 (13.2),
+# app_sub_url /grafana on :3153 (13.2). Joins the network of the main stack (victoriametrics).
+# Start only the services you test: 8 Grafana instances overload the Docker VM.
+# Start: docker compose -p drawiomap-spike -f docker-compose.spike.yaml up -d grafana12 grafana13
+x-grafana-env: &grafana-env
+  GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: simnv-drawiomap-panel
+  GF_AUTH_ANONYMOUS_ENABLED: 'true'
+  GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+  GF_DEFAULT_APP_MODE: development
+  GF_LOG_LEVEL: warn
+  GF_NEWS_NEWS_FEED_ENABLED: 'false'
+x-sandbox-env: &sandbox-env
+  <<: *grafana-env
+  GF_SECURITY_ENABLE_FRONTEND_SANDBOX_FOR_PLUGINS: simnv-drawiomap-panel
+  GF_FEATURE_TOGGLES_ENABLE: pluginsFrontendSandbox
+x-csp-env: &csp-env
+  <<: *grafana-env
+  GF_SECURITY_CONTENT_SECURITY_POLICY: 'true'
+x-sandbox-csp-env: &sandbox-csp-env
+  <<: *sandbox-env
+  GF_SECURITY_CONTENT_SECURITY_POLICY: 'true'
+x-subpath-env: &subpath-env
+  <<: *grafana-env
+  GF_SERVER_ROOT_URL: http://localhost:3153/grafana/
+  GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+x-grafana-volumes: &grafana-volumes
+  - ./dist:/var/lib/grafana/plugins/simnv-drawiomap-panel
+  - ./provisioning:/etc/grafana/provisioning
+
+services:
+  grafana12:
+    image: grafana/grafana:12.4.13
+    ports: ['127.0.0.1:3112:3000']
+    environment: *grafana-env
+    volumes: *grafana-volumes
+  grafana13:
+    image: grafana/grafana:13.2.4
+    ports: ['127.0.0.1:3113:3000']
+    environment: *grafana-env
+    volumes: *grafana-volumes
+  grafana12-sandbox:
+    image: grafana/grafana:12.4.13
+    ports: ['127.0.0.1:3122:3000']
+    environment: *sandbox-env
+    volumes: *grafana-volumes
+  grafana13-sandbox:
+    image: grafana/grafana:13.2.4
+    ports: ['127.0.0.1:3123:3000']
+    environment: *sandbox-env
+    volumes: *grafana-volumes
+  grafana12-csp:
+    image: grafana/grafana:12.4.13
+    ports: ['127.0.0.1:3132:3000']
+    environment: *csp-env
+    volumes: *grafana-volumes
+  grafana13-csp:
+    image: grafana/grafana:13.2.4
+    ports: ['127.0.0.1:3133:3000']
+    environment: *csp-env
+    volumes: *grafana-volumes
+  grafana13-sandbox-csp:
+    image: grafana/grafana:13.2.4
+    ports: ['127.0.0.1:3143:3000']
+    environment: *sandbox-csp-env
+    volumes: *grafana-volumes
+  grafana13-subpath:
+    image: grafana/grafana:13.2.4
+    ports: ['127.0.0.1:3153:3000']
+    environment: *subpath-env
+    volumes: *grafana-volumes
+
+networks:
+  default:
+    name: simnv-drawiomap-panel_default
+    external: true
