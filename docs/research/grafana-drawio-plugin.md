@@ -7,7 +7,7 @@ Evidence types used:
 - Web docs and repositories (linked inline).
 - Package registries (npm, Docker Hub, GitHub API).
 - Local probe: draw.io Desktop 32.4.1 CLI (`/opt/homebrew/bin/drawio`) exported a small
-  test diagram to SVG in `/tmp/drawio-probe`. Results are marked "probe".
+  test diagram to SVG in a temporary directory. Results are marked "probe".
 
 Contents:
 

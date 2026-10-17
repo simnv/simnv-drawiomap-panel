@@ -4,7 +4,7 @@ Date: 2026-10-17. Status: approved for PoC.
 
 Background research:
 - `docs/research/grafana-drawio-plugin.md`: toolchain, editor embedding, renderer choice, prior art.
-- `docs/research/references.md`: portograph output and the demo-lab metric labels.
+- `docs/research/reference-projects.md`: portograph output and the demo-lab metric labels.
 - `docs/research/portograph-contract.md`: the cell attribute contract. The portograph worker writes this file.
 
 ## 1. Goal

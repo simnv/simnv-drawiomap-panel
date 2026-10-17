@@ -78,12 +78,12 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
   link:
     capacity: { refId: S, match: { job: 'node-${to.node}', device: '${to.port}' } }
 - name: wan uplinks
-  select: { kind: link, attrs: { pg-to: '/^(dm|hm)-wrt:(wan1|wan2|lte|pppoe)$/' } }
+  select: { kind: link, attrs: { pg-to: '/^rtr-(a|b):(wan1|wan2|wan3|pppoe)$/' } }
   link:
     a2b: { refId: W, match: { job: 'node-${from.node}', device: '${from.port}' } }
     b2a: { refId: W, match: { job: 'node-${to.node}', device: '${to.port}' } }
 - name: tunnels 100M
-  select: { kind: link, attrs: { pg-to: '/:(ts0|in-3088|in-3089)$/' } }
+  select: { kind: link, attrs: { pg-to: '/:(ts0|tun-in|chain-in)$/' } }
   link: { capacity: 100000000 }
 - name: node up
   select: { kind: node }
@@ -171,7 +171,7 @@ The card of a link always has one row for each bound direction: the current valu
 | `label`   | A matcher for the label text.                                                  |
 | `between` | `[a, b]`. A link between two nodes, in any direction.                          |
 
-A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:(wan1|lte)$/`.
+A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:(wan1|wan3)$/`.
 
 ### Templates
 
@@ -258,7 +258,7 @@ The canvas shows only colours. The values show in a card:
 
 The card stays inside the panel. It scrolls when it is too long. In a panel narrower than 480 px, the card is a sheet at the bottom of the panel.
 
-A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `wan1 → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
+A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
 
 The footer has the rule URL (title: `urlTitle`) and the data links of the field config (title: the data link title). A link that opens in a new tab has an external-link icon.
 
@@ -296,13 +296,13 @@ The scale stays between 0.2× and 10× of the configured zoom. When the view is 
 
 The panel sets `touch-action: pan-x pan-y` at the configured zoom: one finger scrolls the page, and the browser does not pinch-zoom the page over the panel. When the view is zoomed, the panel sets `touch-action: none` and takes all touches. A two-finger `touchmove` calls `preventDefault()`, so the page does not scroll while you pinch.
 
-![Zoomed view with the reset button](docs/screenshots/zoomed-reset-button.png)
+![Zoomed view with the reset button](docs/images/zoomed-reset-button.png)
 
 ## Editor
 
 The plugin includes the draw.io editor (`dist/drawio`). Edit mode opens it in an iframe inside a modal, in embed mode. The iframe has an opaque origin, so the editor cannot reach the Grafana page (see `docs/security.md` and `docs/adr/0001-bundled-editor-opaque-origin.md`). The editor works with and without the Grafana frontend sandbox, with `content_security_policy = true`, and with `app_sub_url`. The plugin has no option for another editor URL. An `editorUrl` value that an older version saved is ignored. No draw.io code loads in view mode.
 
-![Diagram options](docs/screenshots/options-diagram.png)
+![Diagram options](docs/images/options-diagram.png)
 
 ## Grafana 12 and 13
 
@@ -321,9 +321,11 @@ npm run e2e:matrix        # both
 npm run stack:wait        # wait for the demo series, Grafana health and the plugin (bounded, no fixed sleep)
 npm run package           # artifacts/simnv-drawiomap-panel-<version>.zip (run npm run build first)
 npm run ci:local          # all CI steps in order: install, checks, build, package, e2e on both versions
-npm run build:dashboard   # rebuild provisioning/dashboards/drawiomap-demo.json
-./scripts/export-fixtures.sh   # export fixtures/**/*.drawio to fixtures/svg/*.svg
+npm run build:dashboard   # rebuild provisioning/dashboards/demo.json
+./scripts/export-fixtures.sh   # export fixtures/{demo,hand}/*.drawio to fixtures/demo/svg/*.svg
 ```
+
+The demo network in `fixtures/demo/` is fictional. Its `.yaml` sources are portograph input; `npx portograph render fixtures/demo/demo-l3.yaml --format drawio --output fixtures/demo/demo-l3.drawio` makes the `.drawio` file again.
 
 The acceptance results are in `docs/acceptance.md`. The decision records are in `docs/adr/`.
 

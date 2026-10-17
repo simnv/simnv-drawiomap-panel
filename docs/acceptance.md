@@ -31,8 +31,8 @@ Every result below is real output from this run. `npm run ci:local` passed end t
 | Diagram options layout    | `tests/options.spec.ts`                                                       | PASS on both versions. The Diagram option buttons stay inside the options pane at the narrowest width.                                                                                                                                                                                           |
 | Plugin package            | `npm run package`                                                             | PASS. `artifacts/simnv-drawiomap-panel-1.0.0.zip`: 22104392 bytes (21.1 MB). One top folder `simnv-drawiomap-panel/`. `dist/` is 56592 KB in 2411 files; `dist/drawio/` is 55628 KB of it.                                                                                                       |
 
-Screenshots: `docs/screenshots/card-hover-desktop.png`, `card-pinned-desktop.png`, `card-mobile-sheet.png`,
-`zoomed-reset-button.png`, `options-diagram.png`, `labels-above-links.png` (set `DMAP_SCREENSHOTS=docs/screenshots`
+Screenshots: `docs/images/card-hover-desktop.png`, `card-pinned-desktop.png`, `card-mobile-sheet.png`,
+`zoomed-reset-button.png`, `options-diagram.png`, `labels-above-links.png` (set `DMAP_SCREENSHOTS=docs/images`
 to write them again).
 
 ## Isolation variants

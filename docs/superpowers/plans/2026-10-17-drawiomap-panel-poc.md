@@ -8,7 +8,7 @@
 
 **Tech Stack:** `@grafana/create-plugin` 7.13.0, `@grafana/{data,ui,runtime,schema}` 12.4.x, React 18.3 types (runtime React comes from Grafana), TypeScript, Vitest + jsdom, Playwright + `@grafana/plugin-e2e` 3.15.x, `zod`, `js-yaml`, Docker Compose (Grafana 12.4.13, Grafana 13.2.4, `jgraph/drawio` 32.4.1, VictoriaMetrics, a Python metrics generator).
 
-**Spec:** `docs/superpowers/specs/2026-10-17-drawiomap-panel-poc-design.md`. Research: `docs/research/grafana-drawio-plugin.md`, `docs/research/references.md`. Contract: `docs/research/portograph-contract.md` (schema 1; copy of portograph `docs/drawio-binding-contract.md`). Fixture sources: `fixtures/portograph/{l1-physical,l2-link,l3-routing,l4-exits}.drawio` (+ `.yaml`), already committed.
+**Spec:** `docs/superpowers/specs/2026-10-17-drawiomap-panel-poc-design.md`. Research: `docs/research/grafana-drawio-plugin.md`, `docs/research/reference-projects.md`. Contract: `docs/research/portograph-contract.md` (schema 1; copy of portograph `docs/drawio-binding-contract.md`). Fixture sources: `fixtures/portograph/{l1-physical,l2-link,l3-routing,l4-exits}.drawio` (+ `.yaml`), already committed.
 
 ## Global Constraints
 
@@ -125,12 +125,14 @@ Workers in one wave run in parallel. A wave starts when every task of the previo
 
 - [ ] **Step 1: Scaffold in a temp directory and copy into the repo**
 
+`REPO` is the root of this repository.
+
 ```bash
-cd /tmp && rm -rf dmap-scaffold && mkdir dmap-scaffold && cd dmap-scaffold
+scaffold=$(mktemp -d) && cd "$scaffold"
 npx -y @grafana/create-plugin@7.13.0 --plugin-name=drawiomap --org-name=simnv --plugin-type=panel --no-backend
 ls simnv-drawiomap-panel
-rsync -a --exclude .git ./simnv-drawiomap-panel/ ./
-cd ./ && git status --short | head -40
+rsync -a --exclude .git "$scaffold/simnv-drawiomap-panel/" "$REPO/"
+cd "$REPO" && git status --short | head -40
 ```
 
 Expected: `src/plugin.json` has `"id": "simnv-drawiomap-panel"` and `"type": "panel"`. If the CLI asks interactive questions, answer: plugin name `drawiomap`, org `simnv`, type `panel`, no backend, no GitHub workflows is acceptable either way.
@@ -138,7 +140,7 @@ Expected: `src/plugin.json` has `"id": "simnv-drawiomap-panel"` and `"type": "pa
 - [ ] **Step 2: Pin Grafana packages to 12.4.x and React types to 18.3**
 
 ```bash
-cd ./
+cd "$REPO"
 V=$(npm view @grafana/data versions --json | tr -d '", ' | grep '^12\.4\.' | tail -1); echo "$V"
 npm install --save-exact "@grafana/data@$V" "@grafana/ui@$V" "@grafana/runtime@$V" "@grafana/schema@$V"
 npm install --save-exact react@18.3.1 react-dom@18.3.1
@@ -794,14 +796,14 @@ describe('parseEndpoint', () => {
 describe('cellMetaFromAttrs', () => {
   it('maps a link with the pg contract', () => {
     const m = cellMetaFromAttrs(
-      'pg-link~wan1:pppoe->rtr-a:wan1',
-      { label: '', 'pg-kind': 'link', 'pg-id': 'wan1:pppoe->rtr-a:wan1', 'pg-from': 'wan1:pppoe', 'pg-to': 'rtr-a:wan1' },
+      'pg-link~isp-a:pppoe->rtr-a:wan1',
+      { label: '', 'pg-kind': 'link', 'pg-id': 'isp-a:pppoe->rtr-a:wan1', 'pg-from': 'isp-a:pppoe', 'pg-to': 'rtr-a:wan1' },
       true
     );
     expect(m.kind).toBe('link');
-    expect(m.key).toBe('wan1:pppoe->rtr-a:wan1');
-    expect(m.from?.node).toBe('wan1');
-    expect(m.to?.port).toBe('wan1');
+    expect(m.key).toBe('isp-a:pppoe->rtr-a:wan1');
+    expect(m.from?.node).toBe('isp-a');
+    expect(m.to?.port).toBe('isp-a');
     expect(m.labelText).toBe('');
   });
   it('maps a node and a port', () => {
@@ -809,7 +811,7 @@ describe('cellMetaFromAttrs', () => {
     expect(n.kind).toBe('node');
     expect(n.key).toBe('rtr-a');
     expect(n.labelText).toBe('rtr-a');
-    const p = cellMetaFromAttrs('pg-port~rtr-a~lte~1', { 'pg-kind': 'port', 'pg-id': 'rtr-a:lte', 'pg-node': 'rtr-a', 'pg-port': 'lte' }, false, 'lte');
+    const p = cellMetaFromAttrs('pg-port~rtr-a~wan3~1', { 'pg-kind': 'port', 'pg-id': 'rtr-a:wan3', 'pg-node': 'rtr-a', 'pg-port': 'lte' }, false, 'lte');
     expect(p.kind).toBe('port');
     expect(p.attrs['pg-port']).toBe('lte');
   });
@@ -1018,7 +1020,7 @@ The series mirror the demo-lab `l3-routing` links: `job=node-<node id>`, `device
 """Push synthetic node_exporter-like series to VictoriaMetrics every 5 s.
 
 Stdlib only. Counters grow at a constant rate from process start, so
-rate(...[1m]) * 8 is stable: wan1 41 Mb/s (41 % of 100M), wan2 90 Mb/s
+rate(...[1m]) * 8 is stable: isp-a 41 Mb/s (41 % of 100M), radio 90 Mb/s
 (90 % of 100M), br-lan 480 Mb/s (48 % of 1G). lte has no traffic series and up=0.
 """
 import math
@@ -1030,28 +1032,28 @@ VM = os.environ.get("VM_URL", "http://victoriametrics:8428")
 
 # (job, device, transmit bytes/s, receive bytes/s)
 LINKS = [
-    ("node-net-dm", "lan", 60_000_000, 12_000_000),
+    ("node-net-a", "lan", 60_000_000, 12_000_000),
     ("node-rtr-a", "br-lan", 60_000_000, 12_000_000),
-    ("node-net-hm", "lan", 2_500_000, 1_000_000),
+    ("node-net-b", "lan", 2_500_000, 1_000_000),
     ("node-rtr-b", "br-lan", 2_500_000, 1_000_000),
-    ("node-wan1", "pppoe", 5_125_000, 1_250_000),
+    ("node-isp-a", "pppoe", 5_125_000, 1_250_000),
     ("node-rtr-a", "wan1", 1_250_000, 5_125_000),
-    ("node-wan2", "dhcp", 11_250_000, 2_000_000),
+    ("node-radio", "dhcp", 11_250_000, 2_000_000),
     ("node-rtr-a", "wan2", 2_000_000, 11_250_000),
-    ("node-isp-hm", "pppoe", 3_000_000, 500_000),
+    ("node-isp-b", "pppoe", 3_000_000, 500_000),
     ("node-rtr-b", "pppoe", 500_000, 3_000_000),
     ("node-rtr-a", "ts0", 400_000, 300_000),
     ("node-rtr-b", "ts0", 300_000, 400_000),
     ("node-rtr-a", "tun0", 200_000, 100_000),
-    ("node-proxy-a", "in-3088", 100_000, 200_000),
+    ("node-proxy-a", "tun-in", 100_000, 200_000),
     ("node-rtr-b", "tun0", 150_000, 90_000),
-    ("node-proxy-b", "in-3088", 90_000, 150_000),
+    ("node-proxy-b", "tun-in", 90_000, 150_000),
     ("node-proxy-a", "relay-out", 50_000, 20_000),
-    ("node-proxy-b", "in-3089", 20_000, 50_000),
+    ("node-proxy-b", "chain-in", 20_000, 50_000),
 ]
 UP = {
-    "node-net-dm": 1, "node-net-hm": 1, "node-rtr-a": 1, "node-rtr-b": 1,
-    "node-wan1": 1, "node-wan2": 1, "node-lte": 0, "node-isp-hm": 1,
+    "node-net-a": 1, "node-net-b": 1, "node-rtr-a": 1, "node-rtr-b": 1,
+    "node-isp-a": 1, "node-radio": 1, "node-lte": 0, "node-isp-b": 1,
     "node-proxy-a": 1, "node-proxy-b": 1,
 }
 
@@ -1131,9 +1133,9 @@ wait_for http://localhost:3013/api/health
 wait_for http://localhost:8428/health
 wait_for http://localhost:8080/
 sleep 15
-q='rate(node_network_transmit_bytes_total{job="node-wan1",device="pppoe"}[1m])*8'
+q='rate(node_network_transmit_bytes_total{job="node-isp-a",device="pppoe"}[1m])*8'
 val=$(curl -fsS --get http://localhost:8428/api/v1/query --data-urlencode "query=$q" | sed -E 's/.*"value":\[[0-9.]+,"([0-9.e+]+)"\].*/\1/')
-echo "wan1 tx bit/s: $val"
+echo "isp-a tx bit/s: $val"
 awk -v v="$val" 'BEGIN { if (v < 40e6 || v > 42e6) { print "FAIL: expected ~41e6"; exit 1 } print "OK" }'
 for p in 3012 3013; do
   curl -fsS "http://localhost:$p/api/plugins/simnv-drawiomap-panel/settings" | grep -q '"id":"simnv-drawiomap-panel"' && echo "plugin loaded on :$p"
@@ -1148,7 +1150,7 @@ Run: `npm run build && docker compose up -d && ./scripts/stack-smoke.sh`
 Expected output ends with (the number may print as `4.1e+07`):
 
 ```
-wan1 tx bit/s: 41000000
+isp-a tx bit/s: 41000000
 OK
 plugin loaded on :3012
 plugin loaded on :3013
@@ -1176,7 +1178,7 @@ Leave the stack running for other workers, or `docker compose down -v`.
 - Create: `scripts/export-fixtures.sh`, `fixtures/hand/hand-drawn.drawio`, `fixtures/svg/l1-physical.svg`, `fixtures/svg/l2-link.svg`, `fixtures/svg/l3-routing.svg`, `fixtures/svg/l4-exits.svg`, `fixtures/svg/hand-drawn.svg`, `src/fixtures.test.ts`
 
 **Interfaces:**
-- Produces: SVG files that Tasks 5, 6, 7, 11, 12 load with `fs.readFileSync(resolve(__dirname, '..', 'fixtures', 'svg', name))`. Known facts (verified on 2026-10-17 with draw.io 32.4.1 CLI on the committed `l3-routing.drawio`): 438 680 bytes, 100 `data-cell-id` groups, 10 `data-meta-pg-kind="link"`, 10 `node`, 20 `port`, 8 `link-label`, root cell `data-cell-id="0"` with `data-meta-pg-schema="1"`, link ids like `pg-link~wan1:pppoe->rtr-a:wan1` (`&gt;` in the file, `>` in the DOM), 53 PNG `<image>` label fallbacks inside `<switch>`, 189 `light-dark(` occurrences. `l2-link` carries meta attrs `job`, `instance`, `device`, `capacity`; `l1-physical` carries `capacity`, `kind`, `device`; `l3-routing` and `l4-exits` carry only `pg-*` attrs.
+- Produces: SVG files that Tasks 5, 6, 7, 11, 12 load with `fs.readFileSync(resolve(__dirname, '..', 'fixtures', 'svg', name))`. Known facts (verified on 2026-10-17 with draw.io 32.4.1 CLI on the committed `l3-routing.drawio`): 438 680 bytes, 100 `data-cell-id` groups, 10 `data-meta-pg-kind="link"`, 10 `node`, 20 `port`, 8 `link-label`, root cell `data-cell-id="0"` with `data-meta-pg-schema="1"`, link ids like `pg-link~isp-a:pppoe->rtr-a:wan1` (`&gt;` in the file, `>` in the DOM), 53 PNG `<image>` label fallbacks inside `<switch>`, 189 `light-dark(` occurrences. `l2-link` carries meta attrs `job`, `instance`, `device`, `capacity`; `l1-physical` carries `capacity`, `kind`, `device`; `l3-routing` and `l4-exits` carry only `pg-*` attrs.
 
 - [ ] **Step 1: Write `scripts/export-fixtures.sh`**
 
@@ -1299,7 +1301,7 @@ describe('fixtures', () => {
     expect(count(s, /data-meta-pg-kind="port"/g)).toBe(20);
     expect(count(s, /data-meta-pg-kind="link-label"/g)).toBe(8);
     expect(s).toContain('data-meta-pg-schema="1"');
-    expect(s).toContain('data-meta-pg-id="wan1:pppoe-&gt;rtr-a:wan1"');
+    expect(s).toContain('data-meta-pg-id="isp-a:pppoe-&gt;rtr-a:wan1"');
   });
   it('l2-link carries author meta attributes', () => {
     const s = svg('l2-link');
@@ -1368,7 +1370,7 @@ import { resolveTemplate } from './template';
 
 const scope = {
   cell: { 'pg-id': 'rtr-a', capacity: '1000000000' },
-  from: { node: 'wan1', port: 'pppoe' },
+  from: { node: 'isp-a', port: 'pppoe' },
   to: { node: 'rtr-a', port: 'wan1' },
   labels: { job: 'node-rtr-a' },
   value: '41 Mb/s',
@@ -1378,7 +1380,7 @@ const scope = {
 describe('resolveTemplate', () => {
   it('resolves cell, from, to, labels, value and percent', () => {
     const r = resolveTemplate('node-${from.node} ${to.port} ${cell.pg-id} ${labels.job} ${value} · ${percent}', scope);
-    expect(r.text).toBe('node-wan1 wan1 rtr-a node-rtr-a 41 Mb/s · 41%');
+    expect(r.text).toBe('node-isp-a isp-a rtr-a node-rtr-a 41 Mb/s · 41%');
     expect(r.unresolved).toEqual([]);
   });
   it('reports missing keys and keeps the placeholder', () => {
@@ -1584,7 +1586,7 @@ const frames = [
     refId: 'A',
     fields: [
       { name: 'Time', type: FieldType.time, values: [1, 2, 3] },
-      { name: 'Value', type: FieldType.number, values: [1, 2, 3], labels: { job: 'node-wan1', device: 'pppoe' } },
+      { name: 'Value', type: FieldType.number, values: [1, 2, 3], labels: { job: 'node-isp-a', device: 'pppoe' } },
     ],
   }),
   toDataFrame({
@@ -1610,14 +1612,14 @@ describe('extractSeries', () => {
 
 describe('findSeries', () => {
   const s = extractSeries(frames);
-  const scope = { cell: {}, from: { node: 'wan1', port: 'pppoe' }, to: { node: 'rtr-a', port: 'wan1' } };
+  const scope = { cell: {}, from: { node: 'isp-a', port: 'pppoe' }, to: { node: 'rtr-a', port: 'wan1' } };
   it('matches refId plus resolved label templates', () => {
     const r = findSeries({ refId: 'A', match: { job: 'node-${to.node}', device: '${to.port}' } }, s, scope);
-    expect(r.series?.labels.device).toBe('wan1');
+    expect(r.series?.labels.device).toBe('isp-a');
     expect(r.unresolved).toEqual([]);
   });
   it('supports regex label matchers and name matcher', () => {
-    expect(findSeries({ match: { job: '/^node-op/' } }, s, scope).series?.labels.job).toBe('node-wan1');
+    expect(findSeries({ match: { job: '/^node-op/' } }, s, scope).series?.labels.job).toBe('node-isp-a');
     expect(findSeries({ name: '/node-lte/' }, s, scope).series?.refId).toBe('C');
   });
   it('returns unresolved when a template cannot resolve', () => {
@@ -1915,20 +1917,20 @@ const mk = (refId: string, labels: Record<string, string>, values: number[]): Se
   frame: { fields: [], length: values.length },
 });
 const series = [
-  mk('A', { job: 'node-wan1', device: 'pppoe' }, [40e6, 41e6]),
+  mk('A', { job: 'node-isp-a', device: 'pppoe' }, [40e6, 41e6]),
   mk('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]),
-  mk('A', { job: 'node-wan2', device: 'dhcp' }, [90e6]),
+  mk('A', { job: 'node-radio', device: 'dhcp' }, [90e6]),
   mk('C', { job: 'node-rtr-a' }, [1]),
   mk('C', { job: 'node-lte' }, [0]),
   mk('D', { job: 'node-rtr-a' }, [0.5, 1.5, 1.0]),
 ];
 const cells = [
-  cellMetaFromAttrs('pg-link~wan1:pppoe->rtr-a:wan1', { 'pg-kind': 'link', 'pg-id': 'wan1:pppoe->rtr-a:wan1', 'pg-from': 'wan1:pppoe', 'pg-to': 'rtr-a:wan1' }, true),
-  cellMetaFromAttrs('pg-link~wan2:dhcp->rtr-a:wan2', { 'pg-kind': 'link', 'pg-id': 'wan2:dhcp->rtr-a:wan2', 'pg-from': 'wan2:dhcp', 'pg-to': 'rtr-a:wan2' }, true),
-  cellMetaFromAttrs('pg-link~lte:static->rtr-a:lte', { 'pg-kind': 'link', 'pg-id': 'lte:static->rtr-a:lte', 'pg-from': 'lte:static', 'pg-to': 'rtr-a:lte' }, true),
+  cellMetaFromAttrs('pg-link~isp-a:pppoe->rtr-a:wan1', { 'pg-kind': 'link', 'pg-id': 'isp-a:pppoe->rtr-a:wan1', 'pg-from': 'isp-a:pppoe', 'pg-to': 'rtr-a:wan1' }, true),
+  cellMetaFromAttrs('pg-link~radio:dhcp->rtr-a:wan2', { 'pg-kind': 'link', 'pg-id': 'radio:dhcp->rtr-a:wan2', 'pg-from': 'radio:dhcp', 'pg-to': 'rtr-a:wan2' }, true),
+  cellMetaFromAttrs('pg-link~lte:static->rtr-a:wan3', { 'pg-kind': 'link', 'pg-id': 'lte:static->rtr-a:wan3', 'pg-from': 'lte:static', 'pg-to': 'rtr-a:wan3' }, true),
   cellMetaFromAttrs('pg-node~rtr-a', { 'pg-kind': 'node', 'pg-id': 'rtr-a' }, false, 'rtr-a'),
   cellMetaFromAttrs('pg-node~lte', { 'pg-kind': 'node', 'pg-id': 'lte' }, false, 'lte'),
-  cellMetaFromAttrs('pg-port~rtr-a~lte~1', { 'pg-kind': 'port', 'pg-id': 'rtr-a:lte' }, false, 'lte'),
+  cellMetaFromAttrs('pg-port~rtr-a~wan3~1', { 'pg-kind': 'port', 'pg-id': 'rtr-a:wan3' }, false, 'lte'),
 ];
 const rules: Rule[] = [
   {
@@ -1943,7 +1945,7 @@ const rules: Rule[] = [
   },
   {
     name: 'wan 100M',
-    select: { kind: 'link', attrs: { 'pg-to': '/^rtr-a:(wan1|wan2|lte)$/' } },
+    select: { kind: 'link', attrs: { 'pg-to': '/^rtr-a:(wan1|wan2|wan3)$/' } },
     link: { capacity: '100000000' },
     thresholds: { mode: 'percent', steps: [[0, 'green'], [60, 'yellow'], [85, 'red']] },
   },
@@ -1966,7 +1968,7 @@ describe('bind', () => {
   const { patches, warnings } = bind(rules, cells, series, ctx);
 
   it('colours both halves of a link and merges capacity from a later rule', () => {
-    const p = patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const p = patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(p.ruleNames).toEqual(['links', 'wan 100M']);
     expect(p.link?.a2b?.status).toBe('ok');
     expect(p.link?.a2b?.value).toBe(41e6);
@@ -1977,10 +1979,10 @@ describe('bind', () => {
     expect(p.link?.a2b?.width).toBeCloseTo(2 + 8 * 0.41);
   });
   it('red at 90 percent', () => {
-    expect(patches.get('pg-link~wan2:dhcp->rtr-a:wan2')!.link?.a2b?.stepIndex).toBe(2);
+    expect(patches.get('pg-link~radio:dhcp->rtr-a:wan2')!.link?.a2b?.stepIndex).toBe(2);
   });
   it('grey no data when the series is missing', () => {
-    const h = patches.get('pg-link~lte:static->rtr-a:lte')!.link!.a2b!;
+    const h = patches.get('pg-link~lte:static->rtr-a:wan3')!.link!.a2b!;
     expect(h.status).toBe('nodata');
     expect(h.stepIndex).toBe(-1);
     expect(h.color).toBe(theme.colors.text.disabled);
@@ -1998,10 +2000,10 @@ describe('bind', () => {
     expect(down.sparkline).toBeUndefined();
   });
   it('resolves rule urls', () => {
-    expect(patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.urls).toEqual([{ title: 'links', url: '/d/iface?var-job=node-wan1&var-device=pppoe' }]);
+    expect(patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.urls).toEqual([{ title: 'links', url: '/d/iface?var-job=node-isp-a&var-device=pppoe' }]);
   });
   it('skips unmatched cells', () => {
-    expect(patches.has('pg-port~rtr-a~lte~1')).toBe(false);
+    expect(patches.has('pg-port~rtr-a~wan3~1')).toBe(false);
     expect(warnings).toEqual([]);
   });
   it('marks unbound when a template cannot resolve', () => {
@@ -2011,7 +2013,7 @@ describe('bind', () => {
   });
   it('marks both halves unbound when the capacity template cannot resolve', () => {
     const r = bind([{ name: 'cap', select: { kind: 'link' }, link: { a2b: rules[0].link!.a2b, b2a: rules[0].link!.b2a, capacity: '${cell.capacity}' } }], cells, series, ctx);
-    const p = r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const p = r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(p.link?.a2b?.status).toBe('unbound');
     expect(p.link?.b2a?.status).toBe('unbound');
     expect(p.link?.a2b?.color).toBe(theme.colors.text.disabled);
@@ -2028,12 +2030,12 @@ describe('bind', () => {
     const field: Field = { name: 'v', type: FieldType.number, config: { unit: 'bps', decimals: 1 }, values: [] };
     const proc = getDisplayProcessor({ field, theme });
     const r = bind(rules, cells, series, { ...ctx, display: (_s, v) => proc(v) });
-    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe('41.0 Mb/s · 41%');
-    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe('10.0 Mb/s · 10%');
+    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe('41.0 Mb/s · 41%');
+    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe('10.0 Mb/s · 10%');
   });
   it('a link with one series keeps the other half undefined', () => {
-    const r = bind([{ name: 'one', select: { ids: ['pg-link~wan1:pppoe->rtr-a:wan1'] }, link: { a2b: { refId: 'A', match: { device: 'pppoe' } } } }], cells, series, ctx);
-    const p = r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const r = bind([{ name: 'one', select: { ids: ['pg-link~isp-a:pppoe->rtr-a:wan1'] }, link: { a2b: { refId: 'A', match: { device: 'pppoe' } } } }], cells, series, ctx);
+    const p = r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(p.link?.a2b?.status).toBe('ok');
     expect(p.link?.b2a).toBeUndefined();
     expect(p.link?.a2b?.percent).toBeUndefined();
@@ -2362,7 +2364,7 @@ describe('sanitizeSvg: draw.io export', () => {
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
     expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(100);
-    expect(r.svg).toContain('data-meta-pg-id="wan1:pppoe->rtr-a:wan1"');
+    expect(r.svg).toContain('data-meta-pg-id="isp-a:pppoe->rtr-a:wan1"');
     expect(r.svg).toContain('pointer-events="stroke"');
     expect(r.svg).toContain('light-dark(');
     expect(r.svg).toMatch(/<svg[^>]*viewBox="0 0 /);
@@ -2532,14 +2534,14 @@ describe('buildCellIndex on l3-routing', () => {
     expect(kinds).toMatchObject({ link: 10, node: 10, port: 20, 'link-label': 8 });
   });
   it('finds the edge polyline and the decoded id', () => {
-    const e = index.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const e = index.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(e).toBeDefined();
     expect(e.meta.isEdge).toBe(true);
     expect(e.line?.getAttribute('d')).toMatch(/^M/);
     expect(e.line?.getAttribute('fill')).toBe('none');
-    expect(e.meta.from).toMatchObject({ node: 'wan1', port: 'pppoe' });
+    expect(e.meta.from).toMatchObject({ node: 'isp-a', port: 'pppoe' });
     expect(e.meta.to).toMatchObject({ node: 'rtr-a', port: 'wan1' });
-    expect(e.meta.attrs['pg-id']).toBe('wan1:pppoe->rtr-a:wan1');
+    expect(e.meta.attrs['pg-id']).toBe('isp-a:pppoe->rtr-a:wan1');
   });
   it('finds a vertex shape and label text', () => {
     const n = index.get('pg-node~rtr-a')!;
@@ -2549,7 +2551,7 @@ describe('buildCellIndex on l3-routing', () => {
     expect(n.shape).not.toBe(n.line);
   });
   it('copies link-label text onto the link', () => {
-    const e = index.get('pg-link~wan1:pppoe->rtr-a:wan1')!;
+    const e = index.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(e.meta.labelText).toContain('metric 10');
   });
   it('records original styles for reset', () => {
@@ -4769,9 +4771,9 @@ const options: Options = {
 
 function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
   const series = [
-    frame('A', { job: 'node-wan1', device: 'pppoe' }, [41e6]),
+    frame('A', { job: 'node-isp-a', device: 'pppoe' }, [41e6]),
     frame('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]),
-    frame('A', { job: 'node-wan2', device: 'dhcp' }, [90e6]),
+    frame('A', { job: 'node-radio', device: 'dhcp' }, [90e6]),
     frame('C', { job: 'node-rtr-a' }, [1]),
     frame('C', { job: 'node-lte' }, [0]),
   ];
@@ -4807,11 +4809,11 @@ describe('DrawioMapPanel', () => {
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     expect(container.querySelectorAll('svg g[data-cell-id]').length).toBe(100);
     expect(wrapper.getAttribute('data-dmap-cells')).toBe('100');
-    const a2b = container.querySelector('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"]')!;
+    const a2b = container.querySelector('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~isp-a:pppoe->rtr-a:wan1"]')!;
     expect(a2b.getAttribute('data-dmap-step')).toBe('0');
-    const red = container.querySelector('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan2:dhcp->rtr-a:wan2"]')!;
+    const red = container.querySelector('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~radio:dhcp->rtr-a:wan2"]')!;
     expect(red.getAttribute('data-dmap-step')).toBe('2');
-    const lte = container.querySelector('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~lte:static->rtr-a:lte"]')!;
+    const lte = container.querySelector('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~lte:static->rtr-a:wan3"]')!;
     expect(lte.getAttribute('data-dmap-status')).toBe('nodata');
     expect(container.querySelector('[data-cell-id="pg-node~lte"]')!.getAttribute('data-dmap-step')).toBe('0');
     expect(container.querySelector('[data-cell-id="pg-node~rtr-a"]')!.getAttribute('data-dmap-step')).toBe('1');
@@ -4821,11 +4823,11 @@ describe('DrawioMapPanel', () => {
     const { container } = render(<DrawioMapPanel {...props()} />);
     await waitFor(() => expect(container.querySelector('polyline.dmap-half')).not.toBeNull());
     const half = (cell: string) => container.querySelector(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${cell}"]`)!;
-    fireEvent.click(half('pg-link~wan1:pppoe->rtr-a:wan1'), { clientX: 10, clientY: 10 });
+    fireEvent.click(half('pg-link~isp-a:pppoe->rtr-a:wan1'), { clientX: 10, clientY: 10 });
     const item = await screen.findByRole('menuitem', { name: 'links' });
-    expect(item.getAttribute('href')).toBe('/d/x?job=wan1');
-    fireEvent.click(half('pg-link~wan2:dhcp->rtr-a:wan2'), { clientX: 20, clientY: 20 });
-    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'links' }).getAttribute('href')).toBe('/d/x?job=wan2'));
+    expect(item.getAttribute('href')).toBe('/d/x?job=isp-a');
+    fireEvent.click(half('pg-link~radio:dhcp->rtr-a:wan2'), { clientX: 20, clientY: 20 });
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'links' }).getAttribute('href')).toBe('/d/x?job=radio'));
   });
   it('does not open a menu for a cell without links', async () => {
     const { container } = render(<DrawioMapPanel {...props()} />);
@@ -5117,7 +5119,7 @@ Run: `npx vitest run src/components` — Expected: PASS (5). If the `requestAnim
 - [ ] **Step 5: Manual check on both Grafana versions**
 
 Run: `npm run build` (the compose stack from Task 2 serves `dist/`). Open `http://localhost:3012` and `http://localhost:3013`, create a dashboard with the "draw.io map" panel, paste the XML of `fixtures/portograph/l3-routing.drawio` in the Diagram option (requires the `drawio` container for the export), add query `rate(node_network_transmit_bytes_total[1m]) * 8` (refId A) and `up` (refId C), paste the rules from the test above in the YAML tab, Apply.
-Expected: the diagram renders, the wan1 link is green and the wan2 link red, the `lte` node is red, hovering a link shows the tooltip, the warnings badge shows the foreignObject note.
+Expected: the diagram renders, the isp-a link is green and the radio link red, the `lte` node is red, hovering a link shows the tooltip, the warnings badge shows the foreignObject note.
 
 - [ ] **Step 6: Verify and commit**
 
@@ -5155,7 +5157,7 @@ git commit -m "feat: panel component integrates stage, binding, overlay, zoom an
   label: "${value} · ${percent}"
   url: "/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}"
 - name: wan uplinks 100M
-  select: { kind: link, attrs: { pg-to: "/^rtr-a:(wan1|wan2|lte)$/" } }
+  select: { kind: link, attrs: { pg-to: "/^rtr-a:(wan1|wan2|wan3)$/" } }
   link: { capacity: 100000000 }
   thresholds: { mode: percent, steps: [[0, green], [60, yellow], [85, red]] }
 - name: node up
@@ -5170,14 +5172,14 @@ git commit -m "feat: panel component integrates stage, binding, overlay, zoom an
 
 - [ ] **Step 2: `demo/rules-hand.yaml` and `demo/dashboard.template.json`**
 
-`demo/rules-hand.yaml` (binds the two hand-drawn edges to the wan1 series so the curved edge gets halves):
+`demo/rules-hand.yaml` (binds the two hand-drawn edges to the isp-a series so the curved edge gets halves):
 
 ```yaml
 - name: hand links
   select: { ids: [edge-ab, edge-cd] }
   link:
-    a2b: { refId: A, match: { job: node-wan1, device: pppoe } }
-    b2a: { refId: A, match: { job: node-rtr-a, device: wan1 } }
+    a2b: { refId: A, match: { job: node-isp-a, device: pppoe } }
+    b2a: { refId: A, match: { job: node-rtr-a, device: isp-a } }
     capacity: "${cell.capacity}"
   url: "/d/drawiomap-demo?cell=${cell.id}"
 ```
@@ -5426,7 +5428,7 @@ git commit -m "chore: bundle check for draw.io runtime code and stack scripts"
 - Delete: any template spec left in `tests/` from the scaffold
 
 **Interfaces:**
-- Consumes: dashboard uid `drawiomap-demo`, panel title `demo-lab L3`, panel id `1` (Task 12); overlay attributes (Task 7); `data-testid` values `dmap-panel`, `dmap-open-editor`, `dmap-editor-frame`, `dmap-editor-modal`, `data-dmap-editor-phase` (Tasks 8, 10, 11); series values from Task 2 (wan1 41 %, wan2 90 %, lte no data and up=0).
+- Consumes: dashboard uid `drawiomap-demo`, panel title `demo-lab L3`, panel id `1` (Task 12); overlay attributes (Task 7); `data-testid` values `dmap-panel`, `dmap-open-editor`, `dmap-editor-frame`, `dmap-editor-modal`, `data-dmap-editor-phase` (Tasks 8, 10, 11); series values from Task 2 (isp-a 41 %, radio 90 %, lte no data and up=0).
 - Produces: `npm run e2e:12` and `npm run e2e:13` green.
 
 - [ ] **Step 1: Config**
@@ -5443,14 +5445,14 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
   await expect(panel.locator.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '100');
   const half = (cell: string, dir: string) => panel.locator.locator(`polyline.dmap-half[data-dmap-half="${dir}"][data-dmap-cell="${cell}"]`);
-  await expect(half('pg-link~wan1:pppoe->rtr-a:wan1', 'a2b')).toHaveAttribute('data-dmap-step', '0');
-  await expect(half('pg-link~wan1:pppoe->rtr-a:wan1', 'b2a')).toHaveAttribute('data-dmap-status', 'ok');
-  await expect(half('pg-link~wan2:dhcp->rtr-a:wan2', 'a2b')).toHaveAttribute('data-dmap-step', '2');
-  await expect(half('pg-link~lte:static->rtr-a:lte', 'a2b')).toHaveAttribute('data-dmap-status', 'nodata');
+  await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'a2b')).toHaveAttribute('data-dmap-step', '0');
+  await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'b2a')).toHaveAttribute('data-dmap-status', 'ok');
+  await expect(half('pg-link~radio:dhcp->rtr-a:wan2', 'a2b')).toHaveAttribute('data-dmap-step', '2');
+  await expect(half('pg-link~lte:static->rtr-a:wan3', 'a2b')).toHaveAttribute('data-dmap-status', 'nodata');
   await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-step', '0');
   await expect(panel.locator.locator('[data-cell-id="pg-node~rtr-a"]')).toHaveAttribute('data-dmap-step', '1');
   await expect(panel.locator.locator('polyline.dmap-spark[data-dmap-cell="pg-node~rtr-a"]')).toBeAttached();
-  const label = panel.locator.locator('g.dmap-label[data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"][data-dmap-half="a2b"] text');
+  const label = panel.locator.locator('g.dmap-label[data-dmap-cell="pg-link~isp-a:pppoe->rtr-a:wan1"][data-dmap-half="a2b"] text');
   await expect(label).toHaveText(/41(\.\d)? Mb\/s · 41%/);
 });
 
@@ -5482,23 +5484,23 @@ import { expect, test } from '@grafana/plugin-e2e';
 test('clicking a link opens a menu with the rule url and the field link', async ({ gotoDashboardPage, page }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
-  const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"]');
+  const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~isp-a:pppoe->rtr-a:wan1"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
   await half.click({ force: true });
   const rule = page.getByRole('menuitem', { name: 'links' });
   await expect(rule).toBeVisible();
-  await expect(rule).toHaveAttribute('href', /var-job=node-wan1&var-device=pppoe/);
+  await expect(rule).toHaveAttribute('href', /var-job=node-isp-a&var-device=pppoe/);
   await expect(page.getByRole('menuitem', { name: 'Field link' })).toBeVisible();
   // switching cells replaces the items
   await page.keyboard.press('Escape');
-  await panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan2:dhcp->rtr-a:wan2"]').click({ force: true });
-  await expect(page.getByRole('menuitem', { name: 'links' })).toHaveAttribute('href', /var-job=node-wan2&var-device=dhcp/);
+  await panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~radio:dhcp->rtr-a:wan2"]').click({ force: true });
+  await expect(page.getByRole('menuitem', { name: 'links' })).toHaveAttribute('href', /var-job=node-radio&var-device=dhcp/);
 });
 
 test('hovering shows the tooltip with both directions', async ({ gotoDashboardPage, page }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
-  const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan2:dhcp->rtr-a:wan2"]');
+  const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~radio:dhcp->rtr-a:wan2"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
   await half.hover({ force: true });
   await expect(page.getByTestId('dmap-tooltip')).toContainText('A→B');
@@ -5617,9 +5619,9 @@ Date: <today>. Grafana 12.4.13 and 13.2.4. draw.io 32.4.1.
 | # | Check | Command | Result |
 |---|---|---|---|
 | 1 | build, typecheck, lint, test | `npm run build && npm run typecheck && npm run lint && npm test` | |
-| 2 | stack and demo dashboard | `npm run stack:up && npm run stack:smoke`; open http://localhost:3012/d/drawiomap-demo and http://localhost:3013/d/drawiomap-demo | links coloured (wan1 green, wan2 red, lte grey), `lte` node red, sparklines under nodes |
+| 2 | stack and demo dashboard | `npm run stack:up && npm run stack:smoke`; open http://localhost:3012/d/drawiomap-demo and http://localhost:3013/d/drawiomap-demo | links coloured (isp-a green, radio red, lte grey), `lte` node red, sparklines under nodes |
 | 3 | editor round trip | automated in `tests/editor.spec.ts`; manual fallback: Edit panel > Diagram > Open editor; move a node; Save & Exit | the view updates, the Diagram status shows a new hash |
-| 4 | click menu | click the wan1 link | menu shows the `links` rule URL and `Field link` |
+| 4 | click menu | click the isp-a link | menu shows the `links` rule URL and `Field link` |
 | 5 | e2e both versions | `npm run e2e:12 && npm run e2e:13` | |
 | 6 | no draw.io scripts in view | `npm run check:bundle` (dependency tree + runtime globals); `tests/no-drawio.spec.ts` (no request to the editor origin, no iframe) | |
 
