@@ -102,3 +102,23 @@ describe('buildCellIndex on hand-drawn', () => {
     expect(index.get('lbl-ab')?.meta.labelText).toBe('10G');
   });
 });
+
+describe('node icons on l3-routing', () => {
+  const c = document.createElement('div');
+  const index = buildCellIndex(mountSvg(c, fixture('l3-routing')));
+  it('links each node to its icon cell, the icon tile first', () => {
+    expect(index.get('pg-node~rtr-a')!.iconId).toBe('pg-icon~rtr-a');
+    expect(index.get('pg-node~lte')!.iconId).toBe('pg-iconTile~lte');
+    expect(index.get('pg-icon~rtr-a')!.shape?.localName).toBe('ellipse');
+  });
+  it('marks the icon cells with their node', () => {
+    expect(index.get('pg-icon~lte')!.ownerId).toBe('pg-node~lte');
+    expect(index.get('pg-iconTile~lte')!.ownerId).toBe('pg-node~lte');
+    expect(index.get('pg-nodeDescription~rtr-a')!.ownerId).toBe('pg-node~rtr-a');
+    expect(index.get('pg-node~lte')!.ownerId).toBeUndefined();
+  });
+  it('keeps the inline stroke width of a vertex shape for the reset', () => {
+    const e = index.get('pg-node~rtr-a')!;
+    expect(e.original.strokeWidth).toBe((e.shape as SVGElement).style.strokeWidth);
+  });
+});

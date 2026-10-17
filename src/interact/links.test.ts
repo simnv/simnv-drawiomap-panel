@@ -42,7 +42,7 @@ describe('primaryOf', () => {
       primaryOf({
         ...patch,
         link: undefined,
-        shape: { status: 'ok', color: '#f00', fill: true, stroke: false, stepIndex: 0, value: 1 },
+        shape: { status: 'ok', color: '#f00', target: 'icon', stepIndex: 0, value: 1 },
       }).value
     ).toBe(1);
     expect(primaryOf({ ...patch, link: undefined }).status).toBe('nodata');
@@ -71,6 +71,10 @@ describe('resolveLinks', () => {
       valueRowIndex: 1,
       calculatedValue: { text: '41 Mb/s', numeric: 41e6 },
     });
+  });
+  it('drops a rule url that a dashboard variable turns into another scheme', () => {
+    const p = { ...patch, urls: [{ title: 'v', url: '${target:raw}' }] };
+    expect(resolveLinks(p, primaryOf(p), () => 'javascript:alert(1)').map((l) => l.title)).toEqual(['Field link']);
   });
   it('works without a series', () => {
     const p = { ...patch, link: undefined };

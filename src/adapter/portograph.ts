@@ -98,3 +98,62 @@ export function endpointScope(e?: Endpoint): Record<string, string> | undefined 
   }
   return { node: e.node, port: e.port ?? '', ordinal: String(e.ordinal), raw: e.raw };
 }
+
+/** pg-kind="node-icon" cells by the pg-id of their node (pg-of), and the set of all cell ids. */
+function iconCells(cells: CellMeta[]): { tagged: Map<string, string[]>; byId: Set<string> } {
+  const tagged = new Map<string, string[]>();
+  for (const c of cells) {
+    const of = c.attrs['pg-of'];
+    if (c.attrs['pg-kind'] === 'node-icon' && of) {
+      tagged.set(of, [...(tagged.get(of) ?? []), c.id]);
+    }
+  }
+  return { tagged, byId: new Set(cells.map((c) => c.id)) };
+}
+
+/**
+ * Node key → cell id of the icon shape that takes the state colour. The icon is the cell with
+ * pg-kind="node-icon" and pg-of=<node pg-id> (older exports: the cell pg-icon~<pg-id>). Some icons are
+ * a white glyph on a tile (pg-iconTile~<pg-id>). Then the tile takes the colour.
+ */
+export function nodeIcons(cells: CellMeta[]): Map<string, string> {
+  const { tagged, byId } = iconCells(cells);
+  const out = new Map<string, string>();
+  for (const c of cells) {
+    if (c.kind !== 'node' || out.has(c.key)) {
+      continue;
+    }
+    const tile = `pg-iconTile~${c.key}`;
+    const id = byId.has(tile) ? tile : (tagged.get(c.key)?.[0] ?? [`pg-icon~${c.key}`].find((i) => byId.has(i)));
+    if (id) {
+      out.set(c.key, id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Cell id → node cell id, for the cells that draw a part of a node outside its group: the icon, the icon tile
+ * and the description. A hover on such a cell is a hover on its node.
+ */
+export function nodeParts(cells: CellMeta[]): Map<string, string> {
+  const { tagged, byId } = iconCells(cells);
+  const out = new Map<string, string>();
+  for (const c of cells) {
+    if (c.kind !== 'node') {
+      continue;
+    }
+    const parts = [
+      ...(tagged.get(c.key) ?? []),
+      `pg-iconTile~${c.key}`,
+      `pg-icon~${c.key}`,
+      `pg-nodeDescription~${c.key}`,
+    ];
+    for (const id of parts) {
+      if (byId.has(id) && !out.has(id)) {
+        out.set(id, c.id);
+      }
+    }
+  }
+  return out;
+}

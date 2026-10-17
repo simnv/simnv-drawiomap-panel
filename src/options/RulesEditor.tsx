@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { StandardEditorProps } from '@grafana/data';
 import { Button, Checkbox, Field, Input, RadioButtonGroup, Select, TextArea, useTheme2 } from '@grafana/ui';
 import { parseRulesYaml, rulesToYaml } from '../rules/schema';
-import { CellKind, Options, ReducerName, Rule, SeriesSelector } from '../types';
+import { targetOf } from '../binding/engine';
+import { CellKind, Options, ReducerName, Rule, SeriesSelector, ShapeTarget } from '../types';
 
 type Props = StandardEditorProps<Rule[], Record<string, never>, Options>;
 
@@ -12,6 +13,11 @@ const KINDS: Array<{ label: string; value: CellKind | 'any' }> = [
   { label: 'port', value: 'port' },
   { label: 'other', value: 'other' },
   { label: 'any', value: 'any' },
+];
+const TARGETS: Array<{ label: string; value: ShapeTarget; description: string }> = [
+  { label: 'icon', value: 'icon', description: 'Colour the node icon. Without an icon: the outline' },
+  { label: 'shape', value: 'shape', description: 'Fill the whole shape' },
+  { label: 'stroke', value: 'stroke', description: 'Colour the outline' },
 ];
 const REDUCERS: Array<{ label: string; value: ReducerName }> = ['last', 'mean', 'max', 'min'].map((r) => ({
   label: r,
@@ -122,36 +128,35 @@ function RuleCard({ rule, onChange, onRemove }: { rule: Rule; onChange: (r: Rule
             value={rule.shape?.series}
             onChange={(s) => onChange({ ...rule, shape: { ...rule.shape, series: s } })}
           />
-          <div style={{ display: 'flex', gap: 16 }}>
-            <Checkbox
-              label="fill"
-              value={rule.shape?.fill ?? true}
-              onChange={(e) => onChange({ ...rule, shape: { ...rule.shape, fill: e.currentTarget.checked } })}
+          <Field label="Colour target" description="What the state colour changes">
+            <RadioButtonGroup<ShapeTarget>
+              options={TARGETS}
+              value={(() => {
+                const t = targetOf(rule.shape ?? {});
+                return t === 'none' ? undefined : t;
+              })()}
+              onChange={(v) =>
+                onChange({ ...rule, shape: { ...rule.shape, target: v, fill: undefined, stroke: undefined } })
+              }
             />
-            <Checkbox
-              label="stroke"
-              value={!!rule.shape?.stroke}
-              onChange={(e) => onChange({ ...rule, shape: { ...rule.shape, stroke: e.currentTarget.checked } })}
-            />
-            <Checkbox
-              label="text"
-              value={!!rule.shape?.text}
-              onChange={(e) => onChange({ ...rule, shape: { ...rule.shape, text: e.currentTarget.checked } })}
-            />
-          </div>
-          <SeriesFields
-            label="Sparkline series"
-            value={rule.shape?.sparkline}
-            onChange={(s) =>
-              onChange({
-                ...rule,
-                shape: {
-                  ...rule.shape,
-                  sparkline: s ? { ...s, position: rule.shape?.sparkline?.position ?? 'bottom' } : undefined,
-                },
-              })
-            }
+          </Field>
+          <Checkbox
+            label="Write the value into the label"
+            value={!!rule.shape?.text}
+            onChange={(e) => onChange({ ...rule, shape: { ...rule.shape, text: e.currentTarget.checked } })}
           />
+          {rule.shape?.text ? (
+            <Field label="Label template">
+              <Input
+                placeholder="${value}"
+                value={rule.label ?? ''}
+                onChange={(e) => onChange({ ...rule, label: e.currentTarget.value || undefined })}
+              />
+            </Field>
+          ) : null}
+          <div style={{ color: theme.colors.text.secondary, marginBottom: theme.spacing(1) }}>
+            Hover card rows ({rule.shape?.card?.length ?? 0}): edit them in the YAML tab (shape.card).
+          </div>
         </>
       )}
       <Field label="Reducer">
@@ -159,13 +164,6 @@ function RuleCard({ rule, onChange, onRemove }: { rule: Rule; onChange: (r: Rule
           options={REDUCERS}
           value={rule.reducer ?? 'last'}
           onChange={(v) => onChange({ ...rule, reducer: v.value })}
-        />
-      </Field>
-      <Field label="Label template">
-        <Input
-          placeholder="${value} · ${percent}"
-          value={rule.label ?? ''}
-          onChange={(e) => onChange({ ...rule, label: e.currentTarget.value || undefined })}
         />
       </Field>
       <Field label="URL template">
@@ -249,7 +247,7 @@ export function RulesEditor({ value, onChange }: Props) {
                 update(rules.length, {
                   name: `shapes ${rules.length + 1}`,
                   select: { kind: 'node' },
-                  shape: { fill: true },
+                  shape: { target: 'icon' },
                 })
               }
             >

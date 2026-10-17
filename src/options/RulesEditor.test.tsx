@@ -44,3 +44,14 @@ describe('RulesEditor YAML tab', () => {
     expect(screen.getByTestId('dmap-rules-errors').textContent).toMatch(/select|reducer/);
   });
 });
+
+describe('RulesEditor form', () => {
+  it('sets the colour target of a shape rule and drops the old fill flag', () => {
+    const onChange = vi.fn();
+    const rule = { name: 'n', select: { kind: 'node' as const }, shape: { fill: true } };
+    render(<RulesEditor {...base} value={[rule]} onChange={onChange} />);
+    expect((screen.getByLabelText('shape') as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByLabelText('icon'));
+    expect(onChange).toHaveBeenCalledWith([{ ...rule, shape: { target: 'icon', fill: undefined, stroke: undefined } }]);
+  });
+});

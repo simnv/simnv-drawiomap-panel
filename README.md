@@ -6,9 +6,10 @@ A Grafana panel plugin (`simnv-drawiomap-panel`). It shows a draw.io diagram as 
 
 ## What it does
 
-- It colours each link by traffic, for each direction. It shows the value and the percent of capacity on each half of the link.
-- It colours shapes by state (for example, `up`). It draws sparklines near shapes and in the tooltip.
-- A click on a link or a shape opens a menu with the rule URL and the field data links. The real draw.io editor opens in a modal.
+- It colours each link by traffic, for each direction. Each half of the link has its colour and an arrow. The canvas shows no value labels.
+- It colours the node icon by state (for example, `up`). A rule can colour the whole shape or the outline instead.
+- A hover card shows the values and sparklines of the cell under the pointer. A click or a tap pins the card. The pinned card has links to more dashboards. See [Hover card](#hover-card).
+- The real draw.io editor opens in a modal.
 
 View mode loads no draw.io code. The panel stores the diagram XML and the SVG that draw.io exported. The panel shows the SVG and writes colours into it.
 
@@ -41,7 +42,7 @@ The stack starts these services:
 
 A generator pushes synthetic traffic series. Open the demo dashboard: http://localhost:3012/d/drawiomap-demo (or port 3013). Anonymous access is on, with the Admin role.
 
-You see the demo-lab diagram. The links have colours from the synthetic traffic. The `lte` node is red because its `up` series is 0. Sparklines show under the nodes.
+You see the demo-lab diagram. The links have colours from the synthetic traffic. The icon of the `lte` node is red because its `up` series is 0. Move the pointer on a link to see the traffic in each direction. Move it on `rtr-a` or `rtr-b` to see the CPU sparkline.
 
 Stop the stack with `npm run stack:down`. This command also deletes the volumes.
 
@@ -71,8 +72,8 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
     a2b: { refId: A, match: { job: 'node-${from.node}', device: '${from.port}' } }
     b2a: { refId: A, match: { job: 'node-${to.node}', device: '${to.port}' } }
     capacity: 1000000000
+    card: { title: '${from.node} ↔ ${to.node}' }
   reducer: last
-  label: '${value} · ${percent}'
   url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}'
 - name: wan uplinks 100M
   select: { kind: link, attrs: { pg-to: '/^rtr-a:(wan1|wan2|lte)$/' } }
@@ -82,28 +83,74 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
   select: { kind: node }
   shape:
     series: { refId: C, match: { job: 'node-${cell.pg-id}' } }
-    fill: true
-    sparkline: { refId: D, match: { job: 'node-${cell.pg-id}' }, position: bottom }
+    target: icon
+    card:
+      - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
+      - { title: load 1m, refId: D, match: { job: 'node-${cell.pg-id}' } }
   thresholds: { mode: absolute, steps: [[0, red], [1, green]] }
   url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}'
+- name: router cpu
+  select: { ids: [rtr-a, rtr-b] }
+  shape:
+    card:
+      - title: CPU
+        refId: E
+        match: { job: 'node-${cell.pg-id}' }
+        unit: percent
+        decimals: 0
+        url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}&var-metric=cpu'
+      - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
 ```
 
-Rules are an ordered list. A later rule overrides an earlier rule for the same property of the same cell. In the example, the second rule changes the capacity and the thresholds of the WAN links.
+Rules are an ordered list. A later rule overrides an earlier rule for the same property of the same cell. In the example, the second rule changes the capacity and the thresholds of the WAN links. The last rule replaces the card rows of the two routers. The `series` and the `target` of the `node up` rule stay.
 
 ### Rule fields
 
-| Field        | Meaning                                                                                                                                                                                           |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`       | Name of the rule. The click menu shows it next to the rule URL.                                                                                                                                   |
-| `select`     | Which cells the rule applies to. See below.                                                                                                                                                       |
-| `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (a number or a template).                                                                                 |
-| `shape`      | For shapes. `series` selects the series. `fill`, `stroke` and `text` choose what the colour changes. `sparkline` selects a series for a sparkline. Its `position` is `bottom`, `top` or `inside`. |
-| `reducer`    | `last` (default), `mean`, `max` or `min`. Reduces the series to one value.                                                                                                                        |
-| `label`      | Label template. The default for links is `${value} · ${percent}`. The default for shapes is `${value}`.                                                                                           |
-| `thresholds` | `mode: percent` or `absolute`. `steps` is a list of `[threshold, colour]`, ascending. If you omit it, the panel uses the field config of Grafana.                                                 |
-| `url`        | Link for the click menu. It can use templates and dashboard variables.                                                                                                                            |
+| Field        | Meaning                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Name of the rule. The card footer shows it as the title of the rule URL.                                                                          |
+| `select`     | Which cells the rule applies to. See below.                                                                                                       |
+| `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (a number or a template). `card` sets the card of links.  |
+| `shape`      | For shapes. See below.                                                                                                                            |
+| `reducer`    | `last` (default), `mean`, `max` or `min`. Reduces the series to one value. The card rows use it too.                                              |
+| `label`      | Template of the text that `shape.text` writes into the node label. The default is `${value}`. Links ignore it (the panel shows a warning).        |
+| `thresholds` | `mode: percent` or `absolute`. `steps` is a list of `[threshold, colour]`, ascending. If you omit it, the panel uses the field config of Grafana. |
+| `url`        | Link in the card footer, and the click target of card rows without their own URL. It can use templates and dashboard variables.                   |
 
 A series selector has `refId` (the query), `name` and `match` (a map of label name to matcher).
+
+#### `shape`
+
+| Field    | Meaning                                                                                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `series` | The series that sets the state colour.                                                                                                                                          |
+| `target` | What the colour changes: `icon` (default), `shape` (the fill of the whole shape) or `stroke` (the outline). Without an icon, or with a bitmap icon, `icon` colours the outline. |
+| `text`   | `true` writes the value into the node label (see `label`).                                                                                                                      |
+| `card`   | A list of card rows. Without it, the card has one row for `series`.                                                                                                             |
+
+The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-icon~<pg-id>`. Some icons are a white glyph on a tile (`pg-iconTile~<pg-id>`). Then the tile takes the colour. A hover on the icon or on the node description opens the card of the node.
+
+The old keys `fill: true` and `stroke: true` still work: they are the same as `target: shape` and `target: stroke`. The panel ignores the removed key `shape.sparkline` and shows a warning.
+
+#### Card rows (`shape.card`)
+
+Each row is a series selector with these extra fields:
+
+| Field      | Meaning                                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `title`    | Row title (a template). The default is the series name.                                                                    |
+| `unit`     | A Grafana unit id, for example `percent`. The default is the unit of the field config.                                     |
+| `decimals` | Number of decimals. The default comes from the field config.                                                               |
+| `url`      | Click target of the row (a template). `${labels.<name>}` uses the labels of the row series. The default is the rule `url`. |
+
+#### Link card (`link.card`)
+
+| Field   | Meaning                                                                               |
+| ------- | ------------------------------------------------------------------------------------- |
+| `title` | Card title (a template). The default is the label text of the link, else its `pg-id`. |
+| `url`   | Click target of the `a2b` and `b2a` rows (a template). The default is the rule `url`. |
+
+The card of a link always has one row for each bound direction: the current value, the percent of capacity and a sparkline.
 
 ### Cell selectors (`select`)
 
@@ -128,11 +175,31 @@ A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:
 | `${value}`                     | The value, formatted with the unit and decimals of the field config.          |
 | `${percent}`                   | The value as a percent of the capacity.                                       |
 
-Grafana dashboard variables also resolve in `url`. If a template in a series selector does not resolve, the cell is "unbound". It is grey and the panel shows a warning.
+`${value}` and `${percent}` are for `label`. Grafana dashboard variables also resolve in all URLs. If a template in a series selector does not resolve, the cell is "unbound". It is grey and the panel shows a warning.
 
 A missing series gives a grey "no data" state. It is never green.
 
 Colour, unit, decimals, value mappings and data links come from the Grafana field config. A rule `thresholds` setting overrides the colour.
+
+## Hover card
+
+The canvas shows only colours. The values show in a card:
+
+| Action                             | Result                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Move the mouse on a link or a node | The card shows near the pointer. It goes away when the pointer leaves the cell.                      |
+| Click a cell                       | The card stays (it is pinned). It has a close button (✕), clickable rows and the footer links.       |
+| Click another cell                 | The pinned card moves to that cell.                                                                  |
+| Esc, ✕, or a click outside         | The pinned card closes.                                                                              |
+| Tap a cell (phone, tablet)         | The card opens pinned. Devices without hover (`(hover: none)`) do not open a card on a pointer move. |
+| Click or tap a row or a sparkline  | Opens the URL of the row in a new tab (see `shape.card[].url` and `link.card.url`).                  |
+| Tab to a cell, then Enter or Space | The card opens pinned. Esc closes it and the focus goes back to the cell.                            |
+
+The card stays inside the panel. It scrolls when it is too long. In a panel narrower than 480 px, the card is a sheet at the bottom of the panel.
+
+A card row has a title, the current value with its unit (for example `wan1 → rtr-a   41 Mb/s · 41%`) and a sparkline over the dashboard time range. The footer has the rule URL and the data links of the field config.
+
+The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button is a normal button. Each bound cell is a button for the keyboard (`tabindex="0"`). The panel builds the card only when it opens, and only for one cell.
 
 ## Zoom options
 
@@ -179,7 +246,7 @@ The acceptance results are in `docs/acceptance.md`.
 - No signing and no catalogue entry.
 - No rules embedded in the diagram (`pg-rules`).
 - No click-to-bind in the diagram.
-- No sparklines on links.
+- No sparklines on the canvas. Sparklines show in the hover card only.
 - No animated flow.
 - No diagrams loaded from a URL.
 - No multi-page diagrams. The panel renders page 1 and shows a warning.

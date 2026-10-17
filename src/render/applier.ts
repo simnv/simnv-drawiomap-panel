@@ -36,23 +36,44 @@ function setText(label: Element | undefined, text: string): void {
   el.textContent = text;
 }
 
-function applyShape(entry: CellEntry, patch: CellPatch): void {
+/** Icon cells that a patch coloured, with the patch's node. Only these need an icon reset. */
+const iconOwner = new WeakMap<Element, CellEntry>();
+
+/** The shape that takes the icon colour, or undefined when the node has no usable icon. */
+function iconShape(entry: CellEntry, index: CellIndex): SVGElement | undefined {
+  const shape = entry.iconId ? index.get(entry.iconId)?.shape : undefined;
+  // a bitmap icon has no fill
+  return shape && shape.localName !== 'image' ? shape : undefined;
+}
+
+/** Colours the target and returns the target that it used (icon falls back to stroke). */
+function applyShape(entry: CellEntry, patch: CellPatch, index: CellIndex): string | undefined {
   const s = patch.shape;
   if (!s) {
-    return;
-  }
-  const shape = entry.shape as SVGElement | undefined;
-  if (shape) {
-    if (s.fill) {
-      shape.style.fill = s.color;
-    }
-    if (s.stroke) {
-      shape.style.stroke = s.color;
-    }
+    return undefined;
   }
   if (s.text !== undefined) {
     setText(entry.label, s.text);
   }
+  let target: string = s.target;
+  if (target === 'icon') {
+    const icon = iconShape(entry, index);
+    if (icon) {
+      icon.style.fill = s.color;
+      iconOwner.set(icon, entry);
+      return target;
+    }
+    target = 'stroke';
+  }
+  const shape = entry.shape as SVGElement | undefined;
+  if (shape && target === 'shape') {
+    shape.style.fill = s.color;
+  }
+  if (shape && target === 'stroke') {
+    shape.style.stroke = s.color;
+    shape.style.strokeWidth = String((parseFloat(shape.getAttribute('stroke-width') ?? '') || 1) + 1);
+  }
+  return target;
 }
 
 function applyLink(entry: CellEntry, patch: CellPatch): void {
@@ -68,7 +89,14 @@ function applyLink(entry: CellEntry, patch: CellPatch): void {
   }
 }
 
-function tag(entry: CellEntry, patch: CellPatch): void {
+function tag(entry: CellEntry, patch: CellPatch, target: string | undefined): void {
+  if (target) {
+    entry.group.setAttribute('data-dmap-target', target);
+  }
+  // Keyboard access: Tab moves to the cell, Enter or Space opens its card.
+  entry.group.setAttribute('tabindex', '0');
+  entry.group.setAttribute('role', 'button');
+  entry.group.setAttribute('aria-label', entry.meta.labelText || entry.meta.key);
   const states = [patch.shape, patch.link?.a2b, patch.link?.b2a].filter(Boolean) as Array<{
     status: string;
     stepIndex: number;
@@ -86,11 +114,20 @@ function tag(entry: CellEntry, patch: CellPatch): void {
   entry.group.setAttribute('data-dmap-step', String(step));
 }
 
-function reset(entry: CellEntry): void {
+function reset(entry: CellEntry, index: CellIndex): void {
   const shape = entry.shape as SVGElement | undefined;
   if (shape) {
     shape.style.fill = entry.original.fill ?? '';
     shape.style.stroke = entry.original.stroke ?? '';
+    if (!entry.line) {
+      shape.style.strokeWidth = entry.original.strokeWidth ?? '';
+    }
+  }
+  const iconEntry = entry.iconId ? index.get(entry.iconId) : undefined;
+  const icon = iconEntry?.shape as SVGElement | undefined;
+  if (icon && iconOwner.get(icon) === entry) {
+    icon.style.fill = iconEntry!.original.fill ?? '';
+    iconOwner.delete(icon);
   }
   if (entry.line) {
     entry.line.style.strokeOpacity = '';
@@ -118,17 +155,20 @@ function reset(entry: CellEntry): void {
   }
   entry.group.removeAttribute('data-dmap-status');
   entry.group.removeAttribute('data-dmap-step');
+  entry.group.removeAttribute('data-dmap-target');
+  entry.group.removeAttribute('tabindex');
+  entry.group.removeAttribute('role');
+  entry.group.removeAttribute('aria-label');
 }
 
 /** Write patches into the SVG DOM. Returns the ids that are patched now. */
 export function applyPatches(index: CellIndex, patches: PatchMap, previous: Set<string>): Set<string> {
   const done = new Set<string>();
+  // Reset everything first: a node colours the shape of another cell (its icon), so a later reset must not undo it.
   for (const id of previous) {
-    if (!patches.has(id)) {
-      const entry = index.get(id);
-      if (entry) {
-        reset(entry);
-      }
+    const entry = index.get(id);
+    if (entry) {
+      reset(entry, index);
     }
   }
   for (const [id, patch] of patches) {
@@ -136,12 +176,9 @@ export function applyPatches(index: CellIndex, patches: PatchMap, previous: Set<
     if (!entry) {
       continue;
     }
-    if (previous.has(id)) {
-      reset(entry);
-    }
-    applyShape(entry, patch);
+    const target = applyShape(entry, patch, index);
     applyLink(entry, patch);
-    tag(entry, patch);
+    tag(entry, patch, target);
     done.add(id);
   }
   return done;

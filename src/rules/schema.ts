@@ -22,6 +22,14 @@ const cellSelector = z
     between: z.tuple([z.string(), z.string()]).optional(),
   })
   .strict();
+const cardRow = seriesSelector
+  .extend({
+    title: z.string().optional(),
+    unit: z.string().optional(),
+    decimals: z.number().int().min(0).optional(),
+    url: z.string().optional(),
+  })
+  .strict();
 const thresholds = z
   .object({ mode: z.enum(['percent', 'absolute']), steps: z.array(z.tuple([z.number(), z.string()])).min(1) })
   .strict();
@@ -35,15 +43,19 @@ export const ruleSchema = z
         a2b: seriesSelector.optional(),
         b2a: seriesSelector.optional(),
         capacity: z.union([z.string(), z.number()]).optional(),
+        card: z.object({ url: z.string().optional(), title: z.string().optional() }).strict().optional(),
       })
       .strict()
       .optional(),
     shape: z
       .object({
         series: seriesSelector.optional(),
+        target: z.enum(['icon', 'shape', 'stroke']).optional(),
         fill: z.boolean().optional(),
         stroke: z.boolean().optional(),
         text: z.boolean().optional(),
+        card: z.array(cardRow).optional(),
+        // Removed. Accepted so that old dashboards still load; the engine gives a warning.
         sparkline: seriesSelector
           .extend({ position: z.enum(['bottom', 'top', 'inside']).optional() })
           .strict()

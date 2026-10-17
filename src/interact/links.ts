@@ -1,4 +1,5 @@
 import type { DisplayValue, LinkModel, ScopedVars } from '@grafana/data';
+import { isAllowedUrl } from '../binding/url';
 import type { BindStatus, CellPatch, SeriesInfo } from '../types';
 
 export interface Primary {
@@ -58,12 +59,14 @@ export function resolveLinks(
   replaceVariables: (s: string, v?: ScopedVars) => string
 ): LinkModel[] {
   const vars = buildScopedVars(patch, primary);
-  const out: LinkModel[] = patch.urls.map((u) => ({
-    title: u.title,
-    href: replaceVariables(u.url, vars),
-    target: '_blank',
-    origin: patch,
-  }));
+  const out: LinkModel[] = [];
+  for (const u of patch.urls) {
+    // a dashboard variable can put a scheme into the url, so check the final text again
+    const href = replaceVariables(u.url, vars);
+    if (isAllowedUrl(href)) {
+      out.push({ title: u.title, href, target: '_blank', origin: patch });
+    }
+  }
   const field = primary.series?.field;
   if (field?.getLinks) {
     const row = Math.max(0, (primary.series?.values.length ?? 1) - 1);
