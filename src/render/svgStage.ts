@@ -49,7 +49,19 @@ function metaAttrs(group: Element): Record<string, string> {
 function labelOf(group: Element): { el?: Element; text: string } {
   const text = ownDescendants(group, 'text')[0];
   if (text) {
-    return { el: text, text: (text.textContent ?? '').replace(/\s+/g, ' ').trim() };
+    // A plain-text label of several lines is one <text> per line inside one draw.io label <g>, which
+    // holds nothing else but an optional background <rect>. Only that <g> becomes the label.
+    const parent = text.parentElement;
+    const children = parent ? Array.from(parent.children) : [];
+    const lines = children.filter((el) => el.localName === 'text');
+    const group =
+      parent?.localName === 'g' &&
+      !parent.hasAttribute('data-cell-id') &&
+      lines.length > 1 &&
+      children.every((el) => el.localName === 'text' || el.localName === 'rect');
+    const el = group ? parent! : text;
+    const own = group ? lines : [text];
+    return { el, text: own.map((l) => l.textContent ?? '').join(' ').replace(/\s+/g, ' ').trim() };
   }
   const fo = ownDescendants(group, 'foreignObject')[0];
   if (fo) {

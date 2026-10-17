@@ -157,9 +157,51 @@ describe('applyPatches', () => {
   });
 });
 
-describe('applyPatches on a multi-line foreignObject label (l3-routing)', () => {
-  const load = () => {
+describe('applyPatches on a native text label (l3-routing)', () => {
+  it('writes the text and restores it on reset', () => {
     const raw = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(raw).svg));
+    const entry = index.get('pg-node~rtr-a')!;
+    expect(entry.label!.localName).toBe('text');
+    const before = entry.label!.outerHTML;
+    const round = (text: string) =>
+      new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape({ text }) })]]);
+    const prev = applyPatches(index, round('up 1'), new Set());
+    expect(entry.label!.textContent).toBe('up 1');
+    applyPatches(index, new Map(), prev);
+    expect(entry.label!.outerHTML).toBe(before);
+  });
+  it('writes a multi-line label into its first line and restores every line on reset', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><rect width="5" height="5"/></g><g><g fill="#000"><text x="1" y="2">first</text><text x="1" y="4"><tspan fill="red">sec</tspan>ond</text></g></g></g></svg>`;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    const label = index.get('n')!.label!;
+    const before = label.innerHTML;
+    const lines = Array.from(label.querySelectorAll('text'));
+    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up' }) })]]), new Set());
+    expect(lines.map((t) => t.textContent)).toEqual(['up', '']);
+    prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up 2' }) })]]), prev);
+    applyPatches(index, new Map(), prev);
+    expect(label.innerHTML).toBe(before);
+    // Codex: the same elements stay in the DOM, so nothing indexed is detached by a reset.
+    expect(lines.every((t) => label.contains(t))).toBe(true);
+  });
+  it('keeps the indexed shape attached when a label background shares the label group', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g data-cell-id="n"><g><g fill="#000"><rect width="5" height="5"/><text x="1" y="2">A</text><text x="1" y="4">B</text></g></g></g></svg>`;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    const entry = index.get('n')!;
+    expect(entry.label!.localName).toBe('g');
+    const rect = entry.shape!;
+    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'x' }) })]]), new Set());
+    prev = applyPatches(index, new Map(), prev);
+    applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'y' }) })]]), prev);
+    expect(entry.group.contains(rect)).toBe(true);
+    expect(entry.label!.querySelector('rect')).toBe(rect);
+  });
+});
+
+describe('applyPatches on a multi-line foreignObject label (legacy-html-labels)', () => {
+  const load = () => {
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/svg/legacy-html-labels.svg'), 'utf8');
     const root = mountSvg(document.createElement('div'), sanitizeSvg(raw).svg);
     const index = buildCellIndex(root);
     const entry = index.get('pg-node~rtr-a')!;

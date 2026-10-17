@@ -143,8 +143,8 @@ describe('DrawioMapPanel', () => {
     const { container, findByTestId } = render(<DrawioMapPanel {...props()} />);
     const wrapper = await findByTestId('dmap-panel');
     await new Promise((r) => requestAnimationFrame(() => r(null)));
-    expect(container.querySelectorAll('svg g[data-cell-id]').length).toBe(100);
-    expect(wrapper.getAttribute('data-dmap-cells')).toBe('100');
+    expect(container.querySelectorAll('svg g[data-cell-id]').length).toBe(108);
+    expect(wrapper.getAttribute('data-dmap-cells')).toBe('108');
     const a2b = container.querySelector(
       'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"]'
     )!;

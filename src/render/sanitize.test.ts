@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeSvg } from './sanitize';
 
 const l3 = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
+// An l3-routing export with html=1 labels: every label is <switch><foreignObject/><image PNG/></switch>.
+const legacy = readFileSync(resolve(__dirname, '../../fixtures/svg/legacy-html-labels.svg'), 'utf8');
 const wrap = (inner: string, rootAttrs = '') =>
   `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10" ${rootAttrs}>${inner}</svg>`;
 
@@ -79,16 +81,23 @@ describe('sanitizeSvg: adversarial input', () => {
 
 describe('sanitizeSvg: draw.io export', () => {
   it('drops PNG label fallbacks inside <switch> and keeps foreignObject', () => {
-    const r = sanitizeSvg(l3);
+    const r = sanitizeSvg(legacy);
     expect(r.removed.images).toBe(53);
     expect(r.svg).not.toMatch(/<image[^>]*data:image\/png/);
     expect(r.foreignObjects).toBeGreaterThan(0);
     expect(r.warnings[0]).toMatch(/foreignObject/);
-    expect(r.svg.length).toBeLessThan(l3.length / 2);
+    expect(r.svg.length).toBeLessThan(legacy.length / 2);
+  });
+  it('passes native text labels through with no warning', () => {
+    const r = sanitizeSvg(l3);
+    expect(r.foreignObjects).toBe(0);
+    expect(r.removed.images).toBe(0);
+    expect(r.warnings).toEqual([]);
+    expect((r.svg.match(/<text/g) ?? []).length).toBe((l3.match(/<text/g) ?? []).length);
   });
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
-    expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(100);
+    expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(108);
     expect(r.svg).toContain('data-meta-pg-id="wan1:pppoe-&gt;rtr-a:wan1"');
     expect(r.svg).toContain('pointer-events="stroke"');
     expect(r.svg).toContain('light-dark(');
@@ -109,7 +118,7 @@ describe('sanitizeSvg: draw.io export', () => {
 
 describe('sanitizeSvg: idempotence', () => {
   it('produces output that sanitizes again without a parse error', () => {
-    const once = sanitizeSvg(l3);
+    const once = sanitizeSvg(legacy);
     const twice = sanitizeSvg(once.svg);
     expect(twice.warnings.join(' ')).not.toMatch(/Not an SVG/i);
     expect(twice.svg).toContain('data-cell-id="pg-node~rtr-a"');
