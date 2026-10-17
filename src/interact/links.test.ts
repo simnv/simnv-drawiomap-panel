@@ -42,7 +42,7 @@ describe('primaryOf', () => {
       primaryOf({
         ...patch,
         link: undefined,
-        shape: { status: 'ok', color: '#f00', fill: true, stroke: false, stepIndex: 0, value: 1 },
+        shape: { status: 'ok', color: '#f00', target: 'icon', stepIndex: 0, value: 1 },
       }).value
     ).toBe(1);
     expect(primaryOf({ ...patch, link: undefined }).status).toBe('nodata');

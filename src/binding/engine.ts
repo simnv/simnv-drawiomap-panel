@@ -15,7 +15,7 @@ import type {
   SeriesSelector,
   ShapeRule,
   ShapeState,
-  SparklineState,
+  ShapeTarget,
   TemplateScope,
 } from '../types';
 import { colorFor, noDataColor, widthFor } from './color';
@@ -151,24 +151,14 @@ function half(
     r.series.field.config?.thresholds ?? ctx.fieldThresholds,
     ctx.theme
   );
-  const tpl = eff.label ?? (percent === undefined ? '${value}' : '${value} · ${percent}');
-  const labelScope: TemplateScope = {
-    ...scope,
-    labels: r.series.labels,
-    value: formattedValueToString(display),
-    percent: percent === undefined ? undefined : `${Math.round(percent)}%`,
-  };
-  const label = resolveTemplate(tpl, labelScope);
-  if (label.unresolved.length) {
-    // spec: a template that does not resolve makes the binding unbound (grey, warning in edit mode)
-    return { state: { ...UNBOUND(ctx), series: r.series }, unresolved: label.unresolved, notes };
-  }
+  const value = formattedValueToString(display);
+  const label = percent === undefined ? value : `${value} · ${Math.round(percent)}%`;
   return {
     state: {
       status: 'ok',
       color,
       width: widthFor(percent, ctx.linkWidth),
-      label: label.text,
+      label,
       stepIndex,
       value: r.value,
       percent,
@@ -197,90 +187,80 @@ function capacityOf(link: LinkRule, scope: TemplateScope): { capacity?: number; 
     : { unresolved: [`capacity "${r.text}" is not a number`] };
 }
 
+/** The explicit target wins. Without it, the old fill and stroke flags decide; a text-only rule colours nothing. */
+export function targetOf(sh: ShapeRule): ShapeTarget | 'none' {
+  if (sh.target) {
+    return sh.target;
+  }
+  if (sh.fill) {
+    return 'shape';
+  }
+  if (sh.stroke) {
+    return 'stroke';
+  }
+  return sh.text || sh.fill === false ? 'none' : 'icon';
+}
+
 function shape(
   sh: ShapeRule,
   eff: Effective,
   scope: TemplateScope,
   series: SeriesInfo[],
   ctx: BindContext
-): { state?: ShapeState; spark?: SparklineState; unresolved: string[] } {
+): { state?: ShapeState; unresolved: string[] } {
   const unresolved: string[] = [];
-  let state: ShapeState | undefined;
-  const wantFill = sh.fill ?? (!sh.stroke && !sh.text);
-  if (sh.series) {
-    const r = resolveSeries(sh.series, series, scope, eff.reducer ?? 'last');
-    unresolved.push(...r.unresolved);
-    if (r.status === 'ok' && r.value !== undefined && r.series) {
-      const display = ctx.display(r.series, r.value);
-      const { color, stepIndex } = colorFor(
-        r.value,
-        undefined,
-        eff.thresholds,
-        display,
-        r.series.field.config?.thresholds ?? ctx.fieldThresholds,
-        ctx.theme
-      );
-      let text: string | undefined;
-      let textUnresolved = false;
-      if (sh.text) {
-        const t = resolveTemplate(eff.label ?? '${value}', {
-          ...scope,
-          labels: r.series.labels,
-          value: formattedValueToString(display),
-        });
-        unresolved.push(...t.unresolved);
-        text = t.text;
-        textUnresolved = t.unresolved.length > 0;
-      }
-      state = textUnresolved
-        ? {
-            status: 'unbound',
-            color: noDataColor(ctx.theme),
-            fill: wantFill,
-            stroke: !!sh.stroke,
-            stepIndex: -1,
-            text: STATUS_TEXT.unbound,
-            series: r.series,
-          }
-        : {
-            status: 'ok',
-            color,
-            fill: wantFill,
-            stroke: !!sh.stroke,
-            stepIndex,
-            text,
-            value: r.value,
-            display,
-            series: r.series,
-          };
-    } else {
-      const status = r.status === 'ok' ? 'nodata' : r.status;
-      state = {
-        status,
+  if (!sh.series) {
+    return { unresolved };
+  }
+  const target = targetOf(sh);
+  const r = resolveSeries(sh.series, series, scope, eff.reducer ?? 'last');
+  unresolved.push(...r.unresolved);
+  if (r.status !== 'ok' || r.value === undefined || !r.series) {
+    const status = r.status === 'ok' ? 'nodata' : r.status;
+    const state: ShapeState = {
+      status,
+      color: noDataColor(ctx.theme),
+      target,
+      stepIndex: -1,
+      // a text-only binding has no colour to show the state, so the text says it
+      text: sh.text ? STATUS_TEXT[status] : undefined,
+    };
+    return { state, unresolved };
+  }
+  const display = ctx.display(r.series, r.value);
+  const { color, stepIndex } = colorFor(
+    r.value,
+    undefined,
+    eff.thresholds,
+    display,
+    r.series.field.config?.thresholds ?? ctx.fieldThresholds,
+    ctx.theme
+  );
+  let text: string | undefined;
+  if (sh.text) {
+    const t = resolveTemplate(eff.label ?? '${value}', {
+      ...scope,
+      labels: r.series.labels,
+      value: formattedValueToString(display),
+    });
+    unresolved.push(...t.unresolved);
+    if (t.unresolved.length) {
+      const state: ShapeState = {
+        status: 'unbound',
         color: noDataColor(ctx.theme),
-        fill: wantFill,
-        stroke: !!sh.stroke,
+        target,
         stepIndex: -1,
-        // a text-only binding has no colour to show the state, so the text says it
-        text: sh.text ? STATUS_TEXT[status] : undefined,
+        text: STATUS_TEXT.unbound,
+        series: r.series,
       };
+      return { state, unresolved };
     }
+    text = t.text;
   }
-  let spark: SparklineState | undefined;
-  if (sh.sparkline) {
-    const { position, ...sel } = sh.sparkline;
-    const f = findSeries(sel, series, scope);
-    unresolved.push(...f.unresolved);
-    if (f.series && f.series.values.length) {
-      spark = {
-        values: f.series.values,
-        color: state?.status === 'ok' ? state.color : ctx.theme.colors.text.secondary,
-        position: position ?? 'bottom',
-        series: f.series,
-      };
-    }
-  }
-  return { state, spark, unresolved };
+  return {
+    state: { status: 'ok', color, target, stepIndex, text, value: r.value, display, series: r.series },
+    unresolved,
+  };
 }
 
 function ruleMatchers(r: Rule): string[] {
@@ -288,7 +268,7 @@ function ruleMatchers(r: Rule): string[] {
   if (r.select.label) {
     out.push(r.select.label);
   }
-  for (const sel of [r.link?.a2b, r.link?.b2a, r.shape?.series, r.shape?.sparkline]) {
+  for (const sel of [r.link?.a2b, r.link?.b2a, r.shape?.series, ...(r.shape?.card ?? [])]) {
     if (sel?.name) {
       out.push(sel.name);
     }
@@ -306,6 +286,12 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
       if (err) {
         warnings.push(`${r.name}: ${err}`);
       }
+    }
+    if (r.shape?.sparkline) {
+      warnings.push(`${r.name}: shape.sparkline is removed, use shape.card`);
+    }
+    if (r.link && r.label !== undefined && !r.shape?.text) {
+      warnings.push(`${r.name}: label is ignored for links, the hover card shows the values`);
     }
   }
   for (const cell of cells) {
@@ -349,9 +335,14 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
     if (eff.shape && !cell.isEdge) {
       const s = shape(eff.shape, eff, scope, series, ctx);
       patch.shape = s.state;
-      patch.sparkline = s.spark;
       unresolved.push(...s.unresolved);
       primary = primary ?? s.state?.series;
+    }
+    // The card resolves its rows only when it opens; here it keeps the configuration.
+    if (patch.link) {
+      patch.card = { reducer: eff.reducer ?? 'last', ...eff.link?.card };
+    } else if (eff.shape && !cell.isEdge && (patch.shape || eff.shape.card)) {
+      patch.card = { reducer: eff.reducer ?? 'last', ...(eff.shape.card ? { rows: eff.shape.card } : {}) };
     }
     if (eff.url) {
       const u = resolveTemplate(eff.url, { ...scope, labels: primary?.labels ?? {} }, encodeURIComponent);
@@ -369,7 +360,7 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
     }
     patch.warnings.push(...msgs);
     warnings.push(...msgs);
-    if (patch.link || patch.shape || patch.sparkline || patch.urls.length) {
+    if (patch.link || patch.shape || patch.card || patch.urls.length) {
       patches.set(cell.id, patch);
     }
   }

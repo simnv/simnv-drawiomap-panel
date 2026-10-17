@@ -39,9 +39,12 @@ export interface CellEntry {
   arrows: SVGPathElement[];
   /** Text or foreignObject label element. */
   label?: Element;
+  /** Node only: the cell id of its icon (see adapter/portograph nodeIcons). */
+  iconId?: string;
   original: {
     fill?: string;
     stroke?: string;
+    /** Inline stroke-width of the edge line, or of the vertex shape. */
     strokeWidth?: string;
     text?: string;
     /** Deep clones of the label child nodes. Reset puts copies of them back after a text patch. */
@@ -131,20 +134,43 @@ export interface LinkRule {
   b2a?: SeriesSelector;
   /** bit/s; number or template like "${cell.capacity}" */
   capacity?: string | number;
+  /** The hover card of the link. */
+  card?: LinkCardRule;
 }
 
-export type SparklinePosition = 'bottom' | 'top' | 'inside';
+export interface LinkCardRule {
+  /** click target of the a2b and b2a rows (template). Default: the rule url. */
+  url?: string;
+  /** card title (template). Default: the link label text, else the pg-id. */
+  title?: string;
+}
 
-export interface SparklineRule extends SeriesSelector {
-  position?: SparklinePosition;
+/** What the state colour changes: the node icon (default), the whole shape fill, or the shape outline. */
+export type ShapeTarget = 'icon' | 'shape' | 'stroke';
+
+/** One row of the hover card: a title, the current value and a sparkline of one series. */
+export interface CardRow extends SeriesSelector {
+  /** row title (template). Default: the series name. */
+  title?: string;
+  /** Grafana unit id, for example "percent". Default: the field unit. */
+  unit?: string;
+  decimals?: number;
+  /** click target of the row (template). Default: the rule url. */
+  url?: string;
 }
 
 export interface ShapeRule {
   series?: SeriesSelector;
+  target?: ShapeTarget;
+  /** old form of target: shape */
   fill?: boolean;
+  /** old form of target: stroke */
   stroke?: boolean;
   text?: boolean;
-  sparkline?: SparklineRule;
+  /** hover card rows. Default: one row for `series`. */
+  card?: CardRow[];
+  /** removed (no canvas sparklines). The rule parser accepts it, the engine ignores it with a warning. */
+  sparkline?: SeriesSelector & { position?: string };
 }
 
 export interface Rule {
@@ -153,7 +179,7 @@ export interface Rule {
   link?: LinkRule;
   shape?: ShapeRule;
   reducer?: ReducerName;
-  /** label template; default "${value} · ${percent}" for links, "${value}" for shapes */
+  /** template of the text that shape.text writes into the node label; default "${value}". Links ignore it. */
   label?: string;
   thresholds?: RuleThresholds;
   url?: string;
@@ -176,6 +202,7 @@ export interface HalfState {
   status: BindStatus;
   color: string;
   width: number;
+  /** "41 Mb/s · 41%", "no data" or "unbound". The hover card shows it. */
   label: string;
   /** index into the threshold steps that produced the colour; -1 when no data */
   stepIndex: number;
@@ -188,19 +215,12 @@ export interface HalfState {
 export interface ShapeState {
   status: BindStatus;
   color: string;
-  fill: boolean;
-  stroke: boolean;
+  /** none: the state shows in the text only */
+  target: ShapeTarget | 'none';
   stepIndex: number;
   text?: string;
   value?: number;
   display?: DisplayValue;
-  series?: SeriesInfo;
-}
-
-export interface SparklineState {
-  values: number[];
-  color: string;
-  position: SparklinePosition;
   series?: SeriesInfo;
 }
 
@@ -209,13 +229,24 @@ export interface LinkTarget {
   url: string;
 }
 
+/** Card configuration of a cell. The card resolves it only when it opens (see interact/card). */
+export interface CardSpec {
+  /** title template */
+  title?: string;
+  /** link rows: click target template */
+  url?: string;
+  /** shape rows */
+  rows?: CardRow[];
+  reducer: ReducerName;
+}
+
 export interface CellPatch {
   cellId: string;
   ruleNames: string[];
   scope: TemplateScope;
   link?: { a2b?: HalfState; b2a?: HalfState };
   shape?: ShapeState;
-  sparkline?: SparklineState;
+  card?: CardSpec;
   /** rule url(s) after template resolution; dashboard variables are resolved later by replaceVariables */
   urls: LinkTarget[];
   warnings: string[];

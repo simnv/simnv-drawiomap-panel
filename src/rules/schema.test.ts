@@ -76,3 +76,41 @@ describe('matcher validation', () => {
     ).toBe(true);
   });
 });
+
+describe('hover card schema', () => {
+  const node = (shape: object) => ({ name: 'x', select: { kind: 'node' }, shape });
+  it('accepts shape.target icon, shape and stroke and rejects other values', () => {
+    for (const target of ['icon', 'shape', 'stroke']) {
+      expect(ruleSchema.safeParse(node({ target })).success).toBe(true);
+    }
+    expect(ruleSchema.safeParse(node({ target: 'fill' })).success).toBe(false);
+  });
+  it('accepts shape.card rows and rejects unknown row keys', () => {
+    const r = parseRulesYaml(`
+- name: cpu
+  select: { kind: node }
+  shape:
+    card:
+      - { title: CPU, refId: E, match: { job: "node-\${cell.pg-id}" }, unit: percent, decimals: 0, url: "/d/cpu" }
+`);
+    expect(r.errors).toEqual([]);
+    expect(r.rules?.[0].shape?.card?.[0]).toEqual({
+      title: 'CPU',
+      refId: 'E',
+      match: { job: 'node-${cell.pg-id}' },
+      unit: 'percent',
+      decimals: 0,
+      url: '/d/cpu',
+    });
+    expect(ruleSchema.safeParse(node({ card: [{ refId: 'E', position: 'bottom' }] })).success).toBe(false);
+    expect(ruleSchema.safeParse(node({ card: [{ match: { job: '/[/' } }] })).success).toBe(false);
+  });
+  it('accepts link.card with url and title', () => {
+    const rule = { name: 'l', select: { kind: 'link' }, link: { card: { url: '/d/if', title: '${from.node}' } } };
+    expect(ruleSchema.safeParse(rule).success).toBe(true);
+    expect(ruleSchema.safeParse({ ...rule, link: { card: { color: 'red' } } }).success).toBe(false);
+  });
+  it('still accepts the removed shape.sparkline and label keys (old dashboards)', () => {
+    expect(parseRulesYaml(yaml).errors).toEqual([]);
+  });
+});

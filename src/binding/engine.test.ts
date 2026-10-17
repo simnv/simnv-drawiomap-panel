@@ -81,8 +81,8 @@ const rules: Rule[] = [
     select: { kind: 'node' },
     shape: {
       series: { refId: 'C', match: { job: 'node-${cell.pg-id}' } },
-      fill: true,
-      sparkline: { refId: 'D', match: { job: 'node-${cell.pg-id}' }, position: 'bottom' },
+      target: 'shape',
+      card: [{ title: 'load', refId: 'D', match: { job: 'node-${cell.pg-id}' }, decimals: 1 }],
     },
     thresholds: {
       mode: 'absolute',
@@ -132,16 +132,31 @@ describe('bind', () => {
     expect(h.color).toBe(theme.colors.text.disabled);
     expect(h.label).toBe('no data');
   });
-  it('fills nodes by up and attaches a sparkline', () => {
+  it('colours nodes by up and keeps the card rows for the hover card', () => {
     const up = patches.get('pg-node~rtr-a')!;
     expect(up.shape?.status).toBe('ok');
     expect(up.shape?.stepIndex).toBe(1);
-    expect(up.shape?.fill).toBe(true);
-    expect(up.sparkline?.values).toEqual([0.5, 1.5, 1.0]);
-    expect(up.sparkline?.position).toBe('bottom');
+    expect(up.shape?.target).toBe('shape');
+    expect(up.card).toEqual({
+      reducer: 'last',
+      rows: [{ title: 'load', refId: 'D', match: { job: 'node-${cell.pg-id}' }, decimals: 1 }],
+    });
     const down = patches.get('pg-node~lte')!;
     expect(down.shape?.stepIndex).toBe(0);
-    expect(down.sparkline).toBeUndefined();
+  });
+  it('gives every link patch a card spec with the link.card url and title', () => {
+    const r = bind(
+      [{ ...rules[0], link: { ...rules[0].link, card: { url: '/d/if?d=${from.port}', title: '${from.node}' } } }],
+      cells,
+      series,
+      ctx
+    );
+    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.card).toEqual({
+      reducer: 'last',
+      url: '/d/if?d=${from.port}',
+      title: '${from.node}',
+    });
+    expect(patches.get('pg-link~lte:static->rtr-a:lte')!.card).toEqual({ reducer: 'last' });
   });
   it('resolves rule urls', () => {
     expect(patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.urls).toEqual([
@@ -282,7 +297,7 @@ describe('bind review fixes', () => {
     expect(sh.status).toBe('nodata');
     expect(sh.text).toBe('no data');
     expect(sh.color).toBe(theme.colors.text.disabled);
-    expect(sh.fill).toBe(false);
+    expect(sh.target).toBe('none');
   });
   it('finding 5: a text-only shape shows "unbound" in grey when the series template is unbound', () => {
     const r = bind(
@@ -296,24 +311,12 @@ describe('bind review fixes', () => {
     expect(sh.text).toBe('unbound');
     expect(sh.color).toBe(theme.colors.text.disabled);
   });
-  it('finding 6: an unresolved link label placeholder makes the half unbound', () => {
-    const r = bind([capRule({ label: '${value} ${labels.nope}' })], [linkCell], [withUnit('bps', 4e7)], ctx);
+  it('links ignore the label template (no canvas labels) and give one warning per rule', () => {
+    const r = bind([capRule({ label: '${value} ${labels.nope}' })], [linkCell, cells[1]], [withUnit('bps', 4e7)], ctx);
     const h = r.patches.get(linkCell.id)!.link!.a2b!;
-    expect(h.status).toBe('unbound');
-    expect(h.color).toBe(theme.colors.text.disabled);
-    expect(h.label).toBe('unbound');
-    expect(h.stepIndex).toBe(-1);
-    expect(r.warnings.join(' ')).toMatch(/labels\.nope/);
-  });
-  it('finding 6: ${percent} without a capacity makes the half unbound', () => {
-    const r = bind(
-      [{ name: 'np', select: { kind: 'link' }, link: { a2b: { refId: 'U' } }, label: '${percent}' }],
-      [linkCell],
-      [withUnit('bps', 4e7)],
-      ctx
-    );
-    expect(r.patches.get(linkCell.id)!.link!.a2b!.status).toBe('unbound');
-    expect(r.warnings.join(' ')).toMatch(/percent/);
+    expect(h.status).toBe('ok');
+    expect(h.label).toBe('40 Mb/s · 40%');
+    expect(r.warnings).toEqual(['cap: label is ignored for links, the hover card shows the values']);
   });
   it('finding 6: an unresolved shape text placeholder makes the shape unbound', () => {
     const r = bind(
@@ -334,6 +337,16 @@ describe('bind review fixes', () => {
     expect(sh.text).toBe('unbound');
     expect(sh.color).toBe(theme.colors.text.disabled);
     expect(sh.stepIndex).toBe(-1);
+  });
+
+  it('shape.sparkline is ignored with a warning', () => {
+    const r = bind(
+      [{ name: 'sp', select: { kind: 'node' }, shape: { target: 'shape', sparkline: { refId: 'D' } } }],
+      cells,
+      series,
+      ctx
+    );
+    expect(r.warnings).toEqual(['sp: shape.sparkline is removed, use shape.card']);
   });
 
   const hostCell = cellMetaFromAttrs(
@@ -369,5 +382,57 @@ describe('bind review fixes', () => {
     const p = urlOf('/d/x').patches.get('h1');
     expect(p).toBeDefined();
     expect(p!.urls).toEqual([{ title: 'u', url: '/d/x' }]);
+  });
+});
+
+describe('shape target', () => {
+  const upRule = (shape: Rule['shape']): Rule[] => [
+    {
+      name: 't',
+      select: { ids: ['pg-node~rtr-a'] },
+      shape: { series: { refId: 'C', match: { job: 'node-rtr-a' } }, ...shape },
+    },
+  ];
+  const targetOf = (shape: Rule['shape']) =>
+    bind(upRule(shape), cells, series, ctx).patches.get('pg-node~rtr-a')!.shape!.target;
+  it('defaults to icon', () => {
+    expect(targetOf({})).toBe('icon');
+  });
+  it('maps the old fill and stroke flags', () => {
+    expect(targetOf({ fill: true })).toBe('shape');
+    expect(targetOf({ stroke: true })).toBe('stroke');
+    expect(targetOf({ fill: true, stroke: true })).toBe('shape');
+    expect(targetOf({ text: true })).toBe('none');
+    expect(targetOf({ fill: false })).toBe('none');
+  });
+  it('an explicit target wins over the old flags', () => {
+    expect(targetOf({ target: 'stroke', fill: true })).toBe('stroke');
+    expect(targetOf({ target: 'icon', text: true })).toBe('icon');
+  });
+  it('a card-only shape rule makes a patch without a colour state', () => {
+    const r = bind(
+      [
+        {
+          name: 'c',
+          select: { kind: 'node' },
+          shape: { card: [{ refId: 'D', match: { job: 'node-${cell.pg-id}' } }] },
+        },
+      ],
+      cells,
+      series,
+      ctx
+    );
+    const p = r.patches.get('pg-node~rtr-a')!;
+    expect(p.shape).toBeUndefined();
+    expect(p.card?.rows).toHaveLength(1);
+  });
+  it('validates the matchers of card rows', () => {
+    const r = bind(
+      [{ name: 'c', select: { kind: 'node' }, shape: { card: [{ match: { job: '/[/' } }] } }],
+      cells,
+      series,
+      ctx
+    );
+    expect(r.warnings.join(' ')).toMatch(/c: invalid regex/);
   });
 });
