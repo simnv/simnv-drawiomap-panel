@@ -85,6 +85,10 @@ function tag(entry: CellEntry, patch: CellPatch, target: string | undefined): vo
   if (target) {
     entry.group.setAttribute('data-dmap-target', target);
   }
+  // Keyboard access: Tab moves to the cell, Enter or Space opens its card.
+  entry.group.setAttribute('tabindex', '0');
+  entry.group.setAttribute('role', 'button');
+  entry.group.setAttribute('aria-label', entry.meta.labelText || entry.meta.key);
   const states = [patch.shape, patch.link?.a2b, patch.link?.b2a].filter(Boolean) as Array<{
     status: string;
     stepIndex: number;
@@ -138,26 +142,25 @@ function reset(entry: CellEntry, index: CellIndex): void {
   entry.group.removeAttribute('data-dmap-status');
   entry.group.removeAttribute('data-dmap-step');
   entry.group.removeAttribute('data-dmap-target');
+  entry.group.removeAttribute('tabindex');
+  entry.group.removeAttribute('role');
+  entry.group.removeAttribute('aria-label');
 }
 
 /** Write patches into the SVG DOM. Returns the ids that are patched now. */
 export function applyPatches(index: CellIndex, patches: PatchMap, previous: Set<string>): Set<string> {
   const done = new Set<string>();
+  // Reset everything first: a node colours the shape of another cell (its icon), so a later reset must not undo it.
   for (const id of previous) {
-    if (!patches.has(id)) {
-      const entry = index.get(id);
-      if (entry) {
-        reset(entry, index);
-      }
+    const entry = index.get(id);
+    if (entry) {
+      reset(entry, index);
     }
   }
   for (const [id, patch] of patches) {
     const entry = index.get(id);
     if (!entry) {
       continue;
-    }
-    if (previous.has(id)) {
-      reset(entry, index);
     }
     const target = applyShape(entry, patch, index);
     applyLink(entry, patch);

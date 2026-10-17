@@ -49,7 +49,12 @@ function rowHref(patch: CellPatch, tpl: string | undefined, primary: Primary, ct
     const r = resolveTemplate(tpl, { ...patch.scope, labels: primary.series?.labels ?? {} }, encodeURIComponent);
     url = !r.unresolved.length && isAllowedUrl(r.text) ? r.text : undefined;
   }
-  return url === undefined ? undefined : ctx.replaceVariables(url, buildScopedVars(patch, primary));
+  if (url === undefined) {
+    return undefined;
+  }
+  // a dashboard variable can put a scheme into the url, so check the final text again
+  const href = ctx.replaceVariables(url, buildScopedVars(patch, primary));
+  return isAllowedUrl(href) ? href : undefined;
 }
 
 function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardContext): CardRowModel {
@@ -73,20 +78,27 @@ function seriesRow(patch: CellPatch, row: CardRow, i: number, ctx: CardContext):
   const f = findSeries(row, ctx.series, scope);
   const title = (s?: SeriesInfo) =>
     resolveTemplate(row.title ?? s?.name ?? `row ${i + 1}`, { ...scope, labels: s?.labels ?? {} }).text;
-  const base = { key: `row-${i}`, color: ctx.theme.colors.text.disabled, values: [] };
+  // a row without data keeps its url: the target dashboard can tell why
+  const base = (s?: SeriesInfo) => ({
+    key: `row-${i}`,
+    title: title(s),
+    color: ctx.theme.colors.text.disabled,
+    values: [],
+    href: rowHref(patch, row.url, { status: 'nodata', series: s }, ctx),
+  });
   if (f.unresolved.length) {
-    return { ...base, title: title(), text: STATUS_TEXT.unbound, status: 'unbound' };
+    return { ...base(), text: STATUS_TEXT.unbound, status: 'unbound' };
   }
   const value = f.series ? reduceValues(f.series.values, patch.card?.reducer ?? 'last') : undefined;
   if (!f.series || value === undefined) {
-    return { ...base, title: title(f.series), text: STATUS_TEXT.nodata, status: 'nodata' };
+    return { ...base(f.series), text: STATUS_TEXT.nodata, status: 'nodata' };
   }
   const override =
     row.unit !== undefined || row.decimals !== undefined ? { unit: row.unit, decimals: row.decimals } : undefined;
   const display = ctx.display(f.series, value, override);
   const primary: Primary = { status: 'ok', series: f.series, display, value };
   return {
-    key: base.key,
+    key: `row-${i}`,
     title: title(f.series),
     text: formattedValueToString(display),
     status: 'ok',
@@ -161,13 +173,26 @@ export function sparkPoints(
   w: number,
   h: number
 ): string {
-  const idx = values.flatMap((v, i) => (Number.isFinite(v) ? [i] : []));
+  // Long series: keep about two points per pixel. The loop finds the extrema (a spread call fails on big arrays).
+  const step = Math.max(1, Math.floor(values.length / (2 * Math.max(w, 1))));
+  const idx: number[] = [];
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (!Number.isFinite(v)) {
+      continue;
+    }
+    min = Math.min(min, v);
+    max = Math.max(max, v);
+    if (i % step === 0 || i === values.length - 1) {
+      idx.push(i);
+    }
+  }
   if (idx.length < 2) {
     return '';
   }
-  const vs = idx.map((i) => values[i]);
-  const min = Math.min(...vs);
-  const span = Math.max(...vs) - min;
+  const span = max - min;
   const useTime = !!times && !!range && range.to > range.from;
   const x = (i: number) =>
     useTime ? ((times![i] - range!.from) / (range!.to - range!.from)) * w : (i / (values.length - 1)) * w;

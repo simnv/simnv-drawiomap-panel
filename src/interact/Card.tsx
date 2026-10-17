@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { memo, useLayoutEffect, useMemo, useRef } from 'react';
 import { css, cx } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
@@ -128,16 +128,29 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
 });
 
-function Row({
+/** Memoised: the card re-renders on each pointer move, the rows change only with the data. */
+const Row = memo(function Row({
   row,
-  range,
+  from,
+  to,
   styles,
 }: {
   row: CardRowModel;
-  range?: CardProps['range'];
+  from?: number;
+  to?: number;
   styles: ReturnType<typeof getStyles>;
 }) {
-  const points = sparkPoints(row.values, row.times, range, SPARK_W, SPARK_H);
+  const points = useMemo(
+    () =>
+      sparkPoints(
+        row.values,
+        row.times,
+        from !== undefined && to !== undefined ? { from, to } : undefined,
+        SPARK_W,
+        SPARK_H
+      ),
+    [row.values, row.times, from, to]
+  );
   const body = (
     <>
       <div className={styles.rowHead}>
@@ -178,7 +191,7 @@ function Row({
       {body}
     </div>
   );
-}
+});
 
 /**
  * The hover card. Unpinned it follows the pointer and ignores the pointer. Pinned it is a non-modal
@@ -235,7 +248,7 @@ export function Card({ model, pinned, x, y, width, height, range, onClose }: Car
         {pinned ? <IconButton name="times" size="sm" aria-label="Close" onClick={onClose} /> : null}
       </div>
       {model.rows.map((r) => (
-        <Row key={r.key} row={r} range={range} styles={styles} />
+        <Row key={r.key} row={r} from={range?.from} to={range?.to} styles={styles} />
       ))}
       {pinned && model.links.length ? (
         <div className={styles.footer}>

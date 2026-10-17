@@ -266,8 +266,13 @@ describe('DrawioMapPanel hover card', () => {
     await screen.findByRole('dialog');
     fireEvent.pointerMove(half('pg-link~wan2:dhcp->rtr-a:wan2'), { pointerType: 'mouse' });
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('metric 10');
-    fireEvent.keyDown(document, { key: 'Escape' });
+    const grafana = vi.fn();
+    document.addEventListener('keydown', grafana);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    document.removeEventListener('keydown', grafana);
     expect(card()).toBeNull();
+    // Grafana does not see this Esc (it would leave the panel view)
+    expect(grafana).not.toHaveBeenCalled();
   });
   it('a click on another cell moves the pin; a click on empty space or outside the panel closes it', async () => {
     const { half, wrapper } = await setup();
@@ -309,6 +314,39 @@ describe('DrawioMapPanel hover card', () => {
     } finally {
       window.matchMedia = mm;
     }
+  });
+  it('with wheel zoom on, the wheel scrolls the card and does not zoom', async () => {
+    const { half, wrapper } = await setup(props({ options: { ...options, zoom: { ...options.zoom, wheel: true } } }));
+    fireEvent.click(half(linkId));
+    const dialog = await screen.findByRole('dialog');
+    const ev = new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
+    dialog.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    const outside = new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
+    wrapper.querySelector('svg')!.dispatchEvent(outside);
+    expect(outside.defaultPrevented).toBe(true);
+  });
+  it('keyboard: Enter on a focused cell pins its card, Esc closes it and gives the focus back', async () => {
+    const { cell } = await setup(withCpu());
+    const node = cell('pg-node~rtr-b') as SVGGElement;
+    expect(node.getAttribute('tabindex')).toBe('0');
+    node.focus();
+    fireEvent.keyDown(node, { key: 'Enter' });
+    const dialog = await screen.findByRole('dialog');
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(card()).toBeNull();
+    expect(document.activeElement).toBe(node);
+  });
+  it('closes a pinned card when its cell loses the patch, and hover works again', async () => {
+    const p = withCpu();
+    const { cell, half, rerender } = await setup(p);
+    fireEvent.click(cell('pg-node~rtr-b'));
+    await screen.findByRole('dialog');
+    rerender(<DrawioMapPanel {...p} options={{ ...options, rules: [options.rules[0]] }} />);
+    expect(card()).toBeNull();
+    fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
+    expect(await screen.findByRole('tooltip')).toBeTruthy();
   });
   it('a narrow panel shows the card as a bottom sheet', async () => {
     const { half } = await setup(props({ width: 400 }));

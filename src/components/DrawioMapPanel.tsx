@@ -79,6 +79,7 @@ export function DrawioMapPanel({
   const [card, setCard] = useState<CardState | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const zoomMode = opts.zoom.mode;
   const zoomPercent = opts.zoom.percent;
   const wheelZoom = opts.zoom.wheel;
@@ -123,6 +124,10 @@ export function DrawioMapPanel({
 
   // The card resolves its rows only for the open cell. A data refresh updates it in place.
   const cardPatch = card ? result.patches.get(card.cellId) : undefined;
+  if (card && !cardPatch) {
+    // the rules or the diagram changed and the cell has no patch now
+    setCard(null);
+  }
   const model = useMemo(() => {
     if (!cardPatch) {
       return undefined;
@@ -145,28 +150,42 @@ export function DrawioMapPanel({
   const open = !!model;
   const pinned = !!card?.pinned && open;
 
+  // A card opened from the keyboard gives the focus back to its cell when it closes.
+  const opener = useRef<Element | null>(null);
+  const close = useCallback(() => {
+    setCard(null);
+    const el = opener.current as (Element & HTMLOrSVGElement) | null;
+    opener.current = null;
+    if (el?.isConnected) {
+      el.focus({ preventScroll: true });
+    }
+  }, []);
+
   // Esc closes the card. A pointer down outside the panel closes a pinned card.
   useEffect(() => {
     if (!open) {
       return;
     }
+    // Capture phase: Esc closes the card only, Grafana does not also leave the panel view.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setCard(null);
+        e.stopPropagation();
+        close();
       }
     };
     const onDown = (e: PointerEvent) => {
       if (pinned && !wrapperRef.current?.contains(e.target as Node)) {
+        opener.current = null;
         setCard(null);
       }
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onDown, true);
     return () => {
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('pointerdown', onDown, true);
     };
-  }, [open, pinned]);
+  }, [open, pinned, close]);
 
   // draw.io writes color-scheme: light dark on the root, so light-dark() colours follow the OS preference.
   // Override it with the Grafana theme.
@@ -215,6 +234,10 @@ export function DrawioMapPanel({
       return;
     }
     const onWheel = (e: WheelEvent) => {
+      // the wheel scrolls a long card
+      if (e.target instanceof Node && cardRef.current?.contains(e.target)) {
+        return;
+      }
       e.preventDefault();
       const c = clientToViewBox(root, e.clientX, e.clientY);
       setView((v) => zoomAt(v ?? base, e.deltaY > 0 ? 1.1 : 1 / 1.1, c.x, c.y));
@@ -223,7 +246,6 @@ export function DrawioMapPanel({
     return () => wrapper.removeEventListener('wheel', onWheel);
   }, [wheelZoom, stage.root, stage.base]);
 
-  const cardRef = useRef<HTMLDivElement>(null);
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -237,7 +259,23 @@ export function DrawioMapPanel({
       return;
     }
     const patch = patchAt(e.target, stageEl, result.patches, stage.index);
+    opener.current = null;
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: true } : null);
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const stageEl = containerRef.current;
+    if ((e.key !== 'Enter' && e.key !== ' ') || !stageEl || inCard(e.target) || !(e.target instanceof Element)) {
+      return;
+    }
+    const patch = patchAt(e.target, stageEl, result.patches, stage.index);
+    if (!patch) {
+      return;
+    }
+    e.preventDefault();
+    const r = wrapperRef.current!.getBoundingClientRect();
+    const b = e.target.getBoundingClientRect();
+    opener.current = e.target;
+    setCard({ cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top, pinned: true });
   };
   const drag = useRef<{ x: number; y: number } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
@@ -254,7 +292,7 @@ export function DrawioMapPanel({
     }
     // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
     const stageEl = containerRef.current;
-    if (e.pointerType === 'touch' || !canHover() || card?.pinned || !stageEl) {
+    if (e.pointerType === 'touch' || !canHover() || pinned || !stageEl) {
       return;
     }
     const patch = patchAt(e.target, stageEl, result.patches, stage.index);
@@ -283,12 +321,13 @@ export function DrawioMapPanel({
       data-dmap-hash={opts.diagram.hash}
       style={{ colorScheme: theme.isDark ? 'dark' : 'light' }}
       onClick={onClick}
+      onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={() => {
         drag.current = null;
-        if (!card?.pinned) {
+        if (!pinned) {
           setCard(null);
         }
       }}
@@ -315,7 +354,7 @@ export function DrawioMapPanel({
             width={width}
             height={height}
             range={{ from: timeRange.from.valueOf(), to: timeRange.to.valueOf() }}
-            onClose={() => setCard(null)}
+            onClose={close}
           />
         </div>
       ) : null}

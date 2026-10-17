@@ -72,6 +72,10 @@ describe('resolveLinks', () => {
       calculatedValue: { text: '41 Mb/s', numeric: 41e6 },
     });
   });
+  it('drops a rule url that a dashboard variable turns into another scheme', () => {
+    const p = { ...patch, urls: [{ title: 'v', url: '${target:raw}' }] };
+    expect(resolveLinks(p, primaryOf(p), () => 'javascript:alert(1)').map((l) => l.title)).toEqual(['Field link']);
+  });
   it('works without a series', () => {
     const p = { ...patch, link: undefined };
     expect(resolveLinks(p, primaryOf(p), (s) => s)).toHaveLength(1);

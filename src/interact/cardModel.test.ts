@@ -179,9 +179,9 @@ describe('buildCard for a node', () => {
       ],
     };
     const c = buildCard(p, ctx);
-    expect(c.rows.map((r) => [r.title, r.text, r.status])).toEqual([
-      ['gone', 'no data', 'nodata'],
-      ['bad', 'unbound', 'unbound'],
+    expect(c.rows.map((r) => [r.title, r.text, r.status, r.href])).toEqual([
+      ['gone', 'no data', 'nodata', '/d/node?job=node-rtr-a'],
+      ['bad', 'unbound', 'unbound', '/d/node?job=node-rtr-a'],
     ]);
   });
   it('without card rows, shows one row for the shape series', () => {
@@ -195,7 +195,28 @@ describe('buildCard for a node', () => {
   });
 });
 
+describe('buildCard url checks', () => {
+  it('drops a row url and a footer url that a dashboard variable turns into another scheme', () => {
+    const c = buildCard(nodePatch({ urls: [{ title: 'r', url: '${v:raw}' }] }), {
+      ...ctx,
+      replaceVariables: (s) => (s === '${v:raw}' ? 'javascript:alert(1)' : s),
+    });
+    expect(c.rows[0].href).toBe('/d/cpu?host=node-rtr-a&from=${__from}');
+    const p = nodePatch({ urls: [{ title: 'r', url: '${v:raw}' }] });
+    p.card = { reducer: 'last', rows: [{ refId: 'E' }] };
+    const c2 = buildCard(p, { ...ctx, replaceVariables: () => 'javascript:alert(1)' });
+    expect(c2.rows[0].href).toBeUndefined();
+    expect(c2.links.map((l) => l.title)).toEqual(['Field link']);
+  });
+});
+
 describe('sparkPoints', () => {
+  it('handles a long series without a stack overflow and keeps the last point', () => {
+    const values = Array.from({ length: 300_000 }, (_, i) => i);
+    const pts = sparkPoints(values, undefined, undefined, 200, 36).split(' ');
+    expect(pts.length).toBeLessThanOrEqual(402);
+    expect(pts[pts.length - 1]).toBe('200,1');
+  });
   it('maps times over the dashboard range and values over min..max', () => {
     expect(sparkPoints([0, 10, 5], [0, 50, 100], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
   });

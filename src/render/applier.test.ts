@@ -101,6 +101,9 @@ describe('applyPatches', () => {
     expect(rect.getAttribute('fill')).toBe('#fff');
     expect(index.get('n1')!.group.getAttribute('data-dmap-status')).toBe('ok');
     expect(index.get('n1')!.group.getAttribute('data-dmap-step')).toBe('0');
+    expect(index.get('n1')!.group.getAttribute('tabindex')).toBe('0');
+    expect(index.get('n1')!.group.getAttribute('role')).toBe('button');
+    expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a');
     expect([...done]).toEqual(['n1']);
   });
   it('strokes and writes text into tspan and foreignObject', () => {
@@ -149,6 +152,7 @@ describe('applyPatches', () => {
     expect(rect.style.fill).toBe(index.get('n1')!.original.fill ?? '');
     expect(index.get('n1')!.label!.textContent).toBe('rtr-a');
     expect(index.get('n1')!.group.hasAttribute('data-dmap-status')).toBe(false);
+    expect(index.get('n1')!.group.hasAttribute('tabindex')).toBe(false);
     expect(index.get('e1')!.line!.style.strokeOpacity).toBe('');
   });
 });
@@ -230,5 +234,19 @@ describe('applyPatches shape targets', () => {
     expect(rect.style.fill).not.toMatch(RED);
     expect(rect.style.stroke).not.toMatch(RED);
     expect(index.get('n1')!.label!.textContent).toBe('t');
+  });
+});
+
+describe('applyPatches with a patched icon cell', () => {
+  it('keeps the icon colour of the node when the icon cell has its own patch (url only)', () => {
+    const index = build();
+    index.get('n1')!.iconId = 'i1';
+    const patches: PatchMap = new Map([
+      ['n1', patch('n1', { shape: shape({ target: 'icon' }) })],
+      ['i1', patch('i1', { urls: [{ title: 'u', url: '/x' }] })],
+    ]);
+    const prev = applyPatches(index, patches, new Set());
+    applyPatches(index, patches, prev);
+    expect((index.get('i1')!.shape as SVGElement).style.fill).toMatch(RED);
   });
 });
