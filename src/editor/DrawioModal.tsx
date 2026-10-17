@@ -1,8 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { Alert, Modal } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
-import { acceptEditorMessage, eventSource, frameWindow, handleMessage, initialState, ProtocolState } from './protocol';
+import {
+  acceptChannelHello,
+  classifyEditorMessage,
+  EditorAction,
+  EditorMessage,
+  frameWindow,
+  handleMessage,
+  initialState,
+  newChannelToken,
+  parseMessage,
+  ProtocolState,
+} from './protocol';
+import { parseFileRequest, readEditorFile } from './files';
 import { editorTarget } from './target';
 
 const styles = {
@@ -38,37 +50,22 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stateRef = useRef<ProtocolState>(initialState(xml));
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');
-  const target = useMemo(() => editorTarget(editorUrl, isDark), [editorUrl, isDark]);
-  const origin = target.origin;
-
-  // The editor sends the first message. Replies go to the sender of the first accepted message.
-  const sourceRef = useRef<Window | undefined>(undefined);
-  // The Grafana frontend sandbox blocks iframe.contentWindow and event.source (cross-origin window),
-  // so the host cannot reply to the editor.
+  // A new token for each modal. The bundled editor sends it back in its channel hello.
+  const [token] = useState(newChannelToken);
+  const target = useMemo(() => editorTarget(editorUrl, isDark, token), [editorUrl, isDark, token]);
+  // External editor only: the Grafana frontend sandbox forbids iframe.contentWindow and event.source
+  // (cross-origin window). Then the host cannot verify the sender or reply: the filter fails closed and the modal
+  // shows an alert.
   const [blocked, setBlocked] = useState(false);
-  const post = useCallback(
-    (action: unknown) => {
-      sourceRef.current?.postMessage(JSON.stringify(action), origin);
-    },
-    [origin]
-  );
+  // Bundled editor: the port of the accepted channel hello. It stays open while the modal is open.
+  const portRef = useRef<MessagePort | undefined>(undefined);
 
   useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      const msg = acceptEditorMessage(e, origin, frameWindow(frameRef.current), sourceRef.current);
-      if (!msg) {
-        return;
-      }
-      const source = eventSource(e);
-      if (!source) {
-        setBlocked(true);
-        return;
-      }
-      sourceRef.current = source as Window;
+    const run = (msg: EditorMessage, reply: (action: EditorAction) => void) => {
       const step = handleMessage(stateRef.current, msg, { mode, title, isDark });
       stateRef.current = step.state;
       setPhase(step.state.phase);
-      step.send.forEach(post);
+      step.send.forEach(reply);
       if (step.result) {
         onSave(step.result);
       }
@@ -76,9 +73,50 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
         onClose();
       }
     };
+    const bindPort = (port: MessagePort, base: string) => {
+      port.onmessage = (m: MessageEvent) => {
+        const file = parseFileRequest(m.data);
+        if (file) {
+          readEditorFile(file, base).then((reply) => port.postMessage(reply));
+          return;
+        }
+        const msg = parseMessage(m.data);
+        if (msg) {
+          run(msg, (action) => port.postMessage(JSON.stringify(action)));
+        }
+      };
+    };
+    if (portRef.current && target.kind === 'bundled') {
+      bindPort(portRef.current, target.base);
+    }
+    const onMessage = (e: MessageEvent) => {
+      const frame = frameWindow(frameRef.current);
+      if (target.kind === 'bundled') {
+        const port = acceptChannelHello<MessagePort>(e, target.origin, token, frame);
+        if (port) {
+          // A reload of the frame sends a new hello with the same token.
+          portRef.current?.close();
+          portRef.current = port;
+          bindPort(port, target.base);
+        }
+        return;
+      }
+      const verdict = classifyEditorMessage(e, target.origin, frame);
+      if (verdict.kind === 'blocked') {
+        setBlocked(true);
+      } else if (verdict.kind === 'accept') {
+        // Replies go only to the window of the editor frame and only to the editor origin.
+        run(verdict.msg, (action) => frame?.postMessage(JSON.stringify(action), target.origin));
+      }
+    };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, mode, title, isDark, post, onSave, onClose]);
+  }, [target, token, mode, title, isDark, onSave, onClose]);
+
+  useEffect(() => {
+    const ref = portRef;
+    return () => ref.current?.close();
+  }, []);
 
   return (
     <Modal
@@ -97,17 +135,19 @@ export function DrawioModal({ editorUrl, xml, title, mode, isDark, onSave, onClo
       >
         {blocked ? (
           <Alert severity="error" title="The draw.io editor cannot start" data-testid="dmap-editor-blocked">
-            The Grafana frontend sandbox is on for this plugin. The sandbox does not let the panel send messages to the
-            draw.io frame on another origin. Clear the Editor URL to use the draw.io editor that the plugin includes, or
-            remove simnv-drawiomap-panel from enable_frontend_sandbox_for_plugins.
+            The Grafana frontend sandbox is on for this plugin. The sandbox does not let the panel verify or answer the
+            messages of the draw.io frame on another origin. Clear the Editor URL to use the draw.io editor that the
+            plugin includes, or remove simnv-drawiomap-panel from enable_frontend_sandbox_for_plugins.
           </Alert>
         ) : null}
         <iframe
+          key={target.kind}
           ref={frameRef}
           data-testid="dmap-editor-frame"
           className={styles.frame}
           src={target.kind === 'url' ? target.src : undefined}
           srcDoc={target.kind === 'bundled' ? target.srcDoc : undefined}
+          sandbox={target.kind === 'bundled' ? target.sandbox : undefined}
           data-dmap-editor-kind={target.kind}
           title="draw.io"
           allow="clipboard-read; clipboard-write"

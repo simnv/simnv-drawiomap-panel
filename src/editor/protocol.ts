@@ -120,30 +120,103 @@ export function eventSource(e: { source: unknown }): unknown {
 }
 
 /**
- * Validates a message event from the editor and parses it. The origin must be the editor origin and the
- * payload must be a JSON event. The sender is compared only when it is readable:
- * `expected` is the frame window (undefined in the sandbox), `pinned` is the sender of the first accepted message.
+ * Result of the message filter. blocked: the message has the editor origin and is an editor event, but the host
+ * cannot read the frame window or the sender (Grafana frontend sandbox). The host cannot verify such a message.
  */
+export type MessageVerdict = { kind: 'accept'; msg: EditorMessage } | { kind: 'blocked' } | { kind: 'ignore' };
+
+/**
+ * Fail-closed filter for message events from the external editor. The origin must be the editor origin, the sender
+ * must be the frame window, and the payload must be a JSON event. The bundled editor uses a channel instead
+ * (acceptChannelHello).
+ * `frame` is the window of the editor iframe: null when the frame is not mounted, undefined when it is not readable.
+ * There is no fallback when the frame window or the sender is unknown.
+ */
+export function classifyEditorMessage(
+  e: { origin: string; source: unknown; data: unknown },
+  origin: string,
+  frame: unknown
+): MessageVerdict {
+  if (e.origin !== origin) {
+    return { kind: 'ignore' };
+  }
+  const msg = parseMessage(e.data);
+  if (!msg) {
+    return { kind: 'ignore' };
+  }
+  const source = eventSource(e);
+  if (source === undefined || frame === undefined) {
+    return { kind: 'blocked' };
+  }
+  if (frame === null || source !== frame) {
+    return { kind: 'ignore' };
+  }
+  return { kind: 'accept', msg };
+}
+
+/** The editor message when classifyEditorMessage accepts the event, else undefined. */
 export function acceptEditorMessage(
   e: { origin: string; source: unknown; data: unknown },
   origin: string,
-  expected: unknown,
-  pinned: unknown
+  frame: unknown
 ): EditorMessage | undefined {
-  if (e.origin !== origin) {
+  const v = classifyEditorMessage(e, origin, frame);
+  return v.kind === 'accept' ? v.msg : undefined;
+}
+
+/**
+ * The bundled editor talks to the host through a MessageChannel, not through window messages: with the Grafana
+ * frontend sandbox the host cannot read iframe.contentWindow or event.source, so it cannot verify the sender or
+ * reply to the frame. The host puts a random token in the srcdoc document (<meta name="dmap-channel">). The shim in
+ * the frame (src/editor/drawio-shim.js) sends one hello with the token and transfers a MessagePort. The host uses
+ * only that port for the protocol. Only the frame and the Grafana page can read the token.
+ */
+export const CHANNEL_META = 'dmap-channel';
+
+/** A new random 128-bit token (hex) for one editor frame. */
+export function newChannelToken(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Payload of the hello message that the shim sends. */
+export function channelHello(token: string): string {
+  return JSON.stringify({ dmapHello: token });
+}
+
+/**
+ * Fail-closed check of the hello of the bundled editor. Returns the transferred port, or undefined.
+ * The origin must be the editor origin ('null' for the opaque frame) and the token must be the token of this
+ * frame. When the host can read the frame window and the sender (no frontend sandbox), the sender must also be
+ * the frame window.
+ */
+export function acceptChannelHello<P>(
+  e: { origin: string; source: unknown; data: unknown; ports?: readonly P[] },
+  origin: string,
+  token: string,
+  frame: unknown
+): P | undefined {
+  if (e.origin !== origin || token === '' || typeof e.data !== 'string' || !e.data.startsWith('{')) {
+    return undefined;
+  }
+  let hello: unknown;
+  try {
+    hello = JSON.parse(e.data);
+  } catch {
+    return undefined;
+  }
+  if (!hello || (hello as { dmapHello?: unknown }).dmapHello !== token) {
+    return undefined;
+  }
+  if (!e.ports || e.ports.length !== 1) {
     return undefined;
   }
   const source = eventSource(e);
-  if (source === null) {
+  if (source === null || (source !== undefined && frame !== undefined && source !== frame)) {
     return undefined;
   }
-  if (
-    source !== undefined &&
-    ((expected !== undefined && source !== expected) || (pinned !== undefined && source !== pinned))
-  ) {
-    return undefined;
-  }
-  return parseMessage(e.data);
+  return e.ports[0];
 }
 
 const EXPORT: EditorAction = {

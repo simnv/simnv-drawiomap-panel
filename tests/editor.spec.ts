@@ -32,6 +32,10 @@ test('edit mode opens the bundled draw.io editor, saves, and the panel updates',
   await expect(frameEl).toBeAttached();
   await expect(frameEl).toHaveAttribute('data-dmap-editor-kind', 'bundled');
   await expect(frameEl).toHaveAttribute('srcdoc', /public\/plugins\/simnv-drawiomap-panel\/drawio\//);
+  // Opaque origin: an iframe sandbox without allow-same-origin.
+  const sandbox = (await frameEl.getAttribute('sandbox')) ?? '';
+  expect(sandbox.split(' ')).toContain('allow-scripts');
+  expect(sandbox.split(' ')).not.toContain('allow-same-origin');
   await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', {
     timeout: 60_000,
   });
@@ -39,6 +43,40 @@ test('edit mode opens the bundled draw.io editor, saves, and the panel updates',
   const frame = page.frameLocator('[data-testid="dmap-editor-frame"]');
   const canvas = frame.locator('.geDiagramContainer');
   await expect(canvas).toBeVisible({ timeout: 60_000 });
+
+  // Script in the editor frame cannot reach the Grafana page, its cookies, its storage or its API.
+  const isolation = await canvas.evaluate(async () => {
+    const probe = (f: () => unknown) => {
+      try {
+        const v = f();
+        return v === '' ? 'empty' : `readable: ${String(v).slice(0, 40)}`;
+      } catch (e) {
+        return `throws ${(e as Error).name}`;
+      }
+    };
+    // The CSP <meta> blocks /api. A file that the CSP allows still fails: Grafana sends no CORS headers.
+    let api: string;
+    try {
+      const r = await fetch('js/PreConfig.js', { credentials: 'include' });
+      api = `status ${r.status}`;
+    } catch (e) {
+      api = `throws ${(e as Error).name}`;
+    }
+    return {
+      origin: window.origin,
+      parentDocument: probe(() => window.top!.document.title),
+      cookie: probe(() => document.cookie),
+      localStorage: probe(() => window.localStorage.length),
+      fetch: api,
+    };
+  });
+  expect(isolation).toEqual({
+    origin: 'null',
+    parentDocument: 'throws SecurityError',
+    cookie: 'throws SecurityError',
+    localStorage: 'throws SecurityError',
+    fetch: 'throws TypeError',
+  });
 
   // Minimal edit: a click on the first shape in the Shapes sidebar inserts that shape into the diagram.
   await frame.locator('.geSidebar .geItem').first().click({ timeout: 10_000 });
@@ -54,4 +92,55 @@ test('edit mode opens the bundled draw.io editor, saves, and the panel updates',
   await expect(page.getByTestId('dmap-editor-modal')).toBeVisible();
   expect(external).toEqual([]);
   expect(cspViolations).toEqual([]);
+});
+
+// An image shape that uses a PNG file of dist/drawio. The opaque-origin frame cannot read that file (no CORS):
+// the host reads it for the export (src/editor/files.ts).
+const IMAGE_XML =
+  '<mxfile><diagram id="img" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+  '<mxCell id="2" value="" style="shape=image;image=img/clipart/Gear_128x128.png;" vertex="1" parent="1">' +
+  '<mxGeometry x="20" y="20" width="80" height="80" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>';
+
+test('the bundled editor embeds image files of the plugin in the saved SVG', async ({ gotoPanelEditPage, page }) => {
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '2' });
+  await panelEditPage.getCustomOptions('Diagram').expand();
+  // Apply pasted XML: the editor opens in export-only mode, exports the SVG and closes.
+  await page.getByTestId('dmap-paste-xml').fill(IMAGE_XML);
+  await page.getByRole('button', { name: 'Apply pasted XML' }).click();
+  await expect(page.getByTestId('dmap-diagram-message')).toContainText('Saved', { timeout: 60_000 });
+  await expect(page.getByTestId('dmap-editor-modal')).toHaveCount(0);
+  const href = await page
+    .getByTestId('dmap-panel')
+    .locator('image')
+    .first()
+    .evaluate((el) => el.getAttribute('href') ?? el.getAttribute('xlink:href') ?? '');
+  expect(href).toMatch(/^data:image\/png;base64,/);
+});
+
+test('an external Editor URL still opens the external draw.io', async ({ gotoPanelEditPage, page }) => {
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '2' });
+  const diagram = panelEditPage.getCustomOptions('Diagram');
+  await diagram.expand();
+  // jgraph/drawio of the dev stack (docker-compose.yaml).
+  await diagram.getTextInput('Editor URL').fill('http://localhost:8080');
+  await diagram.getTextInput('Editor URL').blur();
+  await page.getByTestId('dmap-open-editor').click();
+  const frameEl = page.getByTestId('dmap-editor-frame');
+  await expect(frameEl).toHaveAttribute('data-dmap-editor-kind', 'url');
+  await expect(frameEl).toHaveAttribute('src', /^http:\/\/localhost:8080\/\?embed=1/);
+  expect(await frameEl.getAttribute('sandbox')).toBeNull();
+  // With the Grafana frontend sandbox the host cannot verify the messages of another origin: it fails closed.
+  const sandboxed = await page.evaluate(() => {
+    const settings = (window as unknown as { grafanaBootData?: { settings?: Record<string, unknown> } }).grafanaBootData
+      ?.settings;
+    const list = settings?.enableFrontendSandboxForPlugins;
+    return Array.isArray(list) && list.includes('simnv-drawiomap-panel');
+  });
+  if (sandboxed) {
+    await expect(page.getByTestId('dmap-editor-blocked')).toBeVisible({ timeout: 60_000 });
+  } else {
+    await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', {
+      timeout: 60_000,
+    });
+  }
 });

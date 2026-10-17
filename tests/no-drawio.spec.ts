@@ -8,5 +8,7 @@ test('view mode loads no draw.io code', async ({ gotoDashboardPage, page }) => {
   await expect(panel.locator.locator('polyline.dmap-half').first()).toBeAttached();
   const offenders = urls.filter((u) => /localhost:8080|diagrams\.net|viewer-static|mxgraph|\/drawio\//i.test(u));
   expect(offenders).toEqual([]);
-  expect(await page.locator('iframe').count()).toBe(0);
+  // Only the panel counts: the Grafana frontend sandbox adds its own iframe to the page.
+  expect(await panel.locator.locator('iframe').count()).toBe(0);
+  expect(await page.getByTestId('dmap-editor-frame').count()).toBe(0);
 });

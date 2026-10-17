@@ -11,6 +11,8 @@ set -euo pipefail
 
 DRAWIO_VERSION=32.4.1
 DRAWIO_SHA256=b83663313ccdecef6581476a7eaa96750bccf1bfdc3768981eb5d95e94be7820
+# Increase when the output of this script changes for the same draw.io version: --if-missing then vendors again.
+VENDOR_REVISION=2
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cache="$root/.drawio/cache"
@@ -21,7 +23,7 @@ war="$cache/draw-$DRAWIO_VERSION.war"
 license="$cache/LICENSE-$DRAWIO_VERSION"
 full=0
 [ "${1:-}" = "--full" ] && full=1
-if [ "${1:-}" = "--if-missing" ] && [ -d "$out" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$DRAWIO_VERSION" ]; then
+if [ "${1:-}" = "--if-missing" ] && [ -d "$out" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$DRAWIO_VERSION-$VENDOR_REVISION" ]; then
   exit 0
 fi
 
@@ -99,7 +101,36 @@ cat >"$out/js/PostConfig.js" <<'EOF'
 window.ICONSEARCH_PATH = null;
 window.ICON_SERVICE_PATH = null;
 EditorUi.enableLogging = false;
+// The editor document is about:srcdoc: location has no host and no path. Relative image URLs (sidebar, image
+// shapes) must resolve against <base> (dist/drawio), not against location.
+mxUrlConverter.prototype.updateBaseUrl = function () {
+  var href = document.baseURI;
+  this.baseDomain = new URL(href).origin;
+  this.baseUrl = href.substring(0, href.lastIndexOf('/') + 1);
+};
+// js/dmap-shim.js: the host reads the image files for the export (opaque-origin frame, no CORS).
+if (window.dmapAfterApp != null) {
+  window.dmapAfterApp();
+}
 EOF
+
+# The bundled editor runs in an iframe sandbox without allow-same-origin (opaque origin). Grafana sends no CORS
+# headers, so XHR from the frame to the plugin files fails. Scripts load cross-origin without CORS. So each text file
+# that draw.io loads by XHR becomes a script file <file>.js that calls dmapVfs.put(<file>, <text>). The shim
+# js/dmap-shim.js (src/editor/drawio-shim.js, copied by webpack.config.ts) loads the script file when draw.io
+# requests <file>. DMAP_VFS_FILES in js/PreConfig.js lists the files. The text files are removed.
+vfs_files=$(cd "$out" && ls resources/dia*.txt)
+# shellcheck disable=SC2086 # one argument per file
+(cd "$out" && node -e '
+const fs = require("fs");
+const files = process.argv.slice(1);
+for (const f of files) {
+  const text = fs.readFileSync(f, "utf8");
+  fs.writeFileSync(f + ".js", "dmapVfs.put(" + JSON.stringify(f) + ", " + JSON.stringify(text) + ");\n");
+  fs.unlinkSync(f);
+}
+console.log("window.DMAP_VFS_FILES = " + JSON.stringify(files) + ";");
+' $vfs_files) >>"$out/js/PreConfig.js"
 
 # The panel shows the editor in an iframe with srcdoc (Grafana sends X-Frame-Options: deny for plugin files).
 # An about:srcdoc document has no query string and its URL is not http(s), so:
@@ -123,9 +154,11 @@ cat >"$out/NOTICE" <<EOF
 This directory contains draw.io $DRAWIO_VERSION (https://github.com/jgraph/drawio),
 Copyright JGraph Holdings Ltd and draw.io AG, licensed under the Apache License 2.0 (LICENSE).
 Source: https://github.com/jgraph/drawio/releases/download/v$DRAWIO_VERSION/draw.war (sha256 $DRAWIO_SHA256).
-simnv-drawiomap-panel changed js/PreConfig.js, js/PostConfig.js and js/bootstrap.js and removed files
-that embed mode does not use (see scripts/vendor-drawio.sh). Third-party licenses of bundled
-libraries are in the license headers of the files and in the LICENSE files of their directories.
+simnv-drawiomap-panel changed js/PreConfig.js, js/PostConfig.js and js/bootstrap.js, converted
+resources/dia*.txt to script files (resources/dia*.txt.js), and removed files that embed mode does
+not use (see scripts/vendor-drawio.sh). js/dmap-shim.js is part of simnv-drawiomap-panel.
+Third-party licenses of bundled libraries are in the license headers of the files and in the
+LICENSE files of their directories.
 draw.io is a trademark of JGraph Holdings Ltd. This plugin is not affiliated with or endorsed by JGraph.
 EOF
 cp "$license" "$out/LICENSE"
@@ -133,5 +166,5 @@ cp "$license" "$out/LICENSE"
 rm -rf "$out_final"
 mv "$tmp" "$out_final"
 # A --full tree is for measurements only: --if-missing replaces it.
-if [ "$full" -eq 0 ]; then echo "$DRAWIO_VERSION" >"$stamp"; else rm -f "$stamp"; fi
+if [ "$full" -eq 0 ]; then echo "$DRAWIO_VERSION-$VENDOR_REVISION" >"$stamp"; else rm -f "$stamp"; fi
 echo "draw.io $DRAWIO_VERSION in $out_final: $(du -sh "$out_final" | cut -f1), $(find "$out_final" -type f | wc -l | tr -d ' ') files"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildEditorSrcdoc, bundledEditorBase, editorTarget } from './target';
+import { buildEditorSrcdoc, bundledEditorBase, EDITOR_SANDBOX, editorTarget } from './target';
 
 describe('bundledEditorBase', () => {
   it('resolves the plugin public path against the document base (app_sub_url)', () => {
@@ -15,24 +15,37 @@ describe('bundledEditorBase', () => {
 });
 
 describe('buildEditorSrcdoc', () => {
-  it('sets base, parameters, a restrictive CSP and the nonce on both scripts', () => {
-    const doc = buildEditorSrcdoc('http://g/public/plugins/p/drawio/', '?embed=1&proto=json', 'abc"');
+  it('sets base, parameters, a restrictive CSP, the XHR shim and the nonce on all scripts', () => {
+    const doc = buildEditorSrcdoc('http://g/public/plugins/p/drawio/', '?embed=1&proto=json', {
+      token: 'f00d',
+      nonce: 'abc"',
+    });
     expect(doc).toContain('<base href="http://g/public/plugins/p/drawio/">');
     expect(doc).toContain('<meta name="dmap-search" content="?embed=1&amp;proto=json">');
     expect(doc).toContain('connect-src http://g/public/plugins/p/drawio/ data: blob:');
     expect(doc).toContain('default-src http://g/public/plugins/p/drawio/;');
-    expect(doc.match(/<script nonce="abc&quot;" src=/g)).toHaveLength(2);
-    expect(buildEditorSrcdoc('http://g/', '?x=1')).not.toContain('nonce=');
+    expect(doc.match(/<script nonce="abc&quot;" src=/g)).toHaveLength(3);
+    // The shim must run before bootstrap.js loads app.min.js.
+    expect(doc.indexOf('js/dmap-shim.js')).toBeLessThan(doc.indexOf('js/bootstrap.js'));
+    expect(doc).toContain('<meta name="dmap-channel" content="f00d">');
+    expect(buildEditorSrcdoc('http://g/', '?x=1', { token: 't' })).not.toContain('nonce=');
   });
 });
 
 describe('editorTarget', () => {
-  it('uses the external editor for a URL and the bundled editor for an empty value', () => {
-    const ext = editorTarget('http://localhost:8080', false, 'http://g');
+  it('uses the external editor for a URL', () => {
+    const ext = editorTarget('http://localhost:8080', false, 'f00dcafe');
     expect(ext).toMatchObject({ kind: 'url', origin: 'http://localhost:8080' });
-    const bundled = editorTarget('  ', true, 'http://g');
-    expect(bundled.kind).toBe('bundled');
-    expect(bundled.origin).toBe('http://g');
+    // The token is only for the bundled editor.
+    expect(ext.kind === 'url' && ext.src).not.toContain('f00dcafe');
+  });
+  it('uses the bundled editor in an opaque-origin frame for an empty value', () => {
+    const bundled = editorTarget('  ', true, 'f00d');
+    expect(bundled).toMatchObject({ kind: 'bundled', origin: 'null', sandbox: EDITOR_SANDBOX });
+    expect(bundled.kind === 'bundled' && bundled.base).toMatch(/\/public\/plugins\/simnv-drawiomap-panel\/drawio\/$/);
     expect(bundled.kind === 'bundled' && bundled.srcDoc).toContain('dark=1');
+    expect(bundled.kind === 'bundled' && bundled.srcDoc).toContain('content="f00d"');
+    expect(EDITOR_SANDBOX.split(' ')).not.toContain('allow-same-origin');
+    expect(EDITOR_SANDBOX.split(' ')).toContain('allow-scripts');
   });
 });

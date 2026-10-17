@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acceptChannelHello,
   acceptEditorMessage,
   buildEditorUrl,
+  channelHello,
+  classifyEditorMessage,
+  newChannelToken,
   editorOrigin,
   eventSource,
   frameWindow,
@@ -60,38 +64,96 @@ describe('frameWindow / acceptEditorMessage', () => {
     };
     expect(frameWindow(sandboxed as never)).toBeUndefined();
   });
-  it('accepts an editor event from the editor origin when the frame window is unknown (sandbox)', () => {
-    expect(acceptEditorMessage(ev(), ORIGIN, undefined, undefined)).toEqual({ event: 'init' });
-  });
-  it('rejects a wrong origin, a missing source and a payload without a JSON event', () => {
-    expect(acceptEditorMessage(ev({ origin: 'https://evil.example' }), ORIGIN, undefined, undefined)).toBeUndefined();
-    expect(acceptEditorMessage(ev({ source: null }), ORIGIN, undefined, undefined)).toBeUndefined();
-    expect(acceptEditorMessage(ev({ data: 'GrafanaAppInit' }), ORIGIN, undefined, undefined)).toBeUndefined();
-    expect(acceptEditorMessage(ev({ data: { event: 'init' } }), ORIGIN, undefined, undefined)).toBeUndefined();
-  });
-  it('compares the source with the frame window when the window is readable', () => {
-    expect(acceptEditorMessage(ev(), ORIGIN, editor, undefined)).toEqual({ event: 'init' });
-    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, editor, undefined)).toBeUndefined();
-    expect(acceptEditorMessage(ev(), ORIGIN, null, undefined)).toBeUndefined();
-  });
-  it('accepts by origin and shape when the sandbox blocks event.source, and reports the source as unknown', () => {
-    // near-membrane throws a SecurityError when it wraps a cross-origin window.
-    const blocked = (origin = ORIGIN) => ({
-      origin,
-      data: '{"event":"configure"}',
+  it('reports the sender, or undefined when near-membrane throws on a cross-origin window', () => {
+    const blocked = {
+      origin: ORIGIN,
       get source(): unknown {
         throw new Error('SecurityError: Blocked a frame from accessing a cross-origin frame.');
       },
-    });
-    expect(eventSource(blocked())).toBeUndefined();
+    };
+    expect(eventSource(blocked)).toBeUndefined();
     expect(eventSource(ev())).toBe(editor);
     expect(eventSource(ev({ source: null }))).toBeNull();
-    expect(acceptEditorMessage(blocked(), ORIGIN, undefined, undefined)).toEqual({ event: 'configure' });
-    expect(acceptEditorMessage(blocked('https://evil.example'), ORIGIN, undefined, undefined)).toBeUndefined();
   });
-  it('accepts later messages only from the source of the first accepted message', () => {
-    expect(acceptEditorMessage(ev(), ORIGIN, undefined, editor)).toEqual({ event: 'init' });
-    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, undefined, editor)).toBeUndefined();
+  it('accepts an editor event only from the frame window and the editor origin', () => {
+    expect(classifyEditorMessage(ev(), ORIGIN, editor)).toEqual({ kind: 'accept', msg: { event: 'init' } });
+    expect(acceptEditorMessage(ev(), ORIGIN, editor)).toEqual({ event: 'init' });
+  });
+  it('rejects a wrong origin, another sender and a payload without a JSON event', () => {
+    expect(acceptEditorMessage(ev({ origin: 'https://evil.example' }), ORIGIN, editor)).toBeUndefined();
+    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, editor)).toBeUndefined();
+    expect(acceptEditorMessage(ev({ source: null }), ORIGIN, editor)).toBeUndefined();
+    expect(acceptEditorMessage(ev({ data: 'GrafanaAppInit' }), ORIGIN, editor)).toBeUndefined();
+    expect(acceptEditorMessage(ev({ data: { event: 'init' } }), ORIGIN, editor)).toBeUndefined();
+  });
+  it('fails closed when the frame window or the sender is not known: no first-sender pinning', () => {
+    // The frame is not mounted or was removed.
+    expect(acceptEditorMessage(ev(), ORIGIN, null)).toBeUndefined();
+    // The Grafana frontend sandbox forbids iframe.contentWindow.
+    expect(classifyEditorMessage(ev(), ORIGIN, undefined)).toEqual({ kind: 'blocked' });
+    // near-membrane throws on event.source.
+    const blockedSource = {
+      origin: ORIGIN,
+      data: '{"event":"configure"}',
+      get source(): unknown {
+        throw new Error('SecurityError');
+      },
+    };
+    expect(classifyEditorMessage(blockedSource, ORIGIN, editor)).toEqual({ kind: 'blocked' });
+    // Messages that are not editor events, or from another origin, never report a blocked editor.
+    expect(classifyEditorMessage(ev({ data: 'x' }), ORIGIN, undefined)).toEqual({ kind: 'ignore' });
+    expect(classifyEditorMessage(ev({ origin: 'https://evil.example' }), ORIGIN, undefined)).toEqual({
+      kind: 'ignore',
+    });
+    // A second message from the same sender is still compared with the frame window.
+    expect(acceptEditorMessage(ev({ source: other }), ORIGIN, editor)).toBeUndefined();
+  });
+});
+
+describe('channel of the bundled editor (token + MessagePort)', () => {
+  const TOKEN = 'a'.repeat(32);
+  const port = { name: 'port' };
+  const frame = { name: 'editor frame' };
+  const hello = (over: Partial<{ origin: string; source: unknown; data: unknown; ports: unknown[] }> = {}) => ({
+    origin: 'null',
+    source: frame,
+    data: channelHello(TOKEN),
+    ports: [port],
+    ...over,
+  });
+  const throwing = (over: Partial<{ origin: string; data: unknown; ports: unknown[] }> = {}) => ({
+    origin: 'null',
+    data: channelHello(TOKEN),
+    ports: [port],
+    ...over,
+    get source(): unknown {
+      throw new Error('SecurityError: Blocked a frame from accessing a cross-origin frame.');
+    },
+  });
+
+  it('makes a new random 128-bit token for each editor', () => {
+    const a = newChannelToken();
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+    expect(newChannelToken()).not.toBe(a);
+  });
+  it('accepts the port of a hello with the token, the editor origin and the frame window as sender', () => {
+    expect(acceptChannelHello(hello(), 'null', TOKEN, frame)).toBe(port);
+    expect(acceptChannelHello(hello({ origin: 'http://g' }), 'http://g', TOKEN, frame)).toBe(port);
+  });
+  it('accepts the port by token and origin when the frontend sandbox hides the frame window and the sender', () => {
+    expect(acceptChannelHello(throwing(), 'null', TOKEN, undefined)).toBe(port);
+  });
+  it('rejects a wrong token, a wrong origin, a missing port, another sender and other payloads', () => {
+    expect(acceptChannelHello(hello({ data: channelHello('b'.repeat(32)) }), 'null', TOKEN, frame)).toBeUndefined();
+    expect(acceptChannelHello(hello({ data: channelHello('') }), 'null', '', frame)).toBeUndefined();
+    expect(acceptChannelHello(hello({ origin: 'http://g' }), 'null', TOKEN, frame)).toBeUndefined();
+    expect(acceptChannelHello(throwing({ origin: 'https://evil.example' }), 'null', TOKEN, undefined)).toBeUndefined();
+    expect(acceptChannelHello(hello({ ports: [] }), 'null', TOKEN, frame)).toBeUndefined();
+    expect(acceptChannelHello(hello({ ports: [port, port] }), 'null', TOKEN, frame)).toBeUndefined();
+    expect(acceptChannelHello(hello({ source: { name: 'other' } }), 'null', TOKEN, frame)).toBeUndefined();
+    expect(acceptChannelHello(hello({ data: '{"event":"init"}' }), 'null', TOKEN, frame)).toBeUndefined();
+    expect(acceptChannelHello(hello({ data: { dmapHello: TOKEN } }), 'null', TOKEN, frame)).toBeUndefined();
+    expect(acceptChannelHello(hello({ data: 'not json' }), 'null', TOKEN, frame)).toBeUndefined();
   });
 });
 
