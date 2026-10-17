@@ -12,11 +12,25 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
   await expect(half('pg-link~lte:static->rtr-a:lte', 'a2b')).toHaveAttribute('data-dmap-status', 'nodata');
   await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-step', '0');
   await expect(panel.locator.locator('[data-cell-id="pg-node~rtr-a"]')).toHaveAttribute('data-dmap-step', '1');
-  await expect(panel.locator.locator('polyline.dmap-spark[data-dmap-cell="pg-node~rtr-a"]')).toBeAttached();
-  const label = panel.locator.locator(
-    'g.dmap-label[data-dmap-cell="pg-link~wan1:pppoe->rtr-a:wan1"][data-dmap-half="a2b"] text'
-  );
-  await expect(label).toHaveText(/41(\.\d)? Mb\/s · 41%/);
+  // The values and sparklines show in the hover card only.
+  await expect(panel.locator.locator('.dmap-overlay text, .dmap-label, .dmap-spark')).toHaveCount(0);
+});
+
+test('node state colours the node icon, not the whole node', async ({ gotoDashboardPage }) => {
+  const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
+  const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
+  const node = panel.locator.locator('[data-cell-id="pg-node~rtr-a"]');
+  await expect(node).toHaveAttribute('data-dmap-target', 'icon');
+  const colours = await node.evaluate((el) => {
+    const svg = el.ownerSVGElement!;
+    const icon = svg.querySelector('[data-cell-id="pg-icon~rtr-a"] ellipse') as SVGElement;
+    const rect = el.querySelector('rect') as SVGElement;
+    return { icon: icon.style.fill, node: rect.style.fill };
+  });
+  // green from the rule thresholds; the node keeps its draw.io fill
+  expect(colours.icon).toMatch(/^(rgb\(115, 191, 105\)|#73bf69)$/i);
+  expect(colours.node).toContain('light-dark');
+  await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-target', 'icon');
 });
 
 test('curved edge halves follow the real path geometry (getPointAtLength + CTM)', async ({ gotoDashboardPage }) => {

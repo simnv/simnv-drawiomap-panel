@@ -28,3 +28,17 @@ Every result below is real output from this run.
   - Work-around: remove `simnv-drawiomap-panel` from `enable_frontend_sandbox_for_plugins`. A draw.io server on the Grafana origin (reverse proxy) can make `event.source` readable. This is not tested.
   - Manual check: `docker compose run --rm -d --name dmap-sandbox -p 127.0.0.1:3014:3000 -e GF_SECURITY_ENABLE_FRONTEND_SANDBOX_FOR_PLUGINS=simnv-drawiomap-panel -e GF_FEATURE_TOGGLES_ENABLE=pluginsFrontendSandbox grafana13`, then open the editor at `http://localhost:3014`.
   - `tests/no-drawio.spec.ts` fails in the sandbox on its iframe count (1 iframe found, not inspected). The sandbox itself can add an iframe. The check for requests to the editor origin passes.
+
+## Hover cards (branch feat-hover-cards, 2026-10-17)
+
+The canvas shows colours only: no value labels, no sparklines. The node state colours the node icon. A hover card shows the values and sparklines; a click or a tap pins it.
+
+| Check               | Command                                                 | Result                                                                  |
+| ------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| unit tests          | `npm test`                                              | PASS. 25 files, 222 tests.                                              |
+| typecheck, lint     | `npm run typecheck && npm run lint`                     | PASS. 0 errors (2 old warnings for `Select`).                           |
+| build, bundle check | `npm run build && npm run check:bundle`                 | PASS. `bundle OK`.                                                      |
+| e2e 12.4.13         | `GRAFANA_URL=http://localhost:3212 npx playwright test` | PASS. `12 passed`. A separate compose project (`-p hover`, ports +200). |
+| e2e 13.2.4          | `GRAFANA_URL=http://localhost:3213 npx playwright test` | PASS. `12 passed`.                                                      |
+
+The e2e tests cover: hover shows the card, a click pins it (links, Esc, the pin moves to another cell, ✕), a click on a sparkline opens the row URL in a new tab, and a tap on a phone (`devices['iPhone 13']` in Chromium) pins the card as a bottom sheet. Screenshots: `docs/screenshots/card-hover-desktop.png`, `card-pinned-desktop.png`, `card-mobile-sheet.png` (set `DMAP_SCREENSHOTS=docs/screenshots` to write them again).
