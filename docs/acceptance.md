@@ -5,7 +5,7 @@ draw.io 32.4.1. Stack: `docker compose` from this repository, started with
 `docker compose up -d --force-recreate --wait` and checked with `scripts/wait-stack.sh`.
 
 Every result below is real output from this run. `npm run ci:local` passed end to end (exit 0): it runs the same steps as CI
-(`.forgejo/workflows/ci.yml`).
+(`.woodpecker/build.yaml`, `.woodpecker/e2e.yaml`).
 
 ## Spec checks (spec section 6, with the superseded decisions applied)
 

@@ -331,14 +331,16 @@ The acceptance results are in `docs/acceptance.md`. The decision records are in 
 
 ### CI
 
-`.forgejo/workflows/ci.yml` runs on Forgejo Actions:
+Woodpecker CI (v3, docker backend) runs the workflows in `.woodpecker/` on push, pull request and manual events:
 
-1. `build-test`: `npm ci`, typecheck, lint, unit tests, build, `check:bundle`, `package`. It caches `.drawio/cache` (the draw.io release file) with a key from `DRAWIO_VERSION` and `DRAWIO_SHA256` in `scripts/vendor-drawio.sh`. It uploads `dist/` and the plugin zip as artifacts.
-2. `e2e`: one job for each Grafana version (12.4.13, 13.2.4). It starts the compose stack with `docker compose up -d --force-recreate --wait`, runs `scripts/wait-stack.sh`, and then Playwright. When a test fails, it uploads the Playwright report.
+1. `build.yaml`: `npm ci`, typecheck, lint, unit tests, build, `check:bundle`, `package`. The last step shows the plugin zip and its sha256. There is no cache: each run downloads the pinned draw.io release (about 46 MB from github.com) and `scripts/vendor-drawio.sh` checks its sha256.
+2. `e2e.yaml` (after `build`): one workflow for each Grafana version of the matrix `GRAFANA` (12.4.13, 13.2.4, the same images as `docker-compose.yaml`). The step `build` builds the plugin and runs `scripts/ci-grafana-files.sh`: it copies `dist/` and `provisioning/` to `ci/` in the workspace. The detached steps `victoriametrics`, `metrics-gen` and `grafana` start the stack. The step name is the hostname. Grafana reads the plugin and the provisioning from the workspace (`GF_PATHS_PLUGINS`, `GF_PATHS_PROVISIONING`). The step `wait` runs `scripts/wait-stack.sh` with `VM_URL=http://victoriametrics:8428` and `GRAFANA_URL=http://grafana:3000`. The step `e2e` runs Playwright in `mcr.microsoft.com/playwright`, with the same version as `@playwright/test`.
 
-The jobs use the runner label in the Actions variable `CI_RUNNER` (default `docker`). The e2e job needs the docker CLI with compose v2 in the job, bind mounts of the workspace, and the published ports on `localhost` (for example, a runner in host mode). The actions come from the `https://data.forgejo.org/actions/...` mirrors, so the jobs do not need github.com.
+The steps do not use the docker socket, volumes, privileged mode or secrets. The repository does not have to be trusted. The steps need access to registry.npmjs.org, github.com and raw.githubusercontent.com (draw.io release and its LICENSE).
 
-`npm run ci:local` runs the same steps on your machine, without the caches and the uploads. `SKIP_INSTALL=1` keeps `node_modules`. `SKIP_E2E=1` stops after the package step. The e2e steps stop the compose stack at the end (`docker compose down -v`).
+`npm run ci:woodpecker` runs both workflows with `woodpecker-cli exec` (image `woodpeckerci/woodpecker-cli:v3`) on the local docker. It copies the files of the working tree (without ignored files) to `~/.cache/wp-ci/repo`, so `node_modules` and `dist/` of your checkout do not change. `npm run ci:woodpecker -- .woodpecker/build.yaml` runs one workflow only. `e2e.yaml` runs only together with `build.yaml`: `woodpecker-cli exec` removes a workflow when its `depends_on` workflow is not in the same run.
+
+`npm run ci:local` runs the same steps without Woodpecker. Its e2e steps use the compose stack. `SKIP_INSTALL=1` keeps `node_modules`. `SKIP_E2E=1` stops after the package step. The e2e steps stop the compose stack at the end (`docker compose down -v`).
 
 ## Known limits (out of scope for the PoC)
 

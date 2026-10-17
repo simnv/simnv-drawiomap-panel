@@ -21,6 +21,7 @@
     "stack:smoke": "./scripts/stack-smoke.sh",
     "stack:wait": "./scripts/wait-stack.sh",
     "ci:local": "./scripts/ci-local.sh",
+    "ci:woodpecker": "./scripts/ci-woodpecker.sh",
     "sign": "sign-plugin"
   },
   "author": "Simnv",
