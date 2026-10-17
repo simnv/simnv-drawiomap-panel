@@ -99,7 +99,7 @@ export function endpointScope(e?: Endpoint): Record<string, string> | undefined 
   return { node: e.node, port: e.port ?? '', ordinal: String(e.ordinal), raw: e.raw };
 }
 
-/** Cells that draw the icon of a node: a pg-kind="node-icon" cell with pg-of, else pg-iconTile~<key> and pg-icon~<key>. */
+/** pg-kind="node-icon" cells by the pg-id of their node (pg-of), and the set of all cell ids. */
 function iconCells(cells: CellMeta[]): { tagged: Map<string, string[]>; byId: Set<string> } {
   const tagged = new Map<string, string[]>();
   for (const c of cells) {
@@ -112,8 +112,9 @@ function iconCells(cells: CellMeta[]): { tagged: Map<string, string[]>; byId: Se
 }
 
 /**
- * Node key → cell id of its icon. A cell with pg-kind="node-icon" and pg-of=<node pg-id> wins.
- * Older exports have no tag: then the icon tile (the background of a glyph) is used, else the icon cell.
+ * Node key → cell id of the icon shape that takes the state colour. The icon is the cell with
+ * pg-kind="node-icon" and pg-of=<node pg-id> (older exports: the cell pg-icon~<pg-id>). Some icons are
+ * a white glyph on a tile (pg-iconTile~<pg-id>). Then the tile takes the colour.
  */
 export function nodeIcons(cells: CellMeta[]): Map<string, string> {
   const { tagged, byId } = iconCells(cells);
@@ -122,7 +123,8 @@ export function nodeIcons(cells: CellMeta[]): Map<string, string> {
     if (c.kind !== 'node' || out.has(c.key)) {
       continue;
     }
-    const id = tagged.get(c.key)?.[0] ?? [`pg-iconTile~${c.key}`, `pg-icon~${c.key}`].find((i) => byId.has(i));
+    const tile = `pg-iconTile~${c.key}`;
+    const id = byId.has(tile) ? tile : (tagged.get(c.key)?.[0] ?? [`pg-icon~${c.key}`].find((i) => byId.has(i)));
     if (id) {
       out.set(c.key, id);
     }
@@ -130,15 +132,24 @@ export function nodeIcons(cells: CellMeta[]): Map<string, string> {
   return out;
 }
 
-/** Icon cell id → node cell id, for every cell that draws a node icon. A hover on an icon is a hover on its node. */
-export function iconOwners(cells: CellMeta[]): Map<string, string> {
+/**
+ * Cell id → node cell id, for the cells that draw a part of a node outside its group: the icon, the icon tile
+ * and the description. A hover on such a cell is a hover on its node.
+ */
+export function nodeParts(cells: CellMeta[]): Map<string, string> {
   const { tagged, byId } = iconCells(cells);
   const out = new Map<string, string>();
   for (const c of cells) {
     if (c.kind !== 'node') {
       continue;
     }
-    for (const id of [...(tagged.get(c.key) ?? []), `pg-iconTile~${c.key}`, `pg-icon~${c.key}`]) {
+    const parts = [
+      ...(tagged.get(c.key) ?? []),
+      `pg-iconTile~${c.key}`,
+      `pg-icon~${c.key}`,
+      `pg-nodeDescription~${c.key}`,
+    ];
+    for (const id of parts) {
       if (byId.has(id) && !out.has(id)) {
         out.set(id, c.id);
       }

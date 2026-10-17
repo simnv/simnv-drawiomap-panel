@@ -1,4 +1,4 @@
-import { attachLinkLabels, cellMetaFromAttrs, iconOwners, nodeIcons } from '../adapter/portograph';
+import { attachLinkLabels, cellMetaFromAttrs, nodeIcons, nodeParts } from '../adapter/portograph';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
 
 const SHAPE_TAGS = new Set(['rect', 'path', 'ellipse', 'circle', 'polygon', 'image']);
@@ -61,7 +61,14 @@ function labelOf(group: Element): { el?: Element; text: string } {
       children.every((el) => el.localName === 'text' || el.localName === 'rect');
     const el = group ? parent! : text;
     const own = group ? lines : [text];
-    return { el, text: own.map((l) => l.textContent ?? '').join(' ').replace(/\s+/g, ' ').trim() };
+    return {
+      el,
+      text: own
+        .map((l) => l.textContent ?? '')
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    };
   }
   const fo = ownDescendants(group, 'foreignObject')[0];
   if (fo) {
@@ -106,7 +113,7 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
   const metas = cellMetas(index);
   attachLinkLabels(metas);
   const icons = nodeIcons(metas);
-  const owners = iconOwners(metas);
+  const owners = nodeParts(metas);
   for (const entry of index.values()) {
     if (entry.meta.kind === 'node') {
       entry.iconId = icons.get(entry.meta.key);

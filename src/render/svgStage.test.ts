@@ -114,6 +114,7 @@ describe('node icons on l3-routing', () => {
   it('marks the icon cells with their node', () => {
     expect(index.get('pg-icon~lte')!.ownerId).toBe('pg-node~lte');
     expect(index.get('pg-iconTile~lte')!.ownerId).toBe('pg-node~lte');
+    expect(index.get('pg-nodeDescription~rtr-a')!.ownerId).toBe('pg-node~rtr-a');
     expect(index.get('pg-node~lte')!.ownerId).toBeUndefined();
   });
   it('keeps the inline stroke width of a vertex shape for the reset', () => {

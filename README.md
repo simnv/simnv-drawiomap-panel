@@ -128,7 +128,7 @@ A series selector has `refId` (the query), `name` and `match` (a map of label na
 | `text`   | `true` writes the value into the node label (see `label`).                                                                                                                      |
 | `card`   | A list of card rows. Without it, the card has one row for `series`.                                                                                                             |
 
-The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-iconTile~<pg-id>` (the tile behind a glyph), else `pg-icon~<pg-id>`.
+The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-icon~<pg-id>`. Some icons are a white glyph on a tile (`pg-iconTile~<pg-id>`). Then the tile takes the colour. A hover on the icon or on the node description opens the card of the node.
 
 The old keys `fill: true` and `stroke: true` still work: they are the same as `target: shape` and `target: stroke`. The panel ignores the removed key `shape.sparkline` and shows a warning.
 

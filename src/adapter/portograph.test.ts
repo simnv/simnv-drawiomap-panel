@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachLinkLabels, cellMetaFromAttrs, iconOwners, nodeIcons, parseEndpoint } from './portograph';
+import { attachLinkLabels, cellMetaFromAttrs, nodeIcons, nodeParts, parseEndpoint } from './portograph';
 
 describe('parseEndpoint', () => {
   it('parses node, node:port and node:port#n', () => {
@@ -100,6 +100,14 @@ describe('nodeIcons', () => {
     ];
     expect(nodeIcons(cells).get('a')).toBe('custom-icon');
   });
+  it('a tile behind the tagged glyph takes the colour', () => {
+    const cells = [
+      node('pg-node~a', 'a'),
+      bare('pg-iconTile~a'),
+      bare('pg-icon~a', { 'pg-kind': 'node-icon', 'pg-of': 'a' }),
+    ];
+    expect(nodeIcons(cells).get('a')).toBe('pg-iconTile~a');
+  });
   it('falls back to the icon tile, then to the icon cell id', () => {
     const cells = [
       node('pg-node~a', 'a'),
@@ -117,19 +125,21 @@ describe('nodeIcons', () => {
   });
 });
 
-describe('iconOwners', () => {
-  it('maps every icon cell of a node to the node cell', () => {
+describe('nodeParts', () => {
+  it('maps the icon, tile and description cells of a node to the node cell', () => {
     const cells = [
       cellMetaFromAttrs('pg-node~a', { 'pg-kind': 'node', 'pg-id': 'a' }, false),
       cellMetaFromAttrs('pg-icon~a', {}, false),
       cellMetaFromAttrs('pg-iconTile~a', {}, false),
       cellMetaFromAttrs('t', { 'pg-kind': 'node-icon', 'pg-of': 'a' }, false),
+      cellMetaFromAttrs('pg-nodeDescription~a', {}, false),
       cellMetaFromAttrs('pg-icon~zz', {}, false),
     ];
-    expect(Object.fromEntries(iconOwners(cells))).toEqual({
+    expect(Object.fromEntries(nodeParts(cells))).toEqual({
       t: 'pg-node~a',
       'pg-iconTile~a': 'pg-node~a',
       'pg-icon~a': 'pg-node~a',
+      'pg-nodeDescription~a': 'pg-node~a',
     });
   });
 });

@@ -2,7 +2,7 @@ import type { CellIndex, CellPatch, PatchMap } from '../types';
 
 /**
  * The nearest patched cell at or above `target`. Overlay elements point at their cell with data-dmap-cell.
- * With the index, an icon cell resolves to its node.
+ * With the index, a node part (icon, description) resolves to its node.
  */
 export function patchAt(
   target: EventTarget | null,
