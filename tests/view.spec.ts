@@ -8,10 +8,10 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
   await expect(panel.locator.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
   const half = (cell: string, dir: string) =>
     panel.locator.locator(`polyline.dmap-half[data-dmap-half="${dir}"][data-dmap-cell="${cell}"]`);
-  await expect(half('pg-link~wan1:pppoe->rtr-a:wan1', 'a2b')).toHaveAttribute('data-dmap-step', '0');
-  await expect(half('pg-link~wan1:pppoe->rtr-a:wan1', 'b2a')).toHaveAttribute('data-dmap-status', 'ok');
-  await expect(half('pg-link~wan2:dhcp->rtr-a:wan2', 'a2b')).toHaveAttribute('data-dmap-step', '2');
-  await expect(half('pg-link~lte:static->rtr-a:lte', 'a2b')).toHaveAttribute('data-dmap-status', 'nodata');
+  await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'a2b')).toHaveAttribute('data-dmap-step', '0');
+  await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'b2a')).toHaveAttribute('data-dmap-status', 'ok');
+  await expect(half('pg-link~radio:dhcp->rtr-a:wan2', 'a2b')).toHaveAttribute('data-dmap-step', '2');
+  await expect(half('pg-link~lte:static->rtr-a:wan3', 'a2b')).toHaveAttribute('data-dmap-status', 'nodata');
   await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-step', '0');
   await expect(panel.locator.locator('[data-cell-id="pg-node~rtr-a"]')).toHaveAttribute('data-dmap-step', '1');
   // The values and sparklines show in the hover card only.
@@ -21,9 +21,9 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
 test('link labels stay above the coloured link halves', async ({ gotoDashboardPage }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
-  const link = 'pg-link~wan1:pppoe->rtr-a:wan1';
+  const link = 'pg-link~isp-a:pppoe->rtr-a:wan1';
   await expect(panel.locator.locator(`polyline.dmap-half[data-dmap-cell="${link}"]`)).toHaveCount(2);
-  const label = panel.locator.locator(`[data-cell-id="pg-linkLabel~wan1:pppoe->rtr-a:wan1"] text`);
+  const label = panel.locator.locator(`[data-cell-id="pg-linkLabel~isp-a:pppoe->rtr-a:wan1"] text`);
   const hit = await label.evaluate((el) => {
     const r = el.getBoundingClientRect();
     const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);

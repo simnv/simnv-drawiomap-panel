@@ -13,7 +13,7 @@ timeout=${WAIT_TIMEOUT:-180}
 plugin=simnv-drawiomap-panel
 [ $# -gt 0 ] || set -- 3012 3013
 deadline=$((SECONDS + timeout))
-series=${DEMO_SERIES:-'node_network_transmit_bytes_total{job="node-wan1",device="pppoe"}'}
+series=${DEMO_SERIES:-'node_network_transmit_bytes_total{job="node-isp-a",device="pppoe"}'}
 
 # wait_until <description> <command...>: runs the command every 2 s until it succeeds or the deadline passes.
 wait_until() {

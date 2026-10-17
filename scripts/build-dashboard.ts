@@ -1,6 +1,6 @@
 /**
- * Builds provisioning/dashboards/drawiomap-demo.json from the template, the demo rules
- * and the l3-routing fixture. Run: npm run build:dashboard
+ * Builds provisioning/dashboards/demo.json from the template, the demo rules
+ * and the demo-l3 fixture. Run: npm run build:dashboard
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,8 +19,8 @@ Object.assign(globalThis, {
 });
 
 const PANELS = [
-  { id: 1, svg: 'fixtures/svg/l3-routing.svg', xml: 'fixtures/portograph/l3-routing.drawio', rules: 'demo/rules.yaml' },
-  { id: 2, svg: 'fixtures/svg/hand-drawn.svg', xml: 'fixtures/hand/hand-drawn.drawio', rules: 'demo/rules-hand.yaml' },
+  { id: 1, svg: 'fixtures/demo/svg/demo-l3.svg', xml: 'fixtures/demo/demo-l3.drawio', rules: 'demo/rules.yaml' },
+  { id: 2, svg: 'fixtures/demo/svg/hand-drawn.svg', xml: 'fixtures/hand/hand-drawn.drawio', rules: 'demo/rules-hand.yaml' },
 ];
 
 async function main() {
@@ -42,7 +42,7 @@ async function main() {
     panel.options.diagram = { xml, svg: clean.svg, hash: fnv1a(clean.svg + xml), updatedAt: '2026-10-17T00:00:00.000Z' };
     console.log(`panel ${spec.id}: svg ${Math.round(clean.svg.length / 1024)} KB (from ${Math.round(svgRaw.length / 1024)} KB), ${rules.rules.length} rules`);
   }
-  const out = resolve(root, 'provisioning/dashboards/drawiomap-demo.json');
+  const out = resolve(root, 'provisioning/dashboards/demo.json');
   writeFileSync(out, JSON.stringify(dashboard, null, 2) + '\n');
   console.log(out);
 }

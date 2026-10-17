@@ -1,4 +1,4 @@
-# Demo rules for the l3-routing fixture. Series come from stack/metrics-gen/gen.py.
+# Demo rules for the demo-l3 fixture. Series come from stack/metrics-gen/gen.py.
 # The canvas shows colours only. Values and sparklines show in the hover card.
 # The colours come from the field config of the panel (Color scheme and Thresholds, also by override).
 # Capacity: LAN links from a port speed series, WAN links from the field Max (override of query W),
@@ -17,12 +17,12 @@
   link:
     capacity: { refId: S, match: { job: "node-${to.node}", device: "${to.port}" } }
 - name: wan uplinks
-  select: { kind: link, attrs: { pg-to: "/^(dm|hm)-wrt:(wan1|wan2|lte|pppoe)$/" } }
+  select: { kind: link, attrs: { pg-to: "/^rtr-(a|b):(wan1|wan2|wan3|pppoe)$/" } }
   link:
     a2b: { refId: W, match: { job: "node-${from.node}", device: "${from.port}" } }
     b2a: { refId: W, match: { job: "node-${to.node}", device: "${to.port}" } }
 - name: tunnels 100M
-  select: { kind: link, attrs: { pg-to: "/:(ts0|in-3088|in-3089)$/" } }
+  select: { kind: link, attrs: { pg-to: "/:(ts0|tun-in|chain-in)$/" } }
   link: { capacity: 100000000 }
 - name: node up
   select: { kind: node }

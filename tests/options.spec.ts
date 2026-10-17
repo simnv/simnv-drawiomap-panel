@@ -2,8 +2,8 @@ import { expect, test } from '@grafana/plugin-e2e';
 
 const PANE_WIDTH = 300;
 
-// Set DMAP_SCREENSHOTS=1 to write docs/screenshots/options-diagram.png.
-const SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'docs/screenshots/options-diagram.png' : undefined;
+// Set DMAP_SCREENSHOTS=1 to write docs/images/options-diagram.png.
+const SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'docs/images/options-diagram.png' : undefined;
 
 test('the Diagram option buttons stay inside the options pane at the narrowest width', async ({
   gotoPanelEditPage,

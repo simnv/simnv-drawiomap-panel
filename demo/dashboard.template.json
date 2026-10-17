@@ -16,8 +16,8 @@
       "gridPos": { "x": 0, "y": 0, "w": 24, "h": 18 },
       "datasource": { "type": "prometheus", "uid": "victoriametrics" },
       "targets": [
-        { "refId": "A", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|wan1|wan2|lte\"}[1m]) * 8", "legendFormat": "{{job}} {{device}}" },
-        { "refId": "W", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|wan1|wan2|lte\"}[1m]) * 8", "legendFormat": "wan {{job}} {{device}}" },
+        { "refId": "A", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "{{job}} {{device}}" },
+        { "refId": "W", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan {{job}} {{device}}" },
         { "refId": "S", "expr": "node_network_speed_bytes", "legendFormat": "speed {{job}} {{device}}" },
         { "refId": "C", "expr": "up", "legendFormat": "{{job}}" },
         { "refId": "D", "expr": "node_load1", "legendFormat": "{{job}}" },
