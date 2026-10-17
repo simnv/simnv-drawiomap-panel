@@ -6,7 +6,7 @@ import { CardModel, CardRowModel, sparkPoints } from './cardModel';
 
 /** Panels narrower than this show the card as a bottom sheet. */
 export const SHEET_BELOW = 480;
-const W = 240;
+const W = 280;
 const GAP = 14;
 const EDGE = 4;
 const SPARK_W = 200;
