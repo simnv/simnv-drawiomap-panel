@@ -54,11 +54,6 @@ export function zoomAt(vb: ViewBox, factor: number, cx: number, cy: number): Vie
   return { x: cx - (cx - vb.x) * factor, y: cy - (cy - vb.y) * factor, w, h };
 }
 
-/** Move the view by (dx, dy) in viewBox units: dragging right shows content further left. */
-export function pan(vb: ViewBox, dx: number, dy: number): ViewBox {
-  return { ...vb, x: vb.x - dx, y: vb.y - dy };
-}
-
 export function applyLayout(root: SVGSVGElement, layout: Layout): void {
   const { x, y, w, h } = layout.viewBox;
   root.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
@@ -67,17 +62,73 @@ export function applyLayout(root: SVGSVGElement, layout: Layout): void {
   root.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 }
 
-/** Client pixel to viewBox units. Uses getScreenCTM when the browser provides it. */
-export function clientToViewBox(root: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } {
-  const ctm = typeof root.getScreenCTM === 'function' ? root.getScreenCTM() : null;
-  if (ctm) {
-    const inv = ctm.inverse();
-    return { x: inv.a * clientX + inv.c * clientY + inv.e, y: inv.b * clientX + inv.d * clientY + inv.f };
+/** The live view scale stays in this range, relative to the base (configured) view. */
+export const MIN_SCALE = 0.2;
+export const MAX_SCALE = 10;
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface Rect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+
+/** The zoomAt factor that keeps the result inside MIN_SCALE..MAX_SCALE of the base. */
+export function clampFactor(vb: ViewBox, factor: number, base: ViewBox): number {
+  const scale = clampScale(base.w / (vb.w * factor));
+  return base.w / (vb.w * scale);
+}
+
+/** No live view, or a live view that is the base view. */
+export function isDefaultView(view: ViewBox | null, base: ViewBox): boolean {
+  if (!view) {
+    return true;
   }
-  const r = root.getBoundingClientRect();
-  const vb = readViewBox(root);
-  return {
-    x: vb.x + ((clientX - r.left) / (r.width || 1)) * vb.w,
-    y: vb.y + ((clientY - r.top) / (r.height || 1)) * vb.h,
-  };
+  const eps = 1e-6 * Math.max(base.w, base.h);
+  return (
+    Math.abs(view.x - base.x) <= eps &&
+    Math.abs(view.y - base.y) <= eps &&
+    Math.abs(view.w - base.w) <= eps &&
+    Math.abs(view.h - base.h) <= eps
+  );
+}
+
+/** Pixels per viewBox unit and the letterbox offset for preserveAspectRatio="xMidYMid meet". */
+function meet(vb: { w: number; h: number }, rect: Rect) {
+  const k = Math.min(rect.width / vb.w, rect.height / vb.h) || 1;
+  return { k, ox: (rect.width - vb.w * k) / 2, oy: (rect.height - vb.h * k) / 2 };
+}
+
+/** Client pixel to viewBox units for a viewBox shown in `rect`. Pure: it does not read the DOM. */
+export function clientToView(vb: ViewBox, rect: Rect, cx: number, cy: number): Point {
+  const { k, ox, oy } = meet(vb, rect);
+  return { x: vb.x + (cx - rect.left - ox) / k, y: vb.y + (cy - rect.top - oy) / k };
+}
+
+/**
+ * The view for a pinch or a drag. `start` is the view when the gesture started, `anchor` is the content
+ * point (viewBox units) under the fingers at the start, `mid` is the client position of the fingers now
+ * and `ratio` is the finger distance now divided by the distance at the start (1 for one finger).
+ * The anchor stays under `mid`. The scale stays inside MIN_SCALE..MAX_SCALE of `base`.
+ */
+export function pinchView(
+  start: ViewBox,
+  base: ViewBox,
+  rect: Rect,
+  anchor: Point,
+  mid: Point,
+  ratio: number
+): ViewBox {
+  const scale = clampScale((base.w / start.w) * ratio);
+  const w = base.w / scale;
+  const h = (start.h * w) / start.w;
+  const { k, ox, oy } = meet({ w, h }, rect);
+  return { x: anchor.x - (mid.x - rect.left - ox) / k, y: anchor.y - (mid.y - rect.top - oy) / k, w, h };
 }

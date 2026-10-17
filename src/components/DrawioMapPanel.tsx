@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { getDisplayProcessor, PanelProps } from '@grafana/data';
-import { useTheme2 } from '@grafana/ui';
+import { IconButton, useTheme2 } from '@grafana/ui';
 import { bind } from '../binding/engine';
 import { extractSeries } from '../binding/series';
 import { buildCard, DisplayOverride } from '../interact/cardModel';
@@ -10,8 +10,9 @@ import { patchAt } from '../interact/hit';
 import { applyPatches } from '../render/applier';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
-import { applyLayout, clientToViewBox, pan, viewBoxFor, ViewBox, zoomAt } from '../render/zoom';
+import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, SeriesInfo } from '../types';
+import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
 
 const styles = {
@@ -34,10 +35,25 @@ const styles = {
     height: 100%;
     opacity: 0.7;
   `,
-  badge: css`
+  // The reset button and the warning badge stack in the top-right corner.
+  corner: css`
     position: absolute;
     right: 4px;
     top: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    z-index: 1;
+  `,
+  // 32 px: a touch target for a finger
+  reset: css`
+    margin: 0;
+    min-width: 32px;
+    min-height: 32px;
+    border-radius: 4px;
+  `,
+  badge: css`
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 3px;
@@ -83,6 +99,7 @@ export function DrawioMapPanel({
   const zoomMode = opts.zoom.mode;
   const zoomPercent = opts.zoom.percent;
   const wheelZoom = opts.zoom.wheel;
+  const dragPan = opts.zoom.pan;
 
   // Reset the custom view and close the card when the diagram changes (state adjustment during render).
   const hash = opts.diagram?.hash;
@@ -91,6 +108,13 @@ export function DrawioMapPanel({
     setViewHash(hash);
     setView(null);
     setCard(null);
+  }
+  // A new panel size or a new zoom option resets the live view to the configured view.
+  const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}`;
+  const [lastViewKey, setLastViewKey] = useState(viewKey);
+  if (lastViewKey !== viewKey) {
+    setLastViewKey(viewKey);
+    setView(null);
   }
 
   const series = useMemo(() => extractSeries(data.series), [data.series]);
@@ -225,37 +249,28 @@ export function DrawioMapPanel({
     }
   }, [stage.root, stage.base, zoomMode, zoomPercent, width, height, view]);
 
-  // Wheel zoom. React adds wheel listeners as passive, so preventDefault needs a native listener.
-  useEffect(() => {
-    const wrapper = wrapperRef.current;
-    const root = stage.root;
-    const base = stage.base;
-    if (!wheelZoom || !wrapper || !root || !base) {
-      return;
-    }
-    const onWheel = (e: WheelEvent) => {
-      // the wheel scrolls a long card
-      if (e.target instanceof Node && cardRef.current?.contains(e.target)) {
-        return;
-      }
-      e.preventDefault();
-      const c = clientToViewBox(root, e.clientX, e.clientY);
-      setView((v) => zoomAt(v ?? base, e.deltaY > 0 ? 1.1 : 1 / 1.1, c.x, c.y));
-    };
-    wrapper.addEventListener('wheel', onWheel, { passive: false });
-    return () => wrapper.removeEventListener('wheel', onWheel);
-  }, [wheelZoom, stage.root, stage.base]);
-
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
-  const inCard = (t: EventTarget) => t instanceof Node && !!cardRef.current?.contains(t);
+  const inCard = (t: EventTarget | null) => t instanceof Node && !!cardRef.current?.contains(t);
+  const corner = useRef<HTMLDivElement>(null);
+  const panZoom = usePanZoom({
+    wrapperRef,
+    root: stage.root,
+    base: stage.base,
+    view,
+    setView,
+    wheel: wheelZoom,
+    dragPan,
+    ignore: (t) => inCard(t) || (t instanceof Node && !!corner.current?.contains(t)),
+  });
 
   // A click or a tap pins the card of the cell. A click on empty space closes it.
   const onClick = (e: React.MouseEvent) => {
     const stageEl = containerRef.current;
-    if (inCard(e.target) || !stageEl) {
+    // a drag that moved the view is not a click
+    if (panZoom.takeClick() || inCard(e.target) || corner.current?.contains(e.target as Node) || !stageEl) {
       return;
     }
     const patch = patchAt(e.target, stageEl, result.patches, stage.index);
@@ -277,28 +292,15 @@ export function DrawioMapPanel({
     opener.current = e.target;
     setCard({ cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top, pinned: true });
   };
-  const drag = useRef<{ x: number; y: number } | null>(null);
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (opts.zoom.pan && stage.root && e.pointerType !== 'touch' && !inCard(e.target)) {
-      drag.current = clientToViewBox(stage.root, e.clientX, e.clientY);
-    }
-  };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (drag.current && stage.root) {
-      const c = clientToViewBox(stage.root, e.clientX, e.clientY);
-      const d = drag.current;
-      setView((v) => pan(v ?? stage.base!, c.x - d.x, c.y - d.y));
-      return;
-    }
     // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
     const stageEl = containerRef.current;
-    if (e.pointerType === 'touch' || !canHover() || pinned || !stageEl) {
+    if (e.pointerType === 'touch' || !canHover() || pinned || panZoom.busy() || !stageEl) {
       return;
     }
     const patch = patchAt(e.target, stageEl, result.patches, stage.index);
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: false } : null);
   };
-  const onPointerUp = () => (drag.current = null);
 
   if (!opts.diagram?.svg) {
     return (
@@ -309,6 +311,9 @@ export function DrawioMapPanel({
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
+  // At the configured view one finger scrolls the page and the page does not pinch-zoom over the panel.
+  // A zoomed view takes all touches: one finger pans it.
+  const touchAction = panZoom.zoomed ? 'none' : 'pan-x pan-y';
 
   return (
     <div
@@ -319,31 +324,43 @@ export function DrawioMapPanel({
       data-dmap-patched={result.patches.size}
       data-dmap-warnings={warnings.length}
       data-dmap-hash={opts.diagram.hash}
-      style={{ colorScheme: theme.isDark ? 'dark' : 'light' }}
+      style={{ colorScheme: theme.isDark ? 'dark' : 'light', touchAction }}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
       onPointerLeave={() => {
-        drag.current = null;
         if (!pinned) {
           setCard(null);
         }
       }}
     >
-      <div ref={containerRef} className={styles.stage} />
+      {/* Chrome does not carry pan restrictions into a scroll container: the stage needs its own touch-action. */}
+      <div ref={containerRef} className={styles.stage} style={{ touchAction }} />
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
-      {warnings.length ? (
-        <div
-          className={styles.badge}
-          style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
-          title={warnings.join('\n')}
-          data-testid="dmap-warning-badge"
-        >
-          {warnings.length} warning{warnings.length > 1 ? 's' : ''}
-        </div>
-      ) : null}
+      <div ref={corner} className={styles.corner} data-testid="dmap-corner">
+        {panZoom.zoomed ? (
+          <IconButton
+            name="search-minus"
+            size="lg"
+            tooltip="Reset zoom"
+            tooltipPlacement="left"
+            className={styles.reset}
+            style={{ background: theme.colors.background.primary, border: `1px solid ${theme.colors.border.medium}` }}
+            data-testid="dmap-reset-zoom"
+            onClick={() => setView(null)}
+          />
+        ) : null}
+        {warnings.length ? (
+          <div
+            className={styles.badge}
+            style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
+            title={warnings.join('\n')}
+            data-testid="dmap-warning-badge"
+          >
+            {warnings.length} warning{warnings.length > 1 ? 's' : ''}
+          </div>
+        ) : null}
+      </div>
       {model && card ? (
         <div ref={cardRef}>
           <Card

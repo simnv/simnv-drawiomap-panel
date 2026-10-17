@@ -382,3 +382,132 @@ describe('DrawioMapPanel hover card', () => {
     expect(link.getAttribute('target')).toBe('_blank');
   });
 });
+
+describe('DrawioMapPanel live zoom', () => {
+  const linkId = 'pg-link~wan1:pppoe->rtr-a:wan1';
+  async function setup(p = props()) {
+    const r = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
+    const svgEl = r.container.querySelector('svg')!;
+    await waitFor(() => expect(svgEl.getAttribute('width')).toBe('100%'));
+    const half = (cell: string) =>
+      r.container.querySelector(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${cell}"]`)!;
+    return { ...r, svgEl, half, base: svgEl.getAttribute('viewBox'), wrapper: screen.getByTestId('dmap-panel') };
+  }
+  const reset = () => screen.queryByRole('button', { name: 'Reset zoom' });
+  const wheel = (el: Element, init: WheelEventInit) => {
+    const ev = new WheelEvent('wheel', { clientX: 0, clientY: 0, bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev;
+  };
+
+  it('Ctrl+wheel (a trackpad pinch) zooms with Wheel zoom off; the plain wheel does not', async () => {
+    const { wrapper, svgEl, base } = await setup();
+    expect(wheel(wrapper, { deltaY: -100 }).defaultPrevented).toBe(false);
+    expect(svgEl.getAttribute('viewBox')).toBe(base);
+    expect(wheel(wrapper, { deltaY: -10, ctrlKey: true }).defaultPrevented).toBe(true);
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(base));
+  });
+
+  it('the reset button shows only when the view differs from the configured zoom; a click restores it', async () => {
+    const { wrapper, svgEl, base } = await setup();
+    expect(reset()).toBeNull();
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    const btn = await screen.findByRole('button', { name: 'Reset zoom' });
+    fireEvent.click(btn);
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).toBe(base));
+    expect(reset()).toBeNull();
+    // the click on the button does not pin a card
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('the reset button and the warning badge stack in the top-right corner', async () => {
+    const { wrapper } = await setup(
+      props({
+        options: {
+          ...options,
+          rules: [...options.rules, { name: 'old', select: { ids: ['rtr-b'] }, shape: { sparkline: {} } } as never],
+        },
+      })
+    );
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    const btn = await screen.findByRole('button', { name: 'Reset zoom' });
+    const corner = screen.getByTestId('dmap-corner');
+    expect(corner.contains(btn)).toBe(true);
+    expect(corner.contains(screen.getByTestId('dmap-warning-badge'))).toBe(true);
+  });
+
+  it('a new panel size or a new zoom option resets the view', async () => {
+    const p = props();
+    const { wrapper, svgEl, base, rerender } = await setup(p);
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    rerender(<DrawioMapPanel {...p} width={700} />);
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).toBe(base));
+    expect(reset()).toBeNull();
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    rerender(
+      <DrawioMapPanel {...p} width={700} options={{ ...options, zoom: { ...options.zoom, mode: 'fit-width' } }} />
+    );
+    await waitFor(() => expect(reset()).toBeNull());
+  });
+
+  it('touch: one finger at the configured view does not pan; two fingers pinch; then one finger pans', async () => {
+    const { wrapper, svgEl, base, half } = await setup();
+    expect(wrapper.style.touchAction).toBe('pan-x pan-y');
+    const t = (type: string, id: number, x: number, y: number) =>
+      fireEvent[type as 'pointerDown'](wrapper, { pointerType: 'touch', pointerId: id, clientX: x, clientY: y });
+    t('pointerDown', 1, 100, 100);
+    t('pointerMove', 1, 100, 200);
+    t('pointerUp', 1, 100, 200);
+    expect(svgEl.getAttribute('viewBox')).toBe(base);
+    expect(reset()).toBeNull();
+
+    t('pointerDown', 1, 100, 100);
+    t('pointerDown', 2, 200, 100);
+    t('pointerMove', 1, 50, 100);
+    t('pointerMove', 2, 250, 100);
+    t('pointerUp', 1, 50, 100);
+    t('pointerUp', 2, 250, 100);
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    const zoomed = svgEl.getAttribute('viewBox')!;
+    expect(Number(zoomed.split(' ')[2])).toBeLessThan(Number(base!.split(' ')[2]));
+    expect(wrapper.style.touchAction).toBe('none');
+
+    t('pointerDown', 1, 100, 100);
+    t('pointerMove', 1, 150, 100);
+    t('pointerUp', 1, 150, 100);
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(zoomed));
+
+    // a tap on a zoomed view still pins the card
+    fireEvent.pointerDown(half(linkId), { pointerType: 'touch', pointerId: 3 });
+    fireEvent.pointerUp(half(linkId), { pointerType: 'touch', pointerId: 3 });
+    fireEvent.click(half(linkId));
+    await screen.findByRole('dialog');
+  });
+
+  it('a mouse drag pans a zoomed view; the click after the drag pins no card', async () => {
+    const { wrapper, svgEl, half } = await setup();
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    const zoomed = svgEl.getAttribute('viewBox');
+    fireEvent.pointerDown(half(linkId), { pointerType: 'mouse', button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 60, clientY: 10 });
+    fireEvent.pointerUp(half(linkId), { pointerType: 'mouse', clientX: 60, clientY: 10 });
+    fireEvent.click(half(linkId));
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(zoomed));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // the next click without a drag pins the card
+    fireEvent.click(half(linkId));
+    await screen.findByRole('dialog');
+  });
+
+  it('without Drag pan, a mouse drag at the configured view does not pan', async () => {
+    const { wrapper, svgEl, base } = await setup();
+    fireEvent.pointerDown(wrapper, { pointerType: 'mouse', button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(wrapper, { pointerType: 'mouse', clientX: 60, clientY: 10 });
+    fireEvent.pointerUp(wrapper, { pointerType: 'mouse', clientX: 60, clientY: 10 });
+    expect(svgEl.getAttribute('viewBox')).toBe(base);
+  });
+});

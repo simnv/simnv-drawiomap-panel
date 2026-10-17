@@ -215,6 +215,25 @@ In the **View** group of the panel options:
 | Drag pan             | A mouse drag moves the view. Off by default.                          |
 | Link width min, max  | The range of the link width in pixels. The width grows with the load. |
 
+### Live zoom
+
+You can zoom and pan the view of the panel. The live zoom does not change the saved panel options.
+
+| Gesture                            | Result                                                                      |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| Pinch with two fingers             | Zooms around the point between the fingers. A move of the two fingers pans. |
+| One finger, at the configured zoom | Scrolls the page. A tap opens the card.                                     |
+| One finger, when zoomed            | Pans the view. A tap (less than 6 px of movement) opens the card.           |
+| Trackpad pinch (Ctrl+wheel)        | Zooms around the pointer. This is always on.                                |
+| Mouse wheel                        | Zooms only when **Wheel zoom** is on.                                       |
+| Mouse drag                         | Pans when the view is zoomed, or at all times when **Drag pan** is on.      |
+
+The scale stays between 0.2× and 10× of the configured zoom. When the view is not at the configured zoom, a **Reset zoom** button shows in the top-right corner of the panel, above the warning badge. Click or tap it to go back to the configured zoom. A new panel size or a new **Zoom** option also resets the view.
+
+The panel sets `touch-action: pan-x pan-y` at the configured zoom: one finger scrolls the page, and the browser does not pinch-zoom the page over the panel. When the view is zoomed, the panel sets `touch-action: none` and takes all touches. A two-finger `touchmove` calls `preventDefault()`, so the page does not scroll while you pinch.
+
+![Zoomed view with the reset button](docs/screenshots/zoomed-reset-button.png)
+
 ## Editor URL option
 
 **Diagram > Editor URL** sets the draw.io editor for edit mode. The default is `http://localhost:8080` (the self-hosted editor in the compose stack). You can use `https://embed.diagrams.net` or your own server.

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { applyLayout, pan, readViewBox, viewBoxFor, zoomAt } from './zoom';
+import {
+  applyLayout,
+  clampFactor,
+  clientToView,
+  isDefaultView,
+  pinchView,
+  readViewBox,
+  viewBoxFor,
+  zoomAt,
+} from './zoom';
 
 const base = { x: 0, y: 0, w: 1000, h: 500 };
 const box = { width: 400, height: 300 };
@@ -30,13 +39,10 @@ describe('viewBoxFor', () => {
   });
 });
 
-describe('zoomAt and pan', () => {
+describe('zoomAt', () => {
   it('zooms around a point', () => {
     const z = zoomAt(base, 0.5, 500, 250);
     expect(z).toEqual({ x: 250, y: 125, w: 500, h: 250 });
-  });
-  it('pans', () => {
-    expect(pan(base, 10, -5)).toEqual({ x: -10, y: 5, w: 1000, h: 500 });
   });
 });
 
@@ -56,5 +62,54 @@ describe('readViewBox and applyLayout', () => {
     root.setAttribute('width', '12px');
     root.setAttribute('height', '7px');
     expect(readViewBox(root)).toEqual({ x: 0, y: 0, w: 12, h: 7 });
+  });
+});
+
+describe('pinch and pan math', () => {
+  // the svg box is 400x200 px at (100, 50); the base viewBox 1000x500 fills it at 0.4 px per unit
+  const rect = { left: 100, top: 50, width: 400, height: 200 };
+
+  it('maps client pixels to viewBox units with xMidYMid meet letterboxing', () => {
+    expect(clientToView(base, rect, 100, 50)).toEqual({ x: 0, y: 0 });
+    expect(clientToView(base, rect, 300, 150)).toEqual({ x: 500, y: 250 });
+    // a square viewBox in the same box: 200 px wide, centred, so it starts at x = 200 px
+    const sq = { x: 0, y: 0, w: 100, h: 100 };
+    expect(clientToView(sq, rect, 200, 50)).toEqual({ x: 0, y: 0 });
+    expect(clientToView(sq, rect, 400, 250)).toEqual({ x: 100, y: 100 });
+  });
+
+  it('a pinch keeps the content point under the gesture midpoint', () => {
+    const anchor = clientToView(base, rect, 200, 100);
+    const v = pinchView(base, base, rect, anchor, { x: 200, y: 100 }, 2);
+    expect(v.w).toBeCloseTo(500);
+    expect(v.h).toBeCloseTo(250);
+    const back = clientToView(v, rect, 200, 100);
+    expect(back.x).toBeCloseTo(anchor.x);
+    expect(back.y).toBeCloseTo(anchor.y);
+  });
+
+  it('a moving midpoint pans the view with the fingers', () => {
+    const anchor = clientToView(base, rect, 200, 100);
+    const v = pinchView(base, base, rect, anchor, { x: 240, y: 120 }, 1);
+    // 40 px right at 0.4 px per unit: the content moves 100 units right, the view origin 100 units left
+    expect(v).toEqual({ x: -100, y: -50, w: 1000, h: 500 });
+  });
+
+  it('clamps the scale to 0.2x..10x of the base', () => {
+    const anchor = { x: 500, y: 250 };
+    const mid = { x: 300, y: 150 };
+    expect(pinchView(base, base, rect, anchor, mid, 100).w).toBeCloseTo(100);
+    expect(pinchView(base, base, rect, anchor, mid, 0.01).w).toBeCloseTo(5000);
+    expect(clampFactor(base, 0.01, base)).toBeCloseTo(0.1);
+    expect(clampFactor({ ...base, w: 100, h: 50 }, 0.5, base)).toBeCloseTo(1);
+    expect(clampFactor(base, 1.1, base)).toBeCloseTo(1.1);
+  });
+
+  it('isDefaultView is true for no view and for the base view only', () => {
+    expect(isDefaultView(null, base)).toBe(true);
+    expect(isDefaultView({ ...base }, base)).toBe(true);
+    expect(isDefaultView({ ...base, x: 1e-9 }, base)).toBe(true);
+    expect(isDefaultView(zoomAt(base, 0.9, 0, 0), base)).toBe(false);
+    expect(isDefaultView({ ...base, x: 5 }, base)).toBe(false);
   });
 });
