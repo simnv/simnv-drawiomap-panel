@@ -30,9 +30,8 @@ const cardRow = seriesSelector
     url: z.string().optional(),
   })
   .strict();
-const thresholds = z
-  .object({ mode: z.enum(['percent', 'absolute']), steps: z.array(z.tuple([z.number(), z.string()])).min(1) })
-  .strict();
+const reducer = z.enum(['last', 'mean', 'max', 'min']);
+const capacitySeries = seriesSelector.extend({ reducer: reducer.optional() }).strict();
 
 export const ruleSchema = z
   .object({
@@ -42,7 +41,7 @@ export const ruleSchema = z
       .object({
         a2b: seriesSelector.optional(),
         b2a: seriesSelector.optional(),
-        capacity: z.union([z.string(), z.number()]).optional(),
+        capacity: z.union([z.string(), z.number(), capacitySeries]).optional(),
         card: z.object({ url: z.string().optional(), title: z.string().optional() }).strict().optional(),
       })
       .strict()
@@ -63,9 +62,10 @@ export const ruleSchema = z
       })
       .strict()
       .optional(),
-    reducer: z.enum(['last', 'mean', 'max', 'min']).optional(),
+    reducer: reducer.optional(),
     label: z.string().optional(),
-    thresholds: thresholds.optional(),
+    // Removed: the field config gives the colours. Accepted so that old dashboards still load.
+    thresholds: z.unknown().optional(),
     url: z.string().optional(),
     urlTitle: z.string().optional(),
   })

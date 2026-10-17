@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
   createTheme,
   dateTime,
+  FieldConfig,
   FieldType,
   getDefaultTimeRange,
   LoadingState,
@@ -35,12 +36,13 @@ vi.hoisted(() => {
 });
 
 const svg = readFileSync(resolve(__dirname, '../../fixtures/svg/l3-routing.svg'), 'utf8');
-const frame = (refId: string, labels: Record<string, string>, values: number[]) =>
+/** `config`: the field config after the overrides, as Grafana gives it to the panel. */
+const frame = (refId: string, labels: Record<string, string>, values: number[], config: FieldConfig = {}) =>
   toDataFrame({
     refId,
     fields: [
       { name: 'Time', type: FieldType.time, values: values.map((_, i) => i) },
-      { name: 'Value', type: FieldType.number, values, labels },
+      { name: 'Value', type: FieldType.number, values, labels, config },
     ],
   });
 
@@ -57,28 +59,22 @@ const options: Options = {
         b2a: { refId: 'A', match: { job: 'node-${to.node}', device: '${to.port}' } },
         capacity: 100000000,
       },
-      thresholds: {
-        mode: 'percent',
-        steps: [
-          [0, 'green'],
-          [60, 'yellow'],
-          [85, 'red'],
-        ],
-      },
       url: '/d/x?job=${from.node}',
     },
     {
       name: 'node up',
       select: { kind: 'node' },
       shape: { series: { refId: 'C', match: { job: 'node-${cell.pg-id}' } }, target: 'shape' },
-      thresholds: {
-        mode: 'absolute',
-        steps: [
-          [0, 'red'],
-          [1, 'green'],
-        ],
-      },
     },
+  ],
+};
+
+// an override for query C in Grafana
+const upThresholds = {
+  mode: ThresholdsMode.Absolute,
+  steps: [
+    { value: -Infinity, color: 'red' },
+    { value: 1, color: 'green' },
   ],
 };
 
@@ -87,8 +83,8 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
     frame('A', { job: 'node-wan1', device: 'pppoe' }, [41e6]),
     frame('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]),
     frame('A', { job: 'node-wan2', device: 'dhcp' }, [90e6]),
-    frame('C', { job: 'node-rtr-a' }, [1]),
-    frame('C', { job: 'node-lte' }, [0]),
+    frame('C', { job: 'node-rtr-a' }, [1], { thresholds: upThresholds }),
+    frame('C', { job: 'node-lte' }, [0], { thresholds: upThresholds }),
     frame('E', { job: 'node-rtr-b' }, [12, 30, 42]),
   ];
   return {
@@ -104,7 +100,14 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
     fieldConfig: {
       defaults: {
         unit: 'bps',
-        thresholds: { mode: ThresholdsMode.Absolute, steps: [{ value: -Infinity, color: 'green' }] },
+        thresholds: {
+          mode: ThresholdsMode.Absolute,
+          steps: [
+            { value: -Infinity, color: 'green' },
+            { value: 60, color: 'yellow' },
+            { value: 85, color: 'red' },
+          ],
+        },
       },
       overrides: [],
     },

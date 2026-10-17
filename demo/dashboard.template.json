@@ -16,7 +16,9 @@
       "gridPos": { "x": 0, "y": 0, "w": 24, "h": 18 },
       "datasource": { "type": "prometheus", "uid": "victoriametrics" },
       "targets": [
-        { "refId": "A", "expr": "rate(node_network_transmit_bytes_total[1m]) * 8", "legendFormat": "{{job}} {{device}}" },
+        { "refId": "A", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|wan1|wan2|lte\"}[1m]) * 8", "legendFormat": "{{job}} {{device}}" },
+        { "refId": "W", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|wan1|wan2|lte\"}[1m]) * 8", "legendFormat": "wan {{job}} {{device}}" },
+        { "refId": "S", "expr": "node_network_speed_bytes", "legendFormat": "speed {{job}} {{device}}" },
         { "refId": "C", "expr": "up", "legendFormat": "{{job}}" },
         { "refId": "D", "expr": "node_load1", "legendFormat": "{{job}}" },
         { "refId": "E", "expr": "node_cpu_usage_percent", "legendFormat": "{{job}}" }
@@ -34,6 +36,15 @@
             "properties": [{ "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }]
           },
           {
+            "matcher": { "id": "byFrameRefID", "options": "W" },
+            "properties": [
+              { "id": "color", "value": { "mode": "continuous-GrYlRd" } },
+              { "id": "max", "value": 100000000 },
+              { "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }
+            ]
+          },
+          { "matcher": { "id": "byFrameRefID", "options": "S" }, "properties": [{ "id": "unit", "value": "Bps" }] },
+          {
             "matcher": { "id": "byFrameRefID", "options": "C" },
             "properties": [{ "id": "links", "value": [{ "title": "Host overview", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&${__url_time_range}", "targetBlank": true }] }]
           },
@@ -41,6 +52,7 @@
             "matcher": { "id": "byFrameRefID", "options": "C" },
             "properties": [
               { "id": "unit", "value": "none" },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } },
               { "id": "mappings", "value": [{ "type": "value", "options": { "0": { "text": "down", "index": 0 }, "1": { "text": "up", "index": 1 } } }] }
             ]
           },

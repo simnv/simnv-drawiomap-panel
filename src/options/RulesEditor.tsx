@@ -112,14 +112,23 @@ function RuleCard({ rule, onChange, onRemove }: { rule: Rule; onChange: (r: Rule
             value={rule.link?.b2a}
             onChange={(s) => onChange({ ...rule, link: { ...rule.link, b2a: s } })}
           />
-          <Field label="Capacity (bit/s or template)">
-            <Input
-              value={String(rule.link?.capacity ?? '')}
-              onChange={(e) =>
-                onChange({ ...rule, link: { ...rule.link, capacity: e.currentTarget.value || undefined } })
-              }
-            />
-          </Field>
+          {typeof rule.link?.capacity === 'object' ? (
+            <Field label="Capacity" description="From a series. Edit it in YAML.">
+              <Input value={`series ${JSON.stringify(rule.link.capacity)}`} disabled />
+            </Field>
+          ) : (
+            <Field
+              label="Capacity (bit/s or template)"
+              description="Empty: the Max of the field config (Standard options or an override) applies"
+            >
+              <Input
+                value={String(rule.link?.capacity ?? '')}
+                onChange={(e) =>
+                  onChange({ ...rule, link: { ...rule.link, capacity: e.currentTarget.value || undefined } })
+                }
+              />
+            </Field>
+          )}
         </>
       ) : (
         <>

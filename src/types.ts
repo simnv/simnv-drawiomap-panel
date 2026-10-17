@@ -128,17 +128,23 @@ export interface CellSelector {
 
 export type ReducerName = 'last' | 'mean' | 'max' | 'min';
 
-export interface RuleThresholds {
-  mode: 'percent' | 'absolute';
-  /** [threshold, colour name or hex], ascending */
-  steps: Array<[number, string]>;
+/** A series that gives the link capacity, e.g. the port speed. The field unit converts it to bit/s. */
+export interface CapacitySeries extends SeriesSelector {
+  /** Default: the rule reducer. */
+  reducer?: ReducerName;
 }
+
+/** Where the capacity of a link half comes from. The first source that gives a value wins, in this order. */
+export type CapacitySource = 'series' | 'attr' | 'number' | 'fieldMax' | 'none';
 
 export interface LinkRule {
   a2b?: SeriesSelector;
   b2a?: SeriesSelector;
-  /** bit/s; number or template like "${cell.capacity}" */
-  capacity?: string | number;
+  /**
+   * bit/s: a number, a template like "${cell.capacity}", or a series selector.
+   * Without it, or when it gives no value, the Max of the field config of the half applies.
+   */
+  capacity?: string | number | CapacitySeries;
   /** The hover card of the link. */
   card?: LinkCardRule;
 }
@@ -186,7 +192,8 @@ export interface Rule {
   reducer?: ReducerName;
   /** template of the text that shape.text writes into the node label; default "${value}". Links ignore it. */
   label?: string;
-  thresholds?: RuleThresholds;
+  /** Removed. The parser accepts it so that old dashboards load; the engine ignores it with a warning. */
+  thresholds?: unknown;
   url?: string;
   /** title of the url in the card footer (template). Default: "Open dashboard" or "Open <card title>". */
   urlTitle?: string;
@@ -209,12 +216,15 @@ export interface HalfState {
   status: BindStatus;
   color: string;
   width: number;
-  /** "41 Mb/s · 41%", "no data" or "unbound". The hover card shows it. */
+  /** "41 Mb/s · 41% of 100 Mb/s", "no data" or "unbound". The hover card shows it. */
   label: string;
   /** index into the threshold steps that produced the colour; -1 when no data */
   stepIndex: number;
   value?: number;
   percent?: number;
+  /** bit/s, when the half has a capacity */
+  capacity?: number;
+  capacitySource?: CapacitySource;
   display?: DisplayValue;
   series?: SeriesInfo;
 }
@@ -264,6 +274,7 @@ export type PatchMap = Map<string, CellPatch>;
 
 export interface BindContext {
   theme: GrafanaTheme2;
+  /** The panel default thresholds. They apply when a field has no thresholds. */
   fieldThresholds?: ThresholdsConfig;
   /** Grafana replaceVariables from PanelProps */
   replaceVariables: (text: string, scopedVars?: ScopedVars) => string;

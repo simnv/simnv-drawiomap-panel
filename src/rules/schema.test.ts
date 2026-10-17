@@ -26,7 +26,8 @@ describe('parseRulesYaml', () => {
     expect(r.errors).toEqual([]);
     expect(r.rules).toHaveLength(2);
     expect(r.rules?.[0].link?.capacity).toBe('${cell.capacity}');
-    expect(r.rules?.[0].thresholds?.steps[1]).toEqual([60, 'yellow']);
+    // removed, but an old rule with it still loads
+    expect(r.rules?.[0].thresholds).toBeDefined();
     expect(r.rules?.[1].shape?.sparkline?.position).toBe('bottom');
   });
   it('reports a bad reducer with a path', () => {
@@ -44,6 +45,17 @@ describe('parseRulesYaml', () => {
   it('round-trips through rulesToYaml', () => {
     const rules = parseRulesYaml(yaml).rules!;
     expect(parseRulesYaml(rulesToYaml(rules)).rules).toEqual(rules);
+  });
+  it('accepts a series capacity with a reducer', () => {
+    const r = parseRulesYaml(
+      '- name: x\n  select: { kind: link }\n  link:\n    capacity: { refId: S, match: { device: "${from.port}" }, reducer: max }\n'
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rules?.[0].link?.capacity).toEqual({ refId: 'S', match: { device: '${from.port}' }, reducer: 'max' });
+  });
+  it('rejects unknown keys in a series capacity', () => {
+    const r = parseRulesYaml('- name: x\n  select: {}\n  link: { capacity: { refId: S, bogus: 1 } }\n');
+    expect(r.rules).toBeUndefined();
   });
   it('rejects unknown keys', () => {
     expect(ruleSchema.safeParse({ name: 'x', select: {}, bogus: 1 }).success).toBe(false);

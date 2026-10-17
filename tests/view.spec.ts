@@ -50,7 +50,7 @@ test('node state colours the node icon, not the whole node', async ({ gotoDashbo
     const rect = el.querySelector('rect') as SVGElement;
     return { icon: icon.style.fill, node: rect.style.fill };
   });
-  // green from the rule thresholds; the node keeps its draw.io fill
+  // green from the thresholds of the up query (an override); the node keeps its draw.io fill
   expect(colours.icon).toMatch(/^(rgb\(115, 191, 105\)|#73bf69)$/i);
   expect(colours.node).toContain('light-dark');
   await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-target', 'icon');

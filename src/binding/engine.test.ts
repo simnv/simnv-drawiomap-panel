@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { createTheme, DisplayValue, Field, FieldType, getDisplayProcessor, ThresholdsMode } from '@grafana/data';
+import {
+  applyFieldOverrides,
+  createTheme,
+  DataFrame,
+  DisplayValue,
+  Field,
+  FieldColorModeId,
+  FieldConfigOptionsRegistry,
+  FieldMatcherID,
+  FieldType,
+  getDisplayProcessor,
+  getFieldColorMode,
+  ThresholdsMode,
+} from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
-import type { BindContext, Rule, SeriesInfo } from '../types';
+import type { BindContext, LinkRule, Rule, SeriesInfo } from '../types';
 import { bind } from './engine';
+import { extractSeries } from './series';
 
 const theme = createTheme();
 const mk = (refId: string, labels: Record<string, string>, values: number[]): SeriesInfo => ({
@@ -14,12 +28,24 @@ const mk = (refId: string, labels: Record<string, string>, values: number[]): Se
   field: {} as Field,
   frame: { fields: [], length: values.length },
 });
+/** The up series has its own thresholds in the field config (an override in Grafana). */
+const upThresholds = {
+  mode: ThresholdsMode.Absolute,
+  steps: [
+    { value: -Infinity, color: 'red' },
+    { value: 1, color: 'green' },
+  ],
+};
+const up = (labels: Record<string, string>, values: number[]): SeriesInfo => ({
+  ...mk('C', labels, values),
+  field: { name: 'up', type: FieldType.number, config: { thresholds: upThresholds }, values } as Field,
+});
 const series = [
   mk('A', { job: 'node-wan1', device: 'pppoe' }, [40e6, 41e6]),
   mk('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]),
   mk('A', { job: 'node-wan2', device: 'dhcp' }, [90e6]),
-  mk('C', { job: 'node-rtr-a' }, [1]),
-  mk('C', { job: 'node-lte' }, [0]),
+  up({ job: 'node-rtr-a' }, [1]),
+  up({ job: 'node-lte' }, [0]),
   mk('D', { job: 'node-rtr-a' }, [0.5, 1.5, 1.0]),
 ];
 const cells = [
@@ -67,14 +93,6 @@ const rules: Rule[] = [
     name: 'wan 100M',
     select: { kind: 'link', attrs: { 'pg-to': '/^rtr-a:(wan1|wan2|lte)$/' } },
     link: { capacity: '100000000' },
-    thresholds: {
-      mode: 'percent',
-      steps: [
-        [0, 'green'],
-        [60, 'yellow'],
-        [85, 'red'],
-      ],
-    },
   },
   {
     name: 'node up',
@@ -83,13 +101,6 @@ const rules: Rule[] = [
       series: { refId: 'C', match: { job: 'node-${cell.pg-id}' } },
       target: 'shape',
       card: [{ title: 'load', refId: 'D', match: { job: 'node-${cell.pg-id}' }, decimals: 1 }],
-    },
-    thresholds: {
-      mode: 'absolute',
-      steps: [
-        [0, 'red'],
-        [1, 'green'],
-      ],
     },
   },
 ];
@@ -118,7 +129,9 @@ describe('bind', () => {
     expect(p.link?.a2b?.value).toBe(41e6);
     expect(p.link?.a2b?.percent).toBeCloseTo(41);
     expect(p.link?.a2b?.stepIndex).toBe(0);
-    expect(p.link?.a2b?.label).toBe('41 Mb/s · 41%');
+    expect(p.link?.a2b?.label).toBe('41 Mb/s · 41% of 100 Mb/s');
+    expect(p.link?.a2b?.capacity).toBe(1e8);
+    expect(p.link?.a2b?.capacitySource).toBe('number');
     expect(p.link?.b2a?.percent).toBeCloseTo(10);
     expect(p.link?.a2b?.width).toBeCloseTo(2 + 8 * 0.41);
   });
@@ -197,7 +210,7 @@ describe('bind', () => {
     expect(p.link?.a2b?.label).toBe('unbound');
     expect(r.warnings[0]).toMatch(/cap.*cell\.capacity/);
   });
-  it('uses the field display colour for shapes without rule thresholds', () => {
+  it('uses the field display colour for shapes', () => {
     const r = bind(
       [
         {
@@ -212,14 +225,18 @@ describe('bind', () => {
     );
     const sh = r.patches.get('pg-node~rtr-a')!.shape!;
     expect(sh.color).toBe('#abcdef');
-    expect(sh.stepIndex).toBe(0); // 1 against the ctx field thresholds (-Inf, 60, 85)
+    expect(sh.stepIndex).toBe(1); // 1 against the up thresholds of the field (-Inf, 1)
   });
   it('formats labels with a real display processor (unit, decimals, suffix)', () => {
     const field: Field = { name: 'v', type: FieldType.number, config: { unit: 'bps', decimals: 1 }, values: [] };
     const proc = getDisplayProcessor({ field, theme });
     const r = bind(rules, cells, series, { ...ctx, display: (_s, v) => proc(v) });
-    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe('41.0 Mb/s · 41%');
-    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe('10.0 Mb/s · 10%');
+    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe(
+      '41.0 Mb/s · 41% of 100 Mb/s'
+    );
+    expect(r.patches.get('pg-link~wan1:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe(
+      '10.0 Mb/s · 10% of 100 Mb/s'
+    );
   });
   it('a link with one series keeps the other half undefined', () => {
     const r = bind(
@@ -315,7 +332,7 @@ describe('bind review fixes', () => {
     const r = bind([capRule({ label: '${value} ${labels.nope}' })], [linkCell, cells[1]], [withUnit('bps', 4e7)], ctx);
     const h = r.patches.get(linkCell.id)!.link!.a2b!;
     expect(h.status).toBe('ok');
-    expect(h.label).toBe('40 Mb/s · 40%');
+    expect(h.label).toBe('40 Mb/s · 40% of 100 Mb/s');
     expect(r.warnings).toEqual(['cap: label is ignored for links, the hover card shows the values']);
   });
   it('finding 6: an unresolved shape text placeholder makes the shape unbound', () => {
@@ -457,5 +474,178 @@ describe('shape target', () => {
       ctx
     );
     expect(r.warnings.join(' ')).toMatch(/c: invalid regex/);
+  });
+});
+
+describe('capacity sources', () => {
+  const linkCell = cellMetaFromAttrs(
+    'pg-link~a:eth0->b:eth1',
+    { 'pg-kind': 'link', 'pg-id': 'a:eth0->b:eth1', 'pg-from': 'a:eth0', 'pg-to': 'b:eth1', capacity: '200000000' },
+    true
+  );
+  const traffic = (config: Field['config'] = { unit: 'bps' }, v = 4e7): SeriesInfo => ({
+    ...mk('T', { job: 'node-a', device: 'eth0' }, [v]),
+    field: { name: 'rx', type: FieldType.number, config, values: [v] } as Field,
+  });
+  // node_network_speed_bytes: 12.5 MB/s = 100 Mb/s
+  const speed = (v = 12.5e6, unit = 'Bps'): SeriesInfo => ({
+    ...mk('S', { job: 'node-a', device: 'eth0' }, [v / 2, v]),
+    field: { name: 'speed', type: FieldType.number, config: { unit }, values: [v / 2, v] } as Field,
+  });
+  const rule = (capacity?: LinkRule['capacity']): Rule => ({
+    name: 'cap',
+    select: { kind: 'link' },
+    link: { a2b: { refId: 'T' }, ...(capacity !== undefined ? { capacity } : {}) },
+  });
+  const a2b = (r: Rule, s: SeriesInfo[]) => {
+    const res = bind([r], [linkCell], s, ctx);
+    return { h: res.patches.get(linkCell.id)!.link!.a2b!, warnings: res.warnings };
+  };
+  const seriesCap = { refId: 'S', match: { job: 'node-${from.node}', device: '${from.port}' } };
+
+  it('series: converts the capacity series to bit/s with its unit', () => {
+    const { h, warnings } = a2b(rule(seriesCap), [traffic(), speed()]);
+    expect(h.capacitySource).toBe('series');
+    expect(h.capacity).toBe(1e8);
+    expect(h.percent).toBeCloseTo(40);
+    expect(h.label).toBe('40 Mb/s · 40% of 100 Mb/s');
+    expect(warnings).toEqual([]);
+  });
+  it('series: uses the reducer of the capacity selector', () => {
+    const { h } = a2b(rule({ ...seriesCap, reducer: 'min' }), [traffic(), speed()]);
+    expect(h.capacity).toBe(5e7);
+  });
+  it('series: an unresolved template makes the link unbound', () => {
+    const { h, warnings } = a2b(rule({ refId: 'S', match: { device: '${cell.nope}' } }), [traffic(), speed()]);
+    expect(h.status).toBe('unbound');
+    expect(warnings.join(' ')).toMatch(/cell\.nope/);
+  });
+  it('series: a missing capacity series falls back to the field Max and gives a note', () => {
+    const { h, warnings } = a2b(rule(seriesCap), [traffic({ unit: 'bps', max: 5e7 })]);
+    expect(h.capacitySource).toBe('fieldMax');
+    expect(h.capacity).toBe(5e7);
+    expect(warnings.join(' ')).toMatch(/capacity series not found/);
+  });
+  it('series wins over the field Max', () => {
+    expect(a2b(rule(seriesCap), [traffic({ unit: 'bps', max: 5e7 }), speed()]).h.capacitySource).toBe('series');
+  });
+  it('attr: a cell attribute template', () => {
+    const { h } = a2b(rule('${cell.capacity}'), [traffic({ unit: 'bps', max: 5e7 })]);
+    expect(h.capacitySource).toBe('attr');
+    expect(h.capacity).toBe(2e8);
+    expect(h.percent).toBeCloseTo(20);
+  });
+  it('number: a number or a number in a string', () => {
+    expect(a2b(rule(1e9), [traffic()]).h.capacitySource).toBe('number');
+    expect(a2b(rule('1e9'), [traffic()]).h.capacity).toBe(1e9);
+  });
+  it('fieldMax: the Max of the field config, in the field unit', () => {
+    // 12.5 MB/s = 100 Mb/s; the traffic is 5 MB/s = 40 Mb/s
+    const { h } = a2b(rule(), [traffic({ unit: 'Bps', max: 12.5e6 }, 5e6)]);
+    expect(h.capacitySource).toBe('fieldMax');
+    expect(h.capacity).toBe(1e8);
+    expect(h.percent).toBeCloseTo(40);
+    expect(h.width).toBeCloseTo(2 + 8 * 0.4);
+  });
+  it('none: no capacity, no percent, the display colour', () => {
+    const { h } = a2b(rule(), [traffic()]);
+    expect(h.capacitySource).toBe('none');
+    expect(h.capacity).toBeUndefined();
+    expect(h.percent).toBeUndefined();
+    expect(h.color).toBe('#abcdef');
+    expect(h.label).toBe('40 Mb/s');
+  });
+});
+
+describe('colours from the Grafana field config', () => {
+  const linkCell = cellMetaFromAttrs(
+    'pg-link~a:eth0->b:eth1',
+    { 'pg-kind': 'link', 'pg-id': 'a:eth0->b:eth1', 'pg-from': 'a:eth0', 'pg-to': 'b:eth1' },
+    true
+  );
+  const frame = (refId: string, value: number): DataFrame => ({
+    refId,
+    length: 1,
+    fields: [
+      { name: 'Time', type: FieldType.time, config: {}, values: [0] },
+      { name: 'Value', type: FieldType.number, config: {}, values: [value], labels: { device: 'eth0' } },
+    ],
+  });
+  const steps = {
+    mode: ThresholdsMode.Absolute,
+    steps: [
+      { value: -Infinity, color: 'green' },
+      { value: 60, color: 'yellow' },
+      { value: 85, color: 'red' },
+    ],
+  };
+  // the standard options of Grafana core that the overrides below use
+  const registry = new FieldConfigOptionsRegistry(() =>
+    ['unit', 'color', 'thresholds', 'max'].map(
+      (id) =>
+        ({ id, path: id, name: id, process: (v: unknown) => v, shouldApply: () => true, override: () => null }) as never
+    )
+  );
+  // WAN (A): continuous GrYlRd and Max 100 Mb/s by an override; LAN (B): thresholds, capacity from the rule
+  const frames = applyFieldOverrides({
+    data: [frame('A', 5e7), frame('B', 7e8)],
+    fieldConfig: {
+      defaults: { unit: 'bps', color: { mode: FieldColorModeId.Thresholds }, thresholds: steps },
+      overrides: [
+        {
+          matcher: { id: FieldMatcherID.byFrameRefID, options: 'A' },
+          properties: [
+            { id: 'color', value: { mode: FieldColorModeId.ContinuousGrYlRd } },
+            { id: 'max', value: 1e8 },
+          ],
+        },
+      ],
+    },
+    fieldConfigRegistry: registry,
+    replaceVariables: (s) => s,
+    theme,
+  });
+  const live = extractSeries(frames);
+  // no panel thresholds: the colours come from the field config only
+  const gctx: BindContext = { ...ctx, fieldThresholds: undefined, display: (s, v) => s.field.display!(v) };
+  const half = (r: Rule) => bind([r], [linkCell], live, gctx).patches.get(linkCell.id)!.link!.a2b!;
+
+  it('colours a WAN half by the continuous scheme of its override at the percent of the field Max', () => {
+    const h = half({ name: 'wan', select: { kind: 'link' }, link: { a2b: { refId: 'A' } } });
+    expect(h.capacitySource).toBe('fieldMax');
+    expect(h.percent).toBeCloseTo(50);
+    const calc = getFieldColorMode(FieldColorModeId.ContinuousGrYlRd).getCalculator(live[0].field, theme);
+    expect(h.color).toBe(calc(0, 0.5));
+  });
+  it('colours a LAN half by the thresholds in percent of the rule capacity', () => {
+    const h = half({ name: 'lan', select: { kind: 'link' }, link: { a2b: { refId: 'B' }, capacity: 1e9 } });
+    expect(h.percent).toBeCloseTo(70);
+    expect(h.color).toBe(theme.visualization.getColorByName('yellow'));
+    expect(h.stepIndex).toBe(1);
+  });
+  it('colours a half without capacity by the display colour of the raw value', () => {
+    const h = half({ name: 'raw', select: { kind: 'link' }, link: { a2b: { refId: 'B' } } });
+    expect(h.capacitySource).toBe('none');
+    // 7e8 against the absolute steps: red
+    expect(h.color).toBe(theme.visualization.getColorByName('red'));
+  });
+  it('ignores the removed rule thresholds and gives a warning', () => {
+    const r = bind(
+      [
+        {
+          name: 'old',
+          select: { kind: 'link' },
+          link: { a2b: { refId: 'B' }, capacity: 1e9 },
+          thresholds: { mode: 'percent', steps: [[0, 'blue']] },
+        },
+      ],
+      [linkCell],
+      live,
+      gctx
+    );
+    expect(r.patches.get(linkCell.id)!.link!.a2b!.color).toBe(theme.visualization.getColorByName('yellow'));
+    expect(r.warnings).toEqual([
+      'old: thresholds is removed and ignored. Set Thresholds and Color scheme in the field config of the panel',
+    ]);
   });
 });

@@ -69,15 +69,22 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
   link:
     a2b: { refId: A, match: { job: 'node-${from.node}', device: '${from.port}' } }
     b2a: { refId: A, match: { job: 'node-${to.node}', device: '${to.port}' } }
-    capacity: 1000000000
     card: { title: '${from.node} ↔ ${to.node}' }
   reducer: last
   url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}'
   urlTitle: 'Traffic of ${from.node}:${from.port}'
-- name: wan uplinks 100M
-  select: { kind: link, attrs: { pg-to: '/^rtr-a:(wan1|wan2|lte)$/' } }
+- name: lan by port speed
+  select: { kind: link, attrs: { pg-to: '/:br-lan$/' } }
+  link:
+    capacity: { refId: S, match: { job: 'node-${to.node}', device: '${to.port}' } }
+- name: wan uplinks
+  select: { kind: link, attrs: { pg-to: '/^(dm|hm)-wrt:(wan1|wan2|lte|pppoe)$/' } }
+  link:
+    a2b: { refId: W, match: { job: 'node-${from.node}', device: '${from.port}' } }
+    b2a: { refId: W, match: { job: 'node-${to.node}', device: '${to.port}' } }
+- name: tunnels 100M
+  select: { kind: link, attrs: { pg-to: '/:(ts0|in-3088|in-3089)$/' } }
   link: { capacity: 100000000 }
-  thresholds: { mode: percent, steps: [[0, green], [60, yellow], [85, red]] }
 - name: node up
   select: { kind: node }
   shape:
@@ -86,7 +93,6 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
     card:
       - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
       - { title: load 1m, refId: D, match: { job: 'node-${cell.pg-id}' } }
-  thresholds: { mode: absolute, steps: [[0, red], [1, green]] }
   url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}'
   urlTitle: 'Host ${cell.pg-id}'
 - name: router cpu
@@ -102,21 +108,23 @@ Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `dem
       - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
 ```
 
-Rules are an ordered list. A later rule overrides an earlier rule for the same property of the same cell. In the example, the second rule changes the capacity and the thresholds of the WAN links. The last rule replaces the card rows of the two routers. The `series` and the `target` of the `node up` rule stay.
+Rules are an ordered list. A later rule overrides an earlier rule for the same property of the same cell. In the example, the `lan by port speed` rule adds a capacity to the LAN links. The `wan uplinks` rule changes the series of the WAN links to query `W`. The last rule replaces the card rows of the two routers. The `series` and the `target` of the `node up` rule stay.
+
+The rules do not set colours. The colours come from the field config of the panel. See [How colours and thresholds work](#how-colours-and-thresholds-work).
 
 ### Rule fields
 
-| Field        | Meaning                                                                                                                                           |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`       | Name of the rule. The rule editor and the warnings show it.                                                                                       |
-| `select`     | Which cells the rule applies to. See below.                                                                                                       |
-| `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (a number or a template). `card` sets the card of links.  |
-| `shape`      | For shapes. See below.                                                                                                                            |
-| `reducer`    | `last` (default), `mean`, `max` or `min`. Reduces the series to one value. The card rows use it too.                                              |
-| `label`      | Template of the text that `shape.text` writes into the node label. The default is `${value}`. Links ignore it (the panel shows a warning).        |
-| `thresholds` | `mode: percent` or `absolute`. `steps` is a list of `[threshold, colour]`, ascending. If you omit it, the panel uses the field config of Grafana. |
-| `url`        | Link in the card footer, and the click target of card rows without their own URL. It can use templates and dashboard variables.                   |
-| `urlTitle`   | Title of the `url` link in the card footer (a template). The default is `Open dashboard` for a `/d/<uid>` URL, else `Open <card title>`.          |
+| Field        | Meaning                                                                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Name of the rule. The rule editor and the warnings show it.                                                                                         |
+| `select`     | Which cells the rule applies to. See below.                                                                                                         |
+| `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (see [Capacity](#capacity)). `card` sets the card of links. |
+| `shape`      | For shapes. See below.                                                                                                                              |
+| `reducer`    | `last` (default), `mean`, `max` or `min`. Reduces the series to one value. The card rows use it too.                                                |
+| `label`      | Template of the text that `shape.text` writes into the node label. The default is `${value}`. Links ignore it (the panel shows a warning).          |
+| `thresholds` | Removed. A rule with it still loads, but the panel ignores it and shows a warning. Set **Thresholds** in the field config.                          |
+| `url`        | Link in the card footer, and the click target of card rows without their own URL. It can use templates and dashboard variables.                     |
+| `urlTitle`   | Title of the `url` link in the card footer (a template). The default is `Open dashboard` for a `/d/<uid>` URL, else `Open <card title>`.            |
 
 A series selector has `refId` (the query), `name` and `match` (a map of label name to matcher).
 
@@ -180,7 +188,59 @@ A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:
 
 A missing series gives a grey "no data" state. It is never green.
 
-Colour, unit, decimals, value mappings and data links come from the Grafana field config. A rule `thresholds` setting overrides the colour.
+Unit, decimals, value mappings and data links come from the Grafana field config.
+
+## How colours and thresholds work
+
+The panel has no colour settings of its own. It uses the standard field config of Grafana, as all Grafana panels do:
+
+- **Standard options → Color scheme**: for example **From thresholds**, **Single color**, **Classic palette** or a continuous scheme such as **Green-Yellow-Red (by value)**.
+- **Thresholds**: the steps and their colours.
+- **Standard options → Max**: a capacity for links (see [Capacity](#capacity)).
+- **Overrides**: each of these settings for one query (**Fields returned by query**), one series name, or a regex. Use overrides to give each kind of link its own scale, for example a continuous scheme for the WAN query and thresholds for the LAN query.
+
+For each link half and each shape, the panel finds the matched series. Then it uses the field config of that series, with the overrides applied:
+
+```text
+matched series ─▶ field config (defaults + overrides)
+                        │
+        link half with a capacity?
+          │ yes                                   │ no (and all shapes)
+          ▼                                       ▼
+  percent = value in bit/s / capacity × 100       the display colour of the raw value:
+          │                                       value mappings, then thresholds
+          ├─ From thresholds: the steps are       and Color scheme (like a Stat panel)
+          │  percent (in Absolute and in
+          │  Percentage mode)
+          ├─ continuous scheme: percent / 100
+          │  is the position on the scale (0..1)
+          └─ other schemes: the colour of the scheme
+```
+
+- A link half with a capacity: the colour input is the utilisation, 0 to 100 %. A step at 85 means 85 % of the capacity. Values above 100 % get the end colour of a continuous scheme. The line width also follows the percent (option **Link width**).
+- A link half without a capacity, and every shape: the colour is the normal display colour of the raw value, as in any Grafana panel. For example, an `up` query with the thresholds base red and 1 green colours a node green when it is up.
+- No data: always grey, never green.
+
+The overlay attribute `data-dmap-step` is the index of the active threshold step.
+
+### Capacity
+
+The panel gives each link half a capacity in bit/s. It uses the first source that gives a value:
+
+| Order | Source            | Example                                                                                         | Notes                                                                                                                              |
+| ----- | ----------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | A series          | `capacity: { refId: S, match: { job: 'node-${to.node}', device: '${to.port}' }, reducer: max }` | For example `node_network_speed_bytes`. The unit of the field converts the value to bit/s (`Bps` multiplies by 8). Templates work. |
+| 2     | A cell attribute  | `capacity: '${cell.capacity}'`                                                                  | The `capacity` attribute of the cell, for example `meta: { capacity: 1e9 }` in a portograph YAML file.                             |
+| 3     | A number          | `capacity: 1000000000`                                                                          | bit/s.                                                                                                                             |
+| 4     | The field **Max** | **Standard options → Max** of the traffic series, or an override for one query                  | In the unit of the field, for example Max `100000000` with the unit `bits/sec(SI)`.                                                |
+
+The series source uses the rule `reducer` when the selector has no `reducer`. If the capacity series is missing, the field **Max** applies and the panel shows a warning in edit mode. A template that does not resolve makes the link unbound (grey, with a warning).
+
+The hover card shows the capacity of each half, for example `41 Mb/s · 41% of 100 Mb/s`. Without a capacity, it shows only the value.
+
+The units are the data-rate units of Grafana: `bps`, `Kbits` … `Pbits`, `Bps`, `KBs` … `PBs`, and the binary (IEC) forms. A field without a unit is in bit/s. A unit that is not a data rate gives a warning, and the panel uses the raw value as bit/s.
+
+The demo dashboard uses all four sources: LAN links get the port speed series `S`, WAN links the **Max** of an override of query `W`, tunnels a number, and the hand-drawn panel the `capacity` attribute of its cells.
 
 ## Hover card
 

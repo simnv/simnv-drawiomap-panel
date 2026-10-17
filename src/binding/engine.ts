@@ -1,8 +1,9 @@
-import { formattedValueToString } from '@grafana/data';
+import { formattedValueToString, getValueFormat } from '@grafana/data';
 import { endpointScope } from '../adapter/portograph';
 import type {
   BindContext,
   BindResult,
+  CapacitySource,
   CellMeta,
   CellPatch,
   HalfState,
@@ -10,7 +11,6 @@ import type {
   PatchMap,
   ReducerName,
   Rule,
-  RuleThresholds,
   SeriesInfo,
   SeriesSelector,
   ShapeRule,
@@ -32,6 +32,7 @@ const UNBOUND = (ctx: BindContext): HalfState => ({
   width: ctx.linkWidth.min,
   label: 'unbound',
   stepIndex: -1,
+  capacitySource: 'none',
 });
 
 const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound' } as const;
@@ -42,7 +43,6 @@ interface Effective {
   shape?: ShapeRule;
   reducer?: ReducerName;
   label?: string;
-  thresholds?: RuleThresholds;
   url?: string;
   urlTitle?: string;
 }
@@ -66,9 +66,6 @@ function merge(rules: Rule[], cell: CellMeta): Effective | undefined {
     }
     if (r.label !== undefined) {
       eff.label = r.label;
-    }
-    if (r.thresholds) {
-      eff.thresholds = r.thresholds;
     }
     // the title goes with the url of the same rule; a later rule can change only the title
     if (r.url !== undefined || r.urlTitle !== undefined) {
@@ -113,9 +110,20 @@ function resolveSeries(
   return { status: value === undefined ? 'nodata' : 'ok', series: f.series, value, unresolved: [] };
 }
 
+const unitNote = (unit: string) => `unit "${unit}" is not a data rate, the raw value is used as bit/s`;
+
+/** A value in the unit of its field, in bit/s. */
+function bitsOf(value: number, s: SeriesInfo, notes: string[]): number {
+  const rate = toBitsPerSecond(value, s.field.config?.unit);
+  if (rate.unknownUnit) {
+    notes.push(unitNote(rate.unknownUnit));
+  }
+  return rate.bits;
+}
+
 function half(
   sel: SeriesSelector,
-  capacity: number | undefined,
+  cap: LinkCapacity,
   eff: Effective,
   scope: TemplateScope,
   series: SeriesInfo[],
@@ -130,32 +138,30 @@ function half(
         width: ctx.linkWidth.min,
         label: r.status === 'nodata' ? 'no data' : 'unbound',
         stepIndex: -1,
+        capacity: cap.bits,
+        capacitySource: cap.source,
       },
       unresolved: r.unresolved,
       notes: [],
     };
   }
   const notes: string[] = [];
-  let percent: number | undefined;
-  if (capacity) {
-    // capacity is in bit/s; the field unit tells how to read the value
-    const rate = toBitsPerSecond(r.value, r.series.field.config?.unit);
-    if (rate.unknownUnit) {
-      notes.push(`unit "${rate.unknownUnit}" is not a data rate, the raw value is used as bit/s`);
-    }
-    percent = (rate.bits / capacity) * 100;
+  let { bits: capacity, source } = cap;
+  // the last source: the Max of the field config (a standard option, also by override), in the field unit
+  const max = r.series.field.config?.max;
+  if (capacity === undefined && typeof max === 'number' && max > 0) {
+    capacity = bitsOf(max, r.series, notes);
+    source = 'fieldMax';
   }
+  // the capacity is in bit/s; the field unit tells how to read the value
+  const percent = capacity === undefined ? undefined : (bitsOf(r.value, r.series, notes) / capacity) * 100;
   const display = ctx.display(r.series, r.value);
-  const { color, stepIndex } = colorFor(
-    r.value,
-    percent,
-    eff.thresholds,
-    display,
-    r.series.field.config?.thresholds ?? ctx.fieldThresholds,
-    ctx.theme
-  );
+  const { color, stepIndex } = colorFor(r.value, percent, r.series.field, display, ctx.fieldThresholds, ctx.theme);
   const value = formattedValueToString(display);
-  const label = percent === undefined ? value : `${value} · ${Math.round(percent)}%`;
+  const label =
+    percent === undefined || capacity === undefined
+      ? value
+      : `${value} · ${Math.round(percent)}% of ${formattedValueToString(getValueFormat('bps')(capacity))}`;
   return {
     state: {
       status: 'ok',
@@ -165,6 +171,8 @@ function half(
       stepIndex,
       value: r.value,
       percent,
+      capacity,
+      capacitySource: capacity === undefined ? 'none' : source,
       display,
       series: r.series,
     },
@@ -173,21 +181,50 @@ function half(
   };
 }
 
-function capacityOf(link: LinkRule, scope: TemplateScope): { capacity?: number; unresolved: string[] } {
-  if (link.capacity === undefined) {
-    return { unresolved: [] };
+/** The capacity of the link from the rule, in bit/s. Without it, each half can use the Max of its field. */
+interface LinkCapacity {
+  bits?: number;
+  source: CapacitySource;
+  unresolved: string[];
+  notes: string[];
+}
+
+function capacityOf(link: LinkRule, scope: TemplateScope, series: SeriesInfo[], reducer: ReducerName): LinkCapacity {
+  const c = link.capacity;
+  if (c === undefined) {
+    return { source: 'none', unresolved: [], notes: [] };
   }
-  if (typeof link.capacity === 'number') {
-    return { capacity: link.capacity, unresolved: [] };
+  if (typeof c === 'number') {
+    return c > 0
+      ? { bits: c, source: 'number', unresolved: [], notes: [] }
+      : { source: 'none', unresolved: [], notes: [`capacity ${c} is not a positive number`] };
   }
-  const r = resolveTemplate(link.capacity, scope);
+  if (typeof c === 'object') {
+    const r = resolveSeries(c, series, scope, c.reducer ?? reducer);
+    if (r.unresolved.length) {
+      return { source: 'none', unresolved: r.unresolved, notes: [] };
+    }
+    if (r.value === undefined || !r.series) {
+      return {
+        source: 'none',
+        unresolved: [],
+        notes: ['capacity series not found, the field Max applies if it is set'],
+      };
+    }
+    const notes: string[] = [];
+    const bits = bitsOf(r.value, r.series, notes);
+    return bits > 0
+      ? { bits, source: 'series', unresolved: [], notes }
+      : { source: 'none', unresolved: [], notes: [...notes, `capacity series value ${r.value} is not positive`] };
+  }
+  const r = resolveTemplate(c, scope);
   if (r.unresolved.length) {
-    return { unresolved: r.unresolved };
+    return { source: 'none', unresolved: r.unresolved, notes: [] };
   }
   const n = Number(r.text);
   return Number.isFinite(n) && n > 0
-    ? { capacity: n, unresolved: [] }
-    : { unresolved: [`capacity "${r.text}" is not a number`] };
+    ? { bits: n, source: c.includes('${') ? 'attr' : 'number', unresolved: [], notes: [] }
+    : { source: 'none', unresolved: [`capacity "${r.text}" is not a number`], notes: [] };
 }
 
 /** The explicit target wins. Without it, the old fill and stroke flags decide; a text-only rule colours nothing. */
@@ -231,14 +268,7 @@ function shape(
     return { state, unresolved };
   }
   const display = ctx.display(r.series, r.value);
-  const { color, stepIndex } = colorFor(
-    r.value,
-    undefined,
-    eff.thresholds,
-    display,
-    r.series.field.config?.thresholds ?? ctx.fieldThresholds,
-    ctx.theme
-  );
+  const { color, stepIndex } = colorFor(r.value, undefined, r.series.field, display, ctx.fieldThresholds, ctx.theme);
   let text: string | undefined;
   if (sh.text) {
     const t = resolveTemplate(eff.label ?? '${value}', {
@@ -271,7 +301,8 @@ function ruleMatchers(r: Rule): string[] {
   if (r.select.label) {
     out.push(r.select.label);
   }
-  for (const sel of [r.link?.a2b, r.link?.b2a, r.shape?.series, ...(r.shape?.card ?? [])]) {
+  const capacity = typeof r.link?.capacity === 'object' ? r.link.capacity : undefined;
+  for (const sel of [r.link?.a2b, r.link?.b2a, capacity, r.shape?.series, ...(r.shape?.card ?? [])]) {
     if (sel?.name) {
       out.push(sel.name);
     }
@@ -289,6 +320,11 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
       if (err) {
         warnings.push(`${r.name}: ${err}`);
       }
+    }
+    if (r.thresholds !== undefined) {
+      warnings.push(
+        `${r.name}: thresholds is removed and ignored. Set Thresholds and Color scheme in the field config of the panel`
+      );
     }
     if (r.shape?.sparkline) {
       warnings.push(`${r.name}: shape.sparkline is removed, use shape.card`);
@@ -309,8 +345,9 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
     let primary: SeriesInfo | undefined;
 
     if (eff.link && (cell.isEdge || cell.kind === 'link')) {
-      const cap = capacityOf(eff.link, scope);
+      const cap = capacityOf(eff.link, scope, series, eff.reducer ?? 'last');
       unresolved.push(...cap.unresolved);
+      notes.push(...cap.notes);
       patch.link = {};
       if (cap.unresolved.length) {
         // spec: a template that does not resolve makes the binding unbound (grey, warning in edit mode)
@@ -321,14 +358,14 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
           patch.link.b2a = UNBOUND(ctx);
         }
       } else if (eff.link.a2b) {
-        const h = half(eff.link.a2b, cap.capacity, eff, scope, series, ctx);
+        const h = half(eff.link.a2b, cap, eff, scope, series, ctx);
         patch.link.a2b = h.state;
         unresolved.push(...h.unresolved);
         notes.push(...h.notes);
         primary = primary ?? h.state.series;
       }
       if (!cap.unresolved.length && eff.link.b2a) {
-        const h = half(eff.link.b2a, cap.capacity, eff, scope, series, ctx);
+        const h = half(eff.link.b2a, cap, eff, scope, series, ctx);
         patch.link.b2a = h.state;
         unresolved.push(...h.unresolved);
         notes.push(...h.notes);

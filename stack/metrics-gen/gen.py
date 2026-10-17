@@ -3,6 +3,8 @@
 Stdlib only. Counters grow at a constant rate from process start, so
 rate(...[1m]) * 8 is stable: wan1 41 Mb/s (41 % of 100M), wan2 90 Mb/s
 (90 % of 100M), br-lan 480 Mb/s (48 % of 1G). lte has no traffic series and up=0.
+node_network_speed_bytes gives the port speed of some ports (bytes/s, as node_exporter):
+the demo reads the LAN capacity from it.
 node_cpu_usage_percent moves slowly around a base value for each host that is up.
 """
 import math
@@ -33,6 +35,11 @@ LINKS = [
     ("node-proxy-a", "relay-out", 50_000, 20_000),
     ("node-proxy-b", "in-3089", 20_000, 50_000),
 ]
+# port speed in bytes/s: rtr-a br-lan 1 Gb/s, rtr-b br-lan 100 Mb/s
+SPEED = [
+    ("node-rtr-a", "br-lan", 125_000_000),
+    ("node-rtr-b", "br-lan", 12_500_000),
+]
 UP = {
     "node-net-dm": 1, "node-net-hm": 1, "node-rtr-a": 1, "node-rtr-b": 1,
     "node-wan1": 1, "node-wan2": 1, "node-lte": 0, "node-isp-hm": 1,
@@ -51,6 +58,8 @@ def build(elapsed: float) -> bytes:
     for job, dev, tx, rx in LINKS:
         lines.append(f'node_network_transmit_bytes_total{{job="{job}",device="{dev}"}} {int(tx * elapsed)}')
         lines.append(f'node_network_receive_bytes_total{{job="{job}",device="{dev}"}} {int(rx * elapsed)}')
+    for job, dev, speed in SPEED:
+        lines.append(f'node_network_speed_bytes{{job="{job}",device="{dev}"}} {speed}')
     for i, (job, up) in enumerate(UP.items()):
         lines.append(f'up{{job="{job}"}} {up}')
         load = 1.0 + 0.8 * math.sin(elapsed / 60.0 + i)
