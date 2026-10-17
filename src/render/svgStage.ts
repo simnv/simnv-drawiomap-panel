@@ -1,4 +1,4 @@
-import { attachLinkLabels, cellMetaFromAttrs, nodeIcons, nodeParts } from '../adapter/portograph';
+import { applyContract, attachLinkLabels, cellMetaFromAttrs, nodeIcons, nodeParts } from '../adapter/portograph';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
 
 const SHAPE_TAGS = new Set(['rect', 'path', 'ellipse', 'circle', 'polygon', 'image']);
@@ -111,6 +111,8 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
     index.set(id, entry);
   }
   const metas = cellMetas(index);
+  // pg-schema: no schema makes all cells generic. The Diagram options show the warning for another version.
+  applyContract(metas);
   attachLinkLabels(metas);
   const icons = nodeIcons(metas);
   const owners = nodeParts(metas);

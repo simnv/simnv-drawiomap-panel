@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { attachLinkLabels, cellMetaFromAttrs, nodeIcons, nodeParts, parseEndpoint } from './portograph';
+import {
+  applyContract,
+  attachLinkLabels,
+  cellMetaFromAttrs,
+  contractWarning,
+  nodeIcons,
+  nodeParts,
+  parseEndpoint,
+} from './portograph';
 
 describe('parseEndpoint', () => {
   it('parses node, node:port and node:port#n', () => {
@@ -141,5 +149,63 @@ describe('nodeParts', () => {
       'pg-icon~a': 'pg-node~a',
       'pg-nodeDescription~a': 'pg-node~a',
     });
+  });
+});
+
+describe('applyContract', () => {
+  const cells = (schema?: string) => [
+    cellMetaFromAttrs('0', schema === undefined ? { label: '' } : { label: '', 'pg-schema': schema }, false),
+    cellMetaFromAttrs('pg-node~a', { 'pg-kind': 'node', 'pg-id': 'a' }, false, 'A'),
+    cellMetaFromAttrs(
+      'pg-link~a:p1->b:p2',
+      { 'pg-kind': 'link', 'pg-id': 'a:p1->b:p2', 'pg-from': 'a:p1', 'pg-to': 'b:p2' },
+      true
+    ),
+  ];
+
+  it('keeps the portograph kinds for schema 1', () => {
+    const metas = cells('1');
+    expect(applyContract(metas)).toEqual({ schema: '1', warning: undefined });
+    expect(metas.map((m) => m.kind)).toEqual(['other', 'node', 'link']);
+    expect(metas[2].from?.node).toBe('a');
+  });
+
+  it('makes all cells generic when the root has no pg-schema', () => {
+    const metas = cells();
+    expect(applyContract(metas)).toEqual({ schema: undefined, warning: undefined });
+    expect(metas.map((m) => m.kind)).toEqual(['other', 'other', 'other']);
+    expect(metas[1].key).toBe('pg-node~a');
+    expect(metas[2].from).toBeUndefined();
+    expect(metas[2].to).toBeUndefined();
+    // The attributes stay: rules can still select generic cells by them.
+    expect(metas[2].attrs['pg-from']).toBe('a:p1');
+  });
+
+  it('makes all cells generic when there is no root cell', () => {
+    const metas = cells('1').slice(1);
+    expect(applyContract(metas).schema).toBeUndefined();
+    expect(metas.map((m) => m.kind)).toEqual(['other', 'other']);
+  });
+
+  it('warns about a higher schema and reads the cells as schema 1', () => {
+    const metas = cells('2');
+    expect(applyContract(metas)).toEqual({
+      schema: '2',
+      warning: 'diagram uses portograph contract v2; panel supports 1',
+    });
+    expect(metas.map((m) => m.kind)).toEqual(['other', 'node', 'link']);
+  });
+});
+
+describe('contractWarning', () => {
+  it('reads pg-schema of the root cell from the SVG text', () => {
+    const svg = (s: string) => `<svg><g data-cell-id="0" data-meta-label="" ${s}></g><g data-cell-id="1"></g></svg>`;
+    expect(contractWarning(svg('data-meta-pg-schema="1"'))).toBeUndefined();
+    expect(contractWarning(svg(''))).toBeUndefined();
+    expect(contractWarning(svg('data-meta-pg-schema="3"'))).toBe(
+      'diagram uses portograph contract v3; panel supports 1'
+    );
+    // pg-schema on another cell does not count.
+    expect(contractWarning('<svg><g data-cell-id="7" data-meta-pg-schema="3"></g></svg>')).toBeUndefined();
   });
 });

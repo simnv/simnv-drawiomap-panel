@@ -1,8 +1,13 @@
 /**
- * The only module that knows the portograph draw.io binding contract (schema 1).
+ * The only module that knows the portograph draw.io binding contract (schema PG_SCHEMA).
  * See docs/research/portograph-contract.md. Adjust here when the contract changes.
  */
 import type { CellKind, CellMeta, Endpoint } from '../types';
+
+/** The pg-schema version that this panel reads. */
+export const PG_SCHEMA = '1';
+/** draw.io gives the root cell this id. The root carries pg-schema. */
+const ROOT_ID = '0';
 
 export const PG_KINDS: Record<string, CellKind> = {
   node: 'node',
@@ -75,6 +80,37 @@ export function cellMetaFromAttrs(
     meta.to = parseEndpoint(attrs['pg-to']);
   }
   return meta;
+}
+
+function schemaWarning(schema: string | undefined): string | undefined {
+  return schema === undefined || schema === PG_SCHEMA
+    ? undefined
+    : `diagram uses portograph contract v${schema}; panel supports ${PG_SCHEMA}`;
+}
+
+/**
+ * Apply the pg-schema of the root cell to all cells (changes the cells).
+ * No pg-schema: the diagram is not a portograph export. All cells become generic: kind "other", key = cell id,
+ * no endpoints. The data-meta attributes stay, so rules can still select the cells.
+ * A different pg-schema: the cells are read as schema 1, and the result has a warning for the editor.
+ */
+export function applyContract(cells: CellMeta[]): { schema?: string; warning?: string } {
+  const schema = cells.find((c) => c.id === ROOT_ID)?.attrs['pg-schema'];
+  if (schema === undefined) {
+    for (const c of cells) {
+      c.kind = 'other';
+      c.key = c.id;
+      delete c.from;
+      delete c.to;
+    }
+  }
+  return { schema, warning: schemaWarning(schema) };
+}
+
+/** The pg-schema warning for the sanitised SVG text, or undefined. For the editor, without a parse of the SVG. */
+export function contractWarning(svg: string): string | undefined {
+  const root = /<g\b[^>]*\sdata-cell-id="0"[^>]*>/.exec(svg)?.[0];
+  return schemaWarning(root ? /\sdata-meta-pg-schema="([^"]*)"/.exec(root)?.[1] : undefined);
 }
 
 /** A link's label lives in a separate cell with pg-of. Copy its text onto the link. */

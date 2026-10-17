@@ -122,3 +122,13 @@ describe('node icons on l3-routing', () => {
     expect(e.original.strokeWidth).toBe((e.shape as SVGElement).style.strokeWidth);
   });
 });
+
+describe('buildCellIndex and pg-schema', () => {
+  it('reads the pg attributes as generic cells when the root cell has no pg-schema', () => {
+    const svg = fixture('l3-routing').replace(/\sdata-meta-pg-schema="1"/, '');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    const metas = cellMetas(index);
+    expect(metas.length).toBe(108);
+    expect(metas.every((m) => m.kind === 'other' && m.key === m.id && !m.from)).toBe(true);
+  });
+});

@@ -1,6 +1,7 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { StandardEditorProps } from '@grafana/data';
 import { Button, Field, Stack, TextArea, useTheme2 } from '@grafana/ui';
+import { contractWarning } from '../adapter/portograph';
 import { DrawioModal } from '../editor/DrawioModal';
 import { Diagram, Options } from '../types';
 import { fnv1a } from '../util/hash';
@@ -15,6 +16,8 @@ export function DiagramEditor({ value, onChange }: Props) {
   const [paste, setPaste] = useState('');
   const [message, setMessage] = useState<string>('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const svg = value?.svg;
+  const contract = useMemo(() => (svg ? contractWarning(svg) : undefined), [svg]);
 
   const save = useCallback(
     (r: { xml: string; svg: string }) => {
@@ -55,6 +58,14 @@ export function DiagramEditor({ value, onChange }: Props) {
           ? `Diagram ${value.hash}, ${Math.round(value.svg.length / 1024)} KB, saved ${value.updatedAt}`
           : 'No diagram'}
       </div>
+      {contract ? (
+        <div
+          style={{ marginBottom: theme.spacing(1), color: theme.colors.warning.text }}
+          data-testid="dmap-contract-warning"
+        >
+          {contract}
+        </div>
+      ) : null}
       {/* The options pane can be 300 px wide: the buttons wrap to the next row. */}
       <Stack direction="row" wrap="wrap" gap={1}>
         <Button
