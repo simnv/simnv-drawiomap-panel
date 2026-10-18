@@ -221,12 +221,42 @@ function DrawioMapPanelView({
     () => resolvePatterns(cellMetas(stage.index), options.config ?? EMPTY_CONFIG),
     [stage.index, options.config]
   );
-  const activeSnapshots = useBindingSnapshots(
+  const bindingSnapshots = useBindingSnapshots(
     savedPlan,
     options.config ?? EMPTY_CONFIG,
     queryService,
     editing ? undefined : card?.cellId,
     Math.max(1, Math.min(264, width - 16))
+  );
+  // Prepared chart results belong to the current saved plan, stage and query service only.
+  const chartOwner = useMemo(
+    () => ({ plan: savedPlan, root: stage.root, context: queryService?.context, controller: queryService?.controller }),
+    [savedPlan, stage.root, queryService?.context, queryService?.controller]
+  );
+  const [chartResults, setChartResults] = useState<{ owner: object; values: Record<string, QueryPreview> }>();
+  if (chartResults && chartResults.owner !== chartOwner) {
+    setChartResults(undefined);
+  }
+  const onChartPrepared = useCallback(
+    (id: string, preview?: QueryPreview) => {
+      setChartResults((previous) => {
+        const values = previous?.owner === chartOwner ? { ...previous.values } : {};
+        if (preview) {
+          values[id] = preview;
+        } else {
+          if (previous?.owner !== chartOwner || !values[id]) {
+            return previous;
+          }
+          delete values[id];
+        }
+        return { owner: chartOwner, values };
+      });
+    },
+    [chartOwner]
+  );
+  const activeSnapshots = useMemo(
+    () => [...bindingSnapshots, ...Object.values(chartResults?.owner === chartOwner ? chartResults.values : {})],
+    [bindingSnapshots, chartResults, chartOwner]
   );
   const patternSnapshots = useMemo(
     () =>
@@ -496,6 +526,7 @@ function DrawioMapPanelView({
           viewport={viewport}
           revision={viewKey + JSON.stringify(view)}
           replaceVariables={replaceVariables}
+          onPrepared={onChartPrepared}
           draft={
             editing
               ? {

@@ -92,7 +92,7 @@ export function previewSnapshot(
     return panelSnapshot(data, query.source.refId, 0);
   }
   const parameterized = Object.keys(query.source.parameters).length > 0;
-  const selected = [...active, preview].find(
+  const compatible = [...active, preview].filter(
     (result) =>
       result &&
       JSON.stringify(result.query) === JSON.stringify(query) &&
@@ -100,7 +100,11 @@ export function previewSnapshot(
       JSON.stringify(result.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&
       (result.cellId === cellId || !parameterized)
   );
-  return selected?.snapshot ?? { state: 'idle' };
+  // A pending display request must not hide an explicit result for the same context.
+  const selected = compatible.find(
+    (result) => result?.snapshot.state !== 'idle' && result?.snapshot.state !== 'loading'
+  );
+  return (selected ?? compatible[0])?.snapshot ?? { state: 'idle' };
 }
 export function createPreviewResolver(
   plan: BindingPlan,

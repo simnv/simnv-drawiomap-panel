@@ -449,9 +449,26 @@ selected Orca Sol/Luna execution method. Planning changed documentation only.
 - [x] Exercise public component/controller seams with two devices, failures, budgets,
       equal demands, cancellation and uncancellable late delivery.
 
-Final validation passes 530 tests, typecheck, lint, production build and bundle checks.
+Ticket 10 validation passed 530 tests, typecheck, lint, production build and bundle checks.
 Pinned Grafana 12.4.13 and 13.2.4 each pass 11 query/authoring browser tests and eight
 effective-sandbox authoring/geometry tests, including authentication. The runtime
 commands, limits and requirement-to-evidence mapping belong to
 `/tmp/drawiomap-implementation-20261018/ticket-10-report.md`. Ticket 9 individual-query
 preview tests retain their explicit unvalidated-match expectations.
+
+## Final chart reuse review repairs
+
+- [x] Share active saved chart results through the existing prepared-result seam.
+- [x] Reuse compatible chart data for full-pattern and individual query previews.
+- [x] Reject changed context/query/cell scope and release hidden/removed chart results.
+- [x] Preserve independent saved monitoring and bound reused preview frames.
+- [x] Execute affected query/authoring cases on minimum 12.4.0 and a freshly selected
+      development tag, 13.1.0-25957875840, plus pinned 12.4.13/13.2.4 and their effective sandboxes.
+
+Ticket 11 passes 540 unit tests and all source/build checks. Fresh Chromium browser
+runs pass 12 tests each on minimum, development and both pinned targets; both pinned
+effective-sandbox runs pass nine tests each. All runs include saved-chart request
+reuse and the full-pattern scenario. Development selection uses the current official
+Docker Hub response; earlier theme and public-route probe results remain historical.
+Exact commands, versions, digests, regression evidence and cleanup are recorded in
+`/tmp/drawiomap-implementation-20261018/ticket-11-report.md`.

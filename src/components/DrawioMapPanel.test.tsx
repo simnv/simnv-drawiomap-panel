@@ -1,7 +1,7 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { locationService } from '@grafana/runtime';
 import {
@@ -198,7 +198,8 @@ it('keeps saved monitoring active in edit mode and executes a changed draft only
   expect(screen.getByLabelText('Diagram binding inspector')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
   fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-  await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+  expect(nativeQuery).toHaveBeenCalledTimes(3);
   act(() => receivers[2](96));
   await waitFor(() =>
     expect(document.querySelector('[data-cell-id="device-1"] text')?.textContent).toContain('Preview 96')
@@ -1185,4 +1186,227 @@ it('paints every prepared pattern scope, clears on Cancel and preserves the sele
   expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
   expect(nativeQuery).toHaveBeenCalledTimes(2);
   act(() => locationService.partial({ editPanel: null }));
+});
+
+describe('saved chart results in authoring previews', () => {
+  let restoreGeometry: () => void;
+  const receivers: Array<(value: number) => void> = [];
+  const release = vi.fn();
+  beforeEach(() => {
+    const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
+    const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+    Object.defineProperties(SVGElement.prototype, {
+      getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
+      getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
+    });
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 400,
+      bottom: 200,
+      width: 400,
+      height: 200,
+      toJSON: () => ({}),
+    });
+    restoreGeometry = () => {
+      rect.mockRestore();
+      for (const [key, descriptor] of [
+        ['getCTM', ctm],
+        ['getBBox', bbox],
+      ] as const) {
+        if (descriptor) {
+          Object.defineProperty(SVGElement.prototype, key, descriptor);
+        } else {
+          Reflect.deleteProperty(SVGElement.prototype, key);
+        }
+      }
+    };
+    receivers.length = 0;
+    release.mockClear();
+    nativeQuery.mockReset().mockImplementation(
+      (request) =>
+        new Observable((observer) => {
+          const receive = (value: number) => observer.next({ data: [frame('D', {}, [value])] });
+          receivers.push(receive);
+          receive(request.targets[0].expr === 'changed' || request.scopedVars.dm_key?.value === 'other' ? 84 : 42);
+          return release;
+        })
+    );
+    locationService.partial({ editPanel: 818 });
+  });
+  afterEach(() => {
+    act(() => locationService.partial({ editPanel: null }));
+    restoreGeometry();
+  });
+  function fixture() {
+    const config: DiagramConfigV2 = {
+      version: 2,
+      overrides: [],
+      queries: [
+        {
+          id: 'q',
+          name: 'Chart data',
+          source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
+        },
+      ],
+      patterns: [{ id: 'p', name: 'Chart region', select: { ids: ['chart'] }, display: {} }],
+      widgets: [
+        {
+          id: 'w',
+          anchorCellId: 'chart',
+          kind: 'sparkline',
+          label: 'CPU chart',
+          binding: { queryId: 'q', match: {}, reducer: 'last' },
+        },
+      ],
+    };
+    const small =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart"><rect width="180" height="70"/></g><g data-cell-id="other"><rect x="200" width="180" height="70"/></g></svg>';
+    return {
+      ...props({ id: 818 }),
+      options: { ...options, rules: [], config, diagram: { xml: '', svg: small, hash: 'reuse-chart', updatedAt: '' } },
+    };
+  }
+  async function selectChart() {
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    expect(nativeQuery.mock.calls[0][0].maxDataPoints).toBe(400);
+    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
+    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+  }
+  async function preview(completed = '1 / 1') {
+    fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
+    await waitFor(() => expect(screen.getByLabelText('Pattern preview progress').textContent).toContain(completed));
+  }
+  it('reuses a visible chart result for full pattern preview and keeps saved monitoring independent', async () => {
+    render(<DrawioMapPanel {...fixture()} />);
+    await selectChart();
+    await preview();
+    expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    act(() => receivers[0](99));
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('99'));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+  });
+  it('reuses the same saved chart result for individual query preview', async () => {
+    render(<DrawioMapPanel {...fixture()} />);
+    await selectChart();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
+  });
+  it('discards an obsolete context while its replacement chart query is pending', async () => {
+    const p = fixture();
+    const view = render(<DrawioMapPanel {...p} />);
+    await selectChart();
+    nativeQuery.mockImplementation(
+      (request) =>
+        new Observable((observer) => {
+          if (request.maxDataPoints === 160) {
+            observer.next({ data: [frame('D', {}, [84])] });
+          }
+          return release;
+        })
+    );
+    view.rerender(<DrawioMapPanel {...p} timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }} />);
+    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('dmap-widget').textContent).not.toContain('42');
+    act(() => receivers[0](999));
+    await preview();
+    expect(nativeQuery).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('84');
+    expect(screen.getByTestId('dmap-widget').textContent).not.toContain('999');
+  });
+  it('executes a changed draft query without reusing or stopping its saved chart query', async () => {
+    render(<DrawioMapPanel {...fixture()} />);
+    await selectChart();
+    fireEvent.click(screen.getByText('Import native target JSON', { exact: true }));
+    fireEvent.change(screen.getByLabelText('Native target JSON'), {
+      target: { value: JSON.stringify({ refId: 'D', expr: 'changed' }) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    await preview();
+    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('84');
+    act(() => receivers[0](99));
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('84');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('99'));
+  });
+  it('keeps different parameterized cell scopes isolated while reusing the chart scope', async () => {
+    const p = fixture();
+    const query = p.options.config.queries[0];
+    if (query.source.kind === 'datasource') {
+      query.source.parameters = { dm_key: 'cell.key' };
+    }
+    p.options.config.patterns[0].select = { ids: ['chart', 'other'] };
+    p.options.config.patterns[0].display.hover = {
+      rows: [{ kind: 'value', label: 'Metric', binding: { queryId: 'q', match: {}, reducer: 'last' } }],
+    };
+    render(<DrawioMapPanel {...p} />);
+    await selectChart();
+    fireEvent.click(screen.getByRole('button', { name: 'Select other' }));
+    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    await preview('2 / 2');
+    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 160]);
+    expect(screen.getByLabelText('Hover row preview').textContent).toContain('84');
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
+  });
+  it('releases hidden chart results, starts no hidden demand and cleans up on unmount', async () => {
+    const p = fixture();
+    const view = render(<DrawioMapPanel {...p} />);
+    await selectChart();
+    const shape = view.container.querySelector<SVGElement>('[data-cell-id="chart"] rect')!;
+    act(() => {
+      shape.style.display = 'none';
+    });
+    await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('dmap-widget')).toBeNull();
+    await preview();
+    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    expect(nativeQuery.mock.calls[1][0].maxDataPoints).toBe(160);
+    view.unmount();
+    expect(release).toHaveBeenCalledTimes(2);
+    act(() => receivers[0](999));
+    render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(3));
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
+  });
+  it('drops a removed saved chart result before previewing its former query scope', async () => {
+    const p = fixture();
+    const view = render(<DrawioMapPanel {...p} />);
+    await selectChart();
+    const config: DiagramConfigV2 = {
+      ...p.options.config,
+      widgets: [],
+      patterns: [
+        {
+          ...p.options.config.patterns[0],
+          display: {
+            hover: {
+              rows: [{ kind: 'value', label: 'Metric', binding: { queryId: 'q', match: {}, reducer: 'last' } }],
+            },
+          },
+        },
+      ],
+    };
+    view.rerender(<DrawioMapPanel {...p} options={{ ...p.options, config }} />);
+    await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('dmap-widget')).toBeNull();
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
+    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    await preview();
+    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    expect(nativeQuery.mock.calls[1][0].maxDataPoints).toBe(160);
+    expect(screen.getByLabelText('Hover row preview').textContent).toContain('42');
+  });
 });

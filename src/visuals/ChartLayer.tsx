@@ -24,6 +24,7 @@ export interface ChartLayerProps {
   viewport: HTMLElement | null;
   revision?: unknown;
   replaceVariables?: (value: string) => string;
+  onPrepared?: (id: string, preview?: QueryPreview) => void;
   draft?: {
     plan: BindingPlan;
     queries: NamedQuery[];
@@ -79,7 +80,6 @@ function Region({
   presentation?: BindingPlan['widgets'][number];
   monitorOnly?: boolean;
   draftOnly?: boolean;
-  onPrepared?: (id: string, preview?: QueryPreview) => void;
 }) {
   const { root, cells, viewport, context, controller, queries, revision, replaceVariables, draft, onPrepared } = props;
   const { widget, scope } = presentation ?? entry;
@@ -334,17 +334,22 @@ function Region({
 
 export function ChartLayer(props: ChartLayerProps) {
   const [prepared, setPrepared] = useState<Record<string, QueryPreview>>({});
-  const onPrepared = useCallback((id: string, preview?: QueryPreview) => {
-    setPrepared((old) => {
-      const next = { ...old };
-      if (preview) {
-        next[id] = preview;
-      } else {
-        delete next[id];
-      }
-      return next;
-    });
-  }, []);
+  const publish = props.onPrepared;
+  const onPrepared = useCallback(
+    (id: string, preview?: QueryPreview) => {
+      publish?.(id, preview);
+      setPrepared((old) => {
+        const next = { ...old };
+        if (preview) {
+          next[id] = preview;
+        } else {
+          delete next[id];
+        }
+        return next;
+      });
+    },
+    [publish]
+  );
   const draft = props.draft
     ? { ...props.draft, active: [...Object.values(prepared), ...(props.draft.active ?? [])] }
     : undefined;

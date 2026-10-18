@@ -16,7 +16,7 @@ import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { cellMatches } from '../binding/select';
 import { bindPlan } from '../binding/engine';
 import { buildConfiguredCard } from '../interact/cardModel';
-import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
+import { createPreviewResolver, previewSnapshot, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
 import { previewPattern, type PatternPreview } from './patternPreview';
 import { PatternTransfer } from './PatternTransfer';
 import { DrawioModal } from './DrawioModal';
@@ -542,6 +542,19 @@ export function BindingEditor({
                 }
                 if (diagnostics.length || queryError) {
                   setSnapshot({ state: 'error', message: 'Fix binding diagnostics before preview.' });
+                  return;
+                }
+                const existing = previewSnapshot(
+                  query,
+                  draft.config,
+                  data,
+                  draft.cellId ?? '',
+                  undefined,
+                  prepared,
+                  context.generation
+                );
+                if (existing.state === 'ready' || existing.state === 'empty') {
+                  setSnapshot(existing);
                   return;
                 }
                 release.current = controller.watch(

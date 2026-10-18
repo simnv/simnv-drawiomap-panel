@@ -2,6 +2,52 @@ import { PanelEditPage } from '@grafana/plugin-e2e';
 import { nativeQuery } from '../src/fixtures/authoring-config';
 import { attachJson, expect, observeQueries, saveDashboard, svg, test } from './authoring-fixtures';
 
+test('saved visible chart supplies full pattern and individual previews without another request', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+  selectors,
+}, testInfo) => {
+  config.queries = [nativeQuery('saved', 'vector(42)')];
+  config.patterns = [{ id: 'chart', name: 'Chart region', select: { ids: ['chart-1'] }, display: {} }];
+  config.widgets = [
+    {
+      id: 'saved-chart',
+      anchorCellId: 'chart-1',
+      kind: 'sparkline',
+      label: 'Saved value',
+      binding: { queryId: 'saved', match: {}, reducer: 'last' },
+    },
+  ];
+  const uid = await createDiagram(config);
+  const requests = observeQueries(page, uid);
+  const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  const chart = page.getByTestId('dmap-panel').locator('[data-dmap-widget="saved-chart"]');
+  const count = () => requests.filter((r) => r.queries.some((q) => q.refId === 'SAVED')).length;
+  await expect(chart).toContainText('42');
+  expect(count()).toBe(1);
+  await inspector.getByRole('button', { name: 'Select chart-1', exact: true }).click();
+  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('pattern');
+  await inspector.getByRole('button', { name: 'Preview all pattern matches', exact: true }).click();
+  await expect(inspector.getByLabel('Pattern preview progress')).toContainText('1 / 1');
+  await expect(inspector.getByLabel('Affected metric resolution')).toContainText('chart-1: resolved');
+  await expect(chart).toContainText('42');
+  expect(count()).toBe(1);
+  await inspector.getByRole('button', { name: 'Preview query', exact: true }).click();
+  await expect(inspector.getByLabel('Query preview result')).toContainText('ready');
+  expect(count()).toBe(1);
+  await edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
+  await expect.poll(count).toBe(2);
+  await expect(inspector.getByLabel('Pattern preview progress')).toHaveCount(0);
+  await expect(chart).toContainText('42');
+  await inspector.getByRole('button', { name: 'Preview all pattern matches', exact: true }).click();
+  await expect(inspector.getByLabel('Pattern preview progress')).toContainText('1 / 1');
+  expect(count()).toBe(2);
+  await attachJson(testInfo, 'saved-chart-reuse-requests', { requests, nativeExecutions: count() });
+});
+
 test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) {
     const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });

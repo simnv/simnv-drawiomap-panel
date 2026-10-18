@@ -136,6 +136,36 @@ preview tests still show the other parameter value as unvalidated.
 
 The browser runs use Chromium. Aggregate limits, queue exhaustion, ambiguity, datasource
 errors and uncancellable Promise rejection have component/controller evidence. The new
-live failure is a missing metric, not an injected datasource outage. Earlier minimum,
-latest-dev and theme matrices remain historical evidence. Current commands and limits
+live failure is a missing metric, not an injected datasource outage. Ticket 10 did not rerun minimum, latest-dev or theme matrices. Current commands and limits
 are recorded in `/tmp/drawiomap-implementation-20261018/ticket-10-report.md`.
+
+## Saved chart reuse and fresh minimum/development checks
+
+Ticket 11 shares active saved chart results with the editor through the existing
+prepared-result path. Full pattern and individual query previews reuse compatible
+visible chart data at its loaded resolution. Context, query, saved-plan and SVG-stage
+changes reject obsolete results. Visibility release and unmount remove active chart
+references. Saved chart monitoring keeps its own subscription; preview neither creates
+hidden demand nor replaces the controller cache. Reused frames still count against
+full-preview aggregate limits. A pending saved request does not mask a ready explicit
+result for the same context.
+
+Final source passes 540 unit tests across 46 files, typecheck, lint, production build
+and bundle checks. Lint retains five existing deprecation warnings. Fresh Chromium
+query/authoring runs pass 12 tests each, including authentication, on minimum Grafana
+12.4.0, development 13.1.0-25957875840, pinned 12.4.13 and pinned 13.2.4. Effective
+frontend sandbox authoring/geometry runs pass nine tests each on both pinned versions.
+All six runs execute the saved-chart reuse assertion and the full-pattern scenario.
+The saved-chart case observes one request after both preview actions and exactly one
+additional saved-monitor request after dashboard Refresh; another full preview reuses
+that new result.
+
+The development tag was selected on 2026-10-18 from the
+[official Docker Hub API](https://hub.docker.com/v2/repositories/grafana/grafana-dev/tags?page_size=100&ordering=last_updated).
+It is the newest returned normal build tag with an arm64 image, updated
+2026-05-16T09:23:40.549393Z. Its older version family reflects the returned registry
+contents. Raw tag response, selection receipt, image digests, actual runtime versions,
+commands, request artifacts and cleanup belong to
+`/tmp/drawiomap-implementation-20261018/ticket-11-report.md` and its referenced files.
+Earlier full theme/public-route-probe matrices remain historical. These fresh runs
+cover the affected production query/authoring paths, not every browser or datasource.

@@ -370,6 +370,41 @@ it.each([
   stop();
   controller.dispose();
 });
+it.each([
+  ['entries', { maxEntries: 1 }],
+  ['sample values', { maxCachedValues: 3 }],
+  ['bytes', { maxCachedBytes: 600 }],
+])('accounts reused chart frames against aggregate prepared %s', async (_name, limit) => {
+  const s = batch();
+  const execute = vi.fn(() => vi.fn());
+  const controller = createQueryController(execute);
+  const compatible = ['a', 'b'].flatMap((cellId, index) => {
+    const snapshot = ready(index === 0 ? 42 : 84);
+    return s.config.queries.map((query) => ({ query, cellId, context: s.context, snapshot }));
+  });
+  const publish = vi.fn();
+  const stop = previewPattern(
+    controller,
+    s.plan,
+    s.config,
+    ['a', 'b'],
+    s.context,
+    publish,
+    {
+      ...DEFAULT_QUERY_POLICY,
+      ...limit,
+    },
+    compatible
+  );
+  const snapshots: QuerySnapshot[] = publish.mock.calls
+    .at(-1)?.[0]
+    .previews.map((p: { snapshot: QuerySnapshot }) => p.snapshot);
+  expect(execute).not.toHaveBeenCalled();
+  expect(snapshots.map((snapshot) => snapshot.state)).toEqual(['ready', 'ready', 'error', 'error']);
+  expect(snapshots[2]).toEqual({ state: 'error', message: expect.stringContaining('Reduce the pattern scope') });
+  stop();
+  controller.dispose();
+});
 it('reports exhausted controller queue and active sample budgets as completed failures', async () => {
   const s = batch();
   const execute = vi.fn((_request, _emit) => vi.fn());
