@@ -14,6 +14,7 @@ import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, SeriesInfo } from '../types';
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
+import { PanelQueryProvider } from '../query/panel';
 
 const styles = {
   wrapper: css`
@@ -72,7 +73,21 @@ interface CardState {
 /** Touch screens and other devices without hover: only a tap opens (and pins) the card. */
 const canHover = () => !(typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
 
-export function DrawioMapPanel({
+export function DrawioMapPanel(props: PanelProps<Options>) {
+  return (
+    <PanelQueryProvider
+      data={props.data}
+      timeRange={props.timeRange}
+      timeZone={props.timeZone}
+      replaceVariables={props.replaceVariables}
+      defaultDatasource={props.options.config?.defaultDatasource}
+    >
+      <DrawioMapPanelView {...props} />
+    </PanelQueryProvider>
+  );
+}
+
+function DrawioMapPanelView({
   options,
   data,
   width,
