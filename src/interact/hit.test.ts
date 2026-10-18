@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
-import { patchAt } from './hit';
+import { cellAt, patchAt } from './hit';
+import { buildCellIndex } from '../render/svgStage';
+
+describe('cellAt', () => {
+  it('selects unbound indexed cells and resolves icon ownership without patches', () => {
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<svg><g data-cell-id="node"><rect/></g><g data-cell-id="icon"><ellipse/></g><g data-cell-id="unbound"><path/></g></svg>';
+    const cells = buildCellIndex(host.querySelector('svg')!);
+    cells.get('icon')!.ownerId = 'node';
+    expect(cellAt(host.querySelector('ellipse'), cells)?.meta.id).toBe('node');
+    expect(cellAt(host.querySelector('path'), cells)?.meta.id).toBe('unbound');
+    expect(cellAt(null, cells)).toBeUndefined();
+    expect(cellAt(host, cells)).toBeUndefined();
+  });
+});
 
 const p = (cellId: string): CellPatch => ({ cellId, ruleNames: [], scope: { cell: {} }, urls: [], warnings: [] });
 

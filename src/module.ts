@@ -42,7 +42,9 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
       .addCustomEditor({
         id: 'rules',
         path: 'rules',
-        name: 'Rules',
+        name: 'Legacy rules',
+        description:
+          'Author V2 bindings and named queries in the panel preview side inspector. Existing legacy rules remain available here.',
         category: ['Binding'],
         editor: RulesEditor,
         defaultValue: [],

@@ -2,7 +2,8 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { locationService } from '@grafana/runtime';
 import {
   createTheme,
   dateTime,
@@ -18,6 +19,15 @@ import {
 import { DrawioMapPanel } from './DrawioMapPanel';
 import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
+import type { DiagramConfigV2 } from '../model/config';
+const nativeQuery = vi.hoisted(() => vi.fn());
+vi.mock('@grafana/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@grafana/runtime')>()),
+  getDataSourceSrv: () => ({
+    get: async () => ({ uid: 'native', components: {}, query: nativeQuery }),
+    getInstanceSettings: () => undefined,
+  }),
+}));
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. Set them before the imports run.
 vi.hoisted(() => {
@@ -36,6 +46,123 @@ vi.hoisted(() => {
 });
 
 const svg = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8');
+
+it('mounts the focused inspector for the public editPanel route and persists through onOptionsChange', async () => {
+  const save = vi.fn();
+  locationService.partial({ editPanel: 1 });
+  const p = props({ id: 1, onOptionsChange: save });
+  render(<DrawioMapPanel {...p} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Select pg-node~rtr-b' }));
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'pg-node~rtr-b bindings' }));
+  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Draft label' } });
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+  expect(save.mock.calls[0][0].config.overrides).toContainEqual({
+    cellId: 'pg-node~rtr-b',
+    display: { label: 'Draft label' },
+  });
+  act(() => locationService.partial({ editPanel: null }));
+  expect(screen.queryByLabelText('Diagram binding inspector')).toBeNull();
+});
+
+it('paints draft bindings before Apply and restores saved paint on Cancel', async () => {
+  locationService.partial({ editPanel: 99 });
+  const config: DiagramConfigV2 = {
+    version: 2,
+    queries: [{ id: 'q', name: 'Metric', source: { kind: 'panel', refId: 'Q' } }],
+    overrides: [],
+    widgets: [],
+    patterns: [
+      {
+        id: 'devices',
+        name: 'Devices',
+        select: { ids: ['device-1'] },
+        display: {
+          label: 'Saved',
+          shape: { text: true, target: 'stroke', binding: { queryId: 'q', match: {}, reducer: 'last' } },
+        },
+      },
+    ],
+  };
+  const small =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g data-cell-id="device-1"><rect width="40" height="30"/><text>Device</text></g></svg>';
+  const save = vi.fn();
+  const p = props({ id: 99, onOptionsChange: save });
+  render(
+    <DrawioMapPanel
+      {...p}
+      options={{
+        ...options,
+        rules: [],
+        config,
+        diagram: { xml: '<mxfile/>', svg: small, hash: 'draft-paint', updatedAt: '' },
+      }}
+      data={{ ...p.data, series: [frame('Q', {}, [42])] }}
+    />
+  );
+  const label = () => document.querySelector('[data-cell-id="device-1"] text')?.textContent;
+  await waitFor(() => expect(label()).toBe('Saved'));
+  fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Preview draft' } });
+  await waitFor(() => expect(label()).toBe('Preview draft'));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+  await waitFor(() => expect(label()).toBe('Saved'));
+  act(() => locationService.partial({ editPanel: null }));
+});
+
+it('paints explicitly previewed native data without executing on mount or query edits', async () => {
+  nativeQuery.mockReset().mockResolvedValue({ data: [frame('D', {}, [42])] });
+  locationService.partial({ editPanel: 98 });
+  const config: DiagramConfigV2 = {
+    version: 2,
+    queries: [
+      {
+        id: 'native',
+        name: 'Native',
+        source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
+      },
+    ],
+    overrides: [],
+    widgets: [],
+    patterns: [
+      {
+        id: 'device',
+        name: 'Device',
+        select: { ids: ['device-1'] },
+        display: {
+          shape: { text: true, binding: { queryId: 'native', match: {}, reducer: 'last' } },
+          label: 'Preview ${value}',
+        },
+      },
+    ],
+  };
+  const small =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g data-cell-id="device-1"><rect width="40" height="30"/><text>Device</text></g></svg>';
+  const p = props({ id: 98 });
+  render(
+    <DrawioMapPanel
+      {...p}
+      options={{
+        ...options,
+        rules: [],
+        config,
+        diagram: { xml: '<mxfile/>', svg: small, hash: 'native-paint', updatedAt: '' },
+      }}
+    />
+  );
+  await screen.findByText(/No supported native query editor/);
+  expect(nativeQuery).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+  await waitFor(() =>
+    expect(document.querySelector('[data-cell-id="device-1"] text')?.textContent).toContain('Preview 42')
+  );
+  expect(nativeQuery).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByLabelText('Query name'), { target: { value: 'Changed' } });
+  expect(nativeQuery).toHaveBeenCalledTimes(1);
+  act(() => locationService.partial({ editPanel: null }));
+});
 /** `config`: the field config after the overrides, as Grafana gives it to the panel. */
 const frame = (refId: string, labels: Record<string, string>, values: number[], config: FieldConfig = {}) =>
   toDataFrame({

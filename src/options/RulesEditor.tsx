@@ -188,7 +188,7 @@ function RuleCard({ rule, onChange, onRemove }: { rule: Rule; onChange: (r: Rule
   );
 }
 
-export function RulesEditor({ value, onChange }: Props) {
+export function RulesEditor({ value, onChange, context }: Props) {
   const rules = value ?? [];
   const [tab, setTab] = useState<'form' | 'yaml'>('form');
   const [yaml, setYaml] = useState<string>(() => rulesToYaml(rules));
@@ -211,6 +211,21 @@ export function RulesEditor({ value, onChange }: Props) {
 
   return (
     <div>
+      <p>
+        Open the panel preview in edit mode to select elements, edit named queries, and apply bindings in the side
+        inspector.
+      </p>
+      {context.options?.config ? (
+        <p>
+          This panel uses V2 bindings. These legacy rules are retained for reference and are not edited by the side
+          inspector.
+        </p>
+      ) : (
+        <p>
+          Legacy rules are preserved. Explicitly recreate V2 bindings in the side inspector, then Apply bindings to save
+          them.
+        </p>
+      )}
       <RadioButtonGroup<'form' | 'yaml'>
         options={[
           { label: 'Form', value: 'form' },

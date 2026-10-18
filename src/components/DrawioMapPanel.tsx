@@ -1,8 +1,19 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { css } from '@emotion/css';
 import { getDisplayProcessor, PanelProps } from '@grafana/data';
 import { IconButton, useTheme2 } from '@grafana/ui';
-import { bind } from '../binding/engine';
+import { locationService } from '@grafana/runtime';
+import { bind, bindPlan } from '../binding/engine';
+import { resolvePatterns } from '../binding/patterns';
 import { extractSeries } from '../binding/series';
 import { buildCard, DisplayOverride } from '../interact/cardModel';
 import { Card } from '../interact/Card';
@@ -14,7 +25,20 @@ import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, SeriesInfo } from '../types';
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
-import { PanelQueryProvider } from '../query/panel';
+import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
+import { BindingEditor } from '../editor/BindingEditor';
+import { EMPTY_CONFIG } from '../editor/draft';
+import type { DiagramConfigV2 } from '../model/config';
+import { createPreviewResolver, usePreviewTime, type QueryPreview } from '../editor/preview';
+
+function usePanelEditing(id: number) {
+  const subscribe = useCallback((notify: () => void) => {
+    const sub = locationService?.getLocationObservable().subscribe(notify);
+    return () => sub?.unsubscribe();
+  }, []);
+  const editPanel = useSyncExternalStore(subscribe, () => String(locationService?.getSearchObject().editPanel ?? ''));
+  return editPanel === String(id);
+}
 
 const styles = {
   wrapper: css`
@@ -88,6 +112,7 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
 }
 
 function DrawioMapPanelView({
+  id,
   options,
   data,
   width,
@@ -96,11 +121,20 @@ function DrawioMapPanelView({
   replaceVariables,
   timeZone,
   timeRange,
+  onOptionsChange,
 }: PanelProps<Options>) {
   const theme = useTheme2();
+  const editing = usePanelEditing(id);
+  const [draftConfig, setDraftConfig] = useState<DiagramConfigV2>();
+  const [queryPreview, setQueryPreview] = useState<QueryPreview>();
+  const queryService = useContext(PanelQueryContext);
+  const nowMs = usePreviewTime(data, queryService?.context.generation, queryPreview?.snapshot);
+  const inspectorWidth = Math.min(420, Math.max(240, width * 0.4));
+  const stageWidth = editing ? Math.max(1, width - inspectorWidth) : width;
   const opts = {
     ...DEFAULT_OPTIONS,
     ...options,
+    config: editing ? (draftConfig ?? options.config) : options.config,
     zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
   };
@@ -139,31 +173,39 @@ function DrawioMapPanelView({
     (s: SeriesInfo, v: number) => (s.field.display ?? getDisplayProcessor({ field: s.field, theme, timeZone }))(v),
     [theme, timeZone]
   );
-  const result = useMemo(
-    () =>
-      bind(opts.rules ?? [], cellMetas(stage.index), series, {
-        theme,
-        fieldThresholds: fieldConfig.defaults.thresholds,
-        replaceVariables,
-        display,
-        linkWidth: opts.linkWidth,
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      opts.rules,
-      stage.index,
-      series,
+  const bindingContext = useMemo(
+    () => ({
       theme,
-      fieldConfig.defaults.thresholds,
+      fieldThresholds: fieldConfig.defaults.thresholds,
       replaceVariables,
       display,
-      opts.linkWidth.min,
-      opts.linkWidth.max,
-    ]
+      linkWidth: { min: opts.linkWidth.min, max: opts.linkWidth.max },
+    }),
+    [theme, fieldConfig.defaults.thresholds, replaceVariables, display, opts.linkWidth.min, opts.linkWidth.max]
   );
+  const plan = useMemo(
+    () => resolvePatterns(cellMetas(stage.index), opts.config ?? EMPTY_CONFIG),
+    [stage.index, opts.config]
+  );
+  const resolve = useMemo(
+    () =>
+      createPreviewResolver(plan, opts.config ?? EMPTY_CONFIG, data, queryPreview, {
+        theme,
+        timeZone,
+        generation: queryService?.context.generation,
+      }),
+    [plan, opts.config, data, queryPreview, theme, timeZone, queryService?.context.generation]
+  );
+  const result = useMemo(() => {
+    if (opts.config) {
+      const bound = bindPlan(plan, resolve, bindingContext, nowMs);
+      return { patches: bound.patches, warnings: bound.diagnostics.map((d) => `${d.path}: ${d.message}`) };
+    }
+    return bind(opts.rules ?? [], cellMetas(stage.index), series, bindingContext);
+  }, [opts.config, opts.rules, plan, resolve, bindingContext, nowMs, stage.index, series]);
 
   // The card resolves its rows only for the open cell. A data refresh updates it in place.
-  const cardPatch = card ? result.patches.get(card.cellId) : undefined;
+  const cardPatch = !editing && card ? result.patches.get(card.cellId) : undefined;
   if (card && !cardPatch) {
     // the rules or the diagram changed and the cell has no patch now
     setCard(null);
@@ -248,7 +290,7 @@ function DrawioMapPanelView({
       renderOverlay(root, stage.index, result.patches, { theme });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, result, theme]);
+  }, [stage.root, stage.index, result, theme, editing]);
 
   // Zoom layout.
   useEffect(() => {
@@ -258,13 +300,13 @@ function DrawioMapPanelView({
     const layout = viewBoxFor(
       { ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align },
       view ?? stage.base,
-      { width, height }
+      { width: stageWidth, height }
     );
     applyLayout(stage.root, layout);
     if (containerRef.current) {
       containerRef.current.style.overflow = layout.overflow;
     }
-  }, [stage.root, stage.base, zoomMode, zoomPercent, align, width, height, view]);
+  }, [stage.root, stage.base, zoomMode, zoomPercent, align, stageWidth, height, view]);
 
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();
@@ -286,6 +328,12 @@ function DrawioMapPanelView({
 
   // A click or a tap pins the card of the cell. A click on empty space closes it.
   const onClick = (e: React.MouseEvent) => {
+    if (editing) {
+      if (panZoom.takeClick()) {
+        e.stopPropagation();
+      }
+      return;
+    }
     const stageEl = containerRef.current;
     // a drag that moved the view is not a click
     if (panZoom.takeClick() || inCard(e.target) || corner.current?.contains(e.target as Node) || !stageEl) {
@@ -296,6 +344,9 @@ function DrawioMapPanelView({
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: true } : null);
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (editing) {
+      return;
+    }
     const stageEl = containerRef.current;
     if ((e.key !== 'Enter' && e.key !== ' ') || !stageEl || inCard(e.target) || !(e.target instanceof Element)) {
       return;
@@ -311,6 +362,9 @@ function DrawioMapPanelView({
     setCard({ cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top, pinned: true });
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (editing) {
+      return;
+    }
     // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
     const stageEl = containerRef.current;
     if (e.pointerType === 'touch' || !canHover() || pinned || panZoom.busy() || !stageEl) {
@@ -333,7 +387,7 @@ function DrawioMapPanelView({
   // A zoomed view takes all touches: one finger pans it.
   const touchAction = panZoom.zoomed ? 'none' : 'pan-x pan-y';
 
-  return (
+  const preview = (
     <div
       className={styles.wrapper}
       ref={wrapperRef}
@@ -394,5 +448,22 @@ function DrawioMapPanelView({
         </div>
       ) : null}
     </div>
+  );
+  return editing ? (
+    <BindingEditor
+      key={`${opts.diagram.hash}:${JSON.stringify(options.config)}`}
+      config={options.config ?? EMPTY_CONFIG}
+      cells={stage.index}
+      data={data}
+      inspectorWidth={inspectorWidth}
+      onPreview={setDraftConfig}
+      onQueryPreview={setQueryPreview}
+      bindContext={bindingContext}
+      onSave={(config) => onOptionsChange({ ...options, config })}
+    >
+      {preview}
+    </BindingEditor>
+  ) : (
+    preview
   );
 }

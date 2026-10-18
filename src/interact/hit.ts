@@ -1,4 +1,18 @@
-import type { CellIndex, CellPatch, PatchMap } from '../types';
+import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
+
+/** Resolve indexed cells even when they have no binding or rendered patch. */
+export function cellAt(target: EventTarget | null, cells: CellIndex): CellEntry | undefined {
+  let el = target instanceof Element ? target : null;
+  while (el) {
+    const id = el.getAttribute('data-dmap-cell') ?? el.getAttribute('data-cell-id');
+    const cell = id ? cells.get(id) : undefined;
+    if (cell) {
+      return (cell.ownerId ? cells.get(cell.ownerId) : undefined) ?? cell;
+    }
+    el = el.parentElement;
+  }
+  return undefined;
+}
 
 /**
  * The nearest patched cell at or above `target`. Overlay elements point at their cell with data-dmap-cell.
