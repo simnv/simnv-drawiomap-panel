@@ -1,4 +1,4 @@
-import { CoreApp, LoadingState, type PanelData, type ScopedVars } from '@grafana/data';
+import { CoreApp, type DataFrame, type PanelData, type ScopedVars } from '@grafana/data';
 import {
   DEFAULT_QUERY_POLICY,
   type QueryController,
@@ -8,6 +8,7 @@ import {
   type QuerySnapshot,
   type ResolvedQueryRequest,
 } from './types';
+import { panelSnapshot } from './panelSnapshot';
 
 /** Canonical JSON for persisted query objects and resolved context, never datasource instances. */
 function stable(value: unknown): string {
@@ -81,6 +82,11 @@ function resolve(demand: QueryDemand, now: number): ResolvedQueryRequest {
   });
   return { datasource: { ...datasource }, request, cacheKey };
 }
+/** Include vector slots and serialized field configuration in both memory budgets. */
+function measureFrames(frames: DataFrame[]): { values: number; bytes: number } {
+  const values = frames.reduce((n, frame) => n + frame.fields.reduce((m, field) => m + field.values.length, 0), 0);
+  return { values, bytes: JSON.stringify(frames).length * 2 + values * 8 };
+}
 interface Entry {
   request?: ResolvedQueryRequest;
   panelRef?: string;
@@ -110,16 +116,14 @@ export function createQueryController(
       return;
     }
     const frames = snapshot.state === 'ready' ? snapshot.frames : [];
-    const values = frames.reduce((n, f) => n + f.fields.reduce((m, field) => m + field.values.length, 0), 0);
-    let bytes: number;
+    let size: ReturnType<typeof measureFrames>;
     try {
-      // Count vector slots as well as serialized strings/configuration, conservatively.
-      bytes = JSON.stringify(frames).length * 2 + values * 8;
+      size = measureFrames(frames);
     } catch {
       return;
     }
     cache.delete(key);
-    cache.set(key, { snapshot, values, bytes });
+    cache.set(key, { snapshot, ...size });
     const totals = () =>
       [...cache.values()].reduce((n, value) => ({ values: n.values + value.values, bytes: n.bytes + value.bytes }), {
         values: 0,
@@ -174,17 +178,13 @@ export function createQueryController(
             return;
           }
           if (snapshot.state === 'ready') {
-            const values = snapshot.frames.reduce(
-              (n, f) => n + f.fields.reduce((m, field) => m + field.values.length, 0),
-              0
-            );
-            let bytes = Infinity;
+            let size = { values: Infinity, bytes: Infinity };
             try {
-              bytes = JSON.stringify(snapshot.frames).length * 2 + values * 8;
+              size = measureFrames(snapshot.frames);
             } catch {
-              /* Unmeasurable results cannot be retained. */
+              /* Unmeasurable active results are rejected; inactive cache retention skips them. */
             }
-            if (values > policy.maxActiveResultValues || bytes > policy.maxActiveResultBytes) {
+            if (size.values > policy.maxActiveResultValues || size.bytes > policy.maxActiveResultBytes) {
               snapshot = {
                 state: 'error',
                 message: 'Diagram query result exceeds the active result budget. Reduce the range or resolution.',
@@ -241,21 +241,6 @@ export function createQueryController(
       pump();
     }
   };
-  const panelSnapshot = (refId: string): QuerySnapshot => {
-    if (!panelData) {
-      return { state: 'idle' };
-    }
-    if (panelData.error || panelData.errors?.length || panelData.state === LoadingState.Error) {
-      return { state: 'error', message: 'Panel query failed.' };
-    }
-    if (panelData.state === LoadingState.Loading || panelData.state === LoadingState.NotStarted) {
-      return { state: 'loading' };
-    }
-    const frames = panelData.series.filter((f) => f.refId === refId);
-    return frames.length
-      ? { state: 'ready', frames, fetchedAt: now(), fromCache: false }
-      : { state: 'empty', fetchedAt: now(), fromCache: false };
-  };
   return {
     setPanelData(data: PanelData) {
       if (disposed) {
@@ -264,7 +249,7 @@ export function createQueryController(
       panelData = data;
       for (const entry of entries.values()) {
         if (entry.panelRef) {
-          publish(entry, panelSnapshot(entry.panelRef));
+          publish(entry, panelSnapshot(panelData, entry.panelRef, now()));
         }
       }
     },
@@ -278,7 +263,13 @@ export function createQueryController(
         const key = `panel:${refId}`;
         let entry = entries.get(key);
         if (!entry) {
-          entry = { panelRef: refId, listeners: new Set(), snapshot: panelSnapshot(refId), token: 0, refreshMs: 0 };
+          entry = {
+            panelRef: refId,
+            listeners: new Set(),
+            snapshot: panelSnapshot(panelData, refId, now()),
+            token: 0,
+            refreshMs: 0,
+          };
           entries.set(key, entry);
         }
         const current = entry;

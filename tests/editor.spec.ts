@@ -125,7 +125,7 @@ test('geometry export keeps semantic identities and chart assignments through da
   gotoPanelEditPage,
 }) => {
   const uid = await createDiagram(config);
-  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
   await inspector.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
   await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', {
@@ -142,7 +142,7 @@ test('geometry export keeps semantic identities and chart assignments through da
   await expect(stage.locator('[data-cell-id="device-1"]')).toHaveAttribute('data-meta-pg-id', 'device-1');
   await expect(stage.locator('[data-cell-id="chart-1"]')).toBeAttached();
   await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
-  await saveDashboard(page);
+  await saveDashboard(page, panelEditPage);
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   const options = saved.dashboard.panels[0].options;
   const encoded = /<diagram[^>]*>([^<]+)<\/diagram>/.exec(options.diagram.xml)?.[1];

@@ -125,7 +125,17 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
                 queries={[source.target]}
                 app={CoreApp.Dashboard}
                 onChange={(next) =>
-                  onChange({ ...query, source: { ...source, target: { ...source.target, ...next } } })
+                  onChange({
+                    ...query,
+                    source: {
+                      ...source,
+                      target: {
+                        // Native editors may include undefined optional properties; JSON omits them.
+                        ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined)),
+                        refId: next.refId || source.target.refId,
+                      },
+                    },
+                  })
                 }
                 onRunQuery={() => setNotice('Use Preview query to execute this draft.')}
               />

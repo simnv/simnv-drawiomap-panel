@@ -357,6 +357,124 @@ describe('binding inspector', () => {
     fireEvent.change(screen.getByLabelText('Health condition 1 reason'), { target: { value: 'Corrected' } });
     expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(false);
   });
+  it('marks every affected native match resolved or unvalidated after representative Preview', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="device-2"><rect/></g></svg>';
+    const execute = vi.fn((_request, emit) => {
+      emit({
+        state: 'ready',
+        frames: [
+          toDataFrame({
+            fields: [
+              { name: 'Time', type: FieldType.time, values: [1] },
+              { name: 'Value', type: FieldType.number, values: [7] },
+            ],
+          }),
+        ],
+        fetchedAt: 1,
+        fromCache: false,
+      });
+      return () => {};
+    });
+    const controller = createQueryController(execute);
+    const timeRange = getDefaultTimeRange();
+    const context = { timeRange, timeZone: 'utc', scopedVars: {}, refreshMs: 0, intervalMs: 1000, generation: 1 };
+    const nativeConfig: DiagramConfigV2 = {
+      ...config,
+      queries: [
+        {
+          id: 'q',
+          name: 'Q',
+          source: {
+            kind: 'datasource',
+            datasource: { uid: 'ds' },
+            target: { refId: 'D', ...{ expr: '$dm_device' } },
+            parameters: { dm_device: 'cell.key' },
+          },
+        },
+      ],
+      patterns: [
+        { ...config.patterns[0], display: { shape: { binding: { queryId: 'q', match: {}, reducer: 'last' } } } },
+      ],
+    };
+    render(
+      <PanelQueryContext.Provider value={{ controller, context }}>
+        <BindingEditor
+          config={nativeConfig}
+          cells={buildCellIndex(host.querySelector('svg')!)}
+          data={{ state: LoadingState.Done, series: [], timeRange }}
+          onSave={vi.fn()}
+        />
+      </PanelQueryContext.Provider>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    await screen.findByText(/No supported native query editor/);
+    expect(execute).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0].request.scopedVars.dm_device.value).toBe('device-1');
+    const preview = screen.getByLabelText('Metric resolution preview');
+    expect(preview.textContent).toContain('device-1: resolved');
+    expect(preview.textContent).toContain('device-2: unvalidated');
+    expect(preview.textContent).not.toContain('No resolution failures');
+    fireEvent.click(screen.getByRole('button', { name: 'Select device-2' }));
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(preview.textContent).toContain('device-2: unvalidated');
+    controller.dispose();
+  });
+  it('shows a failed nonrepresentative eager match before Apply', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="device-2"><rect/></g></svg>';
+    const timeRange = getDefaultTimeRange();
+    const eagerConfig: DiagramConfigV2 = {
+      ...config,
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+      patterns: [
+        {
+          ...config.patterns[0],
+          display: {
+            hover: {
+              rows: [
+                {
+                  kind: 'value',
+                  label: 'Metric',
+                  binding: { queryId: 'q', match: { device: '${cell.key}' }, reducer: 'last' },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    render(
+      <BindingEditor
+        config={eagerConfig}
+        cells={buildCellIndex(host.querySelector('svg')!)}
+        data={{
+          state: LoadingState.Done,
+          timeRange,
+          series: [
+            toDataFrame({
+              refId: 'A',
+              fields: [
+                { name: 'Time', type: FieldType.time, values: [1] },
+                { name: 'Value', type: FieldType.number, values: [7], labels: { device: 'device-1' } },
+              ],
+            }),
+          ],
+        }}
+        onSave={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    const preview = screen.getByLabelText('Metric resolution preview');
+    expect(preview.textContent).toContain('device-1: resolved');
+    expect(preview.textContent).toContain('device-2: failed');
+    expect(preview.textContent).toContain('No metric matches query q');
+    expect(preview.textContent).not.toContain('No resolution failures');
+  });
   it('uses the shared query controller only for explicit preview and releases it on edit or unmount', async () => {
     const cancel = vi.fn();
     const execute = vi.fn((_request, emit) => {

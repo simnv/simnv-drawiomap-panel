@@ -164,6 +164,30 @@ export function BindingEditor({
       ? buildConfiguredCard(cardPatch, resolve, { ...formatting, series: [] })
       : undefined;
   const metricDiagnostics = [...(bound?.diagnostics ?? []), ...(hoverPreview?.diagnostics ?? [])];
+  const matchPreviews = affected.map((cellId) => {
+    const bindings = [
+      ...(plan.cells[cellId]?.bindings ?? []),
+      ...plan.widgets.filter((entry) => entry.anchorCellId === cellId).map((entry) => entry.widget.binding),
+    ];
+    const models = resolve ? bindings.map((binding) => ({ binding, model: resolve(cellId, binding) })) : [];
+    const failures = models.flatMap(({ binding, model }) =>
+      model.state === 'empty'
+        ? [`No metric matches query ${binding.queryId}.`]
+        : model.state === 'error' || model.state === 'unsupported'
+          ? [model.message]
+          : []
+    );
+    const unvalidated =
+      (!resolve && bindings.length > 0) ||
+      models.some(({ model }) => model.state === 'idle' || model.state === 'loading');
+    return {
+      cellId,
+      state: failures.length ? 'failed' : unvalidated ? 'unvalidated' : 'resolved',
+      failures,
+      unvalidated,
+    };
+  });
+  const incompletePreview = matchPreviews.some((match) => match.state !== 'resolved');
   const hasMetricErrors = metricDiagnostics.some((d) =>
     ['ambiguous-metric', 'unsupported-metric', 'unresolved-metadata', 'invalid-url'].includes(d.code)
   );
@@ -311,6 +335,15 @@ export function BindingEditor({
         {data && (
           <section aria-label="Metric resolution preview">
             <h4>Metric resolution preview</h4>
+            <ul aria-label="Affected metric resolution">
+              {matchPreviews.map((match) => (
+                <li key={match.cellId}>
+                  {match.cellId}: {match.state}
+                  {match.failures.length > 0 && `: ${match.failures.join(' ')}`}
+                  {match.unvalidated && ' (unvalidated bindings require explicit Preview for this element)'}
+                </li>
+              ))}
+            </ul>
             {metricDiagnostics.length ? (
               <ul>
                 {metricDiagnostics.map((d, i) => (
@@ -319,8 +352,10 @@ export function BindingEditor({
                   </li>
                 ))}
               </ul>
+            ) : !incompletePreview && affected.length > 0 ? (
+              <p>No resolution failures in available preview data.</p>
             ) : (
-              <p>No resolution failures in available preview data. Native queries require explicit Preview.</p>
+              <p>Select an element and use Preview query to validate its native query bindings.</p>
             )}
             {hoverPreview && (
               <ul aria-label="Hover row preview">

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { expect, test as base } from '@grafana/plugin-e2e';
+import { expect, test as base, type PanelEditPage } from '@grafana/plugin-e2e';
 import type { Page, TestInfo } from '@playwright/test';
 import type { DiagramConfigV2 } from '../src/model/config';
 import { authoringConfig } from '../src/fixtures/authoring-config';
@@ -99,8 +99,8 @@ export async function attachJson(info: TestInfo, name: string, value: unknown) {
   fs.writeFileSync(path, JSON.stringify(value, null, 2));
   await info.attach(name, { path, contentType: 'application/json' });
 }
-export async function saveDashboard(page: Page) {
-  await page.getByRole('button', { name: /^(Back to dashboard|Back)$/i }).click();
+export async function saveDashboard(page: Page, panelEditPage: PanelEditPage) {
+  await panelEditPage.backToDashboard();
   await page.getByRole('button', { name: /^(Save dashboard|Save)$/i }).click();
   const saved = page.waitForResponse((response) => {
     const path = new URL(response.url()).pathname;

@@ -31,7 +31,7 @@ Sandbox runs assert `/api/frontend/settings`: the plugin allowlist must include 
 
 One production panel uses a default Prometheus datasource and a TestData query override. The test requires responses from both installed plugin types and actual painted chart pixels. This establishes the tested pair, not universal compatibility. Prometheus uses VictoriaMetrics as its backend; this is not a separate datasource plugin type.
 
-Native editor `onChange` retains the native target object. Native `onRunQuery` asks for explicit Preview; it does not run an unapplied draft. The inspector also supports validated native-target JSON import when no usable native editor exists. Editors that require other application context, datasource capabilities, or unsupported result shapes remain unverified.
+Native editor `onChange` replaces the native target object. Omitted fields stay deleted; opaque fields remain when the editor returns them. The adapter retains the required refId if omitted and removes undefined top-level target properties before JSON validation. Native `onRunQuery` asks for explicit Preview; it does not run an unapplied draft. The inspector also supports validated native-target JSON import when no usable native editor exists. Editors that require other application context, datasource capabilities, or unsupported result shapes remain unverified.
 
 Finite Grafana data frames with one selected numeric series and one time field support history. Null gaps remain gaps. Empty results, one sample, errors and stale samples have local text. A valid fieldless zero-row backend frame is missing data. Non-numeric, ambiguous, malformed, streaming/partial and legacy datapoint results receive explicit validation messages. Direct execution does not inherit Grafana panel transformations or overrides automatically. Returned field configuration and explicit units supply formatting.
 
@@ -59,7 +59,7 @@ Grafana's backend transport cancels calls that reuse a request ID. The productio
 
 ## Authoring, geometry and presentation
 
-The inspector and diagram share the panel React owner. A host with the public PanelProps dimensions supplies a definite height, including under sandboxing. Browser measurements exposed a 5,805-pixel inspector with no internal scroll before this fix; the repaired lower controls and phone fit pass. Live public `editPanel` navigation activates it. Click and keyboard selection focus its heading; two cloned panels keep independent options. Pattern scope highlights matches and previews the effective binding. Element overrides remain explicit. Apply uses `PanelProps.onOptionsChange`; Grafana's public Save dashboard UI persists the result. No internal panel renderer or cross-editor bus is used.
+The inspector and diagram share the panel React owner. A host with the public PanelProps dimensions supplies a definite height, including under sandboxing. Browser measurements exposed a 5,805-pixel inspector with no internal scroll before this fix; the repaired lower controls and phone fit pass. Live public `editPanel` navigation activates it. Click and keyboard selection focus its heading; two cloned panels keep independent options. Pattern scope highlights matches and previews the effective binding. Each affected match reports resolved, failed or unvalidated metric bindings, including hover rows and chart bindings. Explicit native Preview validates the selected query for the selected element; other parameter values and queries remain unvalidated. Selection, rendering and import never execute changed draft queries. Apply remains available for unvalidated matches, with their status visible before saving. Element overrides remain explicit. Apply uses `PanelProps.onOptionsChange`; Grafana's public Save dashboard UI persists the result. No internal panel renderer or cross-editor bus is used.
 
 Draw.io owns placement, dimensions and stable physical cell IDs. The plugin owns queries, status, formatting, hover and chart behavior. Real draw.io save/export preserves semantic IDs and chart anchor identity through dashboard save/reopen, including compressed XML. Missing anchors remain diagnostic until repaired or explicitly removed. Duplicate physical IDs fail validation. Copy/paste semantic conflicts, nested groups, Unicode and replacement/cancel have executed unit coverage; arbitrary draw.io shape libraries are not claimed tested.
 
@@ -75,9 +75,27 @@ Health freshness uses sample age and configured cadence, independent of cache ag
 
 The plugin is unshipped. V2 config takes precedence over saved legacy rules, without deleting the dashboard or its legacy options. Conflicting legacy controls are hidden for V2 panels after the new workflow passes. V1 panels retain their controls. Custom card chart code was already replaced by the shared Grafana adapter in Ticket 5. Back up dashboard JSON before conversion; recreate authoring configuration if needed. Rollback uses ordinary commit reverts plus the saved dashboard JSON. XML/SVG alone does not contain plugin behavior.
 
-Eager panel references retain Grafana's normal query ownership. The inspector can copy a native definition, but removal of its eager target requires the user to use Grafana's Queries tab. The warning remains until removal is observed. No internal target mutation API is used.
+Eager panel references retain Grafana's normal query ownership. Preview and rendering use the same eager-data adapter: failed requests take precedence over retained frames, while Loading and NotStarted remain loading. A refId-attributed error affects that query; an unattributed failure affects the whole request. Missing results remain distinct from failures. The inspector can copy a native definition, but removal of its eager target requires the user to use Grafana's Queries tab. The warning remains until removal is observed. No internal target mutation API is used.
 
 Full chart axes, legends, interactive multi-series exploration, round gauges, cross-dashboard pattern synchronization and arbitrary datasource/editor/result compatibility remain outside this scope. Existing PoC security/CSP/subpath checks in `docs/acceptance.md` are historical; current authoring claims are limited to the matrix above.
+
+## Review repair validation
+
+Ticket 9 adds regressions for retained eager failures, refId-attributed errors,
+native replacement/deletion and per-match metric preview. All 505 unit tests pass.
+The final query and binding-editor browser specs pass on Grafana 12.4.13 and
+13.2.4, with 10 tests including authentication on each. Grafana 13.2.4 with the
+asserted frontend sandbox passes seven authoring/geometry tests, including the
+actual TestData Random Walk → CSV Content replacement, save/reopen and native
+field deletion. Both versions use PanelEditPage.backToDashboard() for persistence.
+
+The repair uses the approved minimum for pattern preview: each match has an honest
+resolution state, while only the selected native query/element executes explicitly.
+Other parameter values stay unvalidated. Eager failures and mixed-ref errors have
+unit coverage at preview/controller seams, not a new live datasource-failure claim.
+The minimum/latest-dev and theme matrices above remain Ticket 8 evidence and were
+not rerun for this repair. Details are in
+`/tmp/drawiomap-implementation-20261018/ticket-9-report.md`.
 
 ## Reproduction and evidence
 

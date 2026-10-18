@@ -56,7 +56,7 @@ test('panel-owned inspector focuses, saves and isolates cloned panels across rem
   });
   expect(created.ok()).toBe(true);
   try {
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const probe = page.getByTestId('compat-panel-1');
     await expect(probe).toBeVisible({ timeout: 5000 });
     await probe.locator('[data-cell-id="device-1"]').click();
@@ -66,7 +66,7 @@ test('panel-owned inspector focuses, saves and isolates cloned panels across rem
     await probe.getByLabel('Binding label').fill('Saved first clone');
     await probe.getByRole('button', { name: 'Apply binding' }).click();
     // Public callback updates Grafana's options model; persist through Grafana's public save UI.
-    await saveDashboard(page);
+    await saveDashboard(page, panelEditPage);
     await gotoDashboardPage({ uid });
     await expect(page.getByTestId('compat-panel-1').getByTestId('compat-saved')).toHaveText('Saved first clone');
     await expect(page.getByTestId('compat-panel-2').getByTestId('compat-saved')).toHaveText('');
@@ -126,7 +126,7 @@ test('installed native datasource editors preserve targets and require explicit 
       detailRequests.push(r.postData()!);
   });
   try {
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const editor = page.getByTestId('compat-native-editor');
     await expect(editor).toBeVisible({ timeout: 5000 });
     await expect
@@ -157,7 +157,7 @@ test('installed native datasource editors preserve targets and require explicit 
     expect(testdataTarget.compatOpaque).toEqual({ keep: ['native', 7] });
     await editor.getByRole('button', { name: 'Save native targets' }).click();
     expect(detailRequests).toHaveLength(0);
-    await saveDashboard(page);
+    await saveDashboard(page, panelEditPage);
     await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const reopened = page.getByTestId('compat-native-editor');
     await expect

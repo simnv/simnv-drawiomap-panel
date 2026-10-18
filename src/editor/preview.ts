@@ -1,10 +1,11 @@
-import { LoadingState, type PanelData } from '@grafana/data';
+import { type PanelData } from '@grafana/data';
 import { resolveBinding, type BindingResolver } from '../binding/engine';
 import type { BindingPlan } from '../binding/patterns';
 import type { DiagramConfigV2, NamedQuery } from '../model/config';
 import type { HistoryFormat } from '../query/frames';
 import type { QueryContext, QuerySnapshot } from '../query/types';
 import { useEffect, useState } from 'react';
+import { panelSnapshot } from '../query/panelSnapshot';
 
 /** Refresh sample-age evaluation when displayed data or dashboard context changes. */
 export function usePreviewTime(
@@ -88,15 +89,7 @@ export function previewSnapshot(
   generation?: number
 ): QuerySnapshot {
   if (query.source.kind === 'panel') {
-    const refId = query.source.refId;
-    const frames = data.series.filter((frame) => frame.refId === refId);
-    return frames.length
-      ? { state: 'ready', frames, fetchedAt: 0, fromCache: false }
-      : data.state === LoadingState.Error
-        ? { state: 'error', message: 'The eager panel query failed.' }
-        : data.state === LoadingState.Loading
-          ? { state: 'loading' }
-          : { state: 'empty', fetchedAt: 0, fromCache: false };
+    return panelSnapshot(data, query.source.refId, 0);
   }
   const parameterized = Object.keys(query.source.parameters).length > 0;
   const selected = [...active, preview].find(

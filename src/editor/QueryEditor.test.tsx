@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { getDefaultTimeRange, LoadingState, type PanelData, type DataQueryRequest } from '@grafana/data';
 import { QueryEditor } from './QueryEditor';
-import type { NamedQuery } from '../model/config';
+import { validateConfig, type NamedQuery } from '../model/config';
 vi.hoisted(() => {
   window.matchMedia =
     window.matchMedia ?? ((() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as never);
@@ -18,7 +18,11 @@ vi.mock('@grafana/runtime', () => ({
             ? undefined
             : ({ query, onChange, onRunQuery }: any) => (
                 <>
-                  <button onClick={() => onChange({ refId: query.refId, expr: 'changed' })}>Native edit</button>
+                  <button onClick={() => onChange({ ...query, expr: 'changed' })}>Native edit</button>
+                  <button onClick={() => onChange({ refId: query.refId, expr: 'new', datasource: undefined })}>
+                    Native replacement
+                  </button>
+                  <button onClick={() => onChange({ expr: 'without identity' })}>Native edit without identity</button>
                   <button onClick={onRunQuery}>Native run</button>
                 </>
               ),
@@ -61,6 +65,23 @@ describe('named query editor', () => {
     expect(preview).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
     expect(preview).toHaveBeenCalledTimes(1);
+  });
+  it('accepts complete native replacements without restoring deleted fields', async () => {
+    const change = vi.fn();
+    const target = { refId: 'D', expr: 'old', obsoleteMode: true };
+    const query: NamedQuery = {
+      ...native,
+      source: { kind: 'datasource', datasource: { uid: 'prom' }, parameters: {}, target },
+    };
+    render(<QueryEditor query={query} context={context} data={data} onChange={change} onPreview={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Native replacement' }));
+    expect(change.mock.calls[0][0].source.target).toEqual({ refId: 'D', expr: 'new' });
+    expect(
+      validateConfig({ version: 2, queries: [change.mock.calls[0][0]], patterns: [], overrides: [], widgets: [] })
+        .diagnostics
+    ).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Native edit without identity' }));
+    expect(change.mock.calls[1][0].source.target).toEqual({ refId: 'D', expr: 'without identity' });
   });
   it('converts the complete eager target and keeps its warning until removal is verified', () => {
     const target = { refId: 'A', datasource: { uid: 'prom' }, expr: 'native', opaque: { keep: true } };

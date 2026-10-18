@@ -402,6 +402,25 @@ No universal datasource/editor or result-shape support is claimed. Native target
 
 The compatibility document records exact plugin versions, query/cache budgets, screenshots and unsupported behavior. The task report records commands, commits, effective sandbox evidence, exact runtime images, diagnostic corrections and owned-stack teardown. Parent owns integration and independent review.
 
+## Review repair follow-up — 2026-10-18
+
+Ticket 9 repairs the confirmed final standards/spec findings at the existing public seams.
+One eager PanelData adapter now gives controller and preview the same error/loading
+precedence, while respecting refId-attributed failures. Native editor callbacks replace
+queries without resurrecting deleted fields. Required refId fallback and omission of
+undefined optional properties keep actual TestData scenario replacements persistable.
+
+Every affected pattern match now reports resolved, failed or unvalidated metric bindings,
+including hover rows. Explicit native Preview still executes only the selected query and
+element; other parameter values stay visibly unvalidated. This is the ticket's approved
+minimum: no automatic draft execution, extra executor/cache, or added approval step.
+The supplied PanelEditPage back method handles browser navigation. Active-result and
+cache budgets share one frame measurement without changing their accounting limits.
+
+Final commands, RED/GREEN evidence, runtime results and cleanup are recorded in
+`/tmp/drawiomap-implementation-20261018/ticket-9-report.md`. Earlier matrix results remain
+historical evidence; this repair does not repeat unrelated themes or development targets.
+
 ## Verification and handoff notes
 
 Current scripts use Vitest, not Jest. Local Grafana targets are 12.4.13 on port 3012

@@ -1,3 +1,4 @@
+import { PanelEditPage } from '@grafana/plugin-e2e';
 import { attachJson, expect, observeQueries, saveDashboard, test } from './authoring-fixtures';
 
 test.afterEach(async ({ page }, info) => {
@@ -37,6 +38,7 @@ test('representative selection focuses the inspector, previews a pattern and sav
   const dashboard = await gotoDashboardPage({ uid });
   const documentOrigin = await page.evaluate(() => performance.timeOrigin);
   await (await dashboard.getPanelByTitle('Sanitized topology 1')).clickOnMenuItem('Edit');
+  const panelEditPage = new PanelEditPage(dashboard.ctx, { dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
   await expect(inspector).toBeVisible();
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentOrigin);
@@ -54,7 +56,7 @@ test('representative selection focuses the inspector, previews a pattern and sav
   await inspector.getByLabel('Label template', { exact: true }).fill('Override α');
   await expect(inspector.getByText('Element override: Yes', { exact: true })).toBeVisible();
   await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
-  await saveDashboard(page);
+  await saveDashboard(page, panelEditPage);
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   expect(saved.dashboard.panels[0].options.config.overrides).toContainEqual({
     cellId: 'device-1',
@@ -129,7 +131,7 @@ test('native query drafts require Preview, chart assignments and portable import
 }) => {
   const uid = await createDiagram(config);
   const requests = observeQueries(page);
-  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
   await expect(inspector).toBeVisible();
   await expect
@@ -178,7 +180,7 @@ test('native query drafts require Preview, chart assignments and portable import
   expect(detail()).toHaveLength(1);
   await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
   await expect(page.getByTestId('dmap-panel').locator('[data-dmap-widget="chart-1"]')).toContainText('84');
-  await saveDashboard(page);
+  await saveDashboard(page, panelEditPage);
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   const persisted = saved.dashboard.panels[0].options.config;
   expect(persisted.widgets.find((w: { id: string }) => w.id === 'chart-1').anchorCellId).toBe('ordinary-chart');
@@ -186,4 +188,106 @@ test('native query drafts require Preview, chart assignments and portable import
   await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   await inspector.getByRole('button', { name: 'Select ordinary-chart', exact: true }).click();
   await expect(inspector.getByLabel('Chart label', { exact: true })).toHaveValue('Explicit trend α');
+});
+
+test('native TestData scenario replacement deletes obsolete fields and persists after reopen', async ({
+  page,
+  request,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+  selectors,
+}) => {
+  const trend = config.queries.find((q) => q.id === 'trend')!;
+  if (trend.source.kind !== 'datasource') throw new Error('Expected native fixture');
+  const target = { ...trend.source.target, obsoleteMode: true, opaque: { oldScenario: true } };
+  const uid = await createDiagram({
+    ...config,
+    queries: [{ ...trend, source: { ...trend.source, target } }],
+    patterns: [
+      {
+        id: 'trend-hover',
+        name: 'Trend hover',
+        select: { ids: ['device-1'] },
+        display: {
+          hover: {
+            rows: [{ kind: 'value', label: 'Trend', binding: { queryId: 'trend', match: {}, reducer: 'last' } }],
+          },
+        },
+      },
+    ],
+    overrides: [],
+    widgets: [],
+  });
+  const requests = observeQueries(page, uid);
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  const scenario = panelEditPage
+    .getByGrafanaSelector(selectors.components.DataSource.TestData.QueryTab.scenarioSelectContainer, {
+      root: inspector,
+    })
+    .getByRole('combobox');
+  await scenario.click();
+  await page.getByRole('option', { name: 'CSV Content', exact: true }).click();
+  const exportedTarget = async () => {
+    await inspector.getByRole('button', { name: 'Export patterns', exact: true }).click();
+    const document = JSON.parse(await inspector.getByLabel('Exported pattern document', { exact: true }).inputValue());
+    return document.config.queries[0].source.target;
+  };
+  const replacement = await exportedTarget();
+  expect(replacement.refId).toBe('TREND');
+  expect(replacement.scenarioId).toBe('csv_content');
+  expect(replacement).not.toHaveProperty('obsoleteMode');
+  expect(replacement).not.toHaveProperty('opaque');
+  expect(requests).toHaveLength(0);
+  await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
+  await saveDashboard(page, panelEditPage);
+  const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
+  expect(saved.dashboard.panels[0].options.config.queries[0].source.target).toEqual(replacement);
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  await expect(scenario).toBeVisible();
+  expect(await exportedTarget()).toEqual(replacement);
+  expect(requests).toHaveLength(0);
+});
+
+test('shared parameterized preview labels other matches unvalidated before Apply', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  const detail = config.queries.find((q) => q.id === 'detail')!;
+  const uid = await createDiagram({
+    ...config,
+    queries: [detail],
+    widgets: [],
+    overrides: [],
+    patterns: [
+      {
+        id: 'shared',
+        name: 'Shared',
+        select: { ids: ['device-1', 'device-2'] },
+        display: {
+          hover: {
+            rows: [{ kind: 'value', label: 'Detail', binding: { queryId: 'detail', match: {}, reducer: 'last' } }],
+          },
+        },
+      },
+    ],
+  });
+  const requests = observeQueries(page, uid);
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await inspector.getByRole('button', { name: 'Select device-1', exact: true }).click();
+  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('pattern');
+  const preview = inspector.getByLabel('Metric resolution preview');
+  await expect(preview).toContainText('device-2: unvalidated');
+  expect(requests).toHaveLength(0);
+  await inspector.getByRole('button', { name: 'Preview query', exact: true }).click();
+  await expect(preview).toContainText('device-1: resolved');
+  await expect(preview).toContainText('device-2: unvalidated');
+  await expect(preview).not.toContainText('No resolution failures');
+  expect(requests).toHaveLength(1);
+  expect(requests[0].queries[0].expr).toContain('device-1');
+  await expect(inspector.getByRole('button', { name: 'Apply bindings', exact: true })).toBeEnabled();
 });
