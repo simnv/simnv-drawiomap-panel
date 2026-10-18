@@ -1,0 +1,7 @@
+<mxfile><diagram id="authoring" name="Authoring"><mxGraphModel><root>
+<mxCell id="0"/><mxCell id="1" parent="0"/>
+<object id="device-1" label="Router α" pg-id="device-1" pg-kind="node" pg-schema="1" device="router-1"><mxCell vertex="1" parent="1" style="rounded=0;html=0;"><mxGeometry x="35" y="35" width="120" height="55" as="geometry"/></mxCell></object>
+<object id="device-2" label="Router α" pg-id="device-2" pg-kind="node" pg-schema="1" device="router-2"><mxCell vertex="1" parent="1" style="rounded=0;html=0;"><mxGeometry x="285" y="35" width="120" height="55" as="geometry"/></mxCell></object>
+<object id="link-1" label="" pg-id="link-1" pg-kind="link" pg-schema="1" pg-from="device-1:wan" pg-to="device-2:wan"><mxCell edge="1" parent="1" source="device-1" target="device-2" style="endArrow=classic;html=0;"><mxGeometry relative="1" as="geometry"/></mxCell></object>
+<object id="chart-1" label="" pg-id="chart-1" pg-kind="other" pg-schema="1"><mxCell vertex="1" parent="1" style="rounded=0;html=0;rotation=12;"><mxGeometry x="115" y="155" width="216" height="63" as="geometry"/></mxCell></object>
+</root></mxGraphModel></diagram></mxfile>

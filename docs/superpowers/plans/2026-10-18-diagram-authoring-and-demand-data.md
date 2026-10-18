@@ -211,6 +211,8 @@ expect(resolvePatterns(cells, config).diagnostics).toContainEqual(expect.objectC
 
 ### Task 3: Implement demand-loaded queries and bounded cache
 
+Task 1 handoff: see `docs/research/authoring-compatibility.md`. Prometheus and TestData native editors passed on Grafana 12.4.13. Preserve complete native objects and normalize Promise/Observable query returns. Metadata reads do not count as explicit detail execution. Grafana 13 and sandbox acceptance remain Task 8 gates after runtime recovery.
+
 **Files:** Create `src/query/{types,controller,grafana,frames}.ts`,
 `src/query/{controller,grafana,frames}.test.ts`; modify panel integration only to
 provide one controller and current context, retaining existing eager `PanelData`.
@@ -261,6 +263,8 @@ patches plus `StatusView`, summary groups, and demand descriptions for configure
 
 ### Task 5: Render explicit Grafana visuals and lazy hover cards
 
+Task 1 selected the SVG foreignObject portal provisionally. Use rectangle-local bounds and parent-relative CTM, initialize after the stage ref is attached, and prepare numeric range state plus explicit Sparkline line styling. The Grafana 12 dark-theme geometry, clipping, CSS, and painted-pixel checks passed; Grafana 13, light theme, and sandbox remain Task 8 gates.
+
 **Files:** Create `src/visuals/{SparklineView,BarGaugeView,ChartLayer}.tsx` and
 `src/visuals/{SparklineView,ChartLayer}.test.tsx`; modify
 `src/render/geometry.ts`, `src/components/DrawioMapPanel.tsx`,
@@ -284,6 +288,8 @@ produces query-free visual adapters and a layer that owns per-visible-region sub
 - [ ] Run targeted tests plus `npm run typecheck`; expected all pass. Commit `feat: render explicit Grafana visuals in diagram regions`.
 
 ### Task 6: Add named query authoring and element inspector
+
+Task 1 selected preview and inspector together inside the plugin panel, with direct React callbacks and context from public PanelProps. No standard-options bus or host-category expansion route is adopted. Programmatic eager-target removal was not validated; use the manual Grafana Queries-tab removal guidance and keep its lazy-loading warning until removal is verified. See `docs/research/authoring-compatibility.md`.
 
 **Files:** Create `src/editor/{BindingEditor,BindingInspector,QueryEditor}.tsx`,
 `src/editor/draft.ts`, `src/editor/draft.test.ts`, `src/editor/BindingEditor.test.tsx`;
@@ -344,6 +350,8 @@ Produces persisted chart assignments and portable panel-local pattern documents.
       `feat: author chart regions and portable panel patterns`.
 
 ### Task 8: Validate the full workflow and document supported behavior
+
+Blocking acceptance carried from Task 1: repeat `authoring-compat.spec.ts` on Grafana 13.2.4, both sandbox targets, and light theme after the shared OrbStack backend recovers. Grafana 12.4.13 dark baseline passed all three routes; no Grafana 13/sandbox/light result is claimed. Reuse the test-only harness and inspect the owned `drawiomap-t1` project before taking service ownership. Its stop attempt timed out during the outage.
 
 **Files:** Create `tests/query.spec.ts`, `tests/binding-editor.spec.ts`,
 `tests/visual-regions.spec.ts`; extend `tests/editor.spec.ts`, `tests/zoom.spec.ts`,
