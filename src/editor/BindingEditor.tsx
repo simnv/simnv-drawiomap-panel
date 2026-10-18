@@ -74,6 +74,7 @@ export function BindingEditor({
   const [queryId, setQueryId] = useState(config.queries[0]?.id);
   const [queryError, setQueryError] = useState('');
   const [previewState, setPreviewState] = useState<{ key: object; snapshot: QuerySnapshot }>();
+  const [previewAction, setPreviewAction] = useState<'query' | 'pattern'>('query');
   const release = useRef<() => void>();
   const query = draft.config.queries.find((q) => q.id === queryId);
   const context = service?.context;
@@ -182,19 +183,32 @@ export function BindingEditor({
           snapshot,
         }
       : undefined;
-  const resolve = data
-    ? createPreviewResolver(
-        plan,
-        draft.config,
-        data,
-        localPreview,
-        {
-          theme,
-          timeZone: context?.timeZone,
-          generation: context?.generation,
-        },
-        [...patternResults, ...prepared]
-      )
+  const format = { theme, timeZone: context?.timeZone, generation: context?.generation };
+  const explicit = localPreview ? [localPreview] : [];
+  const reportResults = previewAction === 'query' ? [...explicit, ...patternResults] : [...patternResults, ...explicit];
+  const savedResolve = data ? createPreviewResolver(plan, draft.config, data, undefined, format, prepared) : undefined;
+  // The inspector reports the requested outcome, including pending and failed requests.
+  // Resolve each candidate separately so display's terminal-result ranking cannot skip it.
+  const reportResolvers = data
+    ? reportResults.map((result) => ({
+        result,
+        resolve: createPreviewResolver(plan, draft.config, data, undefined, format, [result]),
+      }))
+    : [];
+  const resolve: typeof savedResolve = savedResolve
+    ? (cellId, binding) => {
+        for (const entry of reportResolvers) {
+          // A batch outcome belongs to its requested scope, even for an unparameterized query.
+          if (patternResults.includes(entry.result) && entry.result.cellId !== cellId) {
+            continue;
+          }
+          const model = entry.resolve(cellId, binding);
+          if (model.state !== 'idle') {
+            return model;
+          }
+        }
+        return savedResolve(cellId, binding);
+      }
     : undefined;
   const nowMs = usePreviewTime(
     data,
@@ -375,6 +389,7 @@ export function BindingEditor({
                 if (!service?.controller || !context) {
                   return;
                 }
+                setPreviewAction('pattern');
                 patternRelease.current = previewPattern(
                   service.controller,
                   plan,
@@ -535,6 +550,7 @@ export function BindingEditor({
               onChange={(query) => dispatch({ type: 'query', query })}
               onPreview={() => {
                 release.current?.();
+                setPreviewAction('query');
                 const controller = service?.controller;
                 if (!controller) {
                   setSnapshot({ state: 'error', message: 'Query service is not ready.' });

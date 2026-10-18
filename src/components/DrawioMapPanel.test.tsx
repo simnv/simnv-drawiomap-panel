@@ -1370,17 +1370,51 @@ describe('saved chart results in authoring previews', () => {
       );
     }
   );
+  it('reports the selected individual preview success before any batch preview with a failed saved chart', async () => {
+    const p = mixedFixture('error', false);
+    p.options.config.patterns[0].display.hover = {
+      rows: [{ kind: 'value', label: 'Selected value', binding: { queryId: 'q', match: {}, reducer: 'last' } }],
+    };
+    render(<DrawioMapPanel {...p} />);
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByTestId('dmap-widget')
+          .map((el) => el.textContent)
+          .join('|')
+      ).toContain('42')
+    );
+    expect(screen.getAllByTestId('dmap-widget')[0].textContent).toContain('Datasource query failed');
+    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
+    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+    expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 200]);
+    expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+    expect(screen.getByLabelText('Hover row preview').textContent).toContain('Selected value: 42');
+  });
   it.each([
-    ['error', false],
-    ['error', true],
-    ['loading', false],
-    ['loading', true],
-    ['unsupported', false],
-    ['unsupported', true],
-    ['empty', false],
-    ['empty', true],
-  ] as const)('prefers ready over %s with ready first=%s for both preview actions', async (state, readyFirst) => {
+    ['error', false, 'individual'],
+    ['error', true, 'individual'],
+    ['loading', false, 'individual'],
+    ['loading', true, 'individual'],
+    ['unsupported', false, 'individual'],
+    ['unsupported', true, 'individual'],
+    ['empty', false, 'individual'],
+    ['empty', true, 'individual'],
+    ['error', false, 'pattern'],
+    ['error', true, 'pattern'],
+    ['loading', false, 'pattern'],
+    ['loading', true, 'pattern'],
+    ['unsupported', false, 'pattern'],
+    ['unsupported', true, 'pattern'],
+    ['empty', false, 'pattern'],
+    ['empty', true, 'pattern'],
+  ] as const)('prefers ready over %s with ready first=%s and %s preview first', async (state, readyFirst, first) => {
     const p = mixedFixture(state, readyFirst);
+    p.options.config.patterns[0].display.hover = {
+      rows: [{ kind: 'value', label: 'Selected value', binding: { queryId: 'q', match: {}, reducer: 'last' } }],
+    };
     render(<DrawioMapPanel {...p} />);
     await waitFor(() =>
       expect(
@@ -1393,12 +1427,16 @@ describe('saved chart results in authoring previews', () => {
     expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 200]);
     fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
     fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
-    await preview();
-    expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
-    expect(nativeQuery).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
-    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    const individual = async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+      await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+    };
+    for (const action of first === 'individual' ? [individual, preview] : [preview, individual]) {
+      await action();
+      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+      expect(screen.getByLabelText('Hover row preview').textContent).toContain('Selected value: 42');
+      expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 200]);
+    }
     expect(
       screen
         .getAllByTestId('dmap-widget')
@@ -1645,6 +1683,131 @@ describe('saved chart results in authoring previews', () => {
     expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
   });
   it.each(['individual', 'pattern'] as const)(
+    'reports the latest %s action when explicit outcomes disagree',
+    async (last) => {
+      let savedReady!: () => void;
+      let savedFail!: () => void;
+      let previewFail!: () => void;
+      nativeQuery.mockImplementation(
+        (request) =>
+          new Observable((observer) => {
+            if (request.maxDataPoints === 400) {
+              savedReady = () => observer.next({ data: [frame('D', {}, [42])] });
+              savedFail = () => observer.next({ state: LoadingState.Error, data: [] });
+              if (last === 'individual') {
+                savedReady();
+              } else {
+                savedFail();
+              }
+            } else {
+              previewFail = () => observer.next({ state: LoadingState.Error, data: [] });
+            }
+            return release;
+          })
+      );
+      render(<DrawioMapPanel {...fixture()} />);
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(screen.getByTestId('dmap-widget').textContent).toContain(
+          last === 'individual' ? '42' : 'Datasource query failed'
+        )
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
+      fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+      if (last === 'individual') {
+        await preview();
+        expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+        act(() => savedFail());
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+      expect(screen.getByLabelText('Query preview result').textContent).toContain('loading');
+      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: unvalidated');
+      act(() => previewFail());
+      await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('error'));
+      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: failed');
+      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('Datasource query failed');
+      if (last === 'pattern') {
+        act(() => savedReady());
+        await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+        // Saved readiness must not overwrite a completed explicit failure.
+        expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: failed');
+        await preview();
+        expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+        expect(screen.getByLabelText('Query preview result').textContent).toContain('error');
+      } else {
+        expect(screen.getByTestId('dmap-widget').textContent).toContain('Datasource query failed');
+      }
+      expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 160]);
+      expect(release).not.toHaveBeenCalled();
+    }
+  );
+  it.each([true, false])('keeps representative success scoped with parameterized=%s', async (parameterized) => {
+    const p = fixture();
+    const query = p.options.config.queries[0];
+    if (query.source.kind === 'datasource' && parameterized) {
+      query.source.parameters = { dm_key: 'cell.key' };
+    }
+    p.options.config.patterns[0].select = { ids: ['chart', 'other'] };
+    p.options.config.patterns[0].display.hover = {
+      rows: [
+        {
+          kind: 'value',
+          label: 'Scoped value',
+          binding: {
+            queryId: 'q',
+            match: parameterized ? {} : { device: '${cell.key}' },
+            reducer: 'last',
+          },
+        },
+      ],
+    };
+    nativeQuery.mockImplementation(
+      (request) =>
+        new Observable((observer) => {
+          observer.next(
+            request.maxDataPoints === 400
+              ? { state: LoadingState.Error, data: [] }
+              : { data: [frame('D', { device: 'chart' }, [42])] }
+          );
+          return release;
+        })
+    );
+    render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('Datasource query failed'));
+    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
+    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+    const report = screen.getByLabelText('Affected metric resolution').textContent;
+    expect(report).toContain('chart: resolved');
+    expect(report).toContain(parameterized ? 'other: unvalidated' : 'other: failed: No metric matches query q');
+    expect(screen.getByLabelText('Hover row preview').textContent).toContain('Scoped value: 42');
+    expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 160]);
+  });
+  it('keeps unrelated queries unvalidated after an individual success', async () => {
+    const p = fixture();
+    p.options.config.queries.push({
+      id: 'unrequested',
+      name: 'Unrequested',
+      source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'OTHER' }, parameters: {} },
+    });
+    p.options.config.patterns[0].display.hover = {
+      rows: [
+        { kind: 'value', label: 'Selected', binding: { queryId: 'q', match: {}, reducer: 'last' } },
+        { kind: 'value', label: 'Unrequested', binding: { queryId: 'unrequested', match: {}, reducer: 'last' } },
+      ],
+    };
+    render(<DrawioMapPanel {...p} />);
+    await selectChart();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+    expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: unvalidated');
+    expect(screen.getByLabelText('Hover row preview').textContent).toContain('Selected: 42');
+    expect(screen.getByLabelText('Hover row preview').textContent).not.toContain('Unrequested: 42');
+    expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400]);
+  });
+  it.each(['individual', 'pattern'] as const)(
     'shows a later saved monitoring failure after a successful %s preview',
     async (action) => {
       let fail!: () => void;
@@ -1670,9 +1833,8 @@ describe('saved chart results in authoring previews', () => {
       // One-shot preview reports retain their completed result; the saved chart follows monitoring.
       if (action === 'individual') {
         expect(screen.getByLabelText('Query preview result').textContent).toContain('ready');
-      } else {
-        expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
       }
+      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
       expect(nativeQuery).toHaveBeenCalledTimes(1);
       expect(release).not.toHaveBeenCalled();
     }
