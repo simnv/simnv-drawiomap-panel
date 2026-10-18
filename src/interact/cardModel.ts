@@ -14,7 +14,7 @@ import type { BindStatus, CardRow, CellPatch, HalfState, SeriesInfo } from '../t
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
 import { historySeries, type BindingDemand, type BindingResolver, type PlanCellPatch } from '../binding/engine';
 import type { HistoryModel } from '../query/frames';
-import type { Diagnostic, HoverRow } from '../model/config';
+import type { Diagnostic, FreshnessPolicy, HoverRow } from '../model/config';
 
 export interface ConfiguredCardRow {
   key: string;
@@ -23,6 +23,8 @@ export interface ConfiguredCardRow {
   text: string;
   state: HistoryModel['state'];
   history?: HistoryModel;
+  sampleAt?: number;
+  freshness?: FreshnessPolicy;
   href?: string;
 }
 export interface ConfiguredCardModel {
@@ -117,6 +119,8 @@ export function buildConfiguredCard(
         ...base,
         text,
         state: model.state,
+        sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
+        freshness: row.freshness,
         href: rowHref(patch, row.url, rowPrimary, ctx),
         ...(row.kind === 'history' ? { history: model } : {}),
       });

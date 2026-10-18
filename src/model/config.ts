@@ -24,6 +24,11 @@ export interface QueryBinding {
   reducer: ReducerName;
 }
 
+export interface FreshnessPolicy {
+  expectedIntervalMs: number;
+  staleAfterMs: number;
+}
+
 export type StatusState = 'normal' | 'warning' | 'critical' | 'down';
 export interface StatusCondition {
   state: StatusState;
@@ -33,7 +38,7 @@ export type StatusRule = {
   enabled?: boolean;
   binding: QueryBinding;
   default: StatusCondition;
-  freshness?: { expectedIntervalMs: number; staleAfterMs: number };
+  freshness?: FreshnessPolicy;
 } & (
   | { kind: 'mapping'; mappings: Array<StatusCondition & { value: number }> }
   | {
@@ -43,7 +48,14 @@ export type StatusRule = {
 );
 
 export type HoverRow =
-  | { kind: 'value' | 'history'; label: string; binding: QueryBinding; unit?: string; url?: string }
+  | {
+      kind: 'value' | 'history';
+      label: string;
+      binding: QueryBinding;
+      unit?: string;
+      url?: string;
+      freshness?: FreshnessPolicy;
+    }
   | { kind: 'metadata'; label: string; path: string }
   | { kind: 'drilldown'; label: string; url: string };
 export interface HoverSpec {
@@ -82,6 +94,7 @@ export interface Widget {
   id: string;
   anchorCellId: string;
   kind: 'sparkline' | 'bar';
+  freshness?: FreshnessPolicy;
   binding: QueryBinding;
   label: string;
   unit?: string;
@@ -103,14 +116,14 @@ const bindingSchema = z
   .object({ queryId: nonempty, match: z.record(matcher), field: nonempty.optional(), reducer })
   .strict();
 const condition = z.object({ state: z.enum(['normal', 'warning', 'critical', 'down']), reason: nonempty }).strict();
+const freshnessSchema = z
+  .object({ expectedIntervalMs: z.number().positive().finite(), staleAfterMs: z.number().positive().finite() })
+  .strict();
 const statusBase = {
   enabled: z.boolean().optional(),
   binding: bindingSchema,
   default: condition,
-  freshness: z
-    .object({ expectedIntervalMs: z.number().positive().finite(), staleAfterMs: z.number().positive().finite() })
-    .strict()
-    .optional(),
+  freshness: freshnessSchema.optional(),
 };
 const statusSchema = z.discriminatedUnion('kind', [
   z
@@ -141,6 +154,7 @@ const hoverSchema = z
         z
           .object({
             kind: z.literal('value'),
+            freshness: freshnessSchema.optional(),
             label: nonempty,
             binding: bindingSchema,
             unit: z.string().optional(),
@@ -150,6 +164,7 @@ const hoverSchema = z
         z
           .object({
             kind: z.literal('history'),
+            freshness: freshnessSchema.optional(),
             label: nonempty,
             binding: bindingSchema,
             unit: z.string().optional(),
@@ -228,6 +243,7 @@ const configSchema = z
           id: nonempty,
           anchorCellId: nonempty,
           kind: z.enum(['sparkline', 'bar']),
+          freshness: freshnessSchema.optional(),
           binding: bindingSchema,
           label: nonempty,
           unit: z.string().optional(),
@@ -397,12 +413,26 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
       });
     }
   };
+  const checkFreshness = (freshness: FreshnessPolicy | undefined, path: string) => {
+    if (freshness && freshness.staleAfterMs < freshness.expectedIntervalMs) {
+      diagnostics.push({
+        code: 'invalid-freshness',
+        path: `${path}.staleAfterMs`,
+        message: 'Stale detection must allow at least one expected sample interval.',
+      });
+    }
+  };
   for (const [key, entries] of [
     ['patterns', config.patterns],
     ['overrides', config.overrides],
   ] as const) {
     entries.forEach((entry, i) => {
       displayBindings(entry.display).forEach(({ binding, path }) => reference(binding, `${key}[${i}].display.${path}`));
+      entry.display.hover?.rows.forEach((row, j) => {
+        if (row.kind === 'value' || row.kind === 'history') {
+          checkFreshness(row.freshness, `${key}[${i}].display.hover.rows[${j}].freshness`);
+        }
+      });
       const freshness = entry.display.status?.freshness;
       if (freshness && freshness.staleAfterMs < freshness.expectedIntervalMs) {
         diagnostics.push({
@@ -415,6 +445,7 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
   }
   config.widgets.forEach((widget, i) => {
     reference(widget.binding, `widgets[${i}].binding`);
+    checkFreshness(widget.freshness, `widgets[${i}].freshness`);
     if (widget.min !== undefined && widget.max !== undefined && widget.min >= widget.max) {
       diagnostics.push({
         code: 'invalid-widget-bounds',

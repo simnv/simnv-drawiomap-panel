@@ -4,6 +4,30 @@ import { validateConfig, type DiagramConfigV2 } from './config';
 const empty = () => ({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] });
 
 describe('validateConfig', () => {
+  it('accepts explicit widget and hover freshness and rejects a policy shorter than its sample cadence', () => {
+    const binding = { queryId: 'q', match: {}, reducer: 'last' };
+    const freshness = { expectedIntervalMs: 1000, staleAfterMs: 5000 };
+    const input = {
+      ...empty(),
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+      widgets: [{ id: 'w', anchorCellId: 'a', kind: 'sparkline', label: 'CPU', binding, freshness }],
+      overrides: [{ cellId: 'a', display: { hover: { rows: [{ kind: 'value', label: 'CPU', binding, freshness }] } } }],
+    };
+    expect(validateConfig(input).config).toEqual(input);
+    const invalid = structuredClone(input);
+    invalid.widgets[0].freshness.staleAfterMs = 500;
+    expect(validateConfig(invalid).diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'invalid-freshness', path: 'widgets[0].freshness.staleAfterMs' })
+    );
+    const badRow = structuredClone(input);
+    badRow.overrides[0].display.hover.rows[0].freshness.staleAfterMs = 500;
+    expect(validateConfig(badRow).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'invalid-freshness',
+        path: 'overrides[0].display.hover.rows[0].freshness.staleAfterMs',
+      })
+    );
+  });
   it.each([
     null,
     { ...empty(), version: 3 },

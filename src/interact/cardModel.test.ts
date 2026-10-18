@@ -233,7 +233,13 @@ describe('configured cards', () => {
     hover: {
       rows: [
         { kind: 'metadata', label: 'Device', path: 'cell.key' },
-        { kind: 'value', label: 'CPU', binding, url: '/d/cpu?device=${cell.key}' },
+        {
+          kind: 'value',
+          label: 'CPU',
+          binding,
+          url: '/d/cpu?device=${cell.key}',
+          freshness: { expectedIntervalMs: 1000, staleAfterMs: 5000 },
+        },
         { kind: 'history', label: 'Trend', binding },
         { kind: 'drilldown', label: 'Dashboard', url: '/d/device?device=${cell.key}' },
       ],
@@ -297,6 +303,7 @@ describe('configured cards', () => {
       ['drilldown', 'Dashboard', 'Dashboard'],
     ]);
     expect(card.rows[1].history).toBeUndefined();
+    expect(card.rows[1]).toMatchObject({ sampleAt: 3000, freshness: { expectedIntervalMs: 1000, staleAfterMs: 5000 } });
     expect(card.rows[2].history).toMatchObject({
       state: 'ready',
       values: [20, null, 35.25],

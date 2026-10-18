@@ -1,3 +1,47 @@
+import type { CellEntry } from '../types';
+
+export interface ChartAnchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  matrix: Matrix;
+}
+
+/** The rectangle primitive defines chart bounds. Labels and nested cells never enlarge it. */
+export function readChartAnchor(cell: CellEntry, parent: SVGGraphicsElement): ChartAnchor | undefined {
+  const shape = cell.shape;
+  if (!shape || shape.localName !== 'rect' || typeof shape.getBBox !== 'function') {
+    return undefined;
+  }
+  try {
+    const source = shape.getCTM();
+    const target = parent.getCTM();
+    const valid = (m: Matrix | null): m is Matrix =>
+      !!m && [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite) && Math.abs(m.a * m.d - m.b * m.c) > 1e-12;
+    if (!valid(source) || !valid(target)) {
+      return undefined;
+    }
+    const bounds = shape.getBBox();
+    if (
+      ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) ||
+      bounds.width <= 0 ||
+      bounds.height <= 0
+    ) {
+      return undefined;
+    }
+    return {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      matrix: multiply(invert(target), source),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export interface Point {
   x: number;
   y: number;

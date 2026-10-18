@@ -15,7 +15,7 @@ import { locationService } from '@grafana/runtime';
 import { bind, bindPlan } from '../binding/engine';
 import { resolvePatterns } from '../binding/patterns';
 import { extractSeries } from '../binding/series';
-import { buildCard, DisplayOverride } from '../interact/cardModel';
+import { buildCard, buildConfiguredCard, DisplayOverride } from '../interact/cardModel';
 import { Card } from '../interact/Card';
 import { patchAt } from '../interact/hit';
 import { applyPatches } from '../render/applier';
@@ -30,6 +30,8 @@ import { BindingEditor } from '../editor/BindingEditor';
 import { EMPTY_CONFIG } from '../editor/draft';
 import type { DiagramConfigV2 } from '../model/config';
 import { createPreviewResolver, usePreviewTime, type QueryPreview } from '../editor/preview';
+import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
+import { ChartLayer } from '../visuals/ChartLayer';
 
 function usePanelEditing(id: number) {
   const subscribe = useCallback((notify: () => void) => {
@@ -128,7 +130,6 @@ function DrawioMapPanelView({
   const [draftConfig, setDraftConfig] = useState<DiagramConfigV2>();
   const [queryPreview, setQueryPreview] = useState<QueryPreview>();
   const queryService = useContext(PanelQueryContext);
-  const nowMs = usePreviewTime(data, queryService?.context.generation, queryPreview?.snapshot);
   const inspectorWidth = Math.min(420, Math.max(240, width * 0.4));
   const stageWidth = editing ? Math.max(1, width - inspectorWidth) : width;
   const opts = {
@@ -138,7 +139,12 @@ function DrawioMapPanelView({
     zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
   };
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
+  const attachStage = useCallback((element: HTMLDivElement | null) => {
+    containerRef.current = element;
+    setViewport(element);
+  }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
   const patchedRef = useRef<Set<string>>(new Set());
   const [card, setCard] = useState<CardState | null>(null);
@@ -187,14 +193,38 @@ function DrawioMapPanelView({
     () => resolvePatterns(cellMetas(stage.index), opts.config ?? EMPTY_CONFIG),
     [stage.index, opts.config]
   );
+  const savedPlan = useMemo(
+    () => resolvePatterns(cellMetas(stage.index), options.config ?? EMPTY_CONFIG),
+    [stage.index, options.config]
+  );
+  const activeSnapshots = useBindingSnapshots(
+    savedPlan,
+    options.config ?? EMPTY_CONFIG,
+    queryService,
+    editing ? undefined : card?.cellId,
+    Math.max(1, Math.min(264, width - 16))
+  );
+  const nowMs = usePreviewTime(
+    data,
+    queryService?.context.generation,
+    queryPreview?.snapshot,
+    activeSnapshots.map((value) => value.snapshot)
+  );
   const resolve = useMemo(
     () =>
-      createPreviewResolver(plan, opts.config ?? EMPTY_CONFIG, data, queryPreview, {
-        theme,
-        timeZone,
-        generation: queryService?.context.generation,
-      }),
-    [plan, opts.config, data, queryPreview, theme, timeZone, queryService?.context.generation]
+      createPreviewResolver(
+        plan,
+        opts.config ?? EMPTY_CONFIG,
+        data,
+        queryPreview,
+        {
+          theme,
+          timeZone,
+          generation: queryService?.context.generation,
+        },
+        activeSnapshots
+      ),
+    [plan, opts.config, data, queryPreview, theme, timeZone, queryService?.context.generation, activeSnapshots]
   );
   const result = useMemo(() => {
     if (opts.config) {
@@ -227,8 +257,10 @@ function DrawioMapPanelView({
       }
       return getDisplayProcessor({ field: { ...s.field, config }, theme, timeZone })(v);
     };
-    return buildCard(cardPatch, { series, theme, display: displayFor, replaceVariables });
-  }, [cardPatch, series, theme, timeZone, display, replaceVariables]);
+    return opts.config
+      ? buildConfiguredCard(cardPatch, resolve, { series, theme, display: displayFor, replaceVariables })
+      : buildCard(cardPatch, { series, theme, display: displayFor, replaceVariables });
+  }, [cardPatch, series, theme, timeZone, display, replaceVariables, opts.config, resolve]);
   const open = !!model;
   const pinned = !!card?.pinned && open;
 
@@ -323,7 +355,10 @@ function DrawioMapPanelView({
     wheel: wheelZoom,
     dragPan,
     align,
-    ignore: (t) => inCard(t) || (t instanceof Node && !!corner.current?.contains(t)),
+    ignore: (t) =>
+      inCard(t) ||
+      (t instanceof Element && !!t.closest('[data-dmap-widget] a')) ||
+      (t instanceof Node && !!corner.current?.contains(t)),
   });
 
   // A click or a tap pins the card of the cell. A click on empty space closes it.
@@ -407,7 +442,20 @@ function DrawioMapPanelView({
       }}
     >
       {/* Chrome does not carry pan restrictions into a scroll container: the stage needs its own touch-action. */}
-      <div ref={containerRef} className={styles.stage} style={{ touchAction }} />
+      <div ref={attachStage} className={styles.stage} style={{ touchAction }} />
+      {queryService && options.config ? (
+        <ChartLayer
+          root={stage.root}
+          cells={stage.index}
+          plan={savedPlan}
+          queries={options.config.queries}
+          controller={queryService.controller}
+          context={queryService.context}
+          viewport={viewport}
+          revision={viewKey + JSON.stringify(view)}
+          replaceVariables={replaceVariables}
+        />
+      ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
       <div ref={corner} className={styles.corner} data-testid="dmap-corner">
         {panZoom.zoomed ? (
@@ -442,7 +490,7 @@ function DrawioMapPanelView({
             y={card.y}
             width={width}
             height={height}
-            range={{ from: timeRange.from.valueOf(), to: timeRange.to.valueOf() }}
+            timeRange={timeRange}
             onClose={close}
           />
         </div>

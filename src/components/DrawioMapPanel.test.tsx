@@ -20,6 +20,7 @@ import { DrawioMapPanel } from './DrawioMapPanel';
 import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
 import type { DiagramConfigV2 } from '../model/config';
+import { Observable } from 'rxjs';
 const nativeQuery = vi.hoisted(() => vi.fn());
 vi.mock('@grafana/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/runtime')>()),
@@ -27,6 +28,13 @@ vi.mock('@grafana/runtime', async (importOriginal) => ({
     get: async () => ({ uid: 'native', components: {}, query: nativeQuery }),
     getInstanceSettings: () => undefined,
   }),
+}));
+vi.mock('@grafana/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@grafana/ui')>()),
+  Sparkline: (props: { width: number; height: number }) => (
+    <canvas data-testid="grafana-sparkline" width={props.width} height={props.height} />
+  ),
+  BarGauge: () => <div data-testid="grafana-bar" />,
 }));
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. Set them before the imports run.
@@ -111,8 +119,17 @@ it('paints draft bindings before Apply and restores saved paint on Cancel', asyn
   act(() => locationService.partial({ editPanel: null }));
 });
 
-it('paints explicitly previewed native data without executing on mount or query edits', async () => {
-  nativeQuery.mockReset().mockResolvedValue({ data: [frame('D', {}, [42])] });
+it('keeps saved monitoring active in edit mode and executes a changed draft only after Preview or Apply', async () => {
+  const receivers: Array<(value: number) => void> = [];
+  nativeQuery.mockReset().mockImplementation(
+    (request) =>
+      new Observable((observer) => {
+        const receive = (value: number) => observer.next({ data: [frame('D', {}, [value])] });
+        receivers.push(receive);
+        receive(request.targets[0].expr === 'changed' ? 84 : 42);
+        return () => {};
+      })
+  );
   locationService.partial({ editPanel: 98 });
   const config: DiagramConfigV2 = {
     version: 2,
@@ -140,27 +157,52 @@ it('paints explicitly previewed native data without executing on mount or query 
   const small =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g data-cell-id="device-1"><rect width="40" height="30"/><text>Device</text></g></svg>';
   const p = props({ id: 98 });
-  render(
-    <DrawioMapPanel
-      {...p}
-      options={{
-        ...options,
-        rules: [],
-        config,
-        diagram: { xml: '<mxfile/>', svg: small, hash: 'native-paint', updatedAt: '' },
-      }}
-    />
-  );
+  function SavedPanel() {
+    const [saved, setSaved] = React.useState<Options>({
+      ...options,
+      rules: [],
+      config,
+      diagram: { xml: '<mxfile/>', svg: small, hash: 'native-paint', updatedAt: '' },
+    });
+    return <DrawioMapPanel {...p} options={saved} onOptionsChange={setSaved} />;
+  }
+  render(<SavedPanel />);
   await screen.findByText(/No supported native query editor/);
-  expect(nativeQuery).not.toHaveBeenCalled();
+  await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
+  expect(nativeQuery.mock.calls[0][0].targets[0]).toEqual(expect.objectContaining({ refId: 'D' }));
   fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
   await waitFor(() =>
     expect(document.querySelector('[data-cell-id="device-1"] text')?.textContent).toContain('Preview 42')
   );
   expect(nativeQuery).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText('Query name'), { target: { value: 'Changed' } });
+  fireEvent.change(screen.getByLabelText('Native target JSON'), {
+    target: { value: JSON.stringify({ refId: 'D', expr: 'changed' }) },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
   expect(nativeQuery).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+  await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(document.querySelector('[data-cell-id="device-1"] text')?.textContent).toContain('Preview 84')
+  );
+  expect(nativeQuery.mock.calls[1][0].targets[0].expr).toBe('changed');
+  fireEvent.change(screen.getByLabelText('Native target JSON'), {
+    target: { value: JSON.stringify({ refId: 'D', expr: 'applied' }) },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+  expect(nativeQuery).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+  await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(3));
+  expect(nativeQuery.mock.calls[2][0].targets[0].expr).toBe('applied');
+  expect(screen.getByLabelText('Diagram binding inspector')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+  await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(4));
+  act(() => receivers[2](96));
+  await waitFor(() =>
+    expect(document.querySelector('[data-cell-id="device-1"] text')?.textContent).toContain('Preview 96')
+  );
+
   act(() => locationService.partial({ editPanel: null }));
 });
 /** `config`: the field config after the overrides, as Grafana gives it to the panel. */
@@ -265,6 +307,82 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
 }
 
 describe('DrawioMapPanel', () => {
+  it('attaches only configured chart portals after the stage mounts and keeps query errors inside that widget', async () => {
+    const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
+    const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+    Object.defineProperties(SVGElement.prototype, {
+      getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
+      getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
+    });
+    const bounds = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 400,
+      bottom: 200,
+      width: 400,
+      height: 200,
+      toJSON: () => ({}),
+    });
+    try {
+      nativeQuery.mockReset().mockRejectedValue(new Error('private datasource failure'));
+      const config: DiagramConfigV2 = {
+        version: 2,
+        patterns: [],
+        overrides: [],
+        queries: [
+          {
+            id: 'q',
+            name: 'CPU',
+            source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
+          },
+        ],
+        widgets: [
+          {
+            id: 'w',
+            anchorCellId: 'chart',
+            kind: 'sparkline',
+            label: 'CPU chart',
+            binding: { queryId: 'q', match: {}, reducer: 'last' },
+          },
+        ],
+      };
+      const small =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart"><rect width="180" height="70"/></g><g data-cell-id="ordinary"><rect x="200" width="40" height="30"/><text>Ordinary device</text></g></svg>';
+      const { container, unmount } = render(
+        <DrawioMapPanel
+          {...props({
+            options: {
+              ...options,
+              rules: [],
+              config,
+              diagram: { xml: '', svg: small, hash: 'explicit-chart', updatedAt: '' },
+            },
+          })}
+        />
+      );
+      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('Datasource query failed.'));
+      expect(container.querySelectorAll('foreignObject[data-dmap-widget]')).toHaveLength(1);
+      expect(container.querySelector('[data-cell-id="ordinary"] foreignObject')).toBeNull();
+      expect(container.querySelector('[data-cell-id="ordinary"] text')?.textContent).toBe('Ordinary device');
+      expect(screen.getByTestId('dmap-panel')).toBeTruthy();
+      expect(container.textContent).not.toContain('private datasource failure');
+      unmount();
+    } finally {
+      bounds.mockRestore();
+      if (ctm) {
+        Object.defineProperty(SVGElement.prototype, 'getCTM', ctm);
+      } else {
+        Reflect.deleteProperty(SVGElement.prototype, 'getCTM');
+      }
+      if (bbox) {
+        Object.defineProperty(SVGElement.prototype, 'getBBox', bbox);
+      } else {
+        Reflect.deleteProperty(SVGElement.prototype, 'getBBox');
+      }
+    }
+  });
   it('shows an empty state without a diagram', () => {
     const { getByTestId } = render(<DrawioMapPanel {...props({ options: { ...options, diagram: undefined } })} />);
     expect(getByTestId('dmap-empty')).toBeTruthy();
@@ -330,6 +448,143 @@ describe('DrawioMapPanel', () => {
 });
 
 describe('DrawioMapPanel hover card', () => {
+  it('shares saved visible data with hover rows and keeps monitoring after the card closes', async () => {
+    const cancel = vi.fn();
+    nativeQuery.mockReset().mockImplementation(
+      () =>
+        new Observable((observer) => {
+          observer.next({ data: [frame('D', {}, [10, 42])] });
+          return cancel;
+        })
+    );
+    const binding = { queryId: 'q', reducer: 'last', match: {} } as const;
+    const config: DiagramConfigV2 = {
+      version: 2,
+      queries: [
+        {
+          id: 'q',
+          name: 'Detail',
+          source: {
+            kind: 'datasource',
+            datasource: { uid: 'native' },
+            target: { refId: 'D' },
+            parameters: {},
+          },
+        },
+      ],
+      widgets: [],
+      overrides: [],
+      patterns: [
+        {
+          id: 'p',
+          name: 'Device',
+          select: {},
+          display: {
+            shape: { text: true, binding },
+            label: 'Value ${value}',
+            hover: { rows: [{ kind: 'value', label: 'Value', binding }] },
+          },
+        },
+      ],
+    };
+    const small =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g data-cell-id="a"><rect width="40" height="30"/><text>A</text></g></svg>';
+    const p = props({
+      options: {
+        ...options,
+        rules: [],
+        config,
+        diagram: { xml: '', svg: small, hash: 'shared-demand', updatedAt: '' },
+      },
+    });
+    const { container, rerender, unmount } = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(container.querySelector('text')?.textContent).toBe('Value 42'));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    expect(nativeQuery.mock.calls[0][0].range).toBe(p.timeRange);
+    fireEvent.click(container.querySelector('[data-cell-id="a"] rect')!);
+    expect((await screen.findByRole('dialog')).textContent).toContain('42');
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(cancel).not.toHaveBeenCalled();
+    const range = { from: dateTime(1000), to: dateTime(9000), raw: { from: dateTime(1000), to: dateTime(9000) } };
+    rerender(<DrawioMapPanel {...p} timeRange={range} />);
+    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+    expect(nativeQuery.mock.calls[1][0].range).toBe(range);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(cancel).toHaveBeenCalledTimes(2);
+  });
+  it('keeps all hover-only native requests at zero until open, releases on switch/close, rejects late values and reuses fresh cache', async () => {
+    const releases: Array<ReturnType<typeof vi.fn>> = [];
+    const receivers: Array<(value: { data: Array<ReturnType<typeof frame>> }) => void> = [];
+    nativeQuery.mockReset().mockImplementation(
+      () =>
+        new Observable((observer) => {
+          const release = vi.fn();
+          releases.push(release);
+          receivers.push((value) => observer.next(value));
+          return release;
+        })
+    );
+    const config: DiagramConfigV2 = {
+      version: 2,
+      queries: [
+        {
+          id: 'detail',
+          name: 'Details',
+          source: {
+            kind: 'datasource',
+            datasource: { uid: 'native' },
+            target: { refId: 'D' },
+            parameters: { dm_device: 'cell.key' },
+          },
+        },
+      ],
+      overrides: [],
+      widgets: [],
+      patterns: [
+        {
+          id: 'p',
+          name: 'Devices',
+          select: {},
+          display: {
+            hover: {
+              rows: [
+                { kind: 'value', label: 'Temperature', binding: { queryId: 'detail', reducer: 'last', match: {} } },
+                { kind: 'history', label: 'Trend', binding: { queryId: 'detail', reducer: 'last', match: {} } },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const small =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/></g><g data-cell-id="b"><rect x="50" width="40" height="30"/></g></svg>';
+    const p = props({
+      options: { ...options, rules: [], config, diagram: { xml: '', svg: small, hash: 'hover-demand', updatedAt: '' } },
+    });
+    const { container, unmount } = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(screen.getByTestId('dmap-panel').getAttribute('data-dmap-patched')).toBe('2'));
+    expect(nativeQuery).not.toHaveBeenCalled();
+    fireEvent.click(container.querySelector('[data-cell-id="a"] rect')!);
+    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
+    expect(nativeQuery.mock.calls[0][0].scopedVars.dm_device.value).toBe('a');
+    fireEvent.click(container.querySelector('[data-cell-id="b"] rect')!);
+    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+    expect(releases[0]).toHaveBeenCalledTimes(1);
+    act(() => receivers[0]({ data: [frame('D', {}, [999])] }));
+    expect(screen.getByRole('dialog').textContent).not.toContain('999');
+    act(() => receivers[1]({ data: [frame('D', {}, [10, 42])] }));
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(releases[1]).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(container.querySelector('[data-cell-id="b"] rect')!);
+    await screen.findByRole('dialog');
+    expect(screen.getByRole('dialog').textContent).toContain('42');
+    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    unmount();
+  });
   const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
   const cpuRule = {
     name: 'router cpu',
@@ -505,17 +760,13 @@ describe('DrawioMapPanel hover card', () => {
     const [head, spark, minMax] = Array.from(row.children);
     expect(head.textContent).toContain('CPU');
     expect(head.textContent).toContain('42%');
-    // the sparkline is a block below the head line: a stretched viewBox at 100 % of the row width
     expect(spark.getAttribute('data-testid')).toBe('dmap-card-spark');
-    expect(spark.getAttribute('preserveAspectRatio')).toBe('none');
-    expect(spark.getAttribute('viewBox')).toBe('0 0 200 40');
     expect(getComputedStyle(spark).width).toBe('100%');
     expect(getComputedStyle(spark).display).toBe('block');
-    // the line goes from the left edge to the right edge of the viewBox
-    const pts = spark.querySelector('polyline')!.getAttribute('points')!.split(' ');
-    expect(pts[0].split(',')[0]).toBe('0');
-    expect(pts[pts.length - 1].split(',')[0]).toBe('200');
-    expect(spark.querySelector('line')).not.toBeNull();
+    const plot = spark.querySelector('[data-testid="grafana-sparkline"]')!;
+    expect(plot.getAttribute('width')).toBe('264');
+    expect(plot.getAttribute('height')).toBe('40');
+    expect(spark.querySelector('polyline')).toBeNull();
     expect(minMax.getAttribute('data-testid')).toBe('dmap-card-range');
     expect(minMax.textContent).toBe('min 12%max 42%');
   });
@@ -532,7 +783,7 @@ describe('DrawioMapPanel hover card', () => {
     expect(row.textContent).toContain('CPU');
     expect(row.textContent).toContain('42%');
     expect(row.getAttribute('href')).toBe('/d/cpu?h=rtr-b');
-    expect(dialog.querySelectorAll('[data-testid="dmap-card-spark"] polyline')).toHaveLength(1);
+    expect(dialog.querySelectorAll('[data-testid="grafana-sparkline"]')).toHaveLength(1);
   });
   it('a click on the node icon opens the card of the node', async () => {
     const { cell } = await setup(withCpu());

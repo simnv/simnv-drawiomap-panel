@@ -1,8 +1,11 @@
-import React, { memo, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { memo, useLayoutEffect, useRef } from 'react';
 import { css, cx } from '@emotion/css';
-import type { GrafanaTheme2 } from '@grafana/data';
-import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
-import { CardModel, CardRowModel, sparkPoints } from './cardModel';
+import { dateTime, FieldType, getDefaultTimeRange, type GrafanaTheme2, type TimeRange } from '@grafana/data';
+import { IconButton, LinkButton, useStyles2 } from '@grafana/ui';
+import { CardModel, CardRowModel, type ConfiguredCardModel, type ConfiguredCardRow } from './cardModel';
+import { SparklineView } from '../visuals/SparklineView';
+import type { HistoryModel } from '../query/frames';
+import { useSampleStale } from '../visuals/useSampleStale';
 
 /** Panels narrower than this show the card as a bottom sheet. */
 export const SHEET_BELOW = 480;
@@ -10,11 +13,10 @@ const W = 280;
 const GAP = 14;
 const EDGE = 4;
 /** The sparkline viewBox. preserveAspectRatio="none" stretches it to the full row width, the height is in px. */
-const SPARK_W = 200;
 const SPARK_H = 40;
 
 export interface CardProps {
-  model: CardModel;
+  model: CardModel | ConfiguredCardModel;
   pinned: boolean;
   /** pointer position in panel coordinates */
   x: number;
@@ -24,6 +26,7 @@ export interface CardProps {
   height: number;
   /** dashboard time range in ms, for the sparkline x axis */
   range?: { from: number; to: number };
+  timeRange?: TimeRange;
   onClose: () => void;
 }
 
@@ -137,75 +140,68 @@ const getStyles = (theme: GrafanaTheme2) => ({
 /** Memoised: the card re-renders on each pointer move, the rows change only with the data. */
 const Row = memo(function Row({
   row,
-  from,
-  to,
+  timeRange,
   styles,
-  baseline,
+  width,
 }: {
-  row: CardRowModel;
-  from?: number;
-  to?: number;
+  row: CardRowModel | ConfiguredCardRow;
+  timeRange: TimeRange;
   styles: ReturnType<typeof getStyles>;
-  /** colour of the thin line at the bottom of the sparkline */
-  baseline: string;
+  width: number;
 }) {
-  const points = useMemo(
-    () =>
-      sparkPoints(
-        row.values,
-        row.times,
-        from !== undefined && to !== undefined ? { from, to } : undefined,
-        SPARK_W,
-        SPARK_H,
-        row.domain
-      ),
-    [row.values, row.times, row.domain, from, to]
-  );
+  const legacy = 'values' in row;
+  const stale = useSampleStale(legacy ? undefined : row.sampleAt, legacy ? undefined : row.freshness);
+  let history: HistoryModel | undefined = legacy ? undefined : row.history;
+  if (legacy && row.values.length) {
+    const values = row.values;
+    const times =
+      row.times ??
+      values.map(
+        (_, i) =>
+          timeRange.from.valueOf() +
+          (i * (timeRange.to.valueOf() - timeRange.from.valueOf())) / Math.max(1, values.length - 1)
+      );
+    history = {
+      state: 'ready',
+      field: { name: row.title, type: FieldType.number, config: {}, values },
+      timeField: { name: 'Time', type: FieldType.time, config: {}, values: times },
+      timestamps: times,
+      values,
+      latestValue: values.at(-1),
+      fetchedAt: 0,
+      fromCache: false,
+    };
+  }
   const body = (
     <>
       <div className={styles.rowHead}>
         <span className={styles.rowTitle}>
-          <span className={styles.dot} style={{ background: row.color }} />
+          {legacy ? <span className={styles.dot} style={{ background: row.color }} /> : null}
           {row.title}
         </span>
-        <span className={styles.value} style={row.status === 'ok' ? undefined : { color: row.color }}>
+        <span className={styles.value}>
           {row.text}
+          {stale && !history ? <small role="status"> Stale data</small> : null}
         </span>
       </div>
-      {points ? (
-        <>
-          <svg
-            className={styles.spark}
-            viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
-            preserveAspectRatio="none"
-            data-testid="dmap-card-spark"
-            aria-hidden="true"
-          >
-            <line
-              x1={0}
-              y1={SPARK_H - 0.5}
-              x2={SPARK_W}
-              y2={SPARK_H - 0.5}
-              stroke={baseline}
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-            />
-            <polyline
-              points={points}
-              fill="none"
-              stroke={row.color}
-              strokeWidth={1.5}
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-          {row.min !== undefined && row.max !== undefined ? (
-            <div className={styles.range} data-testid="dmap-card-range">
-              <span>min {row.min}</span>
-              <span>max {row.max}</span>
-            </div>
-          ) : null}
-        </>
+      {history ? (
+        <div className={styles.spark} data-testid="dmap-card-spark">
+          <SparklineView
+            model={history}
+            width={width}
+            height={SPARK_H}
+            timeRange={timeRange}
+            label={row.title}
+            showValue={false}
+            freshness={legacy ? undefined : row.freshness}
+          />
+        </div>
+      ) : null}
+      {legacy && row.min !== undefined && row.max !== undefined ? (
+        <div className={styles.range} data-testid="dmap-card-range">
+          <span>min {row.min}</span>
+          <span>max {row.max}</span>
+        </div>
       ) : null}
     </>
   );
@@ -224,9 +220,8 @@ const Row = memo(function Row({
  * The hover card. Unpinned it follows the pointer and ignores the pointer. Pinned it is a non-modal
  * dialog with a close button, row links and footer links. Narrow panels show it as a bottom sheet.
  */
-export function Card({ model, pinned, x, y, width, height, range, onClose }: CardProps) {
+export function Card({ model, pinned, x, y, width, height, range, timeRange, onClose }: CardProps) {
   const styles = useStyles2(getStyles);
-  const theme = useTheme2();
   const ref = useRef<HTMLDivElement>(null);
   const sheet = width < SHEET_BELOW;
 
@@ -279,10 +274,18 @@ export function Card({ model, pinned, x, y, width, height, range, onClose }: Car
         <Row
           key={r.key}
           row={r}
-          from={range?.from}
-          to={range?.to}
+          timeRange={
+            timeRange ??
+            (range
+              ? {
+                  from: dateTime(range.from),
+                  to: dateTime(range.to),
+                  raw: { from: dateTime(range.from), to: dateTime(range.to) },
+                }
+              : getDefaultTimeRange())
+          }
           styles={styles}
-          baseline={theme.colors.border.weak}
+          width={Math.max(1, Math.min(W, width) - 16)}
         />
       ))}
       {pinned && model.links.length ? (

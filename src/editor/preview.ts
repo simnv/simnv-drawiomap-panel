@@ -7,8 +7,16 @@ import type { QueryContext, QuerySnapshot } from '../query/types';
 import { useEffect, useState } from 'react';
 
 /** Refresh sample-age evaluation when displayed data or dashboard context changes. */
-export function usePreviewTime(data: unknown, generation?: number, snapshot?: QuerySnapshot): number {
+export function usePreviewTime(
+  data: unknown,
+  generation?: number,
+  snapshot?: QuerySnapshot,
+  active: QuerySnapshot[] = []
+): number {
   const [nowMs, setNowMs] = useState(Date.now);
+  const activeVersion = active
+    .map((value) => `${value.state}:${'fetchedAt' in value ? value.fetchedAt : ''}`)
+    .join('|');
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
@@ -19,7 +27,7 @@ export function usePreviewTime(data: unknown, generation?: number, snapshot?: Qu
     return () => {
       active = false;
     };
-  }, [data, generation, snapshot]);
+  }, [data, generation, snapshot, activeVersion]);
   return nowMs;
 }
 
@@ -35,7 +43,8 @@ export function createPreviewResolver(
   config: DiagramConfigV2,
   data: PanelData,
   preview?: QueryPreview,
-  format: HistoryFormat & { generation?: number } = {}
+  format: HistoryFormat & { generation?: number } = {},
+  active: QueryPreview[] = []
 ): BindingResolver {
   return (cellId, binding) => {
     const query = config.queries.find((q) => q.id === binding.queryId);
@@ -54,14 +63,20 @@ export function createPreviewResolver(
           : data.state === LoadingState.Loading
             ? { state: 'loading' }
             : { state: 'empty', fetchedAt: 0, fromCache: false };
-    } else if (
-      preview &&
-      JSON.stringify(preview.query) === JSON.stringify(query) &&
-      (format.generation === undefined || format.generation === preview.context.generation) &&
-      JSON.stringify(preview.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&
-      (preview.cellId === cellId || Object.keys(query.source.parameters).length === 0)
-    ) {
-      snapshot = preview.snapshot;
+    } else {
+      const parameterized = Object.keys(query.source.parameters).length > 0;
+      // Saved monitoring supersedes an old explicit result for the same definition.
+      const selected = [...active, preview].find(
+        (preview) =>
+          preview &&
+          JSON.stringify(preview.query) === JSON.stringify(query) &&
+          (format.generation === undefined || format.generation === preview.context.generation) &&
+          JSON.stringify(preview.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&
+          (preview.cellId === cellId || !parameterized)
+      );
+      if (selected) {
+        snapshot = selected.snapshot;
+      }
     }
     return resolveBinding(snapshot, binding, scope, format);
   };
