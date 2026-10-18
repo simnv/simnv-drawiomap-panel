@@ -11,7 +11,8 @@ export function usePreviewTime(
   data: unknown,
   generation?: number,
   snapshot?: QuerySnapshot,
-  active: QuerySnapshot[] = []
+  active: QuerySnapshot[] = [],
+  deadlines: number[] = []
 ): number {
   const [nowMs, setNowMs] = useState(Date.now);
   const activeVersion = active
@@ -28,7 +29,45 @@ export function usePreviewTime(
       active = false;
     };
   }, [data, generation, snapshot, activeVersion]);
+  const deadlineKey = deadlines.join('|');
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const now = Date.now();
+      const next = Math.min(
+        ...deadlineKey
+          .split('|')
+          .map(Number)
+          .filter((at) => at > now && Number.isFinite(at))
+      );
+      if (Number.isFinite(next)) {
+        timer = setTimeout(
+          () => {
+            setNowMs(Date.now());
+            schedule();
+          },
+          Math.min(2147483647, next - now)
+        );
+      }
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [deadlineKey]);
   return nowMs;
+}
+
+/** Sample-age deadlines only; fetching and cache age do not determine health. */
+export function statusDeadlines(plan: BindingPlan, resolve: BindingResolver): number[] {
+  return Object.values(plan.cells).flatMap((cell) => {
+    const status = cell.display.status;
+    if (!status?.freshness || status.enabled === false) {
+      return [];
+    }
+    const model = resolve(cell.cellId, status.binding);
+    return model.state === 'ready' && model.sampleAt !== undefined
+      ? [model.sampleAt + status.freshness.staleAfterMs + 1]
+      : [];
+  });
 }
 
 /** The current explicit editor result, not a cache or an execution schedule. */

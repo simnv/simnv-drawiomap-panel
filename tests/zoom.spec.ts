@@ -1,5 +1,6 @@
 import { devices, type Locator, type Page } from '@playwright/test';
-import { type DashboardPage, expect, test } from '@grafana/plugin-e2e';
+import { type DashboardPage } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 
@@ -31,6 +32,87 @@ async function openPanel(dashboardPage: DashboardPage) {
 }
 
 test.describe('live zoom on the desktop', () => {
+  test('explicit chart pixels follow nested affine geometry through resize, zoom, pan and reset', async ({
+    page,
+    config,
+    createDiagram,
+    gotoDashboardPage,
+  }, testInfo) => {
+    const uid = await createDiagram(config);
+    await gotoDashboardPage({ uid });
+    const panel = page.getByTestId('dmap-panel');
+    await expect(panel.locator('[data-dmap-widget] canvas')).toBeVisible();
+    const read = () =>
+      panel.evaluate((el) => {
+        const shape = el.querySelector<SVGGraphicsElement>('[data-cell-id="chart-1"] rect')!;
+        const portal = el.querySelector<SVGForeignObjectElement>('[data-dmap-widget="trend-region"]')!;
+        const corners = (node: SVGGraphicsElement) => {
+          const b = node.getBBox(),
+            m = node.getScreenCTM()!;
+          return [
+            [b.x, b.y],
+            [b.x + b.width, b.y],
+            [b.x, b.y + b.height],
+            [b.x + b.width, b.y + b.height],
+          ].map(([x, y]) => {
+            const point = new DOMPoint(x, y).matrixTransform(m);
+            return [point.x, point.y];
+          });
+        };
+        const expected = corners(shape),
+          actual = corners(portal);
+        const canvas = portal.querySelector('canvas');
+        const pixels = canvas?.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
+        return {
+          error: Math.max(...actual.flatMap((p, i) => p.map((v, k) => Math.abs(v - expected[i][k])))),
+          painted: pixels?.some((v, i) => i % 4 === 3 && v > 0),
+          width: portal.width.baseVal.value,
+          height: portal.height.baseVal.value,
+          viewBox: el.querySelector('svg')!.getAttribute('viewBox'),
+          screenWidth: shape.getBoundingClientRect().width,
+          paintOrder: shape.nextElementSibling === portal,
+          pointerEvents: getComputedStyle(portal).pointerEvents,
+        };
+      });
+    const verify = async () => {
+      let value = await read();
+      await expect
+        .poll(async () => {
+          value = await read();
+          return value.painted;
+        })
+        .toBe(true);
+      expect(value.error).toBeLessThan(0.5);
+      expect(value.painted).toBe(true);
+      expect(value.width).toBe(180);
+      expect(value.height).toBe(70);
+      expect(value.paintOrder).toBe(true);
+      expect(value.pointerEvents).toBe('none');
+      return value;
+    };
+    const base = await verify();
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await expect.poll(async () => (await read()).screenWidth).not.toBe(base.screenWidth);
+    const resized = await verify();
+    const box = (await panel.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -100);
+    await expect.poll(async () => (await read()).viewBox).not.toBe(resized.viewBox);
+    const zoomed = await verify();
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 35, box.y + box.height / 2 + 20, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(async () => (await read()).viewBox).not.toBe(zoomed.viewBox);
+    await verify();
+    await panel.getByRole('button', { name: 'Reset zoom' }).click();
+    await expect.poll(async () => (await read()).viewBox).toBe(resized.viewBox);
+    await verify();
+    await testInfo.attach('production-geometry', {
+      body: JSON.stringify({ base, resized, final: await read() }),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('production-geometry-pixels', { body: await panel.screenshot(), contentType: 'image/png' });
+  });
   test('Ctrl+wheel (a trackpad pinch) zooms; the reset button shows and restores the view', async ({
     gotoDashboardPage,
     page,

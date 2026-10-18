@@ -16,7 +16,7 @@ import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { cellMatches } from '../binding/select';
 import { bindPlan } from '../binding/engine';
 import { buildConfiguredCard } from '../interact/cardModel';
-import { createPreviewResolver, usePreviewTime, type QueryPreview } from './preview';
+import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
 import { PatternTransfer } from './PatternTransfer';
 import { DrawioModal } from './DrawioModal';
 import { sanitizeSvg } from '../render/sanitize';
@@ -70,7 +70,6 @@ export function BindingEditor({
   const release = useRef<() => void>();
   const query = draft.config.queries.find((q) => q.id === queryId);
   const context = service?.context;
-  const nowMs = usePreviewTime(data, context?.generation, previewState?.snapshot);
   const previewKey = useMemo(
     () => ({ query, context, cellId: draft.cellId, defaultDatasource: draft.config.defaultDatasource }),
     [query, context, draft.cellId, draft.config.defaultDatasource]
@@ -145,6 +144,13 @@ export function BindingEditor({
         generation: context?.generation,
       })
     : undefined;
+  const nowMs = usePreviewTime(
+    data,
+    context?.generation,
+    previewState?.snapshot,
+    [],
+    resolve ? statusDeadlines(plan, resolve) : []
+  );
   const formatting: BindContext = bindContext ?? {
     theme,
     replaceVariables: (text) => text,

@@ -1,4 +1,5 @@
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, saveDashboard, test } from './authoring-fixtures';
+import { inflateRawSync } from 'node:zlib';
 
 test('edit mode opens the bundled draw.io editor, saves, and the panel updates', async ({
   gotoPanelEditPage,
@@ -114,4 +115,43 @@ test('the bundled editor embeds image files of the plugin in the saved SVG', asy
     .first()
     .evaluate((el) => el.getAttribute('href') ?? el.getAttribute('xlink:href') ?? '');
   expect(href).toMatch(/^data:image\/png;base64,/);
+});
+
+test('geometry export keeps semantic identities and chart assignments through dashboard save and reopen', async ({
+  page,
+  request,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  const uid = await createDiagram(config);
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await inspector.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+  await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', {
+    timeout: 60000,
+  });
+  const frame = page.frameLocator('[data-testid="dmap-editor-frame"]');
+  await expect(frame.locator('.geDiagramContainer')).toBeVisible();
+  await frame.locator('.geSidebar .geItem').first().click();
+  const stage = page.getByTestId('dmap-panel');
+  const previousHash = await stage.getAttribute('data-dmap-hash');
+  await frame.getByTitle(/^Save \(/).dispatchEvent('click');
+  await expect(stage).not.toHaveAttribute('data-dmap-hash', previousHash!);
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(stage.locator('[data-cell-id="device-1"]')).toHaveAttribute('data-meta-pg-id', 'device-1');
+  await expect(stage.locator('[data-cell-id="chart-1"]')).toBeAttached();
+  await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
+  await saveDashboard(page);
+  const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
+  const options = saved.dashboard.panels[0].options;
+  const encoded = /<diagram[^>]*>([^<]+)<\/diagram>/.exec(options.diagram.xml)?.[1];
+  const decoded = encoded
+    ? decodeURIComponent(inflateRawSync(Buffer.from(encoded, 'base64')).toString())
+    : options.diagram.xml;
+  expect(decoded).toContain('pg-id="device-1"');
+  expect(options.config.widgets[0].anchorCellId).toBe('chart-1');
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  await inspector.getByRole('button', { name: 'Select chart-1', exact: true }).click();
+  await expect(inspector.getByLabel('Chart label', { exact: true })).toHaveValue('Standalone trend');
 });

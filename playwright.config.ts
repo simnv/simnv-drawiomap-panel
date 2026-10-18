@@ -16,5 +16,6 @@ export default defineConfig<PluginOptions>(baseConfig, {
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: process.env.GRAFANA_URL || 'http://localhost:3012',
+    actionTimeout: 10_000,
   },
 });

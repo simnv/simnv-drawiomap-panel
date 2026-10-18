@@ -7,15 +7,15 @@ A Grafana panel plugin (`simnv-drawiomap-panel`). It shows a draw.io diagram as 
 ## What it does
 
 - It colours each link by traffic, for each direction. Each half of the link has its colour and an arrow. The canvas shows no value labels.
-- It colours the node icon by state (for example, `up`). A rule can colour the whole shape or the outline instead.
-- A hover card shows the values and sparklines of the cell under the pointer. A click or a tap pins the card. The pinned card has links to more dashboards. See [Hover card](#hover-card).
+- Explicit health rules mark abnormal devices with a state and a reason. Normal V2 devices keep their diagram colours. Legacy rules can colour icons, shapes or outlines.
+- Configured hover values and histories load when the card opens. A click or tap pins the card. Explicit chart rectangles show selected trends or bounded bar gauges.
 - The real draw.io editor opens in a modal.
 
 View mode loads no draw.io code. The panel stores the diagram XML and the SVG that draw.io exported. The panel shows the SVG and writes colours into it.
 
 ## Requirements
 
-- Grafana 12.4 or later (`>=12.4.0`). Tested on 12.4.13 and 13.2.4.
+- Grafana 12.4 or later (`>=12.4.0`). Exact tested releases, sandbox modes and the development build are in the [compatibility matrix](docs/research/authoring-compatibility.md).
 - The plugin is not signed. Set `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel` (or `allow_loading_unsigned_plugins` in `grafana.ini`).
 - A data source with time series. The demo uses VictoriaMetrics.
 
@@ -59,9 +59,41 @@ The panel uses these cell attributes to find cells:
 
 Only page 1 of a multi-page diagram is shown. The panel shows a warning.
 
-## Rules
+## Bindings, queries and chart regions
 
-Rules are in the panel option **Rules**. Use the form or the YAML tab. Copy `demo/rules.yaml` as a start:
+Edit a panel to open its diagram binding inspector. Click a representative element, or select it with the keyboard. The inspector focuses its heading and shows identity, matching patterns and element overrides.
+
+1. Select **This element** or **All elements matching this pattern**. Preview the affected elements and resolution diagnostics.
+2. Add named queries. Set a panel default datasource or a query override. Native datasource editors retain native targets; **Preview query** executes a draft explicitly.
+3. Configure health, directional links and hover rows. Use explicit health mappings or opt-in thresholds. Zero traffic alone does not mean failure.
+4. Select a rectangle and choose **Assign chart region**. Choose a trend or a bar gauge with meaningful minimum and maximum bounds.
+5. Select **Apply bindings**, then save the Grafana dashboard. **Cancel changes** restores the saved bindings and geometry.
+
+Draw.io owns geometry and stable cell IDs. The inspector owns queries, formatting, rules and chart behavior. **Edit geometry in draw.io** previews an export; Apply commits it with the bindings. Deleted chart anchors remain diagnostic until repaired or explicitly removed. Duplicate physical IDs are rejected; copied semantic `pg-id` values must be repaired.
+
+**Export patterns** copies a versioned document with referenced queries, charts and overrides. **Preview pattern import** reports conflicts, datasource context and anchor applicability. Choose Replace or New identity explicitly. Import stages a draft without running queries; Apply activates its visible demand. Native datasource UIDs stay explicit across panels.
+
+The third demo panel, **Sanitized authoring topology**, has fictional repeated routers, a directional link and one standalone chart. Its Prometheus and TestData queries use synthetic data only.
+
+### Demand, cache and sample freshness
+
+Saved visible bindings and displayed chart regions execute while the inspector is open. Unapplied native query edits require Preview. Hover-only scalar values and histories request nothing before display. Identical demands share a request; fresh reopening reuses the panel cache. A named eager panel reference still runs through Grafana's Queries tab. Convert it to a native definition and manually remove its eager copy there; keep the warning until removal is verified.
+
+The cache is panel-local and lasts 15 seconds. Its key includes datasource, native target, element parameters, dashboard variables/range, generation and pixel resolution. It retains at most 64 entries, 100,000 values and 8 MiB, evicting inactive least-recently-used entries. Execution admits four concurrent requests and 64 queued requests. One result is limited to 100,000 values and 8 MiB. Errors are not cached. Closing, switching or unmounting releases demand; obsolete results cannot replace the current card. Datasource cancellation does not guarantee cancellation of server work.
+
+Sample freshness is independent of cache age. Enable it with an expected cadence and a stale-after interval. Health, scalar hover rows and charts transition when sample age crosses that interval, even without another response. Missing, zero, down, stale and incomplete coverage have distinct explanations. No cadence is inferred from the chart step. Dashboard refresh/context changes refresh active demand; inactive cards do not refresh.
+
+### Supported query results and migration
+
+Finite Grafana data frames with one selected numeric series and one time field support histories. Null gaps retain their meaning. Empty, single-sample, failed and stale histories show text. Logs, traces, legacy datapoint objects, streaming/partial frames, ambiguous numeric fields and invalid timestamps receive validation messages. Direct queries do not automatically inherit Grafana panel transformations or field overrides; use returned field configuration or explicit inspector units.
+
+Only the installed Prometheus and TestData plugins in the [tested matrix](docs/research/authoring-compatibility.md) have browser evidence. Other datasource editors can require capabilities this panel does not supply. Without a supported editor, use validated native-target JSON import. This is not universal datasource compatibility.
+
+The plugin is unshipped. Recreate authoring configuration if a saved format cannot be migrated. Existing V1 rules remain available until a V2 config is applied; a V2 config takes precedence without deleting the saved legacy options or dashboard. Back up dashboard JSON before conversion. Revert the implementation commits and restore that JSON for rollback; draw.io XML/SVG alone does not contain plugin behavior.
+
+## Legacy rules
+
+Existing V1 panels use the **Legacy rules** option. Use the form or the YAML tab. Copy `demo/rules.yaml` as a start:
 
 ```yaml
 - name: links
@@ -300,13 +332,13 @@ The panel sets `touch-action: pan-x pan-y` at the configured zoom: one finger sc
 
 ## Editor
 
-The plugin includes the draw.io editor (`dist/drawio`). Edit mode opens it in an iframe inside a modal, in embed mode. The iframe has an opaque origin, so the editor cannot reach the Grafana page (see `docs/security.md` and `docs/adr/0001-bundled-editor-opaque-origin.md`). The editor works with and without the Grafana frontend sandbox, with `content_security_policy = true`, and with `app_sub_url`. The plugin has no option for another editor URL. An `editorUrl` value that an older version saved is ignored. No draw.io code loads in view mode.
+The plugin includes the draw.io editor (`dist/drawio`). Edit mode opens it in an iframe inside a modal, in embed mode. The iframe has an opaque origin, so the editor cannot reach the Grafana page (see `docs/security.md` and `docs/adr/0001-bundled-editor-opaque-origin.md`). Earlier editor checks cover the frontend sandbox, `content_security_policy = true`, and `app_sub_url`; current authoring coverage is recorded separately. The plugin has no option for another editor URL. An `editorUrl` value that an older version saved is ignored. No draw.io code loads in view mode.
 
 ![Diagram options](docs/images/options-diagram.png)
 
 ## Grafana 12 and 13
 
-The plugin targets Grafana `>=12.4.0` and builds against `@grafana/*` 12.4.x. React comes from Grafana (it is not bundled). The same `dist/` runs on Grafana 12.4.13 and 13.2.4. Playwright tests pass on both versions: see `docs/acceptance.md`.
+The plugin targets Grafana `>=12.4.0` and builds against `@grafana/*` 12.4.x. React comes from Grafana (it is not bundled). The authoring matrix and its evidence are in [authoring compatibility](docs/research/authoring-compatibility.md). Earlier PoC results in `docs/acceptance.md` describe the previous workflow.
 
 ## Development
 
@@ -342,19 +374,17 @@ The steps do not use the docker socket, volumes, privileged mode or secrets. The
 
 `npm run ci:local` runs the same steps without Woodpecker. Its e2e steps use the compose stack. `SKIP_INSTALL=1` keeps `node_modules`. `SKIP_E2E=1` stops after the package step. The e2e steps stop the compose stack at the end (`docker compose down -v`).
 
-## Known limits (out of scope for the PoC)
+## Known limits
 
-Baseline: 2026-10-17. The results are in `docs/acceptance.md`.
+Authoring evidence: 2026-10-18, in `docs/research/authoring-compatibility.md`. Earlier PoC results are in `docs/acceptance.md`.
 
 - No signing and no catalogue entry.
 - No rules embedded in the diagram (`pg-rules`).
-- No click-to-bind in the diagram.
-- No sparklines on the canvas. Sparklines show in the hover card only.
 - No animated flow.
 - No diagrams loaded from a URL.
 - No multi-page diagrams. The panel renders page 1 and shows a warning.
 - The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes, and rules select its cells by id, label and other attributes.
-- With the Grafana frontend sandbox on, one e2e test fails: on a phone viewport, the fitted diagram fills the full panel height (no gap below the diagram). All other e2e tests pass in the sandbox, the editor tests too.
+- Consult the authoring compatibility matrix for current browser and sandbox evidence.
 
 ## Licence
 

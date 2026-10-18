@@ -49,12 +49,13 @@ export function PanelProbe(
     iframe.hidden = true;
     host.current?.append(iframe);
     try {
-      void iframe.contentWindow;
-      setRealm('readable');
+      setRealm(iframe.contentWindow ? 'readable' : 'blocked');
     } catch {
       setRealm('blocked');
     } finally {
-      iframe.remove();
+      if (iframe.parentNode === host.current) {
+        host.current?.removeChild(iframe);
+      }
     }
   }, []);
   const [label, setLabel] = useState(props.options.__compat?.label ?? '');
@@ -73,9 +74,9 @@ export function PanelProbe(
     }
   }, [selected]);
   return (
-    <div ref={host} data-testid={`compat-panel-${props.id}`} style={{ height: '100%', overflow: 'auto' }}>
+    <div ref={host} data-testid={`compat-panel-${props.id}`} style={{ height: props.height, overflow: 'auto' }}>
       <div onClick={(e) => choose(e.target)} style={{ height: 260, position: 'relative', overflow: 'hidden' }}>
-        <Panel {...panelProps} height={260} />
+        <Panel {...panelProps} id={-props.id} height={260} />
       </div>
       <PortalProbe host={host} range={props.timeRange} />
       <NativeEditor props={props} />

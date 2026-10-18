@@ -29,7 +29,7 @@ import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
 import { BindingEditor } from '../editor/BindingEditor';
 import { EMPTY_CONFIG } from '../editor/draft';
 import type { DiagramConfigV2 } from '../model/config';
-import { createPreviewResolver, usePreviewTime, type QueryPreview } from '../editor/preview';
+import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from '../editor/preview';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { ChartLayer } from '../visuals/ChartLayer';
 
@@ -108,7 +108,10 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
       replaceVariables={props.replaceVariables}
       defaultDatasource={props.options.config?.defaultDatasource}
     >
-      <DrawioMapPanelView {...props} />
+      {/* Sandbox hosts do not provide a definite percentage-height containing block. */}
+      <div style={{ width: props.width, height: props.height }}>
+        <DrawioMapPanelView {...props} />
+      </div>
     </PanelQueryProvider>
   );
 }
@@ -222,12 +225,6 @@ function DrawioMapPanelView({
     editing ? undefined : card?.cellId,
     Math.max(1, Math.min(264, width - 16))
   );
-  const nowMs = usePreviewTime(
-    data,
-    queryService?.context.generation,
-    queryPreview?.snapshot,
-    activeSnapshots.map((value) => value.snapshot)
-  );
   const resolve = useMemo(
     () =>
       createPreviewResolver(
@@ -243,6 +240,13 @@ function DrawioMapPanelView({
         activeSnapshots
       ),
     [plan, opts.config, data, queryPreview, theme, timeZone, queryService?.context.generation, activeSnapshots]
+  );
+  const nowMs = usePreviewTime(
+    data,
+    queryService?.context.generation,
+    queryPreview?.snapshot,
+    activeSnapshots.map((value) => value.snapshot),
+    statusDeadlines(plan, resolve)
   );
   const result = useMemo(() => {
     if (opts.config) {

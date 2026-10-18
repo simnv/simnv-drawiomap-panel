@@ -1,0 +1,7 @@
+apiVersion: 1
+datasources:
+  - name: Authoring TestData
+    uid: authoring-testdata
+    type: grafana-testdata-datasource
+    access: proxy
+    editable: false

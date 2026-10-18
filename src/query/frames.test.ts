@@ -18,6 +18,13 @@ const frame = (): DataFrame => ({
   ],
 });
 const snapshot = (frames = [frame()]): QuerySnapshot => ({ state: 'ready', frames, fetchedAt: 5000, fromCache: true });
+it('treats a fieldless empty backend frame as missing data rather than an unsupported result type', () => {
+  expect(toHistory(snapshot([{ length: 0, fields: [] }]), binding)).toEqual({
+    state: 'empty',
+    fetchedAt: 5000,
+    fromCache: true,
+  });
+});
 it('preserves numeric samples, null gaps, field configuration and source timestamps independently of cache age', () => {
   const model = toHistory(snapshot(), binding);
   expect(model).toMatchObject({

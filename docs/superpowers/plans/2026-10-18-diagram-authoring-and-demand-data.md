@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Preserve the user's chosen execution method: supervised Sol/Luna workers through Orca orchestration. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Support quiet topology monitoring, explicitly placed Grafana visuals, and click-to-bind authoring with genuinely deferred hover queries.
+**Goal:** Support quiet topology monitoring, explicitly placed Grafana visuals, and click-to-bind authoring with demand-loaded hover queries.
 
 **Architecture:** Retain the SVG stage and pure binding pipeline. Add one panel-local query controller shared by visible widgets, hover cards, and authoring previews; preserve Grafana's normal query pipeline for existing eager panel data. Compile named queries and panel-local patterns into presentation models, then render those through SVG patches and small Grafana React components.
 
 **Tech Stack:** TypeScript, React, Grafana packages pinned to 12.4.13 at the inspected baseline, draw.io exported SVG, Vitest/jsdom, Playwright with `@grafana/plugin-e2e`.
 
-**Spec:** [Approved product spec](../specs/2026-10-18-diagram-authoring-and-demand-data.md). Read it before execution. This plan proposes engineering interfaces and defaults; source inspection is complete, runtime integration remains unverified.
+**Spec:** [Approved product spec](../specs/2026-10-18-diagram-authoring-and-demand-data.md). Read it before execution. The implemented interfaces and final execution evidence are recorded below and in `docs/research/authoring-compatibility.md`. The original steps remain as the implementation record.
 
 ## Global Constraints
 
@@ -351,7 +351,7 @@ Produces persisted chart assignments and portable panel-local pattern documents.
 
 ### Task 8: Validate the full workflow and document supported behavior
 
-Blocking acceptance carried from Task 1: repeat `authoring-compat.spec.ts` on Grafana 13.2.4, both sandbox targets, and light theme after the shared OrbStack backend recovers. Grafana 12.4.13 dark baseline passed all three routes; no Grafana 13/sandbox/light result is claimed. Reuse the test-only harness and inspect the owned `drawiomap-t1` project before taking service ownership. Its stop attempt timed out during the outage.
+Resolved in Task 8 on 2026-10-18; final results appear below. Original blocking acceptance carried from Task 1: repeat `authoring-compat.spec.ts` on Grafana 13.2.4, both sandbox targets, and light theme after the shared OrbStack backend recovers. Grafana 12.4.13 dark baseline passed all three routes; no Grafana 13/sandbox/light result is claimed. Reuse the test-only harness and inspect the owned `drawiomap-t1` project before taking service ownership. Its stop attempt timed out during the outage.
 
 **Files:** Create `tests/query.spec.ts`, `tests/binding-editor.spec.ts`,
 `tests/visual-regions.spec.ts`; extend `tests/editor.spec.ts`, `tests/zoom.spec.ts`,
@@ -361,26 +361,46 @@ update `README.md` and `docs/research/authoring-compatibility.md`.
 **Interfaces:** Exercises the public UI, persisted dashboard options, and actual datasource
 requests on the supported matrix. Uses the monitoring-inspired sanitized fixture, not live infrastructure.
 
-- [ ] Add browser assertions for request counts: initial page/closed hover zero detail
+- [x] Add browser assertions for request counts: initial page/closed hover zero detail
       requests, first open one demand, fresh reopen no duplicate, variable/range change new
       demand, and late old-result rejection. Include both value and history hover rows.
-- [ ] Prove mixed datasource selection with two actual datasource types. Record which
+- [x] Prove mixed datasource selection with two actual datasource types. Record which
       datasource plugins and versions were tested; do not claim universal compatibility.
-- [ ] Exercise representative-element selection, inspector focus, pattern preview,
+- [x] Exercise representative-element selection, inspector focus, pattern preview,
       explicit element override, query editing, chart assignment, save/reopen, and import/export.
-- [ ] Check desktop light/dark rendering of normal, partial outage, widespread outage,
+- [x] Check desktop light/dark rendering of normal, partial outage, widespread outage,
       zero, missing, stale, loading, and error states. Confirm abnormal reasons are visible
       without hover and the diagram is not filled with default per-element charts.
-- [ ] Run `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`, and
+- [x] Run `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`, and
       `npm run check:bundle`. Run focused specs with `npm run e2e:12 -- tests/query.spec.ts tests/binding-editor.spec.ts tests/visual-regions.spec.ts tests/editor.spec.ts tests/zoom.spec.ts`, then the equivalent `e2e:13` command. Expected: all pass.
-- [ ] Run the project's required minimum-supported/latest-dev browser coverage if it
+- [x] Run the project's required minimum-supported/latest-dev browser coverage if it
       differs from the pinned local matrix; report unavailable targets as unverified, not passed.
       Validate effective frontend sandbox settings before claiming sandbox coverage.
-- [ ] Document unsupported datasource editors/result types, cache semantics, freshness,
+- [x] Document unsupported datasource editors/result types, cache semantics, freshness,
       migration/recreation, and the geometry/behavior split. Record measured request counts
       and query budgets. Remove superseded custom chart code and conflicting V1 controls
       only after the new workflow passes; keep rollback available as a normal commit revert.
-- [ ] Commit `test: cover demand-loaded diagram authoring end to end`.
+- [x] Commit `test: cover demand-loaded diagram authoring end to end`.
+
+## Completion evidence — 2026-10-18
+
+Tasks 1–7 are integrated through `891e3d1`; Task 8 adds production browser coverage and fixes defects those checks exposed. Earlier unchecked steps in Tasks 1–7 are historical planning entries; their predecessor reports and the current full unit/browser runs provide the implementation evidence. They are not claims that every edge case ran in a live browser.
+
+| Area                     | Executed evidence and limits                                                                                                                                                                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public authoring route   | Production selection/focus, live Edit navigation without document reload, pattern preview, override, native editor/JSON drafts, explicit Preview/Apply, clone isolation and dashboard persistence                                                                            |
+| Demand and cache         | Real DETAIL counts 0/1/1/2/3; distinct delayed-device values; actual Prometheus and TestData; empty eager targets and absolute-range Refresh. Budget, expiry, LRU and uncancellable Promise behavior also have unit coverage                                                 |
+| Status and presentation  | Eight states in desktop light/dark; visible reasons; one explicit chart and no device charts; exact sample-age deadline without a response. Crowded markers stay inside the diagram; a summary may cross shape fill while information remains readable in the tested fixture |
+| Geometry and portability | Real draw.io export with preserved identity, compressed XML, chart assignment save/reopen, cross-panel imports with different defaults, conflict replacement and Cancel. Affine screen corners, paint, clipping, pan/zoom/resize and theme checks run in browsers            |
+| Pinned matrix            | Grafana 12.4.13 and 13.2.4: focused production suite passes with sandbox disabled and enabled. Separate compatibility probe passes all three routes plus authentication in dark and light for all four targets                                                               |
+| Required extra targets   | Grafana 12.4.0 and registry-listed grafana-dev:13.1.0-25957875840 each pass the full production browser suite: 50 passed, three opt-in probe tests skipped. This is Chromium coverage; other browser engines remain unverified                                               |
+| Source checks            | `npm test`: 44 files, 492 tests passed. Typecheck, lint, production build and bundle check pass; lint retains four existing deprecation warnings                                                                                                                             |
+
+Production defects found by acceptance tests: shared native transport IDs cancelled independent queries; health had no sample-age deadline timer; fieldless empty frames were called unsupported; crowded top-edge markers were clipped; percentage-height sandbox hosts made the inspector unscrollable. Each has an executed RED/reproducer and final GREEN evidence in `/tmp/drawiomap-implementation-20261018/ticket-8-report.md`.
+
+No universal datasource/editor or result-shape support is claimed. Native target objects remain intact; explicit datasource context travels with portable patterns. Eager target removal remains a manual public Grafana Queries-tab action. V2 panels hide conflicting legacy controls, while saved legacy options remain available for rollback by ordinary commit revert and dashboard JSON restoration.
+
+The compatibility document records exact plugin versions, query/cache budgets, screenshots and unsupported behavior. The task report records commands, commits, effective sandbox evidence, exact runtime images, diagnostic corrections and owned-stack teardown. Parent owns integration and independent review.
 
 ## Verification and handoff notes
 

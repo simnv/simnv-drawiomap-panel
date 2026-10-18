@@ -188,6 +188,8 @@ function drawStatusMarker(entry: CellEntry, status: StatusView, theme: GrafanaTh
     x = point.x;
     y = point.y;
   } else {
+    // Keep device markers inside the shape, including cells at the SVG's top edge.
+    y += Number(primitive.getAttribute('height') ?? 0);
     const transform = primitive.getAttribute('transform');
     if (transform) {
       layer.setAttribute('transform', transform);
@@ -195,7 +197,7 @@ function drawStatusMarker(entry: CellEntry, status: StatusView, theme: GrafanaTh
     try {
       const box = primitive.getBBox();
       x = box.x;
-      y = box.y;
+      y = box.y + box.height;
     } catch {
       // Some SVG hosts do not expose getBBox; rectangle/ellipse attributes still locate the marker.
     }

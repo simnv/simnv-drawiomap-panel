@@ -48,6 +48,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['Binding'],
         editor: RulesEditor,
         defaultValue: [],
+        showIf: (options) => !options.config,
       })
       .addRadio({
         path: 'zoom.mode',

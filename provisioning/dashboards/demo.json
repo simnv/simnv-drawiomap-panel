@@ -13,7 +13,28 @@
     "to": "now"
   },
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "site",
+        "type": "custom",
+        "query": "23,47",
+        "current": {
+          "text": "23",
+          "value": "23"
+        },
+        "options": [
+          {
+            "text": "23",
+            "value": "23",
+            "selected": true
+          },
+          {
+            "text": "47",
+            "value": "47"
+          }
+        ]
+      }
+    ]
   },
   "panels": [
     {
@@ -496,6 +517,186 @@
           "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" style=\"background: transparent; background-color: transparent; color-scheme: light dark;\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" version=\"1.1\" width=\"442px\" height=\"282px\" viewBox=\"0 0 442 282\" id=\"ge-svg-t8ivZSA1ruCYTCDh0Iob\"><defs/><g><g data-cell-id=\"0\"><g data-cell-id=\"1\"><g data-cell-id=\"node-a\" data-meta-label=\"rtr-b\" data-meta-host=\"rtr-b\" data-meta-job=\"node-rtr-b\"><g transform=\"translate(0.5,0.5)\"><rect x=\"0\" y=\"0\" width=\"120\" height=\"60\" rx=\"9\" ry=\"9\" fill=\"#dae8fc\" stroke=\"#6c8ebf\" pointer-events=\"all\" style=\"fill: light-dark(rgb(218, 232, 252), rgb(29, 41, 59)); stroke: light-dark(rgb(108, 142, 191), rgb(92, 121, 163));\"/></g><g><g fill=\"#000000\" font-family=\"Helvetica\" text-anchor=\"middle\" font-size=\"12px\" style=\"fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"><g transform=\"translate(60,35) scale(1)\"><text><tspan>rtr-b</tspan></text></g></g></g></g><g data-cell-id=\"node-b\"><g transform=\"translate(0.5,0.5)\"><rect x=\"320\" y=\"0\" width=\"120\" height=\"60\" rx=\"9\" ry=\"9\" fill=\"#ffffff\" stroke=\"#000000\" pointer-events=\"all\" style=\"fill: var(--ge-adaptive-bg, #ffffff); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"/></g><g><g fill=\"#000000\" font-family=\"Helvetica\" text-anchor=\"middle\" font-size=\"12px\" style=\"fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"><g transform=\"translate(380,35) scale(1)\"><text><tspan>rtr-a</tspan></text></g></g></g></g><g data-cell-id=\"edge-ab\" data-meta-label=\"\" data-meta-kind=\"wan\" data-meta-capacity=\"100000000\"><g><path d=\"M 120 30 L 320 30\" fill=\"none\" stroke=\"#000000\" stroke-width=\"2\" stroke-miterlimit=\"10\" pointer-events=\"stroke\" style=\"stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"/></g><g data-cell-id=\"lbl-ab\"><g><g fill=\"#000000\" font-family=\"Helvetica\" text-anchor=\"middle\" font-size=\"11px\" style=\"fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"><g transform=\"translate(220.5,35) scale(1)\"><text><tspan>10G</tspan></text></g></g></g></g></g><g data-cell-id=\"grp\"><g/><g data-cell-id=\"node-c\"><g transform=\"translate(0.5,0.5)\"><rect x=\"0\" y=\"140\" width=\"100\" height=\"50\" rx=\"7.5\" ry=\"7.5\" fill=\"#ffffff\" stroke=\"#000000\" pointer-events=\"all\" style=\"fill: var(--ge-adaptive-bg, #ffffff); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"/></g><g><g fill=\"#000000\" font-family=\"Helvetica\" text-anchor=\"middle\" font-size=\"12px\" style=\"fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"><g transform=\"translate(50,170) scale(1)\"><text><tspan>c</tspan></text></g></g></g></g><g data-cell-id=\"node-d\"><g transform=\"translate(0.5,0.5)\"><rect x=\"340\" y=\"230\" width=\"100\" height=\"50\" rx=\"7.5\" ry=\"7.5\" fill=\"#ffffff\" stroke=\"#000000\" pointer-events=\"all\" style=\"fill: var(--ge-adaptive-bg, #ffffff); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"/></g><g><g fill=\"#000000\" font-family=\"Helvetica\" text-anchor=\"middle\" font-size=\"12px\" style=\"fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"><g transform=\"translate(390,260) scale(1)\"><text><tspan>d</tspan></text></g></g></g></g><g data-cell-id=\"edge-cd\" data-meta-label=\"\" data-meta-kind=\"lan\" data-meta-capacity=\"1000000000\"><g><path d=\"M 100 165 Q 220 165 220 210 Q 220 255 340 255\" fill=\"none\" stroke=\"#000000\" stroke-width=\"2\" stroke-miterlimit=\"10\" pointer-events=\"stroke\" style=\"stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));\"/></g></g></g></g></g></g></svg>",
           "hash": "c22bd96f",
           "updatedAt": "2026-10-17T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Sanitized authoring topology",
+      "type": "simnv-drawiomap-panel",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 16
+      },
+      "targets": [],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "rules": [],
+        "config": {
+          "version": 2,
+          "defaultDatasource": {
+            "uid": "victoriametrics",
+            "type": "prometheus"
+          },
+          "queries": [
+            {
+              "id": "health",
+              "name": "health",
+              "source": {
+                "kind": "datasource",
+                "target": {
+                  "refId": "HEALTH",
+                  "expr": "label_replace(vector(1), \"device\", \"$dm_key\", \"\", \"\")",
+                  "range": true
+                },
+                "parameters": {
+                  "dm_key": "cell.key"
+                }
+              }
+            },
+            {
+              "id": "detail",
+              "name": "detail",
+              "source": {
+                "kind": "datasource",
+                "target": {
+                  "refId": "DETAIL",
+                  "expr": "label_replace(vector($site), \"device\", \"$dm_key\", \"\", \"\")",
+                  "range": true
+                },
+                "parameters": {
+                  "dm_key": "cell.key"
+                }
+              }
+            },
+            {
+              "id": "trend",
+              "name": "Standalone trend",
+              "source": {
+                "kind": "datasource",
+                "datasource": {
+                  "uid": "authoring-testdata",
+                  "type": "grafana-testdata-datasource"
+                },
+                "target": {
+                  "refId": "TREND",
+                  "scenarioId": "random_walk",
+                  "alias": "Sanitized trend"
+                },
+                "parameters": {}
+              }
+            }
+          ],
+          "patterns": [
+            {
+              "id": "routers",
+              "name": "Repeated routers",
+              "select": {
+                "ids": [
+                  "device-1",
+                  "device-2"
+                ]
+              },
+              "display": {
+                "label": "Router ${cell.key}",
+                "status": {
+                  "kind": "mapping",
+                  "binding": {
+                    "queryId": "health",
+                    "match": {},
+                    "reducer": "last"
+                  },
+                  "default": {
+                    "state": "normal",
+                    "reason": "Healthy"
+                  },
+                  "mappings": [
+                    {
+                      "value": 0,
+                      "state": "down",
+                      "reason": "Health check failed"
+                    }
+                  ]
+                },
+                "hover": {
+                  "rows": [
+                    {
+                      "kind": "value",
+                      "label": "Detail value",
+                      "binding": {
+                        "queryId": "detail",
+                        "match": {},
+                        "reducer": "last"
+                      }
+                    },
+                    {
+                      "kind": "history",
+                      "label": "Detail history",
+                      "binding": {
+                        "queryId": "detail",
+                        "match": {},
+                        "reducer": "last"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "directional-link",
+              "name": "Directional traffic",
+              "select": {
+                "ids": [
+                  "link-1"
+                ]
+              },
+              "display": {
+                "link": {
+                  "a2bBinding": {
+                    "queryId": "health",
+                    "match": {},
+                    "reducer": "last"
+                  },
+                  "b2aBinding": {
+                    "queryId": "health",
+                    "match": {},
+                    "reducer": "last"
+                  },
+                  "capacity": 100
+                }
+              }
+            }
+          ],
+          "overrides": [],
+          "widgets": [
+            {
+              "id": "trend-region",
+              "anchorCellId": "chart-1",
+              "kind": "sparkline",
+              "label": "Standalone trend",
+              "binding": {
+                "queryId": "trend",
+                "match": {},
+                "reducer": "last"
+              }
+            }
+          ]
+        },
+        "diagram": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"640\" height=\"320\" viewBox=\"0 0 640 320\">\n  <defs><clipPath id=\"chart-clip\"><rect x=\"0\" y=\"0\" width=\"180\" height=\"70\"/></clipPath></defs>\n  <g data-cell-id=\"0\" data-meta-pg-schema=\"1\">\n  <g transform=\"translate(35 35)\">\n    <g data-cell-id=\"device-1\" data-meta-pg-id=\"device-1\" data-meta-pg-kind=\"node\" data-meta-pg-schema=\"1\" data-meta-device=\"router-1\">\n      <rect width=\"120\" height=\"55\" fill=\"#d5e8d4\" stroke=\"#82b366\"/><text x=\"12\" y=\"32\">Router α</text>\n    </g>\n    <g data-cell-id=\"device-2\" data-meta-pg-id=\"device-2\" data-meta-pg-kind=\"node\" data-meta-pg-schema=\"1\" data-meta-device=\"router-2\" transform=\"translate(250 0)\">\n      <rect width=\"120\" height=\"55\" fill=\"#d5e8d4\" stroke=\"#82b366\"/><text x=\"12\" y=\"32\">Router α</text>\n    </g>\n    <g data-cell-id=\"link-1\" data-meta-pg-id=\"link-1\" data-meta-pg-kind=\"link\" data-meta-pg-schema=\"1\" data-meta-pg-from=\"device-1:wan\" data-meta-pg-to=\"device-2:wan\">\n      <path d=\"M120 28 L250 28\" fill=\"none\" stroke=\"#888\" pointer-events=\"stroke\"/>\n      <path d=\"M245 23 L250 28 L245 33\" fill=\"none\" stroke=\"#888\" pointer-events=\"all\"/>\n    </g>\n    <g transform=\"translate(80 120) rotate(12) skewX(8)\">\n      <g data-cell-id=\"chart-1\" data-meta-pg-id=\"chart-1\" data-meta-pg-kind=\"other\" data-meta-pg-schema=\"1\" transform=\"scale(1.2 .9)\" style=\"color:rgb(1,2,3);font-size:99px;font-family:fantasy\" clip-path=\"url(#chart-clip)\">\n        <rect x=\"0\" y=\"0\" width=\"180\" height=\"70\" transform=\"translate(2 0)\" fill=\"#ffffff\" stroke=\"#666\"/>\n      </g>\n      <rect data-testid=\"paint-order-sentinel\" x=\"170\" y=\"0\" width=\"10\" height=\"10\" fill=\"#ff0000\"/>\n    </g>\n    <g data-cell-id=\"chart-group\" transform=\"translate(360 140)\">\n      <g data-cell-id=\"ordinary-chart\" transform=\"translate(8 12)\">\n        <rect width=\"180\" height=\"70\" fill=\"#fff\" stroke=\"#666\"/>\n        <text x=\"8\" y=\"24\">Трафик α 🚀</text>\n      </g>\n    </g>\n  </g>\n  </g>\n</svg>",
+          "xml": "<mxfile><diagram id=\"authoring\" name=\"Authoring\"><mxGraphModel><root>\n<object id=\"0\" label=\"\" pg-schema=\"1\"><mxCell/></object><mxCell id=\"1\" parent=\"0\"/>\n<object id=\"device-1\" label=\"Router α\" pg-id=\"device-1\" pg-kind=\"node\" pg-schema=\"1\" device=\"router-1\"><mxCell vertex=\"1\" parent=\"1\" style=\"rounded=0;html=0;\"><mxGeometry x=\"35\" y=\"35\" width=\"120\" height=\"55\" as=\"geometry\"/></mxCell></object>\n<object id=\"device-2\" label=\"Router α\" pg-id=\"device-2\" pg-kind=\"node\" pg-schema=\"1\" device=\"router-2\"><mxCell vertex=\"1\" parent=\"1\" style=\"rounded=0;html=0;\"><mxGeometry x=\"285\" y=\"35\" width=\"120\" height=\"55\" as=\"geometry\"/></mxCell></object>\n<object id=\"link-1\" label=\"\" pg-id=\"link-1\" pg-kind=\"link\" pg-schema=\"1\" pg-from=\"device-1:wan\" pg-to=\"device-2:wan\"><mxCell edge=\"1\" parent=\"1\" source=\"device-1\" target=\"device-2\" style=\"endArrow=classic;html=0;\"><mxGeometry relative=\"1\" as=\"geometry\"/></mxCell></object>\n<object id=\"chart-1\" label=\"\" pg-id=\"chart-1\" pg-kind=\"other\" pg-schema=\"1\"><mxCell vertex=\"1\" parent=\"1\" style=\"rounded=0;html=0;rotation=12;\"><mxGeometry x=\"115\" y=\"155\" width=\"216\" height=\"63\" as=\"geometry\"/></mxCell></object>\n<mxCell id=\"chart-group\" value=\"\" vertex=\"1\" parent=\"1\" style=\"group;\"><mxGeometry x=\"395\" y=\"175\" width=\"196\" height=\"94\" as=\"geometry\"/></mxCell>\n<mxCell id=\"ordinary-chart\" value=\"Трафик α 🚀\" vertex=\"1\" parent=\"chart-group\" style=\"rounded=0;html=0;\"><mxGeometry x=\"8\" y=\"12\" width=\"180\" height=\"70\" as=\"geometry\"/></mxCell>\n</root></mxGraphModel></diagram></mxfile>\n",
+          "hash": "b458242d",
+          "updatedAt": "2026-10-18"
+        },
+        "zoom": {
+          "mode": "fit",
+          "wheel": true,
+          "pan": true
         }
       }
     }

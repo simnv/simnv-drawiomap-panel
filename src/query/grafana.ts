@@ -4,6 +4,8 @@ import type { DataSourceRef } from '@grafana/schema';
 import type { QueryExecutor, QuerySnapshot } from './types';
 
 export type DatasourceLookup = (ref: DataSourceRef) => Promise<Pick<DataSourceApi, 'query'>>;
+const transportNamespace = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+let transportSequence = 0;
 
 /** Datasource query() owns native interpolation and escaping. No query string is rewritten here. */
 export function createGrafanaExecutor(
@@ -66,7 +68,12 @@ export function createGrafanaExecutor(
           return;
         }
         try {
-          const result = datasource.query(resolved.request);
+          // BackendSrv cancels requests that share a requestId. A context generation
+          // is shared by independent cells and panels, so it is not a transport ID.
+          const result = datasource.query({
+            ...resolved.request,
+            requestId: `drawiomap-${transportNamespace}-${++transportSequence}`,
+          });
           if ('then' in result) {
             void result.then(receive).catch(fail);
           } else {

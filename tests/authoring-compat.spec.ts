@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { expect, test } from '@grafana/plugin-e2e';
+import { saveDashboard } from './authoring-fixtures';
 
 test.skip(process.env.AUTHORING_COMPAT !== '1', 'Build the test-only probe and use authoring-compat.config.ts');
 test.use({ userPreferences: { theme: process.env.AUTHORING_THEME === 'light' ? 'light' : 'dark' } });
@@ -65,12 +66,7 @@ test('panel-owned inspector focuses, saves and isolates cloned panels across rem
     await probe.getByLabel('Binding label').fill('Saved first clone');
     await probe.getByRole('button', { name: 'Apply binding' }).click();
     // Public callback updates Grafana's options model; persist through Grafana's public save UI.
-    await page.getByRole('button', { name: /Back to dashboard/i }).click();
-    await page.getByRole('button', { name: /Save dashboard/i }).click();
-    await page
-      .getByRole('dialog')
-      .getByRole('button', { name: /^Save$/ })
-      .click();
+    await saveDashboard(page);
     await gotoDashboardPage({ uid });
     await expect(page.getByTestId('compat-panel-1').getByTestId('compat-saved')).toHaveText('Saved first clone');
     await expect(page.getByTestId('compat-panel-2').getByTestId('compat-saved')).toHaveText('');
@@ -161,12 +157,7 @@ test('installed native datasource editors preserve targets and require explicit 
     expect(testdataTarget.compatOpaque).toEqual({ keep: ['native', 7] });
     await editor.getByRole('button', { name: 'Save native targets' }).click();
     expect(detailRequests).toHaveLength(0);
-    await page.getByRole('button', { name: /Back to dashboard/i }).click();
-    await page.getByRole('button', { name: /Save dashboard/i }).click();
-    await page
-      .getByRole('dialog')
-      .getByRole('button', { name: /^Save$/ })
-      .click();
+    await saveDashboard(page);
     await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const reopened = page.getByTestId('compat-native-editor');
     await expect
@@ -238,7 +229,7 @@ test('Sparkline portal follows a nested affine anchor through fit, resize, pan a
   expect(created.ok()).toBe(true);
   try {
     await gotoDashboardPage({ uid });
-    await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '4');
+    await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '7');
     await expect(page.getByTestId('compat-sparkline')).toBeVisible({ timeout: 5000 });
     const panel = page.getByTestId('compat-panel-1');
     await expect(panel.getByTestId('compat-realm')).toHaveText(

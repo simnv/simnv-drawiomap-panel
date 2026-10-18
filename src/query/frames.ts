@@ -40,7 +40,7 @@ export function toHistory(snapshot: QuerySnapshot, binding: QueryBinding, format
   }
   const empty = (): HistoryModel => ({ state: 'empty', fetchedAt: snapshot.fetchedAt, fromCache: snapshot.fromCache });
   const unsupported = (message: string): HistoryModel => ({ state: 'unsupported', message });
-  if (!snapshot.frames.length) {
+  if (!snapshot.frames.length || snapshot.frames.every((frame) => frame.length === 0 && frame.fields.length === 0)) {
     return empty();
   }
   const candidates: Array<{ field: Field; frame: (typeof snapshot.frames)[number] }> = [];

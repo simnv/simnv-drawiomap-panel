@@ -39,6 +39,34 @@ const flush = async () => {
 };
 
 describe('Grafana query execution boundary', () => {
+  it('executes independent requests when randomUUID is unavailable on an HTTP origin', async () => {
+    vi.stubGlobal('crypto', {});
+    try {
+      const query = vi.fn().mockResolvedValue({ data: [frame] });
+      const execute = createGrafanaExecutor(async () => ({ query }));
+      execute(request(), vi.fn());
+      execute(request(), vi.fn());
+      await flush();
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(new Set(query.mock.calls.map(([value]) => value.requestId)).size).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('isolates transport IDs across simultaneous requests and panel controllers without changing native targets', async () => {
+    const query = vi.fn().mockResolvedValue({ data: [frame] });
+    const input = request();
+    const saved = JSON.stringify(input);
+    const first = createGrafanaExecutor(async () => ({ query }));
+    const second = createGrafanaExecutor(async () => ({ query }));
+    first(input, vi.fn());
+    first(input, vi.fn());
+    second(input, vi.fn());
+    await flush();
+    expect(new Set(query.mock.calls.map(([value]) => value.requestId)).size).toBe(3);
+    expect(JSON.stringify(input)).toBe(saved);
+    expect(query.mock.calls.every(([value]) => value.targets === input.request.targets)).toBe(true);
+  });
   it('passes native targets and scoped variables untouched to the selected datasource Promise query', async () => {
     const query = vi.fn().mockResolvedValue({ data: [frame] });
     const get = vi.fn().mockResolvedValue({ query });
