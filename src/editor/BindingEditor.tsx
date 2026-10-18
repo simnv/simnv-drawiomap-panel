@@ -551,7 +551,8 @@ export function BindingEditor({
                   draft.cellId ?? '',
                   undefined,
                   prepared,
-                  context.generation
+                  context.generation,
+                  'reuse'
                 );
                 if (existing.state === 'ready' || existing.state === 'empty') {
                   setSnapshot(existing);

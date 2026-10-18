@@ -86,22 +86,24 @@ export function previewSnapshot(
   cellId: string,
   preview?: QueryPreview,
   active: QueryPreview[] = [],
-  generation?: number
+  generation?: number,
+  purpose: 'display' | 'reuse' = 'display'
 ): QuerySnapshot {
   if (query.source.kind === 'panel') {
     return panelSnapshot(data, query.source.refId, 0);
   }
-  return preparedSnapshot(query, config, cellId, preview, active, generation);
+  return preparedSnapshot(query, config, cellId, preview, active, generation, purpose);
 }
 
-/** Select current display results; callers decide which states can replace their own demand. */
+/** Share compatibility checks; reuse prefers success while display preserves its authoritative result order. */
 export function preparedSnapshot(
   query: NamedQuery,
   config: Pick<DiagramConfigV2, 'defaultDatasource'>,
   cellId: string,
   preview?: QueryPreview,
   active: QueryPreview[] = [],
-  generation?: number
+  generation?: number,
+  purpose: 'display' | 'reuse' = 'reuse'
 ): QuerySnapshot {
   if (query.source.kind === 'panel') {
     return { state: 'idle' };
@@ -115,10 +117,15 @@ export function preparedSnapshot(
       JSON.stringify(result.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&
       (result.cellId === cellId || !parameterized)
   );
-  // A pending display request must not hide an explicit result for the same context.
-  const selected = compatible.find(
-    (result) => result?.snapshot.state !== 'idle' && result?.snapshot.state !== 'loading'
-  );
+  // Reuse data before empty success. Display must still expose a later saved monitoring failure.
+  const successful =
+    purpose === 'reuse'
+      ? (compatible.find((result) => result?.snapshot.state === 'ready') ??
+        compatible.find((result) => result?.snapshot.state === 'empty'))
+      : undefined;
+  const selected =
+    successful ??
+    compatible.find((result) => result?.snapshot.state !== 'idle' && result?.snapshot.state !== 'loading');
   return (selected ?? compatible[0])?.snapshot ?? { state: 'idle' };
 }
 export function createPreviewResolver(

@@ -217,6 +217,7 @@ describe('explicit full pattern preview', () => {
 // Controller-boundary scenarios use the same public run as the inspector action.
 import { previewPattern } from './patternPreview';
 import { resolvePatterns } from '../binding/patterns';
+import type { QueryPreview } from './preview';
 function batch(parameterized = true) {
   const host = document.createElement('div');
   host.innerHTML = '<svg><g data-cell-id="a"><rect/></g><g data-cell-id="b"><rect/></g></svg>';
@@ -251,6 +252,72 @@ function batch(parameterized = true) {
   };
   return { config, plan, context };
 }
+it.each(['error', 'loading', 'unsupported', 'empty'] as const)(
+  'full pattern preview prefers ready over %s in either prepared order',
+  async (state) => {
+    for (const readyFirst of [false, true]) {
+      const s = batch(false);
+      const execute = vi.fn(() => vi.fn());
+      const controller = createQueryController(execute);
+      const other: QuerySnapshot =
+        state === 'empty'
+          ? { state, fetchedAt: 1, fromCache: false }
+          : state === 'loading'
+            ? { state }
+            : { state, message: 'Saved request did not succeed' };
+      const prepared: QueryPreview[] = s.config.queries.flatMap((query) => {
+        const values = [other, ready(42)];
+        if (readyFirst) {
+          values.reverse();
+        }
+        return values.map((snapshot) => ({ query, cellId: 'a', context: s.context, snapshot }));
+      });
+      const publish = vi.fn();
+      const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, undefined, prepared);
+      await Promise.resolve();
+      expect(execute).not.toHaveBeenCalled();
+      const results: QueryPreview[] = publish.mock.calls.at(-1)![0].previews;
+      expect(results).toHaveLength(4);
+      expect(
+        results.map(({ snapshot }) =>
+          snapshot.state === 'ready' ? snapshot.frames[0].fields[1].values[0] : snapshot.state
+        )
+      ).toEqual([42, 42, 42, 42]);
+      stop();
+      controller.dispose();
+    }
+  }
+);
+it.each(['error', 'loading', 'unsupported', 'empty'] as const)(
+  'full pattern preview executes when saved %s cannot satisfy demand',
+  async (state) => {
+    const s = batch(false);
+    const execute = vi.fn((_request, emit) => {
+      emit(ready(84));
+      return vi.fn();
+    });
+    const controller = createQueryController(execute);
+    const snapshot: QuerySnapshot =
+      state === 'empty'
+        ? { state, fetchedAt: 1, fromCache: false }
+        : state === 'loading'
+          ? { state }
+          : { state, message: 'Saved request failed' };
+    const prepared = s.config.queries.map((query) => ({ query, cellId: 'a', context: s.context, snapshot }));
+    const publish = vi.fn();
+    const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, undefined, prepared);
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledTimes(state === 'empty' ? 0 : 1);
+    const results: QueryPreview[] = publish.mock.calls.at(-1)![0].previews;
+    expect(
+      results.map(({ snapshot }) =>
+        snapshot.state === 'ready' ? snapshot.frames[0].fields[1].values[0] : snapshot.state
+      )
+    ).toEqual(state === 'empty' ? ['empty', 'empty', 'empty', 'empty'] : [84, 84, 84, 84]);
+    stop();
+    controller.dispose();
+  }
+);
 it('coalesces equal native demands across query IDs and elements and retains their shared frames once', async () => {
   const s = batch(false);
   const execute = vi.fn((_request, emit) => {

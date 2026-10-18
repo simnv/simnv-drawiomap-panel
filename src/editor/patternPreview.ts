@@ -8,7 +8,7 @@ import {
   type QueryPolicy,
   type QuerySnapshot,
 } from '../query/types';
-import type { QueryPreview } from './preview';
+import { preparedSnapshot, type QueryPreview } from './preview';
 
 export interface PatternPreview {
   config: DiagramConfigV2;
@@ -98,17 +98,9 @@ export function previewPattern(
       }
       update();
     };
-    const existing = compatible.find(
-      (value) =>
-        JSON.stringify(value.query) === JSON.stringify(demand.query) &&
-        value.context.generation === context.generation &&
-        JSON.stringify(value.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&
-        (value.cellId === demand.cellId ||
-          (demand.query.source.kind === 'datasource' && !Object.keys(demand.query.source.parameters).length)) &&
-        (value.snapshot.state === 'ready' || value.snapshot.state === 'empty')
-    );
-    if (existing) {
-      receive(existing.snapshot);
+    const existing = preparedSnapshot(demand.query, config, demand.cellId, undefined, compatible, context.generation);
+    if (existing.state === 'ready' || existing.state === 'empty') {
+      receive(existing);
     } else {
       releases[index] = controller.watch(
         {

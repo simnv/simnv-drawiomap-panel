@@ -199,3 +199,34 @@ The development selection was refreshed from the official Docker Hub API on 2026
 Commands, raw request counts, effective settings, image and bundle digests, source
 freshness and cleanup evidence are recorded in
 `/tmp/drawiomap-implementation-20261018/ticket-12-report.md` and its referenced files.
+
+## Mixed prepared results
+
+Ticket 13 shares successful-result selection across individual query preview, full
+pattern preview and scalar/history hover demand. Compatible ready results take
+precedence over empty, failed, unsupported or pending results in either order.
+An empty result satisfies reuse only when no compatible ready result exists.
+Query, parameterized cell, default datasource and context isolation remain required.
+Without a successful compatible result, ordinary demand and diagnostics remain active.
+
+Display retains its existing terminal-result precedence. A completed one-shot preview
+does not hide a later saved chart monitoring failure. The completed preview report
+remains a one-shot result while the saved chart displays the current failure.
+Eager panel failures still take precedence over retained frames.
+
+The original two-chart component reproducer fails with three native executions before
+the fix and passes with two. A separate full-pattern regression catches empty data
+selected before a ready result. New monitoring regressions catch successful preview
+frames masking a later saved failure. Final source passes 590 unit tests, typecheck,
+lint, production webpack and bundle checks. Lint retains five existing deprecation
+warnings. Final browser commands, source/bundle correspondence, runtime evidence and
+cleanup receipts are recorded in
+`/tmp/drawiomap-implementation-20261018/ticket-13-report.md`.
+
+Fresh Chromium request-count checks pass eight tests each, including authentication,
+on minimum 12.4.0, refreshed development 13.1.0-25957875840, pinned 12.4.13 and 13.2.4,
+and effective frontend sandboxes on both pinned versions. All 48 final executions
+use the corrected production bundle. Mixed saved result states and subsequent
+monitoring failures have component/native-executor evidence. The browser runs retain
+actual HTTP assertions for successful chart reuse, lazy hover demand, refresh and
+context handling. No new browser outage, theme or geometry matrix is claimed.
