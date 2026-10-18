@@ -6,6 +6,8 @@ import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../t
 import { applyPatches } from './applier';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
+import type { PlanCellPatch } from '../binding/engine';
+import type { StatusView } from '../binding/status';
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30" fill="#fff" style="fill: light-dark(#fff, #111); stroke: #000;"/></g><g><text><tspan>rtr-a</tspan></text></g></g>
@@ -92,6 +94,26 @@ const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
 });
 
 describe('applyPatches', () => {
+  it('marks explicit health accessibly without coloring normal shapes and resets its reason', () => {
+    const index = build();
+    const statusView: StatusView = {
+      state: 'down',
+      reason: 'Device down',
+      conditionKey: 'health',
+      queryIds: ['up'],
+      coverage: { available: 1, expected: 1 },
+    };
+    const p: PlanCellPatch = { ...patch('n1', {}), statusView };
+    const prev = applyPatches(index, new Map([['n1', p]]), new Set());
+    expect(index.get('n1')!.group.getAttribute('data-dmap-status')).toBe('down');
+    expect(index.get('n1')!.group.getAttribute('data-dmap-reason')).toBe('Device down');
+    expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a: down. Device down');
+    const normal: PlanCellPatch = { ...p, statusView: { ...statusView, state: 'normal', reason: 'Healthy' } };
+    applyPatches(index, new Map([['n1', normal]]), prev);
+    expect((index.get('n1')!.shape as SVGElement).style.fill).toBe(index.get('n1')!.original.fill);
+    applyPatches(index, new Map(), prev);
+    expect(index.get('n1')!.group.hasAttribute('data-dmap-reason')).toBe(false);
+  });
   it('fills a shape through style and tags the group', () => {
     const index = build();
     const patches: PatchMap = new Map([['n1', patch('n1', { shape: shape() })]]);
@@ -164,8 +186,7 @@ describe('applyPatches on a native text label (demo-l3)', () => {
     const entry = index.get('pg-node~rtr-a')!;
     expect(entry.label!.localName).toBe('text');
     const before = entry.label!.outerHTML;
-    const round = (text: string) =>
-      new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape({ text }) })]]);
+    const round = (text: string) => new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape({ text }) })]]);
     const prev = applyPatches(index, round('up 1'), new Set());
     expect(entry.label!.textContent).toBe('up 1');
     applyPatches(index, new Map(), prev);

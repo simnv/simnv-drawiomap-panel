@@ -3,6 +3,8 @@ import { createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { ensureOverlay, renderOverlay } from './overlay';
+import type { PlanCellPatch } from '../binding/engine';
+import type { StatusView } from '../binding/status';
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g><g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30"/></g></g>
@@ -53,6 +55,39 @@ const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
 const opts = { theme: createTheme() };
 
 const before = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+describe('status overlay', () => {
+  it('renders one summary for equal causes while marking every affected element, without changing directional colors', () => {
+    const { root, index } = build();
+    const statusView: StatusView = {
+      state: 'down',
+      reason: 'Device down',
+      conditionKey: 'health-zero',
+      queryIds: ['up'],
+      coverage: { available: 1, expected: 1 },
+    };
+    const patches = new Map<string, PlanCellPatch>([
+      ['n1', { ...patch('n1', {}), statusView }],
+      ['e1', { ...patch('e1', { link: { a2b: half() } }), statusView }],
+    ]);
+    renderOverlay(root, index, patches, opts);
+    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(2);
+    expect(root.querySelectorAll('.dmap-status-summary')).toHaveLength(1);
+    expect(root.querySelector('.dmap-status-summary')!.textContent).toBe('down: Device down (2 elements)');
+    expect(root.querySelector('.dmap-half')!.getAttribute('stroke')).toBe('#00ff00');
+    expect(root.querySelector('.dmap-status-marker text')!.textContent).toContain('!');
+    expect(root.querySelector('.dmap-status-marker')!.getAttribute('pointer-events')).toBe('none');
+    patches.get('e1')!.statusView = { ...statusView, conditionKey: 'power', reason: 'Power lost' };
+    renderOverlay(root, index, patches, opts);
+    expect(root.querySelectorAll('.dmap-status-summary')).toHaveLength(2);
+    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(2);
+    for (const p of patches.values()) {
+      p.statusView = { ...statusView, state: 'normal', reason: 'Healthy' };
+    }
+    renderOverlay(root, index, patches, opts);
+    expect(root.querySelectorAll('.dmap-status-marker, .dmap-status-summary')).toHaveLength(0);
+  });
+});
 
 describe('ensureOverlay', () => {
   it('creates one overlay group directly after the edge path and its arrow heads', () => {

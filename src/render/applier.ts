@@ -1,4 +1,5 @@
 import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
+import type { PlanCellPatch } from '../binding/engine';
 
 /** Labels that a patch wrote text into. Only these need a label reset. */
 const written = new WeakSet<Element>();
@@ -89,7 +90,7 @@ function applyLink(entry: CellEntry, patch: CellPatch): void {
   }
 }
 
-function tag(entry: CellEntry, patch: CellPatch, target: string | undefined): void {
+function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined): void {
   if (target) {
     entry.group.setAttribute('data-dmap-target', target);
   }
@@ -97,6 +98,16 @@ function tag(entry: CellEntry, patch: CellPatch, target: string | undefined): vo
   entry.group.setAttribute('tabindex', '0');
   entry.group.setAttribute('role', 'button');
   entry.group.setAttribute('aria-label', entry.meta.labelText || entry.meta.key);
+  if (patch.statusView) {
+    const status = patch.statusView;
+    entry.group.setAttribute('data-dmap-status', status.state);
+    entry.group.setAttribute('data-dmap-reason', status.reason);
+    entry.group.setAttribute(
+      'aria-label',
+      `${entry.meta.labelText || entry.meta.key}: ${status.state}. ${status.reason}`
+    );
+    return;
+  }
   const states = [patch.shape, patch.link?.a2b, patch.link?.b2a].filter(Boolean) as Array<{
     status: string;
     stepIndex: number;
@@ -144,7 +155,9 @@ function reset(entry: CellEntry, index: CellIndex): void {
       const originals = nodes.filter((n) => (n as Element).localName === 'text');
       Array.from(label.children)
         .filter((el) => el.localName === 'text')
-        .forEach((line, i) => line.replaceChildren(...Array.from(originals[i]?.childNodes ?? [], (n) => n.cloneNode(true))));
+        .forEach((line, i) =>
+          line.replaceChildren(...Array.from(originals[i]?.childNodes ?? [], (n) => n.cloneNode(true)))
+        );
     } else if (nodes) {
       // Put back the exact markup: a text write flattens the HTML lines of a foreignObject label.
       label.replaceChildren(...nodes.map((n) => n.cloneNode(true)));
@@ -154,6 +167,7 @@ function reset(entry: CellEntry, index: CellIndex): void {
     written.delete(label);
   }
   entry.group.removeAttribute('data-dmap-status');
+  entry.group.removeAttribute('data-dmap-reason');
   entry.group.removeAttribute('data-dmap-step');
   entry.group.removeAttribute('data-dmap-target');
   entry.group.removeAttribute('tabindex');

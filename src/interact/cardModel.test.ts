@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTheme, DisplayValue, Field, FieldType, LinkModel } from '@grafana/data';
 import type { CellPatch, HalfState, SeriesInfo } from '../types';
-import { buildCard, CardContext, sparkDomain, sparkPoints } from './cardModel';
+import { buildCard, buildConfiguredCard, CardContext, sparkDomain, sparkPoints } from './cardModel';
+import type { PlanCellPatch } from '../binding/engine';
+import type { QueryBinding } from '../model/config';
+import { toHistory } from '../query/frames';
 
 const theme = createTheme();
 const fieldLink: LinkModel<Field> = { href: '/d/field', title: 'Field link', target: '_blank', origin: {} as Field };
@@ -105,10 +108,7 @@ describe('buildCard for a link', () => {
   });
   it('uses the rule url for both rows when link.card.url is not set', () => {
     const c = buildCard(linkPatch(), ctx);
-    expect(c.rows.map((r) => r.href)).toEqual([
-      '/d/rule?job=node-isp-a&from=111',
-      '/d/rule?job=node-isp-a&from=111',
-    ]);
+    expect(c.rows.map((r) => r.href)).toEqual(['/d/rule?job=node-isp-a&from=111', '/d/rule?job=node-isp-a&from=111']);
   });
   it('resolves link.card.url per row with the labels of the row series, encoded', () => {
     const c = buildCard(
@@ -223,6 +223,143 @@ describe('buildCard url checks', () => {
     const c2 = buildCard(p, { ...ctx, replaceVariables: () => 'javascript:alert(1)' });
     expect(c2.rows[0].href).toBeUndefined();
     expect(c2.links.map((l) => l.title)).toEqual(['Field link']);
+  });
+});
+
+describe('configured cards', () => {
+  const binding: QueryBinding = { queryId: 'cpu', match: {}, reducer: 'last' };
+  const patch = (): PlanCellPatch => ({
+    ...nodePatch(),
+    hover: {
+      rows: [
+        { kind: 'metadata', label: 'Device', path: 'cell.key' },
+        { kind: 'value', label: 'CPU', binding, url: '/d/cpu?device=${cell.key}' },
+        { kind: 'history', label: 'Trend', binding },
+        { kind: 'drilldown', label: 'Dashboard', url: '/d/device?device=${cell.key}' },
+      ],
+    },
+  });
+  it('resolves no values and describes no demand for a closed card', () => {
+    const card = buildConfiguredCard(
+      patch(),
+      () => {
+        throw new Error('Closed card read extra data');
+      },
+      ctx,
+      false
+    );
+    expect(card).toMatchObject({ rows: [], links: [], demands: [] });
+  });
+  it('explains unavailable metadata without resolving the suppressed hover rows', () => {
+    const p = { ...patch(), unavailableHoverRows: [1, 2] };
+    const card = buildConfiguredCard(
+      p,
+      () => {
+        throw new Error('Suppressed hover was resolved');
+      },
+      ctx
+    );
+    expect(card.rows.slice(1, 3).map((r) => [r.state, r.text])).toEqual([
+      ['unsupported', 'Binding metadata is unavailable'],
+      ['unsupported', 'Binding metadata is unavailable'],
+    ]);
+    expect(card.demands).toEqual([]);
+  });
+  it('uses configured rows, preserves formatted affixes and null gaps, and limits histories to explicit history rows', () => {
+    const model = toHistory(
+      {
+        state: 'ready',
+        fetchedAt: 9000,
+        fromCache: true,
+        frames: [
+          {
+            length: 3,
+            fields: [
+              { name: 'Time', type: FieldType.time, config: {}, values: [1000, 2000, 3000] },
+              {
+                name: 'CPU',
+                type: FieldType.number,
+                config: {},
+                values: [20, null, 35.25],
+                display: (v) => ({ text: String(v), numeric: Number(v), prefix: '~', suffix: ' load' }),
+              },
+            ],
+          },
+        ],
+      },
+      binding
+    );
+    const card = buildConfiguredCard(patch(), () => model, ctx);
+    expect(card.rows.map((r) => [r.kind, r.title, r.text])).toEqual([
+      ['metadata', 'Device', 'rtr-a'],
+      ['value', 'CPU', '~35.25 load'],
+      ['history', 'Trend', '~35.25 load'],
+      ['drilldown', 'Dashboard', 'Dashboard'],
+    ]);
+    expect(card.rows[1].history).toBeUndefined();
+    expect(card.rows[2].history).toMatchObject({
+      state: 'ready',
+      values: [20, null, 35.25],
+      timestamps: [1000, 2000, 3000],
+    });
+    expect(card.rows[1].href).toBe('/d/cpu?device=rtr-a');
+    expect(card.demands.map((d) => d.rowIndex)).toEqual([1, 2]);
+  });
+  it('applies the configured unit and checks templated and dashboard-variable URLs after substitution', () => {
+    const p: PlanCellPatch = {
+      ...nodePatch(),
+      scope: { cell: { key: 'a&b' } },
+      hover: {
+        rows: [
+          { kind: 'value', label: 'CPU', binding, unit: 'percent', url: '/d/cpu?name=${cell.key}&job=${labels.job}' },
+          { kind: 'drilldown', label: 'Unsafe variable', url: '${bad:raw}' },
+          { kind: 'drilldown', label: 'Unsafe scheme', url: 'javascript:alert(1)' },
+        ],
+      },
+    };
+    const model = toHistory(
+      {
+        state: 'ready',
+        fetchedAt: 9000,
+        fromCache: false,
+        frames: [
+          {
+            length: 1,
+            fields: [
+              { name: 'Time', type: FieldType.time, config: {}, values: [1000] },
+              { name: 'CPU', type: FieldType.number, config: { decimals: 1 }, labels: { job: 'x/y' }, values: [35.25] },
+            ],
+          },
+        ],
+      },
+      binding
+    );
+    const card = buildConfiguredCard(p, () => model, {
+      ...ctx,
+      replaceVariables: (v) => (v === '${bad:raw}' ? 'javascript:alert(1)' : v),
+    });
+    expect(card.rows[0].text).toBe('35.3%');
+    expect(card.rows[0].href).toBe('/d/cpu?name=a%26b&job=x%2Fy');
+    expect(card.rows.slice(1).map((r) => r.href)).toEqual([undefined, undefined]);
+  });
+  it('reports unavailable and ambiguous hover metrics to the editor without blank rows', () => {
+    let i = 0;
+    const card = buildConfiguredCard(
+      patch(),
+      () =>
+        i++ === 0
+          ? { state: 'empty', fetchedAt: 9000, fromCache: false }
+          : { state: 'unsupported', message: 'History field selection is ambiguous. Select one field and series.' },
+      ctx
+    );
+    expect(card.rows.slice(1, 3).map((r) => r.text)).toEqual([
+      'No data',
+      'History field selection is ambiguous. Select one field and series.',
+    ]);
+    expect(card.diagnostics.map((d) => [d.code, d.path])).toEqual([
+      ['unmatched-metric', `cells.${patch().cellId}.hover.rows[1].binding`],
+      ['ambiguous-metric', `cells.${patch().cellId}.hover.rows[2].binding`],
+    ]);
   });
 });
 

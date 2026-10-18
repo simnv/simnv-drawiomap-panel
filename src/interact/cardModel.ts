@@ -1,10 +1,129 @@
-import { DisplayValue, formattedValueToString, GrafanaTheme2, LinkModel, ScopedVars } from '@grafana/data';
+import {
+  DisplayValue,
+  formattedValueToString,
+  getDisplayProcessor,
+  GrafanaTheme2,
+  LinkModel,
+  ScopedVars,
+} from '@grafana/data';
 import { reduceValues } from '../binding/reduce';
 import { findSeries } from '../binding/series';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import type { BindStatus, CardRow, CellPatch, HalfState, SeriesInfo } from '../types';
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
+import { historySeries, type BindingDemand, type BindingResolver, type PlanCellPatch } from '../binding/engine';
+import type { HistoryModel } from '../query/frames';
+import type { Diagnostic, HoverRow } from '../model/config';
+
+export interface ConfiguredCardRow {
+  key: string;
+  kind: HoverRow['kind'] | 'status';
+  title: string;
+  text: string;
+  state: HistoryModel['state'];
+  history?: HistoryModel;
+  href?: string;
+}
+export interface ConfiguredCardModel {
+  title: string;
+  rows: ConfiguredCardRow[];
+  links: LinkModel[];
+  demands: BindingDemand[];
+  diagnostics: Diagnostic[];
+}
+
+export function buildConfiguredCard(
+  patch: PlanCellPatch,
+  resolve: BindingResolver,
+  ctx: CardContext,
+  open = true
+): ConfiguredCardModel {
+  const card: ConfiguredCardModel = { title: titleOf(patch), rows: [], links: [], demands: [], diagnostics: [] };
+  if (!open || patch.hover?.enabled === false) {
+    return card;
+  }
+  const primary = primaryOf(patch);
+  card.links = resolveLinks(patch, primary, ctx.replaceVariables, card.title);
+  if (!patch.hover) {
+    if (patch.statusView) {
+      card.rows.push({
+        key: 'status',
+        kind: 'status',
+        title: patch.statusView.state,
+        text: patch.statusView.reason,
+        state: 'ready',
+      });
+    }
+    return card;
+  }
+  patch.hover.rows.forEach((row, i) => {
+    const base = { key: `row-${i}`, kind: row.kind, title: resolveTemplate(row.label, patch.scope).text };
+    if (row.kind === 'metadata') {
+      const value = resolveTemplate(`\${${row.path}}`, patch.scope);
+      card.rows.push({
+        ...base,
+        text: value.unresolved.length ? 'Metadata unavailable' : value.text,
+        state: value.unresolved.length ? 'empty' : 'ready',
+      });
+    } else if (row.kind === 'drilldown') {
+      card.rows.push({ ...base, text: base.title, state: 'ready', href: rowHref(patch, row.url, primary, ctx) });
+    } else {
+      const unavailable = patch.unavailableHoverRows?.includes(i);
+      if (!unavailable) {
+        card.demands.push({ cellId: patch.cellId, binding: row.binding, role: 'hover', rowIndex: i });
+      }
+      let model: HistoryModel = unavailable
+        ? { state: 'unsupported', message: 'Binding metadata is unavailable' }
+        : resolve(patch.cellId, row.binding);
+      if (model.state === 'empty' || model.state === 'error' || model.state === 'unsupported') {
+        const message = model.state === 'empty' ? `No metric matches query ${row.binding.queryId}.` : model.message;
+        card.diagnostics.push({
+          code:
+            model.state === 'empty'
+              ? 'unmatched-metric'
+              : message.toLowerCase().includes('ambiguous')
+                ? 'ambiguous-metric'
+                : `${model.state}-metric`,
+          path: `cells.${patch.cellId}.hover.rows[${i}].binding`,
+          message,
+        });
+      }
+      if (model.state === 'ready' && row.unit !== undefined) {
+        const field = { ...model.field, config: { ...model.field.config, unit: row.unit } };
+        const display = getDisplayProcessor({ field, theme: ctx.theme });
+        model = {
+          ...model,
+          field,
+          latestDisplayValue: model.latestValue === undefined ? undefined : display(model.latestValue),
+        };
+      }
+      const series = model.state === 'ready' ? historySeries(model, row.binding) : undefined;
+      const rowPrimary: Primary = {
+        status: model.state === 'ready' ? 'ok' : 'nodata',
+        series,
+        value: model.state === 'ready' ? model.latestValue : undefined,
+        display: model.state === 'ready' ? model.latestDisplayValue : undefined,
+      };
+      const text =
+        model.state === 'ready' && model.latestDisplayValue
+          ? formattedValueToString(model.latestDisplayValue)
+          : model.state === 'error' || model.state === 'unsupported'
+            ? model.message
+            : model.state === 'idle' || model.state === 'loading'
+              ? 'Loading data'
+              : 'No data';
+      card.rows.push({
+        ...base,
+        text,
+        state: model.state,
+        href: rowHref(patch, row.url, rowPrimary, ctx),
+        ...(row.kind === 'history' ? { history: model } : {}),
+      });
+    }
+  });
+  return card;
+}
 
 /** What the card shows for one series. */
 export interface CardRowModel {

@@ -15,7 +15,43 @@ import {
 } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, LinkRule, Rule, SeriesInfo } from '../types';
-import { bind } from './engine';
+import { bind, bindPlan, collectBindingDemands, resolveBinding } from './engine';
+import { resolvePatterns } from './patterns';
+import type { DiagramConfigV2, QueryBinding } from '../model/config';
+import { toHistory } from '../query/frames';
+
+const queryBinding: QueryBinding = { queryId: 'health', match: {}, reducer: 'last' };
+const v2Config = (display: DiagramConfigV2['patterns'][number]['display']): DiagramConfigV2 => ({
+  version: 2,
+  queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }],
+  patterns: [{ id: 'p', name: 'Devices', select: {}, display }],
+  overrides: [],
+  widgets: [],
+});
+const historyValue = (value: number, sampleAt = 1000) =>
+  toHistory(
+    {
+      state: 'ready',
+      fetchedAt: 100000,
+      fromCache: true,
+      frames: [
+        {
+          length: 1,
+          fields: [
+            { name: 'Time', type: FieldType.time, config: {}, values: [sampleAt] },
+            {
+              name: 'Value',
+              type: FieldType.number,
+              config: { unit: 'percent' },
+              values: [value],
+              display: (v) => ({ numeric: Number(v), text: String(v), suffix: '%', color: '#ff0000' }),
+            },
+          ],
+        },
+      ],
+    },
+    queryBinding
+  );
 import { extractSeries } from './series';
 
 const theme = createTheme();
@@ -118,6 +154,251 @@ const ctx: BindContext = {
   display: (_s, v): DisplayValue => ({ text: `${v / 1e6}`, suffix: ' Mb/s', numeric: v, color: '#abcdef' }),
   linkWidth: { min: 2, max: 10 },
 };
+
+describe('bindPlan', () => {
+  it('keeps normal devices neutral even with a red numeric field and preserves the formatted value', () => {
+    const plan = resolvePatterns(
+      [cells[3]],
+      v2Config({
+        shape: { binding: queryBinding, text: true, target: 'shape' },
+        label: '${cell.key} ${value}',
+        status: {
+          kind: 'mapping',
+          binding: queryBinding,
+          default: { state: 'normal', reason: 'Healthy' },
+          mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
+        },
+      })
+    );
+    expect(plan.diagnostics).toEqual([]);
+    const result = bindPlan(plan, () => historyValue(99), ctx, 100000);
+    expect(result.patches.get(cells[3].id)).toMatchObject({
+      shape: { target: 'none', text: 'rtr-a 99%', value: 99 },
+      statusView: { state: 'normal', reason: 'Healthy' },
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.summaries).toEqual([]);
+  });
+  it('keeps traffic magnitude colors independent of explicit device health and diagnoses incomplete link coverage', () => {
+    const config = v2Config({
+      link: { a2bBinding: queryBinding, b2aBinding: { ...queryBinding, queryId: 'rx' }, capacity: 100 },
+      status: {
+        kind: 'mapping',
+        binding: { ...queryBinding, queryId: 'up' },
+        default: { state: 'normal', reason: 'Healthy' },
+        mappings: [{ value: 0, state: 'down', reason: 'Device down' }],
+      },
+    });
+    config.queries.push(...['rx', 'up'].map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } })));
+    const plan = resolvePatterns([cells[0]], config);
+    expect(plan.diagnostics).toEqual([]);
+    const result = bindPlan(
+      plan,
+      (_, b) =>
+        b.queryId === 'rx'
+          ? { state: 'empty', fetchedAt: 100000, fromCache: false }
+          : historyValue(b.queryId === 'up' ? 1 : 0),
+      ctx,
+      100000
+    );
+    const patch = result.patches.get(cells[0].id)!;
+    expect(patch.link?.a2b).toMatchObject({ status: 'ok', value: 0, percent: 0 });
+    expect(patch.link?.a2b?.color).not.toBe(theme.colors.text.secondary);
+    expect(patch.link?.b2a?.status).toBe('nodata');
+    expect(patch.statusView).toMatchObject({
+      state: 'missing',
+      reason: 'Incomplete coverage (1/2 directions available)',
+    });
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'unmatched-metric', path: `cells.${cells[0].id}.link.b2aBinding` })
+    );
+  });
+  it('demands only visible bindings until the configured card opens, including hover-only scalar values', () => {
+    const extra = { ...queryBinding, queryId: 'extra' };
+    const config = v2Config({
+      shape: { binding: queryBinding },
+      hover: {
+        rows: [
+          { kind: 'value', label: 'Extra', binding: extra },
+          { kind: 'history', label: 'Trend', binding: extra },
+          { kind: 'metadata', label: 'Device', path: 'cell.key' },
+          { kind: 'drilldown', label: 'Open', url: '/d/device' },
+        ],
+      },
+    });
+    config.queries.push({
+      id: 'extra',
+      name: 'Extra',
+      source: { kind: 'datasource', datasource: { uid: 'prom' }, target: { refId: 'X' }, parameters: {} },
+    });
+    const plan = resolvePatterns([cells[3], cells[4]], config);
+    expect(plan.diagnostics).toEqual([]);
+    expect(collectBindingDemands(plan).map((d) => [d.cellId, d.binding.queryId, d.role])).toEqual([
+      [cells[3].id, 'health', 'visible'],
+      [cells[4].id, 'health', 'visible'],
+    ]);
+    expect(
+      collectBindingDemands(plan, cells[3].id)
+        .filter((d) => d.role === 'hover')
+        .map((d) => [d.cellId, d.binding.queryId, d.rowIndex])
+    ).toEqual([
+      [cells[3].id, 'extra', 0],
+      [cells[3].id, 'extra', 1],
+    ]);
+    const result = bindPlan(
+      plan,
+      (_, b) => {
+        if (b.queryId === 'extra') {
+          throw new Error('Closed hover must not resolve values');
+        }
+        return historyValue(1);
+      },
+      ctx,
+      1000
+    );
+    expect(result.patches.get(cells[3].id)?.hover?.rows).toHaveLength(4);
+    expect(result.patches.get(cells[3].id)?.shape?.target).toBe('none');
+  });
+  it('resolves metadata matchers and reports ambiguous or unmatched metrics for editor previews', () => {
+    const binding = { ...queryBinding, match: { instance: '${cell.key}' } };
+    const config = v2Config({ shape: { binding, text: true } });
+    const plan = resolvePatterns([cells[3]], config);
+    const snapshot = {
+      state: 'ready' as const,
+      fetchedAt: 9000,
+      fromCache: false,
+      frames: [
+        {
+          length: 1,
+          fields: [
+            { name: 'Time', type: FieldType.time, config: {}, values: [1000] },
+            { name: 'Value', type: FieldType.number, config: {}, labels: { instance: 'rtr-a' }, values: [10] },
+            { name: 'Other', type: FieldType.number, config: {}, labels: { instance: 'rtr-a' }, values: [20] },
+          ],
+        },
+      ],
+    };
+    const result = bindPlan(plan, (_, b) => resolveBinding(snapshot, b, plan.cells[cells[3].id].scope), ctx, 9000);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'ambiguous-metric', path: `cells.${cells[3].id}.shape.binding` })
+    );
+    expect(resolveBinding(snapshot, { ...binding, field: 'Value' }, plan.cells[cells[3].id].scope)).toMatchObject({
+      state: 'ready',
+      latestValue: 10,
+    });
+    expect(resolveBinding(snapshot, binding, { cell: {} })).toMatchObject({
+      state: 'unsupported',
+      message: expect.stringContaining('cell.key'),
+    });
+    expect(result.patches.get(cells[3].id)?.statusView?.state).toBe('missing');
+    expect(result.patches.get(cells[3].id)?.shape).toMatchObject({ status: 'nodata', text: 'no data', target: 'none' });
+  });
+  it('uses configured capacity bindings and explicit down health without changing the traffic colors', () => {
+    const capacity = { ...queryBinding, queryId: 'capacity' };
+    const config = v2Config({
+      link: { a2bBinding: queryBinding, capacityBinding: capacity },
+      status: {
+        kind: 'mapping',
+        binding: { ...queryBinding, queryId: 'up' },
+        default: { state: 'normal', reason: 'Healthy' },
+        mappings: [{ value: 0, state: 'down', reason: 'Device down' }],
+      },
+    });
+    config.queries.push(
+      ...['capacity', 'up'].map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } }))
+    );
+    const plan = resolvePatterns([cells[0]], config);
+    const result = bindPlan(
+      plan,
+      (_, b) => historyValue(b.queryId === 'health' ? 40 : b.queryId === 'capacity' ? 100 : 0),
+      ctx,
+      1000
+    );
+    expect(result.patches.get(cells[0].id)?.link?.a2b).toMatchObject({
+      value: 40,
+      capacity: 100,
+      capacitySource: 'series',
+      percent: 40,
+    });
+    expect(result.patches.get(cells[0].id)?.statusView).toMatchObject({ state: 'down', reason: 'Device down' });
+  });
+  it('compares sample age to configured cadence regardless of chart resolution and fresh cache retrieval', () => {
+    const plan = resolvePatterns(
+      [cells[3]],
+      v2Config({
+        status: {
+          kind: 'mapping',
+          binding: queryBinding,
+          default: { state: 'normal', reason: 'Healthy' },
+          mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+          freshness: { expectedIntervalMs: 15000, staleAfterMs: 45000 },
+        },
+      })
+    );
+    for (const intervalMs of [1, 3600000]) {
+      const context = { ...ctx, intervalMs };
+      expect(
+        bindPlan(plan, () => historyValue(1, 1000), context, 100000).patches.get(cells[3].id)?.statusView?.state
+      ).toBe('stale');
+      expect(
+        bindPlan(plan, () => historyValue(1, 60000), context, 100000).patches.get(cells[3].id)?.statusView?.state
+      ).toBe('normal');
+    }
+  });
+  it('preserves validated rule URLs, field links and unresolved label diagnostics', () => {
+    const plan = resolvePatterns(
+      [cells[3]],
+      v2Config({
+        shape: { binding: queryBinding, text: true },
+        label: '${labels.missing}',
+        url: '/d/device?host=${labels.host}',
+        urlTitle: 'Open ${cell.key}',
+      })
+    );
+    const model = historyValue(42);
+    if (model.state !== 'ready') {
+      throw new Error('Expected fixture to be ready');
+    }
+    model.field.labels = { host: 'a&b' };
+    const result = bindPlan(plan, () => model, ctx, 1000);
+    expect(result.patches.get(cells[3].id)?.urls).toEqual([{ title: 'Open rtr-a', url: '/d/device?host=a%26b' }]);
+    expect(result.patches.get(cells[3].id)?.shape).toMatchObject({
+      status: 'unbound',
+      text: 'unbound',
+      series: { labels: { host: 'a&b' } },
+    });
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'unresolved-metadata', path: `cells.${cells[3].id}.label` })
+    );
+    plan.cells[cells[3].id].display.url = 'javascript:alert(1)';
+    expect(bindPlan(plan, () => model, ctx, 1000).patches.get(cells[3].id)?.urls).toEqual([]);
+  });
+  it('does not demand or resolve disabled sections or bindings whose metadata parameters are missing', () => {
+    const config = v2Config({
+      shape: { enabled: false, binding: queryBinding },
+      hover: { rows: [{ kind: 'value', label: 'Unavailable', binding: queryBinding }] },
+    });
+    config.queries[0].source = {
+      kind: 'datasource',
+      datasource: { uid: 'prom' },
+      target: { refId: 'A' },
+      parameters: { dm_device: 'cell.device' },
+    };
+    const plan = resolvePatterns([cells[3]], config);
+    expect(plan.diagnostics).toContainEqual(expect.objectContaining({ code: 'missing-parameter-path' }));
+    expect(collectBindingDemands(plan, cells[3].id)).toEqual([]);
+    const result = bindPlan(
+      plan,
+      () => {
+        throw new Error('Suppressed binding was resolved');
+      },
+      ctx,
+      1000
+    );
+    expect(result.patches.get(cells[3].id)?.unavailableHoverRows).toEqual([0]);
+    expect(result.patches.get(cells[3].id)?.shape).toBeUndefined();
+  });
+});
 
 describe('bind', () => {
   const { patches, warnings } = bind(rules, cells, series, ctx);
@@ -231,12 +512,8 @@ describe('bind', () => {
     const field: Field = { name: 'v', type: FieldType.number, config: { unit: 'bps', decimals: 1 }, values: [] };
     const proc = getDisplayProcessor({ field, theme });
     const r = bind(rules, cells, series, { ...ctx, display: (_s, v) => proc(v) });
-    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe(
-      '41.0 Mb/s · 41% of 100 Mb/s'
-    );
-    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe(
-      '10.0 Mb/s · 10% of 100 Mb/s'
-    );
+    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.a2b!.label).toBe('41.0 Mb/s · 41% of 100 Mb/s');
+    expect(r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!.link!.b2a!.label).toBe('10.0 Mb/s · 10% of 100 Mb/s');
   });
   it('a link with one series keeps the other half undefined', () => {
     const r = bind(

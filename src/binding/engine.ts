@@ -25,6 +25,262 @@ import { findSeries } from './series';
 import { resolveTemplate } from './template';
 import { toBitsPerSecond } from './units';
 import { isAllowedUrl } from './url';
+import type { Diagnostic, HoverSpec, QueryBinding } from '../model/config';
+import { toHistory, type HistoryModel, type HistoryFormat } from '../query/frames';
+import type { BindingPlan } from './patterns';
+import type { QuerySnapshot } from '../query/types';
+import { evaluateStatus, summarizeStatuses, type StatusSummary, type StatusView } from './status';
+
+export interface PlanCellPatch extends CellPatch {
+  statusView?: StatusView;
+  hover?: HoverSpec;
+  unavailableHoverRows?: number[];
+}
+/** Read prepared models only. Query subscriptions belong to the caller. */
+export type BindingResolver = (cellId: string, binding: QueryBinding) => HistoryModel;
+export function resolveBinding(
+  snapshot: QuerySnapshot,
+  binding: QueryBinding,
+  scope: TemplateScope,
+  format?: HistoryFormat
+): HistoryModel {
+  const unresolved: string[] = [];
+  const text = (template: string) => {
+    const result = resolveTemplate(template, scope);
+    unresolved.push(...result.unresolved);
+    return result.text;
+  };
+  const resolved: QueryBinding = {
+    ...binding,
+    match: Object.fromEntries(Object.entries(binding.match).map(([key, template]) => [key, text(template)])),
+    field: binding.field === undefined ? undefined : text(binding.field),
+  };
+  return unresolved.length
+    ? { state: 'unsupported', message: `Unresolved binding metadata: ${[...new Set(unresolved)].join(', ')}` }
+    : toHistory(snapshot, resolved, format);
+}
+export interface BindingDemand {
+  cellId: string;
+  binding: QueryBinding;
+  role: 'visible' | 'hover';
+  rowIndex?: number;
+}
+/** Describes visible data plus the open card's rows; does not register or execute queries. */
+export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
+  const demands: BindingDemand[] = [];
+  for (const cell of Object.values(plan.cells)) {
+    const d = cell.display;
+    if (d.enabled === false) {
+      continue;
+    }
+    const visible = [
+      ...(d.link?.enabled === false ? [] : [d.link?.a2bBinding, d.link?.b2aBinding, d.link?.capacityBinding]),
+      d.shape?.enabled === false ? undefined : d.shape?.binding,
+      d.status?.enabled === false ? undefined : d.status?.binding,
+    ];
+    for (const binding of visible) {
+      if (binding && cell.bindings.includes(binding)) {
+        demands.push({ cellId: cell.cellId, binding, role: 'visible' });
+      }
+    }
+    if (cell.cellId === openCellId && d.hover?.enabled !== false) {
+      d.hover?.rows.forEach((row, rowIndex) => {
+        if ('binding' in row && cell.bindings.includes(row.binding)) {
+          demands.push({ cellId: cell.cellId, binding: row.binding, role: 'hover', rowIndex });
+        }
+      });
+    }
+  }
+  return demands;
+}
+export interface PlanBindResult {
+  patches: Map<string, PlanCellPatch>;
+  diagnostics: Diagnostic[];
+  summaries: StatusSummary[];
+}
+
+export function historySeries(model: Extract<HistoryModel, { state: 'ready' }>, binding: QueryBinding): SeriesInfo {
+  const numeric = model.values.flatMap((value, i) => (value === null ? [] : [{ value, time: model.timestamps[i] }]));
+  return {
+    refId: binding.queryId,
+    name: model.field.name,
+    labels: model.field.labels ?? {},
+    field: model.field,
+    values: numeric.map((v) => v.value),
+    times: numeric.map((v) => v.time),
+    frame: { length: model.values.length, fields: [model.timeField, model.field] },
+  };
+}
+
+export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindContext, nowMs: number): PlanBindResult {
+  const result: PlanBindResult = { patches: new Map(), diagnostics: [...plan.diagnostics], summaries: [] };
+  for (const cell of Object.values(plan.cells)) {
+    const display = cell.display;
+    if (display.enabled === false) {
+      continue;
+    }
+    const patch: PlanCellPatch = {
+      cellId: cell.cellId,
+      scope: cell.scope,
+      ruleNames: cell.patternIds,
+      urls: [],
+      warnings: [],
+    };
+    let primary: SeriesInfo | undefined;
+    patch.hover = display.hover;
+    patch.unavailableHoverRows = display.hover?.rows.flatMap((row, i) =>
+      'binding' in row && !cell.bindings.includes(row.binding) ? [i] : []
+    );
+    const read = (binding: QueryBinding, path: string): HistoryModel => {
+      const model = resolve(cell.cellId, binding);
+      if (model.state === 'empty' || model.state === 'unsupported' || model.state === 'error') {
+        const message = model.state === 'empty' ? `No metric matches query ${binding.queryId}.` : model.message;
+        result.diagnostics.push({
+          code:
+            model.state === 'empty'
+              ? 'unmatched-metric'
+              : message.toLowerCase().includes('ambiguous')
+                ? 'ambiguous-metric'
+                : `${model.state}-metric`,
+          path: `cells.${cell.cellId}.${path}`,
+          message,
+        });
+        patch.statusView ??= {
+          state: 'missing',
+          reason: message,
+          queryIds: [binding.queryId],
+          conditionKey: JSON.stringify(['availability', binding.queryId, model.state, message]),
+          coverage: { available: 0, expected: 1 },
+        };
+      }
+      return model;
+    };
+    if (display.link?.enabled !== false && display.link) {
+      const link = display.link;
+      const eff: Effective = { ruleNames: cell.patternIds, link, reducer: display.reducer };
+      let cap = capacityOf(link, cell.scope, [], display.reducer ?? 'last');
+      if (link.capacityBinding && cell.bindings.includes(link.capacityBinding)) {
+        const model = read(link.capacityBinding, 'link.capacityBinding');
+        if (model.state === 'ready' && model.latestValue !== undefined) {
+          const series = historySeries(model, link.capacityBinding);
+          const notes: string[] = [];
+          const bits = bitsOf(model.latestValue, series, notes);
+          cap = bits > 0 ? { bits, source: 'series', unresolved: [], notes } : cap;
+        }
+      }
+      const states: HalfState[] = [];
+      patch.link = {};
+      for (const direction of ['a2b', 'b2a'] as const) {
+        const binding = link[`${direction}Binding`];
+        if (!binding || !cell.bindings.includes(binding)) {
+          continue;
+        }
+        const model = read(binding, `link.${direction}Binding`);
+        const series = model.state === 'ready' ? [historySeries(model, binding)] : [];
+        const h = half({ refId: binding.queryId }, cap, { ...eff, reducer: binding.reducer }, cell.scope, series, {
+          ...ctx,
+          display: (s, v) =>
+            model.state === 'ready' && model.latestDisplayValue ? model.latestDisplayValue : ctx.display(s, v),
+        });
+        patch.link[direction] = h.state;
+        primary ??= h.state.series;
+        states.push(h.state);
+      }
+      const available = states.filter((s) => s.status === 'ok').length;
+      if (states.length && available < states.length) {
+        patch.statusView = {
+          state: 'missing',
+          reason: `Incomplete coverage (${available}/${states.length} directions available)`,
+          queryIds: [link.a2bBinding, link.b2aBinding].flatMap((b) => (b ? [b.queryId] : [])),
+          conditionKey: JSON.stringify(['link-coverage', link.a2bBinding?.queryId, link.b2aBinding?.queryId]),
+          coverage: { available, expected: states.length },
+        };
+      }
+    }
+    if (display.shape?.enabled !== false && display.shape?.binding && cell.bindings.includes(display.shape.binding)) {
+      const model = read(display.shape.binding, 'shape.binding');
+      if (model.state === 'ready' && model.latestValue !== undefined) {
+        const series = historySeries(model, display.shape.binding);
+        primary ??= series;
+        const label =
+          display.shape.text && model.latestDisplayValue
+            ? resolveTemplate(display.label ?? '${value}', {
+                ...cell.scope,
+                labels: model.field.labels,
+                value: formattedValueToString(model.latestDisplayValue),
+              })
+            : undefined;
+        patch.shape = {
+          status: label?.unresolved.length ? 'unbound' : 'ok',
+          color: ctx.theme.colors.text.secondary,
+          target: 'none',
+          stepIndex: -1,
+          value: model.latestValue,
+          display: model.latestDisplayValue,
+          series,
+          text: label?.unresolved.length ? 'unbound' : label?.text,
+        };
+        if (label?.unresolved.length) {
+          result.diagnostics.push({
+            code: 'unresolved-metadata',
+            path: `cells.${cell.cellId}.label`,
+            message: `Unresolved ${[...new Set(label.unresolved)].join(', ')}`,
+          });
+        }
+      } else {
+        patch.shape = {
+          status: 'nodata',
+          color: noDataColor(ctx.theme),
+          target: 'none',
+          stepIndex: -1,
+          text: display.shape.text ? 'no data' : undefined,
+        };
+      }
+    }
+    if (display.status?.enabled !== false && display.status && cell.bindings.includes(display.status.binding)) {
+      const model = read(display.status.binding, 'status.binding');
+      if (model.state === 'ready') {
+        primary ??= historySeries(model, display.status.binding);
+      }
+      const status = evaluateStatus(
+        display.status,
+        [
+          {
+            queryId: display.status.binding.queryId,
+            availability: model.state === 'empty' ? 'missing' : model.state === 'idle' ? 'loading' : model.state,
+            value: model.state === 'ready' ? model.latestValue : undefined,
+            sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
+          },
+        ],
+        nowMs
+      );
+      if (!patch.statusView || status.state !== 'normal') {
+        patch.statusView = status;
+      }
+    }
+    if (display.url !== undefined) {
+      const scope = { ...cell.scope, labels: primary?.labels ?? {} };
+      const url = resolveTemplate(display.url, scope, encodeURIComponent);
+      if (!url.unresolved.length && isAllowedUrl(url.text)) {
+        const title = display.urlTitle === undefined ? undefined : resolveTemplate(display.urlTitle, scope);
+        patch.urls.push(title && !title.unresolved.length ? { url: url.text, title: title.text } : { url: url.text });
+      } else {
+        result.diagnostics.push({
+          code: url.unresolved.length ? 'unresolved-metadata' : 'invalid-url',
+          path: `cells.${cell.cellId}.url`,
+          message: url.unresolved.length
+            ? `Unresolved ${url.unresolved.join(', ')}`
+            : 'URL must use http, https or a relative path.',
+        });
+      }
+    }
+    result.patches.set(cell.cellId, patch);
+  }
+  result.summaries = summarizeStatuses(
+    [...result.patches.values()].flatMap((p) => (p.statusView ? [{ cellId: p.cellId, status: p.statusView }] : []))
+  );
+  return result;
+}
 
 const UNBOUND = (ctx: BindContext): HalfState => ({
   status: 'unbound',
