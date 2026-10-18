@@ -91,6 +91,21 @@ export function previewSnapshot(
   if (query.source.kind === 'panel') {
     return panelSnapshot(data, query.source.refId, 0);
   }
+  return preparedSnapshot(query, config, cellId, preview, active, generation);
+}
+
+/** Select current display results; callers decide which states can replace their own demand. */
+export function preparedSnapshot(
+  query: NamedQuery,
+  config: Pick<DiagramConfigV2, 'defaultDatasource'>,
+  cellId: string,
+  preview?: QueryPreview,
+  active: QueryPreview[] = [],
+  generation?: number
+): QuerySnapshot {
+  if (query.source.kind === 'panel') {
+    return { state: 'idle' };
+  }
   const parameterized = Object.keys(query.source.parameters).length > 0;
   const compatible = [...active, preview].filter(
     (result) =>

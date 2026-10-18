@@ -3,7 +3,9 @@ import { collectBindingDemands } from '../binding/engine';
 import type { BindingPlan } from '../binding/patterns';
 import type { DiagramConfigV2 } from '../model/config';
 import type { PanelQueryService } from '../query/panel';
-import type { QueryPreview } from '../editor/preview';
+import { preparedSnapshot, type QueryPreview } from '../editor/preview';
+
+const NO_PREPARED: QueryPreview[] = [];
 
 /** Holds only active display snapshots. The shared controller owns execution and the inactive cache. */
 export function useBindingSnapshots(
@@ -11,7 +13,8 @@ export function useBindingSnapshots(
   config: DiagramConfigV2,
   service: PanelQueryService | undefined,
   openCellId: string | undefined,
-  maxDataPoints: number
+  maxDataPoints: number,
+  prepared: QueryPreview[] = NO_PREPARED
 ): QueryPreview[] {
   const demands = useMemo(
     () =>
@@ -23,9 +26,22 @@ export function useBindingSnapshots(
         }
         const consumerId = `binding:${demand.role}:${demand.cellId}:${demand.rowIndex ?? JSON.stringify(demand.binding)}`;
         const request = { consumerId, query, scope, context: service.context, maxDataPoints };
-        return [{ request, cellId: demand.cellId, key: JSON.stringify(request) }];
+        const snapshot = preparedSnapshot(
+          query,
+          config,
+          demand.cellId,
+          undefined,
+          prepared.filter(
+            (result) =>
+              result.context === service.context &&
+              (result.snapshot.state === 'ready' || result.snapshot.state === 'empty')
+          ),
+          service.context.generation
+        );
+        const reuse = snapshot.state === 'ready' || snapshot.state === 'empty' ? snapshot : undefined;
+        return [{ request, cellId: demand.cellId, key: JSON.stringify(request), reuse }];
       }),
-    [plan, config, service, openCellId, maxDataPoints]
+    [plan, config, service, openCellId, maxDataPoints, prepared]
   );
   const active = useRef(new Map<string, { key: string; release: () => void }>());
   const [snapshots, setSnapshots] = useState<Record<string, { key: string; preview: QueryPreview }>>({});
@@ -41,7 +57,7 @@ export function useBindingSnapshots(
   }, [controller]);
   useEffect(() => {
     const subscriptions = active.current;
-    const desired = new Map(demands.map((d) => [d.request.consumerId, d]));
+    const desired = new Map(demands.filter((d) => !d.reuse).map((d) => [d.request.consumerId, d]));
     for (const [id, item] of subscriptions) {
       if (desired.get(id)?.key !== item.key) {
         subscriptions.delete(id);
@@ -49,7 +65,7 @@ export function useBindingSnapshots(
       }
     }
     if (controller) {
-      for (const demand of demands) {
+      for (const demand of desired.values()) {
         const id = demand.request.consumerId;
         if (subscriptions.has(id)) {
           continue;
@@ -76,6 +92,9 @@ export function useBindingSnapshots(
       }
     }
     // Discard inactive display snapshots; keep reusable history only in the bounded controller cache.
+    if (!Object.entries(snapshots).some(([id, item]) => desired.get(id)?.key !== item.key)) {
+      return;
+    }
     let attached = true;
     queueMicrotask(() => {
       if (attached) {
@@ -88,10 +107,20 @@ export function useBindingSnapshots(
     return () => {
       attached = false;
     };
-  }, [controller, demands]);
+  }, [controller, demands, snapshots]);
   return useMemo(
     () =>
       demands.flatMap((demand) => {
+        if (demand.reuse) {
+          return [
+            {
+              query: demand.request.query,
+              cellId: demand.cellId,
+              context: demand.request.context,
+              snapshot: demand.reuse,
+            },
+          ];
+        }
         const value = snapshots[demand.request.consumerId];
         return value?.key === demand.key ? [value.preview] : [];
       }),

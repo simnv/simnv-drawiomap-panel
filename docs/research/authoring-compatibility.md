@@ -169,3 +169,33 @@ commands, request artifacts and cleanup belong to
 `/tmp/drawiomap-implementation-20261018/ticket-11-report.md` and its referenced files.
 Earlier full theme/public-route-probe matrices remain historical. These fresh runs
 cover the affected production query/authoring paths, not every browser or datasource.
+
+## Saved chart reuse for hover
+
+Ticket 12 supplies current saved chart snapshots to the existing binding-demand hook.
+Configured scalar and history rows reuse ready or empty results before registering
+demand. Query, datasource, parameterized cell and current context must match. Saved
+updates reach the open card. A hidden or removed chart releases its prepared result;
+an open card then keeps its own ordinary demand. Closing the card releases that work.
+Loading, error and unsupported chart results leave necessary hover fetching active.
+No extra executor, cache or refresh schedule was added.
+
+The original component regression fails with native resolutions `[400, 264]` before
+the fix and passes with `[400]`. The final 550 unit tests also cover live saved updates,
+hidden/removed charts, context replacement, query/cell isolation, close/reopen and
+late responses. Typecheck, lint, production webpack and bundle checks pass. Lint
+retains five existing deprecation warnings.
+
+Fresh Chromium query and preview checks pass eight tests each, including authentication,
+on minimum 12.4.0, development 13.1.0-25957875840, pinned 12.4.13 and 13.2.4, and effective
+frontend sandboxes on both pinned versions. All 48 executions use the final production
+bundle. Each target proves no extra request after opening scalar/history rows over a
+ready chart, reuse after Refresh and variable changes, unrelated hover laziness, and
+continued full-pattern/individual-preview reuse. Component tests cover open-card stream
+updates and fallback while a replacement chart request is pending. Other browser engines,
+new geometry/theme matrices and datasource-outage injection were not rerun.
+
+The development selection was refreshed from the official Docker Hub API on 2026-10-18.
+Commands, raw request counts, effective settings, image and bundle digests, source
+freshness and cleanup evidence are recorded in
+`/tmp/drawiomap-implementation-20261018/ticket-12-report.md` and its referenced files.

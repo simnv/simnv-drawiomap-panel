@@ -1,6 +1,86 @@
 import { attachJson, expect, observeQueries, svg, test } from './authoring-fixtures';
 import { nativeQuery } from '../src/fixtures/authoring-config';
 
+test('ready saved chart supplies scalar and history hover rows without duplicate requests and keeps unrelated hover lazy', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+  selectors,
+}, testInfo) => {
+  config.queries = [nativeQuery('saved', 'vector($site)'), nativeQuery('unrelated', 'vector(999)')];
+  const binding = { queryId: 'saved', match: {}, reducer: 'last' } as const;
+  config.patterns = [
+    {
+      id: 'chart',
+      name: 'Chart',
+      select: { ids: ['chart-1'] },
+      display: {
+        hover: {
+          rows: [
+            { kind: 'value', label: 'Saved scalar', binding },
+            { kind: 'history', label: 'Saved history', binding },
+          ],
+        },
+      },
+    },
+    {
+      id: 'unrelated',
+      name: 'Unrelated',
+      select: { ids: ['device-1'] },
+      display: {
+        hover: { rows: [{ kind: 'value', label: 'Unrelated value', binding: { ...binding, queryId: 'unrelated' } }] },
+      },
+    },
+  ];
+  config.widgets = [{ id: 'saved-chart', anchorCellId: 'chart-1', kind: 'sparkline', label: 'Saved chart', binding }];
+  const uid = await createDiagram(config);
+  const requests = observeQueries(page, uid);
+  const dashboard = await gotoDashboardPage({ uid });
+  const panel = page.getByTestId('dmap-panel');
+  const chart = panel.locator('[data-dmap-widget="saved-chart"]');
+  const card = panel.getByTestId('dmap-card');
+  const count = (ref: string) => requests.filter((r) => r.queries.some((q) => q.refId === ref)).length;
+  await expect(chart).toContainText('23');
+  expect(count('SAVED')).toBe(1);
+  expect(count('UNRELATED')).toBe(0);
+  await panel.locator('[data-cell-id="chart-1"]').hover();
+  await expect(card).toContainText('Saved scalar');
+  await expect(card).toContainText('Saved history');
+  await expect(card).toContainText('23');
+  await expect(card.locator('canvas')).toBeVisible();
+  expect(count('SAVED')).toBe(1);
+  await page.mouse.move(1, 1);
+  await expect(card).toHaveCount(0);
+  await dashboard.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
+  await expect.poll(() => count('SAVED')).toBe(2);
+  await expect(chart).toContainText('23');
+  await panel.locator('[data-cell-id="chart-1"]').hover();
+  await expect(card).toContainText('23');
+  expect(count('SAVED')).toBe(2);
+  await page.mouse.move(1, 1);
+  await dashboard
+    .getByGrafanaSelector(selectors.pages.Dashboard.SubMenu.submenuItemValueDropDownValueLinkTexts('23'))
+    .click();
+  await page.getByRole('option', { name: '47', exact: true }).click();
+  await expect(chart).toContainText('47');
+  expect(count('SAVED')).toBe(3);
+  await panel.locator('[data-cell-id="chart-1"]').hover();
+  await expect(card).toContainText('47');
+  await expect(card.locator('canvas')).toBeVisible();
+  expect(count('SAVED')).toBe(3);
+  expect(count('UNRELATED')).toBe(0);
+  await panel.locator('[data-cell-id="device-1"]').hover();
+  await expect(card).toContainText('999');
+  expect(count('UNRELATED')).toBe(1);
+  expect(count('SAVED')).toBe(3);
+  await attachJson(testInfo, 'saved-chart-hover-requests', {
+    requests,
+    saved: count('SAVED'),
+    unrelated: count('UNRELATED'),
+  });
+});
+
 test('value and history rows wait for display, share demand, reuse fresh cache and follow dashboard context', async ({
   page,
   config,

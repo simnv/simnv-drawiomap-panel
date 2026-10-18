@@ -1228,7 +1228,7 @@ describe('saved chart results in authoring previews', () => {
     nativeQuery.mockReset().mockImplementation(
       (request) =>
         new Observable((observer) => {
-          const receive = (value: number) => observer.next({ data: [frame('D', {}, [value])] });
+          const receive = (value: number) => observer.next({ data: [frame('D', {}, [value - 1, value])] });
           receivers.push(receive);
           receive(request.targets[0].expr === 'changed' || request.scopedVars.dm_key?.value === 'other' ? 84 : 42);
           return release;
@@ -1280,6 +1280,209 @@ describe('saved chart results in authoring previews', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
     await waitFor(() => expect(screen.getByLabelText('Pattern preview progress').textContent).toContain(completed));
   }
+  function hoverFixture() {
+    locationService.partial({ editPanel: null });
+    const p = fixture();
+    p.options.config.patterns[0].display.hover = {
+      rows: [
+        { kind: 'value', label: 'Same chart value', binding: { queryId: 'q', match: {}, reducer: 'last' } },
+        { kind: 'history', label: 'Same chart history', binding: { queryId: 'q', match: {}, reducer: 'last' } },
+      ],
+    };
+    return p;
+  }
+  const clickChart = () => fireEvent.click(document.querySelector('[data-cell-id="chart"] rect')!);
+  it('reuses a ready saved chart for configured scalar and history hover rows', async () => {
+    const p = hoverFixture();
+    render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    clickChart();
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
+    expect(screen.getByRole('dialog').textContent).toContain('Same chart history');
+    expect(screen.getByRole('dialog').querySelector('canvas')).not.toBeNull();
+    expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400]);
+    act(() => receivers[0](99));
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('99');
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+  });
+  it.each(['empty', 'loading', 'error', 'unsupported'] as const)(
+    'reuses only successful saved results while its chart is %s',
+    async (state) => {
+      const p = hoverFixture();
+      let savedNext!: (value: number) => void;
+      let hoverNext!: (value: number) => void;
+      nativeQuery.mockImplementation(
+        (request) =>
+          new Observable((observer) => {
+            const next = (value: number) => observer.next({ data: [frame('D', {}, [value - 1, value])] });
+            if (request.maxDataPoints === 400) {
+              savedNext = next;
+              observer.next({
+                state:
+                  state === 'loading'
+                    ? LoadingState.Loading
+                    : state === 'error'
+                      ? LoadingState.Error
+                      : state === 'unsupported'
+                        ? LoadingState.Streaming
+                        : LoadingState.Done,
+                data: state === 'empty' ? [] : [frame('D', {}, [42])],
+              });
+            } else {
+              hoverNext = next;
+              next(84);
+            }
+            return release;
+          })
+      );
+      const view = render(<DrawioMapPanel {...p} />);
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
+      const savedText =
+        state === 'empty'
+          ? 'No data'
+          : state === 'loading'
+            ? 'Loading'
+            : state === 'error'
+              ? 'Datasource query failed'
+              : 'Streaming and partial';
+      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain(savedText));
+      clickChart();
+      await waitFor(() =>
+        expect(screen.getByRole('dialog').textContent).toContain(state === 'empty' ? 'No data' : '84')
+      );
+      expect(nativeQuery).toHaveBeenCalledTimes(state === 'empty' ? 1 : 2);
+      act(() => savedNext(99));
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
+      expect(screen.getByRole('dialog').querySelector('canvas')).not.toBeNull();
+      if (state !== 'empty') {
+        expect(release).toHaveBeenCalledTimes(1);
+        act(() => hoverNext(888));
+        expect(screen.getByRole('dialog').textContent).not.toContain('888');
+      }
+      view.unmount();
+    }
+  );
+  it('keeps saved monitoring independent across close, fresh props and reopen', async () => {
+    const p = hoverFixture();
+    const view = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+    clickChart();
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(release).not.toHaveBeenCalled();
+    view.rerender(<DrawioMapPanel {...p} timeRange={{ ...p.timeRange }} options={{ ...p.options }} />);
+    act(() => receivers[0](99));
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('99'));
+    clickChart();
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+    view.unmount();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+  it.each(['hidden', 'removed'] as const)('continues open hover monitoring when its chart is %s', async (change) => {
+    const p = hoverFixture();
+    const view = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+    clickChart();
+    await screen.findByRole('dialog');
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    if (change === 'hidden') {
+      act(() => {
+        document.querySelector<SVGElement>('[data-cell-id="chart"] rect')!.style.display = 'none';
+      });
+    } else {
+      view.rerender(<DrawioMapPanel {...p} options={{ ...p.options, config: { ...p.options.config, widgets: [] } }} />);
+    }
+    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(nativeQuery.mock.calls[1][0].maxDataPoints).toBe(264);
+    expect(screen.queryByTestId('dmap-widget')).toBeNull();
+    act(() => {
+      receivers[0](999);
+      receivers[1](84);
+    });
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
+    expect(screen.getByRole('dialog').textContent).not.toContain('999');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(release).toHaveBeenCalledTimes(2);
+    clickChart();
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
+    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    view.unmount();
+  });
+  it('rejects old saved results when the open card context changes and follows the new saved stream', async () => {
+    const p = hoverFixture();
+    const view = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+    clickChart();
+    await screen.findByRole('dialog');
+    const current: Array<(value: number) => void> = [];
+    nativeQuery.mockImplementation(
+      () =>
+        new Observable((observer) => {
+          current.push((value) => observer.next({ data: [frame('D', {}, [value - 1, value])] }));
+          return release;
+        })
+    );
+    view.rerender(<DrawioMapPanel {...p} timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }} />);
+    await waitFor(() => expect(current).toHaveLength(2));
+    act(() => receivers[0](999));
+    expect(screen.getByRole('dialog').textContent).not.toContain('42');
+    expect(screen.getByRole('dialog').textContent).not.toContain('999');
+    // Complete the saved stream first. Its ready data replaces the temporary hover demand.
+    const chartIndex = nativeQuery.mock.calls.slice(1).findIndex(([request]) => request.maxDataPoints === 400);
+    act(() => current[chartIndex](84));
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
+    expect(release).toHaveBeenCalledTimes(2);
+    act(() => {
+      current[1 - chartIndex](888);
+      current[chartIndex](99);
+    });
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
+    expect(screen.getByRole('dialog').textContent).not.toContain('888');
+    expect(nativeQuery).toHaveBeenCalledTimes(3);
+    view.unmount();
+    expect(release).toHaveBeenCalledTimes(3);
+  });
+  it('loads another parameterized cell and a changed hover query instead of reusing the chart data', async () => {
+    const p = hoverFixture();
+    const source = p.options.config.queries[0].source;
+    if (source.kind === 'datasource') {
+      source.parameters = { dm_key: 'cell.key' };
+    }
+    p.options.config.patterns[0].select = { ids: ['chart', 'other'] };
+    const view = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+    clickChart();
+    await screen.findByRole('dialog');
+    expect(nativeQuery).toHaveBeenCalledTimes(1);
+    fireEvent.click(document.querySelector('[data-cell-id="other"] rect')!);
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
+    expect(nativeQuery).toHaveBeenCalledTimes(2);
+    expect(nativeQuery.mock.calls[1][0].scopedVars.dm_key.value).toBe('other');
+    clickChart();
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
+    expect(release).toHaveBeenCalledTimes(1);
+    const config = structuredClone(p.options.config);
+    const q = structuredClone(config.queries[0]);
+    q.id = 'different';
+    if (q.source.kind === 'datasource') {
+      q.source.target = { ...q.source.target, ...{ expr: 'changed' } };
+    }
+    config.queries.push(q);
+    config.patterns[0].display.hover!.rows = [
+      { kind: 'value', label: 'Different', binding: { queryId: q.id, match: {}, reducer: 'last' } },
+    ];
+    view.rerender(<DrawioMapPanel {...p} options={{ ...p.options, config }} />);
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
+    expect(nativeQuery.mock.calls.filter(([request]) => request.targets[0].expr === 'changed')).toHaveLength(1);
+    expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
+    view.unmount();
+  });
   it('reuses a visible chart result for full pattern preview and keeps saved monitoring independent', async () => {
     render(<DrawioMapPanel {...fixture()} />);
     await selectChart();

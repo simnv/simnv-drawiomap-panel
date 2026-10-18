@@ -221,13 +221,6 @@ function DrawioMapPanelView({
     () => resolvePatterns(cellMetas(stage.index), options.config ?? EMPTY_CONFIG),
     [stage.index, options.config]
   );
-  const bindingSnapshots = useBindingSnapshots(
-    savedPlan,
-    options.config ?? EMPTY_CONFIG,
-    queryService,
-    editing ? undefined : card?.cellId,
-    Math.max(1, Math.min(264, width - 16))
-  );
   // Prepared chart results belong to the current saved plan, stage and query service only.
   const chartOwner = useMemo(
     () => ({ plan: savedPlan, root: stage.root, context: queryService?.context, controller: queryService?.controller }),
@@ -254,10 +247,19 @@ function DrawioMapPanelView({
     },
     [chartOwner]
   );
-  const activeSnapshots = useMemo(
-    () => [...bindingSnapshots, ...Object.values(chartResults?.owner === chartOwner ? chartResults.values : {})],
-    [bindingSnapshots, chartResults, chartOwner]
+  const chartSnapshots = useMemo(
+    () => Object.values(chartResults?.owner === chartOwner ? chartResults.values : {}),
+    [chartResults, chartOwner]
   );
+  const bindingSnapshots = useBindingSnapshots(
+    savedPlan,
+    options.config ?? EMPTY_CONFIG,
+    queryService,
+    editing ? undefined : card?.cellId,
+    Math.max(1, Math.min(264, width - 16)),
+    chartSnapshots
+  );
+  const activeSnapshots = useMemo(() => [...bindingSnapshots, ...chartSnapshots], [bindingSnapshots, chartSnapshots]);
   const patternSnapshots = useMemo(
     () =>
       patternPreview && patternPreview.config === opts.config && patternPreview.context === queryService?.context
