@@ -49,6 +49,10 @@ export function DiagramEditor({ value, onChange }: Props) {
 
   return (
     <div>
+      <p>
+        Draw.io edits geometry. Use the panel inspector to assign chart regions and bindings. Replacing the diagram
+        keeps assignments; missing anchors require explicit removal.
+      </p>
       <div
         style={{ marginBottom: theme.spacing(1) }}
         data-testid="dmap-diagram-status"

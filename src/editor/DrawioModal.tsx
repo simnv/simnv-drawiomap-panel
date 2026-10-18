@@ -113,6 +113,12 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
       closeOnBackdropClick={false}
     >
       <div className={styles.body} data-testid="dmap-editor-modal" data-dmap-editor-phase={phase}>
+        {mode === 'edit' && (
+          <p>
+            Move or resize chart rectangles here. Keep cell IDs unchanged to retain bindings. Assign queries and chart
+            settings in the panel inspector.
+          </p>
+        )}
         <iframe
           ref={frameRef}
           data-testid="dmap-editor-frame"

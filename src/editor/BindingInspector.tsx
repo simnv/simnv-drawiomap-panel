@@ -1,8 +1,9 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import type { EffectiveCellBinding } from '../binding/patterns';
 import type { BindingDraft, DraftAction } from './draft';
-import { DisplayFields, TextField } from './BindingFields';
+import { DisplayFields, newBinding, TextField } from './BindingFields';
 import type { DisplayConfig } from '../model/config';
+import { ChartFields } from './ChartFields';
 
 export interface BindingInspectorProps {
   draft: BindingDraft;
@@ -11,6 +12,7 @@ export interface BindingInspectorProps {
   selectionVersion: number;
   dispatch: (action: DraftAction) => void;
   fields?: string[];
+  chartEligible?: boolean;
 }
 export function BindingInspector({
   draft,
@@ -19,6 +21,7 @@ export function BindingInspector({
   selectionVersion,
   dispatch,
   fields,
+  chartEligible,
 }: BindingInspectorProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
@@ -81,6 +84,41 @@ export function BindingInspector({
         </label>
       )}
       <p aria-live="polite">Affected elements: {affected.join(', ') || 'None'}</p>
+      {draft.config.widgets
+        .filter((w) => w.anchorCellId === draft.cellId)
+        .map((widget) => (
+          <ChartFields
+            key={widget.id}
+            widget={widget}
+            queries={draft.config.queries}
+            fields={fields}
+            onChange={(widget) => dispatch({ type: 'widget', widget })}
+            onRemove={() => dispatch({ type: 'remove-widget', id: widget.id })}
+          />
+        ))}
+      {chartEligible && !draft.config.widgets.some((w) => w.anchorCellId === draft.cellId) && (
+        <button
+          disabled={!draft.config.queries.length}
+          onClick={() => {
+            let n = 1;
+            while (draft.config.widgets.some((w) => w.id === `chart-${n}`)) {
+              n++;
+            }
+            dispatch({
+              type: 'widget',
+              widget: {
+                id: `chart-${n}`,
+                anchorCellId: draft.cellId!,
+                kind: 'sparkline',
+                label: 'Chart',
+                binding: newBinding(draft.config.queries[0].id),
+              },
+            });
+          }}
+        >
+          Assign chart region
+        </button>
+      )}
       {pattern && (
         <fieldset>
           <legend>Pattern selector</legend>

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme2 } from '@grafana/ui';
 import type { BindingPlan } from '../binding/patterns';
@@ -11,6 +11,8 @@ import { readChartAnchor, type ChartAnchor } from '../render/geometry';
 import type { CellIndex } from '../types';
 import { SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
+import type { PanelData } from '@grafana/data';
+import { previewSnapshot, type QueryPreview } from '../editor/preview';
 
 export interface ChartLayerProps {
   root?: SVGSVGElement;
@@ -22,6 +24,14 @@ export interface ChartLayerProps {
   viewport: HTMLElement | null;
   revision?: unknown;
   replaceVariables?: (value: string) => string;
+  draft?: {
+    plan: BindingPlan;
+    queries: NamedQuery[];
+    defaultDatasource?: QueryContext['defaultDatasource'];
+    data: PanelData;
+    preview?: QueryPreview;
+    active?: QueryPreview[];
+  };
 }
 
 /** Check the painted element against the panel and every clipping ancestor. */
@@ -58,17 +68,29 @@ function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
   return right > left && bottom > top;
 }
 
-function Region({ entry, ...props }: ChartLayerProps & { entry: BindingPlan['widgets'][number] }) {
-  const { root, cells, viewport, context, controller, queries, revision, replaceVariables } = props;
-  const { widget, scope } = entry;
+function Region({
+  entry,
+  presentation,
+  monitorOnly = false,
+  draftOnly = false,
+  ...props
+}: ChartLayerProps & {
+  entry: BindingPlan['widgets'][number];
+  presentation?: BindingPlan['widgets'][number];
+  monitorOnly?: boolean;
+  draftOnly?: boolean;
+  onPrepared?: (id: string, preview?: QueryPreview) => void;
+}) {
+  const { root, cells, viewport, context, controller, queries, revision, replaceVariables, draft, onPrepared } = props;
+  const { widget, scope } = presentation ?? entry;
   const cell = cells.get(entry.anchorCellId);
   const theme = useTheme2();
   const updateRef = useRef<() => void>();
   const [portal, setPortal] = useState<SVGForeignObjectElement>();
   const [geometry, setGeometry] = useState<{ anchor: ChartAnchor; visible: boolean; resolution: number }>();
   const [response, setResponse] = useState<{ key: string; snapshot: QuerySnapshot }>();
-  const query = queries.find((q) => q.id === widget.binding.queryId);
-  const key = JSON.stringify([query, scope, context, geometry?.resolution]);
+  const query = queries.find((q) => q.id === entry.widget.binding.queryId);
+  const key = JSON.stringify([query, entry.scope, context, geometry?.resolution]);
 
   useLayoutEffect(() => {
     const shape = cell?.shape;
@@ -81,7 +103,9 @@ function Region({ entry, ...props }: ChartLayerProps & { entry: BindingPlan['wid
     region.setAttribute('data-dmap-widget', widget.id);
     region.style.overflow = 'hidden';
     region.style.pointerEvents = 'none';
-    shape.after(region);
+    if (!monitorOnly) {
+      shape.after(region);
+    }
     // The portal target belongs to the external SVG DOM and exists only after attachment.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPortal(region);
@@ -146,31 +170,54 @@ function Region({ entry, ...props }: ChartLayerProps & { entry: BindingPlan['wid
       updateRef.current = undefined;
       region.remove();
     };
-  }, [root, cell, viewport, widget.id]);
+  }, [root, cell, viewport, widget.id, monitorOnly]);
 
   useLayoutEffect(() => {
     updateRef.current?.();
   }, [revision]);
 
   useEffect(() => {
-    if (!geometry?.visible || !controller || !query) {
+    if (draftOnly || !geometry?.visible || !controller || !query) {
       return;
     }
     let current = true;
     const release = controller.watch(
-      { consumerId: `widget:${widget.id}`, query, scope, context, maxDataPoints: geometry.resolution },
+      {
+        consumerId: `widget:${entry.widget.id}`,
+        query,
+        scope: entry.scope,
+        context,
+        maxDataPoints: geometry.resolution,
+      },
       (snapshot) => {
         if (current) {
           setResponse({ key, snapshot });
+          onPrepared?.(entry.widget.id, { query, cellId: entry.anchorCellId, context, snapshot });
         }
       }
     );
     return () => {
       current = false;
       release();
+      onPrepared?.(entry.widget.id);
     };
-  }, [controller, query, scope, context, geometry?.visible, geometry?.resolution, key, widget.id]);
+  }, [
+    controller,
+    query,
+    entry.scope,
+    entry.widget.id,
+    entry.anchorCellId,
+    context,
+    geometry?.visible,
+    geometry?.resolution,
+    key,
+    draftOnly,
+    onPrepared,
+  ]);
 
+  if (monitorOnly) {
+    return null;
+  }
   if (!geometry) {
     return (
       <span role="status" data-dmap-widget-error={widget.id}>
@@ -182,11 +229,35 @@ function Region({ entry, ...props }: ChartLayerProps & { entry: BindingPlan['wid
     return null;
   }
   const { width, height } = geometry.anchor;
-  const snapshot: QuerySnapshot = !query
+  let snapshot: QuerySnapshot = !query
     ? { state: 'error', message: 'Choose a named query.' }
     : response?.key === key
       ? response.snapshot
       : { state: 'loading' };
+  if (draft) {
+    const shownQuery = draft.queries.find((q) => q.id === widget.binding.queryId);
+    const compatible =
+      !draftOnly &&
+      shownQuery &&
+      JSON.stringify(shownQuery) === JSON.stringify(query) &&
+      JSON.stringify(draft.defaultDatasource) === JSON.stringify(context.defaultDatasource);
+    const savedResult: QueryPreview[] =
+      compatible && query ? [{ query, cellId: entry.anchorCellId, context, snapshot }] : [];
+    snapshot = shownQuery
+      ? previewSnapshot(
+          shownQuery,
+          draft,
+          draft.data,
+          widget.anchorCellId,
+          draft.preview,
+          [...savedResult, ...(draft.active ?? [])],
+          context.generation
+        )
+      : { state: 'unsupported', message: 'Choose a named query.' };
+    if (snapshot.state === 'idle') {
+      snapshot = { state: 'unsupported', message: 'Preview query or Apply to load this draft chart.' };
+    }
+  }
   const model = resolveBinding(snapshot, widget.binding, scope, {
     theme,
     unit: widget.unit,
@@ -234,6 +305,8 @@ function Region({ entry, ...props }: ChartLayerProps & { entry: BindingPlan['wid
           label={widget.label}
           timeRange={context.timeRange}
           freshness={widget.freshness}
+          min={widget.min}
+          max={widget.max}
         />
       )}
       {href && isAllowedUrl(href) ? (
@@ -260,11 +333,50 @@ function Region({ entry, ...props }: ChartLayerProps & { entry: BindingPlan['wid
 }
 
 export function ChartLayer(props: ChartLayerProps) {
+  const [prepared, setPrepared] = useState<Record<string, QueryPreview>>({});
+  const onPrepared = useCallback((id: string, preview?: QueryPreview) => {
+    setPrepared((old) => {
+      const next = { ...old };
+      if (preview) {
+        next[id] = preview;
+      } else {
+        delete next[id];
+      }
+      return next;
+    });
+  }, []);
+  const draft = props.draft
+    ? { ...props.draft, active: [...Object.values(prepared), ...(props.draft.active ?? [])] }
+    : undefined;
+  const shown = props.draft?.plan.widgets;
   return (
     <>
       {props.plan.widgets.map((entry) => (
-        <Region key={entry.widget.id} {...props} entry={entry} />
+        <Region
+          key={entry.widget.id}
+          {...props}
+          draft={draft}
+          entry={entry}
+          onPrepared={onPrepared}
+          presentation={shown?.find(
+            (next) => next.widget.id === entry.widget.id && next.anchorCellId === entry.anchorCellId
+          )}
+          monitorOnly={
+            !!shown &&
+            !shown.some((next) => next.widget.id === entry.widget.id && next.anchorCellId === entry.anchorCellId)
+          }
+        />
       ))}
+      {shown
+        ?.filter(
+          (entry) =>
+            !props.plan.widgets.some(
+              (saved) => saved.widget.id === entry.widget.id && saved.anchorCellId === entry.anchorCellId
+            )
+        )
+        .map((entry) => (
+          <Region key={`draft:${entry.widget.id}`} {...props} draft={draft} entry={entry} draftOnly />
+        ))}
     </>
   );
 }

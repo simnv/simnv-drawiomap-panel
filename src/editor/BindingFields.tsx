@@ -1,5 +1,13 @@
 import React, { useId } from 'react';
-import type { DisplayConfig, HoverRow, NamedQuery, QueryBinding, StatusCondition, StatusRule } from '../model/config';
+import type {
+  DisplayConfig,
+  FreshnessPolicy,
+  HoverRow,
+  NamedQuery,
+  QueryBinding,
+  StatusCondition,
+  StatusRule,
+} from '../model/config';
 import type { ReducerName } from '../types';
 
 export function TextField({
@@ -21,6 +29,47 @@ export function TextField({
   );
 }
 export const newBinding = (queryId = ''): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
+export function FreshnessFields({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value?: FreshnessPolicy;
+  onChange: (value?: FreshnessPolicy) => void;
+}) {
+  return (
+    <fieldset>
+      <legend>{label} sample freshness</legend>
+      <label>
+        {label} check sample freshness
+        <input
+          type="checkbox"
+          aria-label={`${label} check sample freshness`}
+          checked={!!value}
+          onChange={(e) => onChange(e.target.checked ? { expectedIntervalMs: 15000, staleAfterMs: 45000 } : undefined)}
+        />
+      </label>
+      <p>Without a policy, sample age does not imply stale data.</p>
+      {value && (
+        <>
+          <TextField
+            label={`${label} expected sample interval ms`}
+            type="number"
+            value={value.expectedIntervalMs}
+            onChange={(v) => onChange({ ...value, expectedIntervalMs: Number(v) })}
+          />
+          <TextField
+            label={`${label} stale after ms`}
+            type="number"
+            value={value.staleAfterMs}
+            onChange={(v) => onChange({ ...value, staleAfterMs: Number(v) })}
+          />
+        </>
+      )}
+    </fieldset>
+  );
+}
 export function BindingFields({
   label,
   value,
@@ -520,6 +569,11 @@ export function DisplayFields({
                   fields={fields}
                   value={row.binding}
                   onChange={(binding) => setRow(i, { ...row, binding: binding ?? newBinding() })}
+                />
+                <FreshnessFields
+                  label={`Hover row ${i + 1}`}
+                  value={row.freshness}
+                  onChange={(freshness) => setRow(i, { ...row, freshness })}
                 />
                 <TextField
                   label={`Hover row ${i + 1} unit`}

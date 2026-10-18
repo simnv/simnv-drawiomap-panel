@@ -4,9 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, cellMetas, mountSvg } from './svgStage';
 
-const fixture = (n: string) => sanitizeSvg(readFileSync(resolve(__dirname, `../../fixtures/demo/svg/${n}.svg`), 'utf8')).svg;
+const fixture = (n: string) =>
+  sanitizeSvg(readFileSync(resolve(__dirname, `../../fixtures/demo/svg/${n}.svg`), 'utf8')).svg;
 
 describe('mountSvg', () => {
+  it('rejects duplicate physical identities instead of silently indexing the last pasted cell', () => {
+    const root = mountSvg(
+      document.createElement('div'),
+      '<svg><g data-cell-id="copied"><rect/></g><g data-cell-id="copied"><rect/></g></svg>'
+    );
+    expect(() => buildCellIndex(root)).toThrow(/copied.*unique identity/i);
+  });
   it('replaces the container content with the svg root', () => {
     const c = document.createElement('div');
     c.innerHTML = '<p>old</p>';

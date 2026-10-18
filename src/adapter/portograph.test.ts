@@ -3,6 +3,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sanitizeSvg } from '../render/sanitize';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
+import { resolvePatterns } from '../binding/patterns';
+import {
+  commitDraft,
+  createDraft,
+  EMPTY_CONFIG,
+  exportPatternDocument,
+  previewPatternImport,
+  reduceDraft,
+} from '../editor/draft';
+import { handleMessage, initialState } from '../editor/protocol';
 import {
   applyContract,
   attachLinkLabels,
@@ -16,6 +26,89 @@ import {
 } from './portograph';
 
 describe('saved semantic identity', () => {
+  it('retains ordinary nested rectangle identity and Unicode through save/export/reopen and portable assignment', () => {
+    const xml = readFileSync(resolve(__dirname, '../fixtures/authoring.drawio'), 'utf8');
+    const svg = readFileSync(resolve(__dirname, '../fixtures/authoring.svg'), 'utf8');
+    const exporting = handleMessage(initialState(xml), { event: 'save', xml }, { mode: 'edit', isDark: false });
+    expect(exporting.send).toContainEqual(expect.objectContaining({ action: 'export', embedCellMetadata: true }));
+    const result = handleMessage(
+      exporting.state,
+      { event: 'export', data: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` },
+      { mode: 'edit', isDark: false }
+    ).result!;
+    const reopened = JSON.parse(JSON.stringify(result));
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(reopened.svg).svg));
+    const ordinary = index.get('ordinary-chart')!;
+    expect(ordinary.meta.key).toBe('ordinary-chart');
+    expect(ordinary.meta.labelText).toBe('Трафик α 🚀');
+    expect(ordinary.shape?.localName).toBe('rect');
+    expect(index.get('chart-group')?.shape).toBeUndefined();
+    const xmlDocument = new DOMParser().parseFromString(reopened.xml, 'application/xml');
+    expect(xmlDocument.querySelector('mxCell[id="ordinary-chart"]')?.getAttribute('parent')).toBe('chart-group');
+    expect(xmlDocument.querySelector('mxCell[id="ordinary-chart"]')?.getAttribute('value')).toBe('Трафик α 🚀');
+    let draft = reduceDraft(
+      createDraft({ ...EMPTY_CONFIG, queries: [{ id: 'q', name: 'Трафик', source: { kind: 'panel', refId: 'A' } }] }),
+      {
+        type: 'widget',
+        widget: {
+          id: 'w',
+          anchorCellId: ordinary.meta.id,
+          kind: 'sparkline',
+          label: 'Трафик α 🚀',
+          binding: { queryId: 'q', match: {}, reducer: 'last' },
+        },
+      }
+    );
+    const imported = previewPatternImport(
+      EMPTY_CONFIG,
+      exportPatternDocument(commitDraft(draft)),
+      Array.from(index.keys())
+    ).config!;
+    expect(
+      resolvePatterns(
+        Array.from(index.values(), (cell) => cell.meta),
+        imported
+      ).widgets[0].anchorCellId
+    ).toBe('ordinary-chart');
+    index.delete('ordinary-chart');
+    expect(
+      resolvePatterns(
+        Array.from(index.values(), (cell) => cell.meta),
+        imported
+      ).diagnostics
+    ).toContainEqual(expect.objectContaining({ code: 'missing-anchor' }));
+    expect(imported.widgets).toHaveLength(1);
+    draft = reduceDraft(createDraft(imported), { type: 'remove-widget', id: 'w' });
+    expect(commitDraft(draft).widgets).toEqual([]);
+  });
+  it('diagnoses pasted semantic metadata on real indexed cells until the copied pg-id is repaired', () => {
+    const svg = readFileSync(resolve(__dirname, '../fixtures/authoring.svg'), 'utf8');
+    const root = mountSvg(document.createElement('div'), sanitizeSvg(svg).svg);
+    const copy = root.querySelector('[data-cell-id="device-1"]')!.cloneNode(true) as Element;
+    copy.setAttribute('data-cell-id', 'device-copy');
+    root.append(copy);
+    const plan = () =>
+      resolvePatterns(
+        Array.from(buildCellIndex(root).values(), (cell) => cell.meta),
+        EMPTY_CONFIG
+      );
+    expect(plan().diagnostics).toContainEqual(expect.objectContaining({ code: 'duplicate-semantic-id' }));
+    copy.setAttribute('data-meta-pg-id', 'device-copy');
+    expect(plan().diagnostics).toEqual([]);
+    expect(plan().cells['device-copy'].scope.cell?.label).toBe('Router α');
+    expect(plan().cells['device-1'].scope.cell?.label).toBe('Router α');
+  });
+  it('explains copied pg-id metadata conflicts without falling back to Unicode labels', () => {
+    const cells = [
+      cellMetaFromAttrs('copy-1', { 'pg-id': 'router', 'pg-kind': 'node' }, false, 'Роутер α'),
+      cellMetaFromAttrs('copy-2', { 'pg-id': 'router', 'pg-kind': 'node' }, false, 'Роутер β'),
+    ];
+    expect(cellIdentityDiagnostics(cells)).toEqual([
+      expect.objectContaining({ code: 'duplicate-semantic-id', message: expect.stringMatching(/pg-id.*draw.io/) }),
+    ]);
+    cells[1].key = 'router-copy';
+    expect(cellIdentityDiagnostics(cells)).toEqual([]);
+  });
   it('retains physical IDs, semantic IDs and metric metadata through XML/SVG save and reopen', () => {
     const diagram = JSON.parse(
       JSON.stringify({

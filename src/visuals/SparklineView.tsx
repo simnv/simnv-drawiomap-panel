@@ -15,6 +15,8 @@ export interface SparklineViewProps {
   stale?: boolean;
   freshness?: FreshnessPolicy;
   showValue?: boolean;
+  min?: number;
+  max?: number;
 }
 
 /** Prepared history only. This adapter never starts queries. */
@@ -27,6 +29,8 @@ export function SparklineView({
   stale,
   freshness,
   showValue = true,
+  min: minimum,
+  max: maximum,
 }: SparklineViewProps) {
   const theme = useTheme2();
   const expired = useSampleStale(model.state === 'ready' ? model.sampleAt : undefined, freshness);
@@ -52,6 +56,18 @@ export function SparklineView({
   for (const value of numeric) {
     min = Math.min(min, value);
     max = Math.max(max, value);
+  }
+  if (Number.isFinite(minimum)) {
+    min = minimum!;
+  }
+  if (Number.isFinite(maximum)) {
+    max = maximum!;
+  }
+  if (minimum === undefined) {
+    min = Math.min(min, max);
+  }
+  if (maximum === undefined) {
+    max = Math.max(min, max);
   }
   const field = {
     ...model.field,
@@ -80,6 +96,8 @@ export function SparklineView({
           theme={theme}
           config={{
             ...model.field.config,
+            min: minimum ?? model.field.config.min,
+            max: maximum ?? model.field.config.max,
             noValue: undefined,
             custom: { lineWidth: 2, fillOpacity: 15, spanNulls: false },
           }}

@@ -28,6 +28,27 @@ export const history = (): HistoryModel => ({
   fromCache: false,
 });
 describe('SparklineView', () => {
+  it('keeps an automatic bound ordered when only the opposite bound is configured', () => {
+    render(
+      <SparklineView model={history()} width={180} height={70} timeRange={getDefaultTimeRange()} label="CPU" min={50} />
+    );
+    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 50, max: 50, delta: 0 });
+  });
+  it('uses explicit chart bounds at the public Grafana boundary', () => {
+    render(
+      <SparklineView
+        model={history()}
+        width={180}
+        height={70}
+        timeRange={getDefaultTimeRange()}
+        label="CPU"
+        min={0}
+        max={100}
+      />
+    );
+    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 0, max: 100, delta: 100 });
+    expect(sparkline.mock.calls.at(-1)![0].config).toMatchObject({ min: 0, max: 100 });
+  });
   it.each(['light', 'dark'] as const)('passes the %s Grafana theme to the public visual', (mode) => {
     const theme = createTheme({ colors: { mode } });
     render(

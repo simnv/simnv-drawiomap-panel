@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320">
   <defs><clipPath id="chart-clip"><rect x="0" y="0" width="180" height="70"/></clipPath></defs>
+  <g data-cell-id="0" data-meta-pg-schema="1">
   <g transform="translate(35 35)">
     <g data-cell-id="device-1" data-meta-pg-id="device-1" data-meta-pg-kind="node" data-meta-pg-schema="1" data-meta-device="router-1">
       <rect width="120" height="55" fill="#d5e8d4" stroke="#82b366"/><text x="12" y="32">Router α</text>
@@ -17,5 +18,12 @@
       </g>
       <rect data-testid="paint-order-sentinel" x="170" y="0" width="10" height="10" fill="#ff0000"/>
     </g>
+    <g data-cell-id="chart-group" transform="translate(360 140)">
+      <g data-cell-id="ordinary-chart" transform="translate(8 12)">
+        <rect width="180" height="70" fill="#fff" stroke="#666"/>
+        <text x="8" y="24">Трафик α 🚀</text>
+      </g>
+    </g>
+  </g>
   </g>
 </svg>

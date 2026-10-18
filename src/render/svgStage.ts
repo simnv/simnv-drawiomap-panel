@@ -81,6 +81,9 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
   const index: CellIndex = new Map();
   for (const group of Array.from(root.querySelectorAll('g[data-cell-id]')) as SVGGElement[]) {
     const id = group.getAttribute('data-cell-id')!;
+    if (index.has(id)) {
+      throw new Error(`Cell ${id} is duplicated. Assign each pasted cell a unique identity in draw.io.`);
+    }
     const paths = ownDescendants(group, 'path') as SVGPathElement[];
     // draw.io edge polylines carry fill="none" AND pointer-events="stroke"; stencil outlines have fill="none" only.
     const line = paths.find((p) => p.getAttribute('fill') === 'none' && p.getAttribute('pointer-events') === 'stroke');

@@ -4,29 +4,35 @@ import { useTheme2 } from '@grafana/ui';
 import { resolvePatterns } from '../binding/patterns';
 import { cellAt } from '../interact/hit';
 import { validateConfig, type DiagramConfigV2 } from '../model/config';
-import { cellMetas } from '../render/svgStage';
-import type { BindContext, CellIndex } from '../types';
+import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
+import type { BindContext, CellIndex, Diagram } from '../types';
 import { BindingInspector } from './BindingInspector';
 import { commitDraft, createDraft, reduceDraft } from './draft';
 import { QueryEditor } from './QueryEditor';
 import { PanelQueryContext } from '../query/panel';
 import type { QuerySnapshot } from '../query/types';
 import { TextField } from './BindingFields';
-import { cellScope } from '../adapter/portograph';
+import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { cellMatches } from '../binding/select';
 import { bindPlan } from '../binding/engine';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { createPreviewResolver, usePreviewTime, type QueryPreview } from './preview';
+import { PatternTransfer } from './PatternTransfer';
+import { DrawioModal } from './DrawioModal';
+import { sanitizeSvg } from '../render/sanitize';
+import { fnv1a } from '../util/hash';
 export interface BindingEditorProps {
   config: DiagramConfigV2;
   cells: CellIndex;
-  onSave: (config: DiagramConfigV2) => void;
+  onSave: (config: DiagramConfigV2, diagram?: Diagram) => void;
   onPreview?: (config: DiagramConfigV2) => void;
   children?: React.ReactNode;
   data?: PanelData;
   inspectorWidth?: number;
   onQueryPreview?: (preview: QueryPreview) => void;
   bindContext?: BindContext;
+  diagram?: Diagram;
+  onDiagramPreview?: (diagram: Diagram) => void;
 }
 export function BindingEditor({
   config,
@@ -38,9 +44,24 @@ export function BindingEditor({
   inspectorWidth = 320,
   onQueryPreview,
   bindContext,
+  diagram,
+  onDiagramPreview,
 }: BindingEditorProps) {
   const theme = useTheme2();
   const [draft, dispatch] = useReducer(reduceDraft, config, createDraft);
+  const [savedDiagram, setSavedDiagram] = useState(diagram);
+  const [draftDiagram, setDraftDiagram] = useState(diagram);
+  const [geometryOpen, setGeometryOpen] = useState(false);
+  const [geometryError, setGeometryError] = useState('');
+  const reset = () => {
+    dispatch({ type: 'reset' });
+    setDraftDiagram(savedDiagram);
+    if (savedDiagram) {
+      onDiagramPreview?.(savedDiagram);
+    }
+    setGeometryError('');
+    setQueryError('');
+  };
   const [selectionVersion, setSelectionVersion] = useState(0);
   const service = useContext(PanelQueryContext);
   const [queryId, setQueryId] = useState(config.queries[0]?.id);
@@ -193,6 +214,32 @@ export function BindingEditor({
         aria-label="Diagram binding inspector"
         style={{ width: inspectorWidth, flexShrink: 0, boxSizing: 'border-box', overflow: 'auto', padding: 12 }}
       >
+        {draftDiagram && <button onClick={() => setGeometryOpen(true)}>Edit geometry in draw.io</button>}
+        {geometryOpen && draftDiagram && (
+          <DrawioModal
+            xml={draftDiagram.xml}
+            title="Diagram geometry"
+            mode="edit"
+            isDark={theme.isDark}
+            onClose={() => setGeometryOpen(false)}
+            onSave={(result) => {
+              try {
+                const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(result.svg).svg));
+                const problems = cellIdentityDiagnostics(cellMetas(index));
+                if (problems.length) {
+                  throw new Error(problems.map((d) => d.message).join('\n'));
+                }
+                const next = { ...result, hash: fnv1a(result.svg + result.xml), updatedAt: new Date().toISOString() };
+                setDraftDiagram(next);
+                onDiagramPreview?.(next);
+                setGeometryError('');
+              } catch (e) {
+                setGeometryError((e as Error).message);
+              }
+            }}
+          />
+        )}
+        {geometryError && <p role="alert">{geometryError}</p>}
         <div aria-label="Element selection" style={{ maxHeight: 96, overflow: 'auto' }}>
           {Array.from(cells.keys()).map((id) => (
             <button key={id} onClick={() => select(id)}>
@@ -207,7 +254,18 @@ export function BindingEditor({
           selectionVersion={selectionVersion}
           dispatch={dispatch}
           fields={fields}
+          chartEligible={selected?.shape?.localName === 'rect'}
         />
+        {draft.config.widgets
+          .filter((w) => !cells.has(w.anchorCellId))
+          .map((widget) => (
+            <p key={widget.id}>
+              Chart {widget.label} has missing anchor {widget.anchorCellId}.
+              <button onClick={() => dispatch({ type: 'remove-widget', id: widget.id })}>
+                Remove chart {widget.label}
+              </button>
+            </p>
+          ))}
         {draft.cellId && (
           <button
             onClick={() => {
@@ -379,31 +437,25 @@ export function BindingEditor({
           </output>
         </section>
         {queryError && <p role="alert">{queryError}</p>}
+        <PatternTransfer
+          config={draft.config}
+          cellIds={Array.from(cells.keys())}
+          onImport={(document, resolution) =>
+            dispatch({ type: 'import-patterns', document, resolution, cellIds: Array.from(cells.keys()) })
+          }
+        />
         <button
-          disabled={!!diagnostics.length || !!queryError || hasMetricErrors}
+          disabled={!!diagnostics.length || !!queryError || !!geometryError || hasMetricErrors}
           onClick={() => {
-            onSave(commitDraft(draft));
+            onSave(commitDraft(draft), draftDiagram);
+            setSavedDiagram(draftDiagram);
             dispatch({ type: 'applied' });
           }}
         >
           Apply bindings
         </button>
-        <button
-          onClick={() => {
-            dispatch({ type: 'reset' });
-            setQueryError('');
-          }}
-        >
-          Cancel changes
-        </button>
-        <button
-          onClick={() => {
-            dispatch({ type: 'reset' });
-            setQueryError('');
-          }}
-        >
-          Undo to saved
-        </button>
+        <button onClick={reset}>Cancel changes</button>
+        <button onClick={reset}>Undo to saved</button>
       </aside>
     </div>
   );

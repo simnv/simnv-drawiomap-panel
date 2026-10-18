@@ -22,7 +22,7 @@ import { applyPatches } from '../render/applier';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
-import { DEFAULT_OPTIONS, Options, SeriesInfo } from '../types';
+import { DEFAULT_OPTIONS, Options, SeriesInfo, type Diagram } from '../types';
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
 import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
@@ -127,15 +127,33 @@ function DrawioMapPanelView({
 }: PanelProps<Options>) {
   const theme = useTheme2();
   const editing = usePanelEditing(id);
-  const [draftConfig, setDraftConfig] = useState<DiagramConfigV2>();
+  const savedRevision = `${options.diagram?.hash}:${JSON.stringify(options.config)}`;
+  const [draftConfig, setDraftConfig] = useState<{ base: string; config: DiagramConfigV2 }>();
+  const [draftDiagram, setDraftDiagram] = useState<{ base: string; diagram: Diagram }>();
   const [queryPreview, setQueryPreview] = useState<QueryPreview>();
+  const [wasEditing, setWasEditing] = useState(editing);
+  if (wasEditing !== editing) {
+    setWasEditing(editing);
+    setDraftConfig(undefined);
+    setDraftDiagram(undefined);
+    setQueryPreview(undefined);
+  }
+  const previewConfig = useCallback(
+    (config: DiagramConfigV2) => setDraftConfig({ base: savedRevision, config }),
+    [savedRevision]
+  );
+  const previewDiagram = useCallback(
+    (diagram: Diagram) => setDraftDiagram({ base: savedRevision, diagram }),
+    [savedRevision]
+  );
   const queryService = useContext(PanelQueryContext);
   const inspectorWidth = Math.min(420, Math.max(240, width * 0.4));
   const stageWidth = editing ? Math.max(1, width - inspectorWidth) : width;
   const opts = {
     ...DEFAULT_OPTIONS,
     ...options,
-    config: editing ? (draftConfig ?? options.config) : options.config,
+    config: editing && draftConfig?.base === savedRevision ? draftConfig.config : options.config,
+    diagram: editing && draftDiagram?.base === savedRevision ? draftDiagram.diagram : options.diagram,
     zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
   };
@@ -443,17 +461,29 @@ function DrawioMapPanelView({
     >
       {/* Chrome does not carry pan restrictions into a scroll container: the stage needs its own touch-action. */}
       <div ref={attachStage} className={styles.stage} style={{ touchAction }} />
-      {queryService && options.config ? (
+      {queryService && opts.config ? (
         <ChartLayer
           root={stage.root}
           cells={stage.index}
           plan={savedPlan}
-          queries={options.config.queries}
+          queries={options.config?.queries ?? []}
           controller={queryService.controller}
           context={queryService.context}
           viewport={viewport}
           revision={viewKey + JSON.stringify(view)}
           replaceVariables={replaceVariables}
+          draft={
+            editing
+              ? {
+                  plan,
+                  queries: opts.config.queries,
+                  defaultDatasource: opts.config.defaultDatasource,
+                  data,
+                  preview: queryPreview,
+                  active: activeSnapshots,
+                }
+              : undefined
+          }
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
@@ -499,15 +529,17 @@ function DrawioMapPanelView({
   );
   return editing ? (
     <BindingEditor
-      key={`${opts.diagram.hash}:${JSON.stringify(options.config)}`}
+      key={savedRevision}
       config={options.config ?? EMPTY_CONFIG}
       cells={stage.index}
       data={data}
       inspectorWidth={inspectorWidth}
-      onPreview={setDraftConfig}
+      onPreview={previewConfig}
       onQueryPreview={setQueryPreview}
       bindContext={bindingContext}
-      onSave={(config) => onOptionsChange({ ...options, config })}
+      diagram={options.diagram}
+      onDiagramPreview={previewDiagram}
+      onSave={(config, diagram) => onOptionsChange({ ...options, config, diagram: diagram ?? options.diagram })}
     >
       {preview}
     </BindingEditor>

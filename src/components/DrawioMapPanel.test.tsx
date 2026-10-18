@@ -21,6 +21,7 @@ import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
 import type { DiagramConfigV2 } from '../model/config';
 import { Observable } from 'rxjs';
+import { exportPatternDocument } from '../editor/draft';
 const nativeQuery = vi.hoisted(() => vi.fn());
 vi.mock('@grafana/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/runtime')>()),
@@ -307,6 +308,186 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
 }
 
 describe('DrawioMapPanel', () => {
+  it('previews geometry before Apply, cancels it, and accepts a replacement diagram over an older geometry draft', () => {
+    locationService.partial({ editPanel: 718 });
+    const save = vi.fn();
+    const small =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="region"><rect width="180" height="70"/></g></svg>';
+    const saved = {
+      ...options,
+      rules: [],
+      diagram: { xml: '<mxfile/>', svg: small, hash: 'geometry-start', updatedAt: '' },
+    };
+    const p = props({ id: 718, options: saved, onOptionsChange: save });
+    const view = render(<DrawioMapPanel {...p} />);
+    const resize = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit geometry in draw.io' }));
+      const frame = screen.getByTitle('draw.io') as HTMLIFrameElement;
+      const token = new DOMParser()
+        .parseFromString(frame.srcdoc, 'text/html')
+        .querySelector('meta[name="dmap-channel"]')!
+        .getAttribute('content');
+      const port = {
+        onmessage: undefined as ((event: { data: string }) => void) | undefined,
+        postMessage: vi.fn(),
+        close: vi.fn(),
+      };
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            origin: 'null',
+            source: frame.contentWindow,
+            data: JSON.stringify({ dmapHello: token }),
+            ports: [port as unknown as MessagePort],
+          })
+        )
+      );
+      act(() => port.onmessage?.({ data: JSON.stringify({ event: 'save', xml: '<mxfile/>', exit: true }) }));
+      act(() =>
+        port.onmessage?.({
+          data: JSON.stringify({
+            event: 'export',
+            data: `data:image/svg+xml,${encodeURIComponent(small.replace('width="180"', 'width="260"'))}`,
+          }),
+        })
+      );
+    };
+    resize();
+    expect(document.querySelector('[data-cell-id="region"] rect')?.getAttribute('width')).toBe('260');
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    expect(document.querySelector('[data-cell-id="region"] rect')?.getAttribute('width')).toBe('180');
+    resize();
+    view.rerender(
+      <DrawioMapPanel
+        {...p}
+        options={{
+          ...saved,
+          diagram: { ...saved.diagram, hash: 'replacement', svg: small.replaceAll('region', 'replacement-cell') },
+        }}
+      />
+    );
+    expect(document.querySelector('[data-cell-id="replacement-cell"]')).toBeTruthy();
+    expect(document.querySelector('[data-cell-id="region"]')).toBeNull();
+    view.unmount();
+    act(() => locationService.partial({ editPanel: null }));
+  });
+  it('shows imported or assigned draft charts without execution until explicit Preview or Apply', async () => {
+    const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
+    const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+    Object.defineProperties(SVGElement.prototype, {
+      getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
+      getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
+    });
+    const bounds = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 400,
+      bottom: 200,
+      width: 400,
+      height: 200,
+      toJSON: () => ({}),
+    });
+    try {
+      nativeQuery.mockReset().mockImplementation(
+        () =>
+          new Observable((observer) => {
+            observer.next({ data: [frame('D', {}, [42])] });
+          })
+      );
+      locationService.partial({ editPanel: 717 });
+      const config: DiagramConfigV2 = {
+        version: 2,
+        patterns: [],
+        overrides: [],
+        widgets: [],
+        queries: [
+          {
+            id: 'native',
+            name: 'CPU',
+            source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
+          },
+        ],
+      };
+      const save = vi.fn();
+      function SavedPanel() {
+        const [saved, setSaved] = React.useState<Options>({
+          ...options,
+          rules: [],
+          config,
+          diagram: {
+            xml: '<mxfile/>',
+            svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="region"><rect width="180" height="70"/></g></svg>',
+            hash: 'draft-region',
+            updatedAt: '',
+          },
+        });
+        return (
+          <DrawioMapPanel
+            {...props({ id: 717 })}
+            options={saved}
+            onOptionsChange={(next) => {
+              save(next);
+              setSaved(next);
+            }}
+          />
+        );
+      }
+      const view = render(<SavedPanel />);
+      await screen.findByText(/No supported native query editor/);
+      const imported = exportPatternDocument({
+        ...config,
+        queries: [{ ...config.queries[0], id: 'import-query' }],
+        widgets: [
+          {
+            id: 'import-widget',
+            anchorCellId: 'region',
+            kind: 'sparkline',
+            label: 'Imported chart',
+            binding: { queryId: 'import-query', match: {}, reducer: 'last' },
+          },
+        ],
+      });
+      fireEvent.change(screen.getByLabelText('Pattern document'), { target: { value: JSON.stringify(imported) } });
+      fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
+      await waitFor(() => expect(screen.getByTestId('dmap-widget').getAttribute('aria-label')).toBe('Imported chart'));
+      expect(screen.getByTestId('dmap-widget').textContent).toContain('Preview query or Apply');
+      expect(nativeQuery).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+      await waitFor(() => expect(screen.queryByTestId('dmap-widget')).toBeNull());
+      fireEvent.click(screen.getByRole('button', { name: 'Select region' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
+      fireEvent.change(screen.getByLabelText('Chart label'), { target: { value: 'Draft CPU' } });
+      await waitFor(() => expect(screen.getByTestId('dmap-widget').getAttribute('aria-label')).toBe('Draft CPU'));
+      expect(nativeQuery).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+      expect(nativeQuery).toHaveBeenCalledTimes(1);
+      expect(save).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+      expect(save.mock.calls[0][0].config.widgets[0]).toMatchObject({ anchorCellId: 'region', label: 'Draft CPU' });
+      expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
+      view.unmount();
+    } finally {
+      bounds.mockRestore();
+      if (ctm) {
+        Object.defineProperty(SVGElement.prototype, 'getCTM', ctm);
+      } else {
+        Reflect.deleteProperty(SVGElement.prototype, 'getCTM');
+      }
+      if (bbox) {
+        Object.defineProperty(SVGElement.prototype, 'getBBox', bbox);
+      } else {
+        Reflect.deleteProperty(SVGElement.prototype, 'getBBox');
+      }
+      act(() => locationService.partial({ editPanel: null }));
+    }
+  });
   it('attaches only configured chart portals after the stage mounts and keeps query errors inside that widget', async () => {
     const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
     const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');

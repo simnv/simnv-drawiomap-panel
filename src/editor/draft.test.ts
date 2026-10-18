@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagramConfigV2 } from '../model/config';
-import { commitDraft, createDraft, reduceDraft } from './draft';
+import { commitDraft, createDraft, reduceDraft, exportPatternDocument, previewPatternImport } from './draft';
 
 export const saved: DiagramConfigV2 = {
   version: 2,
@@ -11,6 +11,205 @@ export const saved: DiagramConfigV2 = {
 };
 
 describe('binding draft', () => {
+  it('requires a destination anchor and rejects invalid identity or query remapping without mutating the panel', () => {
+    const document = exportPatternDocument({
+      ...saved,
+      patterns: [],
+      queries: [{ id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } }],
+      widgets: [
+        {
+          id: 'w',
+          kind: 'bar',
+          label: 'CPU',
+          anchorCellId: 'old-region',
+          min: 0,
+          max: 100,
+          binding: { queryId: 'q', match: {}, reducer: 'last' },
+        },
+      ],
+    });
+    const destination = { ...saved, patterns: [] };
+    const missing = previewPatternImport(destination, document, ['new-region']);
+    expect(missing.config).toBeUndefined();
+    expect(missing.diagnostics).toContainEqual(expect.objectContaining({ code: 'missing-anchor' }));
+    const imported = previewPatternImport(destination, document, ['new-region'], {
+      anchors: { 'old-region': 'new-region' },
+    });
+    expect(imported.config?.widgets[0].anchorCellId).toBe('new-region');
+    const invalid = previewPatternImport(destination, { ...document, config: { ...document.config, queries: [] } }, [
+      'new-region',
+    ]);
+    expect(invalid.config).toBeUndefined();
+    expect(invalid.diagnostics).toContainEqual(expect.objectContaining({ code: 'unknown-query' }));
+    const collision = previewPatternImport(imported.config!, document, ['new-region'], {
+      queries: { q: { action: 'new', id: 'q' } },
+      patterns: {},
+      widgets: { w: { action: 'replace' } },
+      anchors: { 'old-region': 'new-region' },
+    });
+    expect(collision.config).toBeUndefined();
+    expect(collision.diagnostics).toContainEqual(expect.objectContaining({ code: 'import-identity-conflict' }));
+    expect(destination.widgets).toEqual([]);
+  });
+  it('previews conflicts and applicability, then remaps every query reference atomically by ID', () => {
+    const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
+    const source: DiagramConfigV2 = {
+      ...saved,
+      queries: [{ id: 'q', name: 'Repeated name', source: { kind: 'panel', refId: 'A' } }],
+      patterns: [
+        {
+          id: 'p',
+          name: 'Pattern',
+          select: { ids: ['region'] },
+          display: {
+            shape: { binding },
+            link: { a2bBinding: binding, b2aBinding: binding, capacityBinding: binding },
+            status: {
+              kind: 'mapping',
+              binding,
+              default: { state: 'normal', reason: 'OK' },
+              mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+            },
+            hover: {
+              rows: [
+                { kind: 'value', label: 'Value', binding },
+                { kind: 'history', label: 'History', binding },
+              ],
+            },
+          },
+        },
+      ],
+      overrides: [
+        { cellId: 'region', display: { shape: { binding } } },
+        { cellId: 'missing', display: { label: 'Missing' } },
+      ],
+      widgets: [
+        {
+          id: 'w',
+          anchorCellId: 'region',
+          kind: 'sparkline',
+          label: 'Chart',
+          binding,
+          freshness: { expectedIntervalMs: 2000, staleAfterMs: 5000 },
+        },
+      ],
+    };
+    const destination: DiagramConfigV2 = {
+      ...source,
+      overrides: [{ cellId: 'region', display: { label: 'Original' } }],
+      queries: [{ id: 'q', name: 'Repeated name', source: { kind: 'panel', refId: 'Z' } }],
+    };
+    const document = exportPatternDocument(source);
+    const preview = previewPatternImport(destination, document, ['region', 'region-copy']);
+    expect(preview.config).toBeUndefined();
+    expect(preview.conflicts).toEqual(
+      expect.arrayContaining([
+        { section: 'queries', id: 'q' },
+        { section: 'patterns', id: 'p' },
+        { section: 'widgets', id: 'w' },
+      ])
+    );
+    expect(preview.overrides).toEqual([
+      { cellId: 'region', applies: true, conflict: true },
+      { cellId: 'missing', applies: false, conflict: false },
+    ]);
+    const resolved = previewPatternImport(destination, document, ['region', 'region-copy'], {
+      queries: { q: { action: 'new', id: 'q-copy' } },
+      patterns: { p: { action: 'new', id: 'p-copy' } },
+      widgets: { w: { action: 'new', id: 'w-copy' } },
+      overrides: { region: 'region-copy', missing: null },
+    });
+    expect(resolved.diagnostics).toEqual([]);
+    const imported = resolved.config!;
+    expect(imported.queries.map((q) => [q.id, q.source])).toEqual([
+      ['q', { kind: 'panel', refId: 'Z' }],
+      ['q-copy', { kind: 'panel', refId: 'A' }],
+    ]);
+    const p = imported.patterns[1].display;
+    expect(
+      [
+        p.shape?.binding,
+        p.link?.a2bBinding,
+        p.link?.b2aBinding,
+        p.link?.capacityBinding,
+        p.status?.binding,
+        ...(p.hover?.rows.map((row: any) => row.binding) ?? []),
+        imported.overrides[1].display.shape?.binding,
+        imported.widgets[1].binding,
+      ].map((b) => b?.queryId)
+    ).toEqual(Array(9).fill('q-copy'));
+    expect(imported.overrides[1].cellId).toBe('region-copy');
+    expect(imported.widgets[1].freshness).toEqual({ expectedIntervalMs: 2000, staleAfterMs: 5000 });
+    expect(destination.queries).toHaveLength(1);
+    const replace = previewPatternImport(destination, document, ['region'], {
+      queries: { q: { action: 'replace' } },
+      patterns: { p: { action: 'replace' } },
+      widgets: { w: { action: 'replace' } },
+      overrides: { region: 'region', missing: null },
+    });
+    expect(replace.config?.queries).toHaveLength(1);
+    expect(replace.config?.queries[0].source).toEqual({ kind: 'panel', refId: 'A' });
+    expect(replace.config?.patterns).toHaveLength(1);
+    expect(previewPatternImport(destination, { ...document, version: 99 }, []).config).toBeUndefined();
+  });
+  it('exports referenced queries with their inherited datasource and imports across different panel defaults', () => {
+    const source: DiagramConfigV2 = {
+      ...saved,
+      defaultDatasource: { uid: 'source-prom', type: 'prometheus' },
+      queries: [
+        {
+          id: 'q-source',
+          name: 'Same name',
+          source: {
+            kind: 'datasource',
+            target: { refId: 'D', ...{ expr: 'rate(трафик[5m])', opaque: { x: [1, 2] } } },
+            parameters: {},
+          },
+        },
+        { id: 'unused', name: 'Unused', source: { kind: 'panel', refId: 'B' } },
+      ],
+      patterns: [
+        {
+          id: 'p',
+          name: 'Порты α',
+          select: { kind: 'any' },
+          display: {
+            hover: {
+              rows: [
+                {
+                  kind: 'history',
+                  label: 'История 🚀',
+                  binding: { queryId: 'q-source', match: {}, reducer: 'last' },
+                  freshness: { expectedIntervalMs: 1000, staleAfterMs: 4000 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const document = exportPatternDocument(source);
+    expect(document).toMatchObject({ kind: 'drawiomap-patterns', version: 1 });
+    expect(document.config.queries).toHaveLength(1);
+    expect(document.config.queries[0].source).toMatchObject({ datasource: { uid: 'source-prom', type: 'prometheus' } });
+    const destination: DiagramConfigV2 = {
+      ...saved,
+      patterns: [],
+      defaultDatasource: { uid: 'destination-testdata' },
+      queries: [{ id: 'q-destination', name: 'Same name', source: { kind: 'panel', refId: 'Z' } }],
+    };
+    const preview = previewPatternImport(destination, JSON.parse(JSON.stringify(document)), []);
+    expect(preview.diagnostics).toEqual([]);
+    expect(preview.config?.defaultDatasource).toEqual({ uid: 'destination-testdata' });
+    expect(preview.config?.queries.find((q) => q.id === 'q-source')?.source).toEqual(document.config.queries[0].source);
+    expect(preview.config?.patterns[0].display.hover?.rows[0]).toMatchObject({
+      label: 'История 🚀',
+      binding: { queryId: 'q-source' },
+      freshness: { expectedIntervalMs: 1000, staleAfterMs: 4000 },
+    });
+    expect(source.queries[0].source).not.toHaveProperty('datasource');
+    expect(destination.patterns).toEqual([]);
+  });
   it('edits one physical element without changing its shared pattern or saved configuration', () => {
     let draft = reduceDraft(createDraft(saved), { type: 'select', cellId: 'device-1' });
     draft = reduceDraft(draft, { type: 'display', display: { label: 'Local' } });

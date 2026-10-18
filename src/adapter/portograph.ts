@@ -18,7 +18,7 @@ export function cellIdentityDiagnostics(cells: CellMeta[]): Diagnostic[] {
         diagnostics.push({
           code,
           path: `cells[${i}].${key}`,
-          message: `Cell ${key} ${cell[key]} is ambiguous. Assign each diagram entity a unique identity.`,
+          message: `Cell ${key} ${cell[key]} is ambiguous. Assign each diagram entity a unique ${key === 'key' ? 'pg-id metadata value' : 'cell ID'} in draw.io. Copy/paste may duplicate metadata.`,
         });
       }
       seen.add(cell[key]);

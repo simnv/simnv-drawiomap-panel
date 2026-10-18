@@ -8,6 +8,8 @@ import {
   type Widget,
 } from '../model/config';
 import type { CellSelector } from '../types';
+import { previewPatternImport, type ImportResolution } from './portable';
+export { exportPatternDocument, previewPatternImport } from './portable';
 
 export const EMPTY_CONFIG: DiagramConfigV2 = { version: 2, queries: [], patterns: [], overrides: [], widgets: [] };
 export interface BindingDraft {
@@ -29,6 +31,7 @@ export type DraftAction =
   | { type: 'widget'; widget: Widget }
   | { type: 'remove-widget'; id: string }
   | { type: 'import'; config: unknown }
+  | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
   | { type: 'reset' | 'applied' };
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfig>): DisplayConfig {
@@ -56,7 +59,12 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     return { ...draft, saved: commitDraft(draft), diagnostics: [] };
   }
   let config = draft.config;
-  if (action.type === 'import') {
+  if (action.type === 'import-patterns') {
+    const preview = previewPatternImport(config, action.document, action.cellIds, action.resolution);
+    return preview.config
+      ? { ...draft, config: preview.config, diagnostics: [] }
+      : { ...draft, diagnostics: preview.diagnostics };
+  } else if (action.type === 'import') {
     const result = validateConfig(action.config);
     if (!result.config) {
       return { ...draft, diagnostics: result.diagnostics };

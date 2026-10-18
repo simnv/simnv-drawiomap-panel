@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { createTheme, FieldType, getDefaultTimeRange } from '@grafana/data';
+import { createTheme, FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
 import { ChartLayer } from './ChartLayer';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { readChartAnchor } from '../render/geometry';
@@ -13,7 +13,11 @@ import type { NamedQuery, Widget } from '../model/config';
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
   Sparkline: () => <canvas />,
-  BarGauge: () => <div />,
+  BarGauge: (props: { field: { min?: number; max?: number }; value: { numeric: number } }) => (
+    <div data-testid="bar-props">
+      {props.field.min}..{props.field.max}: {props.value.numeric}
+    </div>
+  ),
 }));
 const query: NamedQuery = { id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } };
 const widget: Widget = {
@@ -77,6 +81,179 @@ function setup() {
   };
 }
 describe('ChartLayer', () => {
+  it('reuses saved chart results for a new draft region and preserves monitoring through removal or cancel', () => {
+    const s = setup();
+    const ordinary = s.cells.get('ordinary')!.shape!;
+    Object.assign(ordinary.parentElement!, { getCTM: () => identity });
+    Object.assign(ordinary, {
+      getCTM: () => identity,
+      getBBox: () => ({ x: 0, y: 0, width: 50, height: 30 }),
+      getBoundingClientRect: () => ({ left: 220, top: 20, right: 270, bottom: 50, width: 50, height: 30 }),
+    });
+    const native: NamedQuery = {
+      id: 'q',
+      name: 'CPU',
+      source: { kind: 'datasource', datasource: { uid: 'native' }, parameters: {}, target: { refId: 'D' } },
+    };
+    const snapshot = {
+      state: 'ready' as const,
+      fetchedAt: 1,
+      fromCache: false,
+      frames: [
+        toDataFrame({
+          fields: [
+            { name: 'Time', type: FieldType.time, values: [1, 2] },
+            { name: 'CPU', type: FieldType.number, values: [21, 42] },
+          ],
+        }),
+      ],
+    };
+    s.watch.mockImplementation((_demand, emit) => {
+      emit(snapshot);
+      return s.release;
+    });
+    const data = { state: LoadingState.Done, series: [], timeRange: context.timeRange };
+    const second = {
+      ...s.plan.widgets[0],
+      anchorCellId: 'ordinary',
+      widget: { ...widget, id: 'new', anchorCellId: 'ordinary', label: 'Draft copied value' },
+    };
+    const props = {
+      root: s.root,
+      cells: s.cells,
+      plan: s.plan,
+      queries: [native],
+      controller: s.controller,
+      context,
+      viewport: s.host,
+    };
+    const view = render(<ChartLayer {...props} />);
+    expect(s.host.textContent).toContain('42');
+    view.rerender(
+      <ChartLayer {...props} draft={{ plan: { ...s.plan, widgets: [second] }, queries: [native], data }} />
+    );
+    expect(s.host.querySelector('[aria-label="Draft copied value"]')?.textContent).toContain('42');
+    expect(s.host.querySelector('[data-dmap-widget="w"]')).toBeNull();
+    expect(s.watch).toHaveBeenCalledTimes(1);
+    expect(s.release).not.toHaveBeenCalled();
+    view.rerender(<ChartLayer {...props} />);
+    expect(s.host.querySelector('[data-dmap-widget="new"]')).toBeNull();
+    expect(s.host.textContent).toContain('42');
+    expect(s.watch).toHaveBeenCalledTimes(1);
+    view.unmount();
+    s.host.remove();
+    expect(s.release).toHaveBeenCalledTimes(1);
+  });
+  it('previews draft labels, bounds, units and explicit results while a changed native target stays execution-free', () => {
+    const s = setup();
+    const native: NamedQuery = {
+      id: 'q',
+      name: 'CPU',
+      source: { kind: 'datasource', datasource: { uid: 'native' }, parameters: {}, target: { refId: 'D' } },
+    };
+    const frames = (value: number) => [
+      toDataFrame({
+        fields: [
+          { name: 'Time', type: FieldType.time, values: [1, 2] },
+          { name: 'CPU', type: FieldType.number, values: [21, value] },
+        ],
+      }),
+    ];
+    s.watch.mockImplementation((_demand, emit) => {
+      emit({ state: 'ready', frames: frames(42), fetchedAt: 1, fromCache: false });
+      return s.release;
+    });
+    const data = { state: LoadingState.Done, series: [], timeRange: context.timeRange };
+    const draftPlan = {
+      ...s.plan,
+      widgets: [
+        {
+          ...s.plan.widgets[0],
+          widget: {
+            ...widget,
+            kind: 'bar' as const,
+            label: 'Изменённый α',
+            unit: 'percent',
+            min: 10,
+            max: 90,
+            url: '/d/cpu',
+          },
+        },
+      ],
+    };
+    const props = {
+      root: s.root,
+      cells: s.cells,
+      plan: s.plan,
+      queries: [native],
+      controller: s.controller,
+      context,
+      viewport: s.host,
+    };
+    const view = render(<ChartLayer {...props} draft={{ plan: draftPlan, queries: [native], data }} />);
+    expect(s.host.querySelector('[data-testid="bar-props"]')?.textContent).toBe('10..90: 42');
+    expect(s.host.querySelector('a')?.textContent).toContain('Изменённый α');
+    const changed: NamedQuery = {
+      ...native,
+      source: { ...native.source, kind: 'datasource', parameters: {}, target: { refId: 'D', ...{ expr: 'changed' } } },
+    };
+    view.rerender(<ChartLayer {...props} draft={{ plan: draftPlan, queries: [changed], data }} />);
+    expect(s.host.textContent).toContain('Preview query or Apply');
+    expect(s.watch).toHaveBeenCalledTimes(1);
+    view.rerender(
+      <ChartLayer
+        {...props}
+        draft={{
+          plan: draftPlan,
+          queries: [changed],
+          data,
+          preview: {
+            query: changed,
+            cellId: 'chart',
+            context,
+            snapshot: { state: 'ready', frames: frames(84), fetchedAt: 2, fromCache: false },
+          },
+        }}
+      />
+    );
+    expect(s.host.querySelector('[data-testid="bar-props"]')?.textContent).toBe('10..90: 84');
+    expect(s.watch).toHaveBeenCalledTimes(1);
+    view.rerender(<ChartLayer {...props} />);
+    expect(s.host.textContent).toContain('42');
+    expect(s.host.textContent).not.toContain('84');
+    view.unmount();
+    s.host.remove();
+  });
+  it('displays draft assignment and label without executing it, and restores saved presentation on cancel', () => {
+    const s = setup();
+    const empty = { ...s.plan, widgets: [] };
+    const data = { state: LoadingState.Done, series: [], timeRange: context.timeRange };
+    const draft = { plan: s.plan, queries: [query], data };
+    const props = {
+      root: s.root,
+      cells: s.cells,
+      plan: empty,
+      queries: [query],
+      controller: s.controller,
+      context,
+      viewport: s.host,
+    };
+    const view = render(<ChartLayer {...props} draft={draft} />);
+    expect(s.host.querySelector('[data-testid="dmap-widget"]')?.getAttribute('aria-label')).toBe('CPU');
+    expect(s.watch).not.toHaveBeenCalled();
+    const native: NamedQuery = {
+      id: 'q',
+      name: 'CPU',
+      source: { kind: 'datasource', datasource: { uid: 'native' }, parameters: {}, target: { refId: 'D' } },
+    };
+    view.rerender(<ChartLayer {...props} draft={{ ...draft, queries: [native] }} />);
+    expect(s.host.textContent).toContain('Preview query or Apply');
+    expect(s.watch).not.toHaveBeenCalled();
+    view.rerender(<ChartLayer {...props} />);
+    expect(s.host.querySelector('[data-testid="dmap-widget"]')).toBeNull();
+    view.unmount();
+    s.host.remove();
+  });
   it('updates query resolution on zoom while preserving rectangle-local dimensions', async () => {
     const s = setup();
     const { unmount } = render(

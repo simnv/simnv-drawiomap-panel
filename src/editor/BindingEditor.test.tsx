@@ -7,6 +7,7 @@ import type { DiagramConfigV2 } from '../model/config';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
 import { createQueryController } from '../query/controller';
 import { PanelQueryContext } from '../query/panel';
+import { exportPatternDocument } from './draft';
 vi.hoisted(() => {
   if (!window.localStorage) {
     Object.defineProperty(window, 'localStorage', { value: { getItem: () => null, setItem() {}, removeItem() {} } });
@@ -36,6 +37,167 @@ function setup() {
   return { cells, save };
 }
 describe('binding inspector', () => {
+  it('previews portable conflicts and stages an import without query execution, then cancels or applies', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="region"><rect width="180" height="70"/></g></svg>';
+    const cells = buildCellIndex(host.querySelector('svg')!);
+    const execute = vi.fn();
+    const controller = createQueryController(execute);
+    const context = {
+      timeRange: getDefaultTimeRange(),
+      timeZone: 'utc',
+      scopedVars: {},
+      refreshMs: 0,
+      intervalMs: 1000,
+      generation: 1,
+    };
+    const source: DiagramConfigV2 = {
+      ...config,
+      patterns: [],
+      defaultDatasource: { uid: 'source' },
+      queries: [
+        {
+          id: 'q',
+          name: 'Duplicated name',
+          source: { kind: 'datasource', target: { refId: 'D', ...{ expr: 'cpu' } }, parameters: {} },
+        },
+      ],
+      widgets: [
+        {
+          id: 'w',
+          anchorCellId: 'region',
+          kind: 'sparkline',
+          label: 'График α',
+          binding: { queryId: 'q', match: {}, reducer: 'last' },
+        },
+      ],
+      overrides: [{ cellId: 'region', display: { label: 'Imported' } }],
+    };
+    const destination: DiagramConfigV2 = {
+      ...config,
+      patterns: [],
+      defaultDatasource: { uid: 'destination' },
+      queries: [{ id: 'q', name: 'Duplicated name', source: { kind: 'panel', refId: 'Z' } }],
+    };
+    const save = vi.fn();
+    render(
+      <PanelQueryContext.Provider value={{ controller, context }}>
+        <BindingEditor config={destination} cells={cells} onSave={save} />
+      </PanelQueryContext.Provider>
+    );
+    fireEvent.change(screen.getByLabelText('Pattern document'), {
+      target: { value: JSON.stringify(exportPatternDocument(source)) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
+    expect(screen.getByLabelText('Pattern import preview').textContent).toContain('source');
+    expect(screen.getByLabelText('Pattern import preview').textContent).toContain('region: applies');
+    expect((screen.getByRole('button', { name: 'Import into draft' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('queries q conflict'), { target: { value: 'new' } });
+    fireEvent.change(screen.getByLabelText('queries q new identity'), { target: { value: 'q-copy' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
+    expect(execute).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[0][0].widgets).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[1][0].widgets[0]).toMatchObject({ anchorCellId: 'region', binding: { queryId: 'q-copy' } });
+    expect(save.mock.calls[1][0].queries[1].source.datasource).toEqual({ uid: 'source' });
+    expect(execute).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Export patterns' }));
+    const exported = JSON.parse((screen.getByLabelText('Exported pattern document') as HTMLTextAreaElement).value);
+    expect(exported.config.widgets[0].anchorCellId).toBe('region');
+    controller.dispose();
+  });
+  it('opts chart and value/history hover rows into sample freshness and blocks invalid cadence', () => {
+    const { cells } = (() => {
+      const host = document.createElement('div');
+      host.innerHTML = '<svg><g data-cell-id="region"><rect width="180" height="70"/></g></svg>';
+      return { cells: buildCellIndex(host.querySelector('svg')!) };
+    })();
+    const save = vi.fn();
+    render(
+      <BindingEditor
+        config={{ ...config, patterns: [], queries: [{ id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } }] }}
+        cells={cells}
+        onSave={save}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Select region' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
+    expect((screen.getByLabelText('Chart check sample freshness') as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByLabelText('Chart check sample freshness'));
+    fireEvent.change(screen.getByLabelText('Chart expected sample interval ms'), { target: { value: '2000' } });
+    fireEvent.change(screen.getByLabelText('Chart stale after ms'), { target: { value: '1000' } });
+    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Chart stale after ms'), { target: { value: '6000' } });
+    for (const [index, kind] of ['value', 'history'].entries()) {
+      fireEvent.click(screen.getByRole('button', { name: 'Add hover row' }));
+      fireEvent.change(screen.getByLabelText(`Hover row ${index + 1} kind`), { target: { value: kind } });
+      fireEvent.click(screen.getByLabelText(`Hover row ${index + 1} check sample freshness`));
+      fireEvent.change(screen.getByLabelText(`Hover row ${index + 1} expected sample interval ms`), {
+        target: { value: '1000' },
+      });
+      fireEvent.change(screen.getByLabelText(`Hover row ${index + 1} stale after ms`), { target: { value: '3000' } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[0][0].widgets[0].freshness).toEqual({ expectedIntervalMs: 2000, staleAfterMs: 6000 });
+    expect(save.mock.calls[0][0].overrides[0].display.hover.rows.map((row: any) => row.freshness)).toEqual([
+      { expectedIntervalMs: 1000, staleAfterMs: 3000 },
+      { expectedIntervalMs: 1000, staleAfterMs: 3000 },
+    ]);
+    fireEvent.click(screen.getByLabelText('Chart check sample freshness'));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[1][0].widgets[0]).not.toHaveProperty('freshness');
+  });
+  it('assigns an ordinary rectangle to a named chart query, persists its identity and removes it explicitly', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="plain-rectangle"><rect width="180" height="70"/></g></svg>';
+    const cells = buildCellIndex(host.querySelector('svg')!);
+    const save = vi.fn();
+    const chartConfig: DiagramConfigV2 = {
+      ...config,
+      patterns: [],
+      queries: [
+        { id: 'other', name: 'Other', source: { kind: 'panel', refId: 'B' } },
+        { id: 'cpu-id', name: 'Загрузка α', source: { kind: 'panel', refId: 'A' } },
+      ],
+    };
+    const view = render(<BindingEditor config={chartConfig} cells={cells} onSave={save} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select plain-rectangle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
+    fireEvent.change(screen.getByLabelText('Chart query'), { target: { value: 'cpu-id' } });
+    fireEvent.change(screen.getByLabelText('Chart kind'), { target: { value: 'bar' } });
+    fireEvent.change(screen.getByLabelText('Chart label'), { target: { value: 'Процессор 🚀' } });
+    fireEvent.change(screen.getByLabelText('Chart unit'), { target: { value: 'percent' } });
+    fireEvent.change(screen.getByLabelText('Chart minimum'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Chart maximum'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Chart drilldown URL'), { target: { value: '/d/cpu' } });
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    const persisted = JSON.parse(JSON.stringify(save.mock.calls[0][0])) as DiagramConfigV2;
+    expect(persisted.widgets).toEqual([
+      expect.objectContaining({
+        anchorCellId: 'plain-rectangle',
+        kind: 'bar',
+        label: 'Процессор 🚀',
+        unit: 'percent',
+        min: 0,
+        max: 100,
+        url: '/d/cpu',
+        binding: { queryId: 'cpu-id', match: {}, reducer: 'last' },
+      }),
+    ]);
+    view.unmount();
+    render(<BindingEditor config={persisted} cells={new Map()} onSave={save} />);
+    expect(screen.getByRole('alert').textContent).toContain('plain-rectangle');
+    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove chart Процессор 🚀' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[1][0].widgets).toEqual([]);
+  });
   it('focuses the selected identity and defaults to this-element scope', () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
