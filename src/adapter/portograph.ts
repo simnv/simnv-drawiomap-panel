@@ -2,7 +2,30 @@
  * The only module that knows the portograph draw.io binding contract (schema PG_SCHEMA).
  * See docs/research/portograph-contract.md. Adjust here when the contract changes.
  */
-import type { CellKind, CellMeta, Endpoint } from '../types';
+import type { CellKind, CellMeta, Endpoint, TemplateScope } from '../types';
+import type { Diagnostic } from '../model/config';
+
+/** Duplicate explicit identities cannot safely select a device, even if labels differ. */
+export function cellIdentityDiagnostics(cells: CellMeta[]): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  for (const [key, code] of [
+    ['id', 'duplicate-cell-id'],
+    ['key', 'duplicate-semantic-id'],
+  ] as const) {
+    const seen = new Set<string>();
+    cells.forEach((cell, i) => {
+      if (seen.has(cell[key])) {
+        diagnostics.push({
+          code,
+          path: `cells[${i}].${key}`,
+          message: `Cell ${key} ${cell[key]} is ambiguous. Assign each diagram entity a unique identity.`,
+        });
+      }
+      seen.add(cell[key]);
+    });
+  }
+  return diagnostics;
+}
 
 /** The pg-schema version that this panel reads. */
 export const PG_SCHEMA = '1';
@@ -133,6 +156,15 @@ export function endpointScope(e?: Endpoint): Record<string, string> | undefined 
     return undefined;
   }
   return { node: e.node, port: e.port ?? '', ordinal: String(e.ordinal), raw: e.raw };
+}
+
+/** Pure identity/metadata scope shared by the V2 binding plan and query parameters. */
+export function cellScope(cell: CellMeta): TemplateScope {
+  return {
+    cell: { ...cell.attrs, id: cell.id, key: cell.key, label: cell.labelText },
+    from: endpointScope(cell.from),
+    to: endpointScope(cell.to),
+  };
 }
 
 /** pg-kind="node-icon" cells by the pg-id of their node (pg-of), and the set of all cell ids. */

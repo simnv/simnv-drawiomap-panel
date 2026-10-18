@@ -4,7 +4,7 @@ import { matcherError } from '../binding/select';
 import type { Rule } from '../types';
 
 /** Exact string or "/re/flags". The regex must compile and must not use the stateful g or y flag. */
-const matcher = z.string().superRefine((m, ctx) => {
+export const matcher = z.string().superRefine((m, ctx) => {
   const err = matcherError(m);
   if (err) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
@@ -13,7 +13,7 @@ const matcher = z.string().superRefine((m, ctx) => {
 const seriesSelector = z
   .object({ refId: z.string().optional(), name: matcher.optional(), match: z.record(matcher).optional() })
   .strict();
-const cellSelector = z
+export const cellSelector = z
   .object({
     ids: z.array(z.string()).optional(),
     kind: z.enum(['node', 'port', 'link', 'link-label', 'other', 'any']).optional(),
@@ -30,7 +30,7 @@ const cardRow = seriesSelector
     url: z.string().optional(),
   })
   .strict();
-const reducer = z.enum(['last', 'mean', 'max', 'min']);
+export const reducer = z.enum(['last', 'mean', 'max', 'min']);
 const capacitySeries = seriesSelector.extend({ reducer: reducer.optional() }).strict();
 
 export const ruleSchema = z

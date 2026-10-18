@@ -1,13 +1,61 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { sanitizeSvg } from '../render/sanitize';
+import { buildCellIndex, mountSvg } from '../render/svgStage';
 import {
   applyContract,
   attachLinkLabels,
   cellMetaFromAttrs,
+  cellIdentityDiagnostics,
+  cellScope,
   contractWarning,
   nodeIcons,
   nodeParts,
   parseEndpoint,
 } from './portograph';
+
+describe('saved semantic identity', () => {
+  it('retains physical IDs, semantic IDs and metric metadata through XML/SVG save and reopen', () => {
+    const diagram = JSON.parse(
+      JSON.stringify({
+        xml: readFileSync(resolve(__dirname, '../../fixtures/demo/demo-l1.drawio'), 'utf8'),
+        svg: readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l1.svg'), 'utf8'),
+      })
+    );
+    const xml = new DOMParser().parseFromString(diagram.xml, 'application/xml');
+    const reopenedXml = new DOMParser().parseFromString(new XMLSerializer().serializeToString(xml), 'application/xml');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(diagram.svg).svg));
+    const objects = Array.from(reopenedXml.querySelectorAll('object[pg-id]'));
+    expect(objects.length).toBeGreaterThan(10);
+    for (const object of objects) {
+      const id = object.getAttribute('id')!;
+      const meta = index.get(id)?.meta;
+      expect(meta?.id).toBe(id);
+      expect(meta?.key).toBe(object.getAttribute('pg-id'));
+      for (const key of ['pg-id', 'pg-kind', 'pg-from', 'pg-to', 'device', 'job', 'capacity']) {
+        if (object.hasAttribute(key)) {
+          expect(meta?.attrs[key]).toBe(object.getAttribute(key));
+        }
+      }
+    }
+    expect(cellIdentityDiagnostics([...index.values()].map((entry) => entry.meta))).toEqual([]);
+  });
+
+  it('retains directional endpoint parameters independently of the display label', () => {
+    const cell = cellMetaFromAttrs(
+      'edge-1',
+      { 'pg-id': 'uplink', 'pg-kind': 'link', 'pg-from': 'router-a:eth1#2', 'pg-to': 'router-b:eth2', device: 'wan' },
+      true,
+      'Same label'
+    );
+    expect(cellScope(cell)).toEqual({
+      cell: { ...cell.attrs, id: 'edge-1', key: 'uplink', label: 'Same label' },
+      from: { node: 'router-a', port: 'eth1', ordinal: '2', raw: 'router-a:eth1#2' },
+      to: { node: 'router-b', port: 'eth2', ordinal: '1', raw: 'router-b:eth2' },
+    });
+  });
+});
 
 describe('parseEndpoint', () => {
   it('parses node, node:port and node:port#n', () => {

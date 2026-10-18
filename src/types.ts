@@ -1,4 +1,5 @@
 import type { DataFrame, DisplayValue, Field, GrafanaTheme2, ScopedVars, ThresholdsConfig } from '@grafana/data';
+import type { DiagramConfigV2 } from './model/config';
 
 /* ---------- cells (from the SVG) ---------- */
 
@@ -94,6 +95,8 @@ export interface ZoomOptions {
 
 export interface Options {
   diagram?: Diagram;
+  /** Versioned authoring configuration. Legacy rules remain intact until explicit replacement. */
+  config?: DiagramConfigV2;
   rules: Rule[];
   zoom: ZoomOptions;
   linkWidth: { min: number; max: number };

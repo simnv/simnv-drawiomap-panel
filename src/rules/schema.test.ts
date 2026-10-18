@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRulesYaml, rulesToYaml, ruleSchema } from './schema';
+import { parseRulesYaml, rulesToYaml, ruleSchema, cellSelector } from './schema';
 
 const yaml = `
 - name: uplinks
@@ -63,6 +63,17 @@ describe('parseRulesYaml', () => {
 });
 
 describe('matcher validation', () => {
+  it('shares the legacy selector contract with V2 patterns', () => {
+    const select = {
+      ids: ['router-a'],
+      kind: 'link',
+      between: ['a', 'b'],
+      attrs: { device: '/^eth[0-9]+$/' },
+      label: 'WAN',
+    };
+    expect(cellSelector.safeParse(select).success).toBe(true);
+    expect(cellSelector.safeParse({ ...select, ignored: true }).success).toBe(false);
+  });
   const rule = (select: object, extra: object = {}) => ({ name: 'x', select, ...extra });
   it('finding 1: rejects an invalid regex with a clear message and path', () => {
     const r = parseRulesYaml('- name: x\n  select: { label: "/[/" }\n');
