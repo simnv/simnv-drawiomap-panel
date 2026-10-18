@@ -1122,3 +1122,67 @@ describe('DrawioMapPanel live zoom', () => {
     expect(svgEl.getAttribute('viewBox')).toBe(base);
   });
 });
+
+it('paints every prepared pattern scope, clears on Cancel and preserves the selected pattern and focus', async () => {
+  nativeQuery.mockReset().mockImplementation(
+    (request) =>
+      new Observable((observer) => {
+        observer.next({ data: [frame('D', {}, [request.scopedVars.dm_key.value === 'a' ? 11 : 22])] });
+        return () => {};
+      })
+  );
+  locationService.partial({ editPanel: 97 });
+  const config: DiagramConfigV2 = {
+    version: 2,
+    defaultDatasource: { uid: 'native' },
+    widgets: [],
+    overrides: [],
+    queries: [
+      {
+        id: 'q',
+        name: 'Metric',
+        source: { kind: 'datasource', target: { refId: 'D' }, parameters: { dm_key: 'cell.key' } },
+      },
+    ],
+    patterns: [
+      {
+        id: 'p',
+        name: 'Devices',
+        select: { ids: ['a', 'b'] },
+        display: {
+          hover: { rows: [{ kind: 'value', label: 'Metric', binding: { queryId: 'q', match: {}, reducer: 'last' } }] },
+        },
+      },
+    ],
+  };
+  const small =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/><text>A</text></g><g data-cell-id="b"><rect x="50" width="40" height="30"/><text>B</text></g></svg>';
+  const p = props({ id: 97 });
+  const { container } = render(
+    <DrawioMapPanel
+      {...p}
+      options={{ ...options, rules: [], config, diagram: { xml: '', svg: small, hash: 'full-preview', updatedAt: '' } }}
+    />
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Select a' }));
+  fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+  fireEvent.change(screen.getByLabelText('Shape query'), { target: { value: 'q' } });
+  fireEvent.click(screen.getByLabelText('Write value to shape label'));
+  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Preview ${value}' } });
+  expect(nativeQuery).not.toHaveBeenCalled();
+  const button = screen.getByRole('button', { name: 'Preview all pattern matches' });
+  button.focus();
+  fireEvent.click(button);
+  await waitFor(() => expect(screen.getByLabelText('Pattern preview progress').textContent).toContain('2 / 2'));
+  await waitFor(() => expect(container.querySelector('[data-cell-id="b"] text')?.textContent).toBe('Preview 22'));
+  expect(container.querySelector('[data-cell-id="a"] text')?.textContent).toBe('Preview 11');
+  expect(document.activeElement).toBe(button);
+  expect((screen.getByLabelText('Edit scope') as HTMLSelectElement).value).toBe('pattern');
+  expect(nativeQuery).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+  await waitFor(() => expect(container.querySelector('[data-cell-id="a"] text')?.textContent).toBe('A'));
+  expect(container.querySelector('[data-cell-id="b"] text')?.textContent).toBe('B');
+  expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
+  expect(nativeQuery).toHaveBeenCalledTimes(2);
+  act(() => locationService.partial({ editPanel: null }));
+});

@@ -410,10 +410,13 @@ precedence, while respecting refId-attributed failures. Native editor callbacks 
 queries without resurrecting deleted fields. Required refId fallback and omission of
 undefined optional properties keep actual TestData scenario replacements persistable.
 
-Every affected pattern match now reports resolved, failed or unvalidated metric bindings,
-including hover rows. Explicit native Preview still executes only the selected query and
-element; other parameter values stay visibly unvalidated. This is the ticket's approved
-minimum: no automatic draft execution, extra executor/cache, or added approval step.
+Ticket 9 reports resolved, failed or unvalidated bindings for every affected match,
+including hover rows. Individual native Preview executes the selected query and element.
+The completion audit rejected this partial operation as insufficient for the original
+all-match requirement. Ticket 10 adds **Preview all pattern matches** to explicitly check
+all affected query/element scopes, including hover and anchored widgets, before Apply.
+It uses bounded prepared results and the existing controller, without automatic draft
+demand, an extra executor/cache, or an approval step.
 The supplied PanelEditPage back method handles browser navigation. Active-result and
 cache budgets share one frame measurement without changing their accounting limits.
 
@@ -434,3 +437,21 @@ not establish actual datasource behavior, overlay geometry, focus, or sandbox su
 
 Before execution, review this plan against the spec. After approval, preserve the
 selected Orca Sol/Luna execution method. Planning changed documentation only.
+
+## Full pattern preview completion
+
+- [x] Add an explicit all-match action beside the affected-pattern preview.
+- [x] Resolve shape, directional link, status, hover and anchored chart bindings.
+- [x] Reuse eager/compatible results and coalesce equal requests through QueryController.
+- [x] Report query-scope progress and resolved/failed/unvalidated match outcomes.
+- [x] Bound aggregate prepared frames using existing entry/value/byte policy.
+- [x] Release obsolete and completed demand; preserve saved monitoring independently.
+- [x] Exercise public component/controller seams with two devices, failures, budgets,
+      equal demands, cancellation and uncancellable late delivery.
+
+Final validation passes 530 tests, typecheck, lint, production build and bundle checks.
+Pinned Grafana 12.4.13 and 13.2.4 each pass 11 query/authoring browser tests and eight
+effective-sandbox authoring/geometry tests, including authentication. The runtime
+commands, limits and requirement-to-evidence mapping belong to
+`/tmp/drawiomap-implementation-20261018/ticket-10-report.md`. Ticket 9 individual-query
+preview tests retain their explicit unvalidated-match expectations.

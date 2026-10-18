@@ -1,5 +1,6 @@
 import { PanelEditPage } from '@grafana/plugin-e2e';
-import { attachJson, expect, observeQueries, saveDashboard, test } from './authoring-fixtures';
+import { nativeQuery } from '../src/fixtures/authoring-config';
+import { attachJson, expect, observeQueries, saveDashboard, svg, test } from './authoring-fixtures';
 
 test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) {
@@ -290,4 +291,101 @@ test('shared parameterized preview labels other matches unvalidated before Apply
   expect(requests).toHaveLength(1);
   expect(requests[0].queries[0].expr).toContain('device-1');
   await expect(inspector.getByRole('button', { name: 'Apply bindings', exact: true })).toBeEnabled();
+});
+
+test('full pattern preview resolves every device and draft chart, exposes a nonrepresentative failure and preserves lazy monitoring', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+  selectors,
+}, testInfo) => {
+  const detail = nativeQuery('detail', 'label_replace(vector($dm_sample), "device", "$dm_key", "", "")', {
+    dm_key: 'cell.key',
+    dm_sample: 'cell.sample',
+  });
+  config.queries[1] = detail;
+  config.queries.push(nativeQuery('unrelated', 'vector(999)'));
+  config.patterns.push({
+    id: 'unrelated',
+    name: 'Unrelated hover',
+    select: { ids: ['ordinary-chart'] },
+    display: {
+      hover: {
+        rows: [{ kind: 'value', label: 'Unrelated', binding: { queryId: 'unrelated', match: {}, reducer: 'last' } }],
+      },
+    },
+  });
+  const uid = await createDiagram(config, {
+    svg: svg
+      .replace('data-meta-device="router-1"', 'data-meta-device="router-1" data-meta-sample="23"')
+      .replace('data-meta-device="router-2"', 'data-meta-device="router-2" data-meta-sample="47"'),
+  });
+  const requests = observeQueries(page, uid);
+  const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  const count = (ref: string) => requests.filter((r) => r.queries.some((q) => q.refId === ref)).length;
+  await expect.poll(() => count('HEALTH')).toBeGreaterThan(0);
+  await inspector.getByRole('button', { name: 'Select device-2', exact: true }).click();
+  await inspector.getByRole('button', { name: 'Assign chart region', exact: true }).click();
+  await inspector.getByLabel('Chart query', { exact: true }).selectOption('detail');
+  await inspector.getByLabel('Chart label', { exact: true }).fill('Draft sample');
+  await inspector.getByRole('button', { name: 'Select device-1', exact: true }).click();
+  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('pattern');
+  await inspector.getByLabel('Shape query', { exact: true }).selectOption('detail');
+  await inspector.getByLabel('Write value to shape label', { exact: true }).check();
+  await inspector.getByLabel('Label template', { exact: true }).fill('Sample ${value}');
+  expect(count('DETAIL')).toBe(0);
+  expect(count('UNRELATED')).toBe(0);
+  const preview = inspector.getByLabel('Affected metric resolution', { exact: true });
+  await inspector.getByRole('button', { name: 'Preview all pattern matches', exact: true }).click();
+  await expect(inspector.getByLabel('Pattern preview progress')).toContainText('4 / 4');
+  await expect(preview).toContainText('device-1: resolved');
+  await expect(preview).toContainText('device-2: resolved');
+  expect(count('DETAIL')).toBe(2);
+  const panel = page.getByTestId('dmap-panel');
+  await expect(panel.locator('[data-cell-id="device-1"] text').last()).toHaveText('Sample 23');
+  await expect(panel.locator('[data-cell-id="device-2"] text').last()).toHaveText('Sample 47');
+  await expect(panel.locator('[data-dmap-widget="chart-1"]')).toContainText('47');
+  await expect(inspector.getByLabel('Hover row preview')).toContainText('23');
+  await expect(inspector.getByLabel('Edit scope', { exact: true })).toHaveValue('pattern');
+  await testInfo.attach('full-pattern-resolved', { body: await page.screenshot(), contentType: 'image/png' });
+  await inspector.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+  await expect(panel.locator('[data-dmap-widget="chart-1"]')).toHaveCount(0);
+  await expect(panel.locator('[data-cell-id="device-1"] text').last()).toHaveText('Router α');
+  expect(count('DETAIL')).toBe(2);
+  // A new native target returns no metric for device-2. Editing it alone remains request-free.
+  await inspector.getByLabel('Named query', { exact: true }).selectOption('detail');
+  await inspector.getByText('Import native target JSON', { exact: true }).click();
+  const target = {
+    refId: 'DETAIL',
+    expr: 'label_replace(vector($dm_sample) < 30, "device", "$dm_key", "", "")',
+    range: true,
+  };
+  await inspector.getByLabel('Native target JSON', { exact: true }).fill(JSON.stringify(target));
+  await inspector.getByRole('button', { name: 'Import native target', exact: true }).click();
+  expect(count('DETAIL')).toBe(2);
+  await inspector.getByRole('button', { name: 'Preview all pattern matches', exact: true }).click();
+  await expect(inspector.getByLabel('Pattern preview progress')).toContainText('4 / 4');
+  await expect(preview).toContainText('device-1: resolved');
+  await expect(preview).toContainText('device-2: failed');
+  await expect(preview).toContainText('No metric matches query detail');
+  expect(count('DETAIL')).toBe(4);
+  await testInfo.attach('full-pattern-failure', { body: await page.screenshot(), contentType: 'image/png' });
+  const beforeRefresh = count('HEALTH');
+  await edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
+  await expect.poll(() => count('HEALTH')).toBeGreaterThan(beforeRefresh);
+  await expect(inspector.getByLabel('Pattern preview progress')).toHaveCount(0);
+  expect(count('DETAIL')).toBe(4);
+  expect(count('UNRELATED')).toBe(0);
+  await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
+  await inspector.getByRole('button', { name: 'Select device-2', exact: true }).click();
+  await expect(preview).toContainText('device-2: unvalidated');
+  expect(count('DETAIL')).toBe(4);
+  await attachJson(testInfo, 'full-pattern-requests', {
+    requests,
+    detailRequests: count('DETAIL'),
+    unrelatedRequests: count('UNRELATED'),
+    healthRequests: count('HEALTH'),
+  });
 });

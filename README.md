@@ -63,8 +63,8 @@ Only page 1 of a multi-page diagram is shown. The panel shows a warning.
 
 Edit a panel to open its diagram binding inspector. Click a representative element, or select it with the keyboard. The inspector focuses its heading and shows identity, matching patterns and element overrides.
 
-1. Select **This element** or **All elements matching this pattern**. Preview the affected elements and resolution diagnostics.
-2. Add named queries. Set a panel default datasource or a query override. Native datasource editors retain native targets; **Preview query** executes a draft explicitly.
+1. Select **This element** or **All elements matching this pattern**. Use **Preview all pattern matches** to check every affected element and its shape, link, status, hover and chart bindings. Progress and per-match failures appear before Apply.
+2. Add named queries. Set a panel default datasource or a query override. Native datasource editors retain native targets; **Preview query** checks an individual query for the selected element. Other native parameter values remain unvalidated until **Preview all pattern matches**.
 3. Configure health, directional links and hover rows. Use explicit health mappings or opt-in thresholds. Zero traffic alone does not mean failure.
 4. Select a rectangle and choose **Assign chart region**. Choose a trend or a bar gauge with meaningful minimum and maximum bounds.
 5. Select **Apply bindings**, then save the Grafana dashboard. **Cancel changes** restores the saved bindings and geometry.
@@ -77,7 +77,7 @@ The third demo panel, **Sanitized authoring topology**, has fictional repeated r
 
 ### Demand, cache and sample freshness
 
-Saved visible bindings and displayed chart regions execute while the inspector is open. Unapplied native query edits require Preview. Hover-only scalar values and histories request nothing before display. Identical demands share a request; fresh reopening reuses the panel cache. A named eager panel reference still runs through Grafana's Queries tab. Convert it to a native definition and manually remove its eager copy there; keep the warning until removal is verified.
+Saved visible bindings and displayed chart regions execute while the inspector is open. Unapplied native query edits require explicit Preview. Full pattern preview reuses eager and compatible prepared results, shares equal requests through the panel controller, and releases completed subscriptions. Its prepared results use the existing entry, sample and byte limits; exhausted limits appear as failures. Edits, selection, import, Cancel, Apply and dashboard context changes discard obsolete preview results. Full pattern preview never starts background refresh. Hover-only scalar values and histories request nothing before display. Identical demands share a request; fresh reopening reuses the panel cache. A named eager panel reference still runs through Grafana's Queries tab. Convert it to a native definition and manually remove its eager copy there; keep the warning until removal is verified.
 
 The cache is panel-local and lasts 15 seconds. Its key includes datasource, native target, element parameters, dashboard variables/range, generation and pixel resolution. It retains at most 64 entries, 100,000 values and 8 MiB, evicting inactive least-recently-used entries. Execution admits four concurrent requests and 64 queued requests. One result is limited to 100,000 values and 8 MiB. Errors are not cached. Closing, switching or unmounting releases demand; obsolete results cannot replace the current card. Datasource cancellation does not guarantee cancellation of server work.
 

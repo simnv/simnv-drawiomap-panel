@@ -17,6 +17,7 @@ import { cellMatches } from '../binding/select';
 import { bindPlan } from '../binding/engine';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
+import { previewPattern, type PatternPreview } from './patternPreview';
 import { PatternTransfer } from './PatternTransfer';
 import { DrawioModal } from './DrawioModal';
 import { sanitizeSvg } from '../render/sanitize';
@@ -29,7 +30,9 @@ export interface BindingEditorProps {
   children?: React.ReactNode;
   data?: PanelData;
   inspectorWidth?: number;
-  onQueryPreview?: (preview: QueryPreview) => void;
+  onQueryPreview?: (preview?: QueryPreview) => void;
+  onPatternPreview?: (preview?: PatternPreview) => void;
+  prepared?: QueryPreview[];
   bindContext?: BindContext;
   diagram?: Diagram;
   onDiagramPreview?: (diagram: Diagram) => void;
@@ -43,6 +46,8 @@ export function BindingEditor({
   data,
   inspectorWidth = 320,
   onQueryPreview,
+  onPatternPreview,
+  prepared = [],
   bindContext,
   diagram,
   onDiagramPreview,
@@ -61,7 +66,9 @@ export function BindingEditor({
     }
     setGeometryError('');
     setQueryError('');
+    setPreviewEpoch((value) => value + 1);
   };
+  const [previewEpoch, setPreviewEpoch] = useState(0);
   const [selectionVersion, setSelectionVersion] = useState(0);
   const service = useContext(PanelQueryContext);
   const [queryId, setQueryId] = useState(config.queries[0]?.id);
@@ -71,9 +78,21 @@ export function BindingEditor({
   const query = draft.config.queries.find((q) => q.id === queryId);
   const context = service?.context;
   const previewKey = useMemo(
-    () => ({ query, context, cellId: draft.cellId, defaultDatasource: draft.config.defaultDatasource }),
-    [query, context, draft.cellId, draft.config.defaultDatasource]
+    () => ({
+      query,
+      context,
+      cellId: draft.cellId,
+      config: draft.config,
+      scope: draft.scope,
+      patternId: draft.patternId,
+      cells,
+      previewEpoch,
+    }),
+    [query, context, draft.cellId, draft.config, draft.scope, draft.patternId, cells, previewEpoch]
   );
+  if (previewState && previewState.key !== previewKey) {
+    setPreviewState(undefined);
+  }
   const snapshot: QuerySnapshot = previewState?.key === previewKey ? previewState.snapshot : { state: 'idle' };
   const setSnapshot = (snapshot: QuerySnapshot) => {
     setPreviewState({ key: previewKey, snapshot });
@@ -87,7 +106,15 @@ export function BindingEditor({
     }
   };
   // Tag results by selection before effects run, and release obsolete demand on edit or unmount.
-  useEffect(() => () => release.current?.(), [previewKey]);
+  useEffect(
+    () => () => {
+      const stop = release.current;
+      release.current = undefined;
+      stop?.();
+      onQueryPreview?.(undefined);
+    },
+    [previewKey, onQueryPreview]
+  );
   const plan = useMemo(() => resolvePatterns(cellMetas(cells), draft.config), [cells, draft.config]);
   const affected =
     draft.scope === 'pattern'
@@ -97,6 +124,24 @@ export function BindingEditor({
       : draft.cellId
         ? [draft.cellId]
         : [];
+  const [patternState, setPatternState] = useState<{ key: object; value: PatternPreview }>();
+  const patternRelease = useRef<() => void>();
+  const patternKey = useMemo(
+    () => ({ config: draft.config, scope: draft.scope, patternId: draft.patternId, cells, context, previewEpoch }),
+    [draft.config, draft.scope, draft.patternId, cells, context, previewEpoch]
+  );
+  if (patternState && patternState.key !== patternKey) {
+    setPatternState(undefined);
+  }
+  const patternResults = patternState?.key === patternKey ? patternState.value.previews : [];
+  useEffect(() => {
+    return () => {
+      const stop = patternRelease.current;
+      patternRelease.current = undefined;
+      stop?.();
+      onPatternPreview?.(undefined);
+    };
+  }, [patternKey, onPatternPreview]);
   const select = (cellId: string) => {
     dispatch({ type: 'select', cellId });
     setSelectionVersion((v) => v + 1);
@@ -138,17 +183,24 @@ export function BindingEditor({
         }
       : undefined;
   const resolve = data
-    ? createPreviewResolver(plan, draft.config, data, localPreview, {
-        theme,
-        timeZone: context?.timeZone,
-        generation: context?.generation,
-      })
+    ? createPreviewResolver(
+        plan,
+        draft.config,
+        data,
+        localPreview,
+        {
+          theme,
+          timeZone: context?.timeZone,
+          generation: context?.generation,
+        },
+        [...patternResults, ...prepared]
+      )
     : undefined;
   const nowMs = usePreviewTime(
     data,
     context?.generation,
     previewState?.snapshot,
-    [],
+    patternResults.map((result) => result.snapshot),
     resolve ? statusDeadlines(plan, resolve) : []
   );
   const formatting: BindContext = bindContext ?? {
@@ -160,7 +212,7 @@ export function BindingEditor({
   const bound = resolve ? bindPlan(plan, resolve, formatting, nowMs) : undefined;
   const cardPatch = draft.cellId ? bound?.patches.get(draft.cellId) : undefined;
   const hoverPreview =
-    localPreview && cardPatch && resolve
+    (localPreview || patternResults.length > 0) && cardPatch && resolve
       ? buildConfiguredCard(cardPatch, resolve, { ...formatting, series: [] })
       : undefined;
   const metricDiagnostics = [...(bound?.diagnostics ?? []), ...(hoverPreview?.diagnostics ?? [])];
@@ -174,7 +226,7 @@ export function BindingEditor({
       model.state === 'empty'
         ? [`No metric matches query ${binding.queryId}.`]
         : model.state === 'error' || model.state === 'unsupported'
-          ? [model.message]
+          ? [`Query ${binding.queryId}: ${model.message}`]
           : []
     );
     const unvalidated =
@@ -313,6 +365,43 @@ export function BindingEditor({
           >
             Create shared pattern
           </button>
+        )}
+        {draft.scope === 'pattern' && (
+          <section aria-label="Full pattern preview">
+            <button
+              disabled={!service?.controller || !context || !!diagnostics.length || !!queryError}
+              onClick={() => {
+                patternRelease.current?.();
+                if (!service?.controller || !context) {
+                  return;
+                }
+                patternRelease.current = previewPattern(
+                  service.controller,
+                  plan,
+                  draft.config,
+                  affected,
+                  context,
+                  (value) => {
+                    setPatternState({ key: patternKey, value });
+                    onPatternPreview?.(value);
+                  },
+                  undefined,
+                  [...prepared, ...(localPreview ? [localPreview] : [])]
+                );
+              }}
+            >
+              Preview all pattern matches
+            </button>
+            {patternState?.key === patternKey && (
+              <output aria-label="Pattern preview progress" aria-live="polite">
+                {
+                  patternResults.filter(({ snapshot }) => snapshot.state !== 'idle' && snapshot.state !== 'loading')
+                    .length
+                }{' '}
+                / {patternResults.length} query scopes checked
+              </output>
+            )}
+          </section>
         )}
         {draft.scope === 'pattern' && (
           <ul aria-label="Affected binding preview">
@@ -488,6 +577,7 @@ export function BindingEditor({
         <button
           disabled={!!diagnostics.length || !!queryError || !!geometryError || hasMetricErrors}
           onClick={() => {
+            setPreviewEpoch((value) => value + 1);
             onSave(commitDraft(draft), draftDiagram);
             setSavedDiagram(draftDiagram);
             dispatch({ type: 'applied' });

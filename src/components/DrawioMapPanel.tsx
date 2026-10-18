@@ -29,6 +29,7 @@ import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
 import { BindingEditor } from '../editor/BindingEditor';
 import { EMPTY_CONFIG } from '../editor/draft';
 import type { DiagramConfigV2 } from '../model/config';
+import type { PatternPreview } from '../editor/patternPreview';
 import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from '../editor/preview';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { ChartLayer } from '../visuals/ChartLayer';
@@ -133,6 +134,7 @@ function DrawioMapPanelView({
   const savedRevision = `${options.diagram?.hash}:${JSON.stringify(options.config)}`;
   const [draftConfig, setDraftConfig] = useState<{ base: string; config: DiagramConfigV2 }>();
   const [draftDiagram, setDraftDiagram] = useState<{ base: string; diagram: Diagram }>();
+  const [patternPreview, setPatternPreview] = useState<PatternPreview>();
   const [queryPreview, setQueryPreview] = useState<QueryPreview>();
   const [wasEditing, setWasEditing] = useState(editing);
   if (wasEditing !== editing) {
@@ -140,6 +142,7 @@ function DrawioMapPanelView({
     setDraftConfig(undefined);
     setDraftDiagram(undefined);
     setQueryPreview(undefined);
+    setPatternPreview(undefined);
   }
   const previewConfig = useCallback(
     (config: DiagramConfigV2) => setDraftConfig({ base: savedRevision, config }),
@@ -225,6 +228,13 @@ function DrawioMapPanelView({
     editing ? undefined : card?.cellId,
     Math.max(1, Math.min(264, width - 16))
   );
+  const patternSnapshots = useMemo(
+    () =>
+      patternPreview && patternPreview.config === opts.config && patternPreview.context === queryService?.context
+        ? patternPreview.previews
+        : [],
+    [patternPreview, opts.config, queryService?.context]
+  );
   const resolve = useMemo(
     () =>
       createPreviewResolver(
@@ -237,15 +247,25 @@ function DrawioMapPanelView({
           timeZone,
           generation: queryService?.context.generation,
         },
-        activeSnapshots
+        [...patternSnapshots, ...activeSnapshots]
       ),
-    [plan, opts.config, data, queryPreview, theme, timeZone, queryService?.context.generation, activeSnapshots]
+    [
+      plan,
+      opts.config,
+      data,
+      queryPreview,
+      theme,
+      timeZone,
+      queryService?.context.generation,
+      activeSnapshots,
+      patternSnapshots,
+    ]
   );
   const nowMs = usePreviewTime(
     data,
     queryService?.context.generation,
     queryPreview?.snapshot,
-    activeSnapshots.map((value) => value.snapshot),
+    [...patternSnapshots, ...activeSnapshots].map((value) => value.snapshot),
     statusDeadlines(plan, resolve)
   );
   const result = useMemo(() => {
@@ -484,7 +504,7 @@ function DrawioMapPanelView({
                   defaultDatasource: opts.config.defaultDatasource,
                   data,
                   preview: queryPreview,
-                  active: activeSnapshots,
+                  active: [...patternSnapshots, ...activeSnapshots],
                 }
               : undefined
           }
@@ -540,6 +560,8 @@ function DrawioMapPanelView({
       inspectorWidth={inspectorWidth}
       onPreview={previewConfig}
       onQueryPreview={setQueryPreview}
+      onPatternPreview={setPatternPreview}
+      prepared={activeSnapshots}
       bindContext={bindingContext}
       diagram={options.diagram}
       onDiagramPreview={previewDiagram}

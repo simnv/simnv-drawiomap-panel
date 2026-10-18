@@ -83,20 +83,19 @@ function resolve(demand: QueryDemand, now: number): ResolvedQueryRequest {
   return { datasource: { ...datasource }, request, cacheKey };
 }
 /** Include vector slots and serialized field configuration in both memory budgets. */
-function measureFrames(frames: DataFrame[]): { values: number; bytes: number } {
+export function measureFrames(frames: DataFrame[]): { values: number; bytes: number } {
   const values = frames.reduce((n, frame) => n + frame.fields.reduce((m, field) => m + field.values.length, 0), 0);
   return { values, bytes: JSON.stringify(frames).length * 2 + values * 8 };
 }
 interface Entry {
   request?: ResolvedQueryRequest;
   panelRef?: string;
-  listeners: Set<(s: QuerySnapshot) => void>;
+  listeners: Map<(s: QuerySnapshot) => void, number>;
   snapshot: QuerySnapshot;
   cancel?: () => void;
   token: number;
   running?: boolean;
   timer?: ReturnType<typeof setTimeout>;
-  refreshMs: number;
 }
 
 export function createQueryController(
@@ -139,10 +138,15 @@ export function createQueryController(
   };
   const publish = (entry: Entry, snapshot: QuerySnapshot) => {
     entry.snapshot = snapshot;
-    for (const listener of [...entry.listeners]) {
+    for (const listener of [...entry.listeners.keys()]) {
       listener(snapshot);
     }
   };
+  const refreshMs = (entry: Entry) =>
+    [...entry.listeners.values()].reduce(
+      (shortest, value) => (value > 0 && (!shortest || value < shortest) ? value : shortest),
+      0
+    );
   const stop = (entry: Entry) => {
     entry.token++;
     clearTimeout(entry.timer);
@@ -206,7 +210,7 @@ export function createQueryController(
             entry.listeners.size &&
             snapshot.state !== 'loading' &&
             snapshot.state !== 'idle' &&
-            entry.refreshMs > 0
+            refreshMs(entry) > 0
           ) {
             clearTimeout(entry.timer);
             entry.timer = setTimeout(() => {
@@ -215,7 +219,7 @@ export function createQueryController(
                 publish(entry, { state: 'loading' });
                 enqueue(entry);
               }
-            }, entry.refreshMs);
+            }, refreshMs(entry));
           }
           pump();
         });
@@ -265,16 +269,15 @@ export function createQueryController(
         if (!entry) {
           entry = {
             panelRef: refId,
-            listeners: new Set(),
+            listeners: new Map(),
             snapshot: panelSnapshot(panelData, refId, now()),
             token: 0,
-            refreshMs: 0,
           };
           entries.set(key, entry);
         }
         const current = entry;
         const receive = (snapshot: QuerySnapshot) => listener(snapshot);
-        current.listeners.add(receive);
+        current.listeners.set(receive, demand.context.refreshMs);
         receive(current.snapshot);
         let released = false;
         const release = () => {
@@ -321,16 +324,15 @@ export function createQueryController(
           now() - snapshot.fetchedAt < policy.freshMs;
         entry = {
           request,
-          listeners: new Set(),
+          listeners: new Map(),
           snapshot: isFresh ? { ...snapshot, fromCache: true } : { state: 'loading' },
           token: 0,
-          refreshMs: demand.context.refreshMs,
         };
         entries.set(request.cacheKey, entry);
       }
       const current = entry;
       const receive = (snapshot: QuerySnapshot) => listener(snapshot);
-      current.listeners.add(receive);
+      current.listeners.set(receive, demand.context.refreshMs);
       receive(current.snapshot);
       let released = false;
       const release = () => {
@@ -339,6 +341,10 @@ export function createQueryController(
         }
         released = true;
         current.listeners.delete(receive);
+        if (!refreshMs(current)) {
+          clearTimeout(current.timer);
+          current.timer = undefined;
+        }
         if (consumers.get(demand.consumerId) === release) {
           consumers.delete(demand.consumerId);
         }
@@ -350,15 +356,14 @@ export function createQueryController(
         }
       };
       consumers.set(demand.consumerId, release);
-      if (fresh) {
-        if (current.snapshot.state === 'loading') {
+      if (fresh && current.snapshot.state === 'loading') {
+        enqueue(current);
+      } else if (!current.running && !current.timer && refreshMs(current) > 0 && current.snapshot.state !== 'loading') {
+        current.timer = setTimeout(() => {
+          current.timer = undefined;
+          publish(current, { state: 'loading' });
           enqueue(current);
-        } else if (current.refreshMs > 0) {
-          current.timer = setTimeout(() => {
-            publish(current, { state: 'loading' });
-            enqueue(current);
-          }, current.refreshMs);
-        }
+        }, refreshMs(current));
       }
       return release;
     },

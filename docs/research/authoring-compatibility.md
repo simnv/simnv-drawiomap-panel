@@ -59,7 +59,7 @@ Grafana's backend transport cancels calls that reuse a request ID. The productio
 
 ## Authoring, geometry and presentation
 
-The inspector and diagram share the panel React owner. A host with the public PanelProps dimensions supplies a definite height, including under sandboxing. Browser measurements exposed a 5,805-pixel inspector with no internal scroll before this fix; the repaired lower controls and phone fit pass. Live public `editPanel` navigation activates it. Click and keyboard selection focus its heading; two cloned panels keep independent options. Pattern scope highlights matches and previews the effective binding. Each affected match reports resolved, failed or unvalidated metric bindings, including hover rows and chart bindings. Explicit native Preview validates the selected query for the selected element; other parameter values and queries remain unvalidated. Selection, rendering and import never execute changed draft queries. Apply remains available for unvalidated matches, with their status visible before saving. Element overrides remain explicit. Apply uses `PanelProps.onOptionsChange`; Grafana's public Save dashboard UI persists the result. No internal panel renderer or cross-editor bus is used.
+The inspector and diagram share the panel React owner. A host with the public PanelProps dimensions supplies a definite height, including under sandboxing. Browser measurements exposed a 5,805-pixel inspector with no internal scroll before this fix; the repaired lower controls and phone fit pass. Live public `editPanel` navigation activates it. Click and keyboard selection focus its heading; two cloned panels keep independent options. Pattern scope highlights matches and previews the effective binding. Each affected match reports resolved, failed or unvalidated metric bindings, including hover rows and chart bindings. The individual **Preview query** action checks the selected query and element. **Preview all pattern matches** explicitly checks every affected shape, link, status, hover and anchored chart binding, with progress and per-match outcomes. Other parameter values remain unvalidated after individual query preview alone. Selection, rendering and import never execute changed draft queries. Apply remains available for unvalidated matches, with their status visible before saving. Element overrides remain explicit. Apply uses `PanelProps.onOptionsChange`; Grafana's public Save dashboard UI persists the result. No internal panel renderer or cross-editor bus is used.
 
 Draw.io owns placement, dimensions and stable physical cell IDs. The plugin owns queries, status, formatting, hover and chart behavior. Real draw.io save/export preserves semantic IDs and chart anchor identity through dashboard save/reopen, including compressed XML. Missing anchors remain diagnostic until repaired or explicitly removed. Duplicate physical IDs fail validation. Copy/paste semantic conflicts, nested groups, Unicode and replacement/cancel have executed unit coverage; arbitrary draw.io shape libraries are not claimed tested.
 
@@ -89,9 +89,9 @@ asserted frontend sandbox passes seven authoring/geometry tests, including the
 actual TestData Random Walk → CSV Content replacement, save/reopen and native
 field deletion. Both versions use PanelEditPage.backToDashboard() for persistence.
 
-The repair uses the approved minimum for pattern preview: each match has an honest
-resolution state, while only the selected native query/element executes explicitly.
-Other parameter values stay unvalidated. Eager failures and mixed-ref errors have
+Ticket 9 exposed the remaining unvalidated matches after individual query preview.
+That partial operation did not complete the original all-match requirement.
+Ticket 10 adds the explicit full-pattern operation without automatic draft demand. Eager failures and mixed-ref errors have
 unit coverage at preview/controller seams, not a new live datasource-failure claim.
 The minimum/latest-dev and theme matrices above remain Ticket 8 evidence and were
 not rerun for this repair. Details are in
@@ -109,3 +109,33 @@ GRAFANA_URL=http://localhost:3413 VM_PORT=3428 npm run e2e:13 -- tests/query.spe
 The launcher uses the same explicit URL for readiness and browser execution. Build the production distribution before these commands. For the test-only probe, run `node tests/build-authoring-probe.mjs`, then select `tests/authoring-compat.config.ts` with `AUTHORING_GRAFANA_URL`, optional `AUTHORING_THEME=light`, and `AUTHORING_SANDBOX=1` for sandbox services. Restore `npm run build` afterwards. Probe source is never imported in the production distribution.
 
 References: [Grafana plugin browser tests](https://grafana.com/developers/plugin-tools/e2e-test-a-plugin/test-a-panel-plugin), [public backend query transport](https://github.com/grafana/grafana/blob/v12.4.13/packages/grafana-runtime/src/utils/DataSourceWithBackend.ts), [pinned Prometheus target processing](https://github.com/grafana/grafana/blob/v12.4.13/packages/grafana-prometheus/src/datasource.ts), and [development image tags](https://hub.docker.com/r/grafana/grafana-dev/tags).
+
+## Full pattern preview follow-up
+
+The full-pattern action uses the existing QueryController for native demand, coalescing,
+queue/concurrency control, cancellation and result limits. Eager and compatible active
+results are reused. Each query/element result is prepared separately, with at most the
+existing 64 distinct frame sets, 100,000 values and 8 MiB retained for the current run.
+Additional outcomes report a result-limit failure with a correction instead of retaining
+more frames. Prepared results feed the diagram, inspector, status, hover and draft charts.
+
+Terminal subscriptions are released. The controller tracks refresh demand per consumer,
+so a one-shot preview cannot suppress saved monitoring or keep it alive after release.
+Edits, scope/pattern/identity changes, Cancel, Apply, context changes and unmount release
+obsolete work. Generation checks reject old prepared results. Full preview creates no
+independent executor, inactive cache, approval step or background refresh schedule.
+
+Ticket 10 passes 530 tests across 46 files, typecheck, lint, production build and
+bundle checks. Lint retains five existing deprecation warnings. Query and binding-editor
+specs pass 11 tests including authentication on each pinned Grafana 12.4.13 and 13.2.4.
+Effective sandbox authoring and geometry specs pass eight tests on each pinned version.
+The added scenario resolves device values 23 and 47 plus a draft chart, reports a missing
+metric for device-2 after a target edit, and proves Refresh keeps saved health demand
+while draft-only and unrelated hover demand stay idle. Existing individual-query
+preview tests still show the other parameter value as unvalidated.
+
+The browser runs use Chromium. Aggregate limits, queue exhaustion, ambiguity, datasource
+errors and uncancellable Promise rejection have component/controller evidence. The new
+live failure is a missing metric, not an injected datasource outage. Earlier minimum,
+latest-dev and theme matrices remain historical evidence. Current commands and limits
+are recorded in `/tmp/drawiomap-implementation-20261018/ticket-10-report.md`.
