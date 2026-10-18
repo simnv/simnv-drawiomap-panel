@@ -1,3 +1,4 @@
+import { editorField, chooseOption, openSection, selectElement } from '../editor/testUtils';
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -61,9 +62,10 @@ it('mounts the focused inspector for the public editPanel route and persists thr
   locationService.partial({ editPanel: 1 });
   const p = props({ id: 1, onOptionsChange: save });
   render(<DrawioMapPanel {...p} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Select pg-node~rtr-b' }));
+  await screen.findByRole('combobox', { name: 'Diagram element' });
+  selectElement('pg-node~rtr-b');
   expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'pg-node~rtr-b bindings' }));
-  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Draft label' } });
+  fireEvent.change(editorField('Label template'), { target: { value: 'Draft label' } });
   expect(save).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
   expect(save.mock.calls[0][0].config.overrides).toContainEqual({
@@ -111,8 +113,8 @@ it('paints draft bindings before Apply and restores saved paint on Cancel', asyn
   );
   const label = () => document.querySelector('[data-cell-id="device-1"] text')?.textContent;
   await waitFor(() => expect(label()).toBe('Saved'));
-  fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Preview draft' } });
+  selectElement('device-1');
+  fireEvent.change(editorField('Label template'), { target: { value: 'Preview draft' } });
   await waitFor(() => expect(label()).toBe('Preview draft'));
   expect(save).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
@@ -168,26 +170,29 @@ it('keeps saved monitoring active in edit mode and executes a changed draft only
     return <DrawioMapPanel {...p} options={saved} onOptionsChange={setSaved} />;
   }
   render(<SavedPanel />);
+  await screen.findByRole('button', { name: 'Named queries' });
+  openSection('Named queries');
   await screen.findByText(/No supported native query editor/);
   await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
   expect(nativeQuery.mock.calls[0][0].targets[0]).toEqual(expect.objectContaining({ refId: 'D' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+  selectElement('device-1');
   await waitFor(() =>
     expect(document.querySelector('[data-cell-id="device-1"] text')?.textContent).toContain('Preview 42')
   );
   expect(nativeQuery).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText('Native target JSON'), {
+  fireEvent.change(editorField('Native target JSON'), {
     target: { value: JSON.stringify({ refId: 'D', expr: 'changed' }) },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
   expect(nativeQuery).toHaveBeenCalledTimes(1);
+  openSection('Named queries');
   fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
   await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
   await waitFor(() =>
     expect(document.querySelector('[data-cell-id="device-1"] text')?.textContent).toContain('Preview 84')
   );
   expect(nativeQuery.mock.calls[1][0].targets[0].expr).toBe('changed');
-  fireEvent.change(screen.getByLabelText('Native target JSON'), {
+  fireEvent.change(editorField('Native target JSON'), {
     target: { value: JSON.stringify({ refId: 'D', expr: 'applied' }) },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
@@ -195,10 +200,11 @@ it('keeps saved monitoring active in edit mode and executes a changed draft only
   fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
   await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(3));
   expect(nativeQuery.mock.calls[2][0].targets[0].expr).toBe('applied');
-  expect(screen.getByLabelText('Diagram binding inspector')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+  expect(editorField('Diagram binding inspector')).toBeTruthy();
+  selectElement('device-1');
+  openSection('Named queries');
   fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-  await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+  await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
   expect(nativeQuery).toHaveBeenCalledTimes(3);
   act(() => receivers[2](96));
   await waitFor(() =>
@@ -437,6 +443,8 @@ describe('DrawioMapPanel', () => {
         );
       }
       const view = render(<SavedPanel />);
+      await screen.findByRole('button', { name: 'Named queries' });
+      openSection('Named queries');
       await screen.findByText(/No supported native query editor/);
       const imported = exportPatternDocument({
         ...config,
@@ -451,7 +459,7 @@ describe('DrawioMapPanel', () => {
           },
         ],
       });
-      fireEvent.change(screen.getByLabelText('Pattern document'), { target: { value: JSON.stringify(imported) } });
+      fireEvent.change(editorField('Pattern document'), { target: { value: JSON.stringify(imported) } });
       fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
       fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
       await waitFor(() => expect(screen.getByTestId('dmap-widget').getAttribute('aria-label')).toBe('Imported chart'));
@@ -460,11 +468,12 @@ describe('DrawioMapPanel', () => {
       expect(save).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
       await waitFor(() => expect(screen.queryByTestId('dmap-widget')).toBeNull());
-      fireEvent.click(screen.getByRole('button', { name: 'Select region' }));
+      selectElement('region');
       fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
-      fireEvent.change(screen.getByLabelText('Chart label'), { target: { value: 'Draft CPU' } });
+      fireEvent.change(editorField('Chart label'), { target: { value: 'Draft CPU' } });
       await waitFor(() => expect(screen.getByTestId('dmap-widget').getAttribute('aria-label')).toBe('Draft CPU'));
       expect(nativeQuery).not.toHaveBeenCalled();
+      openSection('Named queries');
       fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
       await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
       expect(nativeQuery).toHaveBeenCalledTimes(1);
@@ -1165,20 +1174,21 @@ it('paints every prepared pattern scope, clears on Cancel and preserves the sele
       options={{ ...options, rules: [], config, diagram: { xml: '', svg: small, hash: 'full-preview', updatedAt: '' } }}
     />
   );
-  fireEvent.click(await screen.findByRole('button', { name: 'Select a' }));
-  fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
-  fireEvent.change(screen.getByLabelText('Shape query'), { target: { value: 'q' } });
-  fireEvent.click(screen.getByLabelText('Write value to shape label'));
-  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Preview ${value}' } });
+  await screen.findByRole('combobox', { name: 'Diagram element' });
+  selectElement('a');
+  chooseOption('Edit scope', 'All elements matching this pattern');
+  chooseOption('Shape query', 'Metric');
+  fireEvent.click(editorField('Write value to shape label'));
+  fireEvent.change(editorField('Label template'), { target: { value: 'Preview ${value}' } });
   expect(nativeQuery).not.toHaveBeenCalled();
   const button = screen.getByRole('button', { name: 'Preview all pattern matches' });
   button.focus();
   fireEvent.click(button);
-  await waitFor(() => expect(screen.getByLabelText('Pattern preview progress').textContent).toContain('2 / 2'));
+  await waitFor(() => expect(editorField('Pattern preview progress').textContent).toContain('2 / 2'));
   await waitFor(() => expect(container.querySelector('[data-cell-id="b"] text')?.textContent).toBe('Preview 22'));
   expect(container.querySelector('[data-cell-id="a"] text')?.textContent).toBe('Preview 11');
   expect(document.activeElement).toBe(button);
-  expect((screen.getByLabelText('Edit scope') as HTMLSelectElement).value).toBe('pattern');
+  expect(screen.getByText('All elements matching this pattern')).toBeTruthy();
   expect(nativeQuery).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
   await waitFor(() => expect(container.querySelector('[data-cell-id="a"] text')?.textContent).toBe('A'));
@@ -1273,12 +1283,12 @@ describe('saved chart results in authoring previews', () => {
     await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
     expect(nativeQuery).toHaveBeenCalledTimes(1);
     expect(nativeQuery.mock.calls[0][0].maxDataPoints).toBe(400);
-    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    selectElement('chart');
+    chooseOption('Edit scope', 'All elements matching this pattern');
   }
   async function preview(completed = '1 / 1') {
     fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
-    await waitFor(() => expect(screen.getByLabelText('Pattern preview progress').textContent).toContain(completed));
+    await waitFor(() => expect(editorField('Pattern preview progress').textContent).toContain(completed));
   }
   function hoverFixture() {
     locationService.partial({ editPanel: null });
@@ -1358,12 +1368,11 @@ describe('saved chart results in authoring previews', () => {
               ? 'Streaming and partial'
               : 'No data';
       await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain(diagnostic));
-      fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
+      selectElement('chart');
+      openSection('Named queries');
       fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
       await waitFor(() =>
-        expect(screen.getByLabelText('Query preview result').textContent).toContain(
-          state === 'empty' ? 'empty' : 'ready'
-        )
+        expect(editorField('Query preview result').textContent).toContain(state === 'empty' ? 'empty' : 'ready')
       );
       expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual(
         state === 'empty' ? [400] : [400, 160]
@@ -1385,13 +1394,14 @@ describe('saved chart results in authoring previews', () => {
       ).toContain('42')
     );
     expect(screen.getAllByTestId('dmap-widget')[0].textContent).toContain('Datasource query failed');
-    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    selectElement('chart');
+    chooseOption('Edit scope', 'All elements matching this pattern');
+    openSection('Named queries');
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+    await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
     expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 200]);
-    expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
-    expect(screen.getByLabelText('Hover row preview').textContent).toContain('Selected value: 42');
+    expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
+    expect(editorField('Hover row preview').textContent).toContain('Selected value: 42');
   });
   it.each([
     ['error', false, 'individual'],
@@ -1425,16 +1435,17 @@ describe('saved chart results in authoring previews', () => {
       ).toContain('42')
     );
     expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 200]);
-    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    selectElement('chart');
+    chooseOption('Edit scope', 'All elements matching this pattern');
     const individual = async () => {
+      openSection('Named queries');
       fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-      await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+      await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
     };
     for (const action of first === 'individual' ? [individual, preview] : [preview, individual]) {
       await action();
-      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
-      expect(screen.getByLabelText('Hover row preview').textContent).toContain('Selected value: 42');
+      expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
+      expect(editorField('Hover row preview').textContent).toContain('Selected value: 42');
       expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 200]);
     }
     expect(
@@ -1666,7 +1677,7 @@ describe('saved chart results in authoring previews', () => {
     render(<DrawioMapPanel {...fixture()} />);
     await selectChart();
     await preview();
-    expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+    expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
     expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
     expect(nativeQuery).toHaveBeenCalledTimes(1);
     act(() => receivers[0](99));
@@ -1677,8 +1688,9 @@ describe('saved chart results in authoring previews', () => {
   it('reuses the same saved chart result for individual query preview', async () => {
     render(<DrawioMapPanel {...fixture()} />);
     await selectChart();
+    openSection('Named queries');
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+    await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
     expect(nativeQuery).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
   });
@@ -1712,29 +1724,30 @@ describe('saved chart results in authoring previews', () => {
           last === 'individual' ? '42' : 'Datasource query failed'
         )
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
-      fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+      selectElement('chart');
+      chooseOption('Edit scope', 'All elements matching this pattern');
       if (last === 'individual') {
         await preview();
-        expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+        expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
         act(() => savedFail());
       }
+      openSection('Named queries');
       fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
       await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
-      expect(screen.getByLabelText('Query preview result').textContent).toContain('loading');
-      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: unvalidated');
+      expect(editorField('Query preview result').textContent).toContain('loading');
+      expect(editorField('Affected metric resolution').textContent).toContain('chart: unvalidated');
       act(() => previewFail());
-      await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('error'));
-      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: failed');
-      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('Datasource query failed');
+      await waitFor(() => expect(editorField('Query preview result').textContent).toContain('error'));
+      expect(editorField('Affected metric resolution').textContent).toContain('chart: failed');
+      expect(editorField('Affected metric resolution').textContent).toContain('Datasource query failed');
       if (last === 'pattern') {
         act(() => savedReady());
         await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
         // Saved readiness must not overwrite a completed explicit failure.
-        expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: failed');
+        expect(editorField('Affected metric resolution').textContent).toContain('chart: failed');
         await preview();
-        expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
-        expect(screen.getByLabelText('Query preview result').textContent).toContain('error');
+        expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
+        expect(editorField('Query preview result').textContent).toContain('error');
       } else {
         expect(screen.getByTestId('dmap-widget').textContent).toContain('Datasource query failed');
       }
@@ -1775,14 +1788,15 @@ describe('saved chart results in authoring previews', () => {
     );
     render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('Datasource query failed'));
-    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    selectElement('chart');
+    chooseOption('Edit scope', 'All elements matching this pattern');
+    openSection('Named queries');
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
-    const report = screen.getByLabelText('Affected metric resolution').textContent;
+    await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
+    const report = editorField('Affected metric resolution').textContent;
     expect(report).toContain('chart: resolved');
     expect(report).toContain(parameterized ? 'other: unvalidated' : 'other: failed: No metric matches query q');
-    expect(screen.getByLabelText('Hover row preview').textContent).toContain('Scoped value: 42');
+    expect(editorField('Hover row preview').textContent).toContain('Scoped value: 42');
     expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 160]);
   });
   it('keeps unrelated queries unvalidated after an individual success', async () => {
@@ -1800,11 +1814,12 @@ describe('saved chart results in authoring previews', () => {
     };
     render(<DrawioMapPanel {...p} />);
     await selectChart();
+    openSection('Named queries');
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-    await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
-    expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: unvalidated');
-    expect(screen.getByLabelText('Hover row preview').textContent).toContain('Selected: 42');
-    expect(screen.getByLabelText('Hover row preview').textContent).not.toContain('Unrequested: 42');
+    await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
+    expect(editorField('Affected metric resolution').textContent).toContain('chart: unvalidated');
+    expect(editorField('Hover row preview').textContent).toContain('Selected: 42');
+    expect(editorField('Hover row preview').textContent).not.toContain('Unrequested: 42');
     expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400]);
   });
   it.each(['individual', 'pattern'] as const)(
@@ -1822,8 +1837,9 @@ describe('saved chart results in authoring previews', () => {
       render(<DrawioMapPanel {...fixture()} />);
       await selectChart();
       if (action === 'individual') {
+        openSection('Named queries');
         fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-        await waitFor(() => expect(screen.getByLabelText('Query preview result').textContent).toContain('ready'));
+        await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
       } else {
         await preview();
       }
@@ -1832,9 +1848,9 @@ describe('saved chart results in authoring previews', () => {
       expect(screen.getByTestId('dmap-widget').textContent).not.toContain('42');
       // One-shot preview reports retain their completed result; the saved chart follows monitoring.
       if (action === 'individual') {
-        expect(screen.getByLabelText('Query preview result').textContent).toContain('ready');
+        expect(editorField('Query preview result').textContent).toContain('ready');
       }
-      expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('chart: resolved');
+      expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
       expect(nativeQuery).toHaveBeenCalledTimes(1);
       expect(release).not.toHaveBeenCalled();
     }
@@ -1864,8 +1880,9 @@ describe('saved chart results in authoring previews', () => {
   it('executes a changed draft query without reusing or stopping its saved chart query', async () => {
     render(<DrawioMapPanel {...fixture()} />);
     await selectChart();
-    fireEvent.click(screen.getByText('Import native target JSON', { exact: true }));
-    fireEvent.change(screen.getByLabelText('Native target JSON'), {
+    openSection('Named queries');
+    openSection('Import native target JSON');
+    fireEvent.change(editorField('Native target JSON'), {
       target: { value: JSON.stringify({ refId: 'D', expr: 'changed' }) },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
@@ -1890,12 +1907,12 @@ describe('saved chart results in authoring previews', () => {
     };
     render(<DrawioMapPanel {...p} />);
     await selectChart();
-    fireEvent.click(screen.getByRole('button', { name: 'Select other' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    selectElement('other');
+    chooseOption('Edit scope', 'All elements matching this pattern');
     await preview('2 / 2');
     expect(nativeQuery).toHaveBeenCalledTimes(2);
     expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 160]);
-    expect(screen.getByLabelText('Hover row preview').textContent).toContain('84');
+    expect(editorField('Hover row preview').textContent).toContain('84');
     expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
   });
   it('releases hidden chart results, starts no hidden demand and cleans up on unmount', async () => {
@@ -1941,11 +1958,11 @@ describe('saved chart results in authoring previews', () => {
     await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('dmap-widget')).toBeNull();
     expect(nativeQuery).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Select chart' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    selectElement('chart');
+    chooseOption('Edit scope', 'All elements matching this pattern');
     await preview();
     expect(nativeQuery).toHaveBeenCalledTimes(2);
     expect(nativeQuery.mock.calls[1][0].maxDataPoints).toBe(160);
-    expect(screen.getByLabelText('Hover row preview').textContent).toContain('42');
+    expect(editorField('Hover row preview').textContent).toContain('42');
   });
 });

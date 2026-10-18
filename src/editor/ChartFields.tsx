@@ -1,6 +1,8 @@
+import { Button, Select } from '@grafana/ui';
 import React from 'react';
 import type { NamedQuery, Widget } from '../model/config';
 import { BindingFields, FreshnessFields, newBinding, TextField } from './BindingFields';
+import { EditorField, EditorSection } from './EditorLayout';
 
 export function ChartFields({
   widget,
@@ -16,20 +18,21 @@ export function ChartFields({
   onRemove: () => void;
 }) {
   return (
-    <fieldset>
-      <legend>Chart region</legend>
+    <EditorSection title="Chart region" defaultOpen>
       <p>Anchor: {widget.anchorCellId}</p>
-      <label>
-        Chart kind
-        <select
+      <EditorField label="Chart kind">
+        <Select
           aria-label="Chart kind"
           value={widget.kind}
-          onChange={(e) => onChange({ ...widget, kind: e.target.value as Widget['kind'] })}
-        >
-          <option value="sparkline">Sparkline</option>
-          <option value="bar">Bar gauge</option>
-        </select>
-      </label>
+          onChange={(selection) => onChange({ ...widget, kind: (selection.value ?? '') as Widget['kind'] })}
+          options={[
+            { value: 'sparkline', label: 'Sparkline' },
+            { value: 'bar', label: 'Bar gauge' },
+          ]}
+          menuShouldPortal
+          maxMenuHeight={240}
+        />
+      </EditorField>
       <BindingFields
         label="Chart"
         value={widget.binding}
@@ -61,7 +64,9 @@ export function ChartFields({
         value={widget.freshness}
         onChange={(freshness) => onChange({ ...widget, freshness })}
       />
-      <button onClick={onRemove}>Remove chart {widget.label}</button>
-    </fieldset>
+      <Button variant="secondary" size="sm" onClick={onRemove}>
+        Remove chart {widget.label}
+      </Button>
+    </EditorSection>
   );
 }

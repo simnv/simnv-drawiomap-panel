@@ -1,3 +1,4 @@
+import { chooseEditorOption, openEditorSection, selectDiagramElement } from './authoring-controls';
 import { PanelEditPage } from '@grafana/plugin-e2e';
 import { nativeQuery } from '../src/fixtures/authoring-config';
 import { attachJson, expect, observeQueries, saveDashboard, svg, test } from './authoring-fixtures';
@@ -24,12 +25,15 @@ test('saved visible chart supplies full pattern and individual previews without 
   const requests = observeQueries(page, uid);
   const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   const chart = page.getByTestId('dmap-panel').locator('[data-dmap-widget="saved-chart"]');
   const count = () => requests.filter((r) => r.queries.some((q) => q.refId === 'SAVED')).length;
   await expect(chart).toContainText('42');
   expect(count()).toBe(1);
-  await inspector.getByRole('button', { name: 'Select chart-1', exact: true }).click();
-  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('pattern');
+  await selectDiagramElement(inspector, 'chart-1');
+  await chooseEditorOption(inspector, 'Edit scope', 'All elements matching this pattern');
+  await openEditorSection(inspector, 'Pattern match details');
   await inspector.getByRole('button', { name: 'Preview all pattern matches', exact: true }).click();
   await expect(inspector.getByLabel('Pattern preview progress')).toContainText('1 / 1');
   await expect(inspector.getByLabel('Affected metric resolution')).toContainText('chart-1: resolved');
@@ -87,19 +91,23 @@ test('representative selection focuses the inspector, previews a pattern and sav
   await (await dashboard.getPanelByTitle('Sanitized topology 1')).clickOnMenuItem('Edit');
   const panelEditPage = new PanelEditPage(dashboard.ctx, { dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   await expect(inspector).toBeVisible();
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentOrigin);
   await page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"]').click();
   await expect(inspector.getByRole('heading', { name: 'device-1 bindings' })).toBeFocused();
-  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('pattern');
+  await chooseEditorOption(inspector, 'Edit scope', 'All elements matching this pattern');
+  await openEditorSection(inspector, 'Pattern match details');
   await expect(inspector.getByLabel('Affected binding preview')).toContainText('device-2');
-  await inspector.getByLabel('Shape query', { exact: true }).selectOption('health');
-  await inspector.getByLabel('Write value to shape label', { exact: true }).check();
+  await openEditorSection(inspector, 'Shape');
+  await chooseEditorOption(inspector, 'Shape query', 'health');
+  await inspector.getByRole('switch', { name: 'Write value to shape label', exact: true }).check({ force: true });
   await inspector.getByLabel('Label template', { exact: true }).fill('Shared ${cell.key}');
   await expect(page.getByTestId('dmap-panel').locator('[data-cell-id="device-2"] text').last()).toHaveText(
     'Shared device-2'
   );
-  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('element');
+  await chooseEditorOption(inspector, 'Edit scope', 'This element');
   await inspector.getByLabel('Label template', { exact: true }).fill('Override α');
   await expect(inspector.getByText('Element override: Yes', { exact: true })).toBeVisible();
   await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
@@ -111,9 +119,11 @@ test('representative selection focuses the inspector, previews a pattern and sav
   });
   expect(saved.dashboard.panels[1].options.config.overrides).toEqual([]);
   await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-  await inspector.getByRole('button', { name: 'Select device-1', exact: true }).click();
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
+  await selectDiagramElement(inspector, 'device-1');
   await expect(inspector.getByLabel('Label template', { exact: true })).toHaveValue('Override α');
-  await inspector.getByRole('button', { name: 'Select device-2', exact: true }).click();
+  await selectDiagramElement(inspector, 'device-2');
   await expect(inspector.getByRole('heading', { name: 'device-2 bindings' })).toBeFocused();
   await expect(inspector.getByLabel('Label template', { exact: true })).toHaveValue('Shared ${cell.key}');
 });
@@ -127,6 +137,8 @@ test('portable patterns keep their datasource across panels and importing or can
   const source = await createDiagram(config);
   await gotoPanelEditPage({ dashboard: { uid: source }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   await inspector.getByRole('button', { name: 'Export patterns', exact: true }).click();
   const document = await inspector.getByLabel('Exported pattern document', { exact: true }).inputValue();
   const trend = config.queries.find((q) => q.id === 'trend')!;
@@ -141,6 +153,8 @@ test('portable patterns keep their datasource across panels and importing or can
   });
   const requests = observeQueries(page, destination);
   await gotoPanelEditPage({ dashboard: { uid: destination }, id: '1' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   await expect(inspector).toBeVisible();
   expect(requests).toHaveLength(0);
   const importDraft = async () => {
@@ -166,6 +180,7 @@ test('portable patterns keep their datasource across panels and importing or can
       )
     )
     .toBe(true);
+  await openEditorSection(inspector, 'Named queries');
   await expect(inspector.getByLabel('Default datasource UID', { exact: true })).toHaveValue(defaultDatasource!.uid!);
 });
 
@@ -180,29 +195,31 @@ test('native query drafts require Preview, chart assignments and portable import
   const requests = observeQueries(page);
   const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   await expect(inspector).toBeVisible();
   await expect
     .poll(() => requests.filter((r) => r.queries.some((q) => q.refId === 'HEALTH')).length)
     .toBeGreaterThan(0);
   const detail = () => requests.filter((r) => r.queries.some((q) => q.refId === 'DETAIL'));
   expect(detail()).toHaveLength(0);
-  await inspector.getByLabel('Named query', { exact: true }).selectOption('trend');
+  await chooseEditorOption(inspector, 'Named query', 'Standalone trend');
   await inspector.getByRole('textbox', { name: 'Alias', exact: true }).fill('Saved native alias');
   await inspector.getByRole('textbox', { name: 'Alias', exact: true }).press('Tab');
-  await inspector.getByLabel('Named query', { exact: true }).selectOption('detail');
+  await chooseEditorOption(inspector, 'Named query', 'detail');
   await inspector.getByText('Import native target JSON', { exact: true }).click();
   const target = { refId: 'DETAIL', expr: 'vector(84)', range: true, opaque: { keep: ['native', 7] } };
   await inspector.getByLabel('Native target JSON', { exact: true }).fill(JSON.stringify(target));
   await inspector.getByRole('button', { name: 'Import native target', exact: true }).click();
   expect(detail()).toHaveLength(0);
-  await inspector.getByRole('button', { name: 'Select device-1', exact: true }).click();
+  await selectDiagramElement(inspector, 'device-1');
   await inspector.getByRole('button', { name: 'Preview query', exact: true }).click();
   await expect(inspector.getByLabel('Query preview result', { exact: true })).toContainText('ready');
   expect(detail()).toHaveLength(1);
   await expect(inspector.getByLabel('Hover row preview')).toContainText('84');
-  await inspector.getByRole('button', { name: 'Select ordinary-chart', exact: true }).click();
+  await selectDiagramElement(inspector, 'ordinary-chart');
   await inspector.getByRole('button', { name: 'Assign chart region', exact: true }).click();
-  await inspector.getByLabel('Chart query', { exact: true }).selectOption('detail');
+  await chooseEditorOption(inspector, 'Chart query', 'detail');
   await inspector.getByLabel('Chart label', { exact: true }).fill('Explicit trend α');
   expect(detail()).toHaveLength(1);
   await inspector.getByRole('button', { name: 'Export patterns', exact: true }).click();
@@ -220,7 +237,7 @@ test('native query drafts require Preview, chart assignments and portable import
   await inspector.getByRole('button', { name: 'Preview pattern import', exact: true }).click();
   for (const section of ['queries', 'patterns', 'widgets']) {
     for (const item of exported.config[section]) {
-      await preview.getByLabel(`${section} ${item.id} conflict`, { exact: true }).selectOption('replace');
+      await chooseEditorOption(preview, `${section} ${item.id} conflict`, 'Replace');
     }
   }
   await preview.getByRole('button', { name: 'Import into draft', exact: true }).click();
@@ -233,7 +250,9 @@ test('native query drafts require Preview, chart assignments and portable import
   expect(persisted.widgets.find((w: { id: string }) => w.id === 'chart-1').anchorCellId).toBe('ordinary-chart');
   expect(persisted.queries.find((q: { id: string }) => q.id === 'detail').source.target).toEqual(target);
   await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-  await inspector.getByRole('button', { name: 'Select ordinary-chart', exact: true }).click();
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
+  await selectDiagramElement(inspector, 'ordinary-chart');
   await expect(inspector.getByLabel('Chart label', { exact: true })).toHaveValue('Explicit trend α');
 });
 
@@ -269,6 +288,8 @@ test('native TestData scenario replacement deletes obsolete fields and persists 
   const requests = observeQueries(page, uid);
   const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   const scenario = panelEditPage
     .getByGrafanaSelector(selectors.components.DataSource.TestData.QueryTab.scenarioSelectContainer, {
       root: inspector,
@@ -292,6 +313,8 @@ test('native TestData scenario replacement deletes obsolete fields and persists 
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   expect(saved.dashboard.panels[0].options.config.queries[0].source.target).toEqual(replacement);
   await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   await expect(scenario).toBeVisible();
   expect(await exportedTarget()).toEqual(replacement);
   expect(requests).toHaveLength(0);
@@ -325,8 +348,11 @@ test('shared parameterized preview labels other matches unvalidated before Apply
   const requests = observeQueries(page, uid);
   await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
-  await inspector.getByRole('button', { name: 'Select device-1', exact: true }).click();
-  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('pattern');
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
+  await selectDiagramElement(inspector, 'device-1');
+  await chooseEditorOption(inspector, 'Edit scope', 'All elements matching this pattern');
+  await openEditorSection(inspector, 'Pattern match details');
   const preview = inspector.getByLabel('Metric resolution preview');
   await expect(preview).toContainText('device-2: unvalidated');
   expect(requests).toHaveLength(0);
@@ -370,16 +396,20 @@ test('full pattern preview resolves every device and draft chart, exposes a nonr
   const requests = observeQueries(page, uid);
   const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+  await openEditorSection(inspector, 'Named queries');
+  await openEditorSection(inspector, 'Portable patterns');
   const count = (ref: string) => requests.filter((r) => r.queries.some((q) => q.refId === ref)).length;
   await expect.poll(() => count('HEALTH')).toBeGreaterThan(0);
-  await inspector.getByRole('button', { name: 'Select device-2', exact: true }).click();
+  await selectDiagramElement(inspector, 'device-2');
   await inspector.getByRole('button', { name: 'Assign chart region', exact: true }).click();
-  await inspector.getByLabel('Chart query', { exact: true }).selectOption('detail');
+  await chooseEditorOption(inspector, 'Chart query', 'detail');
   await inspector.getByLabel('Chart label', { exact: true }).fill('Draft sample');
-  await inspector.getByRole('button', { name: 'Select device-1', exact: true }).click();
-  await inspector.getByLabel('Edit scope', { exact: true }).selectOption('pattern');
-  await inspector.getByLabel('Shape query', { exact: true }).selectOption('detail');
-  await inspector.getByLabel('Write value to shape label', { exact: true }).check();
+  await selectDiagramElement(inspector, 'device-1');
+  await chooseEditorOption(inspector, 'Edit scope', 'All elements matching this pattern');
+  await openEditorSection(inspector, 'Pattern match details');
+  await openEditorSection(inspector, 'Shape');
+  await chooseEditorOption(inspector, 'Shape query', 'detail');
+  await inspector.getByRole('switch', { name: 'Write value to shape label', exact: true }).check({ force: true });
   await inspector.getByLabel('Label template', { exact: true }).fill('Sample ${value}');
   expect(count('DETAIL')).toBe(0);
   expect(count('UNRELATED')).toBe(0);
@@ -394,14 +424,14 @@ test('full pattern preview resolves every device and draft chart, exposes a nonr
   await expect(panel.locator('[data-cell-id="device-2"] text').last()).toHaveText('Sample 47');
   await expect(panel.locator('[data-dmap-widget="chart-1"]')).toContainText('47');
   await expect(inspector.getByLabel('Hover row preview')).toContainText('23');
-  await expect(inspector.getByLabel('Edit scope', { exact: true })).toHaveValue('pattern');
+  await expect(inspector.getByText('All elements matching this pattern', { exact: true })).toBeVisible();
   await testInfo.attach('full-pattern-resolved', { body: await page.screenshot(), contentType: 'image/png' });
   await inspector.getByRole('button', { name: 'Cancel changes', exact: true }).click();
   await expect(panel.locator('[data-dmap-widget="chart-1"]')).toHaveCount(0);
   await expect(panel.locator('[data-cell-id="device-1"] text').last()).toHaveText('Router α');
   expect(count('DETAIL')).toBe(2);
   // A new native target returns no metric for device-2. Editing it alone remains request-free.
-  await inspector.getByLabel('Named query', { exact: true }).selectOption('detail');
+  await chooseEditorOption(inspector, 'Named query', 'detail');
   await inspector.getByText('Import native target JSON', { exact: true }).click();
   const target = {
     refId: 'DETAIL',
@@ -425,7 +455,7 @@ test('full pattern preview resolves every device and draft chart, exposes a nonr
   expect(count('DETAIL')).toBe(4);
   expect(count('UNRELATED')).toBe(0);
   await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
-  await inspector.getByRole('button', { name: 'Select device-2', exact: true }).click();
+  await selectDiagramElement(inspector, 'device-2');
   await expect(preview).toContainText('device-2: unvalidated');
   expect(count('DETAIL')).toBe(4);
   await attachJson(testInfo, 'full-pattern-requests', {

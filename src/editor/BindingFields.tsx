@@ -1,3 +1,4 @@
+import { Button, Input, Select, Switch } from '@grafana/ui';
 import React, { useId } from 'react';
 import type {
   DisplayConfig,
@@ -9,6 +10,7 @@ import type {
   StatusRule,
 } from '../model/config';
 import type { ReducerName } from '../types';
+import { EditorField, EditorSection } from './EditorLayout';
 
 export function TextField({
   label,
@@ -22,10 +24,9 @@ export function TextField({
   type?: string;
 }) {
   return (
-    <label style={{ display: 'block' }}>
-      {label}
-      <input aria-label={label} type={type} value={value} onChange={(e) => onChange(e.target.value)} />
-    </label>
+    <EditorField label={label}>
+      <Input aria-label={label} type={type} value={value} onChange={(e) => onChange(e.currentTarget.value)} />
+    </EditorField>
   );
 }
 export const newBinding = (queryId = ''): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
@@ -39,17 +40,16 @@ export function FreshnessFields({
   onChange: (value?: FreshnessPolicy) => void;
 }) {
   return (
-    <fieldset>
-      <legend>{label} sample freshness</legend>
-      <label>
-        {label} check sample freshness
-        <input
-          type="checkbox"
+    <EditorSection title={`${label} sample freshness`} defaultOpen>
+      <EditorField label={`${label} check sample freshness`}>
+        <Switch
           aria-label={`${label} check sample freshness`}
-          checked={!!value}
-          onChange={(e) => onChange(e.target.checked ? { expectedIntervalMs: 15000, staleAfterMs: 45000 } : undefined)}
+          value={!!value}
+          onChange={(e) =>
+            onChange(e.currentTarget.checked ? { expectedIntervalMs: 15000, staleAfterMs: 45000 } : undefined)
+          }
         />
-      </label>
+      </EditorField>
       <p>Without a policy, sample age does not imply stale data.</p>
       {value && (
         <>
@@ -67,7 +67,7 @@ export function FreshnessFields({
           />
         </>
       )}
-    </fieldset>
+    </EditorSection>
   );
 }
 export function BindingFields({
@@ -85,53 +85,46 @@ export function BindingFields({
 }) {
   const fieldListId = useId();
   return (
-    <fieldset>
-      <legend>{label}</legend>
-      <label>
-        {label} query
-        <select
+    <EditorSection title={`${label} metric`} defaultOpen>
+      <EditorField label={`${label} query`}>
+        <Select
           aria-label={`${label} query`}
           value={value?.queryId ?? ''}
-          onChange={(e) =>
-            onChange(e.target.value ? { ...(value ?? newBinding()), queryId: e.target.value } : undefined)
+          onChange={(selection) =>
+            onChange(
+              (selection.value ?? '') ? { ...(value ?? newBinding()), queryId: selection.value ?? '' } : undefined
+            )
           }
-        >
-          <option value="">Inherit / unset</option>
-          {queries.map((q) => (
-            <option key={q.id} value={q.id}>
-              {q.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={[{ value: '', label: 'Inherit / unset' }, ...queries.map((q) => ({ value: q.id, label: q.name }))]}
+          menuShouldPortal
+          maxMenuHeight={240}
+        />
+      </EditorField>
       {value && (
         <>
-          <label>
-            {label} result field
-            <input
+          <EditorField label={`${label} result field`}>
+            <Input
               aria-label={`${label} result field`}
               list={fieldListId}
               value={value.field ?? ''}
-              onChange={(e) => onChange({ ...value, field: e.target.value || undefined })}
+              onChange={(e) => onChange({ ...value, field: e.currentTarget.value || undefined })}
             />
-          </label>
+          </EditorField>
           <datalist id={fieldListId}>
             {fields.map((field) => (
               <option key={field} value={field} />
             ))}
           </datalist>
-          <label>
-            {label} reducer
-            <select
+          <EditorField label={`${label} reducer`}>
+            <Select
               aria-label={`${label} reducer`}
               value={value.reducer}
-              onChange={(e) => onChange({ ...value, reducer: e.target.value as ReducerName })}
-            >
-              {['last', 'mean', 'min', 'max'].map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </select>
-          </label>
+              onChange={(selection) => onChange({ ...value, reducer: (selection.value ?? '') as ReducerName })}
+              options={['last', 'mean', 'min', 'max'].map((r) => ({ value: r, label: r }))}
+              menuShouldPortal
+              maxMenuHeight={240}
+            />
+          </EditorField>
           {Object.entries(value.match).map(([key, match]) => (
             <div key={key}>
               <TextField
@@ -139,7 +132,9 @@ export function BindingFields({
                 value={match}
                 onChange={(v) => onChange({ ...value, match: { ...value.match, [key]: v } })}
               />
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   const next = { ...value.match };
                   delete next[key];
@@ -147,10 +142,12 @@ export function BindingFields({
                 }}
               >
                 Remove {label} match {key}
-              </button>
+              </Button>
             </div>
           ))}
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => {
               let n = 1;
               while (`label${n}` in value.match) {
@@ -160,15 +157,14 @@ export function BindingFields({
             }}
           >
             Add {label} matcher
-          </button>
+          </Button>
           {Object.keys(value.match).map((key) => (
-            <label key={key}>
-              {label} label name {key}
-              <input
+            <EditorField label={`${label} label name ${key}`} key={key}>
+              <Input
                 aria-label={`${label} label name ${key}`}
                 defaultValue={key}
                 onBlur={(e) => {
-                  const name = e.target.value;
+                  const name = e.currentTarget.value;
                   if (name === key || Object.hasOwn(value.match, name)) {
                     return;
                   }
@@ -179,11 +175,11 @@ export function BindingFields({
                   onChange({ ...value, match: next });
                 }}
               />
-            </label>
+            </EditorField>
           ))}
         </>
       )}
-    </fieldset>
+    </EditorSection>
   );
 }
 const states = ['normal', 'warning', 'critical', 'down'] as const;
@@ -198,18 +194,18 @@ function ConditionFields({
 }) {
   return (
     <>
-      <label>
-        {label} state
-        <select
+      <EditorField label={`${label} state`}>
+        <Select
           aria-label={`${label} state`}
           value={condition.state}
-          onChange={(e) => onChange({ ...condition, state: e.target.value as StatusCondition['state'] })}
-        >
-          {states.map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
-      </label>
+          onChange={(selection) =>
+            onChange({ ...condition, state: (selection.value ?? '') as StatusCondition['state'] })
+          }
+          options={states.map((s) => ({ value: s, label: s }))}
+          menuShouldPortal
+          maxMenuHeight={240}
+        />
+      </EditorField>
       <TextField
         label={`${label} reason`}
         value={condition.reason}
@@ -237,85 +233,82 @@ export function DisplayFields({
   const setStatus = (next: StatusRule) => onChange({ status: next });
   return (
     <>
-      <label>
-        Enable shape binding
-        <input
-          aria-label="Enable shape binding"
-          type="checkbox"
-          checked={value.shape?.enabled !== false}
-          onChange={(e) => onChange({ shape: { ...value.shape, enabled: e.target.checked } })}
-        />
-      </label>
-      <label>
-        Enable link binding
-        <input
-          aria-label="Enable link binding"
-          type="checkbox"
-          checked={value.link?.enabled !== false}
-          onChange={(e) => onChange({ link: { ...value.link, enabled: e.target.checked } })}
-        />
-      </label>
-      <label>
-        Enable element
-        <input
-          aria-label="Enable element"
-          type="checkbox"
-          checked={value.enabled !== false}
-          onChange={(e) => onChange({ enabled: e.target.checked })}
-        />
-      </label>
-      <TextField label="Label template" value={value.label ?? ''} onChange={(label) => onChange({ label })} />
-      <label>
-        Write value to shape label
-        <input
-          aria-label="Write value to shape label"
-          type="checkbox"
-          checked={!!value.shape?.text}
-          onChange={(e) => onChange({ shape: { ...value.shape, text: e.target.checked } })}
-        />
-      </label>
-      <TextField label="Drilldown URL" value={value.url ?? ''} onChange={(url) => onChange({ url })} />
-      <BindingFields
-        label="Shape"
-        value={value.shape?.binding}
-        queries={queries}
-        fields={fields}
-        onChange={(binding) => onChange({ shape: { ...value.shape, binding } })}
-      />
-      <label>
-        Shape colour target
-        <select
-          aria-label="Shape colour target"
-          value={value.shape?.target ?? 'icon'}
-          onChange={(e) =>
-            onChange({ shape: { ...value.shape, target: e.target.value as 'icon' | 'shape' | 'stroke' } })
-          }
-        >
-          {['icon', 'shape', 'stroke'].map((v) => (
-            <option key={v}>{v}</option>
-          ))}
-        </select>
-      </label>
-      {(['a2bBinding', 'b2aBinding', 'capacityBinding'] as const).map((key, i) => (
+      <EditorSection title="General" defaultOpen>
+        <EditorField label="Enable element">
+          <Switch
+            aria-label="Enable element"
+            value={value.enabled !== false}
+            onChange={(e) => onChange({ enabled: e.currentTarget.checked })}
+          />
+        </EditorField>
+        <TextField label="Label template" value={value.label ?? ''} onChange={(label) => onChange({ label })} />
+        <EditorField label="Write value to shape label">
+          <Switch
+            aria-label="Write value to shape label"
+            value={!!value.shape?.text}
+            onChange={(e) => onChange({ shape: { ...value.shape, text: e.currentTarget.checked } })}
+          />
+        </EditorField>
+        <TextField label="Drilldown URL" value={value.url ?? ''} onChange={(url) => onChange({ url })} />
+      </EditorSection>
+      <EditorSection title="Shape">
+        <EditorField label="Enable shape binding">
+          <Switch
+            aria-label="Enable shape binding"
+            value={value.shape?.enabled !== false}
+            onChange={(e) => onChange({ shape: { ...value.shape, enabled: e.currentTarget.checked } })}
+          />
+        </EditorField>
         <BindingFields
-          key={key}
-          label={['A to B', 'B to A', 'Capacity'][i]}
-          value={value.link?.[key]}
+          label="Shape"
+          value={value.shape?.binding}
           queries={queries}
           fields={fields}
-          onChange={(binding) => onChange({ link: { ...value.link, [key]: binding } })}
+          onChange={(binding) => onChange({ shape: { ...value.shape, binding } })}
         />
-      ))}
-      <TextField
-        label="Link capacity"
-        type="number"
-        value={typeof value.link?.capacity === 'number' ? value.link.capacity : ''}
-        onChange={(v) => onChange({ link: { ...value.link, capacity: v ? Number(v) : undefined } })}
-      />
-      <fieldset>
-        <legend>Explicit health status</legend>
+        <EditorField label="Shape colour target">
+          <Select
+            aria-label="Shape colour target"
+            value={value.shape?.target ?? 'icon'}
+            onChange={(selection) =>
+              onChange({ shape: { ...value.shape, target: (selection.value ?? '') as 'icon' | 'shape' | 'stroke' } })
+            }
+            options={['icon', 'shape', 'stroke'].map((v) => ({ value: v, label: v }))}
+            menuShouldPortal
+            maxMenuHeight={240}
+          />
+        </EditorField>
+      </EditorSection>
+      <EditorSection title="Link">
+        <EditorField label="Enable link binding">
+          <Switch
+            aria-label="Enable link binding"
+            value={value.link?.enabled !== false}
+            onChange={(e) => onChange({ link: { ...value.link, enabled: e.currentTarget.checked } })}
+          />
+        </EditorField>
+        {(['a2bBinding', 'b2aBinding', 'capacityBinding'] as const).map((key, i) => (
+          <BindingFields
+            key={key}
+            label={['A to B', 'B to A', 'Capacity'][i]}
+            value={value.link?.[key]}
+            queries={queries}
+            fields={fields}
+            onChange={(binding) => onChange({ link: { ...value.link, [key]: binding } })}
+          />
+        ))}
+        <TextField
+          label="Link capacity"
+          type="number"
+          value={typeof value.link?.capacity === 'number' ? value.link.capacity : ''}
+          onChange={(v) => onChange({ link: { ...value.link, capacity: v ? Number(v) : undefined } })}
+        />
+      </EditorSection>
+      <EditorSection title="Explicit health status">
         {!status ? (
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() =>
               setStatus({
                 kind: 'mapping',
@@ -326,18 +319,16 @@ export function DisplayFields({
             }
           >
             Add health rule
-          </button>
+          </Button>
         ) : (
           <>
-            <label>
-              Enable health status
-              <input
-                type="checkbox"
+            <EditorField label="Enable health status">
+              <Switch
                 aria-label="Enable health status"
-                checked={status.enabled !== false}
-                onChange={(e) => setStatus({ ...status, enabled: e.target.checked })}
+                value={status.enabled !== false}
+                onChange={(e) => setStatus({ ...status, enabled: e.currentTarget.checked })}
               />
-            </label>
+            </EditorField>
             <BindingFields
               label="Health"
               queries={queries}
@@ -345,15 +336,14 @@ export function DisplayFields({
               value={status.binding}
               onChange={(binding) => setStatus({ ...status, binding: binding ?? newBinding() })}
             />
-            <label>
-              Health rule type
-              <select
+            <EditorField label="Health rule type">
+              <Select
                 aria-label="Health rule type"
                 value={status.kind}
-                onChange={(e) => {
+                onChange={(selection) => {
                   const { binding, default: fallback, enabled, freshness } = status;
                   setStatus(
-                    e.target.value === 'mapping'
+                    (selection.value ?? '') === 'mapping'
                       ? {
                           kind: 'mapping',
                           binding,
@@ -374,11 +364,14 @@ export function DisplayFields({
                         }
                   );
                 }}
-              >
-                <option value="mapping">Explicit value mapping</option>
-                <option value="predicates">Opt-in thresholds</option>
-              </select>
-            </label>
+                options={[
+                  { value: 'mapping', label: 'Explicit value mapping' },
+                  { value: 'predicates', label: 'Opt-in thresholds' },
+                ]}
+                menuShouldPortal
+                maxMenuHeight={240}
+              />
+            </EditorField>
             <ConditionFields
               label="Default health"
               condition={status.default}
@@ -405,25 +398,23 @@ export function DisplayFields({
                   }}
                 />
                 {status.kind === 'predicates' && (
-                  <label>
-                    Health condition {i + 1} operator
-                    <select
+                  <EditorField label={`Health condition ${i + 1} operator`}>
+                    <Select
                       aria-label={`Health condition ${i + 1} operator`}
                       value={status.predicates[i].op}
-                      onChange={(e) =>
+                      onChange={(selection) =>
                         setStatus({
                           ...status,
                           predicates: status.predicates.map((old, j) =>
-                            i === j ? { ...old, op: e.target.value as 'gt' } : old
+                            i === j ? { ...old, op: (selection.value ?? '') as 'gt' } : old
                           ),
                         })
                       }
-                    >
-                      {['eq', 'ne', 'gt', 'gte', 'lt', 'lte'].map((op) => (
-                        <option key={op}>{op}</option>
-                      ))}
-                    </select>
-                  </label>
+                      options={['eq', 'ne', 'gt', 'gte', 'lt', 'lte'].map((op) => ({ value: op, label: op }))}
+                      menuShouldPortal
+                      maxMenuHeight={240}
+                    />
+                  </EditorField>
                 )}
                 <ConditionFields
                   label={`Health condition ${i + 1}`}
@@ -442,7 +433,9 @@ export function DisplayFields({
                     }
                   }}
                 />
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() =>
                     status.kind === 'mapping'
                       ? setStatus({ ...status, mappings: status.mappings.filter((_, j) => i !== j) })
@@ -450,10 +443,12 @@ export function DisplayFields({
                   }
                 >
                   Remove health condition {i + 1}
-                </button>
+                </Button>
               </div>
             ))}
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() =>
                 status.kind === 'mapping'
                   ? setStatus({
@@ -470,21 +465,19 @@ export function DisplayFields({
               }
             >
               Add health condition
-            </button>
-            <label>
-              Check sample freshness
-              <input
-                type="checkbox"
+            </Button>
+            <EditorField label="Check sample freshness">
+              <Switch
                 aria-label="Check sample freshness"
-                checked={!!status.freshness}
+                value={!!status.freshness}
                 onChange={(e) =>
                   setStatus({
                     ...status,
-                    freshness: e.target.checked ? { expectedIntervalMs: 15000, staleAfterMs: 45000 } : undefined,
+                    freshness: e.currentTarget.checked ? { expectedIntervalMs: 15000, staleAfterMs: 45000 } : undefined,
                   })
                 }
               />
-            </label>
+            </EditorField>
             {status.freshness && (
               <>
                 <TextField
@@ -507,27 +500,23 @@ export function DisplayFields({
             )}
           </>
         )}
-      </fieldset>
-      <fieldset>
-        <legend>Hover rows</legend>
-        <label>
-          Enable hover rows
-          <input
+      </EditorSection>
+      <EditorSection title="Hover rows">
+        <EditorField label="Enable hover rows">
+          <Switch
             aria-label="Enable hover rows"
-            type="checkbox"
-            checked={value.hover?.enabled !== false}
-            onChange={(e) => onChange({ hover: { ...value.hover, rows, enabled: e.target.checked } })}
+            value={value.hover?.enabled !== false}
+            onChange={(e) => onChange({ hover: { ...value.hover, rows, enabled: e.currentTarget.checked } })}
           />
-        </label>
+        </EditorField>
         {rows.map((row, i) => (
           <div key={i}>
-            <label>
-              Hover row {i + 1} kind
-              <select
+            <EditorField label={`Hover row ${i + 1} kind`}>
+              <Select
                 aria-label={`Hover row ${i + 1} kind`}
                 value={row.kind}
-                onChange={(e) => {
-                  const kind = e.target.value;
+                onChange={(selection) => {
+                  const kind = selection.value ?? '';
                   const label = row.label;
                   setRow(
                     i,
@@ -538,12 +527,11 @@ export function DisplayFields({
                         : { kind: kind as 'value' | 'history', label, binding: newBinding(first) }
                   );
                 }}
-              >
-                {['metadata', 'value', 'history', 'drilldown'].map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
-              </select>
-            </label>
+                options={['metadata', 'value', 'history', 'drilldown'].map((k) => ({ value: k, label: k }))}
+                menuShouldPortal
+                maxMenuHeight={240}
+              />
+            </EditorField>
             <TextField
               label={`Hover row ${i + 1} label`}
               value={row.label}
@@ -587,13 +575,19 @@ export function DisplayFields({
                 />
               </>
             )}
-            <button onClick={() => setRows(rows.filter((_, j) => i !== j))}>Remove hover row {i + 1}</button>
+            <Button variant="secondary" size="sm" onClick={() => setRows(rows.filter((_, j) => i !== j))}>
+              Remove hover row {i + 1}
+            </Button>
           </div>
         ))}
-        <button onClick={() => setRows([...rows, { kind: 'metadata', label: 'Identity', path: 'cell.key' }])}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setRows([...rows, { kind: 'metadata', label: 'Identity', path: 'cell.key' }])}
+        >
           Add hover row
-        </button>
-      </fieldset>
+        </Button>
+      </EditorSection>
     </>
   );
 }

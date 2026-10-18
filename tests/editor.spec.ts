@@ -1,3 +1,4 @@
+import { selectDiagramElement } from './authoring-controls';
 import { expect, saveDashboard, test } from './authoring-fixtures';
 import { inflateRawSync } from 'node:zlib';
 
@@ -152,6 +153,6 @@ test('geometry export keeps semantic identities and chart assignments through da
   expect(decoded).toContain('pg-id="device-1"');
   expect(options.config.widgets[0].anchorCellId).toBe('chart-1');
   await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-  await inspector.getByRole('button', { name: 'Select chart-1', exact: true }).click();
+  await selectDiagramElement(inspector, 'chart-1');
   await expect(inspector.getByLabel('Chart label', { exact: true })).toHaveValue('Standalone trend');
 });

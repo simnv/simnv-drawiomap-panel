@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getDisplayProcessor, type PanelData } from '@grafana/data';
-import { useTheme2 } from '@grafana/ui';
+import { useTheme2, useStyles2, Alert, Button, Select } from '@grafana/ui';
 import { resolvePatterns } from '../binding/patterns';
 import { cellAt } from '../interact/hit';
 import { validateConfig, type DiagramConfigV2 } from '../model/config';
@@ -22,6 +22,7 @@ import { PatternTransfer } from './PatternTransfer';
 import { DrawioModal } from './DrawioModal';
 import { sanitizeSvg } from '../render/sanitize';
 import { fnv1a } from '../util/hash';
+import { EditorField, EditorSection, getEditorStyles } from './EditorLayout';
 export interface BindingEditorProps {
   config: DiagramConfigV2;
   cells: CellIndex;
@@ -53,6 +54,8 @@ export function BindingEditor({
   onDiagramPreview,
 }: BindingEditorProps) {
   const theme = useTheme2();
+  const styles = useStyles2(getEditorStyles);
+  const elementOptions = useMemo(() => Array.from(cells.keys(), (id) => ({ label: id, value: id })), [cells]);
   const [draft, dispatch] = useReducer(reduceDraft, config, createDraft);
   const [savedDiagram, setSavedDiagram] = useState(diagram);
   const [draftDiagram, setDraftDiagram] = useState(diagram);
@@ -306,317 +309,368 @@ export function BindingEditor({
         }
       </style>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
-      <aside
-        aria-label="Diagram binding inspector"
-        style={{ width: inspectorWidth, flexShrink: 0, boxSizing: 'border-box', overflow: 'auto', padding: 12 }}
-      >
-        {draftDiagram && <button onClick={() => setGeometryOpen(true)}>Edit geometry in draw.io</button>}
-        {geometryOpen && draftDiagram && (
-          <DrawioModal
-            xml={draftDiagram.xml}
-            title="Diagram geometry"
-            mode="edit"
-            isDark={theme.isDark}
-            onClose={() => setGeometryOpen(false)}
-            onSave={(result) => {
-              try {
-                const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(result.svg).svg));
-                const problems = cellIdentityDiagnostics(cellMetas(index));
-                if (problems.length) {
-                  throw new Error(problems.map((d) => d.message).join('\n'));
-                }
-                const next = { ...result, hash: fnv1a(result.svg + result.xml), updatedAt: new Date().toISOString() };
-                setDraftDiagram(next);
-                onDiagramPreview?.(next);
-                setGeometryError('');
-              } catch (e) {
-                setGeometryError((e as Error).message);
-              }
-            }}
-          />
-        )}
-        {geometryError && <p role="alert">{geometryError}</p>}
-        <div aria-label="Element selection" style={{ maxHeight: 96, overflow: 'auto' }}>
-          {Array.from(cells.keys()).map((id) => (
-            <button key={id} onClick={() => select(id)}>
-              Select {id}
-            </button>
-          ))}
+      <aside aria-label="Diagram binding inspector" className={styles.inspector} style={{ width: inspectorWidth }}>
+        <div className={styles.header}>
+          <h3>Diagram bindings</h3>
+          <EditorField label="Diagram element" noMargin>
+            <Select
+              aria-label="Diagram element"
+              placeholder="Search elements"
+              options={elementOptions}
+              value={draft.cellId ?? null}
+              onChange={(option) => option.value && select(option.value)}
+              isSearchable
+              menuShouldPortal
+              maxMenuHeight={240}
+              noOptionsMessage="No matching elements"
+            />
+          </EditorField>
         </div>
-        <BindingInspector
-          draft={draft}
-          binding={inspected}
-          affected={affected}
-          selectionVersion={selectionVersion}
-          dispatch={dispatch}
-          fields={fields}
-          chartEligible={selected?.shape?.localName === 'rect'}
-        />
-        {draft.config.widgets
-          .filter((w) => !cells.has(w.anchorCellId))
-          .map((widget) => (
-            <p key={widget.id}>
-              Chart {widget.label} has missing anchor {widget.anchorCellId}.
-              <button onClick={() => dispatch({ type: 'remove-widget', id: widget.id })}>
-                Remove chart {widget.label}
-              </button>
-            </p>
-          ))}
-        {draft.cellId && (
-          <button
-            onClick={() => {
-              let n = 1;
-              while (draft.config.patterns.some((p) => p.id === `pattern-${n}`)) {
-                n++;
-              }
-              const id = `pattern-${n}`;
-              dispatch({
-                type: 'pattern',
-                pattern: { id, name: `Pattern ${n}`, select: { ids: [draft.cellId!] }, display: {} },
-              });
-              dispatch({ type: 'scope', scope: 'pattern', patternId: id });
-            }}
-          >
-            Create shared pattern
-          </button>
-        )}
-        {draft.scope === 'pattern' && (
-          <section aria-label="Full pattern preview">
-            <button
-              disabled={!service?.controller || !context || !!diagnostics.length || !!queryError}
-              onClick={() => {
-                patternRelease.current?.();
-                if (!service?.controller || !context) {
-                  return;
+        <div className={styles.body} role="region" aria-label="Binding editor fields">
+          {draftDiagram && (
+            <Button variant="secondary" size="sm" onClick={() => setGeometryOpen(true)}>
+              Edit geometry in draw.io
+            </Button>
+          )}
+          {geometryOpen && draftDiagram && (
+            <DrawioModal
+              xml={draftDiagram.xml}
+              title="Diagram geometry"
+              mode="edit"
+              isDark={theme.isDark}
+              onClose={() => setGeometryOpen(false)}
+              onSave={(result) => {
+                try {
+                  const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(result.svg).svg));
+                  const problems = cellIdentityDiagnostics(cellMetas(index));
+                  if (problems.length) {
+                    throw new Error(problems.map((d) => d.message).join('\n'));
+                  }
+                  const next = { ...result, hash: fnv1a(result.svg + result.xml), updatedAt: new Date().toISOString() };
+                  setDraftDiagram(next);
+                  onDiagramPreview?.(next);
+                  setGeometryError('');
+                } catch (e) {
+                  setGeometryError((e as Error).message);
                 }
-                setPreviewAction('pattern');
-                patternRelease.current = previewPattern(
-                  service.controller,
-                  plan,
-                  draft.config,
-                  affected,
-                  context,
-                  (value) => {
-                    setPatternState({ key: patternKey, value });
-                    onPatternPreview?.(value);
-                  },
-                  undefined,
-                  [...prepared, ...(localPreview ? [localPreview] : [])]
-                );
+              }}
+            />
+          )}
+          {geometryError && (
+            <Alert title="Geometry could not be saved" severity="error">
+              {geometryError}
+            </Alert>
+          )}
+          <BindingInspector
+            draft={draft}
+            binding={inspected}
+            affected={affected}
+            selectionVersion={selectionVersion}
+            dispatch={dispatch}
+            fields={fields}
+            chartEligible={selected?.shape?.localName === 'rect'}
+          />
+          {draft.config.widgets
+            .filter((w) => !cells.has(w.anchorCellId))
+            .map((widget) => (
+              <p key={widget.id}>
+                Chart {widget.label} has missing anchor {widget.anchorCellId}.
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => dispatch({ type: 'remove-widget', id: widget.id })}
+                >
+                  Remove chart {widget.label}
+                </Button>
+              </p>
+            ))}
+          {draft.cellId && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                let n = 1;
+                while (draft.config.patterns.some((p) => p.id === `pattern-${n}`)) {
+                  n++;
+                }
+                const id = `pattern-${n}`;
+                dispatch({
+                  type: 'pattern',
+                  pattern: { id, name: `Pattern ${n}`, select: { ids: [draft.cellId!] }, display: {} },
+                });
+                dispatch({ type: 'scope', scope: 'pattern', patternId: id });
               }}
             >
-              Preview all pattern matches
-            </button>
-            {patternState?.key === patternKey && (
-              <output aria-label="Pattern preview progress" aria-live="polite">
-                {
-                  patternResults.filter(({ snapshot }) => snapshot.state !== 'idle' && snapshot.state !== 'loading')
-                    .length
-                }{' '}
-                / {patternResults.length} query scopes checked
-              </output>
-            )}
-          </section>
-        )}
-        {draft.scope === 'pattern' && (
-          <ul aria-label="Affected binding preview">
-            {affected.map((id) => (
-              <li key={id}>
-                {id}: {JSON.stringify(plan.cells[id]?.display)}
-              </li>
-            ))}
-          </ul>
-        )}
-        {diagnostics.length > 0 && (
-          <ul role="alert">
-            {diagnostics.map((d, i) => (
-              <li key={i}>
-                {d.path}: {d.message}
-              </li>
-            ))}
-          </ul>
-        )}
-        {data && (
-          <section aria-label="Metric resolution preview">
-            <h4>Metric resolution preview</h4>
-            <ul aria-label="Affected metric resolution">
-              {matchPreviews.map((match) => (
-                <li key={match.cellId}>
-                  {match.cellId}: {match.state}
-                  {match.failures.length > 0 && `: ${match.failures.join(' ')}`}
-                  {match.unvalidated && ' (unvalidated bindings require explicit Preview for this element)'}
-                </li>
-              ))}
-            </ul>
-            {metricDiagnostics.length ? (
+              Create shared pattern
+            </Button>
+          )}
+          {draft.scope === 'pattern' && (
+            <section aria-label="Full pattern preview">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!service?.controller || !context || !!diagnostics.length || !!queryError}
+                onClick={() => {
+                  patternRelease.current?.();
+                  if (!service?.controller || !context) {
+                    return;
+                  }
+                  setPreviewAction('pattern');
+                  patternRelease.current = previewPattern(
+                    service.controller,
+                    plan,
+                    draft.config,
+                    affected,
+                    context,
+                    (value) => {
+                      setPatternState({ key: patternKey, value });
+                      onPatternPreview?.(value);
+                    },
+                    undefined,
+                    [...prepared, ...(localPreview ? [localPreview] : [])]
+                  );
+                }}
+              >
+                Preview all pattern matches
+              </Button>
+              {patternState?.key === patternKey && (
+                <output aria-label="Pattern preview progress" aria-live="polite">
+                  {
+                    patternResults.filter(({ snapshot }) => snapshot.state !== 'idle' && snapshot.state !== 'loading')
+                      .length
+                  }{' '}
+                  / {patternResults.length} query scopes checked
+                </output>
+              )}
+            </section>
+          )}
+          {draft.scope === 'pattern' && (
+            <EditorSection title="Pattern match details">
+              <ul aria-label="Affected binding preview">
+                {affected.map((id) => (
+                  <li key={id}>
+                    {id}: {JSON.stringify(plan.cells[id]?.display)}
+                  </li>
+                ))}
+              </ul>
+            </EditorSection>
+          )}
+          {diagnostics.length > 0 && (
+            <Alert title="Binding diagnostics" severity="error">
               <ul>
-                {metricDiagnostics.map((d, i) => (
+                {diagnostics.map((d, i) => (
                   <li key={i}>
                     {d.path}: {d.message}
                   </li>
                 ))}
               </ul>
-            ) : !incompletePreview && affected.length > 0 ? (
-              <p>No resolution failures in available preview data.</p>
-            ) : (
-              <p>Select an element and use Preview query to validate its native query bindings.</p>
-            )}
-            {hoverPreview && (
-              <ul aria-label="Hover row preview">
-                {hoverPreview.rows.map((row) => (
-                  <li key={row.key}>
-                    {row.title}: {row.text}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-        <section aria-label="Query library">
-          <h3>Named queries</h3>
-          <TextField
-            label="Default datasource UID"
-            value={draft.config.defaultDatasource?.uid ?? ''}
-            onChange={(uid) => dispatch({ type: 'default-datasource', datasource: uid ? { uid } : undefined })}
-          />
-          <label>
-            Named query
-            <select
-              aria-label="Named query"
-              value={queryId ?? ''}
-              onChange={(e) => {
-                setQueryId(e.target.value);
-                setQueryError('');
-              }}
-            >
-              <option value="">Select query</option>
-              {draft.config.queries.map((q) => (
-                <option key={q.id} value={q.id}>
-                  {q.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            onClick={() => {
-              let n = 1;
-              while (draft.config.queries.some((q) => q.id === `query-${n}`)) {
-                n++;
-              }
-              const id = `query-${n}`;
-              setQueryId(id);
-              setQueryError('');
-              dispatch({
-                type: 'query',
-                query: {
-                  id,
-                  name: `Query ${n}`,
-                  source: { kind: 'datasource', target: { refId: `DM${n}` }, parameters: {} },
-                },
-              });
-            }}
-          >
-            Add named query
-          </button>
-          <button
-            onClick={() => {
-              const target = data?.request?.targets[0];
-              let n = 1;
-              while (draft.config.queries.some((q) => q.id === `panel-${n}`)) {
-                n++;
-              }
-              const id = `panel-${n}`;
-              setQueryId(id);
-              setQueryError('');
-              dispatch({
-                type: 'query',
-                query: {
-                  id,
-                  name: `Panel query ${target?.refId ?? 'A'}`,
-                  source: { kind: 'panel', refId: target?.refId ?? 'A' },
-                },
-              });
-            }}
-          >
-            Add eager panel reference
-          </button>
-          {query && context && data && (
-            <QueryEditor
-              key={`${query.id}:${query.source.kind}`}
-              query={query}
-              context={{ ...context, defaultDatasource: draft.config.defaultDatasource }}
-              data={data}
-              onValidity={setQueryError}
-              onChange={(query) => dispatch({ type: 'query', query })}
-              onPreview={() => {
-                release.current?.();
-                setPreviewAction('query');
-                const controller = service?.controller;
-                if (!controller) {
-                  setSnapshot({ state: 'error', message: 'Query service is not ready.' });
-                  return;
-                }
-                if (diagnostics.length || queryError) {
-                  setSnapshot({ state: 'error', message: 'Fix binding diagnostics before preview.' });
-                  return;
-                }
-                const existing = previewSnapshot(
-                  query,
-                  draft.config,
-                  data,
-                  draft.cellId ?? '',
-                  undefined,
-                  prepared,
-                  context.generation,
-                  'reuse'
-                );
-                if (existing.state === 'ready' || existing.state === 'empty') {
-                  setSnapshot(existing);
-                  return;
-                }
-                release.current = controller.watch(
-                  {
-                    consumerId: 'binding-editor-preview',
-                    query,
-                    scope: draft.cellId ? (plan.cells[draft.cellId]?.scope ?? { cell: {} }) : { cell: {} },
-                    context: { ...context, defaultDatasource: draft.config.defaultDatasource },
-                    maxDataPoints: 160,
-                  },
-                  setSnapshot
-                );
-              }}
-            />
+            </Alert>
           )}
-          <output aria-label="Query preview result">
-            {snapshot.state}
-            {snapshot.state === 'error' || snapshot.state === 'unsupported'
-              ? `: ${snapshot.message}`
-              : snapshot.state === 'ready'
-                ? `: ${snapshot.frames.length} frames; fields ${fields.join(', ')}`
-                : ''}
-          </output>
-        </section>
-        {queryError && <p role="alert">{queryError}</p>}
-        <PatternTransfer
-          config={draft.config}
-          cellIds={Array.from(cells.keys())}
-          onImport={(document, resolution) =>
-            dispatch({ type: 'import-patterns', document, resolution, cellIds: Array.from(cells.keys()) })
-          }
-        />
-        <button
-          disabled={!!diagnostics.length || !!queryError || !!geometryError || hasMetricErrors}
-          onClick={() => {
-            setPreviewEpoch((value) => value + 1);
-            onSave(commitDraft(draft), draftDiagram);
-            setSavedDiagram(draftDiagram);
-            dispatch({ type: 'applied' });
-          }}
-        >
-          Apply bindings
-        </button>
-        <button onClick={reset}>Cancel changes</button>
-        <button onClick={reset}>Undo to saved</button>
+          {data && (
+            <EditorSection title="Metric preview" defaultOpen>
+              <section aria-label="Metric resolution preview">
+                <ul aria-label="Affected metric resolution">
+                  {matchPreviews.map((match) => (
+                    <li key={match.cellId}>
+                      {match.cellId}: {match.state}
+                      {match.failures.length > 0 && `: ${match.failures.join(' ')}`}
+                      {match.unvalidated && ' (unvalidated bindings require explicit Preview for this element)'}
+                    </li>
+                  ))}
+                </ul>
+                {metricDiagnostics.length ? (
+                  <ul>
+                    {metricDiagnostics.map((d, i) => (
+                      <li key={i}>
+                        {d.path}: {d.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : !incompletePreview && affected.length > 0 ? (
+                  <p>No resolution failures in available preview data.</p>
+                ) : (
+                  <p>Select an element and use Preview query to validate its native query bindings.</p>
+                )}
+                {hoverPreview && (
+                  <ul aria-label="Hover row preview">
+                    {hoverPreview.rows.map((row) => (
+                      <li key={row.key}>
+                        {row.title}: {row.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </EditorSection>
+          )}
+          <EditorSection title="Named queries">
+            <section aria-label="Query library">
+              <TextField
+                label="Default datasource UID"
+                value={draft.config.defaultDatasource?.uid ?? ''}
+                onChange={(uid) => dispatch({ type: 'default-datasource', datasource: uid ? { uid } : undefined })}
+              />
+              <EditorField label="Named query">
+                <Select
+                  aria-label="Named query"
+                  value={queryId ?? ''}
+                  onChange={(selection) => {
+                    setQueryId(selection.value ?? '');
+                    setQueryError('');
+                  }}
+                  options={[
+                    { value: '', label: 'Select query' },
+                    ...draft.config.queries.map((q) => ({ value: q.id, label: q.name })),
+                  ]}
+                  menuShouldPortal
+                  maxMenuHeight={240}
+                />
+              </EditorField>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  let n = 1;
+                  while (draft.config.queries.some((q) => q.id === `query-${n}`)) {
+                    n++;
+                  }
+                  const id = `query-${n}`;
+                  setQueryId(id);
+                  setQueryError('');
+                  dispatch({
+                    type: 'query',
+                    query: {
+                      id,
+                      name: `Query ${n}`,
+                      source: { kind: 'datasource', target: { refId: `DM${n}` }, parameters: {} },
+                    },
+                  });
+                }}
+              >
+                Add named query
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const target = data?.request?.targets[0];
+                  let n = 1;
+                  while (draft.config.queries.some((q) => q.id === `panel-${n}`)) {
+                    n++;
+                  }
+                  const id = `panel-${n}`;
+                  setQueryId(id);
+                  setQueryError('');
+                  dispatch({
+                    type: 'query',
+                    query: {
+                      id,
+                      name: `Panel query ${target?.refId ?? 'A'}`,
+                      source: { kind: 'panel', refId: target?.refId ?? 'A' },
+                    },
+                  });
+                }}
+              >
+                Add eager panel reference
+              </Button>
+              {query && context && data && (
+                <QueryEditor
+                  key={`${query.id}:${query.source.kind}`}
+                  query={query}
+                  context={{ ...context, defaultDatasource: draft.config.defaultDatasource }}
+                  data={data}
+                  onValidity={setQueryError}
+                  onChange={(query) => dispatch({ type: 'query', query })}
+                  onPreview={() => {
+                    release.current?.();
+                    setPreviewAction('query');
+                    const controller = service?.controller;
+                    if (!controller) {
+                      setSnapshot({ state: 'error', message: 'Query service is not ready.' });
+                      return;
+                    }
+                    if (diagnostics.length || queryError) {
+                      setSnapshot({ state: 'error', message: 'Fix binding diagnostics before preview.' });
+                      return;
+                    }
+                    const existing = previewSnapshot(
+                      query,
+                      draft.config,
+                      data,
+                      draft.cellId ?? '',
+                      undefined,
+                      prepared,
+                      context.generation,
+                      'reuse'
+                    );
+                    if (existing.state === 'ready' || existing.state === 'empty') {
+                      setSnapshot(existing);
+                      return;
+                    }
+                    release.current = controller.watch(
+                      {
+                        consumerId: 'binding-editor-preview',
+                        query,
+                        scope: draft.cellId ? (plan.cells[draft.cellId]?.scope ?? { cell: {} }) : { cell: {} },
+                        context: { ...context, defaultDatasource: draft.config.defaultDatasource },
+                        maxDataPoints: 160,
+                      },
+                      setSnapshot
+                    );
+                  }}
+                />
+              )}
+              <output aria-label="Query preview result">
+                {snapshot.state}
+                {snapshot.state === 'error' || snapshot.state === 'unsupported'
+                  ? `: ${snapshot.message}`
+                  : snapshot.state === 'ready'
+                    ? `: ${snapshot.frames.length} frames; fields ${fields.join(', ')}`
+                    : ''}
+              </output>
+            </section>
+          </EditorSection>
+          {queryError && (
+            <Alert title="Query needs attention" severity="error">
+              {queryError}
+            </Alert>
+          )}
+          <PatternTransfer
+            config={draft.config}
+            cellIds={Array.from(cells.keys())}
+            onImport={(document, resolution) =>
+              dispatch({ type: 'import-patterns', document, resolution, cellIds: Array.from(cells.keys()) })
+            }
+          />
+        </div>
+        <footer className={styles.footer} aria-label="Binding draft actions">
+          <Button
+            variant="primary"
+            size="sm"
+            aria-label="Apply bindings"
+            disabled={!!diagnostics.length || !!queryError || !!geometryError || hasMetricErrors}
+            onClick={() => {
+              setPreviewEpoch((value) => value + 1);
+              onSave(commitDraft(draft), draftDiagram);
+              setSavedDiagram(draftDiagram);
+              dispatch({ type: 'applied' });
+            }}
+          >
+            Apply
+          </Button>
+          <Button variant="secondary" size="sm" aria-label="Cancel changes" onClick={reset}>
+            Cancel
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            fill="text"
+            icon="history"
+            aria-label="Undo to saved"
+            tooltip="Undo to saved"
+            onClick={reset}
+          />
+        </footer>
       </aside>
     </div>
   );

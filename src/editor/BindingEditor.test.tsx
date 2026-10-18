@@ -1,3 +1,4 @@
+import { editorField, chooseOption, openSection, selectElement } from './testUtils';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
@@ -37,6 +38,65 @@ function setup() {
   return { cells, save };
 }
 describe('binding inspector', () => {
+  it.each([false, true])(
+    'preserves native JSON text and validation across collapse with invalid=%s',
+    async (invalid) => {
+      const timeRange = getDefaultTimeRange();
+      const execute = vi.fn();
+      const controller = createQueryController(execute);
+      const context = { timeRange, timeZone: 'utc', scopedVars: {}, refreshMs: 0, intervalMs: 1000, generation: 1 };
+      render(
+        <PanelQueryContext.Provider value={{ controller, context }}>
+          <BindingEditor
+            config={{
+              ...config,
+              defaultDatasource: { uid: 'test' },
+              queries: [
+                { id: 'q', name: 'Native', source: { kind: 'datasource', target: { refId: 'D' }, parameters: {} } },
+              ],
+            }}
+            cells={new Map()}
+            data={{ state: LoadingState.Done, series: [], timeRange }}
+            onSave={vi.fn()}
+          />
+        </PanelQueryContext.Provider>
+      );
+      expect(screen.queryByRole('textbox', { name: 'Query name' })).toBeNull();
+      openSection('Named queries');
+      await screen.findByText(/No supported native query editor/);
+      const text = invalid ? '{invalid' : '{"refId":"D","expr":"typed draft"}';
+      fireEvent.change(editorField('Native target JSON'), { target: { value: text } });
+      if (invalid) {
+        fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Named queries' }));
+      expect(screen.queryByRole('textbox', { name: 'Query name' })).toBeNull();
+      openSection('Named queries');
+      expect((editorField('Native target JSON') as HTMLTextAreaElement).value).toBe(text);
+      expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(invalid);
+      if (invalid) {
+        expect(screen.getByRole('region', { name: 'Query Native' }).textContent).toContain(
+          'Invalid native target JSON'
+        );
+        fireEvent.change(editorField('Native target JSON'), { target: { value: '{"refId":"D"}' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+        expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(false);
+      }
+      expect(execute).not.toHaveBeenCalled();
+      controller.dispose();
+    }
+  );
+  it('searches elements in a compact selector and focuses the chosen identity', () => {
+    setup();
+    const selector = screen.getByRole('combobox', { name: 'Diagram element' });
+    expect(screen.queryByRole('button', { name: 'Select device-1' })).toBeNull();
+    fireEvent.change(selector, { target: { value: 'device-2' } });
+    fireEvent.keyDown(selector, { key: 'ArrowDown' });
+    expect(screen.queryByRole('option', { name: 'device-1' })).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: 'device-2' }));
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'device-2 bindings' }));
+    expect(screen.getByRole('combobox', { name: 'Edit scope' })).toBeTruthy();
+  });
   it('previews portable conflicts and stages an import without query execution, then cancels or applies', () => {
     const host = document.createElement('div');
     host.innerHTML = '<svg><g data-cell-id="region"><rect width="180" height="70"/></g></svg>';
@@ -85,15 +145,18 @@ describe('binding inspector', () => {
         <BindingEditor config={destination} cells={cells} onSave={save} />
       </PanelQueryContext.Provider>
     );
-    fireEvent.change(screen.getByLabelText('Pattern document'), {
+    fireEvent.change(editorField('Pattern document'), {
       target: { value: JSON.stringify(exportPatternDocument(source)) },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
-    expect(screen.getByLabelText('Pattern import preview').textContent).toContain('source');
-    expect(screen.getByLabelText('Pattern import preview').textContent).toContain('region: applies');
+    expect(editorField('Pattern import preview').textContent).toContain('source');
+    expect(editorField('Pattern import preview').textContent).toContain('region: applies');
     expect((screen.getByRole('button', { name: 'Import into draft' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('queries q conflict'), { target: { value: 'new' } });
-    fireEvent.change(screen.getByLabelText('queries q new identity'), { target: { value: 'q-copy' } });
+    chooseOption('queries q conflict', 'New identity');
+    fireEvent.change(editorField('queries q new identity'), { target: { value: 'q-copy' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Portable patterns' }));
+    openSection('Portable patterns');
+    expect((editorField('queries q new identity') as HTMLInputElement).value).toBe('q-copy');
     fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
     expect(execute).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
@@ -107,7 +170,7 @@ describe('binding inspector', () => {
     expect(save.mock.calls[1][0].queries[1].source.datasource).toEqual({ uid: 'source' });
     expect(execute).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Export patterns' }));
-    const exported = JSON.parse((screen.getByLabelText('Exported pattern document') as HTMLTextAreaElement).value);
+    const exported = JSON.parse((editorField('Exported pattern document') as HTMLTextAreaElement).value);
     expect(exported.config.widgets[0].anchorCellId).toBe('region');
     controller.dispose();
   });
@@ -125,22 +188,23 @@ describe('binding inspector', () => {
         onSave={save}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Select region' }));
+    selectElement('region');
     fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
-    expect((screen.getByLabelText('Chart check sample freshness') as HTMLInputElement).checked).toBe(false);
-    fireEvent.click(screen.getByLabelText('Chart check sample freshness'));
-    fireEvent.change(screen.getByLabelText('Chart expected sample interval ms'), { target: { value: '2000' } });
-    fireEvent.change(screen.getByLabelText('Chart stale after ms'), { target: { value: '1000' } });
+    expect((editorField('Chart check sample freshness') as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(editorField('Chart check sample freshness'));
+    fireEvent.change(editorField('Chart expected sample interval ms'), { target: { value: '2000' } });
+    fireEvent.change(editorField('Chart stale after ms'), { target: { value: '1000' } });
     expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Chart stale after ms'), { target: { value: '6000' } });
+    fireEvent.change(editorField('Chart stale after ms'), { target: { value: '6000' } });
     for (const [index, kind] of ['value', 'history'].entries()) {
+      openSection('Hover rows');
       fireEvent.click(screen.getByRole('button', { name: 'Add hover row' }));
-      fireEvent.change(screen.getByLabelText(`Hover row ${index + 1} kind`), { target: { value: kind } });
-      fireEvent.click(screen.getByLabelText(`Hover row ${index + 1} check sample freshness`));
-      fireEvent.change(screen.getByLabelText(`Hover row ${index + 1} expected sample interval ms`), {
+      chooseOption(`Hover row ${index + 1} kind`, kind);
+      fireEvent.click(editorField(`Hover row ${index + 1} check sample freshness`));
+      fireEvent.change(editorField(`Hover row ${index + 1} expected sample interval ms`), {
         target: { value: '1000' },
       });
-      fireEvent.change(screen.getByLabelText(`Hover row ${index + 1} stale after ms`), { target: { value: '3000' } });
+      fireEvent.change(editorField(`Hover row ${index + 1} stale after ms`), { target: { value: '3000' } });
     }
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     expect(save.mock.calls[0][0].widgets[0].freshness).toEqual({ expectedIntervalMs: 2000, staleAfterMs: 6000 });
@@ -148,7 +212,7 @@ describe('binding inspector', () => {
       { expectedIntervalMs: 1000, staleAfterMs: 3000 },
       { expectedIntervalMs: 1000, staleAfterMs: 3000 },
     ]);
-    fireEvent.click(screen.getByLabelText('Chart check sample freshness'));
+    fireEvent.click(editorField('Chart check sample freshness'));
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     expect(save.mock.calls[1][0].widgets[0]).not.toHaveProperty('freshness');
   });
@@ -166,15 +230,15 @@ describe('binding inspector', () => {
       ],
     };
     const view = render(<BindingEditor config={chartConfig} cells={cells} onSave={save} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Select plain-rectangle' }));
+    selectElement('plain-rectangle');
     fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
-    fireEvent.change(screen.getByLabelText('Chart query'), { target: { value: 'cpu-id' } });
-    fireEvent.change(screen.getByLabelText('Chart kind'), { target: { value: 'bar' } });
-    fireEvent.change(screen.getByLabelText('Chart label'), { target: { value: 'Процессор 🚀' } });
-    fireEvent.change(screen.getByLabelText('Chart unit'), { target: { value: 'percent' } });
-    fireEvent.change(screen.getByLabelText('Chart minimum'), { target: { value: '0' } });
-    fireEvent.change(screen.getByLabelText('Chart maximum'), { target: { value: '100' } });
-    fireEvent.change(screen.getByLabelText('Chart drilldown URL'), { target: { value: '/d/cpu' } });
+    chooseOption('Chart query', 'Загрузка α');
+    chooseOption('Chart kind', 'Bar gauge');
+    fireEvent.change(editorField('Chart label'), { target: { value: 'Процессор 🚀' } });
+    fireEvent.change(editorField('Chart unit'), { target: { value: 'percent' } });
+    fireEvent.change(editorField('Chart minimum'), { target: { value: '0' } });
+    fireEvent.change(editorField('Chart maximum'), { target: { value: '100' } });
+    fireEvent.change(editorField('Chart drilldown URL'), { target: { value: '/d/cpu' } });
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     const persisted = JSON.parse(JSON.stringify(save.mock.calls[0][0])) as DiagramConfigV2;
@@ -200,9 +264,10 @@ describe('binding inspector', () => {
   });
   it('focuses the selected identity and defaults to this-element scope', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+    selectElement('device-1');
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'device-1 bindings' }));
-    expect((screen.getByLabelText('Edit scope') as HTMLSelectElement).value).toBe('element');
+    expect(screen.getByText('This element')).toBeTruthy();
+    openSection('Element details');
     expect(screen.getByText('Patterns: Devices')).toBeTruthy();
   });
   it('isolates cloned editors and reopens the saved binding after remount', () => {
@@ -223,17 +288,17 @@ describe('binding inspector', () => {
         </div>
       </>
     );
-    const one = within(screen.getByLabelText('Panel one'));
-    const two = within(screen.getByLabelText('Panel two'));
-    fireEvent.click(one.getByRole('button', { name: 'Select device-1' }));
+    const one = within(editorField('Panel one'));
+    const two = within(editorField('Panel two'));
+    selectElement('device-1', one);
     expect(two.queryByRole('heading', { name: 'device-1 bindings' })).toBeNull();
-    fireEvent.change(one.getByLabelText('Label template'), { target: { value: 'Only panel one' } });
+    fireEvent.change(editorField('Label template', one), { target: { value: 'Only panel one' } });
     fireEvent.click(one.getByRole('button', { name: 'Apply bindings' }));
     expect(saveTwo).not.toHaveBeenCalled();
     view.unmount();
     render(<BindingEditor config={saveOne.mock.calls[0][0]} cells={cells} onSave={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-    expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Only panel one');
+    selectElement('device-1');
+    expect((editorField('Label template') as HTMLInputElement).value).toBe('Only panel one');
   });
   it('keeps unedited shape settings inherited when creating an element override', () => {
     const host = document.createElement('div');
@@ -250,27 +315,27 @@ describe('binding inspector', () => {
       ],
     };
     render(<BindingEditor config={inherited} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-    fireEvent.change(screen.getByLabelText('Shape colour target'), { target: { value: 'stroke' } });
+    selectElement('device-1');
+    chooseOption('Shape colour target', 'stroke');
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     expect(save.mock.calls[0][0].overrides[0].display).toEqual({ shape: { target: 'stroke' } });
   });
   it('previews every pattern match, saves only on Apply, and cancels back to saved', () => {
     const { save, cells } = setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
-    fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Changed' } });
-    expect(screen.getByLabelText('Affected binding preview').textContent).toContain('device-2');
+    selectElement('device-1');
+    chooseOption('Edit scope', 'All elements matching this pattern');
+    fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } });
+    expect(editorField('Affected binding preview').textContent).toContain('device-2');
     expect(cells.get('device-2')?.group.getAttribute('data-dmap-affected')).toBe('true');
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
-    expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Shared');
-    fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Applied' } });
+    expect((editorField('Label template') as HTMLInputElement).value).toBe('Shared');
+    fireEvent.change(editorField('Label template'), { target: { value: 'Applied' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     expect(save.mock.calls[0][0].patterns[0].display.label).toBe('Applied');
-    fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Lost' } });
+    fireEvent.change(editorField('Label template'), { target: { value: 'Lost' } });
     fireEvent.click(screen.getByRole('button', { name: 'Undo to saved' }));
-    expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Applied');
+    expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied');
   });
   it('selects unbound cells by pointer or keyboard while hover leaves focus alone', () => {
     const host = document.createElement('div');
@@ -291,7 +356,7 @@ describe('binding inspector', () => {
     fireEvent.click(cell.group.querySelector('rect')!);
     const heading = screen.getByRole('heading', { name: 'unbound bindings' });
     expect(document.activeElement).toBe(heading);
-    const label = screen.getByLabelText('Label template');
+    const label = editorField('Label template');
     label.focus();
     fireEvent.pointerMove(cell.group);
     expect(document.activeElement).toBe(label);
@@ -326,13 +391,15 @@ describe('binding inspector', () => {
       queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }],
     };
     render(<BindingEditor config={withQuery} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-    fireEvent.change(screen.getByLabelText('Shape query'), { target: { value: 'health' } });
-    fireEvent.change(screen.getByLabelText('A to B query'), { target: { value: 'health' } });
+    selectElement('device-1');
+    chooseOption('Shape query', 'Health');
+    chooseOption('A to B query', 'Health');
+    openSection('Hover rows');
     fireEvent.click(screen.getByRole('button', { name: 'Add hover row' }));
-    fireEvent.change(screen.getByLabelText('Hover row 1 kind'), { target: { value: 'history' } });
+    chooseOption('Hover row 1 kind', 'history');
+    openSection('Explicit health status');
     fireEvent.click(screen.getByRole('button', { name: 'Add health rule' }));
-    fireEvent.change(screen.getByLabelText('Health condition 1 reason'), { target: { value: 'Health check failed' } });
+    fireEvent.change(editorField('Health condition 1 reason'), { target: { value: 'Health check failed' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     const display = save.mock.calls[0][0].overrides[0].display;
     expect(display.shape.binding.queryId).toBe('health');
@@ -350,11 +417,12 @@ describe('binding inspector', () => {
         onSave={vi.fn()}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
+    selectElement('device-1');
+    openSection('Explicit health status');
     fireEvent.click(screen.getByRole('button', { name: 'Add health rule' }));
-    fireEvent.change(screen.getByLabelText('Health condition 1 reason'), { target: { value: '' } });
+    fireEvent.change(editorField('Health condition 1 reason'), { target: { value: '' } });
     expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Health condition 1 reason'), { target: { value: 'Corrected' } });
+    fireEvent.change(editorField('Health condition 1 reason'), { target: { value: 'Corrected' } });
     expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(false);
   });
   it('marks every affected native match resolved or unvalidated after representative Preview', async () => {
@@ -407,18 +475,19 @@ describe('binding inspector', () => {
         />
       </PanelQueryContext.Provider>
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+    selectElement('device-1');
+    chooseOption('Edit scope', 'All elements matching this pattern');
+    openSection('Named queries');
     await screen.findByText(/No supported native query editor/);
     expect(execute).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute.mock.calls[0][0].request.scopedVars.dm_device.value).toBe('device-1');
-    const preview = screen.getByLabelText('Metric resolution preview');
+    const preview = editorField('Metric resolution preview');
     expect(preview.textContent).toContain('device-1: resolved');
     expect(preview.textContent).toContain('device-2: unvalidated');
     expect(preview.textContent).not.toContain('No resolution failures');
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-2' }));
+    selectElement('device-2');
     expect(execute).toHaveBeenCalledTimes(1);
     expect(preview.textContent).toContain('device-2: unvalidated');
     controller.dispose();
@@ -467,9 +536,9 @@ describe('binding inspector', () => {
         onSave={vi.fn()}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-    fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
-    const preview = screen.getByLabelText('Metric resolution preview');
+    selectElement('device-1');
+    chooseOption('Edit scope', 'All elements matching this pattern');
+    const preview = editorField('Metric resolution preview');
     expect(preview.textContent).toContain('device-1: resolved');
     expect(preview.textContent).toContain('device-2: failed');
     expect(preview.textContent).toContain('No metric matches query q');
@@ -516,13 +585,14 @@ describe('binding inspector', () => {
         />
       </PanelQueryContext.Provider>
     );
+    openSection('Named queries');
     await screen.findByText(/No supported native query editor/);
     expect(execute).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText('Query preview result').textContent).toContain('CPU');
-    fireEvent.change(screen.getByLabelText('Query name'), { target: { value: 'CPU changed' } });
-    expect(screen.getByLabelText('Query preview result').textContent).toBe('idle');
+    expect(editorField('Query preview result').textContent).toContain('CPU');
+    fireEvent.change(editorField('Query name'), { target: { value: 'CPU changed' } });
+    expect(editorField('Query preview result').textContent).toBe('idle');
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
@@ -561,13 +631,13 @@ describe('binding inspector', () => {
         }}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-    expect(screen.getByLabelText('Metric resolution preview').textContent).toContain('ambiguous');
+    selectElement('device-1');
+    expect(editorField('Metric resolution preview').textContent).toContain('ambiguous');
     expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Shape result field'), { target: { value: 'CPU' } });
-    expect(screen.getByLabelText('Metric resolution preview').textContent).not.toContain('ambiguous');
+    fireEvent.change(editorField('Shape result field'), { target: { value: 'CPU' } });
+    expect(editorField('Metric resolution preview').textContent).not.toContain('ambiguous');
     expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.change(screen.getByLabelText('Shape result field'), { target: { value: 'Absent' } });
-    expect(screen.getByLabelText('Metric resolution preview').textContent).toContain('No metric matches query q');
+    fireEvent.change(editorField('Shape result field'), { target: { value: 'Absent' } });
+    expect(editorField('Metric resolution preview').textContent).toContain('No metric matches query q');
   });
 });

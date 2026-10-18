@@ -1,9 +1,11 @@
+import { Button, Select } from '@grafana/ui';
 import React, { useLayoutEffect, useRef } from 'react';
 import type { EffectiveCellBinding } from '../binding/patterns';
 import type { BindingDraft, DraftAction } from './draft';
 import { DisplayFields, newBinding, TextField } from './BindingFields';
 import type { DisplayConfig } from '../model/config';
 import { ChartFields } from './ChartFields';
+import { EditorField, EditorSection } from './EditorLayout';
 
 export interface BindingInspectorProps {
   draft: BindingDraft;
@@ -41,49 +43,59 @@ export function BindingInspector({
       <h3 ref={heading} tabIndex={-1}>
         {draft.cellId} bindings
       </h3>
-      <p>Identity: {String(binding.scope.cell?.key ?? draft.cellId)}</p>
-      <p>
-        Patterns:{' '}
-        {binding.patternIds.map((id) => draft.config.patterns.find((p) => p.id === id)?.name ?? id).join(', ') ||
-          'None'}
-      </p>
+      <EditorSection title="Element details">
+        <p>Identity: {String(binding.scope.cell?.key ?? draft.cellId)}</p>
+        <p>
+          Patterns:{' '}
+          {binding.patternIds.map((id) => draft.config.patterns.find((p) => p.id === id)?.name ?? id).join(', ') ||
+            'None'}
+        </p>
+      </EditorSection>
       <p>Element override: {binding.overridden ? 'Yes' : 'No'}</p>
-      <label>
-        Edit scope
-        <select
+      <EditorField label="Edit scope">
+        <Select
           aria-label="Edit scope"
           value={draft.scope}
-          onChange={(e) =>
+          onChange={(selection) =>
             dispatch({
               type: 'scope',
-              scope: e.target.value as 'element' | 'pattern',
+              scope: (selection.value ?? '') as 'element' | 'pattern',
               patternId: binding.patternIds.at(-1),
             })
           }
-        >
-          <option value="element">This element</option>
-          <option value="pattern" disabled={!binding.patternIds.length}>
-            All elements matching this pattern
-          </option>
-        </select>
-      </label>
+          options={[
+            { value: 'element', label: 'This element' },
+            { value: 'pattern', label: 'All elements matching this pattern', isDisabled: !binding.patternIds.length },
+          ]}
+          menuShouldPortal
+          maxMenuHeight={240}
+        />
+      </EditorField>
       {draft.scope === 'pattern' && (
-        <label>
-          Shared pattern
-          <select
+        <EditorField label="Shared pattern">
+          <Select
             aria-label="Shared pattern"
             value={draft.patternId ?? ''}
-            onChange={(e) => dispatch({ type: 'scope', scope: 'pattern', patternId: e.target.value })}
-          >
-            {binding.patternIds.map((id) => (
-              <option key={id} value={id}>
-                {draft.config.patterns.find((p) => p.id === id)?.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(selection) => dispatch({ type: 'scope', scope: 'pattern', patternId: selection.value ?? '' })}
+            options={[
+              ...binding.patternIds.map((id) => ({
+                value: id,
+                label: draft.config.patterns.find((p) => p.id === id)?.name,
+              })),
+            ]}
+            menuShouldPortal
+            maxMenuHeight={240}
+          />
+        </EditorField>
       )}
-      <p aria-live="polite">Affected elements: {affected.join(', ') || 'None'}</p>
+      <p aria-live="polite">Affected elements: {affected.length}</p>
+      <EditorSection title="Affected elements">
+        <ul>
+          {affected.map((id) => (
+            <li key={id}>{id}</li>
+          ))}
+        </ul>
+      </EditorSection>
       {draft.config.widgets
         .filter((w) => w.anchorCellId === draft.cellId)
         .map((widget) => (
@@ -97,7 +109,9 @@ export function BindingInspector({
           />
         ))}
       {chartEligible && !draft.config.widgets.some((w) => w.anchorCellId === draft.cellId) && (
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
           disabled={!draft.config.queries.length}
           onClick={() => {
             let n = 1;
@@ -117,25 +131,22 @@ export function BindingInspector({
           }}
         >
           Assign chart region
-        </button>
+        </Button>
       )}
       {pattern && (
-        <fieldset>
-          <legend>Pattern selector</legend>
-          <label>
-            Pattern kind
-            <select
+        <EditorSection title="Pattern selector" defaultOpen>
+          <EditorField label="Pattern kind">
+            <Select
               aria-label="Pattern kind"
               value={pattern.select.kind ?? 'any'}
-              onChange={(e) =>
-                dispatch({ type: 'selector', select: { ...pattern.select, kind: e.target.value as 'any' } })
+              onChange={(selection) =>
+                dispatch({ type: 'selector', select: { ...pattern.select, kind: (selection.value ?? '') as 'any' } })
               }
-            >
-              {['any', 'node', 'link', 'port', 'other'].map((kind) => (
-                <option key={kind}>{kind}</option>
-              ))}
-            </select>
-          </label>
+              options={['any', 'node', 'link', 'port', 'other'].map((kind) => ({ value: kind, label: kind }))}
+              menuShouldPortal
+              maxMenuHeight={240}
+            />
+          </EditorField>
           <TextField
             label="Pattern element IDs"
             value={pattern.select.ids?.join(',') ?? ''}
@@ -146,7 +157,7 @@ export function BindingInspector({
               })
             }
           />
-        </fieldset>
+        </EditorSection>
       )}
       <DisplayFields
         value={editDisplay}
@@ -169,10 +180,9 @@ export function BindingInspector({
           dispatch({ type: 'display', display: patch });
         }}
       />
-      <details>
-        <summary>Effective binding preview</summary>
+      <EditorSection title="Effective binding preview">
         <pre>{JSON.stringify(binding.display, null, 2)}</pre>
-      </details>
+      </EditorSection>
     </section>
   );
 }

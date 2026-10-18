@@ -1,3 +1,4 @@
+import { editorField, chooseOption, selectElement } from './testUtils';
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -99,8 +100,8 @@ function setup() {
     </PanelQueryContext.Provider>
   );
   const view = render(editor());
-  fireEvent.click(screen.getByRole('button', { name: 'Select device-1' }));
-  fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'pattern' } });
+  selectElement('device-1');
+  chooseOption('Edit scope', 'All elements matching this pattern');
   return { controller, execute, pending, context, save, prepared, view, editor };
 }
 function ready(value: number): QuerySnapshot {
@@ -121,10 +122,10 @@ function ready(value: number): QuerySnapshot {
 describe('explicit full pattern preview', () => {
   it('loads every binding scope only on explicit action, reports progress and retains distinct prepared values', async () => {
     const { execute, pending, prepared, controller } = setup();
-    fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Draft ${cell.key}' } });
+    fireEvent.change(editorField('Label template'), { target: { value: 'Draft ${cell.key}' } });
     expect(execute).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
-    expect(screen.getByLabelText('Pattern preview progress').textContent).toContain('0 / 5');
+    expect(editorField('Pattern preview progress').textContent).toContain('0 / 5');
     expect(execute).toHaveBeenCalledTimes(4);
     await act(async () => {
       pending[0].emit(ready(11));
@@ -141,11 +142,11 @@ describe('explicit full pattern preview', () => {
       'device-2:HOVER',
       'device-2:WIDGET',
     ]);
-    expect(screen.getByLabelText('Pattern preview progress').textContent).toContain('5 / 5');
-    expect(screen.getByLabelText('Metric resolution preview').textContent).toContain('device-1: resolved');
-    expect(screen.getByLabelText('Metric resolution preview').textContent).toContain('device-2: failed');
-    expect(screen.getByLabelText('Metric resolution preview').textContent).toContain('Datasource unavailable');
-    expect(screen.getByLabelText('Hover row preview').textContent).toContain('12');
+    expect(editorField('Pattern preview progress').textContent).toContain('5 / 5');
+    expect(editorField('Metric resolution preview').textContent).toContain('device-1: resolved');
+    expect(editorField('Metric resolution preview').textContent).toContain('device-2: failed');
+    expect(editorField('Metric resolution preview').textContent).toContain('Datasource unavailable');
+    expect(editorField('Hover row preview').textContent).toContain('12');
     const results = prepared.mock.calls.at(-1)?.[0].previews;
     expect(
       results.find((p: { cellId: string; query: { id: string } }) => p.cellId === 'device-2' && p.query.id === 'shape')
@@ -171,22 +172,22 @@ describe('explicit full pattern preview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
     const old = [...s.pending];
     if (action === 'edit') {
-      fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Changed' } });
+      fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } });
     }
     if (action === 'query') {
-      fireEvent.change(screen.getByLabelText('Query name'), { target: { value: 'Changed query' } });
+      fireEvent.change(editorField('Query name'), { target: { value: 'Changed query' } });
     }
     if (action === 'scope') {
-      fireEvent.change(screen.getByLabelText('Edit scope'), { target: { value: 'element' } });
+      chooseOption('Edit scope', 'This element');
     }
     if (action === 'pattern') {
-      fireEvent.change(screen.getByLabelText('Shared pattern'), { target: { value: 'alternate' } });
+      chooseOption('Shared pattern', 'Alternate');
     }
     if (action === 'selector') {
-      fireEvent.change(screen.getByLabelText('Pattern element IDs'), { target: { value: 'device-1' } });
+      fireEvent.change(editorField('Pattern element IDs'), { target: { value: 'device-1' } });
     }
     if (action === 'select') {
-      fireEvent.click(screen.getByRole('button', { name: 'Select device-2' }));
+      selectElement('device-2');
     }
     if (action === 'context') {
       s.view.rerender(s.editor({ ...s.context, generation: 2 }));
@@ -566,18 +567,18 @@ it.each(['missing', 'ambiguous'])(
       s.pending[3].emit(failure === 'missing' ? { state: 'empty', fetchedAt: 1, fromCache: false } : snapshot);
       s.pending[4].emit(ready(23));
     });
-    const preview = screen.getByLabelText('Affected metric resolution').textContent;
+    const preview = editorField('Affected metric resolution').textContent;
     expect(preview).toContain('device-1: resolved');
     expect(preview).toContain('device-2: failed');
     expect(preview).toContain(failure === 'missing' ? 'No metric matches query hover' : 'ambiguous');
-    expect(screen.getByLabelText('Pattern preview progress').textContent).toContain('5 / 5');
+    expect(editorField('Pattern preview progress').textContent).toContain('5 / 5');
     s.controller.dispose();
   }
 );
 
 it('applies a completed full preview once, discards prepared results, and makes Cancel restore that applied draft', async () => {
   const s = setup();
-  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Applied pattern' } });
+  fireEvent.change(editorField('Label template'), { target: { value: 'Applied pattern' } });
   fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
   await act(async () => {
     s.pending[0].emit(ready(11));
@@ -586,17 +587,17 @@ it('applies a completed full preview once, discards prepared results, and makes 
     s.pending[3].emit(ready(22));
     s.pending[4].emit(ready(23));
   });
-  expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('device-2: resolved');
+  expect(editorField('Affected metric resolution').textContent).toContain('device-2: resolved');
   expect(s.save).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
   expect(s.save).toHaveBeenCalledTimes(1);
   expect(s.save.mock.calls[0][0].patterns.at(-1).display.label).toBe('Applied pattern');
   expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
-  expect(screen.getByLabelText('Affected metric resolution').textContent).toContain('device-2: unvalidated');
+  expect(editorField('Affected metric resolution').textContent).toContain('device-2: unvalidated');
   expect(s.prepared.mock.calls.at(-1)?.[0]).toBeUndefined();
-  fireEvent.change(screen.getByLabelText('Label template'), { target: { value: 'Discard me' } });
+  fireEvent.change(editorField('Label template'), { target: { value: 'Discard me' } });
   fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
-  expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Applied pattern');
+  expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied pattern');
   expect(s.execute).toHaveBeenCalledTimes(5);
   s.controller.dispose();
 });

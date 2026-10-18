@@ -1,9 +1,11 @@
+import { Alert, Button, Input, TextArea } from '@grafana/ui';
 import React, { useEffect, useState } from 'react';
 import { CoreApp, DataSourcePluginContextProvider, type DataSourceApi, type PanelData } from '@grafana/data';
 import { getDataSourceSrv } from '@grafana/runtime';
 import { validateConfig, type NamedQuery } from '../model/config';
 import type { QueryContext } from '../query/types';
 import { EMPTY_CONFIG } from './draft';
+import { EditorField, EditorSection } from './EditorLayout';
 export interface QueryEditorProps {
   query: NamedQuery;
   context: QueryContext;
@@ -70,14 +72,13 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
   };
   return (
     <section aria-label={`Query ${query.name}`}>
-      <label>
-        Query name
-        <input
+      <EditorField label="Query name">
+        <Input
           aria-label="Query name"
           value={query.name}
-          onChange={(e) => onChange({ ...query, name: e.target.value })}
+          onChange={(e) => onChange({ ...query, name: e.currentTarget.value })}
         />
-      </label>
+      </EditorField>
       <p>Query identity: {query.id}</p>
       {eager && (
         <p role="status">
@@ -88,32 +89,32 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
       )}
       {source.kind === 'panel' ? (
         <>
-          <label>
-            Panel refId
-            <input
+          <EditorField label="Panel refId">
+            <Input
               aria-label="Panel refId"
               value={source.refId}
-              onChange={(e) => onChange({ ...query, source: { ...source, refId: e.target.value } })}
+              onChange={(e) => onChange({ ...query, source: { ...source, refId: e.currentTarget.value } })}
             />
-          </label>
-          <button onClick={convert}>Convert to hover-only query</button>
+          </EditorField>
+          <Button variant="secondary" size="sm" onClick={convert}>
+            Convert to hover-only query
+          </Button>
         </>
       ) : (
         <>
-          <label>
-            Datasource override UID
-            <input
+          <EditorField label="Datasource override UID">
+            <Input
               aria-label="Datasource override UID"
               placeholder="Use panel default"
               value={source.datasource?.uid ?? ''}
               onChange={(e) =>
                 onChange({
                   ...query,
-                  source: { ...source, datasource: e.target.value ? { uid: e.target.value } : undefined },
+                  source: { ...source, datasource: e.currentTarget.value ? { uid: e.currentTarget.value } : undefined },
                 })
               }
             />
-          </label>
+          </EditorField>
           <p>Effective datasource: {uid ?? 'Choose a panel default or query override'}</p>
           {Editor && settings && datasource ? (
             <DataSourcePluginContextProvider instanceSettings={settings}>
@@ -145,10 +146,11 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
           ) : (
             <p>No supported native query editor is available. Import a datasource-native target JSON object below.</p>
           )}
-          <details>
-            <summary>Import native target JSON</summary>
-            <textarea aria-label="Native target JSON" value={json} onChange={(e) => setJson(e.target.value)} />
-            <button
+          <EditorSection title="Import native target JSON">
+            <TextArea aria-label="Native target JSON" value={json} onChange={(e) => setJson(e.currentTarget.value)} />
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 let message = '';
                 try {
@@ -172,19 +174,17 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
               }}
             >
               Import native target
-            </button>
-          </details>
-          <fieldset>
-            <legend>Parameter mapping</legend>
+            </Button>
+          </EditorSection>
+          <EditorSection title="Parameter mapping" defaultOpen>
             {Object.entries(source.parameters).map(([name, path]) => (
               <div key={name}>
-                <label>
-                  Parameter name
-                  <input
+                <EditorField label="Parameter name">
+                  <Input
                     aria-label={`${name} parameter name`}
                     defaultValue={name}
                     onBlur={(e) => {
-                      const nextName = e.target.value;
+                      const nextName = e.currentTarget.value;
                       if (nextName === name) {
                         return;
                       }
@@ -201,21 +201,22 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
                       onChange({ ...query, source: { ...source, parameters } });
                     }}
                   />
-                </label>
-                <label>
-                  {name} semantic path
-                  <input
+                </EditorField>
+                <EditorField label={`${name} semantic path`}>
+                  <Input
                     aria-label={`${name} semantic path`}
                     value={path}
                     onChange={(e) =>
                       onChange({
                         ...query,
-                        source: { ...source, parameters: { ...source.parameters, [name]: e.target.value } },
+                        source: { ...source, parameters: { ...source.parameters, [name]: e.currentTarget.value } },
                       })
                     }
                   />
-                </label>
-                <button
+                </EditorField>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => {
                     const parameters = { ...source.parameters };
                     delete parameters[name];
@@ -223,10 +224,12 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
                   }}
                 >
                   Remove {name}
-                </button>
+                </Button>
               </div>
             ))}
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 let i = 1;
                 while (`dm_parameter${i}` in source.parameters) {
@@ -239,14 +242,20 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
               }}
             >
               Add parameter
-            </button>
+            </Button>
             <p>Use $dm_parameter1 in the native target. The datasource handles variable escaping.</p>
-          </fieldset>
+          </EditorSection>
         </>
       )}
       {notice && <p role="status">{notice}</p>}
-      {error && <p role="alert">{error}</p>}
-      <button onClick={onPreview}>Preview query</button>
+      {error && (
+        <Alert title="Query needs attention" severity="error">
+          {error}
+        </Alert>
+      )}
+      <Button variant="secondary" size="sm" onClick={onPreview}>
+        Preview query
+      </Button>
     </section>
   );
 }

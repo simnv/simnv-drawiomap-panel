@@ -1,3 +1,4 @@
+import { editorField } from './testUtils';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -5,6 +6,9 @@ import { getDefaultTimeRange, LoadingState, type PanelData, type DataQueryReques
 import { QueryEditor } from './QueryEditor';
 import { validateConfig, type NamedQuery } from '../model/config';
 vi.hoisted(() => {
+  if (!window.localStorage) {
+    Object.defineProperty(window, 'localStorage', { value: { getItem: () => null, setItem() {}, removeItem() {} } });
+  }
   window.matchMedia =
     window.matchMedia ?? ((() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as never);
 });
@@ -121,11 +125,11 @@ describe('named query editor', () => {
       />
     );
     fireEvent.click(screen.getByText('Import native target JSON'));
-    fireEvent.change(screen.getByLabelText('Native target JSON'), { target: { value: '{"expr":"missing-refId"}' } });
+    fireEvent.change(editorField('Native target JSON'), { target: { value: '{"expr":"missing-refId"}' } });
     fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
     expect(change).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toContain('refId');
-    fireEvent.change(screen.getByLabelText('Native target JSON'), {
+    fireEvent.change(editorField('Native target JSON'), {
       target: { value: '{"refId":"X","opaque":{"keep":[1,2]}}' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
@@ -147,7 +151,7 @@ describe('named query editor', () => {
     expect(await screen.findByText(/No supported native query editor/)).toBeTruthy();
     expect(screen.getByText('Effective datasource: unsupported')).toBeTruthy();
     fireEvent.click(screen.getByText('Import native target JSON'));
-    fireEvent.change(screen.getByLabelText('Native target JSON'), {
+    fireEvent.change(editorField('Native target JSON'), {
       target: { value: '{"refId":"X","custom":{"query":["native",1]}}' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
