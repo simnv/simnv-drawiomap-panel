@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import React, {
   useCallback,
   useContext,
@@ -16,7 +17,7 @@ import { bind, bindPlan } from '../binding/engine';
 import { resolvePatterns } from '../binding/patterns';
 import { extractSeries } from '../binding/series';
 import { buildCard, buildConfiguredCard, DisplayOverride } from '../interact/cardModel';
-import { Card } from '../interact/Card';
+import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind, patchAt } from '../interact/hit';
 import { applyPatches } from '../render/applier';
 import { renderOverlay } from '../render/overlay';
@@ -101,6 +102,10 @@ interface CardState {
   y: number;
   pinned: boolean;
 }
+
+/** The sheet goes to document.body: position: fixed does not work below a CSS transform (the Grafana grid item). */
+const portalSheet = (card: React.ReactElement, sheet: boolean) =>
+  sheet && typeof document !== 'undefined' ? createPortal(card, document.body) : card;
 
 /** Touch screens and other devices without hover: only a tap opens (and pins) the card. */
 const canHover = () => !(typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
@@ -398,7 +403,9 @@ function DrawioMapPanelView({
       }
     };
     const onDown = (e: PointerEvent) => {
-      if (pinned && !wrapperRef.current?.contains(e.target as Node)) {
+      const t = e.target as Node;
+      // the sheet is in a portal outside the panel
+      if (pinned && !wrapperRef.current?.contains(t) && !cardRef.current?.contains(t)) {
         opener.current = null;
         setCard(null);
       }
@@ -623,20 +630,24 @@ function DrawioMapPanelView({
           </div>
         ) : null}
       </div>
-      {open && model && card ? (
-        <div ref={cardRef}>
-          <Card
-            model={model}
-            pinned={pinned}
-            x={card.x}
-            y={card.y}
-            width={width}
-            height={height}
-            timeRange={timeRange}
-            onClose={close}
-          />
-        </div>
-      ) : null}
+      {open && model && card
+        ? portalSheet(
+            <div ref={cardRef}>
+              <Card
+                model={model}
+                pinned={pinned}
+                x={card.x}
+                y={card.y}
+                width={width}
+                height={height}
+                anchor={wrapperEl}
+                timeRange={timeRange}
+                onClose={close}
+              />
+            </div>,
+            width < SHEET_BELOW
+          )
+        : null}
     </div>
   );
   return editing ? (

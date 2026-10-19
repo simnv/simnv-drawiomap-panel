@@ -97,15 +97,23 @@ const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
 test.describe('hover card on a phone', () => {
   test.use(iPhone);
 
-  test('a tap pins the card as a bottom sheet; a tap on the close button closes it', async ({ gotoDashboardPage }) => {
+  test('a tap pins the card as a bottom sheet; a tap on the close button closes it', async ({
+    gotoDashboardPage,
+    page,
+  }) => {
     const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
     const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
     const half = panel.locator.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${ISP_A}"]`);
     await expect(half).toHaveAttribute('data-dmap-status', 'ok');
-    await half.scrollIntoViewIfNeeded();
-    await half.tap({ force: true });
-    const dialog = panel.locator.getByRole('dialog');
-    await expect(dialog).toBeVisible();
+    // the sheet is in a portal in document.body, fixed to the bottom of the viewport
+    const dialog = page.getByRole('dialog');
+    // a redraw of the overlay can replace the polyline between the scroll and the tap
+    await expect(async () => {
+      await panel.locator.locator(`[data-cell-id="${ISP_A}"]`).scrollIntoViewIfNeeded();
+      await half.tap({ force: true, timeout: 2000 });
+      await expect(dialog).toBeVisible({ timeout: 2000 });
+    }).toPass();
+    await expect(dialog).toBeInViewport({ ratio: 1 });
     await expect(dialog).toHaveAttribute('data-sheet', 'true');
     await expect(dialog).toContainText('isp-a → rtr-a');
     // the sparkline is responsive: it has the full width of the sheet row
@@ -115,7 +123,7 @@ test.describe('hover card on a phone', () => {
     expect(Math.abs(s.width - (r.width - 8))).toBeLessThanOrEqual(1);
     expect(s.width).toBeGreaterThan(300);
     if (SHOTS) {
-      await panel.locator.screenshot({ path: `${SHOTS}/card-mobile-sheet.png` });
+      await page.screenshot({ path: `${SHOTS}/card-mobile-sheet.png` });
     }
     await dialog.getByRole('button', { name: 'Close' }).tap();
     await expect(dialog).toHaveCount(0);

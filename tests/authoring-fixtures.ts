@@ -9,7 +9,10 @@ export const svg = fs.readFileSync('src/fixtures/authoring.svg', 'utf8');
 export const xml = fs.readFileSync('src/fixtures/authoring.drawio', 'utf8');
 export const test = base.extend<{
   config: DiagramConfigV2;
-  createDiagram: (config: DiagramConfigV2, settings?: { clones?: number; svg?: string }) => Promise<string>;
+  createDiagram: (
+    config: DiagramConfigV2,
+    settings?: { clones?: number; svg?: string; height?: number }
+  ) => Promise<string>;
   sandboxSettings: void;
 }>({
   sandboxSettings: [
@@ -59,7 +62,7 @@ export const test = base.extend<{
               id: i + 1,
               title: `Sanitized topology ${i + 1}`,
               type: 'simnv-drawiomap-panel',
-              gridPos: { x: i * 12, y: 0, w: settings.clones ? 12 : 24, h: 20 },
+              gridPos: { x: i * 12, y: 0, w: settings.clones ? 12 : 24, h: settings.height ?? 20 },
               targets: [],
               fieldConfig: { defaults: {}, overrides: [] },
               options: {

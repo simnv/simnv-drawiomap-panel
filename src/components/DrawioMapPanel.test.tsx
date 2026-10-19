@@ -3,7 +3,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { locationService } from '@grafana/runtime';
 import {
   createTheme,
@@ -971,10 +971,36 @@ describe('DrawioMapPanel hover card', () => {
     expect(minMax.getAttribute('data-testid')).toBe('dmap-card-range');
     expect(minMax.textContent).toBe('min 12%max 42%');
   });
-  it('a narrow panel shows the card as a bottom sheet', async () => {
+  it('a narrow panel shows the card as a sheet fixed to the bottom of the viewport, outside the panel', async () => {
+    const { half, wrapper } = await setup(props({ width: 400, height: 2000 }));
+    fireEvent.click(half(linkId));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.getAttribute('data-sheet')).toBe('true');
+    // a portal: a CSS transform of the Grafana grid item does not move a fixed element in document.body
+    expect(wrapper.contains(dialog)).toBe(false);
+    expect(dialog.parentElement!.parentElement).toBe(document.body);
+    const style = getComputedStyle(dialog);
+    expect(style.position).toBe('fixed');
+    expect(style.bottom).toBe('0px');
+    expect(style.maxHeight).toBe('60vh');
+    expect(style.overflowY).toBe('auto');
+    expect(Number(style.zIndex)).toBeGreaterThanOrEqual(createTheme().zIndex.modal);
+    // a tap inside the sheet keeps it; a click on its row does not close it
+    fireEvent.pointerDown(dialog);
+    fireEvent.click(screen.getAllByTestId('dmap-card-row')[0]);
+    expect(card()).not.toBeNull();
+    // a tap outside the panel and the sheet closes it
+    fireEvent.pointerDown(document.body);
+    expect(card()).toBeNull();
+  });
+  it('Esc and the close button close the sheet', async () => {
     const { half } = await setup(props({ width: 400 }));
     fireEvent.click(half(linkId));
-    expect((await screen.findByRole('dialog')).getAttribute('data-sheet')).toBe('true');
+    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
+    expect(card()).toBeNull();
+    fireEvent.click(half(linkId));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close' }));
+    expect(card()).toBeNull();
   });
   it('a node card shows the configured rows with their unit, sparkline and url', async () => {
     const { cell } = await setup(withCpu());

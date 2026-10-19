@@ -7,7 +7,7 @@ import { SparklineView } from '../visuals/SparklineView';
 import type { HistoryModel } from '../query/frames';
 import { useSampleStale } from '../visuals/useSampleStale';
 
-/** Panels narrower than this show the card as a bottom sheet. */
+/** Panels narrower than this show the pinned or hover card as a sheet at the bottom of the viewport. */
 export const SHEET_BELOW = 480;
 const W = 280;
 const GAP = 14;
@@ -24,6 +24,8 @@ export interface CardProps {
   /** panel size: the card stays inside it */
   width: number;
   height: number;
+  /** the panel element: the sheet has its horizontal position */
+  anchor?: HTMLElement | null;
   /** dashboard time range in ms, for the sparkline x axis */
   range?: { from: number; to: number };
   timeRange?: TimeRange;
@@ -49,10 +51,18 @@ const getStyles = (theme: GrafanaTheme2) => ({
   hover: css`
     pointer-events: none;
   `,
+  // Fixed to the viewport, so the sheet is visible also in a panel that is taller than the screen. The panel
+  // renders it in a portal: a CSS transform of a parent (the Grafana grid item) would move a fixed element.
   sheet: css`
+    position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
+    z-index: ${theme.zIndex.modal};
+    max-height: 60vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: calc(${theme.spacing(1)} + env(safe-area-inset-bottom, 0px));
     border-radius: ${theme.shape.radius.default} ${theme.shape.radius.default} 0 0;
     border-bottom: none;
   `,
@@ -220,7 +230,7 @@ const Row = memo(function Row({
  * The hover card. Unpinned it follows the pointer and ignores the pointer. Pinned it is a non-modal
  * dialog with a close button, row links and footer links. Narrow panels show it as a bottom sheet.
  */
-export function Card({ model, pinned, x, y, width, height, range, timeRange, onClose }: CardProps) {
+export function Card({ model, pinned, x, y, width, height, anchor, range, timeRange, onClose }: CardProps) {
   const styles = useStyles2(getStyles);
   const ref = useRef<HTMLDivElement>(null);
   const sheet = width < SHEET_BELOW;
@@ -228,7 +238,16 @@ export function Card({ model, pinned, x, y, width, height, range, timeRange, onC
   // Place the card after it renders: the height is known only then.
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || sheet) {
+    if (!el) {
+      return;
+    }
+    if (sheet) {
+      // the width of the panel, at the bottom of the viewport
+      const r = anchor?.getBoundingClientRect();
+      if (r && r.width > 0) {
+        el.style.left = `${Math.max(0, r.left)}px`;
+        el.style.right = `${Math.max(0, document.documentElement.clientWidth - r.right)}px`;
+      }
       return;
     }
     const h = el.offsetHeight;
@@ -251,7 +270,7 @@ export function Card({ model, pinned, x, y, width, height, range, timeRange, onC
   }, [pinned, model.title]);
 
   const style: React.CSSProperties = sheet
-    ? { maxHeight: Math.max(120, Math.round(height * 0.6)) }
+    ? {}
     : { width: W, maxHeight: height - 2 * EDGE, left: x + GAP, top: y + GAP };
 
   return (
