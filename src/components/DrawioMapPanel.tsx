@@ -197,6 +197,7 @@ function DrawioMapPanelView({
   const wheelZoom = opts.zoom.wheel;
   const dragPan = opts.zoom.pan;
   const align = opts.zoom.align ?? 'top';
+  const minScale = opts.zoom.minScale ?? 0;
 
   // Reset the custom view and close the card when the diagram changes (state adjustment during render).
   const hash = opts.diagram?.hash;
@@ -207,7 +208,7 @@ function DrawioMapPanelView({
     setCard(null);
   }
   // A new panel size or a new zoom option resets the live view to the configured view.
-  const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}|${align}`;
+  const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}|${align}|${minScale}`;
   const [lastViewKey, setLastViewKey] = useState(viewKey);
   if (lastViewKey !== viewKey) {
     setLastViewKey(viewKey);
@@ -447,15 +448,16 @@ function DrawioMapPanelView({
       return;
     }
     const layout = viewBoxFor(
-      { ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align },
-      view ?? stage.base,
-      { width: stageWidth, height: stageHeight }
+      { ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align, minScale },
+      stage.base,
+      { width: stageWidth, height: stageHeight },
+      view ?? stage.base
     );
     applyLayout(stage.root, layout);
     if (containerRef.current) {
       containerRef.current.style.overflow = layout.overflow;
     }
-  }, [stage.root, stage.base, zoomMode, zoomPercent, align, stageWidth, stageHeight, view]);
+  }, [stage.root, stage.base, zoomMode, zoomPercent, align, minScale, stageWidth, stageHeight, view]);
 
   // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default).
   const hoverKinds = opts.hover.kinds;
@@ -483,6 +485,15 @@ function DrawioMapPanelView({
       (t instanceof Element && !!t.closest('[data-dmap-widget] a')) ||
       (t instanceof Node && (!!corner.current?.contains(t) || !!bandRef.current?.contains(t))),
   });
+
+  // The configured view starts at the top-left corner of a stage that scrolls.
+  const resetView = () => {
+    setView(null);
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+      containerRef.current.scrollLeft = 0;
+    }
+  };
 
   // A click or a tap pins the card of the cell. A click on empty space closes it.
   const onClick = (e: React.MouseEvent) => {
@@ -616,7 +627,7 @@ function DrawioMapPanelView({
             className={styles.reset}
             style={{ background: theme.colors.background.primary, border: `1px solid ${theme.colors.border.medium}` }}
             data-testid="dmap-reset-zoom"
-            onClick={() => setView(null)}
+            onClick={resetView}
           />
         ) : null}
         {warnings.length ? (

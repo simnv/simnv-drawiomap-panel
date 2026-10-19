@@ -11,7 +11,14 @@ export const test = base.extend<{
   config: DiagramConfigV2;
   createDiagram: (
     config: DiagramConfigV2,
-    settings?: { clones?: number; svg?: string; height?: number }
+    settings?: {
+      clones?: number;
+      svg?: string;
+      height?: number;
+      /** grid columns of the panel; default: the full row */
+      width?: number;
+      zoom?: Record<string, unknown>;
+    }
   ) => Promise<string>;
   sandboxSettings: void;
 }>({
@@ -62,14 +69,14 @@ export const test = base.extend<{
               id: i + 1,
               title: `Sanitized topology ${i + 1}`,
               type: 'simnv-drawiomap-panel',
-              gridPos: { x: i * 12, y: 0, w: settings.clones ? 12 : 24, h: settings.height ?? 20 },
+              gridPos: { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24), h: settings.height ?? 20 },
               targets: [],
               fieldConfig: { defaults: {}, overrides: [] },
               options: {
                 config,
                 rules: [],
                 diagram: { svg: settings.svg ?? svg, xml, hash: uid },
-                zoom: { mode: 'fit', wheel: true, pan: true },
+                zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
               },
             })),
           },

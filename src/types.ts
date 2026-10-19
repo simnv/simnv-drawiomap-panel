@@ -98,6 +98,8 @@ export interface ZoomOptions {
   pan: boolean;
   /** Default: top. */
   align?: ZoomAlign;
+  /** Fit and Fit width do not shrink the diagram below this scale (1 = 100 %); the stage scrolls instead. 0: off. */
+  minScale?: number;
 }
 
 export interface Options {

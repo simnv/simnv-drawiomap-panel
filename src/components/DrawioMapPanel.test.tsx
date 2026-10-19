@@ -1058,6 +1058,67 @@ describe('DrawioMapPanel live zoom', () => {
     await waitFor(() => expect(svgEl.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet'));
   });
 
+  describe('Minimum scale', () => {
+    // the sheet is 1115 x 640; the 800 x 600 panel fits it at about 0.72
+    const minScale = (mode: 'fit' | 'fit-width', scale = 1.3) =>
+      props({ options: { ...options, zoom: { ...options.zoom, mode, minScale: scale } } });
+    async function mount(p: PanelProps<Options>) {
+      const r = render(<DrawioMapPanel {...p} />);
+      await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
+      const svgEl = r.container.querySelector('svg')!;
+      const stage = screen.getByTestId('dmap-stage');
+      return { ...r, svgEl, stage, wrapper: screen.getByTestId('dmap-panel') };
+    }
+
+    it('fit: the diagram does not shrink below the minimum scale; the stage scrolls', async () => {
+      const { svgEl, stage } = await mount(minScale('fit'));
+      await waitFor(() => expect(svgEl.getAttribute('width')).toBe('1449.5px'));
+      expect(svgEl.getAttribute('height')).toBe('832px');
+      expect(svgEl.getAttribute('viewBox')).toBe('0 0 1115 640');
+      expect(stage.style.overflow).toBe('auto');
+      // the status band is not in the scroll container
+      expect(stage.contains(screen.queryByTestId('dmap-status-band'))).toBe(false);
+    });
+
+    it('fit-width: the height is the sheet height times the minimum scale', async () => {
+      const { svgEl, stage } = await mount(minScale('fit-width'));
+      await waitFor(() => expect(svgEl.getAttribute('width')).toBe('1449.5px'));
+      expect(svgEl.getAttribute('height')).toBe('832px');
+      expect(stage.style.overflow).toBe('auto');
+    });
+
+    it('a minimum scale below the fit scale keeps the fit layout', async () => {
+      const { svgEl, stage } = await mount(minScale('fit', 0.5));
+      await waitFor(() => expect(svgEl.getAttribute('width')).toBe('100%'));
+      expect(stage.style.overflow).toBe('hidden');
+    });
+
+    it('at the configured view the plain wheel scrolls the stage; a live zoom keeps the svg size', async () => {
+      const { svgEl, wrapper } = await mount(minScale('fit'));
+      await waitFor(() => expect(svgEl.getAttribute('width')).toBe('1449.5px'));
+      expect(wheel(wrapper, { deltaY: 100 }).defaultPrevented).toBe(false);
+      expect(reset()).toBeNull();
+      wheel(wrapper, { deltaY: -10, ctrlKey: true });
+      await screen.findByRole('button', { name: 'Reset zoom' });
+      expect(svgEl.getAttribute('viewBox')).not.toBe('0 0 1115 640');
+      expect(svgEl.getAttribute('width')).toBe('1449.5px');
+      expect(svgEl.getAttribute('height')).toBe('832px');
+    });
+
+    it('the reset button restores the configured view and scrolls the stage to the top left', async () => {
+      const { svgEl, stage, wrapper } = await mount(minScale('fit'));
+      await waitFor(() => expect(svgEl.getAttribute('width')).toBe('1449.5px'));
+      stage.scrollTop = 120;
+      stage.scrollLeft = 80;
+      wheel(wrapper, { deltaY: -10, ctrlKey: true });
+      fireEvent.click(await screen.findByRole('button', { name: 'Reset zoom' }));
+      await waitFor(() => expect(svgEl.getAttribute('viewBox')).toBe('0 0 1115 640'));
+      expect(reset()).toBeNull();
+      expect(stage.scrollTop).toBe(0);
+      expect(stage.scrollLeft).toBe(0);
+    });
+  });
+
   it('Ctrl+wheel (a trackpad pinch) zooms with Wheel zoom off; the plain wheel does not', async () => {
     const { wrapper, svgEl, base } = await setup();
     expect(wheel(wrapper, { deltaY: -100 }).defaultPrevented).toBe(false);

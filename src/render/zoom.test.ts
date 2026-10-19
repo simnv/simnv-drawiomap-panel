@@ -44,6 +44,67 @@ describe('viewBoxFor', () => {
   });
 });
 
+describe('viewBoxFor with minScale', () => {
+  const fit = { mode: 'fit', percent: 100, wheel: false, pan: false } as const;
+  const fitWidth = { ...fit, mode: 'fit-width' } as const;
+
+  it('minScale 0 or a minScale below the fit scale keeps the fit layout', () => {
+    // the fit scale is min(400 / 1000, 300 / 500) = 0.4
+    expect(viewBoxFor({ ...fit, minScale: 0 }, base, box)).toEqual(viewBoxFor(fit, base, box));
+    expect(viewBoxFor({ ...fit, minScale: 0.3 }, base, box)).toEqual(viewBoxFor(fit, base, box));
+    expect(viewBoxFor({ ...fitWidth, minScale: 0.4 }, base, box)).toEqual(viewBoxFor(fitWidth, base, box));
+  });
+  it('fit: a minScale above the fit scale gives the diagram its pixel size at minScale and scrolls', () => {
+    expect(viewBoxFor({ ...fit, minScale: 1.3 }, base, box)).toEqual({
+      viewBox: base,
+      width: '1300px',
+      height: '650px',
+      overflow: 'auto',
+      align: 'top',
+    });
+  });
+  it('fit: a dimension that does not overflow fills the box, so that the diagram stays centred in it', () => {
+    const tall = { x: 0, y: 0, w: 200, h: 1000 };
+    // the fit scale is 0.3; at 1 the diagram is 200 px wide in a 400 px box
+    expect(viewBoxFor({ ...fit, minScale: 1 }, tall, box)).toMatchObject({
+      width: '100%',
+      height: '1000px',
+      overflow: 'auto',
+    });
+    const wide = { x: 0, y: 0, w: 2000, h: 100 };
+    expect(viewBoxFor({ ...fit, minScale: 1, align: 'center' }, wide, box)).toMatchObject({
+      width: '2000px',
+      height: '100%',
+      overflow: 'auto',
+      align: 'center',
+    });
+  });
+  it('fit-width: the content height is the sheet height times the scale', () => {
+    expect(viewBoxFor({ ...fitWidth, minScale: 1.3 }, base, box)).toEqual({
+      viewBox: base,
+      width: '1300px',
+      height: '650px',
+      overflow: 'auto',
+      align: 'top',
+    });
+  });
+  it('a live view changes the viewBox only: the svg box keeps the size of the configured view', () => {
+    const view = { x: 100, y: 50, w: 500, h: 250 };
+    expect(viewBoxFor({ ...fit, minScale: 1.3 }, base, box, view)).toEqual({
+      ...viewBoxFor({ ...fit, minScale: 1.3 }, base, box),
+      viewBox: view,
+    });
+    expect(viewBoxFor(fitWidth, base, box, view)).toEqual({ ...viewBoxFor(fitWidth, base, box), viewBox: view });
+    expect(viewBoxFor({ ...fit, mode: 'original' }, base, box, view)).toMatchObject({ width: '1000px', viewBox: view });
+  });
+  it('the configured view is the default view also when minScale clamps the scale', () => {
+    const layout = viewBoxFor({ ...fit, minScale: 1.3 }, base, box);
+    expect(isDefaultView(null, base)).toBe(true);
+    expect(isDefaultView(layout.viewBox, base)).toBe(true);
+    expect(isDefaultView(zoomAt(layout.viewBox, 0.5, 500, 250), base)).toBe(false);
+  });
+});
+
 describe('zoomAt', () => {
   it('zooms around a point', () => {
     const z = zoomAt(base, 0.5, 500, 250);

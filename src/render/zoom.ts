@@ -32,21 +32,40 @@ export function readViewBox(root: SVGSVGElement): ViewBox {
   return { x: 0, y: 0, w, h };
 }
 
-export function viewBoxFor(zoom: ZoomOptions, base: ViewBox, box: { width: number; height: number }): Layout {
+/**
+ * The svg box for the configured view `base` in a stage of size `box`. A live view (`view`) changes the viewBox
+ * only: the svg box keeps its size, so that the gesture math stays in one coordinate system.
+ */
+export function viewBoxFor(
+  zoom: ZoomOptions,
+  base: ViewBox,
+  box: { width: number; height: number },
+  view: ViewBox = base
+): Layout {
   const align = zoom.align ?? 'top';
+  const min = zoom.minScale ?? 0;
+  const px = (scale: number) => ({ width: `${base.w * scale}px`, height: `${base.h * scale}px` });
   switch (zoom.mode) {
-    case 'fit':
-      return { viewBox: base, width: '100%', height: '100%', overflow: 'hidden', align };
+    case 'fit': {
+      if (min > Math.min(box.width / base.w, box.height / base.h)) {
+        // A dimension that does not overflow fills the box: preserveAspectRatio keeps the diagram centred in it.
+        const width = base.w * min > box.width ? `${base.w * min}px` : '100%';
+        const height = base.h * min > box.height ? `${base.h * min}px` : '100%';
+        return { viewBox: view, width, height, overflow: 'auto', align };
+      }
+      return { viewBox: view, width: '100%', height: '100%', overflow: 'hidden', align };
+    }
     case 'fit-width': {
+      if (min > box.width / base.w) {
+        return { viewBox: view, ...px(min), overflow: 'auto', align };
+      }
       const h = (box.width * base.h) / base.w;
-      return { viewBox: base, width: `${box.width}px`, height: `${h}px`, overflow: 'auto', align };
+      return { viewBox: view, width: `${box.width}px`, height: `${h}px`, overflow: 'auto', align };
     }
     case 'original':
-      return { viewBox: base, width: `${base.w}px`, height: `${base.h}px`, overflow: 'auto', align };
-    case 'custom': {
-      const f = (zoom.percent || 100) / 100;
-      return { viewBox: base, width: `${base.w * f}px`, height: `${base.h * f}px`, overflow: 'auto', align };
-    }
+      return { viewBox: view, ...px(1), overflow: 'auto', align };
+    case 'custom':
+      return { viewBox: view, ...px((zoom.percent || 100) / 100), overflow: 'auto', align };
   }
 }
 

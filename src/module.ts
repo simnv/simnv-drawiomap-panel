@@ -77,6 +77,15 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         defaultValue: 100,
         showIf: (o) => o.zoom?.mode === 'custom',
       })
+      .addNumberInput({
+        path: 'zoom.minScale',
+        name: 'Minimum scale',
+        description: 'Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%.',
+        category: ['View'],
+        defaultValue: 0,
+        settings: { min: 0, step: 0.1 },
+        showIf: (o) => ['fit', 'fit-width'].includes(o.zoom?.mode ?? 'fit'),
+      })
       .addRadio({
         path: 'zoom.align',
         name: 'Align',
