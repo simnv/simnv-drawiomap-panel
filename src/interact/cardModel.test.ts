@@ -300,8 +300,8 @@ describe('configured cards', () => {
       ['metadata', 'Device', 'rtr-a'],
       ['value', 'CPU', '~35.25 load'],
       ['history', 'Trend', '~35.25 load'],
-      ['drilldown', 'Dashboard', 'Dashboard'],
     ]);
+    expect(card.links.filter((l) => l.title === 'Dashboard').map((l) => l.href)).toEqual(['/d/device?device=rtr-a']);
     expect(card.rows[1].history).toBeUndefined();
     expect(card.rows[1]).toMatchObject({ sampleAt: 3000, freshness: { expectedIntervalMs: 1000, staleAfterMs: 5000 } });
     expect(card.rows[2].history).toMatchObject({
@@ -347,7 +347,29 @@ describe('configured cards', () => {
     });
     expect(card.rows[0].text).toBe('35.3%');
     expect(card.rows[0].href).toBe('/d/cpu?name=a%26b&job=x%2Fy');
-    expect(card.rows.slice(1).map((r) => r.href)).toEqual([undefined, undefined]);
+    expect(card.rows).toHaveLength(1);
+    expect(card.links.filter((l) => l.title.startsWith('Unsafe'))).toEqual([]);
+    expect(card.diagnostics.map((d) => [d.code, d.path])).toEqual([
+      ['invalid-url', `cells.${p.cellId}.hover.rows[1].url`],
+      ['invalid-url', `cells.${p.cellId}.hover.rows[2].url`],
+    ]);
+  });
+  it('shows a drilldown once, as a footer link, and not again when the cell url has the same target', () => {
+    const p: PlanCellPatch = {
+      ...nodePatch(),
+      urls: [{ url: '/d/vpn' }],
+      hover: {
+        rows: [
+          { kind: 'metadata', label: 'Role', path: 'cell.key' },
+          { kind: 'drilldown', label: 'Open dashboard', url: '/d/vpn' },
+        ],
+      },
+    };
+    const card = buildConfiguredCard(p, () => ({ state: 'idle' }), ctx);
+    expect(card.rows.map((r) => [r.title, r.text])).toEqual([['Role', 'rtr-a']]);
+    expect(card.links.filter((l) => l.href === '/d/vpn').map((l) => [l.title, l.target])).toEqual([
+      ['Open dashboard', '_blank'],
+    ]);
   });
   it('reports unavailable and ambiguous hover metrics to the editor without blank rows', () => {
     let i = 0;

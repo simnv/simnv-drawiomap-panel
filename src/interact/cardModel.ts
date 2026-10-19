@@ -69,7 +69,17 @@ export function buildConfiguredCard(
         state: value.unresolved.length ? 'empty' : 'ready',
       });
     } else if (row.kind === 'drilldown') {
-      card.rows.push({ ...base, text: base.title, state: 'ready', href: rowHref(patch, row.url, primary, ctx) });
+      // A drilldown is a footer link, not a row: a row would show its label as the title and as the value.
+      const href = rowHref(patch, row.url, primary, ctx);
+      if (href === undefined) {
+        card.diagnostics.push({
+          code: 'invalid-url',
+          path: `cells.${patch.cellId}.hover.rows[${i}].url`,
+          message: 'Drilldown URL must use http, https or a relative path.',
+        });
+      } else if (!card.links.some((l) => l.href === href)) {
+        card.links.push({ title: base.title, href, target: '_blank', origin: patch });
+      }
     } else {
       const unavailable = patch.unavailableHoverRows?.includes(i);
       if (!unavailable) {
