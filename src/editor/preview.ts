@@ -77,6 +77,8 @@ export interface QueryPreview {
   cellId?: string;
   context: QueryContext;
   snapshot: QuerySnapshot;
+  /** A result of an earlier context, shown until the new result. Reuse ignores it. */
+  kept?: boolean;
 }
 /** Select compatible prepared results without registering demand or consulting another cache. */
 export function previewSnapshot(
@@ -112,6 +114,7 @@ export function preparedSnapshot(
   const compatible = [...active, preview].filter(
     (result) =>
       result &&
+      !(purpose === 'reuse' && result.kept) &&
       JSON.stringify(result.query) === JSON.stringify(query) &&
       (generation === undefined || generation === result.context.generation) &&
       JSON.stringify(result.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&

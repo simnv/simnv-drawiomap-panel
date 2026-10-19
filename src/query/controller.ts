@@ -136,10 +136,20 @@ export function createQueryController(
       cache.delete(cache.keys().next().value!);
     }
   };
+  const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
   const publish = (entry: Entry, snapshot: QuerySnapshot) => {
     entry.snapshot = snapshot;
     for (const listener of [...entry.listeners.keys()]) {
       listener(snapshot);
+    }
+  };
+  /** Keep the last result while a refresh runs. Only an entry without a result shows loading. */
+  const refreshing = (entry: Entry) => {
+    const last = entry.snapshot;
+    if (last.state === 'ready' || last.state === 'empty') {
+      publish(entry, { ...last, fromCache: true });
+    } else if (!settled(last)) {
+      publish(entry, { state: 'loading' });
     }
   };
   const refreshMs = (entry: Entry) =>
@@ -181,6 +191,9 @@ export function createQueryController(
           if (disposed || entry.token !== token || !entry.listeners.size) {
             return;
           }
+          if (!settled(snapshot) && settled(entry.snapshot)) {
+            return;
+          }
           if (snapshot.state === 'ready') {
             let size = { values: Infinity, bytes: Infinity };
             try {
@@ -216,7 +229,7 @@ export function createQueryController(
             entry.timer = setTimeout(() => {
               stop(entry);
               if (!disposed && entry.listeners.size) {
-                publish(entry, { state: 'loading' });
+                refreshing(entry);
                 enqueue(entry);
               }
             }, refreshMs(entry));
@@ -304,15 +317,18 @@ export function createQueryController(
         return () => {};
       }
       let entry = entries.get(request.cacheKey);
-      let fresh = !entry;
+      let run = false;
+      // A pending renewal also has an expired kept result. Do not restart it.
       if (
         entry &&
+        !entry.running &&
+        !queue.has(entry) &&
         (entry.snapshot.state === 'ready' || entry.snapshot.state === 'empty') &&
         now() - entry.snapshot.fetchedAt >= policy.freshMs
       ) {
         stop(entry);
-        publish(entry, { state: 'loading' });
-        fresh = true;
+        refreshing(entry);
+        run = true;
       }
       if (!entry) {
         const cached = cache.get(request.cacheKey);
@@ -328,6 +344,7 @@ export function createQueryController(
           snapshot: isFresh ? { ...snapshot, fromCache: true } : { state: 'loading' },
           token: 0,
         };
+        run = !isFresh;
         entries.set(request.cacheKey, entry);
       }
       const current = entry;
@@ -356,12 +373,18 @@ export function createQueryController(
         }
       };
       consumers.set(demand.consumerId, release);
-      if (fresh && current.snapshot.state === 'loading') {
+      if (run) {
         enqueue(current);
-      } else if (!current.running && !current.timer && refreshMs(current) > 0 && current.snapshot.state !== 'loading') {
+      } else if (
+        !current.running &&
+        !queue.has(current) &&
+        !current.timer &&
+        refreshMs(current) > 0 &&
+        current.snapshot.state !== 'loading'
+      ) {
         current.timer = setTimeout(() => {
           current.timer = undefined;
-          publish(current, { state: 'loading' });
+          refreshing(current);
           enqueue(current);
         }, refreshMs(current));
       }

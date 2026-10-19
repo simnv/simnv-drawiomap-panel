@@ -4,8 +4,17 @@ import type { BindingPlan } from '../binding/patterns';
 import type { DiagramConfigV2 } from '../model/config';
 import type { PanelQueryService } from '../query/panel';
 import { preparedSnapshot, type QueryPreview } from '../editor/preview';
+import type { QuerySnapshot } from '../query/types';
 
 const NO_PREPARED: QueryPreview[] = [];
+const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
+
+interface Held {
+  key: string;
+  preview: QueryPreview;
+  /** The last result that is not loading, for the same query, scope, element and default datasource. */
+  last?: { match: string; preview: QueryPreview };
+}
 
 /** Holds only active display snapshots. The shared controller owns execution and the inactive cache. */
 export function useBindingSnapshots(
@@ -39,12 +48,13 @@ export function useBindingSnapshots(
           service.context.generation
         );
         const reuse = snapshot.state === 'ready' || snapshot.state === 'empty' ? snapshot : undefined;
-        return [{ request, cellId: demand.cellId, key: JSON.stringify(request), reuse }];
+        const match = JSON.stringify([query, scope, demand.cellId, service.context.defaultDatasource]);
+        return [{ request, cellId: demand.cellId, key: JSON.stringify(request), match, reuse }];
       }),
     [plan, config, service, openCellId, maxDataPoints, prepared]
   );
   const active = useRef(new Map<string, { key: string; release: () => void }>());
-  const [snapshots, setSnapshots] = useState<Record<string, { key: string; preview: QueryPreview }>>({});
+  const [snapshots, setSnapshots] = useState<Record<string, Held>>({});
   const controller = service?.controller;
   useEffect(() => {
     const subscriptions = active.current;
@@ -76,30 +86,29 @@ export function useBindingSnapshots(
           if (subscriptions.get(id) !== item) {
             return;
           }
-          setSnapshots((previous) => ({
-            ...previous,
-            [id]: {
-              key: demand.key,
-              preview: {
-                query: demand.request.query,
-                cellId: demand.cellId,
-                context: demand.request.context,
-                snapshot,
-              },
-            },
-          }));
+          setSnapshots((previous) => {
+            const preview = {
+              query: demand.request.query,
+              cellId: demand.cellId,
+              context: demand.request.context,
+              snapshot,
+            };
+            const last = settled(snapshot) ? { match: demand.match, preview } : previous[id]?.last;
+            return { ...previous, [id]: { key: demand.key, preview, last } };
+          });
         });
       }
     }
-    // Discard inactive display snapshots; keep reusable history only in the bounded controller cache.
-    if (!Object.entries(snapshots).some(([id, item]) => desired.get(id)?.key !== item.key)) {
+    // Discard snapshots of released consumers; keep reusable history only in the bounded controller cache.
+    // A consumer with a new key keeps its entry: the entry holds the last result until the new result.
+    if (Object.keys(snapshots).every((id) => desired.has(id))) {
       return;
     }
     let attached = true;
     queueMicrotask(() => {
       if (attached) {
         setSnapshots((previous) => {
-          const entries = Object.entries(previous).filter(([id, item]) => desired.get(id)?.key === item.key);
+          const entries = Object.entries(previous).filter(([id]) => desired.has(id));
           return entries.length === Object.keys(previous).length ? previous : Object.fromEntries(entries);
         });
       }
@@ -122,8 +131,39 @@ export function useBindingSnapshots(
           ];
         }
         const value = snapshots[demand.request.consumerId];
-        return value?.key === demand.key ? [value.preview] : [];
+        const current = value?.key === demand.key ? value.preview : undefined;
+        // A refresh starts a new request. Until it has a result, show the last result of the same demand,
+        // or the last chart result of an earlier context that the demand reused.
+        const last =
+          (value?.last?.match === demand.match ? value.last.preview : undefined) ??
+          prepared.find(
+            (result) =>
+              result.context !== demand.request.context &&
+              settled(result.snapshot) &&
+              preparedSnapshot(
+                demand.request.query,
+                config,
+                demand.cellId,
+                undefined,
+                [result],
+                undefined,
+                'display'
+              ) === result.snapshot
+          );
+        if (last && !(current && settled(current.snapshot))) {
+          const snapshot = last.snapshot;
+          return [
+            {
+              ...last,
+              kept: true,
+              context: demand.request.context,
+              snapshot:
+                snapshot.state === 'ready' || snapshot.state === 'empty' ? { ...snapshot, fromCache: true } : snapshot,
+            },
+          ];
+        }
+        return current ? [current] : [];
       }),
-    [demands, snapshots]
+    [demands, snapshots, prepared, config]
   );
 }

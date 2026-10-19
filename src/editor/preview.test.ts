@@ -94,8 +94,8 @@ describe('eager query results in the preview and controller', () => {
     ['retained frames after request failure', { state: LoadingState.Error, series: [frame] }, 'error'],
     ['legacy error with retained frames', { error: { message: 'failed' }, series: [frame] }, 'error'],
     ['errors without frames', { errors: [{ message: 'failed' }] }, 'error'],
-    ['not started with retained frames', { state: LoadingState.NotStarted, series: [frame] }, 'loading'],
-    ['loading with retained frames', { state: LoadingState.Loading, series: [frame] }, 'loading'],
+    ['not started with retained frames', { state: LoadingState.NotStarted, series: [frame] }, 'ready'],
+    ['loading with retained frames', { state: LoadingState.Loading, series: [frame] }, 'ready'],
     ['missing result', {}, 'empty'],
     ['healthy result', { series: [frame] }, 'ready'],
     [

@@ -364,7 +364,8 @@ it('keeps saved monitoring independent when it joins a pending one-shot preview'
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(10);
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(saved.mock.calls.at(-1)?.[0].state).toBe('loading');
+    // The saved consumer keeps the last result while its query runs again.
+    expect(saved.mock.calls.at(-1)?.[0]).toMatchObject({ state: 'ready', fromCache: true });
     stop();
     release();
     controller.dispose();

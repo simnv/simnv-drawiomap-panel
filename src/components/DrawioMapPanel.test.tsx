@@ -1718,7 +1718,8 @@ describe('saved chart results in authoring previews', () => {
     view.rerender(<DrawioMapPanel {...p} timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }} />);
     await waitFor(() => expect(current).toHaveLength(2));
     act(() => receivers[0](999));
-    expect(screen.getByRole('dialog').textContent).not.toContain('42');
+    // The card keeps the last result until the new context has a result.
+    expect(screen.getByRole('dialog').textContent).toContain('42');
     expect(screen.getByRole('dialog').textContent).not.toContain('999');
     // Complete the saved stream first. Its ready data replaces the temporary hover demand.
     const chartIndex = nativeQuery.mock.calls.slice(1).findIndex(([request]) => request.maxDataPoints === 400);

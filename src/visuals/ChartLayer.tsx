@@ -35,6 +35,8 @@ export interface ChartLayerProps {
   };
 }
 
+const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
+
 /** Check the painted element against the panel and every clipping ancestor. */
 function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
   if (!shape.isConnected || document.visibilityState === 'hidden') {
@@ -88,8 +90,11 @@ function Region({
   const updateRef = useRef<() => void>();
   const [portal, setPortal] = useState<SVGForeignObjectElement>();
   const [geometry, setGeometry] = useState<{ anchor: ChartAnchor; visible: boolean; resolution: number }>();
-  const [response, setResponse] = useState<{ key: string; snapshot: QuerySnapshot }>();
+  const [response, setResponse] = useState<{ key: string; match: string; preview: QueryPreview }>();
+  /** The last result that is not loading, for the same query, scope and default datasource. */
+  const last = useRef<{ match: string; preview: QueryPreview }>();
   const query = queries.find((q) => q.id === entry.widget.binding.queryId);
+  const match = JSON.stringify([query, entry.scope, context.defaultDatasource]);
   const key = JSON.stringify([query, entry.scope, context, geometry?.resolution]);
 
   useLayoutEffect(() => {
@@ -189,10 +194,26 @@ function Region({
         context,
         maxDataPoints: geometry.resolution,
       },
-      (snapshot) => {
+      (received) => {
         if (current) {
-          setResponse({ key, snapshot });
-          onPrepared?.(entry.widget.id, { query, cellId: entry.anchorCellId, context, snapshot });
+          // A refresh or a resize starts a new request. Until it has a result, show the last result.
+          // The kept result keeps its own context: reuse for the new context needs a new result.
+          let preview: QueryPreview = { query, cellId: entry.anchorCellId, context, snapshot: received };
+          if (settled(received)) {
+            last.current = { match, preview };
+          } else if (last.current?.match === match) {
+            const kept = last.current.preview;
+            preview = {
+              ...kept,
+              kept: true,
+              snapshot:
+                kept.snapshot.state === 'ready' || kept.snapshot.state === 'empty'
+                  ? { ...kept.snapshot, fromCache: true }
+                  : kept.snapshot,
+            };
+          }
+          setResponse({ key, match, preview });
+          onPrepared?.(entry.widget.id, preview);
         }
       }
     );
@@ -211,6 +232,7 @@ function Region({
     geometry?.visible,
     geometry?.resolution,
     key,
+    match,
     draftOnly,
     onPrepared,
   ]);
@@ -229,10 +251,11 @@ function Region({
     return null;
   }
   const { width, height } = geometry.anchor;
+  // Until the effect watches a new key, show the last result of the same query and scope.
   let snapshot: QuerySnapshot = !query
     ? { state: 'error', message: 'Choose a named query.' }
-    : response?.key === key
-      ? response.snapshot
+    : response && (response.key === key || (response.match === match && settled(response.preview.snapshot)))
+      ? response.preview.snapshot
       : { state: 'loading' };
   if (draft) {
     const shownQuery = draft.queries.find((q) => q.id === widget.binding.queryId);
@@ -241,8 +264,11 @@ function Region({
       shownQuery &&
       JSON.stringify(shownQuery) === JSON.stringify(query) &&
       JSON.stringify(draft.defaultDatasource) === JSON.stringify(context.defaultDatasource);
+    // A kept result of an earlier context is not a saved result for this context.
+    const saved: QuerySnapshot =
+      response?.key === key && response.preview.context === context ? response.preview.snapshot : { state: 'loading' };
     const savedResult: QueryPreview[] =
-      compatible && query ? [{ query, cellId: entry.anchorCellId, context, snapshot }] : [];
+      compatible && query ? [{ query, cellId: entry.anchorCellId, context, snapshot: saved }] : [];
     snapshot = shownQuery
       ? previewSnapshot(
           shownQuery,

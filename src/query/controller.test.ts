@@ -482,3 +482,97 @@ it('counts numeric vector storage in the active byte budget even for cheaply ser
   );
   controller.dispose();
 });
+
+describe('keep the last result during a refresh', () => {
+  const states = (receive: ReturnType<typeof vi.fn>) =>
+    receive.mock.calls.map(([snapshot]) => (snapshot as QuerySnapshot).state);
+
+  it('reports loading only on the first load and keeps ready data while the refresh timer runs', () => {
+    vi.useFakeTimers();
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const controller = createQueryController(execute);
+    const a = demand();
+    a.context.refreshMs = 500;
+    const receive = vi.fn();
+    controller.watch(a, receive);
+    expect(receive).toHaveBeenLastCalledWith({ state: 'loading' });
+    execute.mock.calls[0][1](ready());
+    vi.advanceTimersByTime(500);
+    expect(execute).toHaveBeenCalledTimes(2);
+    execute.mock.calls[1][1]({ state: 'loading' });
+    expect(states(receive)).toEqual(['loading', 'ready', 'ready']);
+    expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'ready', fromCache: true }));
+    execute.mock.calls[1][1](ready());
+    expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'ready', fromCache: false }));
+    controller.dispose();
+  });
+
+  it('keeps ready data while a consumer renews an expired result', () => {
+    let clock = 0;
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const controller = createQueryController(execute, { ...DEFAULT_QUERY_POLICY, freshMs: 100 }, () => clock);
+    const receiveA = vi.fn();
+    controller.watch(demand('a'), receiveA);
+    execute.mock.calls[0][1](ready());
+    clock = 101;
+    const receiveB = vi.fn();
+    controller.watch(demand('b'), receiveB);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(states(receiveA)).toEqual(['loading', 'ready', 'ready']);
+    expect(states(receiveB)).toEqual(['ready']);
+    expect(receiveB).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 0, fromCache: true }));
+    execute.mock.calls[1][1](ready());
+    expect(receiveB).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 101, fromCache: false }));
+    controller.dispose();
+  });
+
+  it('does not restart a pending renewal when another consumer joins the expired entry', () => {
+    let clock = 0;
+    const cancel = vi.fn();
+    const execute = vi.fn<QueryExecutor>(() => cancel);
+    const controller = createQueryController(execute, { ...DEFAULT_QUERY_POLICY, freshMs: 100 }, () => clock);
+    controller.watch(demand('a'), vi.fn());
+    execute.mock.calls[0][1](ready());
+    clock = 101;
+    controller.watch(demand('b'), vi.fn());
+    expect(execute).toHaveBeenCalledTimes(2);
+    cancel.mockClear();
+    const receiveC = vi.fn();
+    controller.watch(demand('c'), receiveC);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(cancel).not.toHaveBeenCalled();
+    execute.mock.calls[1][1](ready());
+    expect(receiveC).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 101, fromCache: false }));
+    controller.dispose();
+  });
+
+  it('keeps the error while the refresh after an error runs, then shows the new result', () => {
+    vi.useFakeTimers();
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const controller = createQueryController(execute);
+    const a = demand();
+    a.context.refreshMs = 500;
+    const receive = vi.fn();
+    controller.watch(a, receive);
+    execute.mock.calls[0][1]({ state: 'error', message: 'Datasource query failed.' });
+    vi.advanceTimersByTime(500);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(states(receive)).toEqual(['loading', 'error']);
+    execute.mock.calls[1][1](ready());
+    expect(states(receive)).toEqual(['loading', 'error', 'ready']);
+    controller.dispose();
+  });
+
+  it('keeps the previous panel frames while the panel query runner loads', () => {
+    const controller = createQueryController(vi.fn<QueryExecutor>(() => () => {}));
+    const a = demand();
+    a.query.source = { kind: 'panel', refId: 'D' };
+    const receive = vi.fn();
+    controller.watch(a, receive);
+    controller.setPanelData({ state: 'Loading' as never, series: [frame()], timeRange: a.context.timeRange });
+    expect(receive).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: 'ready', frames: [frame()], fromCache: true })
+    );
+    controller.dispose();
+  });
+});

@@ -403,7 +403,7 @@ describe('ChartLayer', () => {
     unmount();
     s.host.remove();
   });
-  it('resets displayed values on context changes and rejects late old results', () => {
+  it('keeps displayed values on context changes until the new result and rejects late old results', () => {
     const s = setup();
     const listeners: Array<Parameters<QueryController['watch']>[1]> = [];
     s.watch.mockImplementation((_demand, listener) => {
@@ -438,9 +438,18 @@ describe('ChartLayer', () => {
     expect(s.host.textContent).toContain('20');
     rerender(<ChartLayer {...props} context={{ ...context, generation: 2 }} />);
     expect(s.release).toHaveBeenCalledTimes(1);
-    expect(s.host.textContent).not.toContain('20');
-    act(() => listeners[0](result as any));
-    expect(s.host.textContent).not.toContain('20');
+    expect(s.host.textContent).toContain('20');
+    const late = {
+      ...result,
+      frames: [
+        {
+          ...result.frames[0],
+          fields: [result.frames[0].fields[0], { ...result.frames[0].fields[1], values: [10, 99] }],
+        },
+      ],
+    };
+    act(() => listeners[0](late as any));
+    expect(s.host.textContent).not.toContain('99');
     act(() => listeners[1]({ state: 'error', message: 'This widget query failed' }));
     expect(s.host.textContent).toContain('This widget query failed');
     unmount();
@@ -532,6 +541,60 @@ describe('ChartLayer', () => {
     expect(s.watch).toHaveBeenCalledTimes(2);
     unmount();
     expect(s.release).toHaveBeenCalledTimes(2);
+    s.host.remove();
+  });
+  it('keeps the last result while a refresh in the next generation loads', () => {
+    const s = setup();
+    const native: NamedQuery = {
+      id: 'q',
+      name: 'CPU',
+      source: { kind: 'datasource', datasource: { uid: 'native' }, parameters: {}, target: { refId: 'D' } },
+    };
+    const ready = (value: number) => ({
+      state: 'ready' as const,
+      fetchedAt: 1,
+      fromCache: false,
+      frames: [
+        toDataFrame({
+          fields: [
+            { name: 'Time', type: FieldType.time, values: [1, 2] },
+            { name: 'CPU', type: FieldType.number, values: [21, value] },
+          ],
+        }),
+      ],
+    });
+    const emits: Array<(snapshot: Parameters<Parameters<QueryController['watch']>[1]>[0]) => void> = [];
+    s.watch.mockImplementation((_demand, emit) => {
+      emits.push(emit);
+      emit(emits.length === 1 ? ready(42) : { state: 'loading' });
+      return s.release;
+    });
+    const props = {
+      root: s.root,
+      cells: s.cells,
+      plan: s.plan,
+      queries: [native],
+      controller: s.controller,
+      viewport: s.host,
+      onPrepared: vi.fn(),
+    };
+    const view = render(<ChartLayer {...props} context={context} />);
+    expect(s.host.textContent).toContain('42');
+    view.rerender(<ChartLayer {...props} context={{ ...context, generation: 2 }} />);
+    expect(s.watch).toHaveBeenCalledTimes(2);
+    expect(s.host.textContent).toContain('42');
+    expect(s.host.textContent).not.toContain('Loading');
+    // The kept result keeps its context: it is not a result for the new context.
+    expect(props.onPrepared).toHaveBeenLastCalledWith(
+      'w',
+      expect.objectContaining({
+        context: expect.objectContaining({ generation: 1 }),
+        snapshot: expect.objectContaining({ state: 'ready', fromCache: true }),
+      })
+    );
+    act(() => emits[1](ready(50)));
+    expect(s.host.textContent).toContain('50');
+    view.unmount();
     s.host.remove();
   });
 });

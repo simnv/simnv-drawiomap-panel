@@ -14,11 +14,13 @@ export function panelSnapshot(data: PanelData | undefined, refId: string, fetche
   ) {
     return { state: 'error', message: 'Panel query failed.' };
   }
-  if (data.state === LoadingState.Loading || data.state === LoadingState.NotStarted) {
+  // During a refresh Grafana keeps the last series. Show them; only the first load has no series.
+  const loading = data.state === LoadingState.Loading || data.state === LoadingState.NotStarted;
+  if (loading && !data.series.length) {
     return { state: 'loading' };
   }
   const frames = data.series.filter((frame) => frame.refId === refId);
   return frames.length
-    ? { state: 'ready', frames, fetchedAt, fromCache: false }
-    : { state: 'empty', fetchedAt, fromCache: false };
+    ? { state: 'ready', frames, fetchedAt, fromCache: loading }
+    : { state: 'empty', fetchedAt, fromCache: loading };
 }
