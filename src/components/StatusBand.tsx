@@ -21,12 +21,13 @@ export interface BandLayout {
 }
 
 /**
- * The band above the diagram. Collapsed, it has at most maxRows rows: when there are more causes, the last row
- * is "+k more". Expanded, it shows all causes and a "Show less" row, up to half of the panel height (then it
- * scrolls). maxRows 0 hides the band. The band takes its own space, so it never covers the diagram.
+ * The band above the diagram. Collapsed, it has at most maxRows rows and at most half of the panel height: when
+ * there are more causes, the last row is "+k more" (with one row: "k causes"). Expanded, it shows all causes and
+ * a "Show less" row, up to half of the panel height (then it scrolls). maxRows 0 hides the band. The band takes
+ * its own space, so it never covers the diagram.
  */
 export function bandLayout(count: number, maxRows: number, expanded: boolean, panelHeight: number): BandLayout {
-  const max = Math.floor(maxRows);
+  const max = Math.min(Math.floor(maxRows), Math.max(1, Math.floor((panelHeight / 2 - BAND_PAD) / BAND_ROW)));
   if (count === 0 || !(max > 0)) {
     return { causes: 0, hidden: 0, toggle: false, height: 0 };
   }
@@ -35,11 +36,11 @@ export function bandLayout(count: number, maxRows: number, expanded: boolean, pa
   }
   if (expanded) {
     const content = (count + 1) * BAND_ROW + BAND_PAD;
-    const height = Math.min(content, Math.max(2 * BAND_ROW + BAND_PAD, Math.floor(panelHeight / 2)));
+    const height = Math.min(content, Math.max(BAND_ROW + BAND_PAD, Math.floor(panelHeight / 2)));
     return { causes: count, hidden: 0, toggle: true, height };
   }
-  const causes = Math.max(1, max - 1);
-  return { causes, hidden: count - causes, toggle: true, height: (causes + 1) * BAND_ROW + BAND_PAD };
+  const causes = max - 1;
+  return { causes, hidden: count - causes, toggle: true, height: max * BAND_ROW + BAND_PAD };
 }
 
 const plural = (n: number) => `${n} element${n === 1 ? '' : 's'}`;
@@ -145,7 +146,11 @@ export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBa
         {layout.toggle ? (
           <li className={styles.row}>
             <button type="button" className={styles.more} aria-expanded={expanded} onClick={onToggle}>
-              {expanded ? 'Show less' : `+${layout.hidden} more (${plural(hiddenCells)})`}
+              {expanded
+                ? 'Show less'
+                : layout.causes
+                  ? `+${layout.hidden} more (${plural(hiddenCells)})`
+                  : `${layout.hidden} causes (${plural(hiddenCells)})`}
             </button>
           </li>
         ) : null}

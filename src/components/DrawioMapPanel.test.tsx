@@ -2086,6 +2086,9 @@ describe('DrawioMapPanel status band', () => {
     const { rerender } = render(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 5 } })} />);
     await waitFor(() => expect(rows()).toHaveLength(3));
     expect(screen.queryByRole('button', { name: /more/ })).toBeNull();
+    rerender(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 1 } })} />);
+    expect(rows()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: '3 causes (3 elements)' })).toBeTruthy();
     rerender(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 0 } })} />);
     expect(band()).toBeNull();
     expect(screen.getByTestId('dmap-stage').style.height).toBe('600px');
