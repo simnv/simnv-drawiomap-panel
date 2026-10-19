@@ -12,6 +12,8 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360" vi
       <g data-cell-id="pg-node~rtr-a" data-meta-pg-kind="node" data-meta-pg-id="rtr-a" data-meta-role="router"><rect x="60" y="100" width="100" height="60" fill="#d5e8d4" stroke="#82b366"/><text x="70" y="135">rtr-a</text></g>
       <g data-cell-id="pg-node~rtr-b" data-meta-pg-kind="node" data-meta-pg-id="rtr-b" data-meta-role="router"><rect x="300" y="100" width="100" height="60" fill="#d5e8d4" stroke="#82b366"/><text x="310" y="135">rtr-b</text></g>
       <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="rtr-a" data-meta-pg-to="rtr-b"><path d="M160 130 L300 130" fill="none" stroke="#888" stroke-width="6" pointer-events="stroke"/></g>
+      <g data-cell-id="pg-icon~rtr-a" data-meta-pg-kind="node-icon" data-meta-pg-of="rtr-a"><ellipse cx="80" cy="115" rx="10" ry="10" fill="#666"/></g>
+      <g data-cell-id="pg-linkLabel~a-b" data-meta-pg-kind="link-label" data-meta-pg-of="a-b"><rect x="205" y="110" width="50" height="16" fill="#fff"/><text x="208" y="122">uplink</text></g>
       <g data-cell-id="pg-legend"><rect x="460" y="260" width="120" height="80" fill="#fff" stroke="#999"/><text x="470" y="290">Legend</text></g>
     </g>
   </g>
@@ -54,8 +56,8 @@ test('the canvas, a group and the legend open no card; nodes and links do', asyn
   const shape = (id: string) => panel.locator(`[data-cell-id="${id}"] > rect, [data-cell-id="${id}"] > path`).first();
   await hoverAt(shape('pg-node~rtr-a'));
   await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'rtr-a');
-  await hoverAt(shape('pg-link~a-b'));
-  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'a-b');
+  await hoverAt(shape('pg-link~a-b'), 0.2, 0.5);
+  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'uplink');
   // the empty background (bottom-left corner), the free area of the group, the legend
   await hoverAt(shape('pg-canvas'), 0.02, 0.97);
   await expect(card).toHaveCount(0);
@@ -81,8 +83,30 @@ test('Hover kinds: group added, link removed', async ({ page, request, config, c
   const shape = (id: string) => panel.locator(`[data-cell-id="${id}"] > rect, [data-cell-id="${id}"] > path`).first();
   await hoverAt(shape('pg-node~rtr-a'));
   await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'rtr-a');
-  await hoverAt(shape('pg-link~a-b'));
+  await hoverAt(shape('pg-link~a-b'), 0.2, 0.5);
   await expect(panel.getByTestId('dmap-card')).toHaveCount(0);
   await hoverAt(shape('pg-group~core'), 0.4, 0.9);
   await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'pg-group~core');
+});
+
+test('the icon of a node and the label of a link open the card of the node and of the link', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}) => {
+  const uid = await createDiagram(cardsForAll(config), { svg });
+  await gotoDashboardPage({ uid });
+  const panel = page.getByTestId('dmap-panel');
+  const tooltip = panel.getByRole('tooltip');
+  await hoverAt(panel.locator('[data-cell-id="pg-node~rtr-a"] > rect'), 0.8, 0.8);
+  await expect(tooltip).toHaveAttribute('aria-label', 'rtr-a');
+  const node = await tooltip.textContent();
+  expect(node).toContain('pg-node~rtr-a');
+  await hoverAt(panel.locator('[data-cell-id="pg-icon~rtr-a"] > ellipse'));
+  await expect(tooltip).toHaveAttribute('aria-label', 'rtr-a');
+  await expect(tooltip).toHaveText(node!);
+  await hoverAt(panel.locator('[data-cell-id="pg-linkLabel~a-b"] > rect'));
+  await expect(tooltip).toContainText('pg-link~a-b');
+  await expect(tooltip).not.toContainText('pg-linkLabel');
 });

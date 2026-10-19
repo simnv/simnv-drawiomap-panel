@@ -201,13 +201,26 @@ export function nodeIcons(cells: CellMeta[]): Map<string, string> {
 }
 
 /**
- * Cell id → node cell id, for the cells that draw a part of a node outside its group: the icon, the icon tile
- * and the description. A hover on such a cell is a hover on its node.
+ * Cell id → owner cell id, for the cells that draw a part of a node or a link outside its group: the icon, the
+ * icon tile, the description, the link label (pg-linkLabel~<link pg-id>), and each other cell with pg-of whose
+ * own kind is not node, link or port. A hover on such a cell is a hover on its owner.
  */
 export function nodeParts(cells: CellMeta[]): Map<string, string> {
   const { tagged, byId } = iconCells(cells);
   const out = new Map<string, string>();
+  const owners = new Map<string, CellMeta>();
   for (const c of cells) {
+    if (c.kind === 'node' || c.kind === 'link' || c.kind === 'port') {
+      if (!owners.has(c.key)) {
+        owners.set(c.key, c);
+      }
+    }
+    if (c.kind === 'link') {
+      const label = `pg-linkLabel~${c.key}`;
+      if (byId.has(label) && !out.has(label)) {
+        out.set(label, c.id);
+      }
+    }
     if (c.kind !== 'node') {
       continue;
     }
@@ -221,6 +234,13 @@ export function nodeParts(cells: CellMeta[]): Map<string, string> {
       if (byId.has(id) && !out.has(id)) {
         out.set(id, c.id);
       }
+    }
+  }
+  for (const c of cells) {
+    const of = c.attrs['pg-of'];
+    const owner = of === undefined ? undefined : owners.get(of);
+    if (owner && owner !== c && c.kind !== 'node' && c.kind !== 'link' && c.kind !== 'port' && !out.has(c.id)) {
+      out.set(c.id, owner.id);
     }
   }
   return out;

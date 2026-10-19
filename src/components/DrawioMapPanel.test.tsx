@@ -2077,6 +2077,8 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"><path id="lab" d="M50 25 L100 25" fill="none" stroke="#888"/></g>
       <g data-cell-id="pg-legend"><rect id="leg" x="10" y="150" width="60" height="30"/></g>
       <g data-cell-id="chart-1" data-meta-pg-kind="other"><rect id="chart" x="220" y="150" width="60" height="30"/></g>
+      <g data-cell-id="pg-icon~a" data-meta-pg-kind="node-icon" data-meta-pg-of="a"><ellipse id="icon-a" cx="20" cy="20" rx="5" ry="5"/></g>
+      <g data-cell-id="pg-linkLabel~a-b" data-meta-pg-kind="link-label" data-meta-pg-of="a-b"><rect id="lbl-bg" x="60" y="15" width="20" height="10"/><text id="lbl">uplink</text></g>
     </g>
   </g></svg>`;
   const roleRow = { kind: 'metadata', label: 'Role', path: 'cell.key' } as const;
@@ -2127,7 +2129,8 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     await hover('na');
     expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
     await hover('lab');
-    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('a-b');
+    // the link label cell gives the link its title
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('uplink');
     for (const id of ['bg', 'grp', 'grp-title', 'leg']) {
       await hover(id);
       expect(screen.queryByTestId('dmap-card')).toBeNull();
@@ -2143,6 +2146,19 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     expect(screen.queryByTestId('dmap-card')).toBeNull();
     await hover('lab');
     expect(await screen.findByRole('tooltip')).toBeTruthy();
+  });
+  it('the icon and the link label open the card of their node and link, not a card of their own', async () => {
+    render(<DrawioMapPanel {...structurePanel({})} />);
+    await hover('na');
+    const node = (await screen.findByRole('tooltip')).textContent;
+    await hover('icon-a');
+    const icon = await screen.findByRole('tooltip');
+    expect(icon.getAttribute('aria-label')).toBe('A');
+    expect(icon.textContent).toBe(node);
+    await hover('lbl-bg');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('uplink');
+    fireEvent.click(await at('icon-a'));
+    expect((await screen.findByRole('dialog')).getAttribute('aria-label')).toBe('A');
   });
   it('Hover kinds selects the cells that open a card', async () => {
     render(<DrawioMapPanel {...structurePanel({}, { hover: { kinds: ['node', 'group'] } })} />);

@@ -42,8 +42,8 @@ export function hoverKind(cell: Pick<CellEntry, 'meta' | 'shape' | 'line' | 'lab
 
 /**
  * The nearest patched cell at or above `target`. Overlay elements point at their cell with data-dmap-cell.
- * With the index, a node part (icon, description) resolves to its node. A patch that `accept` rejects does not
- * stop the walk.
+ * With the index, a node or link part (icon, description, link label) resolves to its owner, also when the part
+ * has a patch of its own. A patch that `accept` rejects does not stop the walk.
  */
 export function patchAt(
   target: EventTarget | null,
@@ -56,8 +56,9 @@ export function patchAt(
   while (el && el !== stop) {
     const id = el.getAttribute('data-dmap-cell') ?? el.getAttribute('data-cell-id');
     if (id) {
+      // A sub-cell (icon, description, link label) shows the card of its owner, never a card of its own.
       const owner = index?.get(id)?.ownerId;
-      const p = patches.get(id) ?? (owner ? patches.get(owner) : undefined);
+      const p = patches.get(owner ?? id);
       if (p && accept(p)) {
         return p;
       }

@@ -291,6 +291,22 @@ describe('nodeParts', () => {
       'pg-nodeDescription~a': 'pg-node~a',
     });
   });
+  it('maps link labels and other pg-of sub-cells to their link or node, never a node, link or port itself', () => {
+    const cells = [
+      cellMetaFromAttrs('pg-node~a', { 'pg-kind': 'node', 'pg-id': 'a' }, false),
+      cellMetaFromAttrs('pg-link~a-b', { 'pg-kind': 'link', 'pg-id': 'a-b' }, true),
+      cellMetaFromAttrs('pg-port~a:1', { 'pg-kind': 'port', 'pg-id': 'a:1', 'pg-of': 'a' }, false),
+      cellMetaFromAttrs('lbl', { 'pg-kind': 'link-label', 'pg-of': 'a-b' }, false),
+      cellMetaFromAttrs('pg-linkLabel~a-b', {}, false),
+      cellMetaFromAttrs('mark', { 'pg-kind': 'badge', 'pg-of': 'a' }, false),
+      cellMetaFromAttrs('lost', { 'pg-kind': 'link-label', 'pg-of': 'zz' }, false),
+    ];
+    expect(Object.fromEntries(nodeParts(cells))).toEqual({
+      lbl: 'pg-link~a-b',
+      'pg-linkLabel~a-b': 'pg-link~a-b',
+      mark: 'pg-node~a',
+    });
+  });
 });
 
 describe('applyContract', () => {

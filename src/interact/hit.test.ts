@@ -40,6 +40,18 @@ describe('patchAt', () => {
     expect(patchAt(h.querySelector('#e'), h, ps)).toBeUndefined();
     expect(patchAt(h.querySelector('#e'), h, ps, index)?.cellId).toBe('node');
   });
+  it('uses the patch of the owner before the own patch of an icon, and never the own patch', () => {
+    const h = document.createElement('div');
+    h.innerHTML = '<svg><g data-cell-id="node"><rect/></g><g data-cell-id="icon"><ellipse id="e"/></g></svg>';
+    const index = new Map([['icon', { ownerId: 'node' }]]) as unknown as CellIndex;
+    const ps: PatchMap = new Map([
+      ['node', p('node')],
+      ['icon', p('icon')],
+    ]);
+    expect(patchAt(h.querySelector('#e'), h, ps, index)?.cellId).toBe('node');
+    // the owner opens no card: the icon does not open its own card either
+    expect(patchAt(h.querySelector('#e'), h, ps, index, (x) => x.cellId !== 'node')).toBeUndefined();
+  });
   it('returns undefined outside any patched cell', () => {
     expect(patchAt(host.querySelector('#free'), host, patches)).toBeUndefined();
     expect(patchAt(null, host, patches)).toBeUndefined();
