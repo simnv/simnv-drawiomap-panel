@@ -300,6 +300,34 @@ The canvas shows only colours. The values show in a card:
 
 The card stays inside the panel. It scrolls when it is too long. In a panel narrower than 480 px, the card is a sheet at the bottom of the panel.
 
+### Which cells open a card
+
+A cell opens a card only when both conditions are true:
+
+- The kind of the cell is in the **Hover kinds** panel option (group **View**, option path `hover.kinds`). The default is `node`, `link`, `port` and `other`.
+- The card has content: at least one row (a status, a value, a history or a metadata row) or one footer link.
+
+Thus by default the empty background (`pg-canvas`), the layers, groups (`pg-group~…`, `pg-groupTitle~…`), the legend (`pg-legend…`) and cells without bound rows or links open nothing.
+
+| Kind         | Cells                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| `node`       | `pg-kind="node"`. In a plain draw.io diagram (no `pg-schema`): each vertex.                            |
+| `link`       | `pg-kind="link"`. In a plain draw.io diagram: each edge.                                               |
+| `port`       | `pg-kind="port"`.                                                                                      |
+| `link-label` | `pg-kind="link-label"`.                                                                                |
+| `group`      | `pg-group~…` and `pg-groupTitle~…`.                                                                    |
+| `canvas`     | `pg-canvas`, `pg-layer~…`, and the draw.io root and layers (cells that draw nothing of their own).     |
+| `legend`     | `pg-legend…`.                                                                                          |
+| `other`      | Other `pg-` cells and cells with another `pg-kind`, for example a chart anchor with `pg-kind="other"`. |
+
+In the panel JSON, the option is:
+
+```json
+"options": { "hover": { "kinds": ["node", "link", "port", "other"] } }
+```
+
+To remove the card of one element, add an element override with `"hover": { "enabled": false, "rows": [] }` in its display.
+
 A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
 
 The footer has the rule URL (title: `urlTitle`) and the data links of the field config (title: the data link title). A link that opens in a new tab has an external-link icon.
@@ -320,6 +348,7 @@ In the **View** group of the panel options:
 | Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                 |
 | Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                    |
 | Link width min, max  | The range of the link width in pixels. The width grows with the load.                                                                                                           |
+| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                    |
 | Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                           |
 
 ### Live zoom

@@ -17,12 +17,12 @@ import { resolvePatterns } from '../binding/patterns';
 import { extractSeries } from '../binding/series';
 import { buildCard, buildConfiguredCard, DisplayOverride } from '../interact/cardModel';
 import { Card } from '../interact/Card';
-import { patchAt } from '../interact/hit';
+import { hoverKind, patchAt } from '../interact/hit';
 import { applyPatches } from '../render/applier';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
-import { DEFAULT_OPTIONS, Options, SeriesInfo, type Diagram } from '../types';
+import { DEFAULT_OPTIONS, Options, SeriesInfo, type CellPatch, type Diagram } from '../types';
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
 import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
@@ -168,6 +168,7 @@ function DrawioMapPanelView({
     zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
     summary: { ...DEFAULT_OPTIONS.summary!, ...options.summary },
+    hover: { ...DEFAULT_OPTIONS.hover!, ...options.hover },
   };
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
@@ -357,7 +358,8 @@ function DrawioMapPanelView({
       ? buildConfiguredCard(cardPatch, resolve, { series, theme, display: displayFor, replaceVariables })
       : buildCard(cardPatch, { series, theme, display: displayFor, replaceVariables });
   }, [cardPatch, series, theme, timeZone, display, replaceVariables, opts.config, resolve]);
-  const open = !!model;
+  // A card without rows and links has nothing to show: the cell opens no card.
+  const open = !!model && (model.rows.length > 0 || model.links.length > 0);
   const pinned = !!card?.pinned && open;
 
   // A card opened from the keyboard gives the focus back to its cell when it closes.
@@ -448,6 +450,12 @@ function DrawioMapPanelView({
     }
   }, [stage.root, stage.base, zoomMode, zoomPercent, align, stageWidth, stageHeight, view]);
 
+  // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default).
+  const hoverKinds = opts.hover.kinds;
+  const cardable = (p: CellPatch) => {
+    const entry = stage.index.get(p.cellId);
+    return !!entry && hoverKinds.includes(hoverKind(entry));
+  };
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -488,7 +496,7 @@ function DrawioMapPanelView({
     ) {
       return;
     }
-    const patch = patchAt(e.target, stageEl, result.patches, stage.index);
+    const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
     opener.current = null;
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: true } : null);
   };
@@ -500,7 +508,7 @@ function DrawioMapPanelView({
     if ((e.key !== 'Enter' && e.key !== ' ') || !stageEl || inCard(e.target) || !(e.target instanceof Element)) {
       return;
     }
-    const patch = patchAt(e.target, stageEl, result.patches, stage.index);
+    const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
     if (!patch) {
       return;
     }
@@ -519,7 +527,7 @@ function DrawioMapPanelView({
     if (e.pointerType === 'touch' || !canHover() || pinned || panZoom.busy() || !stageEl) {
       return;
     }
-    const patch = patchAt(e.target, stageEl, result.patches, stage.index);
+    const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: false } : null);
   };
 
@@ -615,7 +623,7 @@ function DrawioMapPanelView({
           </div>
         ) : null}
       </div>
-      {model && card ? (
+      {open && model && card ? (
         <div ref={cardRef}>
           <Card
             model={model}

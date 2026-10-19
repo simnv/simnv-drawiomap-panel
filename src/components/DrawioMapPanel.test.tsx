@@ -2065,3 +2065,92 @@ describe('DrawioMapPanel status band', () => {
     expect(screen.getByTestId('dmap-stage').style.height).toBe('600px');
   });
 });
+
+describe('DrawioMapPanel cards only for cells with content', () => {
+  const structureSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><g data-cell-id="0" data-meta-pg-schema="1">
+    <g data-cell-id="pg-layer~canvas"><g data-cell-id="pg-canvas"><rect id="bg" width="300" height="200"/></g></g>
+    <g data-cell-id="pg-layer~diagram">
+      <g data-cell-id="pg-group~core"><rect id="grp" x="5" y="5" width="200" height="120"/></g>
+      <g data-cell-id="pg-groupTitle~core"><text id="grp-title">CORE</text></g>
+      <g data-cell-id="pg-node~a" data-meta-pg-kind="node" data-meta-pg-id="a" data-meta-role="router"><rect id="na" x="10" y="10" width="40" height="30"/><text>A</text></g>
+      <g data-cell-id="pg-node~b" data-meta-pg-kind="node" data-meta-pg-id="b"><rect id="nb" x="100" y="10" width="40" height="30"/><text>B</text></g>
+      <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"><path id="lab" d="M50 25 L100 25" fill="none" stroke="#888"/></g>
+      <g data-cell-id="pg-legend"><rect id="leg" x="10" y="150" width="60" height="30"/></g>
+      <g data-cell-id="chart-1" data-meta-pg-kind="other"><rect id="chart" x="220" y="150" width="60" height="30"/></g>
+    </g>
+  </g></svg>`;
+  const roleRow = { kind: 'metadata', label: 'Role', path: 'cell.key' } as const;
+  function structurePanel(select: { ids?: string[] }, over: Partial<Options> = {}) {
+    const config: DiagramConfigV2 = {
+      version: 2,
+      queries: [],
+      widgets: [],
+      overrides: [],
+      patterns: [{ id: 'p', name: 'Cards', select, display: { hover: { rows: [roleRow] } } }],
+    };
+    return props({
+      options: {
+        ...options,
+        rules: [],
+        config,
+        diagram: { xml: '', svg: structureSvg, hash: `structure-${JSON.stringify([select, over])}`, updatedAt: '' },
+        ...over,
+      },
+    });
+  }
+  const at = async (id: string) => {
+    const el = await waitFor(() => {
+      const found = document.getElementById(id);
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    return el;
+  };
+  const hover = async (id: string) =>
+    fireEvent.pointerMove(await at(id), { pointerType: 'mouse', clientX: 20, clientY: 20 });
+
+  it('opens no card for a cell without rows and links, and none for the empty background', async () => {
+    render(<DrawioMapPanel {...structurePanel({ ids: ['a'] })} />);
+    await hover('na');
+    expect((await screen.findByRole('tooltip')).textContent).toContain('Role');
+    await hover('nb');
+    expect(screen.queryByTestId('dmap-card')).toBeNull();
+    fireEvent.click(await at('nb'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await hover('bg');
+    expect(screen.queryByTestId('dmap-card')).toBeNull();
+  });
+  it('by default opens cards for nodes, links, ports and other cells, not for the canvas, groups and the legend', async () => {
+    render(<DrawioMapPanel {...structurePanel({})} />);
+    await hover('chart');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('chart-1');
+    await hover('na');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
+    await hover('lab');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('a-b');
+    for (const id of ['bg', 'grp', 'grp-title', 'leg']) {
+      await hover(id);
+      expect(screen.queryByTestId('dmap-card')).toBeNull();
+      fireEvent.click(await at(id));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    }
+  });
+  it('an element override with hover.enabled false removes the card of that element', async () => {
+    const p = structurePanel({});
+    p.options.config!.overrides.push({ cellId: 'pg-node~a', display: { hover: { enabled: false, rows: [] } } });
+    render(<DrawioMapPanel {...p} />);
+    await hover('na');
+    expect(screen.queryByTestId('dmap-card')).toBeNull();
+    await hover('lab');
+    expect(await screen.findByRole('tooltip')).toBeTruthy();
+  });
+  it('Hover kinds selects the cells that open a card', async () => {
+    render(<DrawioMapPanel {...structurePanel({}, { hover: { kinds: ['node', 'group'] } })} />);
+    await hover('lab');
+    expect(screen.queryByTestId('dmap-card')).toBeNull();
+    await hover('grp');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('pg-group~core');
+    await hover('na');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
+  });
+});

@@ -5,6 +5,13 @@ import type { DiagramConfigV2 } from './model/config';
 
 export type CellKind = 'node' | 'port' | 'link' | 'link-label' | 'other';
 
+/**
+ * The kind of a cell for the hover card (Options.hover.kinds). Portograph structure cells (canvas and layers,
+ * groups and group titles, legend) have their own kinds. Cells of a plain draw.io diagram are nodes (vertices)
+ * and links (edges).
+ */
+export type HoverKind = 'node' | 'link' | 'port' | 'link-label' | 'group' | 'canvas' | 'legend' | 'other';
+
 /** One end of a link, parsed from pg-from / pg-to ("node", "node:port", "node:port#2"). */
 export interface Endpoint {
   node: string;
@@ -102,6 +109,8 @@ export interface Options {
   linkWidth: { min: number; max: number };
   /** The status band above the diagram: one row per cause. maxRows 0 hides the band. Default: 3. */
   summary?: { maxRows: number };
+  /** The cells that open a hover or pinned card. Default: node, link, port, other. */
+  hover?: { kinds: HoverKind[] };
 }
 
 export const DEFAULT_OPTIONS: Options = {
@@ -109,6 +118,7 @@ export const DEFAULT_OPTIONS: Options = {
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
+  hover: { kinds: ['node', 'link', 'port', 'other'] },
 };
 
 /* ---------- rules ---------- */

@@ -1,8 +1,14 @@
-import { FieldColorModeId, FieldConfigProperty, PanelPlugin, ThresholdsMode } from '@grafana/data';
+import {
+  FieldColorModeId,
+  FieldConfigProperty,
+  PanelPlugin,
+  type SelectFieldConfigSettings,
+  ThresholdsMode,
+} from '@grafana/data';
 import { DrawioMapPanel } from './components/DrawioMapPanel';
 import { DiagramEditor } from './options/DiagramEditor';
 import { RulesEditor } from './options/RulesEditor';
-import { DEFAULT_OPTIONS, Options } from './types';
+import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
   .setNoPadding()
@@ -98,6 +104,27 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         name: 'Link width max',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.linkWidth.max,
+      })
+      .addMultiSelect<HoverKind, SelectFieldConfigSettings<HoverKind>>({
+        path: 'hover.kinds',
+        name: 'Hover kinds',
+        description:
+          'The cells that open a hover or pinned card. A cell opens a card only when the card has rows or links.',
+        category: ['View'],
+        // the builder types defaultValue as one option value; a multi-select stores an array
+        defaultValue: DEFAULT_OPTIONS.hover!.kinds as unknown as HoverKind,
+        settings: {
+          options: [
+            { value: 'node', label: 'Node' },
+            { value: 'link', label: 'Link' },
+            { value: 'port', label: 'Port' },
+            { value: 'link-label', label: 'Link label' },
+            { value: 'group', label: 'Group' },
+            { value: 'canvas', label: 'Canvas' },
+            { value: 'legend', label: 'Legend' },
+            { value: 'other', label: 'Other' },
+          ],
+        },
       })
       .addNumberInput({
         path: 'summary.maxRows',
