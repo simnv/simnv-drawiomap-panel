@@ -824,6 +824,16 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.pointerLeave(wrapper, { pointerType: 'mouse' });
     expect(card()).toBeNull();
   });
+  it('leaving the panel hides the hover card also without a pointerout (the cell under the pointer was redrawn)', async () => {
+    const { half, wrapper } = await setup();
+    fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 50, clientY: 40 });
+    await screen.findByRole('tooltip');
+    // Chrome sends no pointerout from a removed element; only the native pointerleave of the panel comes
+    act(() => {
+      wrapper.dispatchEvent(new Event('pointerleave'));
+    });
+    expect(card()).toBeNull();
+  });
   it('click pins the card as a dialog with a close button, row links and footer links', async () => {
     const { half } = await setup();
     fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });

@@ -179,7 +179,12 @@ function DrawioMapPanelView({
   const patchedRef = useRef<Set<string>>(new Set());
   const [card, setCard] = useState<CardState | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [wrapperEl, setWrapperEl] = useState<HTMLDivElement | null>(null);
+  const attachWrapper = useCallback((element: HTMLDivElement | null) => {
+    wrapperRef.current = element;
+    setWrapperEl(element);
+  }, []);
   const cardRef = useRef<HTMLDivElement>(null);
   const zoomMode = opts.zoom.mode;
   const zoomPercent = opts.zoom.percent;
@@ -366,6 +371,18 @@ function DrawioMapPanelView({
     }
   }, []);
 
+  // The pointer leaves the panel: the hover card closes, a pinned card stays. A native listener: React makes
+  // onPointerLeave from pointerout, and the browser sends no pointerout when the overlay redraw removed the
+  // element under the pointer.
+  useEffect(() => {
+    if (!wrapperEl) {
+      return;
+    }
+    const onLeave = () => setCard((c) => (c?.pinned ? c : null));
+    wrapperEl.addEventListener('pointerleave', onLeave);
+    return () => wrapperEl.removeEventListener('pointerleave', onLeave);
+  }, [wrapperEl]);
+
   // Esc closes the card. A pointer down outside the panel closes a pinned card.
   useEffect(() => {
     if (!open) {
@@ -522,7 +539,7 @@ function DrawioMapPanelView({
   const preview = (
     <div
       className={styles.wrapper}
-      ref={wrapperRef}
+      ref={attachWrapper}
       data-testid="dmap-panel"
       data-dmap-cells={stage.index.size}
       data-dmap-patched={result.patches.size}
@@ -532,11 +549,6 @@ function DrawioMapPanelView({
       onClick={onClick}
       onKeyDown={onKeyDown}
       onPointerMove={onPointerMove}
-      onPointerLeave={() => {
-        if (!pinned) {
-          setCard(null);
-        }
-      }}
     >
       {/* Chrome does not carry pan restrictions into a scroll container: the stage needs its own touch-action. */}
       <StatusBand
