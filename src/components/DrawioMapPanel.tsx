@@ -33,6 +33,8 @@ import type { PatternPreview } from '../editor/patternPreview';
 import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from '../editor/preview';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { ChartLayer } from '../visuals/ChartLayer';
+import type { StatusSummary } from '../binding/status';
+import { bandLayout, StatusBand } from './StatusBand';
 
 function usePanelEditing(id: number) {
   const subscribe = useCallback((notify: () => void) => {
@@ -44,14 +46,17 @@ function usePanelEditing(id: number) {
 }
 
 const styles = {
+  // The status band and the stage stack: the band never covers the diagram.
   wrapper: css`
     position: relative;
+    display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
   `,
   stage: css`
+    flex: none;
     width: 100%;
-    height: 100%;
     & > svg {
       display: block;
     }
@@ -162,6 +167,7 @@ function DrawioMapPanelView({
     diagram: editing && draftDiagram?.base === savedRevision ? draftDiagram.diagram : options.diagram,
     zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
+    summary: { ...DEFAULT_OPTIONS.summary!, ...options.summary },
   };
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
@@ -303,10 +309,21 @@ function DrawioMapPanelView({
   const result = useMemo(() => {
     if (opts.config) {
       const bound = bindPlan(plan, resolve, bindingContext, nowMs);
-      return { patches: bound.patches, warnings: bound.diagnostics.map((d) => `${d.path}: ${d.message}`) };
+      return {
+        patches: bound.patches,
+        warnings: bound.diagnostics.map((d) => `${d.path}: ${d.message}`),
+        summaries: bound.summaries,
+      };
     }
-    return bind(opts.rules ?? [], cellMetas(stage.index), series, bindingContext);
+    const summaries: StatusSummary[] = [];
+    return { ...bind(opts.rules ?? [], cellMetas(stage.index), series, bindingContext), summaries };
   }, [opts.config, opts.rules, plan, resolve, bindingContext, nowMs, stage.index, series]);
+
+  // The status band takes its height from the panel; the stage gets the rest.
+  const [bandExpanded, setBandExpanded] = useState(false);
+  const band = bandLayout(result.summaries.length, opts.summary.maxRows, bandExpanded, height);
+  const stageHeight = Math.max(1, height - band.height);
+  const bandRef = useRef<HTMLElement>(null);
 
   // The card resolves its rows only for the open cell. A data refresh updates it in place.
   const cardPatch = !editing && card ? result.patches.get(card.cellId) : undefined;
@@ -406,13 +423,13 @@ function DrawioMapPanelView({
     const layout = viewBoxFor(
       { ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align },
       view ?? stage.base,
-      { width: stageWidth, height }
+      { width: stageWidth, height: stageHeight }
     );
     applyLayout(stage.root, layout);
     if (containerRef.current) {
       containerRef.current.style.overflow = layout.overflow;
     }
-  }, [stage.root, stage.base, zoomMode, zoomPercent, align, stageWidth, height, view]);
+  }, [stage.root, stage.base, zoomMode, zoomPercent, align, stageWidth, stageHeight, view]);
 
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();
@@ -432,7 +449,7 @@ function DrawioMapPanelView({
     ignore: (t) =>
       inCard(t) ||
       (t instanceof Element && !!t.closest('[data-dmap-widget] a')) ||
-      (t instanceof Node && !!corner.current?.contains(t)),
+      (t instanceof Node && (!!corner.current?.contains(t) || !!bandRef.current?.contains(t))),
   });
 
   // A click or a tap pins the card of the cell. A click on empty space closes it.
@@ -445,7 +462,13 @@ function DrawioMapPanelView({
     }
     const stageEl = containerRef.current;
     // a drag that moved the view is not a click
-    if (panZoom.takeClick() || inCard(e.target) || corner.current?.contains(e.target as Node) || !stageEl) {
+    if (
+      panZoom.takeClick() ||
+      inCard(e.target) ||
+      corner.current?.contains(e.target as Node) ||
+      bandRef.current?.contains(e.target as Node) ||
+      !stageEl
+    ) {
       return;
     }
     const patch = patchAt(e.target, stageEl, result.patches, stage.index);
@@ -516,7 +539,19 @@ function DrawioMapPanelView({
       }}
     >
       {/* Chrome does not carry pan restrictions into a scroll container: the stage needs its own touch-action. */}
-      <div ref={attachStage} className={styles.stage} style={{ touchAction }} />
+      <StatusBand
+        ref={bandRef}
+        summaries={result.summaries}
+        layout={band}
+        expanded={bandExpanded}
+        onToggle={() => setBandExpanded((v) => !v)}
+      />
+      <div
+        ref={attachStage}
+        className={styles.stage}
+        style={{ touchAction, height: stageHeight }}
+        data-testid="dmap-stage"
+      />
       {queryService && opts.config ? (
         <ChartLayer
           root={stage.root}
@@ -526,7 +561,7 @@ function DrawioMapPanelView({
           controller={queryService.controller}
           context={queryService.context}
           viewport={viewport}
-          revision={viewKey + JSON.stringify(view)}
+          revision={`${viewKey}|${stageHeight}${JSON.stringify(view)}`}
           replaceVariables={replaceVariables}
           onPrepared={onChartPrepared}
           draft={
@@ -544,7 +579,7 @@ function DrawioMapPanelView({
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
-      <div ref={corner} className={styles.corner} data-testid="dmap-corner">
+      <div ref={corner} className={styles.corner} style={{ top: band.height + 4 }} data-testid="dmap-corner">
         {panZoom.zoomed ? (
           <IconButton
             name="search-minus"

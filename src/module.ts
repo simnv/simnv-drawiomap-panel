@@ -99,4 +99,13 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.linkWidth.max,
       })
+      .addNumberInput({
+        path: 'summary.maxRows',
+        name: 'Status summary rows',
+        description:
+          'The band above the diagram shows one row for each status cause. More causes go into a "+N more" row. 0 hides the band.',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.summary!.maxRows,
+        settings: { min: 0, integer: true },
+      })
   );

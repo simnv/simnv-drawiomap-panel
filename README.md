@@ -87,6 +87,12 @@ The cache is panel-local and lasts 15 seconds. Its key includes datasource, nati
 
 Sample freshness is independent of cache age. Enable it with an expected cadence and a stale-after interval. Health, scalar hover rows and charts transition when sample age crosses that interval, even without another response. Missing, zero, down, stale and incomplete coverage have distinct explanations. No cadence is inferred from the chart step. Dashboard refresh/context changes refresh active demand; inactive cards do not refresh.
 
+### Status summary
+
+A band above the diagram has one row for each status cause: the state, the reason and the number of elements, for example `? missing   No data   26 elements`. Elements with the same state and reason share one row, also when each element has its own query. The most severe cause is first (down, critical, warning, stale, missing), then the cause with the most elements. Normal elements do not show in the band.
+
+The band has at most **Status summary rows** rows (default 3). When there are more causes, the last row is `+N more (M elements)`. Click it to show all causes; **Show less** collapses the band again. The band takes its own height above the diagram, so it never covers the diagram. The diagram fits into the remaining height. Set **Status summary rows** to 0 to hide the band. The markers on the elements stay.
+
 ### Supported query results and migration
 
 Finite Grafana data frames with one selected numeric series and one time field support histories. Null gaps retain their meaning. Empty, single-sample, failed and stale histories show text. Logs, traces, legacy datapoint objects, streaming/partial frames, ambiguous numeric fields and invalid timestamps receive validation messages. Direct queries do not automatically inherit Grafana panel transformations or field overrides; use returned field configuration or explicit inspector units.
@@ -314,6 +320,7 @@ In the **View** group of the panel options:
 | Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                 |
 | Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                    |
 | Link width min, max  | The range of the link width in pixels. The width grows with the load.                                                                                                           |
+| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                           |
 
 ### Live zoom
 

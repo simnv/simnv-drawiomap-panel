@@ -99,7 +99,10 @@ for (const theme of ['light', 'dark'] as const) {
           if (state === 'widespread outage') {
             await expect(panel.locator('.dmap-status-marker')).toHaveCount(2);
             await expect(panel.locator('.dmap-status-summary')).toHaveCount(1);
-            await expect(panel.locator('.dmap-status-summary')).toContainText('Health check failed (2 elements)');
+            await expect(panel.locator('.dmap-status-summary')).toHaveAttribute(
+              'title',
+              'down: Health check failed (2 elements)'
+            );
           }
           if (expected !== 'normal') {
             const reason = state.includes('outage')
@@ -139,9 +142,7 @@ for (const theme of ['light', 'dark'] as const) {
       const dashboard = await gotoDashboardPage({ uid });
       await dashboard.goto({ queryParams: new URLSearchParams({ theme }) });
       const panel = page.getByTestId('dmap-panel');
-      await expect(
-        panel.locator('.dmap-status-summary').filter({ hasText: 'Health check failed (2 elements)' })
-      ).toBeVisible();
+      await expect(panel.locator('.dmap-status-summary[title="down: Health check failed (2 elements)"]')).toBeVisible();
       const top = (await panel.boundingBox())!.y;
       for (const marker of await panel.locator('.dmap-status-marker text').all()) {
         expect((await marker.boundingBox())!.y).toBeGreaterThanOrEqual(top);

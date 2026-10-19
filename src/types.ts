@@ -100,12 +100,15 @@ export interface Options {
   rules: Rule[];
   zoom: ZoomOptions;
   linkWidth: { min: number; max: number };
+  /** The status band above the diagram: one row per cause. maxRows 0 hides the band. Default: 3. */
+  summary?: { maxRows: number };
 }
 
 export const DEFAULT_OPTIONS: Options = {
   rules: [],
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
+  summary: { maxRows: 3 },
 };
 
 /* ---------- rules ---------- */

@@ -57,7 +57,7 @@ const opts = { theme: createTheme() };
 const before = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
 describe('status overlay', () => {
-  it('renders one summary for equal causes while marking every affected element, without changing directional colors', () => {
+  it('marks every affected element without a summary inside the diagram and without changing directional colors', () => {
     const { root, index } = build();
     const statusView: StatusView = {
       state: 'down',
@@ -72,14 +72,13 @@ describe('status overlay', () => {
     ]);
     renderOverlay(root, index, patches, opts);
     expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(2);
-    expect(root.querySelectorAll('.dmap-status-summary')).toHaveLength(1);
-    expect(root.querySelector('.dmap-status-summary')!.textContent).toBe('down: Device down (2 elements)');
+    // the panel shows the summary in a band above the diagram, never on top of it
+    expect(root.querySelectorAll('.dmap-status-summary')).toHaveLength(0);
     expect(root.querySelector('.dmap-half')!.getAttribute('stroke')).toBe('#00ff00');
     expect(root.querySelector('.dmap-status-marker text')!.textContent).toContain('!');
     expect(root.querySelector('.dmap-status-marker')!.getAttribute('pointer-events')).toBe('none');
     patches.get('e1')!.statusView = { ...statusView, conditionKey: 'power', reason: 'Power lost' };
     renderOverlay(root, index, patches, opts);
-    expect(root.querySelectorAll('.dmap-status-summary')).toHaveLength(2);
     expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(2);
     for (const p of patches.values()) {
       p.statusView = { ...statusView, state: 'normal', reason: 'Healthy' };

@@ -1966,3 +1966,92 @@ describe('saved chart results in authoring previews', () => {
     expect(editorField('Hover row preview').textContent).toContain('42');
   });
 });
+
+describe('DrawioMapPanel status band', () => {
+  const statusBinding = (queryId: string) => ({ queryId, match: {}, reducer: 'last' }) as const;
+  /** count cells, each with its own panel query; reasons[i] gives the down reason of cell i (data value 0) */
+  function statusPanel(count: number, reasons: Record<number, string> = {}, over: Partial<Options> = {}) {
+    const cells = Array.from(
+      { length: count },
+      (_, i) =>
+        `<g data-cell-id="c${i}" transform="translate(${(i % 6) * 60} ${Math.floor(i / 6) * 50})"><rect width="40" height="30"/><text>C${i}</text></g>`
+    ).join('');
+    const svgText = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 250">${cells}</svg>`;
+    const config: DiagramConfigV2 = {
+      version: 2,
+      queries: Array.from({ length: count }, (_, i) => ({
+        id: `q${i}`,
+        name: `Q${i}`,
+        source: { kind: 'panel', refId: `Q${i}` },
+      })),
+      patterns: [],
+      widgets: [],
+      overrides: Array.from({ length: count }, (_, i) => ({
+        cellId: `c${i}`,
+        display: {
+          status: {
+            kind: 'mapping',
+            binding: statusBinding(`q${i}`),
+            default: { state: 'normal', reason: 'Healthy' },
+            mappings: [{ value: 0, state: 'down', reason: reasons[i] ?? 'Down' }],
+          },
+        },
+      })),
+    };
+    const series = Object.keys(reasons).map((i) => frame(`Q${i}`, {}, [0]));
+    const p = props();
+    return props({
+      options: {
+        ...options,
+        rules: [],
+        config,
+        diagram: { xml: '', svg: svgText, hash: `band-${count}`, updatedAt: '' },
+        ...over,
+      },
+      data: { ...p.data, series },
+    });
+  }
+  const band = () => screen.queryByTestId('dmap-status-band');
+  const rows = () => Array.from(band()?.querySelectorAll('.dmap-status-summary') ?? []);
+
+  it('merges 26 elements without data into one row above the diagram, and the diagram gets the rest of the height', async () => {
+    render(<DrawioMapPanel {...statusPanel(26)} />);
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0].textContent).toBe('? missingNo data26 elements');
+    expect(rows()[0].getAttribute('title')).toBe('missing: No data (26 elements)');
+    const stage = screen.getByTestId('dmap-stage');
+    // the band is before the stage, not on top of it
+    expect(band()!.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(parseFloat(band()!.style.height) + parseFloat(stage.style.height)).toBe(600);
+    // the warning badge and the reset button do not cover the band
+    expect(parseFloat(screen.getByTestId('dmap-corner').style.top)).toBe(parseFloat(band()!.style.height) + 4);
+    expect(screen.getByTestId('dmap-panel').querySelector('svg .dmap-status-summary')).toBeNull();
+  });
+  it('shows the most severe causes first, caps the band at 3 rows with "+k more", and expands on a click', async () => {
+    const reasons = { 0: 'Power lost', 1: 'Power lost', 2: 'Link down', 3: 'Fan failed', 4: 'Disk failed' };
+    render(<DrawioMapPanel {...statusPanel(8, reasons)} />);
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(rows().map((r) => r.getAttribute('title'))).toEqual([
+      'down: Power lost (2 elements)',
+      'down: Link down (1 element)',
+    ]);
+    const more = screen.getByRole('button', { name: '+3 more (5 elements)' });
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    const collapsed = parseFloat(band()!.style.height);
+    fireEvent.click(more);
+    expect(rows()).toHaveLength(5);
+    expect(rows()[4].getAttribute('title')).toBe('missing: No data (3 elements)');
+    expect(parseFloat(band()!.style.height)).toBeGreaterThan(collapsed);
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
+    expect(rows()).toHaveLength(2);
+  });
+  it('Status summary rows sets the cap, 0 hides the band', async () => {
+    const reasons = { 0: 'A', 1: 'B', 2: 'C' };
+    const { rerender } = render(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 5 } })} />);
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(screen.queryByRole('button', { name: /more/ })).toBeNull();
+    rerender(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 0 } })} />);
+    expect(band()).toBeNull();
+    expect(screen.getByTestId('dmap-stage').style.height).toBe('600px');
+  });
+});

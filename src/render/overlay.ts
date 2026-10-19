@@ -2,7 +2,7 @@ import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
 import { PathGeom, pathGeometry, Point } from './geometry';
 import type { PlanCellPatch } from '../binding/engine';
-import { summarizeStatuses, type StatusView } from '../binding/status';
+import type { StatusView } from '../binding/status';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
 const NS = 'http://www.w3.org/2000/svg';
@@ -127,7 +127,7 @@ function drawLink(entry: CellEntry, link: { a2b?: HalfState; b2a?: HalfState }, 
 export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: PatchMap, opts: OverlayOptions): void {
   const o: Required<OverlayOptions> = { arrowSize: 8, ...opts };
   root.querySelectorAll(`g.${OVERLAY_CLASS}`).forEach((g) => g.remove());
-  root.querySelectorAll('.dmap-status-marker, .dmap-status-summary').forEach((g) => g.remove());
+  root.querySelectorAll('.dmap-status-marker').forEach((g) => g.remove());
   for (const [id, patch] of patches) {
     const entry = index.get(id);
     if (!entry) {
@@ -146,26 +146,9 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
       drawStatusMarker(index.get(cellId)!, status, opts.theme);
     }
   }
-  const viewBox = (root.getAttribute('viewBox') ?? '0 0').split(/[\s,]+/).map(Number);
-  summarizeStatuses(items).forEach((summary, i) => {
-    const group = el('g', { class: 'dmap-status-summary', 'pointer-events': 'none' });
-    const text = el('text', {
-      x: (viewBox[0] || 0) + 8,
-      y: (viewBox[1] || 0) + 18 + i * 20,
-      fill: statusColor(summary, opts.theme),
-      'font-size': 12,
-      'font-family': 'sans-serif',
-      stroke: opts.theme.colors.background.primary,
-      'stroke-width': 3,
-      'paint-order': 'stroke',
-    });
-    text.textContent = `${summary.state}: ${summary.reason} (${summary.cellIds.length} elements)`;
-    group.appendChild(text);
-    root.appendChild(group);
-  });
 }
 
-function statusColor(status: StatusView, theme: GrafanaTheme2): string {
+export function statusColor(status: StatusView, theme: GrafanaTheme2): string {
   return status.state === 'critical' || status.state === 'down'
     ? theme.colors.error.text
     : status.state === 'warning' || status.state === 'stale'

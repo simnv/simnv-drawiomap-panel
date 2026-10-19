@@ -63,7 +63,7 @@ describe('evaluateStatus', () => {
 });
 
 describe('summarizeStatuses', () => {
-  it('groups identical conditions while keeping different causes and physical element IDs', () => {
+  it('merges equal causes by state and reason, counts distinct elements and keeps their IDs', () => {
     const down = evaluateStatus(health, [{ queryId: 'health', availability: 'ready', value: 0 }], 0);
     const different = evaluateStatus(
       { ...health, mappings: [{ value: 0, state: 'down', reason: 'Power lost' }] },
@@ -71,29 +71,59 @@ describe('summarizeStatuses', () => {
       0
     );
     const sameReasonDifferentCondition = evaluateStatus(
-      { ...health, mappings: [{ value: 2, state: 'down', reason: 'Health check failed' }] },
-      [{ queryId: 'health', availability: 'ready', value: 2 }],
+      {
+        ...health,
+        binding: { ...health.binding, queryId: 'other' },
+        mappings: [{ value: 2, state: 'down', reason: 'Health check failed' }],
+      },
+      [{ queryId: 'other', availability: 'ready', value: 2 }],
       0
     );
     const normal = evaluateStatus(health, [{ queryId: 'health', availability: 'ready', value: 1 }], 0);
-    const reordered = evaluateStatus(
-      { ...health, mappings: [{ state: 'down', reason: 'Health check failed', value: 0 }] },
-      [{ queryId: 'health', availability: 'ready', value: 0 }],
+    const summary = summarizeStatuses([
+      { cellId: 'a', status: down },
+      { cellId: 'b', status: down },
+      { cellId: 'c', status: different },
+      { cellId: 'd', status: sameReasonDifferentCondition },
+      { cellId: 'e', status: normal },
+      { cellId: 'a', status: down },
+    ]);
+    expect(summary.map((s) => ({ state: s.state, reason: s.reason, cellIds: s.cellIds }))).toEqual([
+      { state: 'down', reason: 'Health check failed', cellIds: ['a', 'b', 'd'] },
+      { state: 'down', reason: 'Power lost', cellIds: ['c'] },
+    ]);
+    expect(summary[0].queryIds).toEqual(['health', 'other']);
+  });
+  it('gives one row to many elements without data, after more severe causes', () => {
+    // each element has its own query, so the condition keys differ
+    const missing = (i: number) =>
+      evaluateStatus({ ...health, binding: { ...health.binding, queryId: `q${i}` } }, [], 0);
+    const warning = evaluateStatus(
+      { ...health, mappings: [{ value: 2, state: 'warning', reason: 'Probe slow' }] },
+      [{ queryId: 'health', availability: 'ready', value: 2 }],
       0
     );
-    expect(
-      summarizeStatuses([
-        { cellId: 'a', status: down },
-        { cellId: 'b', status: down },
-        { cellId: 'c', status: different },
-        { cellId: 'd', status: sameReasonDifferentCondition },
-        { cellId: 'e', status: normal },
-        { cellId: 'a', status: reordered },
-      ]).map((s) => ({ state: s.state, reason: s.reason, cellIds: s.cellIds }))
-    ).toEqual([
-      { state: 'down', reason: 'Health check failed', cellIds: ['a', 'b'] },
-      { state: 'down', reason: 'Power lost', cellIds: ['c'] },
-      { state: 'down', reason: 'Health check failed', cellIds: ['d'] },
+    const down = evaluateStatus(health, [{ queryId: 'health', availability: 'ready', value: 0 }], 0);
+    const items = Array.from({ length: 26 }, (_, i) => ({ cellId: `cell-${i}`, status: missing(i) }));
+    const summary = summarizeStatuses([...items, { cellId: 'w', status: warning }, { cellId: 'x', status: down }]);
+    expect(summary.map((s) => [s.state, s.reason, s.cellIds.length])).toEqual([
+      ['down', 'Health check failed', 1],
+      ['warning', 'Probe slow', 1],
+      ['missing', 'No data', 26],
     ]);
+  });
+  it('orders causes of the same severity by the number of elements', () => {
+    const down = (reason: string) =>
+      evaluateStatus(
+        { ...health, mappings: [{ value: 0, state: 'down', reason }] },
+        [{ queryId: 'health', availability: 'ready', value: 0 }],
+        0
+      );
+    const summary = summarizeStatuses([
+      { cellId: 'a', status: down('One') },
+      { cellId: 'b', status: down('Two') },
+      { cellId: 'c', status: down('Two') },
+    ]);
+    expect(summary.map((s) => s.reason)).toEqual(['Two', 'One']);
   });
 });

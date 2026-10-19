@@ -88,21 +88,42 @@ export function evaluateStatus(rule: StatusRule, values: ResolvedValue[], nowMs:
   return view(condition.state, condition.reason, conditionKey);
 }
 
+/** Most severe first. The summary band and its row order use it. */
+export const STATUS_SEVERITY: Record<StatusView['state'], number> = {
+  down: 0,
+  critical: 1,
+  warning: 2,
+  stale: 3,
+  missing: 4,
+  normal: 5,
+};
+
+/**
+ * One summary per cause (state and reason) for all cells that are not normal. Cells with different queries or
+ * conditions but the same cause merge into one summary. The order is severity, then the number of cells.
+ */
 export function summarizeStatuses(items: CellStatus[]): StatusSummary[] {
   const groups = new Map<string, StatusSummary>();
   for (const { cellId, status } of items) {
     if (status.state === 'normal') {
       continue;
     }
-    const key = JSON.stringify([status.conditionKey, status.state, status.reason]);
+    const key = JSON.stringify([status.state, status.reason]);
     const group = groups.get(key);
-    if (group) {
-      if (!group.cellIds.includes(cellId)) {
-        group.cellIds.push(cellId);
+    if (!group) {
+      groups.set(key, { ...status, queryIds: [...status.queryIds], cellIds: [cellId] });
+      continue;
+    }
+    if (!group.cellIds.includes(cellId)) {
+      group.cellIds.push(cellId);
+    }
+    for (const id of status.queryIds) {
+      if (!group.queryIds.includes(id)) {
+        group.queryIds.push(id);
       }
-    } else {
-      groups.set(key, { ...status, cellIds: [cellId] });
     }
   }
-  return [...groups.values()];
+  return [...groups.values()].sort(
+    (a, b) => STATUS_SEVERITY[a.state] - STATUS_SEVERITY[b.state] || b.cellIds.length - a.cellIds.length
+  );
 }
