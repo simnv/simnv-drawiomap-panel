@@ -49,8 +49,9 @@ for (const viewport of [
       const panel = page.getByTestId('dmap-panel');
       await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="missing"]')).toHaveCount(COUNT);
       const rows = panel.getByTestId('dmap-status-band').locator('.dmap-status-summary');
+      // wait for the end of loading: then one row has all elements
+      await expect(rows.and(panel.locator(`[title="missing: No data (${COUNT} elements)"]`))).toBeVisible();
       await expect(rows).toHaveCount(1);
-      await expect(rows).toHaveAttribute('title', `missing: No data (${COUNT} elements)`);
       await expect(rows).toContainText('No data');
       await expect(rows).toContainText(`${COUNT} elements`);
       const band = (await panel.getByTestId('dmap-status-band').boundingBox())!;
@@ -89,6 +90,7 @@ test('more causes than rows: "+k more" expands the band, the diagram moves down 
   const bandEl = panel.getByTestId('dmap-status-band');
   const rows = bandEl.locator('.dmap-status-summary');
   await expect(panel.locator('[data-dmap-status="down"]')).toHaveCount(5);
+  await expect(bandEl.getByRole('button', { name: /^\+4 more/ })).toHaveText(`+4 more (${COUNT - 2} elements)`);
   await expect(rows).toHaveCount(2);
   const more = bandEl.getByRole('button', { name: `+4 more (${COUNT - 2} elements)` });
   await expect(more).toBeVisible();
