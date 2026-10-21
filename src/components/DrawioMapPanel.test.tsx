@@ -2251,6 +2251,22 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     fireEvent.click(await at('icon-a'));
     expect((await screen.findByRole('dialog')).getAttribute('aria-label')).toBe('A');
   });
+  it('marks only the cells that open a card, and their parts, as interactive buttons', async () => {
+    const p = structurePanel({});
+    p.options.config!.overrides.push({ cellId: 'pg-node~b', display: { hover: { enabled: false, rows: [] } } });
+    const { container } = render(<DrawioMapPanel {...p} />);
+    const marked = () =>
+      Array.from(container.querySelectorAll('[data-dmap-interactive]'), (el) => el.getAttribute('data-cell-id')).sort();
+    await waitFor(() =>
+      expect(marked()).toEqual(['chart-1', 'pg-icon~a', 'pg-linkLabel~a-b', 'pg-link~a-b', 'pg-node~a'])
+    );
+    const group = (id: string) => container.querySelector(`[data-cell-id="${id}"]`)!;
+    expect(group('pg-node~a').getAttribute('role')).toBe('button');
+    for (const id of ['0', 'pg-canvas', 'pg-group~core', 'pg-legend', 'pg-node~b']) {
+      expect(group(id).hasAttribute('role')).toBe(false);
+      expect(group(id).hasAttribute('tabindex')).toBe(false);
+    }
+  });
   it('Hover kinds selects the cells that open a card', async () => {
     render(<DrawioMapPanel {...structurePanel({}, { hover: { kinds: ['node', 'group'] } })} />);
     await hover('lab');

@@ -16,10 +16,10 @@ import { locationService } from '@grafana/runtime';
 import { bind, bindPlan } from '../binding/engine';
 import { resolvePatterns } from '../binding/patterns';
 import { extractSeries } from '../binding/series';
-import { buildCard, buildConfiguredCard, DisplayOverride } from '../interact/cardModel';
+import { buildCard, buildConfiguredCard, DisplayOverride, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
-import { hoverKind, patchAt } from '../interact/hit';
-import { applyPatches } from '../render/applier';
+import { hoverKind, interactiveCells, patchAt } from '../interact/hit';
+import { applyPatches, INTERACTIVE_ATTR, markInteractive } from '../render/applier';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
@@ -60,6 +60,10 @@ const styles = {
     width: 100%;
     & > svg {
       display: block;
+    }
+    /* Only the cells that open a card show the hand cursor (Grafana gives it to every role="button"). */
+    & [${INTERACTIVE_ATTR}] {
+      cursor: pointer;
     }
   `,
   empty: css`
@@ -183,6 +187,7 @@ function DrawioMapPanelView({
   }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
   const patchedRef = useRef<Set<string>>(new Set());
+  const interactiveRef = useRef<Set<string>>(new Set());
   const [card, setCard] = useState<CardState | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -343,10 +348,7 @@ function DrawioMapPanelView({
     // the rules or the diagram changed and the cell has no patch now
     setCard(null);
   }
-  const model = useMemo(() => {
-    if (!cardPatch) {
-      return undefined;
-    }
+  const cardContext = useMemo(() => {
     const displayFor = (s: SeriesInfo, v: number, o?: DisplayOverride) => {
       if (!o) {
         return display(s, v);
@@ -360,25 +362,27 @@ function DrawioMapPanelView({
       }
       return getDisplayProcessor({ field: { ...s.field, config }, theme, timeZone })(v);
     };
-    const cardContext = {
-      series,
-      theme,
-      display: displayFor,
-      replaceVariables,
-      fieldThresholds: fieldConfig.defaults.thresholds,
-    };
-    return opts.config ? buildConfiguredCard(cardPatch, resolve, cardContext) : buildCard(cardPatch, cardContext);
-  }, [
-    cardPatch,
-    series,
-    theme,
-    timeZone,
-    display,
-    replaceVariables,
-    opts.config,
-    resolve,
-    fieldConfig.defaults.thresholds,
-  ]);
+    return { series, theme, display: displayFor, replaceVariables, fieldThresholds: fieldConfig.defaults.thresholds };
+  }, [series, theme, timeZone, display, replaceVariables, fieldConfig.defaults.thresholds]);
+  const configured = !!opts.config;
+  const model = useMemo(() => {
+    if (!cardPatch) {
+      return undefined;
+    }
+    return configured ? buildConfiguredCard(cardPatch, resolve, cardContext) : buildCard(cardPatch, cardContext);
+  }, [cardPatch, configured, resolve, cardContext]);
+  // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default),
+  // and only when the card has rows or links. Computed once per data update: these cells get the hand cursor.
+  const hoverKinds = opts.hover.kinds;
+  const interactive = useMemo(
+    () =>
+      interactiveCells(result.patches, stage.index, (p) => {
+        const entry = stage.index.get(p.cellId);
+        return !!entry && hoverKinds.includes(hoverKind(entry)) && opensCard(p, configured, cardContext);
+      }),
+    [result.patches, stage.index, hoverKinds, configured, cardContext]
+  );
+  const cardable = (p: CellPatch) => interactive.has(p.cellId);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
   const pinned = !!card?.pinned && open;
@@ -451,11 +455,12 @@ function DrawioMapPanelView({
     }
     const root = stage.root;
     const id = requestAnimationFrame(() => {
-      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current);
+      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive);
+      interactiveRef.current = markInteractive(stage.index, interactive, interactiveRef.current);
       renderOverlay(root, stage.index, result.patches, { theme });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, result, theme, editing]);
+  }, [stage.root, stage.index, result, theme, editing, interactive]);
 
   // Zoom layout.
   useEffect(() => {
@@ -474,12 +479,6 @@ function DrawioMapPanelView({
     }
   }, [stage.root, stage.base, zoomMode, zoomPercent, align, minScale, stageWidth, stageHeight, view]);
 
-  // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default).
-  const hoverKinds = opts.hover.kinds;
-  const cardable = (p: CellPatch) => {
-    const entry = stage.index.get(p.cellId);
-    return !!entry && hoverKinds.includes(hoverKind(entry));
-  };
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };

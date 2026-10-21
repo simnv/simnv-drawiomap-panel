@@ -67,3 +67,26 @@ export function patchAt(
   }
   return undefined;
 }
+
+/**
+ * The cells that do something on a click: the patched cells that `accept` takes, and the parts (icon, description,
+ * link label) that resolve to one of them. Only these cells show the hand cursor.
+ */
+export function interactiveCells(
+  patches: PatchMap,
+  index: CellIndex,
+  accept: (patch: CellPatch) => boolean
+): Set<string> {
+  const ids = new Set<string>();
+  for (const patch of patches.values()) {
+    if (index.has(patch.cellId) && accept(patch)) {
+      ids.add(patch.cellId);
+    }
+  }
+  for (const [id, entry] of index) {
+    if (entry.ownerId && ids.has(entry.ownerId)) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}

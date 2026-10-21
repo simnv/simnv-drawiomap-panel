@@ -90,13 +90,15 @@ function applyLink(entry: CellEntry, patch: CellPatch): void {
   }
 }
 
-function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined): void {
+function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined, interactive: boolean): void {
   if (target) {
     entry.group.setAttribute('data-dmap-target', target);
   }
-  // Keyboard access: Tab moves to the cell, Enter or Space opens its card.
-  entry.group.setAttribute('tabindex', '0');
-  entry.group.setAttribute('role', 'button');
+  // Keyboard access: Tab moves to the cell, Enter or Space opens its card. A cell without a card is not a button.
+  if (interactive) {
+    entry.group.setAttribute('tabindex', '0');
+    entry.group.setAttribute('role', 'button');
+  }
   entry.group.setAttribute('aria-label', entry.meta.labelText || entry.meta.key);
   if (patch.statusView) {
     const status = patch.statusView;
@@ -175,8 +177,16 @@ function reset(entry: CellEntry, index: CellIndex): void {
   entry.group.removeAttribute('aria-label');
 }
 
-/** Write patches into the SVG DOM. Returns the ids that are patched now. */
-export function applyPatches(index: CellIndex, patches: PatchMap, previous: Set<string>): Set<string> {
+/**
+ * Write patches into the SVG DOM. Returns the ids that are patched now. Only the `interactive` cells become
+ * buttons; without the set, all patched cells do.
+ */
+export function applyPatches(
+  index: CellIndex,
+  patches: PatchMap,
+  previous: Set<string>,
+  interactive?: Set<string>
+): Set<string> {
   const done = new Set<string>();
   // Reset everything first: a node colours the shape of another cell (its icon), so a later reset must not undo it.
   for (const id of previous) {
@@ -192,8 +202,28 @@ export function applyPatches(index: CellIndex, patches: PatchMap, previous: Set<
     }
     const target = applyShape(entry, patch, index);
     applyLink(entry, patch);
-    tag(entry, patch, target);
+    tag(entry, patch, target, !interactive || interactive.has(id));
     done.add(id);
+  }
+  return done;
+}
+
+export const INTERACTIVE_ATTR = 'data-dmap-interactive';
+
+/** Marks the cells that open a card (the panel CSS gives them the hand cursor). Returns the ids that are marked now. */
+export function markInteractive(index: CellIndex, ids: Set<string>, previous: Set<string>): Set<string> {
+  for (const id of previous) {
+    if (!ids.has(id)) {
+      index.get(id)?.group.removeAttribute(INTERACTIVE_ATTR);
+    }
+  }
+  const done = new Set<string>();
+  for (const id of ids) {
+    const entry = index.get(id);
+    if (entry) {
+      entry.group.setAttribute(INTERACTIVE_ATTR, '');
+      done.add(id);
+    }
   }
   return done;
 }

@@ -458,6 +458,28 @@ function titleOf(patch: CellPatch): string {
   return r.unresolved.length ? fallback : r.text;
 }
 
+/**
+ * True when the card of the cell has rows or links. It reads no series values, so the panel can call it for all
+ * cells once per data update. `configured`: the patch comes from the authoring configuration (buildConfiguredCard).
+ */
+export function opensCard(patch: PlanCellPatch, configured: boolean, ctx: CardContext): boolean {
+  if (configured) {
+    if (patch.hover?.enabled === false) {
+      return false;
+    }
+    const rows = patch.hover?.rows;
+    if (rows?.some((row) => row.kind !== 'drilldown' || rowHref(patch, row.url, { status: 'nodata' }, ctx))) {
+      return true;
+    }
+    if (!patch.hover && patch.statusView) {
+      return true;
+    }
+  } else if (patch.link?.a2b || patch.link?.b2a || patch.card?.rows?.length || patch.shape) {
+    return true;
+  }
+  return resolveLinks(patch, primaryOf(patch), ctx.replaceVariables, '').length > 0;
+}
+
 /** Resolves the card of one cell. The panel calls it only for the cell under the pointer or the pinned cell. */
 export function buildCard(patch: CellPatch, ctx: CardContext): CardModel {
   const rows: CardRowModel[] = [];

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
-import { applyPatches } from './applier';
+import { applyPatches, markInteractive } from './applier';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
 import type { PlanCellPatch } from '../binding/engine';
@@ -127,6 +127,30 @@ describe('applyPatches', () => {
     expect(index.get('n1')!.group.getAttribute('role')).toBe('button');
     expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a');
     expect([...done]).toEqual(['n1']);
+  });
+  it('makes a patched cell focusable only when it is interactive', () => {
+    const index = build();
+    const patches: PatchMap = new Map([
+      ['n1', patch('n1', { shape: shape() })],
+      ['n2', patch('n2', { shape: shape() })],
+    ]);
+    applyPatches(index, patches, new Set(), new Set(['n1']));
+    expect(index.get('n1')!.group.getAttribute('role')).toBe('button');
+    expect(index.get('n2')!.group.hasAttribute('role')).toBe(false);
+    expect(index.get('n2')!.group.hasAttribute('tabindex')).toBe(false);
+    expect(index.get('n2')!.group.getAttribute('aria-label')).toBe('old');
+    expect(index.get('n2')!.group.getAttribute('data-dmap-status')).toBe('ok');
+  });
+  it('marks the interactive cells and clears the cells that are no longer interactive', () => {
+    const index = build();
+    const prev = markInteractive(index, new Set(['n1', 'i1', 'missing']), new Set());
+    expect([...prev].sort()).toEqual(['i1', 'n1']);
+    expect(index.get('i1')!.group.hasAttribute('data-dmap-interactive')).toBe(true);
+    expect(index.get('n2')!.group.hasAttribute('data-dmap-interactive')).toBe(false);
+    markInteractive(index, new Set(['n2']), prev);
+    expect(index.get('n1')!.group.hasAttribute('data-dmap-interactive')).toBe(false);
+    expect(index.get('i1')!.group.hasAttribute('data-dmap-interactive')).toBe(false);
+    expect(index.get('n2')!.group.hasAttribute('data-dmap-interactive')).toBe(true);
   });
   it('strokes and writes text into tspan and foreignObject', () => {
     const index = build();

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTheme, DisplayValue, Field, FieldType, LinkModel, ThresholdsMode } from '@grafana/data';
 import type { CellPatch, HalfState, SeriesInfo } from '../types';
-import { buildCard, buildConfiguredCard, CardContext, sparkPoints } from './cardModel';
+import { buildCard, buildConfiguredCard, CardContext, opensCard, sparkPoints } from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
 import type { QueryBinding } from '../model/config';
 import { toHistory } from '../query/frames';
@@ -537,6 +537,71 @@ describe('combined up/down row', () => {
     );
     expect(c.rows[0]).toMatchObject({ state: 'unsupported', text: 'Binding metadata is unavailable' });
     expect(c.demands).toEqual([]);
+  });
+});
+
+describe('opensCard', () => {
+  const bare = (over: Partial<PlanCellPatch> = {}): PlanCellPatch => ({
+    cellId: 'pg-node~x',
+    ruleNames: [],
+    scope: { cell: { key: 'x' } },
+    urls: [],
+    warnings: [],
+    ...over,
+  });
+  // a series without data links
+  const state = { ...nodePatch().shape!, series: { ...up, field: { ...up.field, getLinks: undefined } } };
+  it('is true for a configured cell with hover rows, a status or a cell url', () => {
+    expect(
+      opensCard(bare({ hover: { rows: [{ kind: 'metadata', label: 'Device', path: 'cell.key' }] } }), true, ctx)
+    ).toBe(true);
+    expect(
+      opensCard(
+        bare({
+          statusView: {
+            state: 'down',
+            reason: 'Device down',
+            conditionKey: 'health',
+            queryIds: [],
+            coverage: { available: 1, expected: 1 },
+          },
+        }),
+        true,
+        ctx
+      )
+    ).toBe(true);
+    expect(opensCard(bare({ urls: [{ url: '/d/x' }] }), true, ctx)).toBe(true);
+  });
+  it('is false for a configured cell that only colours, has no rows or turns the card off', () => {
+    expect(opensCard(bare({ shape: state }), true, ctx)).toBe(false);
+    expect(opensCard(bare({ hover: { rows: [] } }), true, ctx)).toBe(false);
+    expect(
+      opensCard(
+        bare({
+          urls: [{ url: '/d/x' }],
+          hover: { enabled: false, rows: [{ kind: 'metadata', label: 'D', path: 'cell.key' }] },
+        }),
+        true,
+        ctx
+      )
+    ).toBe(false);
+  });
+  it('ignores a drilldown row whose url is not allowed', () => {
+    expect(
+      opensCard(bare({ hover: { rows: [{ kind: 'drilldown', label: 'Go', url: 'javascript:alert(1)' }] } }), true, ctx)
+    ).toBe(false);
+    expect(
+      opensCard(bare({ hover: { rows: [{ kind: 'drilldown', label: 'Go', url: '/d/${cell.key}' }] } }), true, ctx)
+    ).toBe(true);
+  });
+  it('is true for a cell whose series has data links', () => {
+    expect(opensCard(bare({ shape: { ...state, series: up } }), true, ctx)).toBe(true);
+  });
+  it('legacy rules: a shape, a link half or card rows open a card, a bare patch does not', () => {
+    expect(opensCard(nodePatch(), false, ctx)).toBe(true);
+    expect(opensCard(linkPatch({ urls: [] }), false, ctx)).toBe(true);
+    expect(opensCard(bare({ shape: state }), false, ctx)).toBe(true);
+    expect(opensCard(bare(), false, ctx)).toBe(false);
   });
 });
 

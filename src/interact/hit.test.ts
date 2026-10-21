@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
-import { cellAt, hoverKind, patchAt } from './hit';
+import { cellAt, hoverKind, interactiveCells, patchAt } from './hit';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { buildCellIndex } from '../render/svgStage';
 
@@ -99,5 +99,25 @@ describe('patchAt with a filter', () => {
     expect(patchAt(h.querySelector('#bg'), h, ps)?.cellId).toBe('canvas');
     expect(patchAt(h.querySelector('#bg'), h, ps, undefined, (x) => x.cellId !== 'canvas')?.cellId).toBe('layer');
     expect(patchAt(h.querySelector('#bg'), h, ps, undefined, () => false)).toBeUndefined();
+  });
+});
+
+describe('interactiveCells', () => {
+  const host = document.createElement('div');
+  host.innerHTML = `<svg><g data-cell-id="node"><rect/></g><g data-cell-id="icon"><ellipse/></g>
+    <g data-cell-id="plain"><rect/></g><g data-cell-id="plainIcon"><ellipse/></g><g data-cell-id="free"><rect/></g></svg>`;
+  const cells = buildCellIndex(host.querySelector('svg')!);
+  cells.get('icon')!.ownerId = 'node';
+  cells.get('plainIcon')!.ownerId = 'plain';
+  const patches: PatchMap = new Map([
+    ['node', p('node')],
+    ['plain', p('plain')],
+  ]);
+  it('has the accepted patched cells and the parts that resolve to them', () => {
+    const ids = interactiveCells(patches, cells, (x) => x.cellId === 'node');
+    expect([...ids].sort()).toEqual(['icon', 'node']);
+  });
+  it('is empty when no patch is accepted', () => {
+    expect(interactiveCells(patches, cells, () => false).size).toBe(0);
   });
 });

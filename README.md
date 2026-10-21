@@ -386,6 +386,8 @@ A cell opens a card only when both conditions are true:
 
 Thus by default the empty background (`pg-canvas`), the layers, groups (`pg-group~…`, `pg-groupTitle~…`), the legend (`pg-legend…`) and cells without bound rows or links open nothing.
 
+Only the cells that open a card show the hand cursor and are in the Tab order. Their parts (the icon, the description and the link label) also show the hand cursor, because they open the card of their node or link. All other cells show the default cursor.
+
 | Kind         | Cells                                                                                                  |
 | ------------ | ------------------------------------------------------------------------------------------------------ |
 | `node`       | `pg-kind="node"`. In a plain draw.io diagram (no `pg-schema`): each vertex.                            |
