@@ -23,7 +23,7 @@ import { applyPatches, INTERACTIVE_ATTR, markInteractive } from '../render/appli
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
-import { DEFAULT_OPTIONS, Options, SeriesInfo, type CellPatch, type Diagram } from '../types';
+import { DEFAULT_OPTIONS, Options, SeriesInfo, type CellPatch, type Diagram, type LegendCorner } from '../types';
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
 import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
@@ -36,6 +36,9 @@ import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { ChartLayer } from '../visuals/ChartLayer';
 import type { StatusSummary } from '../binding/status';
 import { bandLayout, StatusBand } from './StatusBand';
+import { Legend } from '../legend/Legend';
+import { buildLegend } from '../legend/model';
+import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
 
 function usePanelEditing(id: number) {
   const subscribe = useCallback((notify: () => void) => {
@@ -65,6 +68,18 @@ const styles = {
     & [${INTERACTIVE_ATTR}] {
       cursor: pointer;
     }
+    /* A legend entry under the pointer: the other cells of the legend dim. */
+    & .${LEGEND_MEMBER} {
+      transition: opacity 120ms;
+    }
+    & svg.${LEGEND_ACTIVE} .${LEGEND_MEMBER}:not(.${LEGEND_HIT}):not(:has(.${LEGEND_HIT})) {
+      opacity: 0.2;
+    }
+  `,
+  // The legend stays in its corner of the panel: it is outside the stage, which scrolls and zooms.
+  legend: css`
+    position: absolute;
+    z-index: 1;
   `,
   empty: css`
     display: flex;
@@ -178,6 +193,7 @@ function DrawioMapPanelView({
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
     summary: { ...DEFAULT_OPTIONS.summary!, ...options.summary },
     hover: { ...DEFAULT_OPTIONS.hover!, ...options.hover },
+    legend: { ...DEFAULT_OPTIONS.legend!, ...options.legend },
   };
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
@@ -383,6 +399,24 @@ function DrawioMapPanelView({
     [result.patches, stage.index, hoverKinds, configured, cardContext]
   );
   const cardable = (p: CellPatch) => interactive.has(p.cellId);
+
+  // The colour legend: the scales of the bound cells. A legend entry under the pointer highlights its cells.
+  const legendOptions = opts.legend;
+  const queries = opts.config?.queries;
+  const legendBlocks = useMemo(() => {
+    if (!legendOptions.show) {
+      return [];
+    }
+    const names = new Map((queries ?? []).map((q) => [q.id, q.name]));
+    return buildLegend(result.patches, {
+      theme,
+      fieldThresholds: fieldConfig.defaults.thresholds,
+      queryName: (id) => names.get(id),
+    });
+  }, [legendOptions.show, queries, result.patches, theme, fieldConfig.defaults.thresholds]);
+  const legendMembers = useMemo(() => [...new Set(legendBlocks.flatMap((b) => b.cellIds))], [legendBlocks]);
+  const [legendHits, setLegendHits] = useState<string[] | null>(null);
+  const legendRef = useRef<HTMLElement>(null);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
   const pinned = !!card?.pinned && open;
@@ -462,6 +496,17 @@ function DrawioMapPanelView({
     return () => cancelAnimationFrame(id);
   }, [stage.root, stage.index, result, theme, editing, interactive]);
 
+  // After the patches (the same frame order): mark the cells of the legend entry under the pointer.
+  const hits = legendBlocks.length ? legendHits : null;
+  useEffect(() => {
+    if (!stage.root) {
+      return;
+    }
+    const root = stage.root;
+    const id = requestAnimationFrame(() => highlightCells(root, stage.index, legendMembers, hits));
+    return () => cancelAnimationFrame(id);
+  }, [stage.root, stage.index, legendMembers, hits, result]);
+
   // Zoom layout.
   useEffect(() => {
     if (!stage.root || !stage.base) {
@@ -497,7 +542,8 @@ function DrawioMapPanelView({
     ignore: (t) =>
       inCard(t) ||
       (t instanceof Element && !!t.closest('[data-dmap-widget] a')) ||
-      (t instanceof Node && (!!corner.current?.contains(t) || !!bandRef.current?.contains(t))),
+      (t instanceof Node &&
+        (!!corner.current?.contains(t) || !!bandRef.current?.contains(t) || !!legendRef.current?.contains(t))),
   });
 
   // The configured view starts at the top-left corner of a stage that scrolls.
@@ -524,6 +570,7 @@ function DrawioMapPanelView({
       inCard(e.target) ||
       corner.current?.contains(e.target as Node) ||
       bandRef.current?.contains(e.target as Node) ||
+      legendRef.current?.contains(e.target as Node) ||
       !stageEl
     ) {
       return;
@@ -572,6 +619,26 @@ function DrawioMapPanelView({
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
+  // The legend corner. In the top-right corner the legend goes below the reset button and the warning badge.
+  const corners: Partial<Record<LegendCorner, React.CSSProperties>> = {
+    'top-left': { left: 4, top: band.height + 4 },
+    'bottom-left': { left: 4, bottom: 4 },
+    'bottom-right': { right: 4, bottom: 4 },
+  };
+  const legendCorner: LegendCorner =
+    legendOptions.corner === 'top-right' || corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
+  const legend = legendOptions.show ? (
+    <Legend
+      ref={legendRef}
+      blocks={legendBlocks}
+      maxBlocks={legendOptions.maxBlocks}
+      narrow={width < SHEET_BELOW}
+      onHighlight={setLegendHits}
+      className={legendCorner === 'top-right' ? undefined : styles.legend}
+      style={corners[legendCorner]}
+      corner={legendCorner}
+    />
+  ) : null;
   // At the configured view one finger scrolls the page and the page does not pinch-zoom over the panel.
   // A zoomed view takes all touches: one finger pans it.
   const touchAction = panZoom.zoomed ? 'none' : 'pan-x pan-y';
@@ -654,7 +721,9 @@ function DrawioMapPanelView({
             {warnings.length} warning{warnings.length > 1 ? 's' : ''}
           </div>
         ) : null}
+        {legendCorner === 'top-right' ? legend : null}
       </div>
+      {legendCorner === 'top-right' ? null : legend}
       {open && model && card
         ? portalSheet(
             <div ref={cardRef}>

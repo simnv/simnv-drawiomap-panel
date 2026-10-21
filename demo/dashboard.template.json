@@ -66,6 +66,7 @@
       "options": {
         "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false, "align": "top" },
         "linkWidth": { "min": 2, "max": 10 },
+        "legend": { "show": true, "corner": "bottom-right", "maxBlocks": 4 },
         "rules": [],
         "diagram": null
       }

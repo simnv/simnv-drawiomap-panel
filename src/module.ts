@@ -144,4 +144,35 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         defaultValue: DEFAULT_OPTIONS.summary!.maxRows,
         settings: { min: 0, integer: true },
       })
+      .addBooleanSwitch({
+        path: 'legend.show',
+        name: 'Show legend',
+        description: 'The colours of the bound cells and their thresholds, from the field config and the status rules.',
+        category: ['Legend'],
+        defaultValue: DEFAULT_OPTIONS.legend!.show,
+      })
+      .addRadio({
+        path: 'legend.corner',
+        name: 'Corner',
+        category: ['Legend'],
+        defaultValue: DEFAULT_OPTIONS.legend!.corner,
+        settings: {
+          options: [
+            { value: 'top-left', label: 'Top left' },
+            { value: 'top-right', label: 'Top right' },
+            { value: 'bottom-left', label: 'Bottom left' },
+            { value: 'bottom-right', label: 'Bottom right' },
+          ],
+        },
+        showIf: (o) => o.legend?.show !== false,
+      })
+      .addNumberInput({
+        path: 'legend.maxBlocks',
+        name: 'Maximum scales',
+        description: 'More colour scales go into a "+N more" line.',
+        category: ['Legend'],
+        defaultValue: DEFAULT_OPTIONS.legend!.maxBlocks,
+        settings: { min: 1, integer: true },
+        showIf: (o) => o.legend?.show !== false,
+      })
   );

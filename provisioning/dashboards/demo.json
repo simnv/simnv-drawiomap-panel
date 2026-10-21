@@ -279,6 +279,11 @@
           "min": 2,
           "max": 10
         },
+        "legend": {
+          "show": true,
+          "corner": "bottom-right",
+          "maxBlocks": 4
+        },
         "rules": [
           {
             "name": "links",

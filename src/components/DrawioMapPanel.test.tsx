@@ -2277,3 +2277,63 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
   });
 });
+
+describe('DrawioMapPanel colour legend', () => {
+  const legend = () => screen.queryByTestId('dmap-legend');
+  async function setup(p = props()) {
+    const r = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
+    return r;
+  }
+  it('shows the scales of the bound cells in the bottom-right corner by default', async () => {
+    await setup();
+    const el = legend()!;
+    expect(el.getAttribute('data-dmap-corner')).toBe('bottom-right');
+    expect(
+      within(el)
+        .getAllByTestId('dmap-legend-block')
+        .map((b) => b.getAttribute('aria-label'))
+    ).toEqual(expect.arrayContaining(['Link load %']));
+    // outside the stage, so zoom, pan and the stage scroll do not move it
+    expect(screen.getByTestId('dmap-stage').contains(el)).toBe(false);
+  });
+  it('legend.show false hides it; another corner moves it', async () => {
+    const { rerender } = await setup(
+      props({ options: { ...options, legend: { show: false, corner: 'bottom-right', maxBlocks: 4 } } })
+    );
+    expect(legend()).toBeNull();
+    rerender(
+      <DrawioMapPanel
+        {...props({ options: { ...options, legend: { show: true, corner: 'top-left', maxBlocks: 4 } } })}
+      />
+    );
+    expect(legend()!.getAttribute('data-dmap-corner')).toBe('top-left');
+  });
+  it('a narrow panel shows only the Legend chip until a tap opens it', async () => {
+    await setup(props({ width: 400 }));
+    const chip = within(legend()!).getByRole('button', { name: 'Legend' });
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(chip);
+    expect(within(legend()!).getAllByTestId('dmap-legend-block').length).toBeGreaterThan(0);
+    // the click on the legend does not open or pin a card
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('hovering an entry highlights the cells in that band and dims the others; leaving clears it', async () => {
+    const { container } = await setup();
+    const block = within(legend()!)
+      .getAllByTestId('dmap-legend-block')
+      .find((b) => b.getAttribute('aria-label') === 'Link load %')!;
+    const entry = within(block)
+      .getAllByTestId('dmap-legend-entry')
+      .find((e) => !e.getAttribute('aria-label')!.endsWith(': 0 elements'))!;
+    fireEvent.mouseEnter(entry);
+    const root = container.querySelector('[data-testid="dmap-stage"] > svg')!;
+    await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+    const hits = Array.from(container.querySelectorAll('.dmap-legend-hit'), (el) => el.getAttribute('data-cell-id'));
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((id) => id!.startsWith('pg-link'))).toBe(true);
+    fireEvent.mouseLeave(entry);
+    await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+    expect(container.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
+  });
+});

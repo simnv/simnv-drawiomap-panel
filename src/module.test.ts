@@ -56,3 +56,12 @@ describe('Minimum scale option', () => {
     expect(showIf(zoom('custom'))).toBe(false);
   });
 });
+
+describe('Legend options', () => {
+  it('shows the legend in the bottom-right corner with at most four blocks by default', () => {
+    expect(option('legend.show')).toMatchObject({ kind: 'addBooleanSwitch', defaultValue: true });
+    expect(option('legend.corner')).toMatchObject({ kind: 'addRadio', defaultValue: 'bottom-right' });
+    expect(option('legend.maxBlocks')).toMatchObject({ kind: 'addNumberInput', defaultValue: 4 });
+    expect(option('legend.corner')?.showIf?.({ legend: { show: false } } as Options)).toBe(false);
+  });
+});

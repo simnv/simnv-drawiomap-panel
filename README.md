@@ -342,6 +342,42 @@ matched series ─▶ field config (defaults + overrides)
 
 The overlay attribute `data-dmap-step` is the index of the active threshold step.
 
+### Colour legend
+
+A small legend in a corner of the panel shows each colour that the bound cells can show now, with its threshold or its text. The panel makes it from the colour settings above. You do not configure the scales.
+
+![Colour legend of the demo network](docs/images/colour-legend.png)
+
+- One block for each colour scale, with the unit or the kind as the title: **Link load %** for links with a capacity, else the query name (or **Link** or **Node**) and the unit symbol, for example `PoE W`. The **Display name** of the field replaces this title. Two different scales with the same title get their queries in brackets, for example `Link load % (A)` and `Link load % (W)`.
+- **From thresholds**: one swatch for each step, from low to high: `< 60%`, `≥ 60%`, `≥ 85%`. Links with a capacity show percent. Other values show the field unit.
+- A continuous scheme: a gradient bar from `0%` to `100%` for links with a capacity, else from the field **Min** to **Max**.
+- **Single color** and **Shades**: one swatch, `All values`.
+- Value mappings with a colour: one swatch with the mapping text, before the threshold swatches. A link with a capacity takes its colour from the percent, so its mappings do not show.
+- **Classic palette** (a colour for each series): no block, because the colour does not tell a value.
+- **Status**: the colours of the status markers: `Down, critical`, `Warning, stale` and `Missing`. Normal elements have no marker.
+- **No data**: the grey of links and shapes without data.
+- Identical scales merge into one block, also when they come from different queries. An override that changes the thresholds or the scheme of one query gives that query its own block.
+
+Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elements in that band stay visible and the other elements of the legend dim. Move the pointer away, or move the focus, to show all elements again.
+
+![Elements below 60 % load highlighted](docs/images/legend-highlight.png)
+
+The legend stays in its corner when you zoom, pan or scroll the diagram. In the top-right corner, it is below the **Reset zoom** button and the warning badge. In the top-left corner, it is below the status band. It catches the pointer only inside its own box. In a panel narrower than 480 px (a phone), the legend starts closed as a **Legend** chip; tap the chip to open or close it. On a wider panel, click **Legend** to close it.
+
+The options are in the **Legend** group:
+
+| Option         | Path               | Meaning                                                                    |
+| -------------- | ------------------ | -------------------------------------------------------------------------- |
+| Show legend    | `legend.show`      | Default on.                                                                |
+| Corner         | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`.        |
+| Maximum scales | `legend.maxBlocks` | The legend shows at most this number of blocks, then `+N more`. Default 4. |
+
+In the panel JSON:
+
+```json
+{ "legend": { "show": true, "corner": "bottom-right", "maxBlocks": 4 } }
+```
+
 ### Capacity
 
 The panel gives each link half a capacity in bit/s. It uses the first source that gives a value:

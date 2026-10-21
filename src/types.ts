@@ -113,6 +113,17 @@ export interface Options {
   summary?: { maxRows: number };
   /** The cells that open a hover or pinned card. Default: node, link, port, other. */
   hover?: { kinds: HoverKind[] };
+  /** The colour legend in a corner of the panel. Default: shown, bottom-right, at most 4 blocks. */
+  legend?: LegendOptions;
+}
+
+export type LegendCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+export interface LegendOptions {
+  show: boolean;
+  corner: LegendCorner;
+  /** More colour scales go into a "+N more" line. */
+  maxBlocks: number;
 }
 
 export const DEFAULT_OPTIONS: Options = {
@@ -121,6 +132,7 @@ export const DEFAULT_OPTIONS: Options = {
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
   hover: { kinds: ['node', 'link', 'port', 'other'] },
+  legend: { show: true, corner: 'bottom-right', maxBlocks: 4 },
 };
 
 /* ---------- rules ---------- */
