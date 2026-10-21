@@ -2,7 +2,14 @@ import React, { memo, useLayoutEffect, useRef } from 'react';
 import { css, cx } from '@emotion/css';
 import { dateTime, FieldType, getDefaultTimeRange, type GrafanaTheme2, type TimeRange } from '@grafana/data';
 import { IconButton, LinkButton, useStyles2 } from '@grafana/ui';
-import { CardModel, CardRowModel, type ConfiguredCardModel, type ConfiguredCardRow } from './cardModel';
+import {
+  CardModel,
+  CardRowModel,
+  chartHeight,
+  SPARK_HEIGHT,
+  type ConfiguredCardModel,
+  type ConfiguredCardRow,
+} from './cardModel';
 import { SparklineView } from '../visuals/SparklineView';
 import { MirrorSparkline } from '../visuals/MirrorSparkline';
 import type { HistoryModel } from '../query/frames';
@@ -13,8 +20,6 @@ export const SHEET_BELOW = 480;
 const W = 280;
 const GAP = 14;
 const EDGE = 4;
-/** The sparkline viewBox. preserveAspectRatio="none" stretches it to the full row width, the height is in px. */
-const SPARK_H = 40;
 
 export interface CardProps {
   model: CardModel | ConfiguredCardModel;
@@ -125,7 +130,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
   spark: css`
     display: block;
     width: 100%;
-    height: ${SPARK_H}px;
     margin-top: ${theme.spacing(0.5)};
   `,
   range: css`
@@ -188,6 +192,7 @@ const Row = memo(function Row({
       fromCache: false,
     };
   }
+  const chartH = legacy ? SPARK_HEIGHT : chartHeight(row);
   const body = (
     <>
       <div className={styles.rowHead}>
@@ -208,22 +213,22 @@ const Row = memo(function Row({
         </span>
       </div>
       {directions && !legacy && row.domain ? (
-        <div className={styles.spark} data-testid="dmap-card-spark">
+        <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
           <MirrorSparkline
             directions={directions}
             domain={row.domain}
             width={width}
-            height={SPARK_H}
+            height={chartH}
             timeRange={timeRange}
             label={row.title}
           />
         </div>
       ) : history ? (
-        <div className={styles.spark} data-testid="dmap-card-spark">
+        <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
           <SparklineView
             model={history}
             width={width}
-            height={SPARK_H}
+            height={chartH}
             timeRange={timeRange}
             label={row.title}
             showValue={false}

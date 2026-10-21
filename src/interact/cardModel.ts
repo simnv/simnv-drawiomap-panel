@@ -38,6 +38,19 @@ export interface ConfiguredCardRow {
   directions?: DirectionRowModel[];
   /** Y range of a combined row: symmetric around zero when it has both directions */
   domain?: [number, number];
+  /** chart height in px, from the row option "height"; see chartHeight for the default */
+  height?: number;
+}
+
+/** Height in px of the chart of a single-direction history row. */
+export const SPARK_HEIGHT = 40;
+
+/**
+ * Chart height of a history row in px. The row option "height" wins. Without it, a row with the zero line
+ * (up above, down mirrored below) is twice as tall as a plain sparkline, so each half is as tall as one.
+ */
+export function chartHeight(row: Pick<ConfiguredCardRow, 'height' | 'directions'>): number {
+  return row.height ?? (row.directions?.some((d) => d.mirrored) ? 2 * SPARK_HEIGHT : SPARK_HEIGHT);
 }
 export interface ConfiguredCardModel {
   title: string;
@@ -123,6 +136,7 @@ export function buildConfiguredCard(
           ...base,
           freshness: row.freshness,
           href,
+          height: row.height,
           ...(unavailable
             ? { state: 'unsupported', text: 'Binding metadata is unavailable' }
             : combinedRow(
@@ -143,7 +157,7 @@ export function buildConfiguredCard(
         href: rowHref(patch, row.url, parts[0]?.primary ?? { status: 'nodata' }, ctx),
         min: row.min,
         max: row.max,
-        ...(row.kind === 'history' ? { history: model } : {}),
+        ...(row.kind === 'history' ? { history: model, height: row.height } : {}),
       });
     }
   });

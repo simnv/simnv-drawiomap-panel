@@ -58,8 +58,13 @@ test('a combined up/down row shows both values, a zero line and the down series 
   );
   const spark = row.getByTestId('dmap-mirror-spark');
   const zero = Number(await spark.getByTestId('dmap-zero-line').getAttribute('y1'));
-  // the range is symmetric, so the zero line is in the middle of the 40 px chart
-  expect(zero).toBe(20);
+  // the range is symmetric, so the zero line is in the middle of the chart
+  const height = Number(await spark.getAttribute('height'));
+  // the chart is twice as tall as a single sparkline (40 px): each half is as tall as one
+  expect(height).toBe(80);
+  expect(zero).toBe(height / 2);
+  // the chart is really drawn at that height, not clipped by its box
+  expect((await spark.boundingBox())!.height).toBe(height);
   const up = ys((await spark.locator('polyline[data-direction="up"]').first().getAttribute('points'))!);
   const down = spark.locator('polyline[data-direction="down"]').first();
   await expect(down).toHaveAttribute('data-mirrored', 'true');
@@ -70,6 +75,8 @@ test('a combined up/down row shows both values, a zero line and the down series 
   expect(Math.max(...downYs) - zero).toBeGreaterThan(zero - Math.min(...up));
   // the range follows the data, not the 100 Mb/s capacity: the larger direction fills about 90% of its half
   expect((Math.max(...downYs) - zero) / zero).toBeGreaterThan(0.8);
+  // 41 Mb/s fills a half of 40 px: the swing is tens of pixels, not a flat line
+  expect(Math.max(...downYs) - zero).toBeGreaterThan(30);
   if (SHOTS) {
     await panel.locator.screenshot({ path: `${SHOTS}/card-combined-row.png` });
   }

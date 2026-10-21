@@ -577,7 +577,9 @@ export function DisplayFields({
                       ? { kind, label, path: 'cell.key' }
                       : kind === 'drilldown'
                         ? { kind, label, url: '/d/' }
-                        : { kind: kind as 'value' | 'history', label, binding: newBinding(first) }
+                        : kind === 'history'
+                          ? { kind, label, binding: newBinding(first) }
+                          : { kind: 'value', label, binding: newBinding(first) }
                   );
                 }}
                 options={['metadata', 'value', 'history', 'drilldown'].map((k) => ({ value: k, label: k }))}
@@ -661,6 +663,13 @@ export function DisplayFields({
                     onChange={(max) => setRow(i, { ...row, max })}
                   />
                 )}
+                {row.kind === 'history' ? (
+                  <BoundField
+                    label={`Hover row ${i + 1} height`}
+                    value={row.height}
+                    onChange={(height) => setRow(i, { ...row, height })}
+                  />
+                ) : null}
                 <TextField
                   label={`Hover row ${i + 1} URL`}
                   value={row.url ?? ''}

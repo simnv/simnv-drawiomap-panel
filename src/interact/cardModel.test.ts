@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTheme, DisplayValue, Field, FieldType, LinkModel, ThresholdsMode } from '@grafana/data';
 import type { CellPatch, HalfState, SeriesInfo } from '../types';
-import { buildCard, buildConfiguredCard, CardContext, opensCard, sparkPoints } from './cardModel';
+import {
+  buildCard,
+  buildConfiguredCard,
+  CardContext,
+  chartHeight,
+  opensCard,
+  SPARK_HEIGHT,
+  sparkPoints,
+} from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
 import type { QueryBinding } from '../model/config';
 import { toHistory } from '../query/frames';
@@ -240,7 +248,7 @@ describe('configured cards', () => {
           url: '/d/cpu?device=${cell.key}',
           freshness: { expectedIntervalMs: 1000, staleAfterMs: 5000 },
         },
-        { kind: 'history', label: 'Trend', binding },
+        { kind: 'history', label: 'Trend', binding, height: 64 },
         { kind: 'drilldown', label: 'Dashboard', url: '/d/device?device=${cell.key}' },
       ],
     },
@@ -303,6 +311,8 @@ describe('configured cards', () => {
     ]);
     expect(card.links.filter((l) => l.title === 'Dashboard').map((l) => l.href)).toEqual(['/d/device?device=rtr-a']);
     expect(card.rows[1].history).toBeUndefined();
+    expect(card.rows[1].height).toBeUndefined();
+    expect(chartHeight(card.rows[2])).toBe(64);
     expect(card.rows[1]).toMatchObject({ sampleAt: 3000, freshness: { expectedIntervalMs: 1000, staleAfterMs: 5000 } });
     expect(card.rows[2].history).toMatchObject({
       state: 'ready',
@@ -444,6 +454,20 @@ describe('combined up/down row', () => {
       ['tx', 0, 0],
       ['rx', 0, 1],
     ]);
+  });
+  it('is twice as tall as a single sparkline by default, so each half is as tall as one', () => {
+    const row = card({}, models()).rows[0];
+    expect(row.height).toBeUndefined();
+    expect(chartHeight(row)).toBe(2 * SPARK_HEIGHT);
+  });
+  it('takes the row option "height" over the default', () => {
+    const row = card({ height: 120 }, models()).rows[0];
+    expect(row.height).toBe(120);
+    expect(chartHeight(row)).toBe(120);
+  });
+  it.each([0, 1])('a combined row with only direction %s is as tall as a single sparkline', (index) => {
+    const row = card({ series: [both[index]] }, models()).rows[0];
+    expect(chartHeight(row)).toBe(SPARK_HEIGHT);
   });
   it('appends the capacity percent and keeps the capacity out of the domain', () => {
     const row = card({ capacity: 100e6 }, models()).rows[0];

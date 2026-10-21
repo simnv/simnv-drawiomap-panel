@@ -67,9 +67,16 @@ export interface DirectionSeries {
   label?: string;
 }
 export type HoverRow =
-  | (DataRowBase & { kind: 'value' | 'history'; binding: QueryBinding })
+  | (DataRowBase & { kind: 'value'; binding: QueryBinding })
+  | (DataRowBase & { kind: 'history'; binding: QueryBinding; height?: number })
   /** A combined up/down history row: up above the zero line, down mirrored below it. */
-  | (Omit<DataRowBase, 'max'> & { kind: 'history'; series: DirectionSeries[]; capacity?: number; max?: RangeMax })
+  | (Omit<DataRowBase, 'max'> & {
+      kind: 'history';
+      series: DirectionSeries[];
+      capacity?: number;
+      max?: RangeMax;
+      height?: number;
+    })
   | { kind: 'metadata'; label: string; path: string }
   | { kind: 'drilldown'; label: string; url: string };
 export interface HoverSpec {
@@ -169,6 +176,9 @@ const dataRow = {
   min: lowerBound.optional(),
   max: z.number().finite().optional(),
 };
+/** Allowed chart height of a history row, in px. Tall cards scroll. */
+export const ROW_HEIGHT_MIN = 16;
+export const ROW_HEIGHT_MAX = 400;
 const directionSeries = z
   .object({ binding: bindingSchema, direction: z.enum(['up', 'down']), label: z.string().optional() })
   .strict();
@@ -186,6 +196,7 @@ const hoverSchema = z
             binding: bindingSchema.optional(),
             series: z.array(directionSeries).min(1).max(2).optional(),
             capacity: z.number().positive().finite().optional(),
+            height: z.number().finite().min(ROW_HEIGHT_MIN).max(ROW_HEIGHT_MAX).optional(),
             // a combined row (series) also takes "auto" and "capacity"; refined below
             max: z.union([z.number().finite(), z.literal('auto'), z.literal('capacity')]).optional(),
           })

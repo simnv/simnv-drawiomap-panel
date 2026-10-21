@@ -480,6 +480,57 @@ describe('binding inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toMatchObject({ max: 'capacity' });
   });
+  it.each([false, true])('validates, clears and removes history height with series=%s', (combined) => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
+    const save = vi.fn();
+    const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
+    const withRows: DiagramConfigV2 = {
+      ...config,
+      queries: [{ id: 'tx', name: 'TX', source: { kind: 'panel', refId: 'A' } }],
+      overrides: [
+        {
+          cellId: 'device-1',
+          display: {
+            hover: {
+              rows: [
+                combined
+                  ? { kind: 'history', label: 'Traffic', series: [{ binding: tx, direction: 'up' }] }
+                  : { kind: 'history', label: 'Traffic', binding: tx },
+                { kind: 'value', label: 'Now', binding: tx },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    render(<BindingEditor config={withRows} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
+    selectElement('device-1');
+    openSection('Hover rows');
+    expect(screen.queryByLabelText('Hover row 2 height')).toBeNull();
+    for (const height of ['15', '401']) {
+      fireEvent.change(editorField('Hover row 1 height'), { target: { value: height } });
+      const apply = screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement;
+      expect(apply.disabled).toBe(true);
+      fireEvent.click(apply);
+      expect(save).not.toHaveBeenCalled();
+    }
+    fireEvent.change(editorField('Hover row 1 height'), { target: { value: '96' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toMatchObject({ height: 96 });
+    fireEvent.change(editorField('Hover row 1 height'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[1][0].overrides[0].display.hover.rows[0].height).toBeUndefined();
+    fireEvent.change(editorField('Hover row 1 height'), { target: { value: '120' } });
+    chooseOption('Hover row 1 kind', 'value');
+    expect(screen.queryByLabelText('Hover row 1 height')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[2][0].overrides[0].display.hover.rows[0]).toEqual({
+      kind: 'value',
+      label: 'Traffic',
+      binding: tx,
+    });
+  });
   it('keeps a chart minimum "auto"', () => {
     const host = document.createElement('div');
     host.innerHTML = '<svg><g data-cell-id="plain-rectangle"><rect/></g></svg>';

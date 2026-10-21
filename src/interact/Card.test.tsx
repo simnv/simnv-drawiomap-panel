@@ -218,3 +218,78 @@ it('renders a combined up/down row: both values with coloured direction labels a
   expect(row.querySelector('polyline[data-direction="down"]')?.getAttribute('data-mirrored')).toBe('true');
   expect(sparkline).not.toHaveBeenCalled();
 });
+
+const readyHistory = (values: number[]) => ({
+  state: 'ready' as const,
+  field: { name: 'v', type: 'number' as any, config: {}, values },
+  timeField: { name: 'Time', type: 'time' as any, config: {}, values: values.map((_, i) => i) },
+  timestamps: values.map((_, i) => i),
+  values,
+  latestValue: values.at(-1),
+  fetchedAt: 0,
+  fromCache: false,
+});
+const chartRow = (extra: Record<string, unknown>): ConfiguredCardModel['rows'][number] => ({
+  key: 'r',
+  kind: 'history',
+  title: 'Traffic',
+  text: '',
+  state: 'ready',
+  ...extra,
+});
+const cardOf = (row: ConfiguredCardModel['rows'][number]): ConfiguredCardModel => ({
+  title: 'wan1',
+  links: [],
+  demands: [],
+  diagnostics: [],
+  rows: [row],
+});
+const directions = (mirrored: boolean) => [
+  { direction: 'up' as const, label: '↑', text: '8', color: 'red', mirrored: false, history: readyHistory([5, 8]) },
+  ...(mirrored
+    ? [
+        {
+          direction: 'down' as const,
+          label: '↓',
+          text: '1',
+          color: 'blue',
+          mirrored: true,
+          history: readyHistory([2, 1]),
+        },
+      ]
+    : []),
+];
+const chartPx = () => {
+  const box = screen.getByTestId('dmap-card-spark') as HTMLElement;
+  return { box: box.style.height, svg: box.querySelector('svg')?.getAttribute('height') };
+};
+const renderCard = (model: ConfiguredCardModel) =>
+  render(<Card model={model} pinned={true} x={20} y={20} width={800} height={600} onClose={() => {}} />);
+
+it('draws a combined up/down row twice as tall as a single sparkline', () => {
+  renderCard(cardOf(chartRow({ domain: [-10, 10], directions: directions(true) })));
+  expect(chartPx()).toEqual({ box: '80px', svg: '80' });
+});
+it('draws a combined row with one direction at the normal sparkline height', () => {
+  renderCard(cardOf(chartRow({ domain: [0, 10], directions: directions(false) })));
+  expect(chartPx()).toEqual({ box: '40px', svg: '40' });
+});
+it('draws a single history row at the normal height', () => {
+  sparkline.mockClear();
+  renderCard(cardOf(chartRow({ history: readyHistory([1, 2]) })));
+  expect(chartPx().box).toBe('40px');
+  expect(sparkline.mock.calls.at(-1)![0].height).toBe(40);
+});
+it('takes the row height option for a combined row and for a single row', () => {
+  const { unmount } = renderCard(cardOf(chartRow({ height: 120, domain: [-10, 10], directions: directions(true) })));
+  expect(chartPx()).toEqual({ box: '120px', svg: '120' });
+  const svg = screen.getByTestId('dmap-mirror-spark');
+  expect(svg.getAttribute('viewBox')).toBe('0 0 264 120');
+  expect(svg.getAttribute('preserveAspectRatio')).toBe('none');
+  expect(screen.getByTestId('dmap-zero-line').getAttribute('y1')).toBe('60');
+  unmount();
+  sparkline.mockClear();
+  renderCard(cardOf(chartRow({ height: 64, history: readyHistory([1, 2]) })));
+  expect(chartPx().box).toBe('64px');
+  expect(sparkline.mock.calls.at(-1)![0].height).toBe(64);
+});

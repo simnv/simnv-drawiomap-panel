@@ -157,6 +157,7 @@ A history row can show the two directions of one subject (a port, a link) in one
 | `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                             |
 | `capacity`           | Optional. In the unit of the values, for both directions. The default is the field config **Max** of each series. |
 | `max`                | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.         |
+| `height`             | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                       |
 | `unit`, `url`        | As for other rows. `min` applies only to a row with one direction.                                                |
 
 With both directions, up is above a thin zero line and down is mirrored below it (drawn as negative values). The range is symmetric, from -M to M, so the zero line is in the middle. The two directions share one scale. A row with one direction stays positive and goes from 0 (or its `min`) to M.
@@ -178,6 +179,21 @@ The capacity gives only the percent text and the colours; it does not change the
 In these examples, `series` is shortened; use the two entries of the example above.
 
 The value text shows both current values, formatted with the field display processor, for example `↑ 10 Mb/s · 10%  ↓ 41 Mb/s · 41%`. The percent of the capacity shows only when the capacity is known. Each direction has its own colour, from the field config and thresholds of its own value, as a link half. With a capacity, the threshold steps are percent. The arrows in the value text have the colour of their line. A direction without data shows `No data` and no line; the other direction stays. A click on the row opens its `url`.
+
+#### Chart height
+
+A chart with both directions is 80 px tall by default. Each half is 40 px tall, the same height as a single sparkline. A row with one direction is 40 px tall. With both directions, the zero line stays in the middle of the chart.
+
+Set `height` on a V2 `display.hover.rows` history row to change the chart height. Use a number from 16 to 400, in pixels. This option applies to single and combined history rows. Legacy `shape.card` rows do not accept this option.
+
+Click or tap to pin the card before you scroll. The desktop card scrolls when its content exceeds the available panel height. In panels narrower than 480 px, the card becomes a bottom sheet. The sheet scrolls when its content exceeds 60% of the viewport height.
+
+```json
+{ "kind": "history", "label": "Traffic", "capacity": 100000000, "height": 120, "series": [] }
+{ "kind": "history", "label": "CPU", "height": 64, "binding": { "queryId": "cpu", "match": {}, "reducer": "last" } }
+```
+
+In the first example, replace the empty `series` with the two entries from the combined row example above. In the inspector, use **Hover row N height**. Clear the field to restore the default height.
 
 The third demo panel shows a combined row on its link (synthetic transmit and receive rate of `rtr-a:wan1`).
 

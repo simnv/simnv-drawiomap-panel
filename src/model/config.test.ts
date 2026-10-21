@@ -383,6 +383,26 @@ describe('combined up/down history row', () => {
     const plain = validateConfig(withRow({ kind: 'history', label: 'T', binding: up, max: 'capacity' }));
     expect(plain.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
   });
+  it('accepts a row height from 16 to 400 px on a combined or a single history row', () => {
+    for (const height of [16, 80, 400]) {
+      expect(validateConfig(withRow({ ...combined, height })).diagnostics).toEqual([]);
+      expect(validateConfig(withRow({ kind: 'history', label: 'T', binding: up, height })).diagnostics).toEqual([]);
+    }
+  });
+  it.each([
+    ['below 16', { ...combined, height: 15 }],
+    ['above 400', { ...combined, height: 401 }],
+    ['not a number', { ...combined, height: 'tall' }],
+    ['not finite', { ...combined, height: Infinity }],
+    ['null', { ...combined, height: null }],
+    ['on a value row', { kind: 'value', label: 'T', binding: up, height: 80 }],
+    ['on a metadata row', { kind: 'metadata', label: 'T', path: 'cell.key', height: 80 }],
+    ['on a drilldown row', { kind: 'drilldown', label: 'T', url: '/d/x', height: 80 }],
+  ])('rejects a row height %s', (_name, row) => {
+    const result = validateConfig(withRow(row));
+    expect(result.config).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+  });
   it('lists the bindings of the series for query references', () => {
     const config = validateConfig(withRow(combined)).config!;
     expect(displayBindings(config.overrides[0].display)).toEqual([
