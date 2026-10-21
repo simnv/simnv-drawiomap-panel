@@ -2,7 +2,7 @@ import { editorField, chooseOption, openSection, selectElement } from '../editor
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { locationService } from '@grafana/runtime';
 import {
@@ -315,7 +315,15 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
 }
 
 describe('DrawioMapPanel', () => {
-  it('previews geometry before Apply, cancels it, and accepts a replacement diagram over an older geometry draft', () => {
+  it('previews geometry before Apply, cancels it, and accepts a replacement diagram over an older geometry draft', async () => {
+    // The editor modal reads drawio/js/main.js before it makes the frame (src/editor/availability.ts).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { headers: { 'content-type': 'text/javascript' } }))
+    );
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
     locationService.partial({ editPanel: 718 });
     const save = vi.fn();
     const small =
@@ -327,9 +335,9 @@ describe('DrawioMapPanel', () => {
     };
     const p = props({ id: 718, options: saved, onOptionsChange: save });
     const view = render(<DrawioMapPanel {...p} />);
-    const resize = () => {
+    const resize = async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Edit geometry in draw.io' }));
-      const frame = screen.getByTitle('draw.io') as HTMLIFrameElement;
+      const frame = (await screen.findByTitle('draw.io')) as HTMLIFrameElement;
       const token = new DOMParser()
         .parseFromString(frame.srcdoc, 'text/html')
         .querySelector('meta[name="dmap-channel"]')!
@@ -359,12 +367,12 @@ describe('DrawioMapPanel', () => {
         })
       );
     };
-    resize();
+    await resize();
     expect(document.querySelector('[data-cell-id="region"] rect')?.getAttribute('width')).toBe('260');
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
     expect(document.querySelector('[data-cell-id="region"] rect')?.getAttribute('width')).toBe('180');
-    resize();
+    await resize();
     view.rerender(
       <DrawioMapPanel
         {...p}
