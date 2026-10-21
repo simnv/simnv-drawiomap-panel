@@ -52,6 +52,8 @@ function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefined): Di
       a2bBinding: mergeSelector(previous?.a2bBinding, patch.link.a2bBinding),
       b2aBinding: mergeSelector(previous?.b2aBinding, patch.link.b2aBinding),
       capacityBinding: mergeSelector(previous?.capacityBinding, patch.link.capacityBinding),
+      capacityA2bBinding: mergeSelector(previous?.capacityA2bBinding, patch.link.capacityA2bBinding),
+      capacityB2aBinding: mergeSelector(previous?.capacityB2aBinding, patch.link.capacityB2aBinding),
       capacity:
         typeof patch.link.capacity === 'object'
           ? mergeSelector(typeof previous?.capacity === 'object' ? previous.capacity : undefined, patch.link.capacity)

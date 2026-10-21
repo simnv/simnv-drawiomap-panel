@@ -548,9 +548,85 @@ describe('combined up/down row', () => {
         ['unresolved-metadata', `cells.${nodePatch().cellId}.hover.rows[0].capacity`],
       ]);
     });
+    it('converts the template for max "capacity" when one direction has no data', () => {
+      const m = { tx: history('tx', [1.25e6], { unit: 'Bps' }), rx: { state: 'loading' as const } };
+      const c = tpl({ capacity_bps: '100000000' }, { capacity: '${cell.capacity_bps}', max: 'capacity' }, m as any);
+      expect(c.rows[0].domain).toEqual([-12.5e6, 12.5e6]);
+    });
     it('reads max "capacity" as "auto" when the template is unusable', () => {
       const c = tpl({}, { capacity: '${cell.capacity_bps}', max: 'capacity' }, models());
       expect(c.rows[0].domain![1]).toBeCloseTo(9.02e6);
+    });
+  });
+  describe('capacity of each direction (FR-2)', () => {
+    const thresholds = {
+      mode: ThresholdsMode.Absolute,
+      steps: [
+        { value: -Infinity, color: 'green' },
+        { value: 50, color: 'red' },
+      ],
+    };
+    const perDirection = (caps: [unknown, unknown], row: Record<string, unknown> = {}, scope = {}) =>
+      buildConfiguredCard(
+        {
+          ...nodePatch({ scope: { cell: { key: 'rtr-a', cap_a2b: '100000000', cap_b2a: '10000000', ...scope } } }),
+          hover: {
+            rows: [
+              {
+                kind: 'history',
+                label: 'Traffic',
+                series: both.map((s, j) => ({ ...s, ...(caps[j] === undefined ? {} : { capacity: caps[j] }) })),
+                ...row,
+              } as any,
+            ],
+          },
+        },
+        (_, b) =>
+          ({
+            tx: history('tx', [8e6], { unit: 'bps', thresholds }),
+            rx: history('rx', [8e6], { unit: 'bps', thresholds }),
+          })[b.queryId as 'tx' | 'rx'],
+        { ...ctx, fieldThresholds: thresholds }
+      );
+    it('gives each direction the percent and the colour of its own capacity', () => {
+      // the same 8 Mb/s: 8% of 100 Mb/s is green, 80% of 10 Mb/s is red
+      const c = perDirection(['${cell.cap_a2b}', '${cell.cap_b2a}']);
+      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s · 80%');
+      expect(c.rows[0].directions!.map((d) => d.color)).toEqual([
+        theme.visualization.getColorByName('green'),
+        theme.visualization.getColorByName('red'),
+      ]);
+      expect(c.diagnostics).toEqual([]);
+    });
+    it('takes a number in the unit of the values', () => {
+      expect(perDirection([100e6, 10e6]).rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s · 80%');
+    });
+    it('prefers the capacity of the direction to the capacity of the row', () => {
+      expect(perDirection([undefined, '${cell.cap_b2a}'], { capacity: 100e6 }).rows[0].text).toBe(
+        '↑ 8 Mb/s · 8%  ↓ 8 Mb/s · 80%'
+      );
+    });
+    it('uses the larger capacity for max "capacity"', () => {
+      expect(perDirection(['${cell.cap_a2b}', '${cell.cap_b2a}'], { max: 'capacity' }).rows[0].domain).toEqual([
+        -100e6, 100e6,
+      ]);
+      expect(perDirection([5e6, 20e6], { max: 'capacity' }).rows[0].domain).toEqual([-20e6, 20e6]);
+    });
+    it('shows no percent for a direction whose template does not resolve, and reports its path', () => {
+      const c = perDirection(['${cell.cap_a2b}', '${cell.nothing}']);
+      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s');
+      expect(c.diagnostics.map((d) => [d.code, d.path])).toEqual([
+        ['unresolved-metadata', `cells.${nodePatch().cellId}.hover.rows[0].series[1].capacity`],
+      ]);
+    });
+    it('does not use the row capacity or the field Max for a direction whose capacity fails', () => {
+      const c = perDirection([undefined, '${cell.nothing}'], { capacity: 100e6 });
+      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s');
+    });
+    it('uses the capacity of the one direction for max "capacity" when the other fails', () => {
+      expect(perDirection(['${cell.cap_a2b}', '${cell.nothing}'], { max: 'capacity' }).rows[0].domain).toEqual([
+        -100e6, 100e6,
+      ]);
     });
   });
   it('uses the row max for the half range of the symmetric domain', () => {

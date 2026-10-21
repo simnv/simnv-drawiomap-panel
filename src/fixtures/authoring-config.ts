@@ -61,10 +61,10 @@ export function authoringConfig(prometheus: string, testdata: string): DiagramCo
                 kind: 'history',
                 label: 'Traffic',
                 unit: 'bps',
-                capacity: 100000000,
+                // an asymmetric link: each direction has its own capacity, from the attributes of the link
                 series: [
-                  { binding: binding('tx'), direction: 'up', label: '↑' },
-                  { binding: binding('rx'), direction: 'down', label: '↓' },
+                  { binding: binding('tx'), direction: 'up', label: '↑', capacity: '${cell.capacity_a2b_bps}' },
+                  { binding: binding('rx'), direction: 'down', label: '↓', capacity: '${cell.capacity_b2a_bps}' },
                 ],
               },
             ],

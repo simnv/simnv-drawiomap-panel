@@ -409,6 +409,19 @@ describe('combined up/down history row', () => {
     );
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
   });
+  it('accepts a capacity on each series entry, a number or a template', () => {
+    const series = [
+      { ...combined.series[0], capacity: '${cell.capacity_a2b_bps}' },
+      { ...combined.series[1], capacity: 10000000 },
+    ];
+    expect(validateConfig(withRow({ ...combined, series })).diagnostics).toEqual([]);
+  });
+  it.each(['fast', '', 0, -1, null])('rejects the series capacity %j', (capacity) => {
+    const series = [{ ...combined.series[0], capacity }, combined.series[1]];
+    const result = validateConfig(withRow({ ...combined, series }));
+    expect(result.config).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+  });
   it('accepts a row height from 16 to 400 px on a combined or a single history row', () => {
     for (const height of [16, 80, 400]) {
       expect(validateConfig(withRow({ ...combined, height })).diagnostics).toEqual([]);
@@ -462,5 +475,53 @@ describe('combined up/down history row', () => {
     const result = validateConfig(withRow(row));
     expect(result.config).toBeUndefined();
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+  });
+});
+
+describe('capacity of a link direction', () => {
+  const binding = { queryId: 'q', match: {}, reducer: 'last' };
+  const withLink = (link: unknown) => ({
+    ...empty(),
+    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+    overrides: [{ cellId: 'a', display: { link } }],
+  });
+  it('accepts a number or a template for each direction, and a binding', () => {
+    const link = {
+      capacityA2b: '${cell.capacity_a2b_bps}',
+      capacityB2a: 200000000,
+      capacityA2bBinding: binding,
+      capacityB2aBinding: binding,
+    };
+    expect(validateConfig(withLink(link))).toEqual({ config: withLink(link), diagnostics: [] });
+  });
+  it('accepts a number that is not positive; the panel skips it', () => {
+    expect(validateConfig(withLink({ capacityA2b: 0, capacityB2a: -1 })).diagnostics).toEqual([]);
+  });
+  it.each([
+    ['a string without a reference', { capacityA2b: 'fast' }],
+    ['an empty string', { capacityB2a: '' }],
+    ['null', { capacityA2b: null }],
+    ['an object', { capacityB2a: { max: 1 } }],
+    ['a binding without a query', { capacityA2bBinding: { match: {} } }],
+  ])('rejects %s', (_name, link) => {
+    const result = validateConfig(withLink(link));
+    expect(result.config).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+  });
+  it('lists the directional capacity bindings and checks their queries', () => {
+    const config = validateConfig(withLink({ capacityA2bBinding: binding, capacityB2aBinding: binding })).config!;
+    expect(displayBindings(config.overrides[0].display).map((b) => b.path)).toEqual([
+      'link.capacityA2bBinding',
+      'link.capacityB2aBinding',
+    ]);
+    const unknown = { queryId: 'nope', match: {}, reducer: 'last' };
+    expect(
+      validateConfig(withLink({ capacityA2bBinding: unknown, capacityB2aBinding: unknown })).diagnostics.map(
+        (d) => d.path
+      )
+    ).toEqual([
+      'overrides[0].display.link.capacityA2bBinding.queryId',
+      'overrides[0].display.link.capacityB2aBinding.queryId',
+    ]);
   });
 });

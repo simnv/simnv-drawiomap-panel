@@ -155,6 +155,7 @@ A history row can show the two directions of one subject (a port, a link) in one
 | `series`             | One or two entries. Each direction (`up`, `down`) can occur once. A row has `binding` or `series`, not both.                                                   |
 | `series[].direction` | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).                                                    |
 | `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                                                                          |
+| `series[].capacity`  | Optional. The capacity of this direction: a number in the unit of the values, or a template in bit/s. It replaces the row `capacity` for this direction.       |
 | `capacity`           | Optional. A number in the unit of the values, or a template in bit/s (see below). For both directions. The default is the field config **Max** of each series. |
 | `max`                | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.                                                      |
 | `height`             | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                                                                    |
@@ -192,6 +193,33 @@ On a port, use for example `"${cell.capacity_bps}"`. The panel converts the bit/
 
 The order is: row `capacity` (a number, or a resolved template), then the largest field config **Max** of the series, then no percent. If the template does not resolve, or does not give a positive number, the row shows no percent (the field **Max** does not take its place) and the card adds the diagnostic `unresolved-metadata` at `cells.<id>.hover.rows[<i>].capacity`. With `"max": "capacity"`, the range uses the resolved capacity. When it is not known, the range is as `"auto"`.
 
+#### Capacity of each direction
+
+An asymmetric link has one capacity for each direction. Set `capacity` on a `series` entry (a number, or a template in bit/s). The percent and the colour of each direction use its own capacity.
+
+```json
+{
+  "kind": "history",
+  "label": "Traffic",
+  "unit": "bps",
+  "max": "capacity",
+  "series": [
+    {
+      "binding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "direction": "up",
+      "capacity": "${cell.capacity_a2b_bps}"
+    },
+    {
+      "binding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "direction": "down",
+      "capacity": "${cell.capacity_b2a_bps}"
+    }
+  ]
+}
+```
+
+For one direction, the order is: the `capacity` of the `series` entry, the row `capacity`, the **Max** of its field config, no percent. A `series` capacity or a row capacity that does not resolve gives no percent for the direction (see above). With `"max": "capacity"`, the half range is the larger of the two capacities. The legend title stays **Link load %**. The demo panel 3 has a link with the attributes `capacity_a2b_bps` (100 Mb/s) and `capacity_b2a_bps` (50 Mb/s), and its combined row uses them.
+
 #### Chart height
 
 A chart with both directions is 80 px tall by default. Each half is 40 px tall, the same height as a single sparkline. A row with one direction is 40 px tall. With both directions, the zero line stays in the middle of the chart.
@@ -207,7 +235,7 @@ Click or tap to pin the card before you scroll. The desktop card scrolls when it
 
 In the first example, replace the empty `series` with the two entries from the combined row example above. In the inspector, use **Hover row N height**. Clear the field to restore the default height.
 
-The third demo panel shows a combined row on its link (synthetic transmit and receive rate of `rtr-a:wan1`).
+The third demo panel shows a combined row on its link (synthetic transmit and receive rate of `rtr-a:wan1`). The link has two capacities, 100 Mb/s up and 50 Mb/s down.
 
 ### Status summary
 
@@ -439,6 +467,30 @@ The series source uses the rule `reducer` when the selector has no `reducer`. If
 The hover card shows the capacity of each half, for example `41 Mb/s · 41% of 100 Mb/s`. Without a capacity, it shows only the value.
 
 The units are the data-rate units of Grafana: `bps`, `Kbits` … `Pbits`, `Bps`, `KBs` … `PBs`, and the binary (IEC) forms. A field without a unit is in bit/s. A unit that is not a data rate gives a warning, and the panel uses the raw value as bit/s.
+
+#### Capacity of each link direction (V2 configuration)
+
+In `display.link` of a V2 pattern, each half can have its own capacity. All values are in bit/s.
+
+```json
+{
+  "link": {
+    "a2bBinding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+    "b2aBinding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+    "capacityA2b": "${cell.capacity_a2b_bps}",
+    "capacityB2a": "${cell.capacity_b2a_bps}",
+    "capacity": 100000000
+  }
+}
+```
+
+| Key                                        | Meaning                                                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `capacityA2b`, `capacityB2a`               | A number or a template, for one half.                                                                        |
+| `capacityA2bBinding`, `capacityB2aBinding` | A query binding for one half. It is read like `capacityBinding`: the field unit converts the value to bit/s. |
+| `capacityBinding`, `capacity`              | As before: shared by both halves.                                                                            |
+
+The order for each half is: its binding, its number or template, `capacityBinding`, `capacity`, the field **Max**, no percent. A value that is missing, not positive or not a number falls to the next source. A directional template that does not resolve also adds the diagnostic `unresolved-metadata` at `cells.<id>.link.capacityA2b` (or `capacityB2a`). The legend title stays **Link load %**.
 
 The demo dashboard uses all four sources: LAN links get the port speed series `S`, WAN links the **Max** of an override of query `W`, tunnels a number, and the hand-drawn panel the `capacity` attribute of its cells.
 

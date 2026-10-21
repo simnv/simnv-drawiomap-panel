@@ -51,6 +51,8 @@ export type StatusRule = {
 export type LowerBound = number | 'auto';
 /** A hover row capacity: a number (the unit of the values) or a template string that resolves to bit/s. */
 export type RowCapacity = number | string;
+/** The capacity of one link half in bit/s: a number or a template. A value that is not positive is skipped. */
+export type LinkCapacity = number | string;
 /** Half range of a combined up/down row: a number, "auto" (the data, the default) or "capacity". */
 export type RangeMax = number | 'auto' | 'capacity';
 interface DataRowBase {
@@ -67,6 +69,8 @@ export interface DirectionSeries {
   direction: 'up' | 'down';
   /** text before the value; default "↑" or "↓" */
   label?: string;
+  /** the capacity of this direction: a number in the unit of the values, or a template in bit/s */
+  capacity?: RowCapacity;
 }
 export type HoverRow =
   | (DataRowBase & { kind: 'value'; binding: QueryBinding })
@@ -94,6 +98,11 @@ export interface DisplayConfig {
     a2bBinding?: QueryBinding;
     b2aBinding?: QueryBinding;
     capacityBinding?: QueryBinding;
+    /** capacity of one half, a number or a template, in bit/s; see the precedence in README */
+    capacityA2b?: LinkCapacity;
+    capacityB2a?: LinkCapacity;
+    capacityA2bBinding?: QueryBinding;
+    capacityB2aBinding?: QueryBinding;
   };
   shape?: ShapeRule & { enabled?: boolean; binding?: QueryBinding };
   status?: StatusRule;
@@ -185,8 +194,15 @@ export const ROW_HEIGHT_MAX = 400;
 /** A capacity template needs a ${...} reference to the cell scope. It must resolve to a positive number at run time. */
 const capacityTemplate = z.string().regex(/\$\{[^\s{}]+\}/, 'Use a number or a template like ${cell.capacity_bps}.');
 const rowCapacity = z.union([z.number().positive().finite(), capacityTemplate]);
+// a number that is not positive is skipped at run time, as a missing value
+const linkCapacity = z.union([z.number().finite(), capacityTemplate]);
 const directionSeries = z
-  .object({ binding: bindingSchema, direction: z.enum(['up', 'down']), label: z.string().optional() })
+  .object({
+    binding: bindingSchema,
+    direction: z.enum(['up', 'down']),
+    label: z.string().optional(),
+    capacity: rowCapacity.optional(),
+  })
   .strict();
 const hoverSchema = z
   .object({
@@ -244,6 +260,10 @@ const displaySchema = z
         a2bBinding: bindingSchema.optional(),
         b2aBinding: bindingSchema.optional(),
         capacityBinding: bindingSchema.optional(),
+        capacityA2b: linkCapacity.optional(),
+        capacityB2a: linkCapacity.optional(),
+        capacityA2bBinding: bindingSchema.optional(),
+        capacityB2aBinding: bindingSchema.optional(),
       })
       .optional(),
     shape: ruleSchema.shape.shape
@@ -358,6 +378,8 @@ export function displayBindings(display: DisplayConfig): Array<{ binding: QueryB
   add(display.link?.a2bBinding, 'link.a2bBinding');
   add(display.link?.b2aBinding, 'link.b2aBinding');
   add(display.link?.capacityBinding, 'link.capacityBinding');
+  add(display.link?.capacityA2bBinding, 'link.capacityA2bBinding');
+  add(display.link?.capacityB2aBinding, 'link.capacityB2aBinding');
   add(display.shape?.binding, 'shape.binding');
   add(display.status?.binding, 'status.binding');
   display.hover?.rows.forEach((row, i) => {

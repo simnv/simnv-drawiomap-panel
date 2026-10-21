@@ -78,6 +78,41 @@ describe('resolvePatterns', () => {
     expect(JSON.stringify({ cells, config })).toBe(before);
   });
 
+  it('merges the directional capacity bindings and templates of later patterns', () => {
+    const cells = [cellMetaFromAttrs('l1', { 'pg-kind': 'link', 'pg-id': 'a:1->b:2' }, true)];
+    const b = (match: Record<string, string>) => ({ queryId: 'q', match, reducer: 'last' as const });
+    const config: DiagramConfigV2 = {
+      ...empty(),
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+      patterns: [
+        {
+          id: 'first',
+          name: 'First',
+          select: {},
+          display: { link: { capacityA2b: 100, capacityA2bBinding: b({ job: 'a' }), capacityB2aBinding: b({}) } },
+        },
+        {
+          id: 'second',
+          name: 'Second',
+          select: {},
+          display: { link: { capacityA2b: '${cell.capacity_a2b_bps}', capacityA2bBinding: b({ device: 'p1' }) } },
+        },
+      ],
+      overrides: [],
+      widgets: [],
+    };
+    const plan = resolvePatterns(cells, config);
+    expect(plan.diagnostics).toEqual([]);
+    expect(plan.cells.l1.display.link).toMatchObject({
+      capacityA2b: '${cell.capacity_a2b_bps}',
+      capacityA2bBinding: b({ job: 'a', device: 'p1' }),
+      capacityB2aBinding: b({}),
+    });
+    expect(plan.cells.l1.bindings.map((x) => x.match)).toEqual(
+      expect.arrayContaining([{ job: 'a', device: 'p1' }, {}])
+    );
+  });
+
   it('uses physical cell IDs for overrides, even when devices share a display label', () => {
     const cells = [
       cellMetaFromAttrs('a', { 'pg-kind': 'node', 'pg-id': 'router-a' }, false, 'Router'),

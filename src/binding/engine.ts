@@ -76,7 +76,15 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
       continue;
     }
     const visible = [
-      ...(d.link?.enabled === false ? [] : [d.link?.a2bBinding, d.link?.b2aBinding, d.link?.capacityBinding]),
+      ...(d.link?.enabled === false
+        ? []
+        : [
+            d.link?.a2bBinding,
+            d.link?.b2aBinding,
+            d.link?.capacityBinding,
+            d.link?.capacityA2bBinding,
+            d.link?.capacityB2aBinding,
+          ]),
       d.shape?.enabled === false ? undefined : d.shape?.binding,
       d.status?.enabled === false ? undefined : d.status?.binding,
     ];
@@ -168,13 +176,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       const eff: Effective = { ruleNames: cell.patternIds, link, reducer: display.reducer };
       let cap = capacityOf(link, cell.scope, [], display.reducer ?? 'last');
       if (link.capacityBinding && cell.bindings.includes(link.capacityBinding)) {
-        const model = read(link.capacityBinding, 'link.capacityBinding');
-        if (model.state === 'ready' && model.latestValue !== undefined) {
-          const series = historySeries(model, link.capacityBinding);
-          const notes: string[] = [];
-          const bits = bitsOf(model.latestValue, series, notes);
-          cap = bits > 0 ? { bits, source: 'series', unresolved: [], notes } : cap;
-        }
+        cap = capacityFromBinding(read(link.capacityBinding, 'link.capacityBinding'), link.capacityBinding) ?? cap;
       }
       const states: HalfState[] = [];
       patch.link = {};
@@ -185,7 +187,27 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
         }
         const model = read(binding, `link.${direction}Binding`);
         const series = model.state === 'ready' ? [historySeries(model, binding)] : [];
-        const h = half({ refId: binding.queryId }, cap, { ...eff, reducer: binding.reducer }, cell.scope, series, {
+        // the capacity of this half: its own binding, its own number or template, then the shared capacity
+        const key = direction === 'a2b' ? 'capacityA2b' : 'capacityB2a';
+        let halfCap = cap;
+        const own = link[key];
+        if (own !== undefined) {
+          const c = capacityOf({ capacity: own }, cell.scope, [], display.reducer ?? 'last');
+          if (c.bits !== undefined) {
+            halfCap = c;
+          } else if (typeof own === 'string') {
+            result.diagnostics.push({
+              code: 'unresolved-metadata',
+              path: `cells.${cell.cellId}.link.${key}`,
+              message: `Capacity is not usable: ${[...new Set(c.unresolved)].join(', ')}`,
+            });
+          }
+        }
+        const ownBinding = link[`${key}Binding`];
+        if (ownBinding && cell.bindings.includes(ownBinding)) {
+          halfCap = capacityFromBinding(read(ownBinding, `link.${key}Binding`), ownBinding) ?? halfCap;
+        }
+        const h = half({ refId: binding.queryId }, halfCap, { ...eff, reducer: binding.reducer }, cell.scope, series, {
           ...ctx,
           display: (s, v) =>
             model.state === 'ready' && model.latestDisplayValue ? model.latestDisplayValue : ctx.display(s, v),
@@ -451,6 +473,16 @@ interface LinkCapacity {
   source: CapacitySource;
   unresolved: string[];
   notes: string[];
+}
+
+/** The capacity from a read binding: its latest value through the field unit, when it is positive. */
+function capacityFromBinding(model: HistoryModel, binding: QueryBinding): LinkCapacity | undefined {
+  if (model.state !== 'ready' || model.latestValue === undefined) {
+    return undefined;
+  }
+  const notes: string[] = [];
+  const bits = bitsOf(model.latestValue, historySeries(model, binding), notes);
+  return bits > 0 ? { bits, source: 'series', unresolved: [], notes } : undefined;
 }
 
 function capacityOf(link: LinkRule, scope: TemplateScope, series: SeriesInfo[], reducer: ReducerName): LinkCapacity {

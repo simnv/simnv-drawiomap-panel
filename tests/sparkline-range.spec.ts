@@ -52,9 +52,9 @@ test('a combined up/down row shows both values, a zero line and the down series 
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
   await half.hover({ force: true });
   const row = panel.locator.getByRole('tooltip').getByTestId('dmap-card-row').filter({ hasText: 'Traffic' });
-  // synthetic rtr-a wan1: transmit 10 Mb/s, receive 41 Mb/s, capacity 100 Mb/s
+  // synthetic rtr-a wan1: transmit 10 Mb/s of 100 Mb/s, receive 41 Mb/s of 50 Mb/s (an asymmetric link)
   await expect(row.getByTestId('dmap-card-value')).toHaveText(
-    /^↑ (9\.\d+|10(\.\d+)?) Mb\/s · 10%  ↓ (40\.\d+|41(\.\d+)?) Mb\/s · 41%$/
+    /^↑ (9\.\d+|10(\.\d+)?) Mb\/s · 10%  ↓ (40\.\d+|41(\.\d+)?) Mb\/s · 8[0-2]%$/
   );
   const spark = row.getByTestId('dmap-mirror-spark');
   const zero = Number(await spark.getByTestId('dmap-zero-line').getAttribute('y1'));
@@ -71,9 +71,9 @@ test('a combined up/down row shows both values, a zero line and the down series 
   const downYs = ys((await down.getAttribute('points'))!);
   expect(Math.max(...up)).toBeLessThan(zero);
   expect(Math.min(...downYs)).toBeGreaterThan(zero);
-  // down (41%) is further from the zero line than up (10%)
+  // down (41 Mb/s) is further from the zero line than up (10 Mb/s)
   expect(Math.max(...downYs) - zero).toBeGreaterThan(zero - Math.min(...up));
-  // the range follows the data, not the 100 Mb/s capacity: the larger direction fills about 90% of its half
+  // the range follows the data, not the capacity: the larger direction fills about 90% of its half
   expect((Math.max(...downYs) - zero) / zero).toBeGreaterThan(0.8);
   // 41 Mb/s fills a half of 40 px: the swing is tens of pixels, not a flat line
   expect(Math.max(...downYs) - zero).toBeGreaterThan(30);

@@ -292,7 +292,22 @@ function combinedRow(
   ctx: CardContext,
   at: { patch: PlanCellPatch; rowIndex: number; diagnostics: Diagnostic[] }
 ): Pick<ConfiguredCardRow, 'text' | 'state' | 'sampleAt' | 'directions' | 'domain'> {
-  const rowCapacity = resolveRowCapacity(row.capacity, at.patch, `hover.rows[${at.rowIndex}].capacity`, at.diagnostics);
+  const rowPath = `hover.rows[${at.rowIndex}]`;
+  const rowCapacity = resolveRowCapacity(row.capacity, at.patch, `${rowPath}.capacity`, at.diagnostics);
+  // The capacity of a direction: its own, else the row capacity, else the Max of its field config.
+  // A capacity that the author set and that gives no number is not replaced: the direction has no percent.
+  const capacities = row.series.map((s, j): number | undefined => {
+    const own =
+      s.capacity === undefined
+        ? rowCapacity
+        : resolveRowCapacity(s.capacity, at.patch, `${rowPath}.series[${j}].capacity`, at.diagnostics);
+    const model = models[j];
+    // a direction without data has no unit: it takes the unit of the other direction
+    const unitModel = model.state === 'ready' ? model : models.find((m) => m.state === 'ready');
+    return own.failed
+      ? undefined
+      : (inValueUnit(own, unitModel) ?? (model.state === 'ready' ? positive(model.field.config.max) : undefined));
+  });
   const mirrored = row.series.length === 2;
   const directions = row.series.map((s, j): DirectionRowModel => {
     const model = models[j];
@@ -305,10 +320,7 @@ function combinedRow(
     if (model.state !== 'ready' || model.latestValue === undefined) {
       return { ...base, text: stateText(model), color: noDataColor(ctx.theme) };
     }
-    // a capacity set by the author but unusable gives no percent: the field Max does not take its place
-    const capacity = rowCapacity.failed
-      ? undefined
-      : (inValueUnit(rowCapacity, model) ?? positive(model.field.config.max));
+    const capacity = capacities[j];
     const percent = capacity ? (model.latestValue / capacity) * 100 : undefined;
     const { color } = colorFor(
       model.latestValue,
@@ -322,11 +334,9 @@ function combinedRow(
     return { ...base, text: percent === undefined ? value : `${value} · ${Math.round(percent)}%`, color };
   });
   const ready = models.filter((m): m is Extract<HistoryModel, { state: 'ready' }> => m.state === 'ready');
-  // the row capacity applies to both directions; without it, the largest field config Max
-  const fieldMaxes = ready.flatMap((m) => positive(m.field.config.max) ?? []);
-  const capacity = rowCapacity.failed
-    ? undefined
-    : (inValueUnit(rowCapacity, ready[0]) ?? (fieldMaxes.length ? Math.max(...fieldMaxes) : undefined));
+  // for max "capacity": the larger capacity of the two directions
+  const known = capacities.filter((c): c is number => c !== undefined);
+  const capacity = known.length ? Math.max(...known) : undefined;
   // One shared scale for both directions: the data, not the capacity, unless the row says so.
   const top = combinedTop(
     ready.flatMap((m) => m.values),
