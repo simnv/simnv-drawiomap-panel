@@ -11,6 +11,11 @@ steps:
       - node --version
       - npm ci
 
+  - name: privacy
+    image: node:24-bookworm
+    commands:
+      - sh .githooks/check-denylist.sh --all
+
   - name: typecheck
     image: node:24-bookworm
     commands:
