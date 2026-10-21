@@ -10,9 +10,10 @@ import type { BindingPlan } from '../binding/patterns';
 import type { QueryController, QueryContext, QueryExecutor } from '../query/types';
 import type { NamedQuery, Widget } from '../model/config';
 
+const { sparkline } = vi.hoisted(() => ({ sparkline: vi.fn((_props: any) => <canvas />) }));
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
-  Sparkline: () => <canvas />,
+  Sparkline: sparkline,
   BarGauge: (props: { field: { min?: number; max?: number }; value: { numeric: number } }) => (
     <div data-testid="bar-props">
       {props.field.min}..{props.field.max}: {props.value.numeric}
@@ -81,6 +82,50 @@ function setup() {
   };
 }
 describe('ChartLayer', () => {
+  it.each([
+    [{}, { min: 0, max: 42 }],
+    [{ min: 'auto' as const }, { min: 21, max: 42 }],
+    [
+      { min: 5, max: 100 },
+      { min: 5, max: 100 },
+    ],
+  ])('draws a sparkline widget %j in the shared Y range (zero baseline by default)', (bounds, range) => {
+    const s = setup();
+    const native: NamedQuery = {
+      id: 'q',
+      name: 'CPU',
+      source: { kind: 'datasource', datasource: { uid: 'native' }, parameters: {}, target: { refId: 'D' } },
+    };
+    s.watch.mockImplementation((_demand, emit) => {
+      emit({
+        state: 'ready',
+        fetchedAt: 1,
+        fromCache: false,
+        frames: [
+          toDataFrame({
+            fields: [
+              { name: 'Time', type: FieldType.time, values: [1, 2] },
+              { name: 'CPU', type: FieldType.number, values: [21, 42] },
+            ],
+          }),
+        ],
+      });
+      return s.release;
+    });
+    const plan = { ...s.plan, widgets: [{ ...s.plan.widgets[0], widget: { ...widget, ...bounds } }] };
+    render(
+      <ChartLayer
+        root={s.root}
+        cells={s.cells}
+        plan={plan}
+        queries={[native]}
+        controller={s.controller}
+        context={context}
+        viewport={s.host}
+      />
+    );
+    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toMatchObject(range);
+  });
   it('reuses saved chart results for a new draft region and preserves monitoring through removal or cancel', () => {
     const s = setup();
     const ordinary = s.cells.get('ordinary')!.shape!;

@@ -316,7 +316,7 @@ function Region({
           <div>{widget.label}</div>
           <BarGaugeView
             value={model.latestDisplayValue}
-            field={{ ...model.field.config, min: widget.min, max: widget.max }}
+            field={{ ...model.field.config, min: widget.min === 'auto' ? undefined : widget.min, max: widget.max }}
             width={width}
             height={Math.max(1, height - 22)}
             sampleAt={model.sampleAt}

@@ -25,7 +25,7 @@ import { findSeries } from './series';
 import { resolveTemplate } from './template';
 import { toBitsPerSecond } from './units';
 import { isAllowedUrl } from './url';
-import type { Diagnostic, HoverSpec, QueryBinding } from '../model/config';
+import { rowBindings, type Diagnostic, type HoverSpec, type QueryBinding } from '../model/config';
 import { toHistory, type HistoryModel, type HistoryFormat } from '../query/frames';
 import type { BindingPlan } from './patterns';
 import type { QuerySnapshot } from '../query/types';
@@ -64,6 +64,8 @@ export interface BindingDemand {
   binding: QueryBinding;
   role: 'visible' | 'hover';
   rowIndex?: number;
+  /** the index in the series list of a combined row */
+  seriesIndex?: number;
 }
 /** Describes visible data plus the open card's rows; does not register or execute queries. */
 export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
@@ -85,7 +87,13 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
     }
     if (cell.cellId === openCellId && d.hover?.enabled !== false) {
       d.hover?.rows.forEach((row, rowIndex) => {
-        if ('binding' in row && cell.bindings.includes(row.binding)) {
+        if ('series' in row) {
+          row.series.forEach(({ binding }, seriesIndex) => {
+            if (cell.bindings.includes(binding)) {
+              demands.push({ cellId: cell.cellId, binding, role: 'hover', rowIndex, seriesIndex });
+            }
+          });
+        } else if ('binding' in row && cell.bindings.includes(row.binding)) {
           demands.push({ cellId: cell.cellId, binding: row.binding, role: 'hover', rowIndex });
         }
       });
@@ -129,7 +137,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
     let primary: SeriesInfo | undefined;
     patch.hover = display.hover;
     patch.unavailableHoverRows = display.hover?.rows.flatMap((row, i) =>
-      'binding' in row && !cell.bindings.includes(row.binding) ? [i] : []
+      rowBindings(row).some(({ binding }) => !cell.bindings.includes(binding)) ? [i] : []
     );
     const read = (binding: QueryBinding, path: string): HistoryModel => {
       const model = resolve(cell.cellId, binding);

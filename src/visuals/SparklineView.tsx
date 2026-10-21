@@ -4,6 +4,7 @@ import { Sparkline, useTheme2 } from '@grafana/ui';
 import type { FreshnessPolicy } from '../model/config';
 import { useSampleStale } from './useSampleStale';
 import type { HistoryModel } from '../query/frames';
+import { yDomain, type LowerBound } from './domain';
 
 export interface SparklineViewProps {
   model: HistoryModel;
@@ -15,8 +16,11 @@ export interface SparklineViewProps {
   stale?: boolean;
   freshness?: FreshnessPolicy;
   showValue?: boolean;
-  min?: number;
+  /** Y range, see yDomain: a number, or "auto" for the data min. The default is 0 for a non-negative series. */
+  min?: LowerBound;
   max?: number;
+  /** the top of the default Y range, in the unit of the values */
+  capacity?: number;
 }
 
 /** Prepared history only. This adapter never starts queries. */
@@ -31,6 +35,7 @@ export function SparklineView({
   showValue = true,
   min: minimum,
   max: maximum,
+  capacity,
 }: SparklineViewProps) {
   const theme = useTheme2();
   const expired = useSampleStale(model.state === 'ready' ? model.sampleAt : undefined, freshness);
@@ -51,24 +56,15 @@ export function SparklineView({
     );
   }
   const numeric = model.values.filter((value): value is number => value !== null);
-  let min = Infinity,
-    max = -Infinity;
-  for (const value of numeric) {
-    min = Math.min(min, value);
-    max = Math.max(max, value);
-  }
-  if (Number.isFinite(minimum)) {
-    min = minimum!;
-  }
-  if (Number.isFinite(maximum)) {
-    max = maximum!;
-  }
-  if (minimum === undefined) {
-    min = Math.min(min, max);
-  }
-  if (maximum === undefined) {
-    max = Math.max(min, max);
-  }
+  const config = model.field.config;
+  const [min, max] = yDomain(model.values, {
+    min: minimum,
+    max: maximum,
+    fieldMin: config.min,
+    fieldMax: config.max,
+    unit: config.unit,
+    capacity,
+  });
   const field = {
     ...model.field,
     values: model.values,
@@ -95,9 +91,10 @@ export function SparklineView({
           height={Math.max(1, height - (showValue ? 22 : 0))}
           theme={theme}
           config={{
-            ...model.field.config,
-            min: minimum ?? model.field.config.min,
-            max: maximum ?? model.field.config.max,
+            ...config,
+            // the Grafana sparkline widens its range to min and max: give it the same range as the state
+            min,
+            max,
             noValue: undefined,
             custom: { lineWidth: 2, fillOpacity: 15, spanNulls: false },
           }}

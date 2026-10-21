@@ -407,6 +407,71 @@ describe('binding inspector', () => {
     expect(display.hover.rows[0]).toMatchObject({ kind: 'history', binding: { queryId: 'health' } });
     expect(display.status.mappings[0]).toEqual({ value: 0, state: 'down', reason: 'Health check failed' });
   });
+  it('edits the bindings of a combined up/down row and the auto Y range of rows and charts', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="plain-rectangle"><rect/></g></svg>';
+    const save = vi.fn();
+    const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
+    const withRow: DiagramConfigV2 = {
+      ...config,
+      queries: [
+        { id: 'tx', name: 'TX', source: { kind: 'panel', refId: 'A' } },
+        { id: 'rx', name: 'RX', source: { kind: 'panel', refId: 'B' } },
+      ],
+      overrides: [
+        {
+          cellId: 'device-1',
+          display: {
+            hover: {
+              rows: [
+                {
+                  kind: 'history',
+                  label: 'Traffic',
+                  series: [
+                    { binding: tx, direction: 'up', label: '↑' },
+                    { binding: tx, direction: 'down', label: '↓' },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    render(<BindingEditor config={withRow} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
+    selectElement('device-1');
+    openSection('Hover rows');
+    chooseOption('Hover row 1 down query', 'RX');
+    fireEvent.change(editorField('Hover row 1 minimum'), { target: { value: 'auto' } });
+    fireEvent.change(editorField('Hover row 1 maximum'), { target: { value: '100000000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toEqual({
+      kind: 'history',
+      label: 'Traffic',
+      min: 'auto',
+      max: 100000000,
+      series: [
+        { binding: tx, direction: 'up', label: '↑' },
+        { binding: { ...tx, queryId: 'rx' }, direction: 'down', label: '↓' },
+      ],
+    });
+  });
+  it('keeps a chart minimum "auto"', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="plain-rectangle"><rect/></g></svg>';
+    const save = vi.fn();
+    const withQuery: DiagramConfigV2 = {
+      ...config,
+      queries: [{ id: 'cpu', name: 'CPU', source: { kind: 'panel', refId: 'A' } }],
+    };
+    render(<BindingEditor config={withQuery} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
+    selectElement('plain-rectangle');
+    fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
+    chooseOption('Chart query', 'CPU');
+    fireEvent.change(editorField('Chart minimum'), { target: { value: 'auto' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[0][0].widgets[0]).toMatchObject({ min: 'auto' });
+  });
   it('keeps invalid draft fields editable so their diagnostics can be corrected', () => {
     const host = document.createElement('div');
     host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';

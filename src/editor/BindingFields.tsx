@@ -1,9 +1,10 @@
 import { Button, Input, Select, Switch } from '@grafana/ui';
-import React, { useId } from 'react';
+import React, { useId, useState } from 'react';
 import type {
   DisplayConfig,
   FreshnessPolicy,
   HoverRow,
+  LowerBound,
   NamedQuery,
   QueryBinding,
   StatusCondition,
@@ -30,6 +31,55 @@ export function TextField({
   );
 }
 export const newBinding = (queryId = ''): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
+
+/** '' is no bound, "auto" is the data min (only when auto is allowed), else a finite number; null is not valid. */
+function parseBound(text: string, auto: boolean): LowerBound | undefined | null {
+  const t = text.trim();
+  if (t === '') {
+    return undefined;
+  }
+  if (auto && t === 'auto') {
+    return 'auto';
+  }
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+/** A Y range bound. The text stays editable while it is not valid (for example "au"); valid text is applied. */
+export function BoundField<T extends LowerBound>({
+  label,
+  value,
+  onChange,
+  auto = false,
+}: {
+  label: string;
+  value?: T;
+  onChange: (value?: T) => void;
+  auto?: boolean;
+}) {
+  const shown = value === undefined ? '' : String(value);
+  const [text, setText] = useState(shown);
+  // a new value from outside (cancel, import) replaces the text, unless the text already means that value
+  const [seen, setSeen] = useState(value);
+  if (seen !== value) {
+    setSeen(value);
+    if (parseBound(text, auto) !== value) {
+      setText(shown);
+    }
+  }
+  return (
+    <TextField
+      label={label}
+      value={text}
+      onChange={(next) => {
+        setText(next);
+        const bound = parseBound(next, auto);
+        if (bound !== null) {
+          onChange(bound as T | undefined);
+        }
+      }}
+    />
+  );
+}
 export function FreshnessFields({
   label,
   value,
@@ -551,13 +601,33 @@ export function DisplayFields({
               />
             ) : (
               <>
-                <BindingFields
-                  label={`Hover row ${i + 1}`}
-                  queries={queries}
-                  fields={fields}
-                  value={row.binding}
-                  onChange={(binding) => setRow(i, { ...row, binding: binding ?? newBinding() })}
-                />
+                {'series' in row ? (
+                  row.series.map((s, j) => (
+                    <BindingFields
+                      key={s.direction}
+                      label={`Hover row ${i + 1} ${s.direction}`}
+                      queries={queries}
+                      fields={fields}
+                      value={s.binding}
+                      onChange={(binding) =>
+                        setRow(i, {
+                          ...row,
+                          series: row.series.map((old, k) =>
+                            k === j ? { ...old, binding: binding ?? newBinding() } : old
+                          ),
+                        })
+                      }
+                    />
+                  ))
+                ) : (
+                  <BindingFields
+                    label={`Hover row ${i + 1}`}
+                    queries={queries}
+                    fields={fields}
+                    value={row.binding}
+                    onChange={(binding) => setRow(i, { ...row, binding: binding ?? newBinding() })}
+                  />
+                )}
                 <FreshnessFields
                   label={`Hover row ${i + 1}`}
                   value={row.freshness}
@@ -567,6 +637,17 @@ export function DisplayFields({
                   label={`Hover row ${i + 1} unit`}
                   value={row.unit ?? ''}
                   onChange={(unit) => setRow(i, { ...row, unit })}
+                />
+                <BoundField
+                  label={`Hover row ${i + 1} minimum`}
+                  auto
+                  value={row.min}
+                  onChange={(min) => setRow(i, { ...row, min })}
+                />
+                <BoundField
+                  label={`Hover row ${i + 1} maximum`}
+                  value={row.max}
+                  onChange={(max) => setRow(i, { ...row, max })}
                 />
                 <TextField
                   label={`Hover row ${i + 1} URL`}

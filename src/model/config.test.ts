@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateConfig, type DiagramConfigV2 } from './config';
+import { displayBindings, validateConfig, type DiagramConfigV2 } from './config';
 
 const empty = () => ({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] });
 
@@ -311,5 +311,103 @@ describe('validateConfig', () => {
         expect.objectContaining({ code: 'invalid-freshness' }),
       ])
     );
+  });
+});
+
+describe('Y range bounds', () => {
+  const binding = { queryId: 'q', match: {}, reducer: 'last' };
+  const withRows = (rows: unknown[], widgets: unknown[] = []) => ({
+    ...empty(),
+    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+    overrides: [{ cellId: 'a', display: { hover: { rows } } }],
+    widgets,
+  });
+  it('accepts min "auto" or a number and max a number on value and history rows and widgets', () => {
+    const input = withRows(
+      [
+        { kind: 'value', label: 'PoE', binding, min: 'auto' },
+        { kind: 'history', label: 'Temp', binding, min: 10, max: 90 },
+      ],
+      [{ id: 'w', anchorCellId: 'a', kind: 'sparkline', label: 'W', binding, min: 'auto', max: 5 }]
+    );
+    expect(validateConfig(input)).toEqual({ config: input, diagnostics: [] });
+  });
+  it.each([
+    [[{ kind: 'history', label: 'T', binding, min: 'zero' }], []],
+    [[{ kind: 'history', label: 'T', binding, max: 'auto' }], []],
+    [[], [{ id: 'w', anchorCellId: 'a', kind: 'sparkline', label: 'W', binding, min: 'low' }]],
+  ])('rejects other bound values: %j %j', (rows, widgets) => {
+    expect(validateConfig(withRows(rows, widgets)).diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'invalid-config' })
+    );
+  });
+  it('rejects a row min above its max', () => {
+    expect(
+      validateConfig(withRows([{ kind: 'history', label: 'T', binding, min: 10, max: 5 }])).diagnostics
+    ).toContainEqual(
+      expect.objectContaining({ code: 'invalid-row-bounds', path: 'overrides[0].display.hover.rows[0].max' })
+    );
+  });
+});
+
+describe('combined up/down history row', () => {
+  const up = { queryId: 'tx', match: { device: 'wan1' }, reducer: 'last' };
+  const down = { queryId: 'rx', match: { device: 'wan1' }, reducer: 'last' };
+  const combined = {
+    kind: 'history',
+    label: 'Traffic',
+    unit: 'bps',
+    capacity: 100000000,
+    series: [
+      { binding: up, direction: 'up', label: '↑' },
+      { binding: down, direction: 'down', label: '↓' },
+    ],
+  };
+  const withRow = (row: unknown) => ({
+    ...empty(),
+    queries: [
+      { id: 'tx', name: 'TX', source: { kind: 'panel', refId: 'A' } },
+      { id: 'rx', name: 'RX', source: { kind: 'panel', refId: 'B' } },
+    ],
+    overrides: [{ cellId: 'a', display: { hover: { rows: [row] } } }],
+  });
+  it('accepts two bindings with a direction each, or one', () => {
+    expect(validateConfig(withRow(combined))).toEqual({ config: withRow(combined), diagnostics: [] });
+    const single = { kind: 'history', label: 'In', series: [{ binding: down, direction: 'down' }] };
+    expect(validateConfig(withRow(single)).diagnostics).toEqual([]);
+  });
+  it('lists the bindings of the series for query references', () => {
+    const config = validateConfig(withRow(combined)).config!;
+    expect(displayBindings(config.overrides[0].display)).toEqual([
+      { binding: up, path: 'hover.rows[0].series[0].binding' },
+      { binding: down, path: 'hover.rows[0].series[1].binding' },
+    ]);
+    const unknown = withRow({
+      ...combined,
+      series: [combined.series[0], { ...combined.series[1], binding: { ...down, queryId: 'nope' } }],
+    });
+    expect(validateConfig(unknown).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unknown-query',
+        path: 'overrides[0].display.hover.rows[0].series[1].binding.queryId',
+      })
+    );
+  });
+  it.each([
+    ['binding and series', { ...combined, binding: up }],
+    ['no binding and no series', { kind: 'history', label: 'T' }],
+    ['no series', { ...combined, series: [] }],
+    ['three series', { ...combined, series: [...combined.series, combined.series[0]] }],
+    [
+      'the same direction twice',
+      { ...combined, series: [combined.series[0], { ...combined.series[1], direction: 'up' }] },
+    ],
+    ['an unknown direction', { ...combined, series: [{ binding: up, direction: 'left' }] }],
+    ['series on a value row', { ...combined, kind: 'value' }],
+    ['a capacity without series', { kind: 'history', label: 'T', binding: up, capacity: 5 }],
+  ])('rejects %s', (_name, row) => {
+    const result = validateConfig(withRow(row));
+    expect(result.config).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
   });
 });

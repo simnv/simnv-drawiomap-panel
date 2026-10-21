@@ -4,6 +4,7 @@ import { dateTime, FieldType, getDefaultTimeRange, type GrafanaTheme2, type Time
 import { IconButton, LinkButton, useStyles2 } from '@grafana/ui';
 import { CardModel, CardRowModel, type ConfiguredCardModel, type ConfiguredCardRow } from './cardModel';
 import { SparklineView } from '../visuals/SparklineView';
+import { MirrorSparkline } from '../visuals/MirrorSparkline';
 import type { HistoryModel } from '../query/frames';
 import { useSampleStale } from '../visuals/useSampleStale';
 
@@ -110,6 +111,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   `,
+  // keeps the two spaces between the directions of a combined row
+  pre: css`
+    white-space: pre;
+  `,
   dot: css`
     display: inline-block;
     width: 8px;
@@ -162,6 +167,7 @@ const Row = memo(function Row({
   const legacy = 'values' in row;
   const stale = useSampleStale(legacy ? undefined : row.sampleAt, legacy ? undefined : row.freshness);
   let history: HistoryModel | undefined = legacy ? undefined : row.history;
+  const directions = legacy ? undefined : row.directions;
   if (legacy && row.values.length) {
     const values = row.values;
     const times =
@@ -189,12 +195,30 @@ const Row = memo(function Row({
           {legacy ? <span className={styles.dot} style={{ background: row.color }} /> : null}
           {row.title}
         </span>
-        <span className={styles.value}>
-          {row.text}
+        <span className={cx(styles.value, directions && styles.pre)} data-testid="dmap-card-value">
+          {directions
+            ? directions.map((d, j) => (
+                <React.Fragment key={d.direction}>
+                  {j ? '  ' : ''}
+                  <span style={{ color: d.color }}>{d.label}</span> {d.text}
+                </React.Fragment>
+              ))
+            : row.text}
           {stale && !history ? <small role="status"> Stale data</small> : null}
         </span>
       </div>
-      {history ? (
+      {directions && !legacy && row.domain ? (
+        <div className={styles.spark} data-testid="dmap-card-spark">
+          <MirrorSparkline
+            directions={directions}
+            domain={row.domain}
+            width={width}
+            height={SPARK_H}
+            timeRange={timeRange}
+            label={row.title}
+          />
+        </div>
+      ) : history ? (
         <div className={styles.spark} data-testid="dmap-card-spark">
           <SparklineView
             model={history}
@@ -204,6 +228,8 @@ const Row = memo(function Row({
             label={row.title}
             showValue={false}
             freshness={legacy ? undefined : row.freshness}
+            min={legacy ? row.domain?.[0] : row.min}
+            max={legacy ? row.domain?.[1] : row.max}
           />
         </div>
       ) : null}

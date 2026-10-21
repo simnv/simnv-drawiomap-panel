@@ -1,10 +1,12 @@
 import {
   DisplayValue,
+  Field,
   formattedValueToString,
   getDisplayProcessor,
   GrafanaTheme2,
   LinkModel,
   ScopedVars,
+  ThresholdsConfig,
 } from '@grafana/data';
 import { reduceValues } from '../binding/reduce';
 import { findSeries } from '../binding/series';
@@ -14,7 +16,9 @@ import type { BindStatus, CardRow, CellPatch, HalfState, SeriesInfo } from '../t
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
 import { historySeries, type BindingDemand, type BindingResolver, type PlanCellPatch } from '../binding/engine';
 import type { HistoryModel } from '../query/frames';
-import type { Diagnostic, FreshnessPolicy, HoverRow } from '../model/config';
+import { rowBindings, type Diagnostic, type FreshnessPolicy, type HoverRow, type QueryBinding } from '../model/config';
+import { colorFor, noDataColor } from '../binding/color';
+import { yDomain, type LowerBound } from '../visuals/domain';
 
 export interface ConfiguredCardRow {
   key: string;
@@ -26,6 +30,13 @@ export interface ConfiguredCardRow {
   sampleAt?: number;
   freshness?: FreshnessPolicy;
   href?: string;
+  /** Y range of the sparkline, see yDomain */
+  min?: LowerBound;
+  max?: number;
+  /** a combined up/down row: one entry for each configured direction */
+  directions?: DirectionRowModel[];
+  /** Y range of a combined row: symmetric around zero when it has both directions */
+  domain?: [number, number];
 }
 export interface ConfiguredCardModel {
   title: string;
@@ -82,61 +93,189 @@ export function buildConfiguredCard(
       }
     } else {
       const unavailable = patch.unavailableHoverRows?.includes(i);
-      if (!unavailable) {
-        card.demands.push({ cellId: patch.cellId, binding: row.binding, role: 'hover', rowIndex: i });
-      }
-      let model: HistoryModel = unavailable
-        ? { state: 'unsupported', message: 'Binding metadata is unavailable' }
-        : resolve(patch.cellId, row.binding);
-      if (model.state === 'empty' || model.state === 'error' || model.state === 'unsupported') {
-        const message = model.state === 'empty' ? `No metric matches query ${row.binding.queryId}.` : model.message;
-        card.diagnostics.push({
-          code:
-            model.state === 'empty'
-              ? 'unmatched-metric'
-              : message.toLowerCase().includes('ambiguous')
-                ? 'ambiguous-metric'
-                : `${model.state}-metric`,
-          path: `cells.${patch.cellId}.hover.rows[${i}].binding`,
-          message,
-        });
-      }
-      if (model.state === 'ready' && row.unit !== undefined) {
-        const field = { ...model.field, config: { ...model.field.config, unit: row.unit } };
-        const display = getDisplayProcessor({ field, theme: ctx.theme });
-        model = {
-          ...model,
-          field,
-          latestDisplayValue: model.latestValue === undefined ? undefined : display(model.latestValue),
+      const combined = 'series' in row;
+      const parts = rowBindings(row).map(({ binding, path }, j) => {
+        if (!unavailable) {
+          card.demands.push({
+            cellId: patch.cellId,
+            binding,
+            role: 'hover',
+            rowIndex: i,
+            ...(combined ? { seriesIndex: j } : {}),
+          });
+        }
+        const model: HistoryModel = unavailable
+          ? { state: 'unsupported', message: 'Binding metadata is unavailable' }
+          : readBinding(patch, binding, `hover.rows[${i}].${path}`, row.unit, resolve, ctx, card.diagnostics);
+        const series = model.state === 'ready' ? historySeries(model, binding) : undefined;
+        const primary: Primary = {
+          status: model.state === 'ready' ? 'ok' : 'nodata',
+          series,
+          value: model.state === 'ready' ? model.latestValue : undefined,
+          display: model.state === 'ready' ? model.latestDisplayValue : undefined,
         };
+        return { model, primary };
+      });
+      if ('series' in row) {
+        const href = rowHref(patch, row.url, (parts.find((p) => p.primary.series) ?? parts[0]).primary, ctx);
+        card.rows.push({
+          ...base,
+          freshness: row.freshness,
+          href,
+          ...(unavailable
+            ? { state: 'unsupported', text: 'Binding metadata is unavailable' }
+            : combinedRow(
+                row,
+                parts.map((p) => p.model),
+                ctx
+              )),
+        });
+        return;
       }
-      const series = model.state === 'ready' ? historySeries(model, row.binding) : undefined;
-      const rowPrimary: Primary = {
-        status: model.state === 'ready' ? 'ok' : 'nodata',
-        series,
-        value: model.state === 'ready' ? model.latestValue : undefined,
-        display: model.state === 'ready' ? model.latestDisplayValue : undefined,
-      };
-      const text =
-        model.state === 'ready' && model.latestDisplayValue
-          ? formattedValueToString(model.latestDisplayValue)
-          : model.state === 'error' || model.state === 'unsupported'
-            ? model.message
-            : model.state === 'idle' || model.state === 'loading'
-              ? 'Loading data'
-              : 'No data';
+      const model = parts[0]?.model ?? { state: 'unsupported', message: 'Binding metadata is unavailable' };
       card.rows.push({
         ...base,
-        text,
+        text: stateText(model),
         state: model.state,
         sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
         freshness: row.freshness,
-        href: rowHref(patch, row.url, rowPrimary, ctx),
+        href: rowHref(patch, row.url, parts[0]?.primary ?? { status: 'nodata' }, ctx),
+        min: row.min,
+        max: row.max,
         ...(row.kind === 'history' ? { history: model } : {}),
       });
     }
   });
   return card;
+}
+
+/** The current value of a history, or why it has none. */
+function stateText(model: HistoryModel): string {
+  return model.state === 'ready' && model.latestDisplayValue
+    ? formattedValueToString(model.latestDisplayValue)
+    : model.state === 'error' || model.state === 'unsupported'
+      ? model.message
+      : model.state === 'idle' || model.state === 'loading'
+        ? 'Loading data'
+        : 'No data';
+}
+
+/** Resolves one hover binding, reports a missing or failed metric, and applies the unit of the row. */
+function readBinding(
+  patch: PlanCellPatch,
+  binding: QueryBinding,
+  path: string,
+  unit: string | undefined,
+  resolve: BindingResolver,
+  ctx: CardContext,
+  diagnostics: Diagnostic[]
+): HistoryModel {
+  const model = resolve(patch.cellId, binding);
+  if (model.state === 'empty' || model.state === 'error' || model.state === 'unsupported') {
+    const message = model.state === 'empty' ? `No metric matches query ${binding.queryId}.` : model.message;
+    diagnostics.push({
+      code:
+        model.state === 'empty'
+          ? 'unmatched-metric'
+          : message.toLowerCase().includes('ambiguous')
+            ? 'ambiguous-metric'
+            : `${model.state}-metric`,
+      path: `cells.${patch.cellId}.${path}`,
+      message,
+    });
+  }
+  if (model.state !== 'ready' || unit === undefined) {
+    return model;
+  }
+  const field = { ...model.field, config: { ...model.field.config, unit } };
+  const display = getDisplayProcessor({ field, theme: ctx.theme });
+  return {
+    ...model,
+    field,
+    latestDisplayValue: model.latestValue === undefined ? undefined : display(model.latestValue),
+  };
+}
+
+/** One direction of a combined row. */
+export interface DirectionRowModel {
+  direction: 'up' | 'down';
+  /** "↑" or "↓" by default */
+  label: string;
+  /** current value, for example "8.2 Mb/s · 8%", or why there is no value */
+  text: string;
+  /** from the field config and thresholds of its own value, as a link half */
+  color: string;
+  /** drawn below the zero line (negative): down when the row has both directions */
+  mirrored: boolean;
+  history: HistoryModel;
+}
+
+const positive = (v: unknown): number | undefined => (typeof v === 'number' && v > 0 ? v : undefined);
+
+/**
+ * A combined up/down row. Up leaves the subject (tx), down enters it (rx). With both directions, up is above
+ * the zero line and down is mirrored below it, in the symmetric range [-M, M]: M is the largest |value|,
+ * the capacity or the row max. A single direction stays positive and uses yDomain.
+ */
+function combinedRow(
+  row: Extract<HoverRow, { series: unknown }>,
+  models: HistoryModel[],
+  ctx: CardContext
+): Pick<ConfiguredCardRow, 'text' | 'state' | 'sampleAt' | 'directions' | 'domain'> {
+  const mirrored = row.series.length === 2;
+  const directions = row.series.map((s, j): DirectionRowModel => {
+    const model = models[j];
+    const base = {
+      direction: s.direction,
+      label: s.label ?? (s.direction === 'up' ? '↑' : '↓'),
+      mirrored: mirrored && s.direction === 'down',
+      history: model,
+    };
+    if (model.state !== 'ready' || model.latestValue === undefined) {
+      return { ...base, text: stateText(model), color: noDataColor(ctx.theme) };
+    }
+    const capacity = row.capacity ?? positive(model.field.config.max);
+    const percent = capacity ? (model.latestValue / capacity) * 100 : undefined;
+    const { color } = colorFor(
+      model.latestValue,
+      percent,
+      model.field as Field,
+      model.latestDisplayValue,
+      ctx.fieldThresholds,
+      ctx.theme
+    );
+    const value = stateText(model);
+    return { ...base, text: percent === undefined ? value : `${value} · ${Math.round(percent)}%`, color };
+  });
+  const ready = models.filter((m): m is Extract<HistoryModel, { state: 'ready' }> => m.state === 'ready');
+  const capacities = [row.capacity, ...ready.map((m) => positive(m.field.config.max))].flatMap((c) => c ?? []);
+  const capacity = capacities.length ? Math.max(...capacities) : undefined;
+  let domain: [number, number];
+  if (mirrored) {
+    const magnitudes = ready.flatMap((m) => m.values.flatMap((v) => (v === null ? [] : [Math.abs(v)])));
+    const top = yDomain(magnitudes, { max: row.max, capacity })[1];
+    domain = [-top, top];
+  } else {
+    const config = ready[0]?.field.config ?? {};
+    domain = yDomain(ready[0]?.values ?? [], {
+      min: row.min,
+      max: row.max,
+      fieldMin: config.min,
+      fieldMax: config.max,
+      unit: config.unit,
+      capacity: row.capacity,
+    });
+  }
+  const samples = ready.flatMap((m) => (m.sampleAt === undefined ? [] : [m.sampleAt]));
+  return {
+    text: directions.map((d) => `${d.label} ${d.text}`).join('  '),
+    // the row is ready when one direction has data; the other direction tells why it has none
+    state: ready.length ? 'ready' : models[0].state,
+    // the oldest sample decides if the row is stale
+    sampleAt: samples.length ? Math.min(...samples) : undefined,
+    directions,
+    domain,
+  };
 }
 
 /** What the card shows for one series. */
@@ -154,7 +293,7 @@ export interface CardRowModel {
   /** smallest and largest value of the series, formatted like the value */
   min?: string;
   max?: string;
-  /** Y range of the sparkline, see sparkDomain */
+  /** Y range of the sparkline, see yDomain */
   domain?: [number, number];
 }
 
@@ -176,43 +315,16 @@ export interface CardContext {
   /** formats a value with the field display processor; the override replaces the unit and decimals */
   display: (series: SeriesInfo, value: number, override?: DisplayOverride) => DisplayValue;
   replaceVariables: (text: string, scopedVars?: ScopedVars) => string;
+  /** the panel default thresholds: they apply when a field has none */
+  fieldThresholds?: ThresholdsConfig;
 }
 
 const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound' } as const;
 
-/** Units with a fixed top: percent is 0 to 100, percentunit is 0 to 1. */
-const UNIT_TOP: Record<string, number> = { percent: 100, percentunit: 1 };
-
-/**
- * The Y range of a sparkline.
- * A series without negative values starts at 0, so a small change does not look like a big climb.
- * The top is the largest value, the capacity of the row or the top of the unit (percent), whichever is largest.
- * A series with negative values uses min to max, but the span is at least 10% of |max| (1 when max is 0),
- * centred on the data.
- */
-export function sparkDomain(values: number[], opts: { unit?: string; capacity?: number } = {}): [number, number] {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const v of values) {
-    if (Number.isFinite(v)) {
-      min = Math.min(min, v);
-      max = Math.max(max, v);
-    }
-  }
-  if (min > max) {
-    return [0, 1];
-  }
-  if (min < 0) {
-    const minSpan = max === 0 ? 1 : Math.abs(max) / 10;
-    if (max - min >= minSpan) {
-      return [min, max];
-    }
-    const centre = (min + max) / 2;
-    return [centre - minSpan / 2, centre + minSpan / 2];
-  }
-  const cap = opts.capacity !== undefined && opts.capacity > 0 ? opts.capacity : 0;
-  const top = Math.max(max, cap, UNIT_TOP[opts.unit ?? ''] ?? 0);
-  return [0, top > 0 ? top : 1];
+/** The Min, Max and unit of the field config of a series, for yDomain. */
+function fieldBounds(s: SeriesInfo) {
+  const c = s.field.config ?? {};
+  return { fieldMin: c.min, fieldMax: c.max, unit: c.unit };
 }
 
 /** The formatted min and max of the finite values; nothing for a row without values. */
@@ -261,7 +373,7 @@ function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardCo
     times: s?.times,
     href: rowHref(patch, patch.card?.url, primary, ctx),
     ...(s ? minMax(values, (v) => formattedValueToString(ctx.display(s, v))) : {}),
-    ...(s ? { domain: sparkDomain(values, { unit: s.field.config?.unit, capacity }) } : {}),
+    ...(s ? { domain: yDomain(values, { ...fieldBounds(s), capacity }) } : {}),
   };
 }
 
@@ -299,7 +411,7 @@ function seriesRow(patch: CellPatch, row: CardRow, i: number, ctx: CardContext):
     times: f.series.times,
     href: rowHref(patch, row.url, primary, ctx),
     ...minMax(f.series.values, (v) => formattedValueToString(ctx.display(f.series!, v, override))),
-    domain: sparkDomain(f.series.values, { unit: row.unit ?? f.series.field.config?.unit }),
+    domain: yDomain(f.series.values, { ...fieldBounds(f.series), unit: row.unit ?? f.series.field.config?.unit }),
   };
 }
 
@@ -324,7 +436,7 @@ function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined 
     times: series?.times,
     href: rowHref(patch, undefined, primary, ctx),
     ...(series ? minMax(series.values, (v) => formattedValueToString(ctx.display(series, v))) : {}),
-    ...(series ? { domain: sparkDomain(series.values, { unit: series.field.config?.unit }) } : {}),
+    ...(series ? { domain: yDomain(series.values, fieldBounds(series)) } : {}),
   };
 }
 
@@ -364,7 +476,7 @@ export function buildCard(patch: CellPatch, ctx: CardContext): CardModel {
  * Polyline points of a sparkline in a w × h box with 1 px padding. Values that are not finite are skipped.
  * Times map over the part of the dashboard range that has data (first to last sample), so the line fills
  * the width also when the series starts late or stops early. Without times or range the index is used.
- * The Y range is the domain, by default sparkDomain of the values.
+ * The Y range is the domain, by default yDomain of the values.
  */
 export function sparkPoints(
   values: number[],
@@ -372,7 +484,7 @@ export function sparkPoints(
   range: { from: number; to: number } | undefined,
   w: number,
   h: number,
-  domain: [number, number] = sparkDomain(values)
+  domain: [number, number] = yDomain(values)
 ): string {
   // Long series: keep about two points per pixel.
   const step = Math.max(1, Math.floor(values.length / (2 * Math.max(w, 1))));

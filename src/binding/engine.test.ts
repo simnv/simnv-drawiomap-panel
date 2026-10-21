@@ -259,6 +259,43 @@ describe('bindPlan', () => {
     expect(result.patches.get(cells[3].id)?.hover?.rows).toHaveLength(4);
     expect(result.patches.get(cells[3].id)?.shape?.target).toBe('none');
   });
+  it('demands each binding of a combined up/down row with its series index', () => {
+    const tx = { ...queryBinding, queryId: 'tx' };
+    const rx = { ...queryBinding, queryId: 'rx' };
+    const config = v2Config({
+      hover: {
+        rows: [
+          {
+            kind: 'history',
+            label: 'Traffic',
+            series: [
+              { binding: tx, direction: 'up' },
+              { binding: rx, direction: 'down' },
+            ],
+          },
+        ],
+      },
+    });
+    for (const id of ['tx', 'rx']) {
+      config.queries.push({
+        id,
+        name: id,
+        source: { kind: 'datasource', datasource: { uid: 'prom' }, target: { refId: id }, parameters: {} },
+      });
+    }
+    const plan = resolvePatterns([cells[3]], config);
+    expect(plan.diagnostics).toEqual([]);
+    expect(
+      collectBindingDemands(plan, cells[3].id)
+        .filter((d) => d.role === 'hover')
+        .map((d) => [d.binding.queryId, d.rowIndex, d.seriesIndex])
+    ).toEqual([
+      ['tx', 0, 0],
+      ['rx', 0, 1],
+    ]);
+    const result = bindPlan(plan, () => historyValue(1), ctx, 1000);
+    expect(result.patches.get(cells[3].id)?.unavailableHoverRows).toEqual([]);
+  });
   it('resolves metadata matchers and reports ambiguous or unmatched metrics for editor previews', () => {
     const binding = { ...queryBinding, match: { instance: '${cell.key}' } };
     const config = v2Config({ shape: { binding, text: true } });

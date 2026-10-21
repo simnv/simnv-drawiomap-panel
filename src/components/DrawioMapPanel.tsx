@@ -360,10 +360,25 @@ function DrawioMapPanelView({
       }
       return getDisplayProcessor({ field: { ...s.field, config }, theme, timeZone })(v);
     };
-    return opts.config
-      ? buildConfiguredCard(cardPatch, resolve, { series, theme, display: displayFor, replaceVariables })
-      : buildCard(cardPatch, { series, theme, display: displayFor, replaceVariables });
-  }, [cardPatch, series, theme, timeZone, display, replaceVariables, opts.config, resolve]);
+    const cardContext = {
+      series,
+      theme,
+      display: displayFor,
+      replaceVariables,
+      fieldThresholds: fieldConfig.defaults.thresholds,
+    };
+    return opts.config ? buildConfiguredCard(cardPatch, resolve, cardContext) : buildCard(cardPatch, cardContext);
+  }, [
+    cardPatch,
+    series,
+    theme,
+    timeZone,
+    display,
+    replaceVariables,
+    opts.config,
+    resolve,
+    fieldConfig.defaults.thresholds,
+  ]);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
   const pinned = !!card?.pinned && open;

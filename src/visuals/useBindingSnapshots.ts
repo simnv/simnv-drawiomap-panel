@@ -33,7 +33,11 @@ export function useBindingSnapshots(
         if (!query || query.source.kind === 'panel' || !scope || !service) {
           return [];
         }
-        const consumerId = `binding:${demand.role}:${demand.cellId}:${demand.rowIndex ?? JSON.stringify(demand.binding)}`;
+        const row =
+          demand.rowIndex === undefined
+            ? undefined
+            : `${demand.rowIndex}${demand.seriesIndex === undefined ? '' : `.${demand.seriesIndex}`}`;
+        const consumerId = `binding:${demand.role}:${demand.cellId}:${row ?? JSON.stringify(demand.binding)}`;
         const request = { consumerId, query, scope, context: service.context, maxDataPoints };
         const snapshot = preparedSnapshot(
           query,

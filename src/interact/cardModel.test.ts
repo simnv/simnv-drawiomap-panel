@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createTheme, DisplayValue, Field, FieldType, LinkModel } from '@grafana/data';
+import { createTheme, DisplayValue, Field, FieldType, LinkModel, ThresholdsMode } from '@grafana/data';
 import type { CellPatch, HalfState, SeriesInfo } from '../types';
-import { buildCard, buildConfiguredCard, CardContext, sparkDomain, sparkPoints } from './cardModel';
+import { buildCard, buildConfiguredCard, CardContext, sparkPoints } from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
 import type { QueryBinding } from '../model/config';
 import { toHistory } from '../query/frames';
@@ -392,6 +392,148 @@ describe('configured cards', () => {
   });
 });
 
+describe('combined up/down row', () => {
+  const txB: QueryBinding = { queryId: 'tx', match: {}, reducer: 'last' };
+  const rxB: QueryBinding = { queryId: 'rx', match: {}, reducer: 'last' };
+  const history = (name: string, values: number[], config: Field['config'] = { unit: 'bps' }) =>
+    toHistory(
+      {
+        state: 'ready',
+        fetchedAt: 9000,
+        fromCache: false,
+        frames: [
+          {
+            length: values.length,
+            fields: [
+              { name: 'Time', type: FieldType.time, config: {}, values: values.map((_, i) => 1000 + i * 1000) },
+              { name, type: FieldType.number, config, values },
+            ],
+          },
+        ],
+      },
+      { queryId: name, match: {}, reducer: 'last' },
+      { theme }
+    );
+  const both = [
+    { binding: txB, direction: 'up' as const, label: '↑' },
+    { binding: rxB, direction: 'down' as const, label: '↓' },
+  ];
+  const card = (row: Record<string, unknown>, models: Record<string, ReturnType<typeof history>>) =>
+    buildConfiguredCard(
+      { ...nodePatch(), hover: { rows: [{ kind: 'history', label: 'Traffic', series: both, ...row } as any] } },
+      (_, b) => models[b.queryId] ?? { state: 'loading' },
+      ctx
+    );
+  const models = () => ({ tx: history('tx', [5e6, 8.2e6]), rx: history('rx', [2e6, 1.1e6]) });
+
+  it('shows both current values and draws down mirrored below zero in a symmetric domain', () => {
+    const c = card({}, models());
+    expect(c.rows).toHaveLength(1);
+    const row = c.rows[0];
+    expect(row).toMatchObject({ kind: 'history', title: 'Traffic', state: 'ready', domain: [-8.2e6, 8.2e6] });
+    expect(row.text).toBe('↑ 8.20 Mb/s  ↓ 1.10 Mb/s');
+    expect(row.directions!.map((d) => [d.direction, d.label, d.mirrored, d.text])).toEqual([
+      ['up', '↑', false, '8.20 Mb/s'],
+      ['down', '↓', true, '1.10 Mb/s'],
+    ]);
+    expect(row.history).toBeUndefined();
+    expect(c.demands.map((d) => [d.binding.queryId, d.rowIndex, d.seriesIndex])).toEqual([
+      ['tx', 0, 0],
+      ['rx', 0, 1],
+    ]);
+  });
+  it('appends the capacity percent and puts the capacity into the domain', () => {
+    const row = card({ capacity: 100e6 }, models()).rows[0];
+    expect(row.text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+    expect(row.domain).toEqual([-100e6, 100e6]);
+  });
+  it('uses the field config Max as the capacity when the row has none', () => {
+    const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 10e6 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
+    const row = card({}, m).rows[0];
+    expect(row.text).toBe('↑ 8.20 Mb/s · 82%  ↓ 1.10 Mb/s');
+    expect(row.domain).toEqual([-10e6, 10e6]);
+  });
+  it('uses the row max for the half range of the symmetric domain', () => {
+    expect(card({ max: 50e6 }, models()).rows[0].domain).toEqual([-50e6, 50e6]);
+  });
+  it('keeps a single direction positive, with the zero baseline', () => {
+    const row = card({ series: [{ binding: rxB, direction: 'down' }] }, models()).rows[0];
+    expect(row.text).toBe('↓ 1.10 Mb/s');
+    expect(row.directions!.map((d) => d.mirrored)).toEqual([false]);
+    expect(row.domain).toEqual([0, 2e6]);
+  });
+  it('uses the default labels ↑ and ↓', () => {
+    const row = card({ series: both.map(({ label: _l, ...s }) => s) }, models()).rows[0];
+    expect(row.text).toBe('↑ 8.20 Mb/s  ↓ 1.10 Mb/s');
+  });
+  it('colours each direction from the thresholds of its own value', () => {
+    const thresholds = {
+      mode: ThresholdsMode.Absolute,
+      steps: [
+        { value: -Infinity, color: 'green' },
+        { value: 5e6, color: 'red' },
+      ],
+    };
+    const m = {
+      tx: history('tx', [8.2e6], { unit: 'bps', thresholds }),
+      rx: history('rx', [1.1e6], { unit: 'bps', thresholds }),
+    };
+    const [upDir, downDir] = card({}, m).rows[0].directions!;
+    expect(upDir.color).toBe(theme.visualization.getColorByName('red'));
+    expect(downDir.color).toBe(theme.visualization.getColorByName('green'));
+  });
+  it('uses the panel thresholds as percent steps when the field has none and the row has a capacity', () => {
+    const fieldThresholds = {
+      mode: ThresholdsMode.Absolute,
+      steps: [
+        { value: -Infinity, color: 'green' },
+        { value: 5, color: 'red' },
+      ],
+    };
+    const c = buildConfiguredCard(
+      {
+        ...nodePatch(),
+        hover: { rows: [{ kind: 'history', label: 'Traffic', series: both, capacity: 100e6 }] },
+      },
+      (_, b) => models()[b.queryId as 'tx' | 'rx'],
+      { ...ctx, fieldThresholds }
+    );
+    expect(c.rows[0].directions!.map((d) => d.color)).toEqual([
+      theme.visualization.getColorByName('red'),
+      theme.visualization.getColorByName('green'),
+    ]);
+  });
+  it('keeps the row when one direction has no data and reports it', () => {
+    const m = { tx: history('tx', [8.2e6]), rx: { state: 'empty' as const, fetchedAt: 1, fromCache: false } };
+    const c = card({}, m as any);
+    expect(c.rows[0]).toMatchObject({ state: 'ready', text: '↑ 8.20 Mb/s  ↓ No data' });
+    expect(c.rows[0].directions![1].color).toBe(theme.colors.text.disabled);
+    expect(c.diagnostics.map((d) => [d.code, d.path])).toEqual([
+      ['unmatched-metric', `cells.${nodePatch().cellId}.hover.rows[0].series[1].binding`],
+    ]);
+  });
+  it('shows the loading state until a direction has data, and opens the row url', () => {
+    const c = card({ url: '/d/traffic?device=${cell.key}' }, {});
+    expect(c.rows[0]).toMatchObject({ state: 'loading', text: '↑ Loading data  ↓ Loading data' });
+    expect(c.rows[0].href).toBe('/d/traffic?device=rtr-a');
+  });
+  it('marks a combined row unavailable when a series binding has no metadata', () => {
+    const c = buildConfiguredCard(
+      {
+        ...nodePatch(),
+        hover: { rows: [{ kind: 'history', label: 'Traffic', series: both }] },
+        unavailableHoverRows: [0],
+      },
+      () => {
+        throw new Error('unavailable row was resolved');
+      },
+      ctx
+    );
+    expect(c.rows[0]).toMatchObject({ state: 'unsupported', text: 'Binding metadata is unavailable' });
+    expect(c.demands).toEqual([]);
+  });
+});
+
 describe('sparkPoints', () => {
   it('handles a long series without a stack overflow and keeps the last point', () => {
     const values = Array.from({ length: 300_000 }, (_, i) => i);
@@ -417,43 +559,6 @@ describe('sparkPoints', () => {
     expect(sparkPoints([2, 2], [0, 1], { from: 0, to: 1 }, 10, 10)).toBe('0,1 10,1');
     expect(sparkPoints([0, 0], [0, 1], { from: 0, to: 1 }, 10, 10)).toBe('0,9 10,9');
     expect(sparkPoints([2], [0], { from: 0, to: 1 }, 10, 10)).toBe('');
-  });
-});
-
-describe('sparkDomain', () => {
-  it('starts a non-negative series at zero, so a flat series stays flat', () => {
-    expect(sparkDomain([41, 41.2, 41])).toEqual([0, 41.2]);
-    expect(sparkDomain([3, 9, 5])).toEqual([0, 9]);
-  });
-  it('uses 0 to 100 for percent and 0 to 1 for percentunit', () => {
-    expect(sparkDomain([40, 41], { unit: 'percent' })).toEqual([0, 100]);
-    expect(sparkDomain([0.4, 0.41], { unit: 'percentunit' })).toEqual([0, 1]);
-    // a value above the scale still fits
-    expect(sparkDomain([40, 120], { unit: 'percent' })).toEqual([0, 120]);
-  });
-  it('reaches up to the capacity of the row', () => {
-    expect(sparkDomain([10, 20], { capacity: 100 })).toEqual([0, 100]);
-    // a value above the capacity still fits
-    expect(sparkDomain([10, 150], { capacity: 100 })).toEqual([0, 150]);
-    expect(sparkDomain([10, 20], { capacity: 0 })).toEqual([0, 20]);
-  });
-  it('uses min to max for a series with negative values', () => {
-    expect(sparkDomain([-10, 20, 5])).toEqual([-10, 20]);
-  });
-  it('keeps a minimum span of 10% of |max|, centred on the data', () => {
-    const [lo, hi] = sparkDomain([-100.5, -100]);
-    expect(hi - lo).toBeCloseTo(10);
-    expect((lo + hi) / 2).toBeCloseTo(-100.25);
-    // max is 0: the span is at least 1
-    const [lo0, hi0] = sparkDomain([-0.1, 0]);
-    expect(hi0 - lo0).toBeCloseTo(1);
-    expect((lo0 + hi0) / 2).toBeCloseTo(-0.05);
-  });
-  it('gives a usable domain for all zeros, one point and no finite value', () => {
-    expect(sparkDomain([0, 0, 0])).toEqual([0, 1]);
-    expect(sparkDomain([5])).toEqual([0, 5]);
-    expect(sparkDomain([NaN])).toEqual([0, 1]);
-    expect(sparkDomain([])).toEqual([0, 1]);
   });
 });
 

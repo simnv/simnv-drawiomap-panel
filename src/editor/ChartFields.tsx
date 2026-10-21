@@ -1,7 +1,7 @@
 import { Button, Select } from '@grafana/ui';
 import React from 'react';
 import type { NamedQuery, Widget } from '../model/config';
-import { BindingFields, FreshnessFields, newBinding, TextField } from './BindingFields';
+import { BindingFields, BoundField, FreshnessFields, newBinding, TextField } from './BindingFields';
 import { EditorField, EditorSection } from './EditorLayout';
 
 export function ChartFields({
@@ -42,12 +42,7 @@ export function ChartFields({
       />
       <TextField label="Chart label" value={widget.label} onChange={(label) => onChange({ ...widget, label })} />
       <TextField label="Chart unit" value={widget.unit ?? ''} onChange={(unit) => onChange({ ...widget, unit })} />
-      <TextField
-        label="Chart minimum"
-        type="number"
-        value={widget.min ?? ''}
-        onChange={(v) => onChange({ ...widget, min: v === '' ? undefined : Number(v) })}
-      />
+      <BoundField label="Chart minimum" auto value={widget.min} onChange={(min) => onChange({ ...widget, min })} />
       <TextField
         label="Chart maximum"
         type="number"

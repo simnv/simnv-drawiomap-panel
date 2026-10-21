@@ -47,15 +47,27 @@ export type StatusRule = {
     }
 );
 
+/** Y range of a sparkline: a number, or "auto" for the data min. The default is 0 for a non-negative series. */
+export type LowerBound = number | 'auto';
+interface DataRowBase {
+  label: string;
+  unit?: string;
+  url?: string;
+  freshness?: FreshnessPolicy;
+  min?: LowerBound;
+  max?: number;
+}
+/** One direction of a combined row: up leaves the subject (tx), down enters it (rx). */
+export interface DirectionSeries {
+  binding: QueryBinding;
+  direction: 'up' | 'down';
+  /** text before the value; default "↑" or "↓" */
+  label?: string;
+}
 export type HoverRow =
-  | {
-      kind: 'value' | 'history';
-      label: string;
-      binding: QueryBinding;
-      unit?: string;
-      url?: string;
-      freshness?: FreshnessPolicy;
-    }
+  | (DataRowBase & { kind: 'value' | 'history'; binding: QueryBinding })
+  /** A combined up/down history row: up above the zero line, down mirrored below it. */
+  | (DataRowBase & { kind: 'history'; series: DirectionSeries[]; capacity?: number })
   | { kind: 'metadata'; label: string; path: string }
   | { kind: 'drilldown'; label: string; url: string };
 export interface HoverSpec {
@@ -98,7 +110,7 @@ export interface Widget {
   binding: QueryBinding;
   label: string;
   unit?: string;
-  min?: number;
+  min?: LowerBound;
   max?: number;
   url?: string;
 }
@@ -146,29 +158,32 @@ const statusSchema = z.discriminatedUnion('kind', [
 const scopePath = z
   .string()
   .regex(/^(cell|from|to)\.[^\s.{}]+$/, 'Use a semantic scope path, for example cell.device or from.node.');
+const lowerBound = z.union([z.number().finite(), z.literal('auto')]);
+const dataRow = {
+  freshness: freshnessSchema.optional(),
+  label: nonempty,
+  unit: z.string().optional(),
+  url: z.string().optional(),
+  min: lowerBound.optional(),
+  max: z.number().finite().optional(),
+};
+const directionSeries = z
+  .object({ binding: bindingSchema, direction: z.enum(['up', 'down']), label: z.string().optional() })
+  .strict();
 const hoverSchema = z
   .object({
     enabled: z.boolean().optional(),
     rows: z.array(
       z.discriminatedUnion('kind', [
-        z
-          .object({
-            kind: z.literal('value'),
-            freshness: freshnessSchema.optional(),
-            label: nonempty,
-            binding: bindingSchema,
-            unit: z.string().optional(),
-            url: z.string().optional(),
-          })
-          .strict(),
+        z.object({ kind: z.literal('value'), ...dataRow, binding: bindingSchema }).strict(),
+        // A history row has one binding, or a series list (a combined up/down row). Refined below.
         z
           .object({
             kind: z.literal('history'),
-            freshness: freshnessSchema.optional(),
-            label: nonempty,
-            binding: bindingSchema,
-            unit: z.string().optional(),
-            url: z.string().optional(),
+            ...dataRow,
+            binding: bindingSchema.optional(),
+            series: z.array(directionSeries).min(1).max(2).optional(),
+            capacity: z.number().positive().finite().optional(),
           })
           .strict(),
         z.object({ kind: z.literal('metadata'), label: nonempty, path: scopePath }).strict(),
@@ -176,7 +191,25 @@ const hoverSchema = z
       ])
     ),
   })
-  .strict();
+  .strict()
+  .superRefine((hover, ctx) => {
+    hover.rows.forEach((row, i) => {
+      if (row.kind !== 'history') {
+        return;
+      }
+      const issue = (path: Array<string | number>, message: string) =>
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['rows', i, ...path], message });
+      if ((row.binding === undefined) === (row.series === undefined)) {
+        issue([], 'A history row has a binding or a series list, not both.');
+      }
+      if (row.series && new Set(row.series.map((s) => s.direction)).size < row.series.length) {
+        issue(['series'], 'Each direction (up, down) can occur only once.');
+      }
+      if (row.capacity !== undefined && !row.series) {
+        issue(['capacity'], 'Capacity applies only to a combined row with a series list.');
+      }
+    });
+  });
 const displaySchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -247,7 +280,7 @@ const configSchema = z
           binding: bindingSchema,
           label: nonempty,
           unit: z.string().optional(),
-          min: z.number().finite().optional(),
+          min: lowerBound.optional(),
           max: z.number().finite().optional(),
           url: z.string().optional(),
         })
@@ -304,11 +337,17 @@ export function displayBindings(display: DisplayConfig): Array<{ binding: QueryB
   add(display.shape?.binding, 'shape.binding');
   add(display.status?.binding, 'status.binding');
   display.hover?.rows.forEach((row, i) => {
-    if (row.kind === 'value' || row.kind === 'history') {
-      add(row.binding, `hover.rows[${i}].binding`);
-    }
+    rowBindings(row).forEach(({ binding, path }) => add(binding, `hover.rows[${i}].${path}`));
   });
   return found;
+}
+
+/** The bindings of one hover row, with their paths in the row: one, two for a combined row, none for the others. */
+export function rowBindings(row: HoverRow): Array<{ binding: QueryBinding; path: string }> {
+  if ('series' in row) {
+    return row.series.map((s, j) => ({ binding: s.binding, path: `series[${j}].binding` }));
+  }
+  return 'binding' in row ? [{ binding: row.binding, path: 'binding' }] : [];
 }
 
 export function validateConfig(input: unknown): { config?: DiagramConfigV2; diagnostics: Diagnostic[] } {
@@ -334,7 +373,8 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
       })),
     };
   }
-  const config: DiagramConfigV2 = parsed.data;
+  // The schema allows binding and series together; its refinement rejects that, so the data is a HoverRow.
+  const config = parsed.data as DiagramConfigV2;
   const diagnostics: Diagnostic[] = [];
   const seen = new Set<string>();
   config.queries.forEach((q, i) => {
@@ -431,6 +471,13 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
       entry.display.hover?.rows.forEach((row, j) => {
         if (row.kind === 'value' || row.kind === 'history') {
           checkFreshness(row.freshness, `${key}[${i}].display.hover.rows[${j}].freshness`);
+          if (typeof row.min === 'number' && row.max !== undefined && row.min >= row.max) {
+            diagnostics.push({
+              code: 'invalid-row-bounds',
+              path: `${key}[${i}].display.hover.rows[${j}].max`,
+              message: 'Row maximum must be greater than its minimum.',
+            });
+          }
         }
       });
       const freshness = entry.display.status?.freshness;
@@ -446,7 +493,7 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
   config.widgets.forEach((widget, i) => {
     reference(widget.binding, `widgets[${i}].binding`);
     checkFreshness(widget.freshness, `widgets[${i}].freshness`);
-    if (widget.min !== undefined && widget.max !== undefined && widget.min >= widget.max) {
+    if (typeof widget.min === 'number' && widget.max !== undefined && widget.min >= widget.max) {
       diagnostics.push({
         code: 'invalid-widget-bounds',
         path: `widgets[${i}].max`,

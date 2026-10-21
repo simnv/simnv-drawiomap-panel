@@ -28,11 +28,50 @@ export const history = (): HistoryModel => ({
   fromCache: false,
 });
 describe('SparklineView', () => {
-  it('keeps an automatic bound ordered when only the opposite bound is configured', () => {
+  it('keeps all values in range when the configured min is above the data', () => {
     render(
       <SparklineView model={history()} width={180} height={70} timeRange={getDefaultTimeRange()} label="CPU" min={50} />
     );
-    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 50, max: 50, delta: 0 });
+    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 10, max: 30, delta: 20 });
+  });
+  it('starts a non-negative series at zero by default', () => {
+    render(<SparklineView model={history()} width={180} height={70} timeRange={getDefaultTimeRange()} label="PoE" />);
+    const props = sparkline.mock.calls.at(-1)![0];
+    expect(props.sparkline.y.state.range).toEqual({ min: 0, max: 30, delta: 30 });
+    expect(props.config).toMatchObject({ min: 0, max: 30 });
+  });
+  it('uses the data min with min "auto"', () => {
+    render(
+      <SparklineView
+        model={history()}
+        width={180}
+        height={70}
+        timeRange={getDefaultTimeRange()}
+        label="CPU"
+        min="auto"
+      />
+    );
+    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 10, max: 30, delta: 20 });
+  });
+  it('uses the field config min and max before the default, and the capacity in the default', () => {
+    const model = history();
+    if (model.state !== 'ready') {
+      throw new Error();
+    }
+    model.field.config = { min: 5, max: 60 };
+    render(<SparklineView model={model} width={180} height={70} timeRange={getDefaultTimeRange()} label="CPU" />);
+    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 5, max: 60, delta: 55 });
+    render(
+      <SparklineView
+        model={history()}
+        width={180}
+        height={70}
+        timeRange={getDefaultTimeRange()}
+        label="CPU"
+        capacity={80}
+      />
+    );
+    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 0, max: 80, delta: 80 });
   });
   it('uses explicit chart bounds at the public Grafana boundary', () => {
     render(
@@ -64,7 +103,7 @@ describe('SparklineView', () => {
     expect(screen.getByText('30%')).toBeTruthy();
     const props = sparkline.mock.calls.at(-1)![0] as any;
     expect(props.sparkline.y.values).toEqual([10, null, 30]);
-    expect(props.sparkline.y.state.range).toEqual({ min: 10, max: 30, delta: 20 });
+    expect(props.sparkline.y.state.range).toEqual({ min: 0, max: 30, delta: 30 });
     expect(props.sparkline.timeRange).toBe(timeRange);
     expect(props.config.custom.spanNulls).toBe(false);
     expect(props.config.custom.lineWidth).toBe(2);
