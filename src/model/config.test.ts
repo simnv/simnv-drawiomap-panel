@@ -383,6 +383,32 @@ describe('combined up/down history row', () => {
     const plain = validateConfig(withRow({ kind: 'history', label: 'T', binding: up, max: 'capacity' }));
     expect(plain.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
   });
+  it('accepts a capacity as a positive number or a template', () => {
+    for (const capacity of [1, 100000000, '${cell.capacity_a2b_bps}', '${cell.capacity_bps}']) {
+      expect(validateConfig(withRow({ ...combined, capacity })).diagnostics).toEqual([]);
+    }
+  });
+  it.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['not finite', Infinity],
+    ['a string without a reference', 'fast'],
+    ['an empty string', ''],
+    ['a numeric string', '100000000'],
+    ['an empty reference', '${}'],
+    ['null', null],
+    ['an object', { max: 1 }],
+  ])('rejects a capacity that is %s', (_name, capacity) => {
+    const result = validateConfig(withRow({ ...combined, capacity }));
+    expect(result.config).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+  });
+  it('rejects a template capacity on a row without a series list', () => {
+    const result = validateConfig(
+      withRow({ kind: 'history', label: 'T', binding: up, capacity: '${cell.capacity_bps}' })
+    );
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+  });
   it('accepts a row height from 16 to 400 px on a combined or a single history row', () => {
     for (const height of [16, 80, 400]) {
       expect(validateConfig(withRow({ ...combined, height })).diagnostics).toEqual([]);

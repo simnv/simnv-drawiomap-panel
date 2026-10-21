@@ -49,6 +49,8 @@ export type StatusRule = {
 
 /** Y range of a sparkline: a number, or "auto" for the data min. The default is 0 for a non-negative series. */
 export type LowerBound = number | 'auto';
+/** A hover row capacity: a number (the unit of the values) or a template string that resolves to bit/s. */
+export type RowCapacity = number | string;
 /** Half range of a combined up/down row: a number, "auto" (the data, the default) or "capacity". */
 export type RangeMax = number | 'auto' | 'capacity';
 interface DataRowBase {
@@ -73,7 +75,8 @@ export type HoverRow =
   | (Omit<DataRowBase, 'max'> & {
       kind: 'history';
       series: DirectionSeries[];
-      capacity?: number;
+      /** a number in the unit of the values, or a template in bit/s, for example "${cell.capacity_bps}" */
+      capacity?: RowCapacity;
       max?: RangeMax;
       height?: number;
     })
@@ -179,6 +182,9 @@ const dataRow = {
 /** Allowed chart height of a history row, in px. Tall cards scroll. */
 export const ROW_HEIGHT_MIN = 16;
 export const ROW_HEIGHT_MAX = 400;
+/** A capacity template needs a ${...} reference to the cell scope. It must resolve to a positive number at run time. */
+const capacityTemplate = z.string().regex(/\$\{[^\s{}]+\}/, 'Use a number or a template like ${cell.capacity_bps}.');
+const rowCapacity = z.union([z.number().positive().finite(), capacityTemplate]);
 const directionSeries = z
   .object({ binding: bindingSchema, direction: z.enum(['up', 'down']), label: z.string().optional() })
   .strict();
@@ -195,7 +201,7 @@ const hoverSchema = z
             ...dataRow,
             binding: bindingSchema.optional(),
             series: z.array(directionSeries).min(1).max(2).optional(),
-            capacity: z.number().positive().finite().optional(),
+            capacity: rowCapacity.optional(),
             height: z.number().finite().min(ROW_HEIGHT_MIN).max(ROW_HEIGHT_MAX).optional(),
             // a combined row (series) also takes "auto" and "capacity"; refined below
             max: z.union([z.number().finite(), z.literal('auto'), z.literal('capacity')]).optional(),

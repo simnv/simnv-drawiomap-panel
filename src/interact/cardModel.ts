@@ -16,7 +16,14 @@ import type { BindStatus, CardRow, CellPatch, HalfState, SeriesInfo } from '../t
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
 import { historySeries, type BindingDemand, type BindingResolver, type PlanCellPatch } from '../binding/engine';
 import type { HistoryModel } from '../query/frames';
-import { rowBindings, type Diagnostic, type FreshnessPolicy, type HoverRow, type QueryBinding } from '../model/config';
+import {
+  rowBindings,
+  type Diagnostic,
+  type FreshnessPolicy,
+  type HoverRow,
+  type QueryBinding,
+  type RowCapacity,
+} from '../model/config';
 import { colorFor, noDataColor } from '../binding/color';
 import { toBitsPerSecond } from '../binding/units';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
@@ -142,7 +149,8 @@ export function buildConfiguredCard(
             : combinedRow(
                 row,
                 parts.map((p) => p.model),
-                ctx
+                ctx,
+                { patch, rowIndex: i, diagnostics: card.diagnostics }
               )),
         });
         return;
@@ -227,6 +235,52 @@ export interface DirectionRowModel {
 
 const positive = (v: unknown): number | undefined => (typeof v === 'number' && v > 0 ? v : undefined);
 
+/** A capacity from the row: an amount in the unit of the values, or in bit/s (a template). */
+interface RowCapacityValue {
+  amount?: number;
+  bitsPerSecond: boolean;
+  /** the author set a capacity and it gives no usable number */
+  failed: boolean;
+}
+
+/** Resolves a capacity of a combined row. An unusable template gives a diagnostic and no number. */
+function resolveRowCapacity(
+  spec: RowCapacity | undefined,
+  patch: PlanCellPatch,
+  path: string,
+  diagnostics: Diagnostic[]
+): RowCapacityValue {
+  if (spec === undefined) {
+    return { bitsPerSecond: false, failed: false };
+  }
+  if (typeof spec === 'number') {
+    const amount = positive(spec);
+    return { amount, bitsPerSecond: false, failed: amount === undefined };
+  }
+  const resolved = resolveTemplate(spec, patch.scope);
+  const amount = resolved.unresolved.length || resolved.text.trim() === '' ? NaN : Number(resolved.text);
+  if (Number.isFinite(amount) && amount > 0) {
+    return { amount, bitsPerSecond: true, failed: false };
+  }
+  diagnostics.push({
+    code: 'unresolved-metadata',
+    path: `cells.${patch.cellId}.${path}`,
+    message: resolved.unresolved.length
+      ? `Unresolved ${[...new Set(resolved.unresolved)].join(', ')}`
+      : `Capacity "${resolved.text}" is not a positive number of bit/s.`,
+  });
+  return { bitsPerSecond: true, failed: true };
+}
+
+/** The capacity in the unit of the values of a series (a number already has it; bit/s is converted). */
+function inValueUnit(c: RowCapacityValue, model: HistoryModel | undefined): number | undefined {
+  if (c.amount === undefined || !c.bitsPerSecond) {
+    return c.amount;
+  }
+  const unit = model?.state === 'ready' ? model.field.config?.unit : undefined;
+  return c.amount / toBitsPerSecond(1, unit).bits;
+}
+
 /**
  * A combined up/down row. Up leaves the subject (tx), down enters it (rx). With both directions, up is above
  * the zero line and down is mirrored below it, in the symmetric range [-M, M]: M is the largest |value|,
@@ -235,8 +289,10 @@ const positive = (v: unknown): number | undefined => (typeof v === 'number' && v
 function combinedRow(
   row: Extract<HoverRow, { series: unknown }>,
   models: HistoryModel[],
-  ctx: CardContext
+  ctx: CardContext,
+  at: { patch: PlanCellPatch; rowIndex: number; diagnostics: Diagnostic[] }
 ): Pick<ConfiguredCardRow, 'text' | 'state' | 'sampleAt' | 'directions' | 'domain'> {
+  const rowCapacity = resolveRowCapacity(row.capacity, at.patch, `hover.rows[${at.rowIndex}].capacity`, at.diagnostics);
   const mirrored = row.series.length === 2;
   const directions = row.series.map((s, j): DirectionRowModel => {
     const model = models[j];
@@ -249,7 +305,10 @@ function combinedRow(
     if (model.state !== 'ready' || model.latestValue === undefined) {
       return { ...base, text: stateText(model), color: noDataColor(ctx.theme) };
     }
-    const capacity = row.capacity ?? positive(model.field.config.max);
+    // a capacity set by the author but unusable gives no percent: the field Max does not take its place
+    const capacity = rowCapacity.failed
+      ? undefined
+      : (inValueUnit(rowCapacity, model) ?? positive(model.field.config.max));
     const percent = capacity ? (model.latestValue / capacity) * 100 : undefined;
     const { color } = colorFor(
       model.latestValue,
@@ -265,7 +324,9 @@ function combinedRow(
   const ready = models.filter((m): m is Extract<HistoryModel, { state: 'ready' }> => m.state === 'ready');
   // the row capacity applies to both directions; without it, the largest field config Max
   const fieldMaxes = ready.flatMap((m) => positive(m.field.config.max) ?? []);
-  const capacity = row.capacity ?? (fieldMaxes.length ? Math.max(...fieldMaxes) : undefined);
+  const capacity = rowCapacity.failed
+    ? undefined
+    : (inValueUnit(rowCapacity, ready[0]) ?? (fieldMaxes.length ? Math.max(...fieldMaxes) : undefined));
   // One shared scale for both directions: the data, not the capacity, unless the row says so.
   const top = combinedTop(
     ready.flatMap((m) => m.values),

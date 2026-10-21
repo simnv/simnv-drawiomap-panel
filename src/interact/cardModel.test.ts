@@ -501,6 +501,58 @@ describe('combined up/down row', () => {
     expect(row.text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
     expect(row.domain).toEqual([-100e6, 100e6]);
   });
+  describe('template capacity (FR-1)', () => {
+    const tpl = (attrs: Record<string, string>, row: Record<string, unknown>, m: ReturnType<typeof models>) =>
+      buildConfiguredCard(
+        {
+          ...nodePatch({ scope: { cell: { key: 'rtr-a', ...attrs } } }),
+          hover: { rows: [{ kind: 'history', label: 'Traffic', series: both, ...row } as any] },
+        },
+        (_, b) => m[b.queryId as 'tx' | 'rx'],
+        ctx
+      );
+    it('resolves a template against the cell scope, in bit/s', () => {
+      const c = tpl({ capacity_bps: '100000000' }, { capacity: '${cell.capacity_bps}' }, models());
+      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+      expect(c.diagnostics).toEqual([]);
+    });
+    it('converts the bit/s of a template to the unit of the values', () => {
+      // 100 Mb/s are 12.5 MB/s; 1.25 MB/s is 10%
+      const m = { tx: history('tx', [1.25e6], { unit: 'Bps' }), rx: history('rx', [0.125e6], { unit: 'Bps' }) };
+      const c = tpl({ capacity_bps: '100000000' }, { capacity: '${cell.capacity_bps}', max: 'capacity' }, m);
+      expect(c.rows[0].directions!.map((d) => d.text.split(' · ')[1])).toEqual(['10%', '1%']);
+      expect(c.rows[0].domain).toEqual([-12.5e6, 12.5e6]);
+    });
+    it('prefers the resolved template to the field config Max', () => {
+      const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 10e6 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
+      const c = tpl({ capacity_bps: '100000000' }, { capacity: '${cell.capacity_bps}', max: 'capacity' }, m);
+      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+      expect(c.rows[0].domain).toEqual([-100e6, 100e6]);
+    });
+    it('shows no percent and adds a diagnostic when the template does not resolve', () => {
+      // the field Max does not rescue a capacity that the author set
+      const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 10e6 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
+      const c = tpl({}, { capacity: '${cell.capacity_bps}' }, m);
+      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s  ↓ 1.10 Mb/s');
+      expect(c.diagnostics).toEqual([
+        expect.objectContaining({
+          code: 'unresolved-metadata',
+          path: `cells.${nodePatch().cellId}.hover.rows[0].capacity`,
+        }),
+      ]);
+    });
+    it.each(['abc', '0', '-5', 'Infinity', ''])('treats the resolved text "%s" as invalid', (text) => {
+      const c = tpl({ capacity_bps: text }, { capacity: '${cell.capacity_bps}' }, models());
+      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s  ↓ 1.10 Mb/s');
+      expect(c.diagnostics.map((d) => [d.code, d.path])).toEqual([
+        ['unresolved-metadata', `cells.${nodePatch().cellId}.hover.rows[0].capacity`],
+      ]);
+    });
+    it('reads max "capacity" as "auto" when the template is unusable', () => {
+      const c = tpl({}, { capacity: '${cell.capacity_bps}', max: 'capacity' }, models());
+      expect(c.rows[0].domain![1]).toBeCloseTo(9.02e6);
+    });
+  });
   it('uses the row max for the half range of the symmetric domain', () => {
     expect(card({ max: 50e6 }, models()).rows[0].domain).toEqual([-50e6, 50e6]);
   });

@@ -150,15 +150,15 @@ A history row can show the two directions of one subject (a port, a link) in one
 }
 ```
 
-| Key                  | Meaning                                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `series`             | One or two entries. Each direction (`up`, `down`) can occur once. A row has `binding` or `series`, not both.      |
-| `series[].direction` | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).       |
-| `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                             |
-| `capacity`           | Optional. In the unit of the values, for both directions. The default is the field config **Max** of each series. |
-| `max`                | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.         |
-| `height`             | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                       |
-| `unit`, `url`        | As for other rows. `min` applies only to a row with one direction.                                                |
+| Key                  | Meaning                                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `series`             | One or two entries. Each direction (`up`, `down`) can occur once. A row has `binding` or `series`, not both.                                                   |
+| `series[].direction` | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).                                                    |
+| `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                                                                          |
+| `capacity`           | Optional. A number in the unit of the values, or a template in bit/s (see below). For both directions. The default is the field config **Max** of each series. |
+| `max`                | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.                                                      |
+| `height`             | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                                                                    |
+| `unit`, `url`        | As for other rows. `min` applies only to a row with one direction.                                                                                             |
 
 With both directions, up is above a thin zero line and down is mirrored below it (drawn as negative values). The range is symmetric, from -M to M, so the zero line is in the middle. The two directions share one scale. A row with one direction stays positive and goes from 0 (or its `min`) to M.
 
@@ -179,6 +179,18 @@ The capacity gives only the percent text and the colours; it does not change the
 In these examples, `series` is shortened; use the two entries of the example above.
 
 The value text shows both current values, formatted with the field display processor, for example `↑ 10 Mb/s · 10%  ↓ 41 Mb/s · 41%`. The percent of the capacity shows only when the capacity is known. Each direction has its own colour, from the field config and thresholds of its own value, as a link half. With a capacity, the threshold steps are percent. The arrows in the value text have the colour of their line. A direction without data shows `No data` and no line; the other direction stays. A click on the row opens its `url`.
+
+#### Template capacity
+
+The row `capacity` can be a template. It resolves against the cell scope when the card opens, so one pattern fits many links. The value is in bit/s and must resolve to a finite number above 0.
+
+```json
+{ "kind": "history", "label": "Traffic", "capacity": "${cell.capacity_a2b_bps}", "max": "capacity", "series": [] }
+```
+
+On a port, use for example `"${cell.capacity_bps}"`. The panel converts the bit/s to the unit of the values (for example `Bps`), so the percent is correct. A number stays in the unit of the values.
+
+The order is: row `capacity` (a number, or a resolved template), then the largest field config **Max** of the series, then no percent. If the template does not resolve, or does not give a positive number, the row shows no percent (the field **Max** does not take its place) and the card adds the diagnostic `unresolved-metadata` at `cells.<id>.hover.rows[<i>].capacity`. With `"max": "capacity"`, the range uses the resolved capacity. When it is not known, the range is as `"auto"`.
 
 #### Chart height
 
