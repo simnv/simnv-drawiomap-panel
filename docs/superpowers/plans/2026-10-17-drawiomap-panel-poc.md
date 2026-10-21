@@ -1049,7 +1049,7 @@ LINKS = [
     ("node-rtr-b", "tun0", 150_000, 90_000),
     ("node-proxy-b", "tun-in", 90_000, 150_000),
     ("node-proxy-a", "relay-out", 50_000, 20_000),
-    ("node-proxy-b", "chain-in", 20_000, 50_000),
+    ("node-proxy-b", "relay-in", 20_000, 50_000),
 ]
 UP = {
     "node-net-a": 1, "node-net-b": 1, "node-rtr-a": 1, "node-rtr-b": 1,

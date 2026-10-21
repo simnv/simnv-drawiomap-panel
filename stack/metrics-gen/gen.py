@@ -33,7 +33,7 @@ LINKS = [
     ("node-rtr-b", "tun0", 150_000, 90_000),
     ("node-proxy-b", "tun-in", 90_000, 150_000),
     ("node-proxy-a", "relay-out", 50_000, 20_000),
-    ("node-proxy-b", "chain-in", 20_000, 50_000),
+    ("node-proxy-b", "relay-in", 20_000, 50_000),
 ]
 # port speed in bytes/s: rtr-a br-lan 1 Gb/s, rtr-b br-lan 100 Mb/s
 SPEED = [

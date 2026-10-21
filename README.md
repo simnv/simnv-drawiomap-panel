@@ -275,7 +275,7 @@ Existing V1 panels use the **Legacy rules** option. Use the form or the YAML tab
     a2b: { refId: W, match: { job: 'node-${from.node}', device: '${from.port}' } }
     b2a: { refId: W, match: { job: 'node-${to.node}', device: '${to.port}' } }
 - name: tunnels 100M
-  select: { kind: link, attrs: { pg-to: '/:(ts0|tun-in|chain-in)$/' } }
+  select: { kind: link, attrs: { pg-to: '/:(ts0|tun-in|relay-in)$/' } }
   link: { capacity: 100000000 }
 - name: node up
   select: { kind: node }

@@ -1,7 +1,7 @@
 # Synthetic demo network, L1: physical links.
 #
 # Site A: ISP A over fibre (PPPoE), a radio bridge and an LTE modem behind rtr-a, one PoE
-# switch with a hypervisor, an access point and two radios. Site B: ISP B, rtr-b, one switch
+# switch with a hypervisor and an access point. Site B: ISP B, rtr-b, one switch
 # with two hypervisors. All names and addresses are fictional.
 portograph: 2
 profile: network

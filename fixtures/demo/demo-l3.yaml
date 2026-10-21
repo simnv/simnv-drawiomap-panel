@@ -107,7 +107,7 @@ nodes:
     description: "→ exit-b.example.net"
     ports:
       - tun-in
-      - chain-in
+      - relay-in
 
 links:
   - [net-a.lan, rtr-a.br-lan, { label: "10.10.0.1" }]
@@ -123,4 +123,4 @@ links:
   - [rtr-a.tun0, proxy-a.tun-in, { label: "tun0 → proxy" }]
   - [rtr-b.tun0, proxy-b.tun-in, { label: "tun0 → proxy" }]
 
-  - [proxy-a.relay-out, proxy-b.chain-in, { label: "chain over the tunnel", class: idle }]
+  - [proxy-a.relay-out, proxy-b.relay-in, { label: "chain over the tunnel", class: idle }]
