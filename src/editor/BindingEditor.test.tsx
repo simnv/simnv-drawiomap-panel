@@ -456,6 +456,30 @@ describe('binding inspector', () => {
       ],
     });
   });
+  it('accepts the maximum "capacity" on a combined row', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
+    const save = vi.fn();
+    const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
+    const withRow: DiagramConfigV2 = {
+      ...config,
+      queries: [{ id: 'tx', name: 'TX', source: { kind: 'panel', refId: 'A' } }],
+      overrides: [
+        {
+          cellId: 'device-1',
+          display: {
+            hover: { rows: [{ kind: 'history', label: 'Traffic', series: [{ binding: tx, direction: 'up' }] }] },
+          },
+        },
+      ],
+    };
+    render(<BindingEditor config={withRow} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
+    selectElement('device-1');
+    openSection('Hover rows');
+    fireEvent.change(editorField('Hover row 1 maximum'), { target: { value: 'capacity' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toMatchObject({ max: 'capacity' });
+  });
   it('keeps a chart minimum "auto"', () => {
     const host = document.createElement('div');
     host.innerHTML = '<svg><g data-cell-id="plain-rectangle"><rect/></g></svg>';

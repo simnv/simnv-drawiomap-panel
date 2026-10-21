@@ -68,6 +68,8 @@ test('a combined up/down row shows both values, a zero line and the down series 
   expect(Math.min(...downYs)).toBeGreaterThan(zero);
   // down (41%) is further from the zero line than up (10%)
   expect(Math.max(...downYs) - zero).toBeGreaterThan(zero - Math.min(...up));
+  // the range follows the data, not the 100 Mb/s capacity: the larger direction fills about 90% of its half
+  expect((Math.max(...downYs) - zero) / zero).toBeGreaterThan(0.8);
   if (SHOTS) {
     await panel.locator.screenshot({ path: `${SHOTS}/card-combined-row.png` });
   }

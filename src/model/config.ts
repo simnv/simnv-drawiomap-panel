@@ -49,6 +49,8 @@ export type StatusRule = {
 
 /** Y range of a sparkline: a number, or "auto" for the data min. The default is 0 for a non-negative series. */
 export type LowerBound = number | 'auto';
+/** Half range of a combined up/down row: a number, "auto" (the data, the default) or "capacity". */
+export type RangeMax = number | 'auto' | 'capacity';
 interface DataRowBase {
   label: string;
   unit?: string;
@@ -67,7 +69,7 @@ export interface DirectionSeries {
 export type HoverRow =
   | (DataRowBase & { kind: 'value' | 'history'; binding: QueryBinding })
   /** A combined up/down history row: up above the zero line, down mirrored below it. */
-  | (DataRowBase & { kind: 'history'; series: DirectionSeries[]; capacity?: number })
+  | (Omit<DataRowBase, 'max'> & { kind: 'history'; series: DirectionSeries[]; capacity?: number; max?: RangeMax })
   | { kind: 'metadata'; label: string; path: string }
   | { kind: 'drilldown'; label: string; url: string };
 export interface HoverSpec {
@@ -184,6 +186,8 @@ const hoverSchema = z
             binding: bindingSchema.optional(),
             series: z.array(directionSeries).min(1).max(2).optional(),
             capacity: z.number().positive().finite().optional(),
+            // a combined row (series) also takes "auto" and "capacity"; refined below
+            max: z.union([z.number().finite(), z.literal('auto'), z.literal('capacity')]).optional(),
           })
           .strict(),
         z.object({ kind: z.literal('metadata'), label: nonempty, path: scopePath }).strict(),
@@ -207,6 +211,9 @@ const hoverSchema = z
       }
       if (row.capacity !== undefined && !row.series) {
         issue(['capacity'], 'Capacity applies only to a combined row with a series list.');
+      }
+      if (typeof row.max === 'string' && !row.series) {
+        issue(['max'], 'The maximum "auto" or "capacity" applies only to a combined row with a series list.');
       }
     });
   });
@@ -471,7 +478,7 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
       entry.display.hover?.rows.forEach((row, j) => {
         if (row.kind === 'value' || row.kind === 'history') {
           checkFreshness(row.freshness, `${key}[${i}].display.hover.rows[${j}].freshness`);
-          if (typeof row.min === 'number' && row.max !== undefined && row.min >= row.max) {
+          if (typeof row.min === 'number' && typeof row.max === 'number' && row.min >= row.max) {
             diagnostics.push({
               code: 'invalid-row-bounds',
               path: `${key}[${i}].display.hover.rows[${j}].max`,

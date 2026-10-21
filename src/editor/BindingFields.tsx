@@ -4,7 +4,6 @@ import type {
   DisplayConfig,
   FreshnessPolicy,
   HoverRow,
-  LowerBound,
   NamedQuery,
   QueryBinding,
   StatusCondition,
@@ -32,29 +31,33 @@ export function TextField({
 }
 export const newBinding = (queryId = ''): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
 
-/** '' is no bound, "auto" is the data min (only when auto is allowed), else a finite number; null is not valid. */
-function parseBound(text: string, auto: boolean): LowerBound | undefined | null {
+/** '' is no bound, a keyword (for example "auto") when the field allows it, else a finite number; null is not valid. */
+function parseBound(text: string, keywords: readonly string[]): number | string | undefined | null {
   const t = text.trim();
   if (t === '') {
     return undefined;
   }
-  if (auto && t === 'auto') {
-    return 'auto';
+  if (keywords.includes(t)) {
+    return t;
   }
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
 }
 /** A Y range bound. The text stays editable while it is not valid (for example "au"); valid text is applied. */
-export function BoundField<T extends LowerBound>({
+export function BoundField<T extends number | string>({
   label,
   value,
   onChange,
   auto = false,
+  keywords = auto ? ['auto'] : [],
 }: {
   label: string;
   value?: T;
   onChange: (value?: T) => void;
+  /** the field also takes "auto" */
   auto?: boolean;
+  /** the words that the field takes besides numbers; default: "auto" when auto is set */
+  keywords?: readonly string[];
 }) {
   const shown = value === undefined ? '' : String(value);
   const [text, setText] = useState(shown);
@@ -62,7 +65,7 @@ export function BoundField<T extends LowerBound>({
   const [seen, setSeen] = useState(value);
   if (seen !== value) {
     setSeen(value);
-    if (parseBound(text, auto) !== value) {
+    if (parseBound(text, keywords) !== value) {
       setText(shown);
     }
   }
@@ -72,7 +75,7 @@ export function BoundField<T extends LowerBound>({
       value={text}
       onChange={(next) => {
         setText(next);
-        const bound = parseBound(next, auto);
+        const bound = parseBound(next, keywords);
         if (bound !== null) {
           onChange(bound as T | undefined);
         }
@@ -644,11 +647,20 @@ export function DisplayFields({
                   value={row.min}
                   onChange={(min) => setRow(i, { ...row, min })}
                 />
-                <BoundField
-                  label={`Hover row ${i + 1} maximum`}
-                  value={row.max}
-                  onChange={(max) => setRow(i, { ...row, max })}
-                />
+                {'series' in row ? (
+                  <BoundField
+                    label={`Hover row ${i + 1} maximum`}
+                    keywords={['auto', 'capacity']}
+                    value={row.max}
+                    onChange={(max) => setRow(i, { ...row, max })}
+                  />
+                ) : (
+                  <BoundField
+                    label={`Hover row ${i + 1} maximum`}
+                    value={row.max}
+                    onChange={(max) => setRow(i, { ...row, max })}
+                  />
+                )}
                 <TextField
                   label={`Hover row ${i + 1} URL`}
                   value={row.url ?? ''}

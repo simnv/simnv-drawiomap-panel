@@ -89,7 +89,7 @@ Sample freshness is independent of cache age. Enable it with an expected cadence
 
 ### Sparkline Y range
 
-All sparklines use the same Y range: card rows, link halves (legacy rules too) and chart regions. A series without negative values starts at 0, so a small change on a flat series (for example PoE power) does not look like a big climb. The top is the largest value, the capacity, or 100 for the `percent` unit (1 for `percentunit`), whichever is largest. A series with negative values uses its own min and max.
+All sparklines use the same Y range: card rows, link halves (legacy rules too) and chart regions. A series without negative values starts at 0, so a small change on a flat series (for example PoE power) does not look like a big climb. The top is the largest value, the capacity, or 100 for the `percent` unit (1 for `percentunit`), whichever is largest. A series with negative values uses its own min and max. A combined up/down row has its own range rule, see [Combined up/down row](#combined-updown-row).
 
 Each bound uses the first source that has a value:
 
@@ -156,9 +156,26 @@ A history row can show the two directions of one subject (a port, a link) in one
 | `series[].direction` | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).       |
 | `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                             |
 | `capacity`           | Optional. In the unit of the values, for both directions. The default is the field config **Max** of each series. |
-| `unit`, `url`, `max` | As for other rows. `max` sets the top of the range (M below). `min` applies only to a row with one direction.     |
+| `max`                | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.         |
+| `unit`, `url`        | As for other rows. `min` applies only to a row with one direction.                                                |
 
-With both directions, up is above a thin zero line and down is mirrored below it (drawn as negative values). The range is symmetric, from -M to M, so the zero line is in the middle. M is `max` when the row has it, else the larger of the largest absolute value and the capacity. A value above `max` still fits. A row with one direction stays positive and uses the normal Y range.
+With both directions, up is above a thin zero line and down is mirrored below it (drawn as negative values). The range is symmetric, from -M to M, so the zero line is in the middle. The two directions share one scale. A row with one direction stays positive and goes from 0 (or its `min`) to M.
+
+| `max`               | M                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `"auto"` or not set | The largest absolute value of the two directions over the time range × 1.1. The data fills about 90% of each half. |
+| `"capacity"`        | The capacity, or the largest absolute value when it is larger. Without a capacity, as `"auto"`.                    |
+| a number            | That number. A larger value still fits: M is then the largest absolute value.                                      |
+
+The capacity gives only the percent text and the colours; it does not change the range, unless `max` is `"capacity"`. Thus 12 Mb/s on a 1 Gb/s link fills the chart. When all values are 0, M is 1% of the capacity, or 1 when the capacity is not known.
+
+```json
+{ "kind": "history", "label": "Traffic", "capacity": 1000000000, "max": "auto", "series": [] }
+{ "kind": "history", "label": "Traffic", "capacity": 1000000000, "max": "capacity", "series": [] }
+{ "kind": "history", "label": "Traffic", "max": 50000000, "series": [] }
+```
+
+In these examples, `series` is shortened; use the two entries of the example above.
 
 The value text shows both current values, formatted with the field display processor, for example `↑ 10 Mb/s · 10%  ↓ 41 Mb/s · 41%`. The percent of the capacity shows only when the capacity is known. Each direction has its own colour, from the field config and thresholds of its own value, as a link half. With a capacity, the threshold steps are percent. The arrows in the value text have the colour of their line. A direction without data shows `No data` and no line; the other direction stays. A click on the row opens its `url`.
 

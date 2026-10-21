@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { yDomain } from './domain';
+import { combinedTop, yDomain } from './domain';
 
 describe('yDomain default (zero baseline)', () => {
   it('starts a non-negative series at zero, so a flat series stays flat', () => {
@@ -85,5 +85,33 @@ describe('yDomain min "auto" (opt-out)', () => {
     const [lo, hi] = yDomain([99.9, 100], { min: 'auto', max: 100 });
     expect(hi).toBe(100);
     expect(lo).toBeCloseTo(90);
+  });
+});
+
+describe('combinedTop (half range of a combined up/down row)', () => {
+  it('fits the largest value of both directions with 10% headroom, not the capacity', () => {
+    // 12 Mb/s on a 1 Gb/s link uses about 90% of the half height
+    const top = combinedTop([12e6, 3e6, -11e6], { capacity: 1e9 });
+    expect(top).toBeCloseTo(13.2e6);
+    expect(12e6 / top).toBeGreaterThan(0.89);
+    expect(12e6 / top).toBeLessThan(0.92);
+  });
+  it('without data above zero: 1% of the capacity, else 1 unit', () => {
+    expect(combinedTop([0, 0, null], { capacity: 1e9 })).toBe(1e7);
+    expect(combinedTop([0, 1e-12])).toBe(1);
+    expect(combinedTop([])).toBe(1);
+  });
+  it('max "capacity" uses the capacity, or the data when it is larger', () => {
+    expect(combinedTop([12e6], { max: 'capacity', capacity: 1e9 })).toBe(1e9);
+    expect(combinedTop([2e9], { max: 'capacity', capacity: 1e9 })).toBe(2e9);
+    // without a capacity it is auto
+    expect(combinedTop([10], { max: 'capacity' })).toBeCloseTo(11);
+  });
+  it('a numeric max sets the half range; it is soft, so no value is clipped', () => {
+    expect(combinedTop([12e6], { max: 50e6, capacity: 1e9 })).toBe(50e6);
+    expect(combinedTop([80e6], { max: 50e6 })).toBe(80e6);
+  });
+  it('max "auto" is the default', () => {
+    expect(combinedTop([10], { max: 'auto', capacity: 100 })).toBe(combinedTop([10], { capacity: 100 }));
   });
 });

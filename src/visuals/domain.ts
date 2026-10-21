@@ -1,6 +1,6 @@
-import type { LowerBound } from '../model/config';
+import type { LowerBound, RangeMax } from '../model/config';
 
-export type { LowerBound };
+export type { LowerBound, RangeMax };
 
 export interface DomainOptions {
   /** the min of the row or the chart widget */
@@ -67,4 +67,41 @@ export function yDomain(values: ArrayLike<number | null | undefined>, opts: Doma
     hi = Math.max(hi, dmax);
   }
   return [lo, hi > lo ? hi : lo + (Math.abs(lo) / 10 || 1)];
+}
+
+/** Below this, a combined row has no data to fit. */
+const EPSILON = 1e-9;
+
+/**
+ * The half range M of a combined up/down row: up draws from 0 to M, down from 0 to -M (one shared scale).
+ *
+ * - "auto" (the default): the largest |value| of both directions × 1.1, so the data fills about 90% of the
+ *   half height. The capacity does not change the range; it gives only the percent and the colours.
+ * - "capacity": the capacity (the old range), or the data when it is larger. Without a capacity: auto.
+ * - A number: M. The bound is soft: a larger value still fits.
+ * - No data above zero: 1% of the capacity, else 1 unit.
+ */
+export function combinedTop(
+  values: ArrayLike<number | null | undefined>,
+  opts: { max?: RangeMax; capacity?: number } = {}
+): number {
+  let peak = 0;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      peak = Math.max(peak, Math.abs(v));
+    }
+  }
+  const capacity = opts.capacity !== undefined && opts.capacity > 0 ? opts.capacity : undefined;
+  const set = num(typeof opts.max === 'number' ? opts.max : undefined);
+  if (set !== undefined && set > 0) {
+    return Math.max(set, peak);
+  }
+  if (opts.max === 'capacity' && capacity !== undefined) {
+    return Math.max(capacity, peak);
+  }
+  if (peak <= EPSILON) {
+    return capacity !== undefined ? capacity / 100 : 1;
+  }
+  return peak * 1.1;
 }

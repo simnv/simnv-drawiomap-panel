@@ -430,7 +430,10 @@ describe('combined up/down row', () => {
     const c = card({}, models());
     expect(c.rows).toHaveLength(1);
     const row = c.rows[0];
-    expect(row).toMatchObject({ kind: 'history', title: 'Traffic', state: 'ready', domain: [-8.2e6, 8.2e6] });
+    expect(row).toMatchObject({ kind: 'history', title: 'Traffic', state: 'ready' });
+    // the largest value of both directions with 10% headroom
+    expect(row.domain![0]).toBeCloseTo(-9.02e6);
+    expect(row.domain![1]).toBeCloseTo(9.02e6);
     expect(row.text).toBe('↑ 8.20 Mb/s  ↓ 1.10 Mb/s');
     expect(row.directions!.map((d) => [d.direction, d.label, d.mirrored, d.text])).toEqual([
       ['up', '↑', false, '8.20 Mb/s'],
@@ -442,20 +445,35 @@ describe('combined up/down row', () => {
       ['rx', 0, 1],
     ]);
   });
-  it('appends the capacity percent and puts the capacity into the domain', () => {
+  it('appends the capacity percent and keeps the capacity out of the domain', () => {
     const row = card({ capacity: 100e6 }, models()).rows[0];
     expect(row.text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
-    expect(row.domain).toEqual([-100e6, 100e6]);
+    expect(row.domain![1]).toBeCloseTo(9.02e6);
+  });
+  it('fills about 90% of the half height with 12 Mb/s on a 1 Gb/s link', () => {
+    const m = { tx: history('tx', [11e6, 12e6]), rx: history('rx', [3e6, 4e6]) };
+    const [lo, hi] = card({ capacity: 1e9 }, m).rows[0].domain!;
+    expect(lo).toBe(-hi);
+    expect(12e6 / hi).toBeGreaterThan(0.89);
+    expect(12e6 / hi).toBeLessThan(0.92);
+  });
+  it('max "capacity" puts the capacity back into the domain', () => {
+    expect(card({ capacity: 100e6, max: 'capacity' }, models()).rows[0].domain).toEqual([-100e6, 100e6]);
+  });
+  it('all zeros: the half range is 1% of the capacity', () => {
+    const m = { tx: history('tx', [0, 0]), rx: history('rx', [0]) };
+    expect(card({ capacity: 1e9 }, m).rows[0].domain).toEqual([-1e7, 1e7]);
+    expect(card({}, m).rows[0].domain).toEqual([-1, 1]);
   });
   it('uses the field config Max as the capacity when the row has none', () => {
     const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 10e6 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
-    const row = card({}, m).rows[0];
+    const row = card({ max: 'capacity' }, m).rows[0];
     expect(row.text).toBe('↑ 8.20 Mb/s · 82%  ↓ 1.10 Mb/s');
     expect(row.domain).toEqual([-10e6, 10e6]);
   });
   it('uses the row capacity, not the field config Max, when the row has one', () => {
     const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 1e9 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
-    const row = card({ capacity: 100e6 }, m).rows[0];
+    const row = card({ capacity: 100e6, max: 'capacity' }, m).rows[0];
     expect(row.text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
     expect(row.domain).toEqual([-100e6, 100e6]);
   });
@@ -466,7 +484,8 @@ describe('combined up/down row', () => {
     const row = card({ series: [{ binding: rxB, direction: 'down' }] }, models()).rows[0];
     expect(row.text).toBe('↓ 1.10 Mb/s');
     expect(row.directions!.map((d) => d.mirrored)).toEqual([false]);
-    expect(row.domain).toEqual([0, 2e6]);
+    expect(row.domain![0]).toBe(0);
+    expect(row.domain![1]).toBeCloseTo(2.2e6);
   });
   it('uses the default labels ↑ and ↓', () => {
     const row = card({ series: both.map(({ label: _l, ...s }) => s) }, models()).rows[0];

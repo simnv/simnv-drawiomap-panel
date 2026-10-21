@@ -376,6 +376,13 @@ describe('combined up/down history row', () => {
     const single = { kind: 'history', label: 'In', series: [{ binding: down, direction: 'down' }] };
     expect(validateConfig(withRow(single)).diagnostics).toEqual([]);
   });
+  it('accepts max "auto", "capacity" or a number on a combined row only', () => {
+    for (const max of ['auto', 'capacity', 50000000]) {
+      expect(validateConfig(withRow({ ...combined, max })).diagnostics).toEqual([]);
+    }
+    const plain = validateConfig(withRow({ kind: 'history', label: 'T', binding: up, max: 'capacity' }));
+    expect(plain.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+  });
   it('lists the bindings of the series for query references', () => {
     const config = validateConfig(withRow(combined)).config!;
     expect(displayBindings(config.overrides[0].display)).toEqual([

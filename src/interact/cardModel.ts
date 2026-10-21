@@ -19,7 +19,7 @@ import type { HistoryModel } from '../query/frames';
 import { rowBindings, type Diagnostic, type FreshnessPolicy, type HoverRow, type QueryBinding } from '../model/config';
 import { colorFor, noDataColor } from '../binding/color';
 import { toBitsPerSecond } from '../binding/units';
-import { yDomain, type LowerBound } from '../visuals/domain';
+import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 
 export interface ConfiguredCardRow {
   key: string;
@@ -252,21 +252,17 @@ function combinedRow(
   // the row capacity applies to both directions; without it, the largest field config Max
   const fieldMaxes = ready.flatMap((m) => positive(m.field.config.max) ?? []);
   const capacity = row.capacity ?? (fieldMaxes.length ? Math.max(...fieldMaxes) : undefined);
+  // One shared scale for both directions: the data, not the capacity, unless the row says so.
+  const top = combinedTop(
+    ready.flatMap((m) => m.values),
+    { max: row.max, capacity }
+  );
   let domain: [number, number];
   if (mirrored) {
-    const magnitudes = ready.flatMap((m) => m.values.flatMap((v) => (v === null ? [] : [Math.abs(v)])));
-    const top = yDomain(magnitudes, { max: row.max, capacity })[1];
     domain = [-top, top];
   } else {
     const config = ready[0]?.field.config ?? {};
-    domain = yDomain(ready[0]?.values ?? [], {
-      min: row.min,
-      max: row.max,
-      fieldMin: config.min,
-      fieldMax: config.max,
-      unit: config.unit,
-      capacity: row.capacity,
-    });
+    domain = yDomain(ready[0]?.values ?? [], { min: row.min, max: top, fieldMin: config.min, unit: config.unit });
   }
   const samples = ready.flatMap((m) => (m.sampleAt === undefined ? [] : [m.sampleAt]));
   return {
