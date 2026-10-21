@@ -590,6 +590,32 @@
                 },
                 "parameters": {}
               }
+            },
+            {
+              "id": "tx",
+              "name": "tx",
+              "source": {
+                "kind": "datasource",
+                "target": {
+                  "refId": "TX",
+                  "expr": "rate(node_network_transmit_bytes_total{job=\"node-rtr-a\",device=\"wan1\"}[1m]) * 8",
+                  "range": true
+                },
+                "parameters": {}
+              }
+            },
+            {
+              "id": "rx",
+              "name": "rx",
+              "source": {
+                "kind": "datasource",
+                "target": {
+                  "refId": "RX",
+                  "expr": "rate(node_network_receive_bytes_total{job=\"node-rtr-a\",device=\"wan1\"}[1m]) * 8",
+                  "range": true
+                },
+                "parameters": {}
+              }
             }
           ],
           "patterns": [
@@ -668,6 +694,36 @@
                     "reducer": "last"
                   },
                   "capacity": 100
+                },
+                "hover": {
+                  "rows": [
+                    {
+                      "kind": "history",
+                      "label": "Traffic",
+                      "unit": "bps",
+                      "capacity": 100000000,
+                      "series": [
+                        {
+                          "binding": {
+                            "queryId": "tx",
+                            "match": {},
+                            "reducer": "last"
+                          },
+                          "direction": "up",
+                          "label": "↑"
+                        },
+                        {
+                          "binding": {
+                            "queryId": "rx",
+                            "match": {},
+                            "reducer": "last"
+                          },
+                          "direction": "down",
+                          "label": "↓"
+                        }
+                      ]
+                    }
+                  ]
                 }
               }
             }

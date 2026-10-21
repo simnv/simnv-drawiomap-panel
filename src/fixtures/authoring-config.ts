@@ -24,6 +24,9 @@ export function authoringConfig(prometheus: string, testdata: string): DiagramCo
           parameters: {},
         },
       },
+      // synthetic traffic from stack/metrics-gen: the transmit and receive rate of one port, in bit/s
+      nativeQuery('tx', 'rate(node_network_transmit_bytes_total{job="node-rtr-a",device="wan1"}[1m]) * 8'),
+      nativeQuery('rx', 'rate(node_network_receive_bytes_total{job="node-rtr-a",device="wan1"}[1m]) * 8'),
     ],
     patterns: [
       {
@@ -50,7 +53,23 @@ export function authoringConfig(prometheus: string, testdata: string): DiagramCo
         id: 'directional-link',
         name: 'Directional traffic',
         select: { ids: ['link-1'] },
-        display: { link: { a2bBinding: binding('health'), b2aBinding: binding('health'), capacity: 100 } },
+        display: {
+          link: { a2bBinding: binding('health'), b2aBinding: binding('health'), capacity: 100 },
+          hover: {
+            rows: [
+              {
+                kind: 'history',
+                label: 'Traffic',
+                unit: 'bps',
+                capacity: 100000000,
+                series: [
+                  { binding: binding('tx'), direction: 'up', label: '↑' },
+                  { binding: binding('rx'), direction: 'down', label: '↓' },
+                ],
+              },
+            ],
+          },
+        },
       },
     ],
     overrides: [],
