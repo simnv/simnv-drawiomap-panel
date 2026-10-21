@@ -14,7 +14,7 @@ if ! command -v docker >/dev/null 2>&1; then
   echo "run-e2e: docker command not found." >&2
   exit 1
 fi
-if ! perl -e 'my $p = fork; if (!$p) { exec @ARGV or exit 127 } $SIG{ALRM} = sub { kill 9, $p; exit 124 }; alarm 10; waitpid $p, 0; exit($? >> 8)' docker info >/dev/null 2>&1; then
+if ! perl -e 'my $p = fork; if (!$p) { exec @ARGV or exit 127 } $SIG{ALRM} = sub { kill 9, $p; exit 124 }; alarm 10; waitpid $p, 0; exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' docker info >/dev/null 2>&1; then
   echo "run-e2e: docker does not answer within 10 s." >&2
   echo "Check for clamshell sleep: pmset -g log | grep -E ' (Sleep|Wake) ' | tail -3" >&2
   echo "Do not restart OrbStack." >&2

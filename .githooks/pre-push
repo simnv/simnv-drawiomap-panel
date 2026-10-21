@@ -1,7 +1,9 @@
 #!/bin/sh
 # Versioned pre-push guardrail. Enable: npm run hooks:install
 # Every commit that the push publishes is scanned, so a term added and removed in later commits is found.
+# $1 is the remote name (githooks(5)). Only commits that the target remote does not have are scanned.
 dir=$(dirname "$0")
+remote="${1:-}"
 zero=0000000000000000000000000000000000000000
 tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT
@@ -10,7 +12,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2> /dev/null; then
     git rev-list "$remote_sha..$local_sha" > "$tmp/commits" || { echo "pre-push: cannot list commits" >&2; exit 1; }
   else
-    git rev-list "$local_sha" --not --remotes > "$tmp/commits" || { echo "pre-push: cannot list commits" >&2; exit 1; }
+    # New branch: skip commits the push target already has. If that fails, scan all commits.
+    git rev-list "$local_sha" --not --remotes="$remote" > "$tmp/commits" 2> /dev/null \
+      || git rev-list "$local_sha" > "$tmp/commits" \
+      || { echo "pre-push: cannot list commits" >&2; exit 1; }
   fi
   while read -r c; do
     sh "$dir/check-denylist.sh" --commit "$c" || exit 1
