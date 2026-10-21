@@ -87,6 +87,83 @@ The cache is panel-local and lasts 15 seconds. Its key includes datasource, nati
 
 Sample freshness is independent of cache age. Enable it with an expected cadence and a stale-after interval. Health, scalar hover rows and charts transition when sample age crosses that interval, even without another response. Missing, zero, down, stale and incomplete coverage have distinct explanations. No cadence is inferred from the chart step. Dashboard refresh/context changes refresh active demand; inactive cards do not refresh.
 
+### Sparkline Y range
+
+All sparklines use the same Y range: card rows, link halves (legacy rules too) and chart regions. A series without negative values starts at 0, so a small change on a flat series (for example PoE power) does not look like a big climb. The top is the largest value, the capacity, or 100 for the `percent` unit (1 for `percentunit`), whichever is largest. A series with negative values uses its own min and max.
+
+Each bound uses the first source that has a value:
+
+1. `min` and `max` of the hover row or the chart region (numbers).
+2. **Min** and **Max** of the Grafana field config.
+3. The default above.
+
+The bounds are soft: the range always holds all values. To use the data range instead of the zero baseline, set `"min": "auto"`. The span is then at least 10% of the largest value, centred on the data:
+
+```json
+{
+  "kind": "history",
+  "label": "PoE power",
+  "binding": { "queryId": "poe", "match": { "port": "${cell.key}" }, "reducer": "last" },
+  "min": "auto"
+}
+```
+
+A chart region takes the same keys:
+
+```json
+{
+  "id": "poe-chart",
+  "anchorCellId": "chart-1",
+  "kind": "sparkline",
+  "label": "PoE power",
+  "binding": { "queryId": "poe", "match": {}, "reducer": "last" },
+  "min": "auto",
+  "max": 30
+}
+```
+
+The inspector has the fields **Hover row N minimum**, **Hover row N maximum** and **Chart minimum**. Type a number or `auto`.
+
+### Combined up/down row
+
+A history row can show the two directions of one subject (a port, a link) in one chart. Give it `series` instead of `binding`:
+
+```json
+{
+  "kind": "history",
+  "label": "Traffic",
+  "unit": "bps",
+  "capacity": 100000000,
+  "url": "/d/iface?var-device=${cell.key}",
+  "series": [
+    {
+      "binding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "direction": "up",
+      "label": "↑"
+    },
+    {
+      "binding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "direction": "down",
+      "label": "↓"
+    }
+  ]
+}
+```
+
+| Key                  | Meaning                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `series`             | One or two entries. Each direction (`up`, `down`) can occur once. A row has `binding` or `series`, not both.      |
+| `series[].direction` | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).       |
+| `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                             |
+| `capacity`           | Optional. In the unit of the values, for both directions. The default is the field config **Max** of each series. |
+| `unit`, `url`, `max` | As for other rows. `max` sets the top of the range (M below). `min` applies only to a row with one direction.     |
+
+With both directions, up is above a thin zero line and down is mirrored below it (drawn as negative values). The range is symmetric, from -M to M, so the zero line is in the middle. M is `max` when the row has it, else the larger of the largest absolute value and the capacity. A value above `max` still fits. A row with one direction stays positive and uses the normal Y range.
+
+The value text shows both current values, formatted with the field display processor, for example `↑ 10 Mb/s · 10%  ↓ 41 Mb/s · 41%`. The percent of the capacity shows only when the capacity is known. Each direction has its own colour, from the field config and thresholds of its own value, as a link half. With a capacity, the threshold steps are percent. The arrows in the value text have the colour of their line. A direction without data shows `No data` and no line; the other direction stays. A click on the row opens its `url`.
+
+The third demo panel shows a combined row on its link (synthetic transmit and receive rate of `rtr-a:wan1`).
+
 ### Status summary
 
 A band above the diagram has one row for each status cause: the state, the reason and the number of elements, for example `? missing   No data   26 elements`. Elements with the same state and reason share one row, also when each element has its own query. The most severe cause is first (down, critical, warning, stale, missing), then the cause with the most elements. Normal elements do not show in the band.
@@ -328,7 +405,7 @@ In the panel JSON, the option is:
 
 To remove the card of one element, add an element override with `"hover": { "enabled": false, "rows": [] }` in its display.
 
-A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
+A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its Y range starts at 0 for a series without negative values and reaches up to the capacity (see [Sparkline Y range](#sparkline-y-range)). Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
 
 The footer has the rule URL (title: `urlTitle`) and the data links of the field config (title: the data link title). A link that opens in a new tab has an external-link icon.
 
