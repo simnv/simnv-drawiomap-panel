@@ -152,3 +152,43 @@ describe('DrawioModal start-up', () => {
     expect(screen.getByTitle('draw.io')).toBeTruthy();
   });
 });
+
+describe('DrawioModal during panel refreshes', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsResponse())
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the frame, the srcdoc and the channel when the parent renders again with new callbacks', async () => {
+    const props = { xml: '<mxfile/>', title: 't', mode: 'edit' as const, isDark: false };
+    const firstSave = vi.fn();
+    const view = render(<DrawioModal {...props} onSave={firstSave} onClose={() => {}} />);
+    const frame = (await screen.findByTitle('draw.io')) as HTMLIFrameElement;
+    const srcdoc = frame.srcdoc;
+    const port = hello();
+    port.onmessage?.({ data: JSON.stringify({ event: 'init' }) });
+    const listen = vi.spyOn(window, 'addEventListener');
+    const unlisten = vi.spyOn(window, 'removeEventListener');
+    // A dashboard refresh renders the panel and its editor again: the inline callbacks are new functions.
+    const lastSave = vi.fn();
+    for (let i = 0; i < 2; i++) {
+      view.rerender(<DrawioModal {...props} onSave={i ? lastSave : vi.fn()} onClose={() => {}} />);
+    }
+    expect(screen.getByTitle('draw.io')).toBe(frame);
+    expect(frame.srcdoc).toBe(srcdoc);
+    expect(port.close).not.toHaveBeenCalled();
+    expect(listen.mock.calls.filter(([type]) => type === 'message')).toEqual([]);
+    expect(unlisten.mock.calls.filter(([type]) => type === 'message')).toEqual([]);
+    // The channel uses the newest callbacks.
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'save', xml: '<mxfile id="b"/>' }) }));
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'export', data: 'data:image/svg+xml,%3Csvg%2F%3E' }) }));
+    expect(lastSave).toHaveBeenCalledWith({ xml: '<mxfile id="b"/>', svg: '<svg/>' });
+    expect(firstSave).not.toHaveBeenCalled();
+  });
+});

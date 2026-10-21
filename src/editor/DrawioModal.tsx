@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { Alert, Button, Modal, Spinner } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
@@ -80,10 +80,17 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   const failure = FAILURES[load];
   // The port of the accepted channel hello. It stays open while the modal is open.
   const portRef = useRef<MessagePort | undefined>(undefined);
+  // The newest props for the channel. A dashboard refresh renders the parent again and gives new callbacks: the
+  // channel, the frame and its srcdoc must not change for them.
+  const propsRef = useRef({ mode, title, isDark, onSave, onClose });
+  useLayoutEffect(() => {
+    propsRef.current = { mode, title, isDark, onSave, onClose };
+  });
 
   useEffect(() => {
     const run = (msg: EditorMessage, reply: (action: EditorAction) => void) => {
-      const step = handleMessage(stateRef.current, msg, { mode, title, isDark });
+      const { onSave, onClose, ...opts } = propsRef.current;
+      const step = handleMessage(stateRef.current, msg, opts);
       stateRef.current = step.state;
       setPhase(step.state.phase);
       step.send.forEach(reply);
@@ -126,7 +133,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [target, token, mode, title, isDark, onSave, onClose]);
+  }, [target, token]);
 
   // A new srcdoc document (theme change) must send a new hello in time.
   useEffect(() => {
