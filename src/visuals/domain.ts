@@ -60,7 +60,9 @@ export function yDomain(values: ArrayLike<number | null | undefined>, opts: Doma
   }
   const lo = Math.min(setMin ?? 0, empty ? Infinity : dmin);
   const cap = opts.capacity !== undefined && opts.capacity > 0 ? opts.capacity : 0;
-  let hi = setMax ?? Math.max(cap, UNIT_TOP[opts.unit ?? ''] ?? 0);
+  // a series with negative values keeps its data max as the top, also when a min is set
+  const negative = !empty && dmin < 0;
+  let hi = setMax ?? (negative ? dmax : Math.max(cap, UNIT_TOP[opts.unit ?? ''] ?? 0));
   if (!empty) {
     hi = Math.max(hi, dmax);
   }

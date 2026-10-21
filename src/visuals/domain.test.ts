@@ -59,6 +59,10 @@ describe('yDomain precedence', () => {
     expect(yDomain([10, 200], { min: 50, max: 100 })).toEqual([10, 200]);
     expect(yDomain([-5, 20], { fieldMin: 0 })).toEqual([-5, 20]);
   });
+  it('a min alone keeps the data max as the top of a negative series', () => {
+    expect(yDomain([-20, -10], { min: -50 })).toEqual([-50, -10]);
+    expect(yDomain([-20, -10], { fieldMin: -50 })).toEqual([-50, -10]);
+  });
   it('null field bounds count as not set', () => {
     expect(yDomain([10, 20], { fieldMin: null, fieldMax: null })).toEqual([0, 20]);
   });

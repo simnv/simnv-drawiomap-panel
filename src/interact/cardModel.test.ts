@@ -453,6 +453,12 @@ describe('combined up/down row', () => {
     expect(row.text).toBe('↑ 8.20 Mb/s · 82%  ↓ 1.10 Mb/s');
     expect(row.domain).toEqual([-10e6, 10e6]);
   });
+  it('uses the row capacity, not the field config Max, when the row has one', () => {
+    const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 1e9 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
+    const row = card({ capacity: 100e6 }, m).rows[0];
+    expect(row.text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+    expect(row.domain).toEqual([-100e6, 100e6]);
+  });
   it('uses the row max for the half range of the symmetric domain', () => {
     expect(card({ max: 50e6 }, models()).rows[0].domain).toEqual([-50e6, 50e6]);
   });
@@ -578,6 +584,11 @@ describe('card row domain', () => {
     const half: HalfState = { ...okHalf(s, '40 Mb/s · 40%', '#0f0'), value: 40, percent: 40 };
     const c = buildCard(linkPatch({ link: { a2b: half } }), ctx);
     expect(c.rows[0].domain).toEqual([0, 100]);
+  });
+  it('keeps the capacity of a link half in the range when the current value is 0', () => {
+    const s = mk('A', { job: 'x' }, [10, 0], 'Mbits');
+    const half: HalfState = { ...okHalf(s, '0 b/s · 0%', '#0f0'), value: 0, percent: 0, capacity: 100e6 };
+    expect(buildCard(linkPatch({ link: { a2b: half } }), ctx).rows[0].domain).toEqual([0, 100]);
   });
   it('gives a link half without capacity the range 0 to max', () => {
     expect(buildCard(linkPatch(), ctx).rows.map((r) => r.domain)).toEqual([

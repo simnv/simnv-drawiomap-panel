@@ -18,6 +18,7 @@ import { historySeries, type BindingDemand, type BindingResolver, type PlanCellP
 import type { HistoryModel } from '../query/frames';
 import { rowBindings, type Diagnostic, type FreshnessPolicy, type HoverRow, type QueryBinding } from '../model/config';
 import { colorFor, noDataColor } from '../binding/color';
+import { toBitsPerSecond } from '../binding/units';
 import { yDomain, type LowerBound } from '../visuals/domain';
 
 export interface ConfiguredCardRow {
@@ -248,8 +249,9 @@ function combinedRow(
     return { ...base, text: percent === undefined ? value : `${value} · ${Math.round(percent)}%`, color };
   });
   const ready = models.filter((m): m is Extract<HistoryModel, { state: 'ready' }> => m.state === 'ready');
-  const capacities = [row.capacity, ...ready.map((m) => positive(m.field.config.max))].flatMap((c) => c ?? []);
-  const capacity = capacities.length ? Math.max(...capacities) : undefined;
+  // the row capacity applies to both directions; without it, the largest field config Max
+  const fieldMaxes = ready.flatMap((m) => positive(m.field.config.max) ?? []);
+  const capacity = row.capacity ?? (fieldMaxes.length ? Math.max(...fieldMaxes) : undefined);
   let domain: [number, number];
   if (mirrored) {
     const magnitudes = ready.flatMap((m) => m.values.flatMap((v) => (v === null ? [] : [Math.abs(v)])));
@@ -361,8 +363,14 @@ function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardCo
   const primary: Primary = { status: h.status, series: h.series, display: h.display, value: h.value };
   const s = h.status === 'ok' ? h.series : undefined;
   const values = s?.values ?? [];
-  // The state keeps the percent of the capacity, so the capacity in the unit of the series is value / percent.
-  const capacity = h.value !== undefined && h.percent ? (h.value * 100) / h.percent : undefined;
+  // The state keeps the capacity in bit/s: convert it to the unit of the series (an unknown unit is bit/s).
+  // Without it, the capacity is value / percent.
+  const capacity =
+    s && h.capacity !== undefined
+      ? h.capacity / toBitsPerSecond(1, s.field.config?.unit).bits
+      : h.value !== undefined && h.percent
+        ? (h.value * 100) / h.percent
+        : undefined;
   return {
     key,
     title: `${a} → ${b}`,
