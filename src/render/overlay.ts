@@ -1,6 +1,6 @@
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
-import { PathGeom, pathGeometry, Point } from './geometry';
+import { arrowAnchor, PathGeom, pathGeometry, Point } from './geometry';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 
@@ -112,15 +112,18 @@ function drawLink(entry: CellEntry, link: { a2b?: HalfState; b2a?: HalfState }, 
     return;
   }
   const id = entry.meta.id;
+  // An arrow stands on one straight run, away from the bends: the triangle must not stick out past a corner.
+  const clear = (2 * o.arrowSize) / geo.unit;
   if (link.a2b && link.b2a) {
-    drawHalf(layer, id, 'a2b', geo, geo.polyline(0, L / 2), link.a2b, L / 2, true, o);
-    drawHalf(layer, id, 'b2a', geo, geo.polyline(L / 2, L), link.b2a, L / 2, false, o);
+    const mid = arrowAnchor(geo.bends, L, L / 2, clear);
+    drawHalf(layer, id, 'a2b', geo, geo.polyline(0, mid), link.a2b, mid, true, o);
+    drawHalf(layer, id, 'b2a', geo, geo.polyline(mid, L), link.b2a, mid, false, o);
     return;
   }
   if (link.a2b) {
-    drawHalf(layer, id, 'a2b', geo, geo.polyline(0, L), link.a2b, L, true, o);
+    drawHalf(layer, id, 'a2b', geo, geo.polyline(0, L), link.a2b, arrowAnchor(geo.bends, L, L, clear), true, o);
   } else if (link.b2a) {
-    drawHalf(layer, id, 'b2a', geo, geo.polyline(0, L), link.b2a, 0, false, o);
+    drawHalf(layer, id, 'b2a', geo, geo.polyline(0, L), link.b2a, arrowAnchor(geo.bends, L, 0, clear), false, o);
   }
 }
 

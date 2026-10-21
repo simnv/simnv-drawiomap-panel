@@ -156,6 +156,70 @@ export function slicePolyline(pts: Point[], from: number, to: number): Point[] {
   return out;
 }
 
+/** A direction change of at most this angle (radians) is no bend: the edge is still one straight run. */
+const BEND_ANGLE = (5 * Math.PI) / 180;
+/** Rounding slack for the run-length comparisons: a run of exactly 2 × clear fits. */
+const EPSILON = 1e-6;
+
+/**
+ * Arc length of every bend of a polyline: a vertex where the direction changes by more than a few degrees.
+ * Repeated points and collinear vertices are no bends. The path ends are never bends.
+ */
+export function bendLengths(pts: Point[]): number[] {
+  const bends: number[] = [];
+  let acc = 0;
+  let prev: Point | undefined;
+  let heading: number | undefined;
+  for (const p of pts) {
+    if (!prev) {
+      prev = p;
+      continue;
+    }
+    const seg = Math.hypot(p.x - prev.x, p.y - prev.y);
+    if (seg === 0) {
+      continue;
+    }
+    acc += seg;
+    const next = Math.atan2(p.y - prev.y, p.x - prev.x);
+    if (heading !== undefined) {
+      const turn = Math.abs(Math.atan2(Math.sin(next - heading), Math.cos(next - heading)));
+      if (turn > BEND_ANGLE) {
+        bends.push(acc - seg);
+      }
+    }
+    heading = next;
+    prev = p;
+  }
+  return bends;
+}
+
+/**
+ * Arc length for an arrow tip, so that the arrow stands on one straight run. The tip keeps `clear` free path on each
+ * side, measured to the bends. The path end that holds `target` has no clearance: an arrow at a port stays at the port.
+ * Uses the point of a feasible run that is nearest to `target`. Without a feasible run, uses the middle of the longest run.
+ */
+export function arrowAnchor(bends: number[], length: number, target: number, clear: number): number {
+  const stops = [0, ...bends, length];
+  let best: number | undefined;
+  let longest = { size: -1, mid: target };
+  for (let i = 1; i < stops.length; i++) {
+    const from = stops[i - 1];
+    const to = stops[i];
+    const lo = from + (i === 1 && target <= 0 ? 0 : clear);
+    const hi = to - (i === stops.length - 1 && target >= length ? 0 : clear);
+    if (lo <= hi + EPSILON) {
+      const at = Math.min(hi, Math.max(lo, target));
+      if (best === undefined || Math.abs(at - target) < Math.abs(best - target)) {
+        best = at;
+      }
+    }
+    if (to - from > longest.size) {
+      longest = { size: to - from, mid: (from + to) / 2 };
+    }
+  }
+  return best ?? longest.mid;
+}
+
 /* ---------- affine matrices (plain objects; no DOMMatrix so jsdom tests work) ---------- */
 
 export interface Matrix {
@@ -205,6 +269,10 @@ export interface PathGeom {
   pointAt(d: number): { x: number; y: number; angle: number };
   /** sampled points between two arc lengths, in `target` coordinates */
   polyline(from: number, to: number): Point[];
+  /** arc lengths of the bends (direction changes) of the path, in the units of `length` */
+  bends: number[];
+  /** length in `target` coordinates of one unit of `length` (1 unless the path has its own scale) */
+  unit: number;
 }
 
 type PathApi = SVGPathElement & { getTotalLength(): number; getPointAtLength(d: number): { x: number; y: number } };
@@ -227,6 +295,8 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
       length: polylineLength(pts),
       pointAt: (d) => pointAt(pts, d),
       polyline: (from, to) => slicePolyline(pts, from, to),
+      bends: bendLengths(pts),
+      unit: 1,
     };
   }
   const toM = (m: Matrix | null | undefined): Matrix =>
@@ -234,6 +304,11 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
   const targetCTM = typeof target.getCTM === 'function' ? target.getCTM() : null;
   const M = multiply(invert(toM(targetCTM)), toM(line.getCTM()));
   const length = api.getTotalLength();
+  // Bends come from the vertices of the d attribute. Curves count by their end points, so scale to the real length.
+  const parsed = parsePathPoints(line.getAttribute('d') ?? '');
+  const parsedLength = polylineLength(parsed);
+  const scale = parsedLength > 0 && length > 0 ? length / parsedLength : 1;
+  const bends = bendLengths(parsed).map((b) => b * scale);
   const clamp = (d: number) => Math.min(length, Math.max(0, d));
   const at = (d: number): Point => {
     const p = api.getPointAtLength(clamp(d));
@@ -241,6 +316,8 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
   };
   return {
     length,
+    bends,
+    unit: Math.sqrt(Math.abs(M.a * M.d - M.b * M.c)) || 1,
     pointAt(d) {
       const p = at(d);
       const fwd = at(d + 0.5);

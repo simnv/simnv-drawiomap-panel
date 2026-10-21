@@ -13,9 +13,9 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="n2"><g><rect x="150" y="10" width="40" height="30"/></g></g></g>
 </svg>`;
 
-function build(): { root: SVGSVGElement; index: CellIndex } {
+function build(d?: string): { root: SVGSVGElement; index: CellIndex } {
   const host = document.createElement('div');
-  host.innerHTML = SVG;
+  host.innerHTML = d ? SVG.replace('M 0 0 L 100 0 L 100 50', d) : SVG;
   const root = host.querySelector('svg') as SVGSVGElement;
   const index: CellIndex = new Map();
   const n1 = root.querySelector('[data-cell-id="n1"]') as SVGGElement;
@@ -170,5 +170,99 @@ describe('renderOverlay', () => {
       expect(before(item, root.querySelector('[data-cell-id="lbl1"] text')!)).toBe(true);
       expect(before(item, root.querySelector('[data-cell-id="n2"]')!)).toBe(true);
     }
+  });
+});
+
+describe('arrow tip position', () => {
+  const ARROW = 8;
+  const tipOf = (root: SVGSVGElement, which: 'a2b' | 'b2a') => {
+    const [x, y] = root
+      .querySelector(`.dmap-arrow[data-dmap-half="${which}"]`)!
+      .getAttribute('points')!
+      .split(' ')[0]
+      .split(',')
+      .map(Number);
+    return { x, y };
+  };
+  const draw = (d: string, link: CellPatch['link']) => {
+    const { root, index } = build(d);
+    renderOverlay(root, index, new Map([['e1', patch('e1', { link })]]), opts);
+    return root;
+  };
+  const both = { a2b: half(), b2a: half() };
+  // distance from the tip to the nearest vertex of the polyline
+  const toBend = (tip: { x: number; y: number }, vertices: Array<[number, number]>) =>
+    Math.min(...vertices.map(([x, y]) => Math.hypot(x - tip.x, y - tip.y)));
+
+  it('moves both tips off the corner of an L-shaped path and keeps them together', () => {
+    // L = 200: the middle is the corner at (100, 0)
+    const root = draw('M 0 0 L 100 0 L 100 100', both);
+    const tip = tipOf(root, 'a2b');
+    expect(tipOf(root, 'b2a')).toEqual(tip);
+    expect(toBend(tip, [[100, 0]])).toBeGreaterThanOrEqual(2 * ARROW);
+    const a2b = root.querySelector('.dmap-half[data-dmap-half="a2b"]')!.getAttribute('points')!.split(' ');
+    const b2a = root.querySelector('.dmap-half[data-dmap-half="b2a"]')!.getAttribute('points')!.split(' ');
+    expect(a2b[a2b.length - 1]).toBe(b2a[0]);
+    expect(a2b[0]).toBe('0,0');
+    expect(b2a[b2a.length - 1]).toBe('100,100');
+  });
+  it('moves both tips out of the jog of a Z-shaped path', () => {
+    // L = 230: the middle (115) lies inside the 30 px jog between 100 and 130
+    const root = draw('M 0 0 L 100 0 L 100 30 L 200 30', both);
+    const tip = tipOf(root, 'a2b');
+    expect(tipOf(root, 'b2a')).toEqual(tip);
+    expect(
+      toBend(tip, [
+        [100, 0],
+        [100, 30],
+      ])
+    ).toBeGreaterThanOrEqual(2 * ARROW);
+  });
+  it('keeps the middle of a straight path', () => {
+    const root = draw('M 0 0 L 120 0 L 200 0', both);
+    expect(tipOf(root, 'a2b')).toEqual({ x: 100, y: 0 });
+  });
+  it('keeps the middle when it has the clearance although the path bends elsewhere', () => {
+    const root = draw('M 0 0 L 200 0 L 200 20', both);
+    expect(tipOf(root, 'a2b')).toEqual({ x: 110, y: 0 });
+  });
+  it('uses the middle of the longest straight run when no run is long enough', () => {
+    // runs of 20, 25 and 15 px: none has 2 * 16 px
+    const root = draw('M 0 0 L 20 0 L 20 25 L 35 25', both);
+    expect(tipOf(root, 'a2b')).toEqual({ x: 20, y: 12.5 });
+  });
+  it('keeps the tip of a single direction at the port', () => {
+    expect(tipOf(draw('M 0 0 L 100 0 L 100 50', { a2b: half() }), 'a2b')).toEqual({ x: 100, y: 50 });
+    expect(tipOf(draw('M 0 0 L 100 0 L 100 50', { b2a: half() }), 'b2a')).toEqual({ x: 0, y: 0 });
+  });
+  it('pulls the tip of a single direction back from a bend near the port', () => {
+    // the last bend is 6 px before the port at (100, 56)
+    const a2b = tipOf(draw('M 0 0 L 100 0 L 100 50 L 106 50', { a2b: half() }), 'a2b');
+    expect(
+      toBend(a2b, [
+        [100, 50],
+        [100, 0],
+      ])
+    ).toBeGreaterThanOrEqual(2 * ARROW);
+    const b2a = tipOf(draw('M 0 0 L 6 0 L 6 50 L 106 50', { b2a: half() }), 'b2a');
+    expect(
+      toBend(b2a, [
+        [6, 0],
+        [6, 50],
+      ])
+    ).toBeGreaterThanOrEqual(2 * ARROW);
+  });
+  it('measures the clearance in the units of the overlay when the path is scaled', () => {
+    const { root, index } = build('M 0 0 L 400 0 L 400 400');
+    const line = index.get('e1')!.line!;
+    const along = (d: number) => (d <= 400 ? { x: d, y: 0 } : { x: 400, y: d - 400 });
+    Object.assign(line, {
+      getTotalLength: () => 800,
+      getPointAtLength: along,
+      getCTM: () => ({ a: 0.25, b: 0, c: 0, d: 0.25, e: 0, f: 0 }),
+    });
+    renderOverlay(root, index, new Map([['e1', patch('e1', { link: both })]]), opts);
+    // the corner is at (100, 0) in the overlay
+    expect(toBend(tipOf(root, 'a2b'), [[100, 0]])).toBeGreaterThanOrEqual(2 * ARROW - 0.01);
   });
 });

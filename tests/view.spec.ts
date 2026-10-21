@@ -110,3 +110,42 @@ for (const [theme, osScheme, dark] of [
     expect(luminance < 0.5).toBe(dark);
   });
 }
+
+test('link arrows stand away from the bends of the link path', async ({ gotoDashboardPage }) => {
+  // edge-ab of the hand-drawn panel has a 30 px jog exactly at the arc-length middle of the path.
+  const dashboardPage = await gotoDashboardPage({
+    uid: 'drawiomap-demo',
+    queryParams: new URLSearchParams({ viewPanel: 'panel-2' }),
+  });
+  const panel = await dashboardPage.getPanelByTitle('hand-drawn');
+  const arrows = panel.locator.locator('polygon.dmap-arrow[data-dmap-cell="edge-ab"]');
+  await expect(arrows).toHaveCount(2);
+  const result = await arrows.first().evaluate((el) => {
+    const svg = (el as SVGElement).ownerSVGElement!;
+    const path = svg.querySelector('[data-cell-id="edge-ab"] path[pointer-events="stroke"]') as SVGPathElement;
+    const nums = (path.getAttribute('d') || '').match(/-?\d*\.?\d+/g)!.map(Number);
+    const vertices: Array<[number, number]> = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      vertices.push([nums[i], nums[i + 1]]);
+    }
+    const tri = (el.getAttribute('points') || '').split(' ').map((p) => p.split(',').map(Number));
+    const [tip, b1, b2] = tri;
+    const arrowSize = Math.hypot(tip[0] - (b1[0] + b2[0]) / 2, tip[1] - (b1[1] + b2[1]) / 2);
+    // only the vertices that are bends: both neighbours leave the straight line
+    const bends = vertices.filter((v, i) => {
+      if (i === 0 || i === vertices.length - 1) {
+        return false;
+      }
+      const [p, n] = [vertices[i - 1], vertices[i + 1]];
+      return (v[0] - p[0]) * (n[1] - v[1]) - (v[1] - p[1]) * (n[0] - v[0]) !== 0;
+    });
+    return {
+      arrowSize,
+      bends: bends.length,
+      nearest: Math.min(...bends.map((v) => Math.hypot(v[0] - tip[0], v[1] - tip[1]))),
+    };
+  });
+  expect(result.bends).toBe(2);
+  expect(result.arrowSize).toBeGreaterThan(0);
+  expect(result.nearest).toBeGreaterThanOrEqual(2 * result.arrowSize - 0.01);
+});
