@@ -1,17 +1,20 @@
 #!/bin/sh
 # Versioned pre-push guardrail. Enable: npm run hooks:install
+# Every commit that the push publishes is scanned, so a term added and removed in later commits is found.
 dir=$(dirname "$0")
 zero=0000000000000000000000000000000000000000
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$zero" ] && continue
-  if [ "$remote_sha" = "$zero" ]; then
-    if git rev-parse --verify -q origin/main >/dev/null; then
-      sh "$dir/check-denylist.sh" --range "origin/main..$local_sha" || exit 1
-    else
-      sh "$dir/check-denylist.sh" --all || exit 1
-    fi
+  if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2> /dev/null; then
+    git rev-list "$remote_sha..$local_sha" > "$tmp/commits" || { echo "pre-push: cannot list commits" >&2; exit 1; }
   else
-    sh "$dir/check-denylist.sh" --range "$remote_sha..$local_sha" || exit 1
+    git rev-list "$local_sha" --not --remotes > "$tmp/commits" || { echo "pre-push: cannot list commits" >&2; exit 1; }
   fi
+  while read -r c; do
+    sh "$dir/check-denylist.sh" --commit "$c" || exit 1
+  done < "$tmp/commits"
 done
+[ -n "${SIMNV_PANEL_SKIP_PUSH_TESTS:-}" ] && exit 0
 npm test

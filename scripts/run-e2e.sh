@@ -9,8 +9,12 @@ if [ "$(uname)" = Darwin ] && [ -z "${CAFFEINATED:-}" ] && command -v caffeinate
   CAFFEINATED=1 exec caffeinate -dims "$0" "$port" "$@"
 fi
 
-# macOS has no timeout(1); perl alarm gives a 10 s limit.
-if ! perl -e 'alarm 10; exec @ARGV' docker info >/dev/null 2>&1; then
+# macOS has no timeout(1). A perl supervisor kills docker after 10 s (Go ignores SIGALRM) and exits 127 if exec fails.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "run-e2e: docker command not found." >&2
+  exit 1
+fi
+if ! perl -e 'my $p = fork; if (!$p) { exec @ARGV or exit 127 } $SIG{ALRM} = sub { kill 9, $p; exit 124 }; alarm 10; waitpid $p, 0; exit($? >> 8)' docker info >/dev/null 2>&1; then
   echo "run-e2e: docker does not answer within 10 s." >&2
   echo "Check for clamshell sleep: pmset -g log | grep -E ' (Sleep|Wake) ' | tail -3" >&2
   echo "Do not restart OrbStack." >&2
