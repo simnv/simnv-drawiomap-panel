@@ -1,0 +1,17 @@
+#!/bin/sh
+# Versioned pre-push guardrail. Enable: npm run hooks:install
+dir=$(dirname "$0")
+zero=0000000000000000000000000000000000000000
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    if git rev-parse --verify -q origin/main >/dev/null; then
+      sh "$dir/check-denylist.sh" --range "origin/main..$local_sha" || exit 1
+    else
+      sh "$dir/check-denylist.sh" --all || exit 1
+    fi
+  else
+    sh "$dir/check-denylist.sh" --range "$remote_sha..$local_sha" || exit 1
+  fi
+done
+npm test

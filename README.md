@@ -631,6 +631,15 @@ The demo network in `fixtures/demo/` is fictional. Its `.yaml` sources are porto
 
 The acceptance results are in `docs/acceptance.md`. The decision records are in `docs/adr/`.
 
+### Git hooks
+
+Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.githooks`.
+
+- `pre-commit`: the privacy check on the staged diff, then `npm run typecheck` and `npm run lint` when code files are staged.
+- `pre-push`: the privacy check on the pushed commits, then `npm test`.
+
+The privacy check prints `file:line` only. It uses generic patterns (home paths, MAC addresses, private IPv4 outside the demo ranges in `.githooks/privacy-allow.txt`) and the private terms in `~/.config/simnv-drawiomap-panel/denylist` (set `SIMNV_PANEL_DENYLIST` to use another path). Without that file only the generic patterns run. `npm run check:privacy` scans all tracked files. CI runs the generic patterns in the `privacy` step of `build.yaml`.
+
 ### CI
 
 Woodpecker CI (v3, docker backend) runs the workflows in `.woodpecker/` on push, pull request and manual events:

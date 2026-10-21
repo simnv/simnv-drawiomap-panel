@@ -1,0 +1,8 @@
+# Regexes (extended, one per line) for private IPv4 prefixes that are allowed.
+# These are the documentation/demo /24 ranges used by fixtures/demo and provisioning.
+# Matched against the IPv4 text itself, not the whole line.
+^10\.10\.0\.
+^10\.10\.30\.
+^10\.10\.40\.
+^10\.20\.0\.
+^10\.255\.0\.
