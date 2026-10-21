@@ -464,7 +464,8 @@ export function opensCard(patch: PlanCellPatch, configured: boolean, ctx: CardCo
       return false;
     }
     const rows = patch.hover?.rows;
-    if (rows?.some((row) => row.kind !== 'drilldown' || rowHref(patch, row.url, { status: 'nodata' }, ctx))) {
+    const primary = primaryOf(patch);
+    if (rows?.some((row) => row.kind !== 'drilldown' || rowHref(patch, row.url, primary, ctx))) {
       return true;
     }
     if (!patch.hover && patch.statusView) {

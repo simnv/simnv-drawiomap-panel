@@ -60,11 +60,15 @@ interface Item {
   stepIndex: number;
   percent?: number;
   value?: number;
+  /** the display text: the text of a value mapping when one matched */
+  text?: string;
 }
 
 interface Draft extends LegendBlock {
   titles: string[];
   sources: string[];
+  /** a continuous scheme without Min and Max: the range of the field values of all cells of the block */
+  auto?: { min: number; max: number; format: (v: number) => string };
 }
 
 const GRADIENT_STOPS = 5;
@@ -133,6 +137,7 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
   // With a capacity the colour comes from the percent (colorFor), so the value mappings do not apply.
   const entries = capacity ? [] : mappingEntries(config.mappings, theme);
   let gradient: LegendGradient | undefined;
+  let auto: Draft['auto'];
   if (mode.id === FieldColorModeId.Thresholds) {
     const percent = capacity || thresholds?.mode === ThresholdsMode.Percentage;
     entries.push(...thresholdEntries(steps, percent ? (v) => `${v}%` : format, theme));
@@ -142,11 +147,24 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
     if (capacity) {
       gradient = { colors, min: '0%', max: '100%' };
     } else {
-      const min = config.min ?? field.state?.range?.min ?? item.value ?? 0;
-      const max = config.max ?? field.state?.range?.max ?? item.value ?? 0;
-      gradient = { colors, min: format(min), max: format(max) };
+      const min = config.min ?? field.state?.range?.min ?? undefined;
+      const max = config.max ?? field.state?.range?.max ?? undefined;
+      if (min !== undefined && max !== undefined) {
+        gradient = { colors, min: format(min), max: format(max) };
+      } else {
+        // as Grafana: without Min and Max, the range of the field values
+        const values = [...(field.values ?? []), item.value].filter(
+          (v): v is number => typeof v === 'number' && Number.isFinite(v)
+        );
+        auto = {
+          min: min ?? (values.length ? Math.min(...values) : 0),
+          max: max ?? (values.length ? Math.max(...values) : 0),
+          format,
+        };
+        gradient = { colors, min: '', max: '' };
+      }
     }
-  } else if (mode.id === FieldColorModeId.Fixed || mode.id === FieldColorModeId.Shades) {
+  } else if (mode.id === FieldColorModeId.Fixed) {
     entries.push({
       key: 'fixed',
       label: 'All values',
@@ -162,11 +180,18 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
   const title = capacity ? 'Link load %' : (config.displayName ?? (symbol ? `${name} ${symbol}` : name));
   const key = JSON.stringify([entries.map((e) => [e.label, e.color]), gradient]);
   const source = ctx.queryName?.(item.series.refId ?? '') ?? item.series.refId ?? '';
-  return { key, title, titles: [title], sources: source ? [source] : [], entries, gradient, cellIds: [] };
+  return { key, title, titles: [title], sources: source ? [source] : [], entries, gradient, auto, cellIds: [] };
 }
 
 /** The entry of a cell: the threshold step of its colour, else the first entry with its colour. */
 function entryOf(block: LegendBlock, item: Item): LegendEntry | undefined {
+  // a matched value mapping gives the display its text and colour
+  const mapping = block.entries.find(
+    (e) => e.key.startsWith('map-') && e.color === item.color && e.label === item.text
+  );
+  if (mapping) {
+    return mapping;
+  }
   const step = block.entries.find((e) => e.key === `step-${item.stepIndex}`);
   return step?.color === item.color ? step : block.entries.find((e) => e.color === item.color);
 }
@@ -203,6 +228,7 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
       stepIndex: state.stepIndex,
       percent,
       value: state.value,
+      text: state.display?.text,
     });
   };
   for (const patch of patches.values()) {
@@ -221,6 +247,10 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
     }
     const block = blocks.get(scale.key) ?? scale;
     blocks.set(scale.key, block);
+    if (block.auto && scale.auto && block !== scale) {
+      block.auto.min = Math.min(block.auto.min, scale.auto.min);
+      block.auto.max = Math.max(block.auto.max, scale.auto.max);
+    }
     scale.titles.forEach((t) => push(block.titles, t));
     scale.sources.forEach((s) => push(block.sources, s));
     push(block.cellIds, item.cellId);
@@ -232,6 +262,9 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
   const drafts = [...blocks.values()];
   for (const d of drafts) {
     d.title = d.titles.join(' · ');
+    if (d.auto && d.gradient) {
+      d.gradient = { ...d.gradient, min: d.auto.format(d.auto.min), max: d.auto.format(d.auto.max) };
+    }
   }
   // Different scales with the same title: the sources tell them apart.
   const shared = drafts.filter((d) => d.sources.length && drafts.some((o) => o !== d && o.title === d.title));

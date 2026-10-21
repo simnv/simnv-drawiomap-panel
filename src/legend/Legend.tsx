@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
@@ -102,25 +102,37 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     setWasNarrow(narrow);
     setOpen(!narrow);
   }
+  // The active entry: "<block key>\n<entry key>", or "<block key>\n" for a gradient bar.
+  const [active, setActive] = useState<string | null>(null);
+  // The cells of the active entry now: a data refresh changes them, a closed legend has none.
+  const activeIds = useMemo(() => {
+    if (!open || active === null) {
+      return null;
+    }
+    const [blockKey, entryKey] = active.split('\n');
+    const block = blocks.find((b) => b.key === blockKey);
+    return (entryKey ? block?.entries.find((e) => e.key === entryKey)?.cellIds : block?.cellIds) ?? null;
+  }, [open, active, blocks]);
+  useEffect(() => onHighlight(activeIds), [activeIds, onHighlight]);
   if (!blocks.length) {
     return null;
   }
   const shown = blocks.slice(0, Math.max(1, Math.floor(maxBlocks)));
   const hidden = blocks.length - shown.length;
-  const activate = (cellIds: string[]) => ({
+  const activate = (key: string) => ({
     tabIndex: 0,
-    onMouseEnter: () => onHighlight(cellIds),
-    onMouseLeave: () => onHighlight(null),
-    onFocus: () => onHighlight(cellIds),
-    onBlur: () => onHighlight(null),
+    onMouseEnter: () => setActive(key),
+    onMouseLeave: () => setActive(null),
+    onFocus: () => setActive(key),
+    onBlur: () => setActive(null),
   });
-  const entry = (e: LegendEntry) => (
+  const entry = (blockKey: string, e: LegendEntry) => (
     <li
       key={e.key}
       className={styles.entry}
       data-testid="dmap-legend-entry"
       aria-label={`${e.label}: ${plural(e.cellIds.length)}`}
-      {...activate(e.cellIds)}
+      {...activate(`${blockKey}\n${e.key}`)}
     >
       <span className={styles.swatch} style={{ background: e.color }} data-dmap-swatch="" />
       {e.label}
@@ -141,7 +153,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
         aria-expanded={open}
         onClick={() => {
           setOpen((v) => !v);
-          onHighlight(null);
+          setActive(null);
         }}
       >
         Legend
@@ -162,7 +174,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
                     className={styles.entry}
                     data-testid="dmap-legend-entry"
                     aria-label={`${b.gradient.min} to ${b.gradient.max}: ${plural(b.cellIds.length)}`}
-                    {...activate(b.cellIds)}
+                    {...activate(`${b.key}\n`)}
                   >
                     <span>{b.gradient.min}</span>
                     <span
@@ -173,7 +185,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
                     <span>{b.gradient.max}</span>
                   </li>
                 ) : null}
-                {b.entries.map(entry)}
+                {b.entries.map((e) => entry(b.key, e))}
               </ul>
             </div>
           ))

@@ -214,4 +214,53 @@ describe('buildLegend', () => {
     const blocks = buildLegend(new Map([link('l1', half(s, { color: named('blue') }))]), ctx);
     expect(blocks[0].entries).toEqual([{ key: 'fixed', label: 'All values', color: named('blue'), cellIds: ['l1'] }]);
   });
+  it('puts a cell into the mapping of its text when a threshold has the same colour', () => {
+    const s = series({
+      unit: 'none',
+      thresholds: { mode: ThresholdsMode.Absolute, steps: [{ value: -Infinity, color: 'green' }] },
+      mappings: [
+        { type: MappingType.ValueToText, options: { '10': { text: 'Maintenance', color: 'green' } } },
+        { type: MappingType.ValueToText, options: { '20': { text: 'Spare', color: 'green' } } },
+      ],
+    });
+    const shape = (text: string) => ({
+      status: 'ok' as const,
+      color: named('green'),
+      target: 'icon' as const,
+      stepIndex: 0,
+      series: s,
+      display: { text, numeric: 0 },
+    });
+    const blocks = buildLegend(
+      new Map([node('n1', shape('Maintenance')), node('n2', shape('Spare')), node('n3', shape('5'))]),
+      ctx
+    );
+    expect(blocks[0].entries.map((e) => [e.label, e.cellIds])).toEqual([
+      ['Maintenance', ['n1']],
+      ['Spare', ['n2']],
+      ['All values', ['n3']],
+    ]);
+  });
+  it('an automatic continuous range spans the values of all fields of the scale', () => {
+    const mode = { mode: FieldColorModeId.ContinuousGrYlRd };
+    const withValues = (values: number[]) => {
+      const s = series({ color: mode, unit: 'none' });
+      s.field.values = values;
+      return s;
+    };
+    const blocks = buildLegend(
+      new Map([
+        link('l1', half(withValues([0, 10, 20]), { value: 10 })),
+        link('l2', half(withValues([5, 40]), { value: 40 })),
+      ]),
+      ctx
+    );
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].gradient).toMatchObject({ min: '0', max: '40' });
+    expect(blocks[0].cellIds).toEqual(['l1', 'l2']);
+  });
+  it('has no block for Shades: each series has its own shade', () => {
+    const s = series({ color: { mode: FieldColorModeId.Shades, fixedColor: 'blue' } });
+    expect(buildLegend(new Map([link('l1', half(s))]), ctx)).toEqual([]);
+  });
 });

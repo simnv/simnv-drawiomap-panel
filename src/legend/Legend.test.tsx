@@ -92,4 +92,23 @@ describe('Legend', () => {
     const { container } = render(<Legend blocks={[]} maxBlocks={4} narrow={false} onHighlight={() => {}} />);
     expect(container.innerHTML).toBe('');
   });
+  it('follows a data refresh: the active entry highlights its new cells', () => {
+    const { legend, onHighlight, rerender } = view();
+    fireEvent.mouseEnter(within(legend).getAllByTestId('dmap-legend-entry')[1]);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
+    const moved = blocks.map((b) =>
+      b.key === 'load'
+        ? { ...b, entries: b.entries.map((e) => ({ ...e, cellIds: e.key === 'step-1' ? ['l1'] : [] })) }
+        : b
+    );
+    rerender(<Legend blocks={moved} maxBlocks={4} narrow={false} onHighlight={onHighlight} />);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l1']);
+  });
+  it('clears the highlight when the legend closes because the panel became narrow', () => {
+    const { legend, onHighlight, rerender } = view();
+    fireEvent.focus(within(legend).getAllByTestId('dmap-legend-entry')[0]);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l1']);
+    rerender(<Legend blocks={blocks} maxBlocks={4} narrow={true} onHighlight={onHighlight} />);
+    expect(onHighlight).toHaveBeenLastCalledWith(null);
+  });
 });

@@ -613,6 +613,11 @@ describe('opensCard', () => {
       opensCard(bare({ hover: { rows: [{ kind: 'drilldown', label: 'Go', url: '/d/${cell.key}' }] } }), true, ctx)
     ).toBe(true);
   });
+  it('resolves a drilldown url with the labels of the series that the cell shows', () => {
+    const labelled = { ...up, labels: { host: 'router' }, field: { ...up.field, getLinks: undefined } };
+    const row = { kind: 'drilldown' as const, label: 'Go', url: '/d/x?host=${labels.host}' };
+    expect(opensCard(bare({ hover: { rows: [row] }, shape: { ...state, series: labelled } }), true, ctx)).toBe(true);
+  });
   it('is true for a cell whose series has data links', () => {
     expect(opensCard(bare({ shape: { ...state, series: up } }), true, ctx)).toBe(true);
   });
