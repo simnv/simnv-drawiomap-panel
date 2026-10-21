@@ -1139,20 +1139,73 @@ describe('DrawioMapPanel live zoom', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('the reset button and the warning badge stack in the top-right corner', async () => {
-    const { wrapper } = await setup(
-      props({
-        options: {
-          ...options,
-          rules: [...options.rules, { name: 'old', select: { ids: ['rtr-b'] }, shape: { sparkline: {} } } as never],
-        },
-      })
-    );
+  const withWarning = (legend?: Options['legend']) =>
+    props({
+      options: {
+        ...options,
+        ...(legend ? { legend } : {}),
+        rules: [...options.rules, { name: 'old', select: { ids: ['rtr-b'] }, shape: { sparkline: {} } } as never],
+      },
+    });
+
+  // Grafana puts its panel menu button in the top-right corner of a panel without a title.
+  it('the reset button and the warning badge stack in the top-left corner: the button first, then the badge', async () => {
+    const { wrapper } = await setup(withWarning());
     wheel(wrapper, { deltaY: -10, ctrlKey: true });
     const btn = await screen.findByRole('button', { name: 'Reset zoom' });
     const corner = screen.getByTestId('dmap-corner');
+    const badge = screen.getByTestId('dmap-warning-badge');
     expect(corner.contains(btn)).toBe(true);
-    expect(corner.contains(screen.getByTestId('dmap-warning-badge'))).toBe(true);
+    expect(corner.contains(badge)).toBe(true);
+    expect(btn.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(corner.style.left).toBe('4px');
+    expect(corner.style.right).toBe('');
+  });
+
+  it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
+    const { wrapper } = await setup({
+      ...withWarning({ show: true, corner: 'top-right', maxBlocks: 4 }),
+      width: 400,
+    });
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    // 4 px edge + 32 px button + 4 px gap
+    expect(parseFloat(screen.getByTestId('dmap-legend').style.top)).toBeGreaterThanOrEqual(40);
+  });
+
+  it('keeps the tooltip of the reset button and its label', async () => {
+    const { wrapper } = await setup();
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    const btn = await screen.findByRole('button', { name: 'Reset zoom' });
+    expect(btn.getAttribute('aria-label')).toBe('Reset zoom');
+  });
+
+  describe.each(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const)('legend in the %s corner', (c) => {
+    it('does not cover the reset button, the warning badge or the right-hand menu area', async () => {
+      const { wrapper } = await setup(withWarning({ show: true, corner: c, maxBlocks: 4 }));
+      wheel(wrapper, { deltaY: -10, ctrlKey: true });
+      const btn = await screen.findByRole('button', { name: 'Reset zoom' });
+      const corner = screen.getByTestId('dmap-corner');
+      const legend = screen.getByTestId('dmap-legend');
+      expect(legend.getAttribute('data-dmap-corner')).toBe(c);
+      if (c === 'top-left') {
+        // one stack: the reset button, the badge, then the legend, so the three never overlap
+        const order = [btn, screen.getByTestId('dmap-warning-badge'), legend];
+        expect(order.every((el) => corner.contains(el))).toBe(true);
+        order.slice(1).forEach((el, i) => {
+          expect(order[i].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        });
+        expect(legend.style.position).toBe('');
+      } else {
+        // its own corner: not in the top-left stack
+        expect(corner.contains(legend)).toBe(false);
+      }
+      if (c === 'top-right') {
+        // below the area of the panel menu button (28 px: the button and a gap), so the hover menu does not cover it
+        expect(parseFloat(legend.style.top)).toBeGreaterThanOrEqual(32);
+        expect(legend.style.right).toBe('4px');
+      }
+    });
   });
 
   it('a new panel size or a new zoom option resets the view', async () => {

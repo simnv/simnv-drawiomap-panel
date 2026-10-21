@@ -379,7 +379,7 @@ Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elemen
 
 ![Elements below 60 % load highlighted](docs/images/legend-highlight.png)
 
-The legend stays in its corner when you zoom, pan or scroll the diagram. In the top-right corner, it is below the **Reset zoom** button and the warning badge. In the top-left corner, it is below the status band. It catches the pointer only inside its own box. In a panel narrower than 480 px (a phone), the legend starts closed as a **Legend** chip; tap the chip to open or close it. On a wider panel, click **Legend** to close it.
+The legend stays in its corner when you zoom, pan or scroll the diagram. In the top-left corner, it is below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it leaves free the area of the Grafana panel menu button. It catches the pointer only inside its own box. In a panel narrower than 480 px (a phone), the legend starts closed as a **Legend** chip; tap the chip to open or close it. On a wider panel, click **Legend** to close it.
 
 The options are in the **Legend** group:
 
@@ -497,7 +497,7 @@ You can zoom and pan the view of the panel. The live zoom does not change the sa
 | Mouse wheel                        | Zooms only when **Wheel zoom** is on. Else it scrolls the panel or the page. |
 | Mouse drag                         | Pans when the view is zoomed, or at all times when **Drag pan** is on.       |
 
-The scale stays between 0.2× and 10× of the configured zoom. When the view is not at the configured zoom, a **Reset zoom** button shows in the top-right corner of the panel, above the warning badge. Click or tap it to go back to the configured zoom; a panel that scrolls goes back to its top-left corner. A new panel size or a new **Zoom** option also resets the view.
+The scale stays between 0.2× and 10× of the configured zoom. When the view is not at the configured zoom, a **Reset zoom** button shows in the top-left corner of the panel, below the status band and above the legend (top-left corner). The top-right corner stays free for the Grafana panel menu button. The warning badge is next to the button. Click or tap it to go back to the configured zoom; a panel that scrolls goes back to its top-left corner. A new panel size or a new **Zoom** option also resets the view.
 
 The panel sets `touch-action: pan-x pan-y` at the configured zoom: one finger scrolls the page, and the browser does not pinch-zoom the page over the panel. When the view is zoomed, the panel sets `touch-action: none` and takes all touches. A two-finger `touchmove` calls `preventDefault()`, so the page does not scroll while you pinch.
 

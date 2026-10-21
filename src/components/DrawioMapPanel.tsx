@@ -40,6 +40,15 @@ import { Legend } from '../legend/Legend';
 import { buildLegend } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
 
+/**
+ * Height in px that the top-right corner keeps free for the Grafana panel menu button. A panel without a title
+ * has a hover header: its menu button is 24 px high, 3 px below the top edge of the panel.
+ */
+const MENU_CLEARANCE = 32;
+/** Heights in px of the items in the top-left row. */
+const RESET_SIZE = 32;
+const BADGE_HEIGHT = 20;
+
 function usePanelEditing(id: number) {
   const subscribe = useCallback((notify: () => void) => {
     const sub = locationService?.getLocationObservable().subscribe(notify);
@@ -88,16 +97,27 @@ const styles = {
     height: 100%;
     opacity: 0.7;
   `,
-  // The reset button and the warning badge stack in the top-right corner.
+  // The top-left stack: the reset button and the warning badge in one row, then the legend (top-left corner).
+  // The top-right corner is free: Grafana puts its panel menu button there.
   corner: css`
     position: absolute;
-    right: 4px;
-    top: 4px;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 4px;
+    max-width: calc(100% - 8px);
     z-index: 1;
+    /* The empty space beside the row is part of the diagram: only the row and the legend catch the pointer. */
+    pointer-events: none;
+  `,
+  cornerRow: css`
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    pointer-events: auto;
+  `,
+  stackedLegend: css`
+    pointer-events: auto;
   `,
   // 32 px: a touch target for a finger
   reset: css`
@@ -619,14 +639,20 @@ function DrawioMapPanelView({
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
-  // The legend corner. In the top-right corner the legend goes below the reset button and the warning badge.
+  // The legend corner. The top-left legend is the last item of the top-left stack, below the reset button and the
+  // warning badge. The top-right legend starts below the area of the Grafana panel menu button.
+  // On a narrow panel the open legend can reach the left side: it goes below the row of the reset button and the badge.
+  const rowHeight = panZoom.zoomed ? RESET_SIZE : warnings.length ? BADGE_HEIGHT : 0;
+  const topRightLegendTop =
+    width < SHEET_BELOW && rowHeight ? band.height + 4 + rowHeight + 4 : Math.max(band.height + 4, MENU_CLEARANCE);
   const corners: Partial<Record<LegendCorner, React.CSSProperties>> = {
-    'top-left': { left: 4, top: band.height + 4 },
+    'top-right': { right: 4, top: topRightLegendTop },
     'bottom-left': { left: 4, bottom: 4 },
     'bottom-right': { right: 4, bottom: 4 },
   };
   const legendCorner: LegendCorner =
-    legendOptions.corner === 'top-right' || corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
+    legendOptions.corner === 'top-left' || corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
+  const stacked = legendCorner === 'top-left';
   const legend = legendOptions.show ? (
     <Legend
       ref={legendRef}
@@ -634,7 +660,7 @@ function DrawioMapPanelView({
       maxBlocks={legendOptions.maxBlocks}
       narrow={width < SHEET_BELOW}
       onHighlight={setLegendHits}
-      className={legendCorner === 'top-right' ? undefined : styles.legend}
+      className={stacked ? styles.stackedLegend : styles.legend}
       style={corners[legendCorner]}
       corner={legendCorner}
     />
@@ -698,32 +724,44 @@ function DrawioMapPanelView({
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
-      <div ref={corner} className={styles.corner} style={{ top: band.height + 4 }} data-testid="dmap-corner">
-        {panZoom.zoomed ? (
-          <IconButton
-            name="search-minus"
-            size="lg"
-            tooltip="Reset zoom"
-            tooltipPlacement="left"
-            className={styles.reset}
-            style={{ background: theme.colors.background.primary, border: `1px solid ${theme.colors.border.medium}` }}
-            data-testid="dmap-reset-zoom"
-            onClick={resetView}
-          />
-        ) : null}
-        {warnings.length ? (
-          <div
-            className={styles.badge}
-            style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
-            title={warnings.join('\n')}
-            data-testid="dmap-warning-badge"
-          >
-            {warnings.length} warning{warnings.length > 1 ? 's' : ''}
+      <div
+        ref={corner}
+        className={styles.corner}
+        style={{ left: 4, top: band.height + 4, maxHeight: `calc(100% - ${band.height + 8}px)` }}
+        data-testid="dmap-corner"
+      >
+        {panZoom.zoomed || warnings.length ? (
+          <div className={styles.cornerRow}>
+            {panZoom.zoomed ? (
+              <IconButton
+                name="search-minus"
+                size="lg"
+                tooltip="Reset zoom"
+                tooltipPlacement="right"
+                className={styles.reset}
+                style={{
+                  background: theme.colors.background.primary,
+                  border: `1px solid ${theme.colors.border.medium}`,
+                }}
+                data-testid="dmap-reset-zoom"
+                onClick={resetView}
+              />
+            ) : null}
+            {warnings.length ? (
+              <div
+                className={styles.badge}
+                style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
+                title={warnings.join('\n')}
+                data-testid="dmap-warning-badge"
+              >
+                {warnings.length} warning{warnings.length > 1 ? 's' : ''}
+              </div>
+            ) : null}
           </div>
         ) : null}
-        {legendCorner === 'top-right' ? legend : null}
+        {stacked ? legend : null}
       </div>
-      {legendCorner === 'top-right' ? null : legend}
+      {stacked ? null : legend}
       {open && model && card
         ? portalSheet(
             <div ref={cardRef}>

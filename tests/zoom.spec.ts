@@ -117,6 +117,10 @@ test.describe('live zoom on the desktop', () => {
     gotoDashboardPage,
     page,
   }) => {
+    if (SHOTS) {
+      // a tall viewport: the sticky toolbar of the dashboard must not cover the top of the panel in the screenshot
+      await page.setViewportSize({ width: 1280, height: 1000 });
+    }
     const panel = await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
     const reset = panel.getByRole('button', { name: 'Reset zoom' });
     const base = await viewBox(panel);
