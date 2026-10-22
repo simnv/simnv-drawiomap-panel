@@ -476,6 +476,10 @@ function DrawioMapPanelView({
     // Capture phase: Esc closes the card only, Grafana does not also leave the panel view.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // a chart with a tooltip hides the tooltip first (ChartHover); the next Esc closes the card
+        if ((e.target as Element | null)?.closest?.('[data-tooltip-open="true"]')) {
+          return;
+        }
         e.stopPropagation();
         close();
       }
@@ -778,6 +782,7 @@ function DrawioMapPanelView({
                 height={height}
                 anchor={wrapperEl}
                 timeRange={timeRange}
+                timeZone={timeZone}
                 onClose={close}
               />
             </div>,

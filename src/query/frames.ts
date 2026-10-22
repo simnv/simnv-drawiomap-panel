@@ -3,6 +3,7 @@ import {
   createTheme,
   getDisplayProcessor,
   getFieldDisplayName,
+  type DisplayProcessor,
   type DisplayValue,
   type Field,
   type GrafanaTheme2,
@@ -26,6 +27,14 @@ export type HistoryModel =
       fetchedAt: number;
       fromCache: boolean;
     };
+/**
+ * The one display processor of a field: the row text and the chart tooltip both use it.
+ * A field with a changed unit or decimals must have no `display` (see toHistory), so it is rebuilt from the config.
+ */
+export function fieldDisplay(field: Field, theme: GrafanaTheme2 = createTheme(), timeZone?: string): DisplayProcessor {
+  return field.display ?? getDisplayProcessor({ field, theme, timeZone });
+}
+
 export interface HistoryFormat {
   theme?: GrafanaTheme2;
   timeZone?: string;
@@ -100,6 +109,8 @@ export function toHistory(snapshot: QuerySnapshot, binding: QueryBinding, format
   const field = hasOverride
     ? {
         ...original,
+        // the display processor of the original field has the old unit and decimals
+        display: undefined,
         config: {
           ...original.config,
           ...(format.unit !== undefined ? { unit: format.unit } : {}),
@@ -107,10 +118,7 @@ export function toHistory(snapshot: QuerySnapshot, binding: QueryBinding, format
         },
       }
     : original;
-  const display =
-    !hasOverride && field.display
-      ? field.display
-      : getDisplayProcessor({ field, theme: format.theme ?? createTheme(), timeZone: format.timeZone });
+  const display = fieldDisplay(field, format.theme, format.timeZone);
   return {
     state: 'ready',
     field,

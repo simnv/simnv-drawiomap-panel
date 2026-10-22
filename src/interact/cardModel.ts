@@ -2,7 +2,6 @@ import {
   DisplayValue,
   Field,
   formattedValueToString,
-  getDisplayProcessor,
   GrafanaTheme2,
   LinkModel,
   ScopedVars,
@@ -15,7 +14,7 @@ import { isAllowedUrl } from '../binding/url';
 import type { BindStatus, CardRow, CellPatch, HalfState, SeriesInfo } from '../types';
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
 import { historySeries, type BindingDemand, type BindingResolver, type PlanCellPatch } from '../binding/engine';
-import type { HistoryModel } from '../query/frames';
+import { fieldDisplay, type HistoryModel } from '../query/frames';
 import {
   rowBindings,
   type Diagnostic,
@@ -210,8 +209,9 @@ function readBinding(
   if (model.state !== 'ready' || unit === undefined) {
     return model;
   }
-  const field = { ...model.field, config: { ...model.field.config, unit } };
-  const display = getDisplayProcessor({ field, theme: ctx.theme });
+  // drop the display processor of the original field: it has the old unit
+  const field = { ...model.field, display: undefined, config: { ...model.field.config, unit } };
+  const display = fieldDisplay(field, ctx.theme);
   return {
     ...model,
     field,
@@ -371,6 +371,8 @@ export interface CardRowModel {
   color: string;
   values: number[];
   times?: number[];
+  /** formats a value of the series like the row text (unit, decimals); the chart tooltip uses it */
+  format?: (value: number) => string;
   /** click target after template and dashboard variable resolution */
   href?: string;
   /** smallest and largest value of the series, formatted like the value */
@@ -461,6 +463,7 @@ function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardCo
     values,
     times: s?.times,
     href: rowHref(patch, patch.card?.url, primary, ctx),
+    ...(s ? { format: (v: number) => formattedValueToString(ctx.display(s, v)) } : {}),
     ...(s ? minMax(values, (v) => formattedValueToString(ctx.display(s, v))) : {}),
     ...(s ? { domain: yDomain(values, { ...fieldBounds(s), capacity }) } : {}),
   };
@@ -498,6 +501,7 @@ function seriesRow(patch: CellPatch, row: CardRow, i: number, ctx: CardContext):
     color: display.color ?? ctx.theme.colors.text.secondary,
     values: f.series.values,
     times: f.series.times,
+    format: (v: number) => formattedValueToString(ctx.display(f.series!, v, override)),
     href: rowHref(patch, row.url, primary, ctx),
     ...minMax(f.series.values, (v) => formattedValueToString(ctx.display(f.series!, v, override))),
     domain: yDomain(f.series.values, { ...fieldBounds(f.series), unit: row.unit ?? f.series.field.config?.unit }),
@@ -523,6 +527,7 @@ function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined 
     color: s.color,
     values: series?.values ?? [],
     times: series?.times,
+    ...(series ? { format: (v: number) => formattedValueToString(ctx.display(series, v)) } : {}),
     href: rowHref(patch, undefined, primary, ctx),
     ...(series ? minMax(series.values, (v) => formattedValueToString(ctx.display(series, v))) : {}),
     ...(series ? { domain: yDomain(series.values, fieldBounds(series)) } : {}),
