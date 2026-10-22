@@ -179,6 +179,7 @@ test.describe('live zoom on the desktop', () => {
     await fits('panel view');
     const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
     await expect(page.getByRole('complementary', { name: 'Diagram binding inspector' })).toBeVisible();
+    await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
     await fits('panel edit');
     await page.setViewportSize({ width: 1100, height: 760 });
     await fits('panel edit after a window resize');
@@ -191,24 +192,40 @@ test.describe('live zoom on the desktop', () => {
 
 /**
  * The panels whose diagram is not inside the stage, or whose stage is not inside the panel. The diagram is the
- * screen box of the svg content; the stage is the box below the status band.
+ * screen box of all svg content (the bounding box of the root); the stage is the box below the status band.
+ * The page must show at least one panel with a loaded svg.
  */
-const outside = (page: Page) =>
-  page.getByTestId('dmap-panel').evaluateAll((wrappers) =>
+async function outside(page: Page) {
+  const svgs = page.getByTestId('dmap-panel').locator('[data-testid="dmap-stage"] > svg');
+  await expect(svgs.first()).toBeVisible();
+  expect(await svgs.count()).toBeGreaterThan(0);
+  return page.getByTestId('dmap-panel').evaluateAll((wrappers) =>
     wrappers.flatMap((wrapper) => {
-      const stage = wrapper.querySelector('[data-testid="dmap-stage"]')!.getBoundingClientRect();
-      const content = wrapper.querySelector('[data-testid="dmap-stage"] > svg > g')!.getBoundingClientRect();
+      const stageEl = wrapper.querySelector('[data-testid="dmap-stage"]')!;
+      const svg = stageEl.querySelector<SVGSVGElement>(':scope > svg');
+      if (!svg) {
+        return [`${wrapper.getAttribute('data-dmap-hash')}: no svg`];
+      }
+      const b = svg.getBBox();
+      const m = svg.getScreenCTM()!;
+      const corners = [
+        [b.x, b.y],
+        [b.x + b.width, b.y + b.height],
+      ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+      const content = new DOMRect(corners[0].x, corners[0].y, corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+      const stage = stageEl.getBoundingClientRect();
       const box = wrapper.getBoundingClientRect();
       const panel = wrapper.parentElement!.getBoundingClientRect();
-      const inside = (a: DOMRect, b: DOMRect) =>
-        a.left >= b.left - 1 && a.top >= b.top - 1 && a.right <= b.right + 1 && a.bottom <= b.bottom + 1;
-      return inside(content, stage) && inside(stage, box) && inside(box, panel)
+      const inside = (a: DOMRect, c: DOMRect) =>
+        a.left >= c.left - 1 && a.top >= c.top - 1 && a.right <= c.right + 1 && a.bottom <= c.bottom + 1;
+      return b.width > 0 && b.height > 0 && inside(content, stage) && inside(stage, box) && inside(box, panel)
         ? []
         : [
             `${wrapper.getAttribute('data-dmap-hash')}: diagram ${JSON.stringify(content)} stage ${JSON.stringify(stage)}`,
           ];
     })
   );
+}
 
 // Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
 const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];

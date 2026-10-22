@@ -35,7 +35,7 @@ export default defineConfig([
       '**/.eslintcache',
       '.drawio/',
       // Agent worktrees: other checkouts of this repository, each linted on its own.
-      '.claude/',
+      '.claude/worktrees/',
     ],
   },
   ...baseConfig,
