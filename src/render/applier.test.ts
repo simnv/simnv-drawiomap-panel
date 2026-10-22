@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
 import { applyPatches, markInteractive } from './applier';
+import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
 import type { PlanCellPatch } from '../binding/engine';
@@ -140,6 +141,32 @@ describe('applyPatches', () => {
     expect(index.get('n2')!.group.hasAttribute('tabindex')).toBe(false);
     expect(index.get('n2')!.group.getAttribute('aria-label')).toBe('old');
     expect(index.get('n2')!.group.getAttribute('data-dmap-status')).toBe('ok');
+  });
+  it('a refresh keeps the tab stops and roles of the binding editor on cells without a card', () => {
+    const index = build();
+    const patches: PatchMap = new Map([
+      ['n1', patch('n1', { shape: shape() })],
+      ['n2', patch('n2', { shape: shape() })],
+    ]);
+    // the panel applies the patches, then the binding editor makes every cell a button
+    let prev = applyPatches(index, patches, new Set(), new Set(['n1']));
+    for (const [id, cell] of index) {
+      setOwnedAttrs(cell.group, 'editor', { tabindex: '0', role: 'button', 'aria-label': `${id} diagram element` });
+    }
+    // two data refreshes with the same selection
+    prev = applyPatches(index, patches, prev, new Set(['n1']));
+    prev = applyPatches(index, new Map([['n1', patch('n1', { shape: shape() })]]), prev, new Set());
+    for (const [id, cell] of index) {
+      expect(cell.group.getAttribute('tabindex'), id).toBe('0');
+      expect(cell.group.getAttribute('role'), id).toBe('button');
+      expect(cell.group.getAttribute('aria-label'), id).toBe(`${id} diagram element`);
+    }
+    // the editor closes: only the applier attributes stay
+    index.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
+    expect(index.get('n1')!.group.hasAttribute('role')).toBe(false);
+    expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a');
+    expect(index.get('n2')!.group.hasAttribute('tabindex')).toBe(false);
+    expect(index.get('n2')!.group.hasAttribute('aria-label')).toBe(false);
   });
   it('marks the interactive cells and clears the cells that are no longer interactive', () => {
     const index = build();
