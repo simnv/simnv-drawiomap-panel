@@ -73,7 +73,11 @@ const styles = {
     & > svg {
       display: block;
     }
-    /* Only the cells that open a card show the hand cursor (Grafana gives it to every role="button"). */
+    /* Only the cells that open a card show the hand cursor. Grafana gives it to every role="button", and in panel
+       edit mode the binding editor makes every cell a role="button": the other cells take the parent cursor. */
+    & [role='button']:not([${INTERACTIVE_ATTR}]) {
+      cursor: inherit;
+    }
     & [${INTERACTIVE_ATTR}] {
       cursor: pointer;
     }
