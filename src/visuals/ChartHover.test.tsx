@@ -8,6 +8,7 @@ import type { HistoryModel } from '../query/frames';
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
   useStyles2: (fn: (theme: ReturnType<typeof createTheme>) => unknown) => fn(createTheme()),
+  Portal: ({ children }: any) => <div data-testid="portal">{children}</div>,
   VizTooltipContainer: ({ children }: any) => <div data-testid="container">{children}</div>,
   SeriesTable: ({ timestamp, series }: any) => (
     <div>
@@ -123,6 +124,66 @@ describe('ChartHover', () => {
   });
 });
 
+describe('ChartHover keyboard, alignment, width', () => {
+  const pair = () =>
+    series(history([1, 2, 3], 'short'), { ...history([4, 5, 6], 'short'), timestamps: [0, 60, 100] } as HistoryModel);
+  it('renders the tooltip in a portal', () => {
+    render(
+      <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
+        <i />
+      </ChartHover>
+    );
+    hover(50);
+    expect(screen.getByTestId('portal').querySelector('[data-testid="dmap-chart-tooltip"]')).toBeTruthy();
+  });
+  it('gives the wrapper the width of the chart', () => {
+    render(
+      <ChartHover enabled series={series(history([1, 2, 3]))} timeRange={timeRange} width={264}>
+        <i />
+      </ChartHover>
+    );
+    expect(screen.getByTestId('dmap-chart-hover').style.width).toBe('264px');
+  });
+  it('shows one time for a combined row and a dash for a series without a sample there', () => {
+    render(
+      <ChartHover enabled series={pair()} timeRange={timeRange}>
+        <i />
+      </ChartHover>
+    );
+    hover(52); // the nearest time is 50 (up only), the down series has 60
+    expect(screen.getAllByTestId('series').map((r) => r.textContent)).toEqual(['up=2', 'down=–']);
+    hover(58); // 60 is nearest: down only
+    expect(screen.getAllByTestId('series').map((r) => r.textContent)).toEqual(['up=–', 'down=5']);
+  });
+  it('is focusable and the arrow keys move the sample, Escape hides, Enter follows the link', () => {
+    const click = vi.fn((e: React.MouseEvent) => e.preventDefault());
+    render(
+      <a href="/x" onClick={click}>
+        <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange} label="Traffic">
+          <i />
+        </ChartHover>
+      </a>
+    );
+    const el = screen.getByTestId('dmap-chart-hover');
+    el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 20, right: 100, bottom: 20 }) as DOMRect;
+    expect(el.tabIndex).toBe(0);
+    expect(el.getAttribute('aria-label')).toContain('Traffic');
+    expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
+    fireEvent.keyDown(el, { key: 'ArrowLeft' });
+    expect(screen.getByTestId('series').textContent).toBe('up=3');
+    fireEvent.keyDown(el, { key: 'ArrowLeft' });
+    expect(screen.getByTestId('series').textContent).toBe('up=2');
+    fireEvent.keyDown(el, { key: 'ArrowRight' });
+    fireEvent.keyDown(el, { key: 'ArrowRight' });
+    expect(screen.getByTestId('series').textContent).toBe('up=3');
+    expect(el.getAttribute('data-tooltip-open')).toBe('true');
+    fireEvent.keyDown(el, { key: 'Escape' });
+    expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
+    fireEvent.keyDown(el, { key: 'Enter' });
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('formatSample', () => {
   it('uses the field unit and decimals', () => {
     const h = history([1], 'percent', 1);
@@ -131,5 +192,6 @@ describe('formatSample', () => {
     }
     expect(formatSample(h.field, 12.345)).toBe('12.3%');
     expect(formatSample(h.field, null)).toBe('–');
+    expect(formatSample(h.field, 5, undefined, undefined, (v) => `<${v}>`)).toBe('<5>');
   });
 });

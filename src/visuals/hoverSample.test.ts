@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nearestIndex, sampleAt, timeAt } from './hoverSample';
+import { alignedSamples, nearestIndex, sampleAt, sampleTimes, timeAt } from './hoverSample';
 
 describe('nearestIndex', () => {
   const t = [0, 10, 20, 40];
@@ -33,5 +33,21 @@ describe('timeAt', () => {
     expect(timeAt(0.5, 100, 200)).toBe(150);
     expect(timeAt(-1, 100, 200)).toBe(100);
     expect(timeAt(2, 100, 200)).toBe(200);
+  });
+});
+
+describe('alignedSamples', () => {
+  const a = { timestamps: [0, 10, 20], values: [1, 2, 3] as Array<number | null> };
+  const b = { timestamps: [0, 15, 20], values: [4, null, 6] as Array<number | null> };
+  it('picks the nearest time among all series and reads each series at that time', () => {
+    expect(alignedSamples([a, b], 14)).toEqual({ time: 15, values: [null, null] });
+    expect(alignedSamples([a, b], 11)).toEqual({ time: 10, values: [2, null] });
+    expect(alignedSamples([a, b], 19)).toEqual({ time: 20, values: [3, 6] });
+  });
+  it('is undefined without samples', () => {
+    expect(alignedSamples([{ timestamps: [], values: [] }], 1)).toBeUndefined();
+  });
+  it('lists the distinct sample times in order', () => {
+    expect(sampleTimes([a, b])).toEqual([0, 10, 15, 20]);
   });
 });

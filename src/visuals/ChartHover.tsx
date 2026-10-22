@@ -3,21 +3,22 @@ import { css } from '@emotion/css';
 import {
   createTheme,
   dateTimeFormat,
-  getDisplayProcessor,
   formattedValueToString,
   type Field,
   type GrafanaTheme2,
   type TimeRange,
 } from '@grafana/data';
-import { SeriesTable, useStyles2, useTheme2, VizTooltipContainer } from '@grafana/ui';
-import type { HistoryModel } from '../query/frames';
-import { sampleAt, timeAt } from './hoverSample';
+import { Portal, SeriesTable, useStyles2, useTheme2, VizTooltipContainer } from '@grafana/ui';
+import { fieldDisplay, type HistoryModel } from '../query/frames';
+import { alignedSamples, nearestIndex, sampleTimes, timeAt } from './hoverSample';
 
 /** One series of the tooltip. */
 export interface HoverSeries {
   name: string;
   color: string;
   history: HistoryModel;
+  /** the formatter of the row, when the field alone does not give it */
+  format?: (value: number) => string;
 }
 
 export interface ChartHoverProps {
@@ -26,6 +27,9 @@ export interface ChartHoverProps {
   series: HoverSeries[];
   timeRange: TimeRange;
   timeZone?: string;
+  /** Width of the chart in px when it is narrower than the row: the pointer maps over the chart, not the row. */
+  width?: number;
+  label?: string;
   children: React.ReactNode;
 }
 
@@ -34,6 +38,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
   wrap: css`
     position: relative;
     touch-action: pan-y;
+    &:focus-visible {
+      outline: 2px solid ${theme.colors.primary.border};
+      outline-offset: 1px;
+    }
   `,
   line: css`
     position: absolute;
@@ -46,74 +54,89 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
 });
 
-/** The formatted value of a sample: the field display processor (unit, decimals), "–" for a gap. */
+/** The formatted value of a sample: the row formatter or the field display processor, "–" for a gap. */
 export function formatSample(
   field: Field,
   value: number | null,
   theme: GrafanaTheme2 = createTheme(),
-  timeZone?: string
+  timeZone?: string,
+  format?: (value: number) => string
 ): string {
   if (value === null) {
     return '–';
   }
-  const display = field.display ?? getDisplayProcessor({ field, theme, timeZone });
-  return formattedValueToString(display(value));
+  return format ? format(value) : formattedValueToString(fieldDisplay(field, theme, timeZone)(value));
 }
 
-interface Pointer {
+interface Hover {
+  /** the hovered time in ms */
+  t: number;
   fraction: number;
   x: number;
   y: number;
-  touch: boolean;
+  kind: 'mouse' | 'touch' | 'key';
 }
 
 /**
  * Crosshair and the standard Grafana tooltip (time header, colour, name and value of each series) over a
  * card chart. It reads the prepared history only and never changes the chart or its Y range. It adds no
  * click handler, so the chart keeps its link action. Off when the card is not pinned.
+ * Keyboard: the chart is focusable, Left and Right move the sample, Escape hides the tooltip, Enter follows
+ * the row link.
  */
-export function ChartHover({ enabled, series, timeRange, timeZone, children }: ChartHoverProps) {
+export function ChartHover({ enabled, series, timeRange, timeZone, width, label, children }: ChartHoverProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const ref = useRef<HTMLDivElement>(null);
-  const [pointer, setPointer] = useState<Pointer>();
+  const [hover, setHover] = useState<Hover>();
 
-  const touch = pointer?.touch;
+  const kind = hover?.kind;
   useEffect(() => {
-    if (!touch) {
+    if (kind !== 'touch') {
       return;
     }
     // a touch tooltip stays after the finger lifts; the next touch outside the chart removes it
     const away = (ev: PointerEvent) => {
       if (!ref.current?.contains(ev.target as Node)) {
-        setPointer(undefined);
+        setHover(undefined);
       }
     };
     document.addEventListener('pointerdown', away);
     return () => document.removeEventListener('pointerdown', away);
-  }, [touch]);
+  }, [kind]);
 
   const from = timeRange.from.valueOf();
   const to = timeRange.to.valueOf();
+  const ready = useMemo(
+    () =>
+      series.flatMap((s) =>
+        s.history.state === 'ready' ? [{ s, timestamps: s.history.timestamps, values: s.history.values }] : []
+      ),
+    [series]
+  );
   const rows = useMemo(() => {
-    if (!enabled || !pointer) {
+    if (!enabled || !hover) {
       return undefined;
     }
-    const t = timeAt(pointer.fraction, from, to);
-    let time: number | undefined;
-    const list = series.flatMap((s) => {
-      if (s.history.state !== 'ready') {
-        return [];
-      }
-      const sample = sampleAt(s.history.timestamps, s.history.values, t);
-      if (!sample) {
-        return [];
-      }
-      time ??= sample.time;
-      return [{ color: s.color, label: s.name, value: formatSample(s.history.field, sample.value, theme, timeZone) }];
-    });
-    return list.length && time !== undefined ? { time, list } : undefined;
-  }, [enabled, pointer, series, from, to, theme, timeZone]);
+    const picked = alignedSamples(ready, hover.t);
+    if (!picked) {
+      return undefined;
+    }
+    return {
+      time: picked.time,
+      list: ready.map(({ s }, i) => ({
+        color: s.color,
+        label: s.name,
+        value: formatSample(
+          (s.history as Extract<HistoryModel, { state: 'ready' }>).field,
+          picked.values[i],
+          theme,
+          timeZone,
+          s.format
+        ),
+      })),
+    };
+  }, [enabled, hover, ready, theme, timeZone]);
 
   if (!enabled) {
     return <>{children}</>;
@@ -123,43 +146,81 @@ export function ChartHover({ enabled, series, timeRange, timeZone, children }: C
     if (!r || r.width <= 0) {
       return;
     }
-    setPointer({
-      fraction: (ev.clientX - r.left) / r.width,
+    const fraction = (ev.clientX - r.left) / r.width;
+    setHover({
+      t: timeAt(fraction, from, to),
+      fraction,
       x: ev.clientX,
       y: ev.clientY,
-      touch: ev.pointerType === 'touch',
+      kind: ev.pointerType === 'touch' ? 'touch' : 'mouse',
     });
+  };
+  const key = (ev: React.KeyboardEvent) => {
+    if (ev.key === 'Enter') {
+      // the chart is focusable inside the row link: Enter still follows the link
+      (ev.currentTarget as HTMLElement).closest('a')?.click();
+      return;
+    }
+    if (ev.key === 'Escape' && hover) {
+      ev.stopPropagation();
+      ev.preventDefault();
+      setHover(undefined);
+      return;
+    }
+    if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') {
+      return;
+    }
+    const times = sampleTimes(ready);
+    const r = ref.current?.getBoundingClientRect();
+    if (!times.length || !r) {
+      return;
+    }
+    ev.preventDefault();
+    const step = ev.key === 'ArrowRight' ? 1 : -1;
+    const at = hover ? nearestIndex(times, hover.t) + step : times.length - 1;
+    const t = times[Math.min(times.length - 1, Math.max(0, at))];
+    const fraction = to > from ? Math.min(1, Math.max(0, (t - from) / (to - from))) : 0;
+    setHover({ t, fraction, x: r.left + fraction * r.width, y: r.top + r.height / 2, kind: 'key' });
   };
   return (
     <div
       ref={ref}
       className={styles.wrap}
+      style={width === undefined ? undefined : { width }}
       data-testid="dmap-chart-hover"
+      data-tooltip-open={rows ? 'true' : undefined}
+      tabIndex={0}
+      role="group"
+      aria-label={`${label ?? series[0]?.name ?? 'Chart'}: use the left and right arrow keys to read values`}
       onPointerDown={move}
       onPointerMove={move}
       onPointerLeave={(ev) => {
         if (ev.pointerType !== 'touch') {
-          setPointer(undefined);
+          setHover((h) => (h?.kind === 'key' ? h : undefined));
         }
       }}
-      onPointerCancel={() => setPointer(undefined)}
+      onPointerCancel={() => setHover(undefined)}
+      onBlur={() => setHover((h) => (h?.kind === 'key' ? undefined : h))}
+      onKeyDown={key}
     >
       {children}
-      {rows && pointer ? (
+      {rows && hover ? (
         <>
           <div
             className={styles.line}
             data-testid="dmap-chart-crosshair"
-            style={{ left: `${Math.min(1, Math.max(0, pointer.fraction)) * 100}%` }}
+            style={{ left: `${Math.min(1, Math.max(0, hover.fraction)) * 100}%` }}
           />
-          <VizTooltipContainer position={{ x: pointer.x, y: pointer.y }} offset={{ x: 10, y: 10 }}>
-            <div data-testid="dmap-chart-tooltip">
-              <SeriesTable
-                timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
-                series={rows.list}
-              />
-            </div>
-          </VizTooltipContainer>
+          <Portal>
+            <VizTooltipContainer position={{ x: hover.x, y: hover.y }} offset={{ x: 10, y: 10 }}>
+              <div data-testid="dmap-chart-tooltip">
+                <SeriesTable
+                  timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
+                  series={rows.list}
+                />
+              </div>
+            </VizTooltipContainer>
+          </Portal>
         </>
       ) : null}
     </div>

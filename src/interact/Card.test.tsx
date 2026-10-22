@@ -14,6 +14,7 @@ vi.mock('@grafana/ui', () => ({
   IconButton: (props: any) => <button {...props} />,
   LinkButton: (props: any) => <a {...props} />,
   Sparkline: sparkline,
+  Portal: (props: any) => <div>{props.children}</div>,
   VizTooltipContainer: (props: any) => <div>{props.children}</div>,
   SeriesTable: (props: any) => (
     <div data-testid="series-table">{props.series.map((r: any) => `${r.label}=${r.value}`).join(';')}</div>
@@ -317,4 +318,42 @@ it('shows both directions of a combined row in the pinned card tooltip', () => {
   renderCard(cardOf(chartRow({ domain: [-10, 10], directions: directions(true) })));
   hoverChart();
   expect(screen.getByTestId('series-table').textContent).toBe('↑=8;↓=1');
+});
+
+it('uses the row formatter of a legacy row in the tooltip', () => {
+  const model = {
+    title: 'n',
+    links: [],
+    rows: [
+      {
+        key: 'r',
+        title: 'CPU',
+        text: '2 kb/s',
+        status: 'ok',
+        color: 'red',
+        values: [1, 2],
+        times: [0, 10],
+        format: (v: number) => `${v} kb/s`,
+      },
+    ],
+  };
+  renderCard(model as any);
+  hoverChart();
+  expect(screen.getByTestId('series-table').textContent).toBe('CPU=2 kb/s');
+});
+it('sorts a legacy row by time for the sparkline and for the tooltip', () => {
+  const model = {
+    title: 'n',
+    links: [],
+    rows: [{ key: 'r', title: 'CPU', text: '', status: 'ok', color: 'red', values: [3, 2, 1], times: [30, 20, 10] }],
+  };
+  sparkline.mockClear();
+  renderCard(model as any);
+  const props = sparkline.mock.calls.at(-1)![0];
+  expect(Array.from(props.sparkline.x.values)).toEqual([10, 20, 30]);
+  expect(Array.from(props.sparkline.y.values)).toEqual([1, 2, 3]);
+});
+it('sets the hover width of a single chart to the chart width, not the row', () => {
+  renderCard(cardOf(chartRow({ history: readyHistory([1, 2]) })));
+  expect(screen.getByTestId('dmap-chart-hover').style.width).toBe('264px');
 });

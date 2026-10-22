@@ -187,19 +187,23 @@ const Row = memo(function Row({
   let history: HistoryModel | undefined = legacy ? undefined : row.history;
   const directions = legacy ? undefined : row.directions;
   if (legacy && row.values.length) {
-    const values = row.values;
     const times =
       row.times ??
-      values.map(
+      row.values.map(
         (_, i) =>
           timeRange.from.valueOf() +
-          (i * (timeRange.to.valueOf() - timeRange.from.valueOf())) / Math.max(1, values.length - 1)
+          (i * (timeRange.to.valueOf() - timeRange.from.valueOf())) / Math.max(1, row.values.length - 1)
       );
+    // one ascending sequence of time and value pairs for the sparkline and for the tooltip
+    const order = times.map((_, i) => i).sort((a, b) => times[a] - times[b] || a - b);
+    const sorted = order.every((o, i) => o === i);
+    const values = sorted ? row.values : order.map((i) => row.values[i]);
+    const sortedTimes = sorted ? times : order.map((i) => times[i]);
     history = {
       state: 'ready',
       field: { name: row.title, type: FieldType.number, config: {}, values },
-      timeField: { name: 'Time', type: FieldType.time, config: {}, values: times },
-      timestamps: times,
+      timeField: { name: 'Time', type: FieldType.time, config: {}, values: sortedTimes },
+      timestamps: sortedTimes,
       values,
       latestValue: values.at(-1),
       fetchedAt: 0,
@@ -218,7 +222,7 @@ const Row = memo(function Row({
       : history.state === 'ready'
         ? getFieldSeriesColor(history.field, theme).color
         : theme.colors.primary.main;
-    return [{ name: row.title, color, history }];
+    return [{ name: row.title, color, history, format: legacy ? row.format : undefined }];
   }, [directions, legacy, history, row, theme]);
   const chartH = legacy ? SPARK_HEIGHT : chartHeight(row);
   const body = (
@@ -242,7 +246,7 @@ const Row = memo(function Row({
       </div>
       {directions && !legacy && row.domain ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
-          <ChartHover enabled={pinned} series={hoverSeries} timeRange={timeRange} timeZone={timeZone}>
+          <ChartHover enabled={pinned} series={hoverSeries} timeRange={timeRange} timeZone={timeZone} label={row.title}>
             <MirrorSparkline
               directions={directions}
               domain={row.domain}
@@ -255,7 +259,14 @@ const Row = memo(function Row({
         </div>
       ) : history ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
-          <ChartHover enabled={pinned} series={hoverSeries} timeRange={timeRange} timeZone={timeZone}>
+          <ChartHover
+            enabled={pinned}
+            series={hoverSeries}
+            timeRange={timeRange}
+            timeZone={timeZone}
+            width={width}
+            label={row.title}
+          >
             <SparklineView
               model={history}
               width={width}

@@ -42,3 +42,51 @@ export function sampleAt(
 export function timeAt(fraction: number, from: number, to: number): number {
   return from + Math.min(1, Math.max(0, fraction)) * (to - from);
 }
+
+/**
+ * One selected time for several series: the sample time nearest to t among all series (the earlier one on a
+ * tie). Each series then gives its value at that exact time, or null when it has no sample there.
+ */
+export function alignedSamples(
+  series: Array<{ timestamps: ArrayLike<number>; values: ArrayLike<number | null> }>,
+  t: number
+): { time: number; values: Array<number | null> } | undefined {
+  let time: number | undefined;
+  for (const s of series) {
+    const i = nearestIndex(s.timestamps, t);
+    if (i < 0) {
+      continue;
+    }
+    const c = s.timestamps[i];
+    const better =
+      time === undefined ||
+      Math.abs(c - t) < Math.abs(time - t) ||
+      (Math.abs(c - t) === Math.abs(time - t) && c < time);
+    if (better) {
+      time = c;
+    }
+  }
+  if (time === undefined) {
+    return undefined;
+  }
+  const at = time;
+  return {
+    time: at,
+    values: series.map((s) => {
+      const i = nearestIndex(s.timestamps, at);
+      const v = i >= 0 && s.timestamps[i] === at ? s.values[i] : null;
+      return typeof v === 'number' && Number.isFinite(v) ? v : null;
+    }),
+  };
+}
+
+/** The sorted distinct sample times of all series, for keyboard steps. */
+export function sampleTimes(series: Array<{ timestamps: ArrayLike<number> }>): number[] {
+  const all = new Set<number>();
+  for (const s of series) {
+    for (let i = 0; i < s.timestamps.length; i++) {
+      all.add(s.timestamps[i]);
+    }
+  }
+  return [...all].sort((a, b) => a - b);
+}
