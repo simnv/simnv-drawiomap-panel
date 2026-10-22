@@ -159,7 +159,73 @@ test.describe('live zoom on the desktop', () => {
     expect(Math.abs(g.top)).toBeLessThanOrEqual(1);
     expect(Math.abs(g.left - g.right)).toBeLessThanOrEqual(1);
   });
+
+  test('Fit keeps the whole diagram in the panel in view, panel view and panel edit mode, and after a resize', async ({
+    page,
+    gotoDashboardPage,
+    gotoPanelEditPage,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const fits = async (where: string) => {
+      await expect.poll(async () => (await outside(page)).join(' '), { message: where }).toBe('');
+    };
+    await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
+    await fits('view');
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await fits('view after a window resize');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoDashboardPage({ uid: 'drawiomap-demo', queryParams: new URLSearchParams({ viewPanel: 'panel-1' }) });
+    await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+    await fits('panel view');
+    const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
+    await expect(page.getByRole('complementary', { name: 'Diagram binding inspector' })).toBeVisible();
+    await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+    await fits('panel edit');
+    await page.setViewportSize({ width: 1100, height: 760 });
+    await fits('panel edit after a window resize');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await edit.backToDashboard();
+    await expect(page.getByRole('complementary', { name: 'Diagram binding inspector' })).toHaveCount(0);
+    await fits('view after panel edit');
+  });
 });
+
+/**
+ * The panels whose diagram is not inside the stage, or whose stage is not inside the panel. The diagram is the
+ * screen box of all svg content (the bounding box of the root); the stage is the box below the status band.
+ * The page must show at least one panel with a loaded svg.
+ */
+async function outside(page: Page) {
+  const svgs = page.getByTestId('dmap-panel').locator('[data-testid="dmap-stage"] > svg');
+  await expect(svgs.first()).toBeVisible();
+  expect(await svgs.count()).toBeGreaterThan(0);
+  return page.getByTestId('dmap-panel').evaluateAll((wrappers) =>
+    wrappers.flatMap((wrapper) => {
+      const stageEl = wrapper.querySelector('[data-testid="dmap-stage"]')!;
+      const svg = stageEl.querySelector<SVGSVGElement>(':scope > svg');
+      if (!svg) {
+        return [`${wrapper.getAttribute('data-dmap-hash')}: no svg`];
+      }
+      const b = svg.getBBox();
+      const m = svg.getScreenCTM()!;
+      const corners = [
+        [b.x, b.y],
+        [b.x + b.width, b.y + b.height],
+      ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+      const content = new DOMRect(corners[0].x, corners[0].y, corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+      const stage = stageEl.getBoundingClientRect();
+      const box = wrapper.getBoundingClientRect();
+      const panel = wrapper.parentElement!.getBoundingClientRect();
+      const inside = (a: DOMRect, c: DOMRect) =>
+        a.left >= c.left - 1 && a.top >= c.top - 1 && a.right <= c.right + 1 && a.bottom <= c.bottom + 1;
+      return b.width > 0 && b.height > 0 && inside(content, stage) && inside(stage, box) && inside(box, panel)
+        ? []
+        : [
+            `${wrapper.getAttribute('data-dmap-hash')}: diagram ${JSON.stringify(content)} stage ${JSON.stringify(stage)}`,
+          ];
+    })
+  );
+}
 
 // Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
 const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
@@ -241,5 +307,6 @@ test.describe('live zoom on a phone', () => {
     expect(Math.abs(g.top)).toBeLessThanOrEqual(1);
     expect(g.bottom).toBeGreaterThan(50);
     expect(Math.abs(g.left - g.right)).toBeLessThanOrEqual(1);
+    expect(await outside(panel.page())).toEqual([]);
   });
 });

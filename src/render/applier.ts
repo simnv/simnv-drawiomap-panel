@@ -1,5 +1,6 @@
 import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
+import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 
 /** Labels that a patch wrote text into. Only these need a label reset. */
 const written = new WeakSet<Element>();
@@ -95,19 +96,16 @@ function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined,
     entry.group.setAttribute('data-dmap-target', target);
   }
   // Keyboard access: Tab moves to the cell, Enter or Space opens its card. A cell without a card is not a button.
-  if (interactive) {
-    entry.group.setAttribute('tabindex', '0');
-    entry.group.setAttribute('role', 'button');
-  }
-  entry.group.setAttribute('aria-label', entry.meta.labelText || entry.meta.key);
-  if (patch.statusView) {
-    const status = patch.statusView;
-    entry.group.setAttribute('data-dmap-status', status.state);
-    entry.group.setAttribute('data-dmap-reason', status.reason);
-    entry.group.setAttribute(
-      'aria-label',
-      `${entry.meta.labelText || entry.meta.key}: ${status.state}. ${status.reason}`
-    );
+  // tabindex, role and aria-label go into the applier layer: the binding editor writes the same attributes.
+  const label = entry.meta.labelText || entry.meta.key;
+  const view = patch.statusView;
+  setOwnedAttrs(entry.group, 'applier', {
+    ...(interactive ? { tabindex: '0', role: 'button' } : {}),
+    'aria-label': view ? `${label}: ${view.state}. ${view.reason}` : label,
+  });
+  if (view) {
+    entry.group.setAttribute('data-dmap-status', view.state);
+    entry.group.setAttribute('data-dmap-reason', view.reason);
     return;
   }
   const states = [patch.shape, patch.link?.a2b, patch.link?.b2a].filter(Boolean) as Array<{
@@ -172,9 +170,7 @@ function reset(entry: CellEntry, index: CellIndex): void {
   entry.group.removeAttribute('data-dmap-reason');
   entry.group.removeAttribute('data-dmap-step');
   entry.group.removeAttribute('data-dmap-target');
-  entry.group.removeAttribute('tabindex');
-  entry.group.removeAttribute('role');
-  entry.group.removeAttribute('aria-label');
+  clearOwnedAttrs(entry.group, 'applier');
 }
 
 /**

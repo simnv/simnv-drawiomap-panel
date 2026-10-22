@@ -54,3 +54,63 @@ test('the hand cursor shows only on cells that open a card', async ({
     expect(await cursor(id), id).toBe('auto');
   }
 });
+
+test('in panel edit mode only the cells that open a card show the hand cursor; Tab reaches every cell after a refresh', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+  selectors,
+}) => {
+  const cards: DiagramConfigV2 = {
+    ...config,
+    queries: [],
+    widgets: [],
+    overrides: [{ cellId: 'pg-node~rtr-b', display: { hover: { enabled: false, rows: [] } } }],
+    patterns: [
+      {
+        id: 'all',
+        name: 'All cells',
+        select: {},
+        display: { hover: { rows: [{ kind: 'metadata', label: 'Element', path: 'cell.id' }] } },
+      },
+    ],
+  };
+  // A Grafana panel query: a dashboard refresh gives the panel new data, and the panel applies its patches again.
+  const testdata = config.queries.find((q) => q.id === 'trend')!.source;
+  const datasource = testdata.kind === 'datasource' ? testdata.datasource : undefined;
+  const uid = await createDiagram(cards, {
+    svg,
+    targets: [{ refId: 'A', datasource, scenarioId: 'random_walk' }],
+  });
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const panel = page.getByTestId('dmap-panel');
+  const shape = (id: string) => panel.locator(`[data-cell-id="${id}"] > :is(rect, path, ellipse)`).first();
+  const cursor = (id: string) => shape(id).evaluate((el) => getComputedStyle(el).cursor);
+  // A click selects the cell: the binding editor makes every cell a role="button", and Grafana gives every
+  // role="button" the hand cursor.
+  await shape('pg-node~rtr-a').click();
+  await expect(panel.locator('[data-cell-id="pg-canvas"]')).toHaveAttribute('role', 'button');
+  await expect.poll(() => cursor('pg-node~rtr-a')).toBe('pointer');
+  expect(await cursor('pg-link~a-b')).toBe('pointer');
+  for (const id of ['pg-canvas', 'pg-group~core', 'pg-legend', 'pg-node~rtr-b']) {
+    expect(await cursor(id), id).toBe('auto');
+  }
+  // A data refresh with the same selection redraws the patches. The cells without a card keep the tab stop and
+  // the role of the binding editor.
+  const dmapCell = (id: string) => panel.locator(`[data-cell-id="${id}"]`);
+  const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/ds/query');
+  await panelEditPage.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
+  await (await refreshed).finished();
+  // the new data goes through a React render and the patch frame
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await expect(dmapCell('pg-node~rtr-a')).toHaveAttribute('data-dmap-selected', 'true');
+  for (const id of ['pg-canvas', 'pg-group~core', 'pg-legend', 'pg-node~rtr-b']) {
+    await expect(dmapCell(id), id).toHaveAttribute('tabindex', '0');
+    await expect(dmapCell(id), id).toHaveAttribute('role', 'button');
+    expect(await cursor(id), id).toBe('auto');
+  }
+  await dmapCell('pg-node~rtr-a').focus();
+  await page.keyboard.press('Tab');
+  await expect(dmapCell('pg-node~rtr-b')).toBeFocused();
+});

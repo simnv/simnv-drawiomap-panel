@@ -20,6 +20,7 @@ import { createPreviewResolver, previewSnapshot, statusDeadlines, usePreviewTime
 import { previewPattern, type PatternPreview } from './patternPreview';
 import { PatternTransfer } from './PatternTransfer';
 import { DrawioModal } from './DrawioModal';
+import { clearOwnedAttrs, setOwnedAttrs } from '../render/cellAttrs';
 import { sanitizeSvg } from '../render/sanitize';
 import { fnv1a } from '../util/hash';
 import { EditorField, EditorSection, getEditorStyles } from './EditorLayout';
@@ -154,25 +155,18 @@ export function BindingEditor({
     onPreview?.(draft.config);
   }, [draft.config, onPreview]);
   const affectedKey = JSON.stringify(affected);
+  // The editor layer of the cell attributes: a data refresh of the panel (the applier layer) does not touch it.
   useEffect(() => {
-    const restore: Array<() => void> = [];
     for (const [id, cell] of cells) {
-      const attrs = {
+      setOwnedAttrs(cell.group, 'editor', {
         tabindex: '0',
         role: 'button',
         'aria-label': `${id} diagram element`,
         'data-dmap-selected': id === draft.cellId ? 'true' : 'false',
         'data-dmap-affected': affected.includes(id) ? 'true' : 'false',
-      };
-      for (const [key, value] of Object.entries(attrs)) {
-        const previous = cell.group.getAttribute(key);
-        cell.group.setAttribute(key, value);
-        restore.push(() =>
-          previous === null ? cell.group.removeAttribute(key) : cell.group.setAttribute(key, previous)
-        );
-      }
+      });
     }
-    return () => restore.forEach((f) => f());
+    return () => cells.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
     // affectedKey represents the complete list without an unstable array dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cells, draft.cellId, affectedKey]);
