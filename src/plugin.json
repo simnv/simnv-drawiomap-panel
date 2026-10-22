@@ -4,13 +4,7 @@
   "name": "draw.io map",
   "id": "simnv-drawiomap-panel",
   "info": {
-    "keywords": [
-      "panel",
-      "drawio",
-      "weathermap",
-      "network",
-      "diagram"
-    ],
+    "keywords": ["panel", "drawio", "weathermap", "network", "diagram"],
     "description": "Shows a draw.io diagram as a network weathermap. Links and shapes follow the panel queries.",
     "author": {
       "name": "simnv"
