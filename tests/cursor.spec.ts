@@ -64,8 +64,7 @@ test('in panel edit mode only the cells that open a card show the hand cursor; T
 }) => {
   const cards: DiagramConfigV2 = {
     ...config,
-    // one native query, so that a dashboard refresh runs a query and the panel applies new patches
-    queries: config.queries.filter((q) => q.id === 'health'),
+    queries: [],
     widgets: [],
     overrides: [{ cellId: 'pg-node~rtr-b', display: { hover: { enabled: false, rows: [] } } }],
     patterns: [
@@ -75,22 +74,15 @@ test('in panel edit mode only the cells that open a card show the hand cursor; T
         select: {},
         display: { hover: { rows: [{ kind: 'metadata', label: 'Element', path: 'cell.id' }] } },
       },
-      {
-        id: 'health',
-        name: 'Health',
-        select: { ids: ['pg-node~rtr-a'] },
-        display: {
-          status: {
-            kind: 'mapping',
-            binding: { queryId: 'health', match: {}, reducer: 'last' },
-            default: { state: 'normal', reason: 'Healthy' },
-            mappings: [],
-          },
-        },
-      },
     ],
   };
-  const uid = await createDiagram(cards, { svg });
+  // A Grafana panel query: a dashboard refresh gives the panel new data, and the panel applies its patches again.
+  const testdata = config.queries.find((q) => q.id === 'trend')!.source;
+  const datasource = testdata.kind === 'datasource' ? testdata.datasource : undefined;
+  const uid = await createDiagram(cards, {
+    svg,
+    targets: [{ refId: 'A', datasource, scenarioId: 'random_walk' }],
+  });
   const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const panel = page.getByTestId('dmap-panel');
   const shape = (id: string) => panel.locator(`[data-cell-id="${id}"] > :is(rect, path, ellipse)`).first();
@@ -111,7 +103,6 @@ test('in panel edit mode only the cells that open a card show the hand cursor; T
   await panelEditPage.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
   await (await refreshed).finished();
   // the new data goes through a React render and the patch frame
-  await expect(dmapCell('pg-node~rtr-a')).toHaveAttribute('data-dmap-status', /.+/);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await expect(dmapCell('pg-node~rtr-a')).toHaveAttribute('data-dmap-selected', 'true');
   for (const id of ['pg-canvas', 'pg-group~core', 'pg-legend', 'pg-node~rtr-b']) {

@@ -18,6 +18,8 @@ export const test = base.extend<{
       /** grid columns of the panel; default: the full row */
       width?: number;
       zoom?: Record<string, unknown>;
+      /** Grafana panel queries; default: none */
+      targets?: unknown[];
     }
   ) => Promise<string>;
   sandboxSettings: void;
@@ -70,7 +72,7 @@ export const test = base.extend<{
               title: `Sanitized topology ${i + 1}`,
               type: 'simnv-drawiomap-panel',
               gridPos: { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24), h: settings.height ?? 20 },
-              targets: [],
+              targets: settings.targets ?? [],
               fieldConfig: { defaults: {}, overrides: [] },
               options: {
                 config,
