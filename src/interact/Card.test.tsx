@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange } from '@grafana/data';
 import { expect, it, vi } from 'vitest';
 import { Card } from './Card';
@@ -14,6 +14,10 @@ vi.mock('@grafana/ui', () => ({
   IconButton: (props: any) => <button {...props} />,
   LinkButton: (props: any) => <a {...props} />,
   Sparkline: sparkline,
+  VizTooltipContainer: (props: any) => <div>{props.children}</div>,
+  SeriesTable: (props: any) => (
+    <div data-testid="series-table">{props.series.map((r: any) => `${r.label}=${r.value}`).join(';')}</div>
+  ),
 }));
 it('renders configured history states through SparklineView and keeps a failure local to its row', () => {
   const model: ConfiguredCardModel = {
@@ -292,4 +296,25 @@ it('takes the row height option for a combined row and for a single row', () => 
   renderCard(cardOf(chartRow({ height: 64, history: readyHistory([1, 2]) })));
   expect(chartPx().box).toBe('64px');
   expect(sparkline.mock.calls.at(-1)![0].height).toBe(64);
+});
+
+const hoverChart = () => {
+  const el = screen.getByTestId('dmap-chart-hover');
+  el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 40, right: 100, bottom: 40 }) as DOMRect;
+  fireEvent.pointerMove(el, { clientX: 100, clientY: 5, pointerType: 'mouse' });
+};
+it('shows the chart tooltip for a single history row only in the pinned card', () => {
+  const model = cardOf(chartRow({ history: readyHistory([1, 2]) }));
+  const { unmount } = renderCard(model);
+  hoverChart();
+  expect(screen.getByTestId('series-table').textContent).toBe('Traffic=2');
+  unmount();
+  render(<Card model={model} pinned={false} x={20} y={20} width={800} height={600} onClose={() => {}} />);
+  expect(screen.queryByTestId('dmap-chart-hover')).toBeNull();
+  expect(screen.queryByTestId('series-table')).toBeNull();
+});
+it('shows both directions of a combined row in the pinned card tooltip', () => {
+  renderCard(cardOf(chartRow({ domain: [-10, 10], directions: directions(true) })));
+  hoverChart();
+  expect(screen.getByTestId('series-table').textContent).toBe('↑=8;↓=1');
 });

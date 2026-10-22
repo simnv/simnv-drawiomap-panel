@@ -1,7 +1,14 @@
-import React, { memo, useLayoutEffect, useRef } from 'react';
+import React, { memo, useLayoutEffect, useMemo, useRef } from 'react';
 import { css, cx } from '@emotion/css';
-import { dateTime, FieldType, getDefaultTimeRange, type GrafanaTheme2, type TimeRange } from '@grafana/data';
-import { IconButton, LinkButton, useStyles2 } from '@grafana/ui';
+import {
+  dateTime,
+  FieldType,
+  getDefaultTimeRange,
+  getFieldSeriesColor,
+  type GrafanaTheme2,
+  type TimeRange,
+} from '@grafana/data';
+import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
 import {
   CardModel,
   CardRowModel,
@@ -12,6 +19,7 @@ import {
 } from './cardModel';
 import { SparklineView } from '../visuals/SparklineView';
 import { MirrorSparkline } from '../visuals/MirrorSparkline';
+import { ChartHover, type HoverSeries } from '../visuals/ChartHover';
 import type { HistoryModel } from '../query/frames';
 import { useSampleStale } from '../visuals/useSampleStale';
 
@@ -35,6 +43,7 @@ export interface CardProps {
   /** dashboard time range in ms, for the sparkline x axis */
   range?: { from: number; to: number };
   timeRange?: TimeRange;
+  timeZone?: string;
   onClose: () => void;
 }
 
@@ -160,14 +169,19 @@ const getStyles = (theme: GrafanaTheme2) => ({
 const Row = memo(function Row({
   row,
   timeRange,
+  timeZone,
+  pinned,
   styles,
   width,
 }: {
   row: CardRowModel | ConfiguredCardRow;
   timeRange: TimeRange;
+  timeZone?: string;
+  pinned: boolean;
   styles: ReturnType<typeof getStyles>;
   width: number;
 }) {
+  const theme = useTheme2();
   const legacy = 'values' in row;
   const stale = useSampleStale(legacy ? undefined : row.sampleAt, legacy ? undefined : row.freshness);
   let history: HistoryModel | undefined = legacy ? undefined : row.history;
@@ -192,6 +206,20 @@ const Row = memo(function Row({
       fromCache: false,
     };
   }
+  const hoverSeries = useMemo((): HoverSeries[] => {
+    if (directions && !legacy) {
+      return directions.map((d) => ({ name: d.label, color: d.color, history: d.history }));
+    }
+    if (!history) {
+      return [];
+    }
+    const color = legacy
+      ? row.color
+      : history.state === 'ready'
+        ? getFieldSeriesColor(history.field, theme).color
+        : theme.colors.primary.main;
+    return [{ name: row.title, color, history }];
+  }, [directions, legacy, history, row, theme]);
   const chartH = legacy ? SPARK_HEIGHT : chartHeight(row);
   const body = (
     <>
@@ -214,28 +242,32 @@ const Row = memo(function Row({
       </div>
       {directions && !legacy && row.domain ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
-          <MirrorSparkline
-            directions={directions}
-            domain={row.domain}
-            width={width}
-            height={chartH}
-            timeRange={timeRange}
-            label={row.title}
-          />
+          <ChartHover enabled={pinned} series={hoverSeries} timeRange={timeRange} timeZone={timeZone}>
+            <MirrorSparkline
+              directions={directions}
+              domain={row.domain}
+              width={width}
+              height={chartH}
+              timeRange={timeRange}
+              label={row.title}
+            />
+          </ChartHover>
         </div>
       ) : history ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
-          <SparklineView
-            model={history}
-            width={width}
-            height={chartH}
-            timeRange={timeRange}
-            label={row.title}
-            showValue={false}
-            freshness={legacy ? undefined : row.freshness}
-            min={legacy ? row.domain?.[0] : row.min}
-            max={legacy ? row.domain?.[1] : row.max}
-          />
+          <ChartHover enabled={pinned} series={hoverSeries} timeRange={timeRange} timeZone={timeZone}>
+            <SparklineView
+              model={history}
+              width={width}
+              height={chartH}
+              timeRange={timeRange}
+              label={row.title}
+              showValue={false}
+              freshness={legacy ? undefined : row.freshness}
+              min={legacy ? row.domain?.[0] : row.min}
+              max={legacy ? row.domain?.[1] : row.max}
+            />
+          </ChartHover>
         </div>
       ) : null}
       {legacy && row.min !== undefined && row.max !== undefined ? (
@@ -261,7 +293,7 @@ const Row = memo(function Row({
  * The hover card. Unpinned it follows the pointer and ignores the pointer. Pinned it is a non-modal
  * dialog with a close button, row links and footer links. Narrow panels show it as a bottom sheet.
  */
-export function Card({ model, pinned, x, y, width, height, anchor, range, timeRange, onClose }: CardProps) {
+export function Card({ model, pinned, x, y, width, height, anchor, range, timeRange, timeZone, onClose }: CardProps) {
   const styles = useStyles2(getStyles);
   const ref = useRef<HTMLDivElement>(null);
   const sheet = width < SHEET_BELOW;
@@ -334,6 +366,8 @@ export function Card({ model, pinned, x, y, width, height, anchor, range, timeRa
                 }
               : getDefaultTimeRange())
           }
+          timeZone={timeZone}
+          pinned={pinned}
           styles={styles}
           width={Math.max(1, Math.min(W, width) - 16)}
         />

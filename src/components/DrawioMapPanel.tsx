@@ -774,6 +774,7 @@ function DrawioMapPanelView({
                 height={height}
                 anchor={wrapperEl}
                 timeRange={timeRange}
+                timeZone={timeZone}
                 onClose={close}
               />
             </div>,
