@@ -73,9 +73,15 @@ export function alignedSamples(
   return {
     time: at,
     values: series.map((s) => {
-      const i = nearestIndex(s.timestamps, at);
-      const v = i >= 0 && s.timestamps[i] === at ? s.values[i] : null;
-      return typeof v === 'number' && Number.isFinite(v) ? v : null;
+      // duplicate timestamps: the last non-null value at exactly this time
+      let found: number | null = null;
+      for (let i = nearestIndex(s.timestamps, at); i >= 0 && i < s.timestamps.length && s.timestamps[i] === at; i++) {
+        const v = s.values[i];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          found = v;
+        }
+      }
+      return found;
     }),
   };
 }

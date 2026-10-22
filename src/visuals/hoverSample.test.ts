@@ -44,6 +44,14 @@ describe('alignedSamples', () => {
     expect(alignedSamples([a, b], 11)).toEqual({ time: 10, values: [2, null] });
     expect(alignedSamples([a, b], 19)).toEqual({ time: 20, values: [3, 6] });
   });
+  it('takes the last non-null value among duplicate timestamps', () => {
+    const d = { timestamps: [0, 10, 10], values: [1, null, 3] as Array<number | null> };
+    expect(alignedSamples([d], 15)).toEqual({ time: 10, values: [3] });
+    const e = { timestamps: [0, 10, 10], values: [1, 2, null] as Array<number | null> };
+    expect(alignedSamples([e], 15)).toEqual({ time: 10, values: [2] });
+    const g = { timestamps: [10, 10], values: [null, null] as Array<number | null> };
+    expect(alignedSamples([g], 10)).toEqual({ time: 10, values: [null] });
+  });
   it('is undefined without samples', () => {
     expect(alignedSamples([{ timestamps: [], values: [] }], 1)).toBeUndefined();
   });
