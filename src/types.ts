@@ -45,6 +45,8 @@ export interface CellEntry {
   line?: SVGPathElement;
   /** Edge arrow heads: later paths with pointer-events="all". */
   arrows: SVGPathElement[];
+  /** Edge end markers drawn as an <ellipse> or <circle> (the dot of a bare end), with the end of the path that each closes. Computed once when the SVG is indexed. */
+  ends?: Array<{ el: SVGGraphicsElement; end: 'start' | 'end' }>;
   /** Label element: a <text>, the <g> around the <text> lines of a multi-line label, or a foreignObject. */
   label?: Element;
   /** Node only: the cell id of its icon (see adapter/portograph nodeIcons). */

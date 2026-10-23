@@ -1,4 +1,5 @@
 import { applyContract, attachLinkLabels, cellMetaFromAttrs, nodeIcons, nodeParts } from '../adapter/portograph';
+import { markerEnd } from './geometry';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
 
 const SHAPE_TAGS = new Set(['rect', 'path', 'ellipse', 'circle', 'polygon', 'image']);
@@ -88,6 +89,14 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
     // draw.io edge polylines carry fill="none" AND pointer-events="stroke"; stencil outlines have fill="none" only.
     const line = paths.find((p) => p.getAttribute('fill') === 'none' && p.getAttribute('pointer-events') === 'stroke');
     const arrows = line ? paths.filter((p) => p !== line && p.getAttribute('pointer-events') === 'all') : [];
+    // Only the dot of a bare end: its centre lies on the first or the last point of the path. A circular label
+    // background or a decoration on a waypoint is not an end marker.
+    const ends = line
+      ? ownDescendants(group, 'ellipse, circle').flatMap((el) => {
+          const end = el.closest('switch, foreignObject') ? undefined : markerEnd(line, el as SVGGraphicsElement);
+          return end ? [{ el: el as SVGGraphicsElement, end }] : [];
+        })
+      : [];
     let shape: SVGGraphicsElement | undefined;
     if (!line) {
       shape = ownDescendants(group, Array.from(SHAPE_TAGS).join(',')).find(
@@ -102,6 +111,7 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
       shape,
       line,
       arrows,
+      ends,
       label: label.el,
       original: {
         fill: shape?.style.fill,

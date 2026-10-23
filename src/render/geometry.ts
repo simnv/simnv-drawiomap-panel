@@ -334,3 +334,100 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
     },
   };
 }
+
+/* ---------- end markers: which end of an edge does a dot close ---------- */
+
+/** The matrix of one transform attribute. Undefined for a function that is not resolved here. */
+function parseTransform(value: string | null): Matrix | undefined {
+  let m = IDENTITY;
+  for (const fn of value?.match(/[a-z]+\s*\([^)]*\)/gi) ?? []) {
+    const [, name, args] = /^([a-z]+)\s*\(([^)]*)\)$/i.exec(fn) ?? [];
+    const n = (args ?? '')
+      .split(/[\s,]+/)
+      .filter(Boolean)
+      .map(Number);
+    if (!name || n.some((x) => !Number.isFinite(x))) {
+      return undefined;
+    }
+    let t: Matrix;
+    if (name === 'translate' && n.length >= 1) {
+      t = { ...IDENTITY, e: n[0], f: n[1] ?? 0 };
+    } else if (name === 'scale' && n.length >= 1) {
+      t = { ...IDENTITY, a: n[0], d: n[1] ?? n[0] };
+    } else if (name === 'matrix' && n.length === 6) {
+      t = { a: n[0], b: n[1], c: n[2], d: n[3], e: n[4], f: n[5] };
+    } else {
+      return undefined;
+    }
+    m = multiply(m, t);
+  }
+  return m;
+}
+
+/** Product of the transform attributes from `el` up to (not including) `stop`. Undefined when one is not resolved. */
+function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
+  let m = IDENTITY;
+  for (let cur: Element | null = el; cur && cur !== stop; cur = cur.parentElement) {
+    const t = parseTransform(cur.getAttribute('transform'));
+    if (!t) {
+      return undefined;
+    }
+    m = multiply(t, m);
+  }
+  return m;
+}
+
+/** True for a matrix that can be inverted: finite entries and a determinant that is not near zero. */
+function usable(m: Matrix): boolean {
+  const det = m.a * m.d - m.b * m.c;
+  return [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite) && Number.isFinite(det) && Math.abs(det) >= 1e-9;
+}
+
+/** The matrix that takes the user space of `el` into the user space of `line`. Undefined when it cannot be resolved. */
+function toLineSpace(line: SVGPathElement, el: SVGGraphicsElement): Matrix | undefined {
+  if (typeof el.getCTM === 'function' && typeof line.getCTM === 'function') {
+    const a = el.getCTM();
+    const b = line.getCTM();
+    if (a && b) {
+      return usable(a) && usable(b) ? multiply(invert(b), a) : undefined;
+    }
+  }
+  // jsdom has no getCTM: compose the transform attributes up to the nearest common ancestor.
+  let common: Element | null = line.parentElement;
+  while (common && !common.contains(el)) {
+    common = common.parentElement;
+  }
+  const up = localMatrix(el, common);
+  const down = localMatrix(line, common);
+  return up && down && usable(up) && usable(down) ? multiply(invert(down), up) : undefined;
+}
+
+/**
+ * Which end of the edge path an ellipse or circle closes: 'start' or 'end' when its centre, mapped into the user space
+ * of the path, lies within max(r, 3) + 2 of the first or the last point of the path. Anything else (the background of
+ * a label, a decoration on a waypoint) is undefined and is not an end marker.
+ */
+export function markerEnd(line: SVGPathElement, marker: SVGGraphicsElement): 'start' | 'end' | undefined {
+  const pts = parsePathPoints(line.getAttribute('d') ?? '');
+  if (pts.length < 2) {
+    return undefined;
+  }
+  const num = (name: string) => parseFloat(marker.getAttribute(name) ?? '');
+  const r = Math.max(num('r') || 0, num('rx') || 0, num('ry') || 0);
+  const m = toLineSpace(line, marker);
+  if (!m) {
+    return undefined;
+  }
+  const c = applyMatrix(m, { x: num('cx') || 0, y: num('cy') || 0 });
+  if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) {
+    return undefined;
+  }
+  const tol = Math.max(r, 3) + 2;
+  const dist = (p: Point) => Math.hypot(p.x - c.x, p.y - c.y);
+  const ds = dist(pts[0]);
+  const de = dist(pts[pts.length - 1]);
+  if (Math.min(ds, de) > tol) {
+    return undefined;
+  }
+  return de < ds ? 'end' : 'start';
+}

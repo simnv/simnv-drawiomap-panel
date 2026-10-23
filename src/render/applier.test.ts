@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
-import { applyPatches, markInteractive } from './applier';
+import { applyPatches, colourAlpha, markInteractive } from './applier';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
@@ -362,5 +362,182 @@ describe('applyPatches with a patched icon cell', () => {
     const prev = applyPatches(index, patches, new Set());
     applyPatches(index, patches, prev);
     expect((index.get('i1')!.shape as SVGElement).style.fill).toMatch(RED);
+  });
+});
+
+describe('applyPatches on the dot of a bare link end (bare-end-dot)', () => {
+  const ID = 'pg-link~dot-a-b';
+  const load = () => {
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/bare-end-dot.svg'), 'utf8');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(raw).svg));
+    const [start, end] = index.get(ID)!.ends!.map((e) => e.el as SVGElement);
+    return { index, entry: index.get(ID)!, start, end };
+  };
+  const link = (l: CellPatch['link']): PatchMap => new Map([[ID, patch(ID, { link: l })]]);
+  const AMBER = /ff8800|255, 136, 0/;
+  const BLUE = /0000ff|0, 0, 255/;
+
+  it('indexes the ellipses of the edge group as end markers', () => {
+    expect(load().entry.ends).toHaveLength(2);
+  });
+  it('paints each dot with the colour of the half at its end, fill and stroke', () => {
+    const { index, start, end } = load();
+    applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }), new Set());
+    expect(start.style.fill).toMatch(AMBER);
+    expect(start.style.stroke).toMatch(AMBER);
+    expect(end.style.fill).toMatch(BLUE);
+    // the end dot has stroke="none": no stroke is added
+    expect(end.style.stroke).toBe('');
+  });
+  it('paints both dots with the colour of the only half', () => {
+    const { index, start, end } = load();
+    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }), new Set());
+    expect(start.style.fill).toMatch(AMBER);
+    expect(end.style.fill).toMatch(AMBER);
+    prev = applyPatches(index, link({ b2a: ok({ color: '#0000ff' }) }), prev);
+    expect(start.style.fill).toMatch(BLUE);
+    expect(end.style.fill).toMatch(BLUE);
+  });
+  it('restores the original paint when the link has no patch any more', () => {
+    const { index, start, end } = load();
+    const before = [start, end].map((e) => [e.style.fill, e.style.stroke]);
+    const prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }), new Set());
+    applyPatches(index, new Map(), prev);
+    expect([start, end].map((e) => [e.style.fill, e.style.stroke])).toEqual(before);
+  });
+  it('restores the original paint when a refresh patch has no halves', () => {
+    const { index, start } = load();
+    const before = start.style.fill;
+    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }), new Set());
+    prev = applyPatches(index, link({}), prev);
+    expect(start.style.fill).toBe(before);
+  });
+});
+
+describe('end markers: which shapes count and how they are painted', () => {
+  const LINE = '<path d="M 10 30 L 200 30" fill="none" stroke="#333" stroke-width="2" pointer-events="stroke"/>';
+  const load = (inner: string, wrapper = '') => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><g data-cell-id="e"><g${wrapper}>${LINE}${inner}</g></g></svg>`;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+    return { index, entry: index.get('e')! };
+  };
+  const both = (): PatchMap =>
+    new Map([['e', patch('e', { link: { a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) } })]]);
+  const AMBER = /ff8800|255, 136, 0/;
+  const BLUE = /0000ff|0, 0, 255/;
+
+  it('indexes only a circle or ellipse that sits on an end of the path', () => {
+    const { entry } = load(
+      '<circle cx="105" cy="30" r="9" fill="#fff"/><ellipse cx="10" cy="30" rx="4" ry="4" fill="#333"/><circle cx="105" cy="60" r="4"/>'
+    );
+    expect(entry.ends).toHaveLength(1);
+    expect(entry.ends![0].el.getAttribute('cx')).toBe('10');
+  });
+  it('does not paint a circular label background in the middle of the edge', () => {
+    const { index, entry } = load(
+      '<circle id="bg" cx="105" cy="30" r="9" fill="#fff"/><ellipse cx="200" cy="30" rx="4" ry="4" fill="#333"/>'
+    );
+    applyPatches(index, both(), new Set());
+    expect(entry.group.querySelector<SVGElement>('#bg')!.style.fill).toBe('');
+    expect((entry.ends![0].el as SVGElement).style.fill).toMatch(BLUE);
+  });
+  it('assigns a marker with a translate to the end that it sits on', () => {
+    const { index, entry } = load('<circle cx="0" cy="0" r="4" fill="#333" transform="translate(200,30)"/>');
+    expect(entry.ends).toHaveLength(1);
+    applyPatches(index, both(), new Set());
+    expect((entry.ends![0].el as SVGElement).style.fill).toMatch(BLUE);
+  });
+  it('resolves a transform on the group of the edge for the path and the marker alike', () => {
+    const { index, entry } = load('<circle cx="10" cy="30" r="4" fill="#333"/>', ' transform="translate(0.5,0.5)"');
+    applyPatches(index, both(), new Set());
+    expect((entry.ends![0].el as SVGElement).style.fill).toMatch(AMBER);
+  });
+  it('does not paint a transparent fill and paints an inline-only stroke', () => {
+    const { index, entry } = load(
+      '<circle cx="10" cy="30" r="4" fill="none" style="stroke: #333"/><circle cx="200" cy="30" r="4" fill="transparent" fill-opacity="0" stroke="none"/>'
+    );
+    applyPatches(index, both(), new Set());
+    const [a, b] = entry.ends!.map((e) => e.el as SVGElement);
+    expect(a.style.stroke).toMatch(AMBER);
+    expect(a.style.fill).toBe('');
+    expect(b.style.fill).toBe('');
+    expect(b.style.stroke).toBe('');
+  });
+  it('restores the CSS priority of the original inline paint', () => {
+    const { index, entry } = load('<circle cx="10" cy="30" r="4" style="fill: #333 !important"/>');
+    const m = entry.ends![0].el as SVGElement;
+    const prev = applyPatches(index, both(), new Set());
+    expect(m.style.getPropertyPriority('fill')).toBe('important');
+    applyPatches(index, new Map(), prev);
+    expect(m.style.getPropertyValue('fill')).toMatch(/#333|51, 51, 51/);
+    expect(m.style.getPropertyPriority('fill')).toBe('important');
+  });
+});
+
+describe('colourAlpha', () => {
+  it.each([
+    ['none', 0],
+    ['transparent', 0],
+    ['rgb(255, 0, 0)', 1],
+    ['rgb(255 0 0)', 1],
+    ['rgba(255, 0, 0, 0)', 0],
+    ['rgba(255, 0, 0, 0.5)', 0.5],
+    ['rgb(255 0 0 / 0)', 0],
+    ['rgb(255 0 0 / 0%)', 0],
+    ['rgb(255 0 0 / 50%)', 0.5],
+    ['rgb(255 0 0 / none)', 0],
+    ['hsl(120, 100%, 50%)', 1],
+    ['hsla(120, 100%, 50%, 0)', 0],
+    ['hsl(120 100% 50% / 0)', 0],
+    ['hsl(120 100% 50% / 1)', 1],
+    ['#f00', 1],
+    ['#ff0000', 1],
+    ['#f000', 0],
+    ['#ff000000', 0],
+    ['#ff0000ff', 1],
+    ['red', 1],
+    ['url(#grad)', 1],
+    ['', 1],
+  ])('reads the alpha of %s as %s', (value, alpha) => {
+    expect(colourAlpha(value)).toBeCloseTo(alpha, 5);
+  });
+});
+
+describe('end markers: unusable geometry and cost', () => {
+  const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><g data-cell-id="e"><g><path d="M 10 30 L 200 30" fill="none" stroke="#333" pointer-events="stroke"/><circle cx="10" cy="30" r="4" fill="#333"/></g></g></svg>`;
+  const withCtm = (fn: () => SVGMatrix | null, run: () => void) => {
+    const proto = Element.prototype as unknown as { getCTM?: () => unknown };
+    proto.getCTM = fn as never;
+    try {
+      run();
+    } finally {
+      delete proto.getCTM;
+    }
+  };
+  const ident = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 } as SVGMatrix;
+  it('skips a marker whose matrix is singular or not finite', () => {
+    for (const m of [
+      { ...ident, a: 0, d: 0 },
+      { ...ident, e: NaN },
+      { ...ident, a: 1e-6, d: 1e-6 },
+    ] as SVGMatrix[]) {
+      withCtm(
+        () => m,
+        () => expect(buildCellIndex(mountSvg(document.createElement('div'), SVG)).get('e')!.ends).toHaveLength(0)
+      );
+    }
+  });
+  it('computes the end once at index time and never asks for a matrix while painting', () => {
+    const getCTM = vi.fn(() => ident);
+    withCtm(getCTM, () => {
+      const index = buildCellIndex(mountSvg(document.createElement('div'), SVG));
+      expect(index.get('e')!.ends).toEqual([expect.objectContaining({ end: 'start' })]);
+      getCTM.mockClear();
+      const link = { a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) };
+      const prev = applyPatches(index, new Map([['e', patch('e', { link })]]), new Set());
+      applyPatches(index, new Map([['e', patch('e', { link })]]), prev);
+      expect(getCTM).not.toHaveBeenCalled();
+      expect((index.get('e')!.ends![0].el as SVGElement).style.fill).toMatch(/ff8800|255, 136, 0/);
+    });
   });
 });
