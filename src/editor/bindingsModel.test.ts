@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateConfig, type DiagramConfigV2 } from '../model/config';
 import type { CellMeta } from '../types';
-import { buildBindingsList, filterBindings } from './bindingsModel';
+import { buildBindingsList, cellRows, filterBindings, problemsOf, rowMatches } from './bindingsModel';
 
 const cell = (id: string, kind: CellMeta['kind'] = 'node', labelText = ''): CellMeta => ({
   id,
@@ -148,18 +148,22 @@ describe('query-level diagnostics', () => {
     path: 'queries[0].source.datasource',
     message: 'Choose a datasource for this query or set defaultDatasource.',
   };
-  it('attach to every row that references the query', () => {
+  it('attach to the query row and to every row that references the query', () => {
     const list = buildBindingsList(config, cells, [missing]);
+    expect(list.queries[0].problems.map((p) => p.code)).toEqual(['missing-datasource']);
+    expect(list.queries[1].problems).toEqual([]);
     // q1 is used by the Nodes pattern and by the Load widget
     expect(list.patterns[0].problems.map((p) => p.code)).toEqual(['missing-datasource']);
     expect(list.widgets[0].problems.map((p) => p.code)).toEqual(['missing-datasource']);
     expect(list.widgets[1].problems.map((p) => p.code)).not.toContain('missing-datasource');
     expect(list.general).toEqual([]);
   });
-  it('go to the general problems when no row uses the query, and survive Problems only', () => {
+  it('stay with the query row when no row uses the query, and survive Problems only', () => {
     const list = buildBindingsList({ ...config, patterns: [], widgets: [] }, cells, [missing]);
-    expect(list.general.map((p) => p.code)).toEqual(['missing-datasource']);
-    expect(filterBindings(list, { text: 'zzz', problemsOnly: true }).general).toHaveLength(1);
+    expect(list.queries[0].problems.map((p) => p.code)).toEqual(['missing-datasource']);
+    expect(list.queries[0].uses).toBe(0);
+    expect(list.general).toEqual([]);
+    expect(filterBindings(list, { text: '', problemsOnly: true }).queries.map((r) => r.queryId)).toEqual(['q1']);
   });
   it('send a diagnostic without an owner to the general problems', () => {
     const list = buildBindingsList(config, cells, [
@@ -329,5 +333,73 @@ describe('filter text', () => {
     expect(filterBindings(list, { text: 'core router', problemsOnly: false }).patterns.map((r) => r.name)).toEqual([
       'Nodes',
     ]);
+  });
+});
+
+describe('query rows', () => {
+  const list = buildBindingsList(config, cells, []);
+  it('have the name, the id, the source kind and the use count', () => {
+    expect(list.queries.map((r) => [r.queryId, r.name, r.sourceKind, r.uses])).toEqual([
+      ['q1', 'One', 'panel', 2],
+      ['q2', 'Two', 'panel', 2],
+    ]);
+    expect(list.queries[0].key).toBe('query:0:q1');
+  });
+  it('match the filter by name, id and source kind', () => {
+    const rows = (text: string) => filterBindings(list, { text, problemsOnly: false }).queries.map((r) => r.queryId);
+    expect(rows('one')).toEqual(['q1']);
+    expect(rows('Q2')).toEqual(['q2']);
+    expect(rows('panel')).toEqual(['q1', 'q2']);
+    expect(rowMatches(list.queries[0], { text: 'datasource', problemsOnly: false })).toBe(false);
+  });
+});
+
+describe('problemsOf', () => {
+  it('lists every problem once, with the row that owns it', () => {
+    const missing = {
+      code: 'missing-datasource',
+      path: 'queries[0].source.datasource',
+      message: 'Choose a datasource for this query or set defaultDatasource.',
+    };
+    const list = buildBindingsList(config, cells, [
+      missing,
+      { code: 'invalid-config', path: '(root)', message: 'bad' },
+    ]);
+    const entries = problemsOf(list);
+    const codes = entries.map((e) => [e.problem.code, e.row?.key]);
+    expect(codes).toContainEqual(['missing-datasource', 'query:0:q1']);
+    expect(codes.filter(([code]) => code === 'missing-datasource')).toHaveLength(1);
+    expect(codes).toContainEqual(['invalid-config', undefined]);
+    // the diagram-only problems of the ghost pattern, the gone override and the lost widget
+    expect(entries.map((e) => e.row?.key)).toEqual(expect.arrayContaining(['pattern:1:ghost', 'override:1:gone']));
+    expect(new Set(entries.map((e) => e.key)).size).toBe(entries.length);
+  });
+  it('is empty without problems', () => {
+    expect(problemsOf(buildBindingsList({ ...config, patterns: [], overrides: [], widgets: [] }, cells, []))).toEqual(
+      []
+    );
+  });
+});
+
+describe('cellRows', () => {
+  const many = [
+    cell('core', 'node', 'Core router'),
+    cell('core-2', 'node', 'Second'),
+    cell('edge-core', 'node', ''),
+    cell('lan', 'node', 'The core LAN'),
+    cell('other', 'node', ''),
+    cell('Core', 'node', ''),
+  ];
+  it('puts the exact id first, then the prefix, then the contains match in the id or the label', () => {
+    expect(cellRows('core', many).map((c) => c.id)).toEqual(['core', 'Core', 'core-2', 'edge-core', 'lan']);
+  });
+  it('is case-insensitive and ignores spaces around the text', () => {
+    expect(cellRows('  LAN ', many).map((c) => c.id)).toEqual(['lan']);
+  });
+  it('finds nothing for an empty text or an unknown text and returns all matches without a limit', () => {
+    expect(cellRows('', many)).toEqual([]);
+    expect(cellRows('zzz', many)).toEqual([]);
+    const lots = Array.from({ length: 50 }, (_, i) => cell(`n${i}`));
+    expect(cellRows('n', lots)).toHaveLength(50);
   });
 });

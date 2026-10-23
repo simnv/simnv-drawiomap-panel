@@ -1,13 +1,11 @@
-import { editorField, chooseOption, selectElement } from './testUtils';
-import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { editorField, chooseOption, openQueryRow, selectStageCell } from './testUtils';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
-import { BindingEditor } from './BindingEditor';
-import { PanelQueryContext } from '../query/panel';
 import { createQueryController } from '../query/controller';
 import { DEFAULT_QUERY_POLICY, type QueryContext, type QuerySnapshot } from '../query/types';
 import { buildCellIndex, cellMetas } from '../render/svgStage';
+import { renderEditor, svgOf } from './editorHarness';
 import { binding, nativeQuery } from '../fixtures/authoring-config';
 import type { DiagramConfigV2 } from '../model/config';
 vi.hoisted(() => {
@@ -22,9 +20,6 @@ vi.mock('@grafana/runtime', async (original) => ({
   getDataSourceSrv: () => ({ get: async () => ({ components: {} }), getInstanceSettings: () => undefined }),
 }));
 function setup() {
-  const host = document.createElement('div');
-  host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="device-2"><rect/></g></svg>';
-  const cells = buildCellIndex(host.querySelector('svg')!);
   const config: DiagramConfigV2 = {
     version: 2,
     defaultDatasource: { uid: 'ds' },
@@ -86,23 +81,27 @@ function setup() {
     intervalMs: 1000,
     generation: 1,
   };
-  const save = vi.fn();
-  const prepared = vi.fn();
-  const editor = (nextContext = context, nextCells = cells) => (
-    <PanelQueryContext.Provider value={{ controller, context: nextContext }}>
-      <BindingEditor
-        config={config}
-        cells={nextCells}
-        data={{ state: LoadingState.Done, series: [], timeRange: context.timeRange }}
-        onSave={save}
-        onPatternPreview={prepared}
-      />
-    </PanelQueryContext.Provider>
-  );
-  const view = render(editor());
-  selectElement('device-1');
+  const view = renderEditor({
+    config,
+    svg: svgOf('device-1', 'device-2'),
+    data: { state: LoadingState.Done, series: [], timeRange: context.timeRange },
+    service: { controller, context },
+  });
+  selectStageCell('device-1');
   chooseOption('Edit scope', 'All elements matching this pattern');
-  return { controller, execute, pending, context, save, prepared, view, editor };
+  // The popup watches the shape bindings of every cell and the hover rows of the open one on its own. These requests
+  // end here, so that the limit of the controller does not hold back the run of the full preview.
+  const auto = pending.length;
+  const automatic = pending.slice(0, auto);
+  act(() => {
+    for (const request of automatic) {
+      request.emit(ready(request.ref === 'HOVER' ? 12 : request.cell === 'device-1' ? 11 : 21));
+    }
+  });
+  /** The requests that only the full preview started: the hover row and the chart of device-2. */
+  const explicit = () => pending.slice(auto);
+  const rerenderWith = (nextContext: QueryContext) => view.rerenderService({ controller, context: nextContext });
+  return { controller, execute, pending, automatic, explicit, context, save: view.save, view, rerenderWith };
 }
 function ready(value: number): QuerySnapshot {
   return {
@@ -120,99 +119,82 @@ function ready(value: number): QuerySnapshot {
   };
 }
 describe('explicit full pattern preview', () => {
-  it('loads every binding scope only on explicit action, reports progress and retains distinct prepared values', async () => {
-    const { execute, pending, prepared, controller } = setup();
+  it('loads only the missing binding scopes on explicit action, reports progress and retains distinct prepared values', async () => {
+    const { execute, pending, automatic, explicit, controller } = setup();
+    expect(automatic.map((p) => `${p.cell}:${p.ref}`).sort()).toEqual([
+      'device-1:HOVER',
+      'device-1:SHAPE',
+      'device-2:SHAPE',
+    ]);
     fireEvent.change(editorField('Label template'), { target: { value: 'Draft ${cell.key}' } });
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(3);
     fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
-    expect(editorField('Pattern preview progress').textContent).toContain('0 / 5');
-    expect(execute).toHaveBeenCalledTimes(4);
+    // The run reuses the three results that the popup has, and asks for the two scopes that it does not have.
+    expect(editorField('Pattern preview progress').textContent).toContain('3 / 5');
+    expect(execute).toHaveBeenCalledTimes(5);
     await act(async () => {
-      pending[0].emit(ready(11));
-      pending[1].emit(ready(12));
-      pending[2].emit(ready(21));
-      pending[3].emit({ state: 'error', message: 'Datasource unavailable' });
-      pending[4].emit(ready(23));
+      explicit()[0].emit({ state: 'error', message: 'Datasource unavailable' });
+      explicit()[1].emit(ready(23));
     });
     expect(execute).toHaveBeenCalledTimes(5);
-    expect(pending.map((p) => `${p.cell}:${p.ref}`)).toEqual([
-      'device-1:SHAPE',
-      'device-1:HOVER',
-      'device-2:SHAPE',
-      'device-2:HOVER',
-      'device-2:WIDGET',
-    ]);
+    expect(explicit().map((p) => `${p.cell}:${p.ref}`)).toEqual(['device-2:HOVER', 'device-2:WIDGET']);
     expect(editorField('Pattern preview progress').textContent).toContain('5 / 5');
     expect(editorField('Metric resolution preview').textContent).toContain('device-1: resolved');
     expect(editorField('Metric resolution preview').textContent).toContain('device-2: failed');
     expect(editorField('Metric resolution preview').textContent).toContain('Datasource unavailable');
     expect(editorField('Hover row preview').textContent).toContain('12');
-    const results = prepared.mock.calls.at(-1)?.[0].previews;
-    expect(
-      results.find((p: { cellId: string; query: { id: string } }) => p.cellId === 'device-2' && p.query.id === 'shape')
-        .snapshot.frames[0].fields[1].values[0]
-    ).toBe(21);
-    expect(pending.every((p) => p.cancel.mock.calls.length === 1)).toBe(true);
+    // The one-shot requests end with the run. The other requests are still watched by the popup.
+    expect(explicit().every((p) => p.cancel.mock.calls.length === 1)).toBe(true);
+    expect(pending.slice(0, 3).every((p) => p.cancel.mock.calls.length === 0)).toBe(true);
     controller.dispose();
   });
-  it.each([
-    'edit',
-    'query',
-    'scope',
-    'pattern',
-    'selector',
-    'select',
-    'context',
-    'identities',
-    'cancel',
-    'apply',
-    'unmount',
-  ])('releases a pending run on %s and rejects uncancellable late results', async (action) => {
-    const s = setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
-    const old = [...s.pending];
-    if (action === 'edit') {
-      fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } });
+  it.each(['edit', 'query', 'scope', 'pattern', 'selector', 'select', 'context', 'cancel', 'apply', 'unmount'])(
+    'releases a pending run on %s and rejects uncancellable late results',
+    async (action) => {
+      const s = setup();
+      fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
+      const old = [...s.explicit()];
+      expect(old).toHaveLength(2);
+      if (action === 'edit') {
+        fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } });
+      }
+      if (action === 'query') {
+        openQueryRow('shape');
+        fireEvent.change(editorField('Query name'), { target: { value: 'Changed query' } });
+      }
+      if (action === 'scope') {
+        chooseOption('Edit scope', 'This element');
+      }
+      if (action === 'pattern') {
+        chooseOption('Shared pattern', 'Alternate');
+      }
+      if (action === 'selector') {
+        fireEvent.change(editorField('Pattern element IDs'), { target: { value: 'device-1' } });
+      }
+      if (action === 'select') {
+        selectStageCell('device-2');
+      }
+      if (action === 'context') {
+        s.rerenderWith({ ...s.context, generation: 2 });
+      }
+      if (action === 'cancel') {
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+      }
+      if (action === 'apply') {
+        fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+      }
+      if (action === 'unmount') {
+        s.view.unmount();
+      }
+      const before = s.execute.mock.calls.length;
+      await act(async () => old.forEach((entry) => entry.emit(ready(999))));
+      expect(old.every((entry) => entry.cancel.mock.calls.length === 1)).toBe(true);
+      expect(s.execute.mock.calls.length).toBe(before);
+      expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
+      expect(screen.queryByLabelText('Hover row preview')?.textContent ?? '').not.toContain('999');
+      s.controller.dispose();
     }
-    if (action === 'query') {
-      fireEvent.change(editorField('Query name'), { target: { value: 'Changed query' } });
-    }
-    if (action === 'scope') {
-      chooseOption('Edit scope', 'This element');
-    }
-    if (action === 'pattern') {
-      chooseOption('Shared pattern', 'Alternate');
-    }
-    if (action === 'selector') {
-      fireEvent.change(editorField('Pattern element IDs'), { target: { value: 'device-1' } });
-    }
-    if (action === 'select') {
-      selectElement('device-2');
-    }
-    if (action === 'context') {
-      s.view.rerender(s.editor({ ...s.context, generation: 2 }));
-    }
-    if (action === 'identities') {
-      s.view.rerender(s.editor(s.context, new Map()));
-    }
-    if (action === 'cancel') {
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
-    }
-    if (action === 'apply') {
-      fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
-    }
-    if (action === 'unmount') {
-      s.view.unmount();
-    }
-    const published = s.prepared.mock.calls.length;
-    await act(async () => old.forEach((entry) => entry.emit(ready(999))));
-    expect(old.every((entry) => entry.cancel.mock.calls.length === 1)).toBe(true);
-    expect(s.execute).toHaveBeenCalledTimes(4);
-    expect(s.prepared).toHaveBeenCalledTimes(published);
-    expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
-    expect(screen.queryByLabelText('Hover row preview')?.textContent ?? '').not.toContain('999');
-    s.controller.dispose();
-  });
+  );
 });
 
 // Controller-boundary scenarios use the same public run as the inspector action.
@@ -558,15 +540,12 @@ it.each(['missing', 'ambiguous'])(
     const s = setup();
     fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
     await act(async () => {
-      s.pending[0].emit(ready(11));
-      s.pending[1].emit(ready(12));
-      s.pending[2].emit(ready(21));
       const snapshot = ready(22);
       if (failure === 'ambiguous' && snapshot.state === 'ready') {
         snapshot.frames[0].fields.push({ name: 'Other', type: FieldType.number, config: {}, values: [33] });
       }
-      s.pending[3].emit(failure === 'missing' ? { state: 'empty', fetchedAt: 1, fromCache: false } : snapshot);
-      s.pending[4].emit(ready(23));
+      s.explicit()[0].emit(failure === 'missing' ? { state: 'empty', fetchedAt: 1, fromCache: false } : snapshot);
+      s.explicit()[1].emit(ready(23));
     });
     const preview = editorField('Affected metric resolution').textContent;
     expect(preview).toContain('device-1: resolved');
@@ -582,11 +561,8 @@ it('applies a completed full preview once, discards prepared results, and makes 
   fireEvent.change(editorField('Label template'), { target: { value: 'Applied pattern' } });
   fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
   await act(async () => {
-    s.pending[0].emit(ready(11));
-    s.pending[1].emit(ready(12));
-    s.pending[2].emit(ready(21));
-    s.pending[3].emit(ready(22));
-    s.pending[4].emit(ready(23));
+    s.explicit()[0].emit(ready(22));
+    s.explicit()[1].emit(ready(23));
   });
   expect(editorField('Affected metric resolution').textContent).toContain('device-2: resolved');
   expect(s.save).not.toHaveBeenCalled();
@@ -594,8 +570,6 @@ it('applies a completed full preview once, discards prepared results, and makes 
   expect(s.save).toHaveBeenCalledTimes(1);
   expect(s.save.mock.calls[0][0].patterns.at(-1).display.label).toBe('Applied pattern');
   expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
-  expect(editorField('Affected metric resolution').textContent).toContain('device-2: unvalidated');
-  expect(s.prepared.mock.calls.at(-1)?.[0]).toBeUndefined();
   fireEvent.change(editorField('Label template'), { target: { value: 'Discard me' } });
   fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
   expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied pattern');

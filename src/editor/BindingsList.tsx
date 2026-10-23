@@ -1,50 +1,97 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
-import { Checkbox, ConfirmModal, Icon, IconButton, Input, useStyles2 } from '@grafana/ui';
+import { Button, ConfirmModal, Icon, IconButton, useStyles2 } from '@grafana/ui';
+import type { CellMeta } from '../types';
 import {
+  cellRows,
   filterBindings,
+  problemsOf,
   type BindingRow,
+  type BindingsFilter,
   type BindingsList as BindingsListModel,
   type OverrideRow,
   type PatternRow,
+  type ProblemEntry,
+  type QueryRow,
   type RowProblem,
   type WidgetRow,
 } from './bindingsModel';
 import { EditorSection } from './EditorLayout';
 
+/** The Cells group shows this many rows, then "Show more" adds as many again. */
+export const CELLS_PAGE = 20;
+
 export interface BindingsListProps {
   list: BindingsListModel;
-  /** The panel has legacy rules and no V2 config. */
-  legacyRules?: number;
+  /** The cells of the diagram. The Cells group lists the ones that the filter text finds. */
+  cells: CellMeta[];
+  filter: BindingsFilter;
+  /** The key of the selected row (`BindingRow.key`, or `cell:<id>`). The row gets aria-current. */
+  selectedKey?: string;
   onSelectPattern: (row: PatternRow) => void;
   onSelectCell: (cellId: string) => void;
+  onSelectQuery: (queryId: string) => void;
+  onSelectProblem: (entry: ProblemEntry) => void;
   onDeleteOverride: (cellId: string) => void;
   onDeleteWidget: (id: string) => void;
   /** The cells to mark on the diagram while a pattern row is hovered or focused. */
   onHighlight?: (cellIds: string[]) => void;
 }
 
+/** The visible name of a row. */
+export const rowName = (row: BindingRow): string =>
+  row.kind === 'pattern'
+    ? row.name
+    : row.kind === 'override'
+      ? row.label
+        ? `${row.cellId} (${row.label})`
+        : row.cellId
+      : row.kind === 'widget'
+        ? row.label
+        : row.name;
 const problemText = (problem: RowProblem) =>
   `${problem.cellId ? `${problem.cellId}: ` : ''}${problem.message} (${problem.path})`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function BindingsList({
   list,
-  legacyRules = 0,
+  cells,
+  filter,
+  selectedKey,
   onSelectPattern,
   onSelectCell,
+  onSelectQuery,
+  onSelectProblem,
   onDeleteOverride,
   onDeleteWidget,
   onHighlight,
 }: BindingsListProps) {
   const styles = useStyles2(getStyles);
-  const [text, setText] = useState('');
-  const [problemsOnly, setProblemsOnly] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<BindingRow>();
   const [hot, setHot] = useState<string>();
+  const { text, problemsOnly } = filter;
   const filtered = useMemo(() => filterBindings(list, { text, problemsOnly }), [list, text, problemsOnly]);
+  const problems = useMemo(() => {
+    const needle = text.trim().toLowerCase();
+    return problemsOf(list).filter(
+      ({ row, problem }) =>
+        !needle ||
+        !row ||
+        [rowName(row), problem.message, problem.path, problem.cellId ?? ''].some((part) =>
+          part.toLowerCase().includes(needle)
+        )
+    );
+  }, [list, text]);
+  const [cellLimit, setCellLimit] = useState(CELLS_PAGE);
+  const found = useMemo(() => cellRows(text, cells), [text, cells]);
+  // A new filter text starts at the first page again (state adjustment during render).
+  const [cellsText, setCellsText] = useState(text);
+  if (cellsText !== text) {
+    setCellsText(text);
+    setCellLimit(CELLS_PAGE);
+  }
   // The marks on the diagram follow the hovered pattern row. They end with the row: a filter, a refresh or an unmount.
   const hotRow = filtered.patterns.find((row) => row.key === hot);
   const hotCells = hotRow?.matched.join('\n');
@@ -52,7 +99,6 @@ export function BindingsList({
     onHighlight?.(hotCells ? hotCells.split('\n') : []);
   }, [hotCells, onHighlight]);
   useEffect(() => () => onHighlight?.([]), [onHighlight]);
-  const total = list.patterns.length + list.overrides.length + list.widgets.length;
   const toggle = (key: string) =>
     setExpanded((old) => {
       const next = new Set(old);
@@ -83,6 +129,7 @@ export function BindingsList({
             type="button"
             className={styles.main}
             aria-label={`Edit ${row.kind} ${name}`}
+            aria-current={row.key === selectedKey ? 'true' : undefined}
             onClick={onOpen}
             onMouseEnter={() => row.kind === 'pattern' && setHot(row.key)}
             onMouseLeave={() => setHot(undefined)}
@@ -151,43 +198,47 @@ export function BindingsList({
       () => (row.exists ? onSelectCell(row.anchorCellId) : toggle(row.key)),
       () => onDeleteWidget(row.widgetId)
     );
+  const queryRow = (row: QueryRow) =>
+    renderRow(
+      row,
+      row.name,
+      [
+        row.queryId,
+        row.sourceKind,
+        row.uses ? `used by ${plural(row.uses, 'binding')}` : 'unused',
+        plural(row.problems.length, 'problem'),
+      ].join(' · '),
+      () => onSelectQuery(row.queryId)
+    );
   const heading = (title: string, shown: number, all: number) =>
     `${title} (${shown === all ? all : `${shown} of ${all}`})`;
-  const inputId = useId();
 
   return (
     <section aria-label="All bindings" className={styles.root}>
-      {legacyRules > 0 && total === 0 && (
-        <p>
-          This panel uses {plural(legacyRules, 'legacy rule')}. Edit them in the Rules editor of the panel options.
-          Pattern, override and chart bindings appear here after you create them.
-        </p>
-      )}
-      {list.general.length > 0 && (
-        <div role="alert" aria-label="General problems" className={styles.general}>
-          <strong>General problems ({list.general.length})</strong>
-          <ul>
-            {list.general.map((problem, i) => (
-              <li key={i}>{problemText(problem)}</li>
+      <EditorSection title={`Problems (${problems.length})`} defaultOpen>
+        {problems.length ? (
+          <ul className={styles.list} aria-label="Problems">
+            {problems.map((entry) => (
+              <li key={entry.key} className={styles.item}>
+                <button
+                  type="button"
+                  className={styles.main}
+                  aria-label={`Show problem ${entry.row ? `of ${rowName(entry.row)}` : 'without an owner'}: ${entry.problem.message}`}
+                  onClick={() => onSelectProblem(entry)}
+                >
+                  <span className={styles.title}>
+                    <Icon name="exclamation-triangle" className={styles.warn} />
+                    {entry.row ? rowName(entry.row) : 'General'}
+                  </span>
+                  <span className={styles.summary}>{problemText(entry.problem)}</span>
+                </button>
+              </li>
             ))}
           </ul>
-        </div>
-      )}
-      <label htmlFor={inputId} className={styles.label}>
-        Filter bindings
-      </label>
-      <Input
-        id={inputId}
-        value={text}
-        placeholder="Name, cell or query"
-        onChange={(e) => setText(e.currentTarget.value)}
-      />
-      <Checkbox
-        label="Problems only"
-        value={problemsOnly}
-        onChange={(e) => setProblemsOnly(e.currentTarget.checked)}
-        className={styles.check}
-      />
+        ) : (
+          <p>No problems.</p>
+        )}
+      </EditorSection>
       <EditorSection title={heading('Patterns', filtered.patterns.length, list.patterns.length)} defaultOpen>
         {filtered.patterns.length ? (
           <ul className={styles.list} aria-label="Patterns">
@@ -215,6 +266,46 @@ export function BindingsList({
           <p>{list.widgets.length ? 'No widget matches the filter.' : 'No widgets.'}</p>
         )}
       </EditorSection>
+      <EditorSection title={heading('Queries', filtered.queries.length, list.queries.length)} defaultOpen>
+        {filtered.queries.length ? (
+          <ul className={styles.list} aria-label="Queries">
+            {filtered.queries.map(queryRow)}
+          </ul>
+        ) : (
+          <p>{list.queries.length ? 'No query matches the filter.' : 'No queries.'}</p>
+        )}
+      </EditorSection>
+      {text.trim() !== '' && (
+        <EditorSection title={`Cells (${found.length})`} defaultOpen>
+          {found.length ? (
+            <>
+              <ul className={styles.list} aria-label="Cells">
+                {found.slice(0, cellLimit).map((cell) => (
+                  <li key={cell.id} className={styles.item}>
+                    <button
+                      type="button"
+                      className={styles.main}
+                      aria-label={`Select cell ${cell.id}`}
+                      aria-current={`cell:${cell.id}` === selectedKey ? 'true' : undefined}
+                      onClick={() => onSelectCell(cell.id)}
+                    >
+                      <span className={styles.title}>{cell.id}</span>
+                      {cell.labelText ? <span className={styles.summary}>{cell.labelText}</span> : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {found.length > cellLimit && (
+                <Button variant="secondary" size="sm" onClick={() => setCellLimit((limit) => limit + CELLS_PAGE)}>
+                  Show more
+                </Button>
+              )}
+            </>
+          ) : (
+            <p>No cell matches the filter.</p>
+          )}
+        </EditorSection>
+      )}
       <ConfirmModal
         isOpen={!!pending}
         title={pending?.kind === 'widget' ? 'Delete widget' : 'Delete override'}

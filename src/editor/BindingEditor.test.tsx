@@ -1,14 +1,11 @@
-import { editorField, chooseOption, openSection, selectElement } from './testUtils';
-import React from 'react';
+import { editorField, chooseOption, filterBindings, openQueryRow, openSection, selectStageCell } from './testUtils';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { buildCellIndex } from '../render/svgStage';
-import { BindingEditor } from './BindingEditor';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { DiagramConfigV2 } from '../model/config';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
 import { createQueryController } from '../query/controller';
-import { PanelQueryContext } from '../query/panel';
 import { exportPatternDocument } from './draft';
+import { renderEditor, svgOf } from './editorHarness';
 vi.hoisted(() => {
   if (!window.localStorage) {
     Object.defineProperty(window, 'localStorage', { value: { getItem: () => null, setItem() {}, removeItem() {} } });
@@ -29,88 +26,79 @@ const config: DiagramConfigV2 = {
     { id: 'devices', name: 'Devices', select: { ids: ['device-1', 'device-2'] }, display: { label: 'Shared' } },
   ],
 };
+const applyButton = () => screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement;
+const stageCell = (id: string) => screen.getByTestId('dmap-popup-stage').querySelector(`g[data-cell-id="${id}"]`)!;
+const queryContext = {
+  timeRange: getDefaultTimeRange(),
+  timeZone: 'utc',
+  scopedVars: {},
+  refreshMs: 0,
+  intervalMs: 1000,
+  generation: 1,
+};
 function setup() {
-  const host = document.createElement('div');
-  host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="device-2"><rect/></g></svg>';
-  const cells = buildCellIndex(host.querySelector('svg')!);
-  const save = vi.fn();
-  render(<BindingEditor config={config} cells={cells} onSave={save} />);
-  return { cells, save };
+  return renderEditor({ config, svg: svgOf('device-1', 'device-2') });
 }
 describe('binding inspector', () => {
   it.each([false, true])(
-    'preserves native JSON text and validation across collapse with invalid=%s',
+    'keeps native JSON validation in the query pane and drops the typed text when the pane closes with invalid=%s',
     async (invalid) => {
-      const timeRange = getDefaultTimeRange();
       const execute = vi.fn();
       const controller = createQueryController(execute);
-      const context = { timeRange, timeZone: 'utc', scopedVars: {}, refreshMs: 0, intervalMs: 1000, generation: 1 };
-      render(
-        <PanelQueryContext.Provider value={{ controller, context }}>
-          <BindingEditor
-            config={{
-              ...config,
-              defaultDatasource: { uid: 'test' },
-              queries: [
-                { id: 'q', name: 'Native', source: { kind: 'datasource', target: { refId: 'D' }, parameters: {} } },
-              ],
-            }}
-            cells={new Map()}
-            data={{ state: LoadingState.Done, series: [], timeRange }}
-            onSave={vi.fn()}
-          />
-        </PanelQueryContext.Provider>
-      );
+      renderEditor({
+        config: {
+          ...config,
+          defaultDatasource: { uid: 'test' },
+          queries: [
+            { id: 'q', name: 'Native', source: { kind: 'datasource', target: { refId: 'D' }, parameters: {} } },
+          ],
+        },
+        svg: svgOf('device-1', 'device-2'),
+        service: { controller, context: queryContext },
+      });
       expect(screen.queryByRole('textbox', { name: 'Query name' })).toBeNull();
-      openSection('Named queries');
+      openQueryRow('Native');
       await screen.findByText(/No supported native query editor/);
       const text = invalid ? '{invalid' : '{"refId":"D","expr":"typed draft"}';
       fireEvent.change(editorField('Native target JSON'), { target: { value: text } });
       if (invalid) {
         fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
-      }
-      fireEvent.click(screen.getByRole('button', { name: 'Named queries' }));
-      expect(screen.queryByRole('textbox', { name: 'Query name' })).toBeNull();
-      openSection('Named queries');
-      expect((editorField('Native target JSON') as HTMLTextAreaElement).value).toBe(text);
-      expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(invalid);
-      if (invalid) {
+        expect(applyButton().disabled).toBe(true);
         expect(screen.getByRole('region', { name: 'Query Native' }).textContent).toContain(
           'Invalid native target JSON'
         );
         fireEvent.change(editorField('Native target JSON'), { target: { value: '{"refId":"D"}' } });
         fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
-        expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(false);
+        expect(applyButton().disabled).toBe(false);
+        fireEvent.change(editorField('Native target JSON'), { target: { value: '{invalid' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+        expect(applyButton().disabled).toBe(true);
       }
+      // Leaving the pane drops the typed text. It never reached the draft, so it does not block Apply.
+      selectStageCell('device-1');
+      expect(screen.queryByRole('region', { name: 'Query Native' })).toBeNull();
+      expect(applyButton().disabled).toBe(false);
+      openQueryRow('Native');
+      expect((editorField('Native target JSON') as HTMLTextAreaElement).value).toBe(
+        JSON.stringify({ refId: 'D' }, null, 2)
+      );
       expect(execute).not.toHaveBeenCalled();
       controller.dispose();
     }
   );
-  it('searches elements in a compact selector and focuses the chosen identity', () => {
+  it('finds an element with the list filter and focuses the chosen identity', () => {
     setup();
-    const selector = screen.getByRole('combobox', { name: 'Diagram element' });
-    expect(screen.queryByRole('button', { name: 'Select device-1' })).toBeNull();
-    fireEvent.change(selector, { target: { value: 'device-2' } });
-    fireEvent.keyDown(selector, { key: 'ArrowDown' });
-    expect(screen.queryByRole('option', { name: 'device-1' })).toBeNull();
-    fireEvent.click(screen.getByRole('option', { name: 'device-2' }));
+    expect(screen.queryByRole('button', { name: 'Select cell device-1' })).toBeNull();
+    filterBindings('device-2');
+    expect(screen.queryByRole('button', { name: 'Select cell device-1' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Select cell device-2' }));
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'device-2 bindings' }));
     expect(screen.getByRole('combobox', { name: 'Edit scope' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Select cell device-2' }).getAttribute('aria-current')).toBe('true');
   });
   it('previews portable conflicts and stages an import without query execution, then cancels or applies', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="region"><rect width="180" height="70"/></g></svg>';
-    const cells = buildCellIndex(host.querySelector('svg')!);
     const execute = vi.fn();
     const controller = createQueryController(execute);
-    const context = {
-      timeRange: getDefaultTimeRange(),
-      timeZone: 'utc',
-      scopedVars: {},
-      refreshMs: 0,
-      intervalMs: 1000,
-      generation: 1,
-    };
     const source: DiagramConfigV2 = {
       ...config,
       patterns: [],
@@ -139,12 +127,11 @@ describe('binding inspector', () => {
       defaultDatasource: { uid: 'destination' },
       queries: [{ id: 'q', name: 'Duplicated name', source: { kind: 'panel', refId: 'Z' } }],
     };
-    const save = vi.fn();
-    render(
-      <PanelQueryContext.Provider value={{ controller, context }}>
-        <BindingEditor config={destination} cells={cells} onSave={save} />
-      </PanelQueryContext.Provider>
-    );
+    const { save } = renderEditor({
+      config: destination,
+      svg: svgOf('region'),
+      service: { controller, context: queryContext },
+    });
     fireEvent.change(editorField('Pattern document'), {
       target: { value: JSON.stringify(exportPatternDocument(source)) },
     });
@@ -161,11 +148,11 @@ describe('binding inspector', () => {
     expect(execute).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].widgets).toEqual([]);
     fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
     fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[1][0].widgets[0]).toMatchObject({ anchorCellId: 'region', binding: { queryId: 'q-copy' } });
     expect(save.mock.calls[1][0].queries[1].source.datasource).toEqual({ uid: 'source' });
     expect(execute).not.toHaveBeenCalled();
@@ -175,26 +162,17 @@ describe('binding inspector', () => {
     controller.dispose();
   });
   it('opts chart and value/history hover rows into sample freshness and blocks invalid cadence', () => {
-    const { cells } = (() => {
-      const host = document.createElement('div');
-      host.innerHTML = '<svg><g data-cell-id="region"><rect width="180" height="70"/></g></svg>';
-      return { cells: buildCellIndex(host.querySelector('svg')!) };
-    })();
-    const save = vi.fn();
-    render(
-      <BindingEditor
-        config={{ ...config, patterns: [], queries: [{ id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } }] }}
-        cells={cells}
-        onSave={save}
-      />
-    );
-    selectElement('region');
+    const { save } = renderEditor({
+      config: { ...config, patterns: [], queries: [{ id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } }] },
+      svg: svgOf('region'),
+    });
+    selectStageCell('region');
     fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
     expect((editorField('Chart check sample freshness') as HTMLInputElement).checked).toBe(false);
     fireEvent.click(editorField('Chart check sample freshness'));
     fireEvent.change(editorField('Chart expected sample interval ms'), { target: { value: '2000' } });
     fireEvent.change(editorField('Chart stale after ms'), { target: { value: '1000' } });
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(applyButton().disabled).toBe(true);
     fireEvent.change(editorField('Chart stale after ms'), { target: { value: '6000' } });
     for (const [index, kind] of ['value', 'history'].entries()) {
       openSection('Hover rows');
@@ -206,21 +184,18 @@ describe('binding inspector', () => {
       });
       fireEvent.change(editorField(`Hover row ${index + 1} stale after ms`), { target: { value: '3000' } });
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].widgets[0].freshness).toEqual({ expectedIntervalMs: 2000, staleAfterMs: 6000 });
     expect(save.mock.calls[0][0].overrides[0].display.hover.rows.map((row: any) => row.freshness)).toEqual([
       { expectedIntervalMs: 1000, staleAfterMs: 3000 },
       { expectedIntervalMs: 1000, staleAfterMs: 3000 },
     ]);
     fireEvent.click(editorField('Chart check sample freshness'));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[1][0].widgets[0]).not.toHaveProperty('freshness');
-  });
+    // This case makes about forty edits and re-renders the whole popup for each; allow the time.
+  }, 20000);
   it('assigns an ordinary rectangle to a named chart query, persists its identity and removes it explicitly', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="plain-rectangle"><rect width="180" height="70"/></g></svg>';
-    const cells = buildCellIndex(host.querySelector('svg')!);
-    const save = vi.fn();
     const chartConfig: DiagramConfigV2 = {
       ...config,
       patterns: [],
@@ -229,8 +204,8 @@ describe('binding inspector', () => {
         { id: 'cpu-id', name: 'Загрузка α', source: { kind: 'panel', refId: 'A' } },
       ],
     };
-    const view = render(<BindingEditor config={chartConfig} cells={cells} onSave={save} />);
-    selectElement('plain-rectangle');
+    const first = renderEditor({ config: chartConfig, svg: svgOf('plain-rectangle') });
+    selectStageCell('plain-rectangle');
     fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
     chooseOption('Chart query', 'Загрузка α');
     chooseOption('Chart kind', 'Bar gauge');
@@ -239,9 +214,9 @@ describe('binding inspector', () => {
     fireEvent.change(editorField('Chart minimum'), { target: { value: '0' } });
     fireEvent.change(editorField('Chart maximum'), { target: { value: '100' } });
     fireEvent.change(editorField('Chart drilldown URL'), { target: { value: '/d/cpu' } });
-    expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
-    const persisted = JSON.parse(JSON.stringify(save.mock.calls[0][0])) as DiagramConfigV2;
+    expect(first.save).not.toHaveBeenCalled();
+    fireEvent.click(applyButton());
+    const persisted = JSON.parse(JSON.stringify(first.save.mock.calls[0][0])) as DiagramConfigV2;
     expect(persisted.widgets).toEqual([
       expect.objectContaining({
         anchorCellId: 'plain-rectangle',
@@ -254,56 +229,42 @@ describe('binding inspector', () => {
         binding: { queryId: 'cpu-id', match: {}, reducer: 'last' },
       }),
     ]);
-    view.unmount();
-    render(<BindingEditor config={persisted} cells={new Map()} onSave={save} />);
+    first.unmount();
+    const second = renderEditor({ config: persisted, svg: svgOf() });
     expect(screen.getByRole('alert').textContent).toContain('plain-rectangle');
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(applyButton().disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Remove chart Процессор 🚀' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
-    expect(save.mock.calls[1][0].widgets).toEqual([]);
+    fireEvent.click(applyButton());
+    expect(second.save.mock.calls[0][0].widgets).toEqual([]);
   });
   it('focuses the selected identity and defaults to this-element scope', () => {
     setup();
-    selectElement('device-1');
+    selectStageCell('device-1');
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'device-1 bindings' }));
     expect(screen.getByText('This element')).toBeTruthy();
     openSection('Element details');
     expect(screen.getByText('Patterns: Devices')).toBeTruthy();
   });
   it('isolates cloned editors and reopens the saved binding after remount', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
-    const cells = buildCellIndex(host.querySelector('svg')!);
-    const saveOne = vi.fn();
-    const saveTwo = vi.fn();
-    const secondHost = host.cloneNode(true) as HTMLDivElement;
-    const secondCells = buildCellIndex(secondHost.querySelector('svg')!);
-    const view = render(
-      <>
-        <div aria-label="Panel one">
-          <BindingEditor config={config} cells={cells} onSave={saveOne} />
-        </div>
-        <div aria-label="Panel two">
-          <BindingEditor config={config} cells={secondCells} onSave={saveTwo} />
-        </div>
-      </>
-    );
-    const one = within(editorField('Panel one'));
-    const two = within(editorField('Panel two'));
-    selectElement('device-1', one);
-    expect(two.queryByRole('heading', { name: 'device-1 bindings' })).toBeNull();
-    fireEvent.change(editorField('Label template', one), { target: { value: 'Only panel one' } });
-    fireEvent.click(one.getByRole('button', { name: 'Apply bindings' }));
-    expect(saveTwo).not.toHaveBeenCalled();
-    view.unmount();
-    render(<BindingEditor config={saveOne.mock.calls[0][0]} cells={cells} onSave={vi.fn()} />);
-    selectElement('device-1');
+    const svg = svgOf('device-1');
+    const one = renderEditor({ config, svg });
+    const first = within(screen.getByTestId('dmap-bindings-editor'));
+    const two = renderEditor({ config, svg });
+    const editors = screen.getAllByTestId('dmap-bindings-editor');
+    const second = within(editors[1]);
+    selectStageCell('device-1', first);
+    expect(second.queryByRole('heading', { name: 'device-1 bindings' })).toBeNull();
+    fireEvent.change(editorField('Label template', first), { target: { value: 'Only panel one' } });
+    fireEvent.click(first.getByRole('button', { name: 'Apply bindings' }));
+    expect(two.save).not.toHaveBeenCalled();
+    const saved = one.save.mock.calls[0][0];
+    one.unmount();
+    two.unmount();
+    renderEditor({ config: saved, svg });
+    selectStageCell('device-1');
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Only panel one');
   });
   it('keeps unedited shape settings inherited when creating an element override', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
-    const save = vi.fn();
     const inherited: DiagramConfigV2 = {
       ...config,
       queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }],
@@ -314,55 +275,42 @@ describe('binding inspector', () => {
         },
       ],
     };
-    render(<BindingEditor config={inherited} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    selectElement('device-1');
+    const { save } = renderEditor({ config: inherited, svg: svgOf('device-1') });
+    selectStageCell('device-1');
     chooseOption('Shape colour target', 'stroke');
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].overrides[0].display).toEqual({ shape: { target: 'stroke' } });
   });
   it('previews every pattern match, saves only on Apply, and cancels back to saved', () => {
-    const { save, cells } = setup();
-    selectElement('device-1');
+    const { save } = setup();
+    selectStageCell('device-1');
     chooseOption('Edit scope', 'All elements matching this pattern');
     fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } });
     expect(editorField('Affected binding preview').textContent).toContain('device-2');
-    expect(cells.get('device-2')?.group.getAttribute('data-dmap-affected')).toBe('true');
+    expect(stageCell('device-2').getAttribute('data-dmap-affected')).toBe('true');
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Shared');
     fireEvent.change(editorField('Label template'), { target: { value: 'Applied' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].patterns[0].display.label).toBe('Applied');
     fireEvent.change(editorField('Label template'), { target: { value: 'Lost' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Undo to saved' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied');
   });
   it('selects unbound cells by pointer or keyboard while hover leaves focus alone', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="unbound"><rect/></g></svg>';
-    const cells = buildCellIndex(host.querySelector('svg')!);
-    render(
-      <BindingEditor config={config} cells={cells} onSave={vi.fn()}>
-        <div
-          ref={(el) => {
-            if (el) {
-              el.append(host);
-            }
-          }}
-        />
-      </BindingEditor>
-    );
-    const cell = cells.get('unbound')!;
-    fireEvent.click(cell.group.querySelector('rect')!);
+    renderEditor({ config, svg: svgOf('unbound') });
+    const group = stageCell('unbound');
+    fireEvent.click(group.querySelector('rect')!);
     const heading = screen.getByRole('heading', { name: 'unbound bindings' });
     expect(document.activeElement).toBe(heading);
     const label = editorField('Label template');
     label.focus();
-    fireEvent.pointerMove(cell.group);
+    fireEvent.pointerMove(group);
     expect(document.activeElement).toBe(label);
-    fireEvent.keyDown(cell.group, { key: 'Enter' });
+    fireEvent.keyDown(group, { key: 'Enter' });
     expect(document.activeElement).toBe(heading);
-    expect(cell.group.getAttribute('data-dmap-selected')).toBe('true');
+    expect(group.getAttribute('data-dmap-selected')).toBe('true');
   });
   it('blocks Apply for unresolved query references', () => {
     const invalid = {
@@ -374,24 +322,19 @@ describe('binding inspector', () => {
         },
       ],
     };
-    const save = vi.fn();
-    render(<BindingEditor config={invalid} cells={new Map()} onSave={save} />);
-    const apply = screen.getByRole('button', { name: 'Apply bindings' });
-    expect((apply as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(apply);
+    const { save } = renderEditor({ config: invalid, svg: svgOf() });
+    expect(applyButton().disabled).toBe(true);
+    fireEvent.click(applyButton());
     expect(save).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toContain('missing');
   });
   it('authors hover rows, shape/link bindings and explicit health rules through forms', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
-    const save = vi.fn();
     const withQuery: DiagramConfigV2 = {
       ...config,
       queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }],
     };
-    render(<BindingEditor config={withQuery} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    selectElement('device-1');
+    const { save } = renderEditor({ config: withQuery, svg: svgOf('device-1') });
+    selectStageCell('device-1');
     chooseOption('Shape query', 'Health');
     chooseOption('A to B query', 'Health');
     openSection('Hover rows');
@@ -400,7 +343,7 @@ describe('binding inspector', () => {
     openSection('Explicit health status');
     fireEvent.click(screen.getByRole('button', { name: 'Add health rule' }));
     fireEvent.change(editorField('Health condition 1 reason'), { target: { value: 'Health check failed' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     const display = save.mock.calls[0][0].overrides[0].display;
     expect(display.shape.binding.queryId).toBe('health');
     expect(display.link.a2bBinding.queryId).toBe('health');
@@ -408,9 +351,6 @@ describe('binding inspector', () => {
     expect(display.status.mappings[0]).toEqual({ value: 0, state: 'down', reason: 'Health check failed' });
   });
   it('edits the bindings of a combined up/down row and the auto Y range of rows and charts', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="plain-rectangle"><rect/></g></svg>';
-    const save = vi.fn();
     const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
     const withRow: DiagramConfigV2 = {
       ...config,
@@ -438,13 +378,13 @@ describe('binding inspector', () => {
         },
       ],
     };
-    render(<BindingEditor config={withRow} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    selectElement('device-1');
+    const { save } = renderEditor({ config: withRow, svg: svgOf('device-1', 'plain-rectangle') });
+    selectStageCell('device-1');
     openSection('Hover rows');
     chooseOption('Hover row 1 down query', 'RX');
     fireEvent.change(editorField('Hover row 1 minimum'), { target: { value: 'auto' } });
     fireEvent.change(editorField('Hover row 1 maximum'), { target: { value: '100000000' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toEqual({
       kind: 'history',
       label: 'Traffic',
@@ -457,9 +397,6 @@ describe('binding inspector', () => {
     });
   });
   it('accepts the maximum "capacity" on a combined row', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
-    const save = vi.fn();
     const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
     const withRow: DiagramConfigV2 = {
       ...config,
@@ -473,17 +410,14 @@ describe('binding inspector', () => {
         },
       ],
     };
-    render(<BindingEditor config={withRow} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    selectElement('device-1');
+    const { save } = renderEditor({ config: withRow, svg: svgOf('device-1') });
+    selectStageCell('device-1');
     openSection('Hover rows');
     fireEvent.change(editorField('Hover row 1 maximum'), { target: { value: 'capacity' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toMatchObject({ max: 'capacity' });
   });
   it.each([false, true])('validates, clears and removes history height with series=%s', (combined) => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
-    const save = vi.fn();
     const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
     const withRows: DiagramConfigV2 = {
       ...config,
@@ -504,27 +438,26 @@ describe('binding inspector', () => {
         },
       ],
     };
-    render(<BindingEditor config={withRows} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    selectElement('device-1');
+    const { save } = renderEditor({ config: withRows, svg: svgOf('device-1') });
+    selectStageCell('device-1');
     openSection('Hover rows');
     expect(screen.queryByLabelText('Hover row 2 height')).toBeNull();
     for (const height of ['15', '401']) {
       fireEvent.change(editorField('Hover row 1 height'), { target: { value: height } });
-      const apply = screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement;
-      expect(apply.disabled).toBe(true);
-      fireEvent.click(apply);
+      expect(applyButton().disabled).toBe(true);
+      fireEvent.click(applyButton());
       expect(save).not.toHaveBeenCalled();
     }
     fireEvent.change(editorField('Hover row 1 height'), { target: { value: '96' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toMatchObject({ height: 96 });
     fireEvent.change(editorField('Hover row 1 height'), { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[1][0].overrides[0].display.hover.rows[0].height).toBeUndefined();
     fireEvent.change(editorField('Hover row 1 height'), { target: { value: '120' } });
     chooseOption('Hover row 1 kind', 'value');
     expect(screen.queryByLabelText('Hover row 1 height')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[2][0].overrides[0].display.hover.rows[0]).toEqual({
       kind: 'value',
       label: 'Traffic',
@@ -532,42 +465,32 @@ describe('binding inspector', () => {
     });
   });
   it('keeps a chart minimum "auto"', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="plain-rectangle"><rect/></g></svg>';
-    const save = vi.fn();
     const withQuery: DiagramConfigV2 = {
       ...config,
       queries: [{ id: 'cpu', name: 'CPU', source: { kind: 'panel', refId: 'A' } }],
     };
-    render(<BindingEditor config={withQuery} cells={buildCellIndex(host.querySelector('svg')!)} onSave={save} />);
-    selectElement('plain-rectangle');
+    const { save } = renderEditor({ config: withQuery, svg: svgOf('plain-rectangle') });
+    selectStageCell('plain-rectangle');
     fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
     chooseOption('Chart query', 'CPU');
     fireEvent.change(editorField('Chart minimum'), { target: { value: 'auto' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].widgets[0]).toMatchObject({ min: 'auto' });
   });
   it('keeps invalid draft fields editable so their diagnostics can be corrected', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
-    render(
-      <BindingEditor
-        config={{ ...config, queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }] }}
-        cells={buildCellIndex(host.querySelector('svg')!)}
-        onSave={vi.fn()}
-      />
-    );
-    selectElement('device-1');
+    renderEditor({
+      config: { ...config, queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }] },
+      svg: svgOf('device-1'),
+    });
+    selectStageCell('device-1');
     openSection('Explicit health status');
     fireEvent.click(screen.getByRole('button', { name: 'Add health rule' }));
     fireEvent.change(editorField('Health condition 1 reason'), { target: { value: '' } });
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(applyButton().disabled).toBe(true);
     fireEvent.change(editorField('Health condition 1 reason'), { target: { value: 'Corrected' } });
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(applyButton().disabled).toBe(false);
   });
-  it('marks every affected native match resolved or unvalidated after representative Preview', async () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="device-2"><rect/></g></svg>';
+  it('resolves a bound native hover metric at once for the open element and leaves the others unvalidated', async () => {
     const execute = vi.fn((_request, emit) => {
       emit({
         state: 'ready',
@@ -585,8 +508,6 @@ describe('binding inspector', () => {
       return () => {};
     });
     const controller = createQueryController(execute);
-    const timeRange = getDefaultTimeRange();
-    const context = { timeRange, timeZone: 'utc', scopedVars: {}, refreshMs: 0, intervalMs: 1000, generation: 1 };
     const nativeConfig: DiagramConfigV2 = {
       ...config,
       queries: [
@@ -602,39 +523,36 @@ describe('binding inspector', () => {
         },
       ],
       patterns: [
-        { ...config.patterns[0], display: { shape: { binding: { queryId: 'q', match: {}, reducer: 'last' } } } },
+        {
+          ...config.patterns[0],
+          display: {
+            hover: { rows: [{ kind: 'value', label: 'V', binding: { queryId: 'q', match: {}, reducer: 'last' } }] },
+          },
+        },
       ],
     };
-    render(
-      <PanelQueryContext.Provider value={{ controller, context }}>
-        <BindingEditor
-          config={nativeConfig}
-          cells={buildCellIndex(host.querySelector('svg')!)}
-          data={{ state: LoadingState.Done, series: [], timeRange }}
-          onSave={vi.fn()}
-        />
-      </PanelQueryContext.Provider>
-    );
-    selectElement('device-1');
-    chooseOption('Edit scope', 'All elements matching this pattern');
-    openSection('Named queries');
-    await screen.findByText(/No supported native query editor/);
+    renderEditor({
+      config: nativeConfig,
+      svg: svgOf('device-1', 'device-2'),
+      data: { state: LoadingState.Done, series: [], timeRange: queryContext.timeRange },
+      service: { controller, context: queryContext },
+    });
+    // Nothing runs before an element opens: a hover row asks for data only for the open element.
     expect(execute).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-    expect(execute).toHaveBeenCalledTimes(1);
+    selectStageCell('device-1');
+    chooseOption('Edit scope', 'All elements matching this pattern');
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
     expect(execute.mock.calls[0][0].request.scopedVars.dm_device.value).toBe('device-1');
     const preview = editorField('Metric resolution preview');
-    expect(preview.textContent).toContain('device-1: resolved');
+    await waitFor(() => expect(preview.textContent).toContain('device-1: resolved'));
     expect(preview.textContent).toContain('device-2: unvalidated');
     expect(preview.textContent).not.toContain('No resolution failures');
-    selectElement('device-2');
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(preview.textContent).toContain('device-2: unvalidated');
+    selectStageCell('device-2');
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(execute.mock.calls[1][0].request.scopedVars.dm_device.value).toBe('device-2');
     controller.dispose();
   });
   it('shows a failed nonrepresentative eager match before Apply', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="device-2"><rect/></g></svg>';
     const timeRange = getDefaultTimeRange();
     const eagerConfig: DiagramConfigV2 = {
       ...config,
@@ -656,27 +574,24 @@ describe('binding inspector', () => {
         },
       ],
     };
-    render(
-      <BindingEditor
-        config={eagerConfig}
-        cells={buildCellIndex(host.querySelector('svg')!)}
-        data={{
-          state: LoadingState.Done,
-          timeRange,
-          series: [
-            toDataFrame({
-              refId: 'A',
-              fields: [
-                { name: 'Time', type: FieldType.time, values: [1] },
-                { name: 'Value', type: FieldType.number, values: [7], labels: { device: 'device-1' } },
-              ],
-            }),
-          ],
-        }}
-        onSave={vi.fn()}
-      />
-    );
-    selectElement('device-1');
+    renderEditor({
+      config: eagerConfig,
+      svg: svgOf('device-1', 'device-2'),
+      data: {
+        state: LoadingState.Done,
+        timeRange,
+        series: [
+          toDataFrame({
+            refId: 'A',
+            fields: [
+              { name: 'Time', type: FieldType.time, values: [1] },
+              { name: 'Value', type: FieldType.number, values: [7], labels: { device: 'device-1' } },
+            ],
+          }),
+        ],
+      },
+    });
+    selectStageCell('device-1');
     chooseOption('Edit scope', 'All elements matching this pattern');
     const preview = editorField('Metric resolution preview');
     expect(preview.textContent).toContain('device-1: resolved');
@@ -703,8 +618,6 @@ describe('binding inspector', () => {
       return cancel;
     });
     const controller = createQueryController(execute);
-    const timeRange = getDefaultTimeRange();
-    const context = { timeRange, timeZone: 'utc', scopedVars: {}, refreshMs: 0, intervalMs: 1000, generation: 1 };
     const queryConfig: DiagramConfigV2 = {
       ...config,
       queries: [
@@ -715,17 +628,13 @@ describe('binding inspector', () => {
         },
       ],
     };
-    const view = render(
-      <PanelQueryContext.Provider value={{ controller, context }}>
-        <BindingEditor
-          config={queryConfig}
-          cells={new Map()}
-          data={{ state: LoadingState.Done, series: [], timeRange }}
-          onSave={vi.fn()}
-        />
-      </PanelQueryContext.Provider>
-    );
-    openSection('Named queries');
+    const view = renderEditor({
+      config: queryConfig,
+      svg: svgOf(),
+      data: { state: LoadingState.Done, series: [], timeRange: queryContext.timeRange },
+      service: { controller, context: queryContext },
+    });
+    openQueryRow('CPU');
     await screen.findByText(/No supported native query editor/);
     expect(execute).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
@@ -740,8 +649,6 @@ describe('binding inspector', () => {
     controller.dispose();
   });
   it('reports ambiguous and unmatched eager metrics and lets the user choose the result field', () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g></svg>';
     const timeRange = getDefaultTimeRange();
     const withBinding: DiagramConfigV2 = {
       ...config,
@@ -750,33 +657,30 @@ describe('binding inspector', () => {
         { ...config.patterns[0], display: { shape: { binding: { queryId: 'q', match: {}, reducer: 'last' } } } },
       ],
     };
-    render(
-      <BindingEditor
-        config={withBinding}
-        cells={buildCellIndex(host.querySelector('svg')!)}
-        onSave={vi.fn()}
-        data={{
-          state: LoadingState.Done,
-          timeRange,
-          series: [
-            toDataFrame({
-              refId: 'A',
-              fields: [
-                { name: 'Time', type: FieldType.time, values: [1] },
-                { name: 'CPU', type: FieldType.number, values: [7] },
-                { name: 'Memory', type: FieldType.number, values: [8] },
-              ],
-            }),
-          ],
-        }}
-      />
-    );
-    selectElement('device-1');
+    renderEditor({
+      config: withBinding,
+      svg: svgOf('device-1'),
+      data: {
+        state: LoadingState.Done,
+        timeRange,
+        series: [
+          toDataFrame({
+            refId: 'A',
+            fields: [
+              { name: 'Time', type: FieldType.time, values: [1] },
+              { name: 'CPU', type: FieldType.number, values: [7] },
+              { name: 'Memory', type: FieldType.number, values: [8] },
+            ],
+          }),
+        ],
+      },
+    });
+    selectStageCell('device-1');
     expect(editorField('Metric resolution preview').textContent).toContain('ambiguous');
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(applyButton().disabled).toBe(true);
     fireEvent.change(editorField('Shape result field'), { target: { value: 'CPU' } });
     expect(editorField('Metric resolution preview').textContent).not.toContain('ambiguous');
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(applyButton().disabled).toBe(false);
     fireEvent.change(editorField('Shape result field'), { target: { value: 'Absent' } });
     expect(editorField('Metric resolution preview').textContent).toContain('No metric matches query q');
   });

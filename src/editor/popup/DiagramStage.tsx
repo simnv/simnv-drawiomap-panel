@@ -31,6 +31,8 @@ export interface DiagramStageProps {
   chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision' | 'owner'>;
   /** Namespace of the query consumers of the charts, for example `popup:3`. */
   owner: string;
+  /** The hash of the shown diagram. The stage writes it as `data-dmap-hash`, as the panel does. */
+  hash?: string;
 }
 
 const FIT: ZoomOptions = { ...DEFAULT_OPTIONS.zoom, mode: 'fit', percent: 100, align: 'center', minScale: 0 };
@@ -39,7 +41,16 @@ const FIT: ZoomOptions = { ...DEFAULT_OPTIONS.zoom, mode: 'fit', percent: 100, a
  * The centre pane of the bindings popup: a second instance of the diagram with the draft bindings, pan and zoom,
  * and a click to select a cell. It never touches the DOM of the panel behind the popup.
  */
-export function DiagramStage({ stage, stageRef, patches, selection, onSelect, chartLayer, owner }: DiagramStageProps) {
+export function DiagramStage({
+  stage,
+  stageRef,
+  patches,
+  selection,
+  onSelect,
+  chartLayer,
+  owner,
+  hash,
+}: DiagramStageProps) {
   const theme = useTheme2();
   const styles = useStyles2(getStyles);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -175,7 +186,7 @@ export function DiagramStage({ stage, stageRef, patches, selection, onSelect, ch
         }
       }}
     >
-      <div ref={attachStage} className={styles.stage} data-testid="dmap-popup-stage" />
+      <div ref={attachStage} className={styles.stage} data-testid="dmap-popup-stage" data-dmap-hash={hash} />
       {chartLayer ? (
         <ChartLayer
           {...chartLayer}

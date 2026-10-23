@@ -50,7 +50,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         path: 'rules',
         name: 'Legacy rules',
         description:
-          'Author V2 bindings and named queries in the panel preview side inspector. Existing legacy rules remain available here.',
+          'Author V2 bindings and named queries in the bindings popup (Edit bindings). Existing legacy rules remain available here.',
         category: ['Binding'],
         editor: RulesEditor,
         defaultValue: [],
