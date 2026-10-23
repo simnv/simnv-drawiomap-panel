@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { buildCellIndex } from '../render/svgStage';
 import { BindingEditor } from './BindingEditor';
+import * as cardModel from '../interact/cardModel';
+import { LoadingState, getDefaultTimeRange } from '@grafana/data';
 import type { DiagramConfigV2 } from '../model/config';
 
 vi.hoisted(() => {
@@ -17,6 +19,11 @@ vi.mock('@grafana/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/runtime')>()),
   getDataSourceSrv: () => ({ get: async () => ({ components: {} }), getInstanceSettings: () => undefined }),
 }));
+
+vi.mock('../interact/cardModel', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../interact/cardModel')>();
+  return { ...original, buildConfiguredCard: vi.fn(original.buildConfiguredCard) };
+});
 
 const binding = (queryId: string) => ({ queryId, match: {}, reducer: 'last' as const });
 const config: DiagramConfigV2 = {
@@ -180,5 +187,99 @@ describe('all bindings tab', () => {
     openAll();
     expect(screen.getByText(/3 legacy rules/)).toBeTruthy();
     expect(screen.getByText(/Rules editor/)).toBeTruthy();
+  });
+
+  it('shows the problem of a widget whose query matches no metric', () => {
+    const data = { state: LoadingState.Done, series: [], timeRange: getDefaultTimeRange() };
+    setup({ ...config, patterns: [], overrides: [], widgets: [config.widgets[0]] }, { data });
+    openAll();
+    fireEvent.click(screen.getByRole('button', { name: 'Show problems of Load' }));
+    expect(
+      within(screen.getByRole('list', { name: 'Problems of Load' })).getByText(/No metric matches query q1/)
+    ).toBeTruthy();
+    expect(screen.getByText(/widgets\[0\]\.binding/)).toBeTruthy();
+  });
+
+  it('shows a query problem that no row owns as a general problem, also with Problems only', () => {
+    setup({
+      ...config,
+      patterns: [],
+      overrides: [],
+      widgets: [],
+      queries: [
+        { id: 'lonely', name: 'Lonely', source: { kind: 'datasource', target: { refId: 'A' }, parameters: {} } },
+      ],
+    });
+    openAll();
+    const general = screen.getByRole('alert', { name: 'General problems' });
+    expect(general.textContent).toMatch(/Choose a datasource/);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Problems only' }));
+    expect(screen.getByRole('alert', { name: 'General problems' })).toBeTruthy();
+  });
+
+  it('opens the exact pattern when pattern IDs collide', () => {
+    const dup: DiagramConfigV2 = {
+      ...config,
+      overrides: [],
+      widgets: [],
+      patterns: [
+        { id: 'same', name: 'First', select: { ids: ['device-1'] }, display: {} },
+        { id: 'same', name: 'Second', select: { ids: ['device-2'] }, display: {} },
+      ],
+    };
+    setup(dup);
+    openAll();
+    expect(screen.getAllByText(/Pattern same|duplicate|must be unique/i).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit pattern Second' }));
+    expect(screen.getByRole('heading', { name: 'device-2 bindings' })).toBeTruthy();
+    openSection('Pattern selector');
+    expect(screen.getByLabelText('Pattern element IDs')).toHaveProperty('value', 'device-2');
+    fireEvent.change(screen.getByLabelText('Pattern element IDs'), { target: { value: 'device-1,device-2' } });
+    openAll();
+    expect(screen.getByRole('button', { name: 'Edit pattern First' }).textContent).toContain('1 cell ');
+    expect(screen.getByRole('button', { name: 'Edit pattern Second' }).textContent).toContain('2 cells');
+  });
+
+  describe('highlight', () => {
+    const marked = (cells: ReturnType<typeof setup>['cells']) =>
+      Array.from(cells).filter(([, c]) => c.group.getAttribute('data-dmap-highlight') === 'true').length;
+    it('clears when the tab changes', () => {
+      const { cells } = setup();
+      openAll();
+      fireEvent.mouseEnter(screen.getByRole('button', { name: 'Edit pattern Devices' }));
+      expect(marked(cells)).toBe(2);
+      fireEvent.click(screen.getByRole('tab', { name: 'Element' }));
+      expect(marked(cells)).toBe(0);
+    });
+    it('clears when the highlighted row is filtered out', () => {
+      const { cells } = setup();
+      openAll();
+      fireEvent.mouseEnter(screen.getByRole('button', { name: 'Edit pattern Devices' }));
+      expect(marked(cells)).toBe(2);
+      fireEvent.change(screen.getByLabelText('Filter bindings'), { target: { value: 'removed' } });
+      expect(marked(cells)).toBe(0);
+    });
+    it('clears when Problems only hides the row', () => {
+      const { cells } = setup();
+      openAll();
+      fireEvent.focus(screen.getByRole('button', { name: 'Edit pattern Devices' }));
+      expect(marked(cells)).toBe(2);
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Problems only' }));
+      expect(marked(cells)).toBe(0);
+    });
+  });
+
+  it('does not recompute the diagnostics of the cards when only the highlight changes', () => {
+    const data = { state: LoadingState.Done, series: [], timeRange: getDefaultTimeRange() };
+    const calls = vi.mocked(cardModel.buildConfiguredCard);
+    setup(config, { data });
+    openAll();
+    const before = calls.mock.calls.length;
+    expect(before).toBeGreaterThan(0);
+    const row = screen.getByRole('button', { name: 'Edit pattern Devices' });
+    fireEvent.mouseEnter(row);
+    fireEvent.mouseLeave(row);
+    fireEvent.focus(row);
+    expect(calls.mock.calls.length).toBe(before);
   });
 });

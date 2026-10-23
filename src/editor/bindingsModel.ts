@@ -1,4 +1,11 @@
-import { displayBindings, type DiagramConfigV2, type Diagnostic, type DisplayConfig } from '../model/config';
+import {
+  displayBindings,
+  type DiagramConfigV2,
+  type Diagnostic,
+  type DisplayConfig,
+  type ElementOverride,
+  type Pattern,
+} from '../model/config';
 import { cellMatches } from '../binding/select';
 import type { CellMeta } from '../types';
 
@@ -6,11 +13,15 @@ import type { CellMeta } from '../types';
 export interface RowProblem {
   code: string;
   message: string;
+  /** the path of the diagnostic in the config; part of the identity of the problem */
+  path: string;
   cellId?: string;
 }
 interface RowBase {
-  /** stable key of the row */
+  /** stable and unique key of the row, also when IDs collide */
   key: string;
+  /** index in its config array */
+  index: number;
   problems: RowProblem[];
 }
 export interface PatternRow extends RowBase {
@@ -21,6 +32,7 @@ export interface PatternRow extends RowBase {
   queryIds: string[];
   /** ids of the cells of the diagram that the selector matches */
   matched: string[];
+  matchedLabels: string[];
 }
 export interface OverrideRow extends RowBase {
   kind: 'override';
@@ -28,6 +40,7 @@ export interface OverrideRow extends RowBase {
   label: string;
   /** the display keys that the override sets */
   keys: string[];
+  queryIds: string[];
   exists: boolean;
 }
 export interface WidgetRow extends RowBase {
@@ -44,9 +57,13 @@ export interface BindingsList {
   patterns: PatternRow[];
   overrides: OverrideRow[];
   widgets: WidgetRow[];
+  /** Problems that no row owns: invalid structure, a query nobody uses, an unowned cell. */
+  general: RowProblem[];
 }
 
 const unique = <T>(items: T[]): T[] => Array.from(new Set(items));
+const queryIdsOf = (display: Partial<DisplayConfig>) =>
+  unique(displayBindings(display).map(({ binding }) => binding.queryId));
 
 /** The cell of a per-cell diagnostic path "cells.<id>.<display path>". The longest known id wins. */
 function cellOfPath(path: string, ids: string[]): { cellId: string; rest: string } | undefined {
@@ -61,6 +78,41 @@ function cellOfPath(path: string, ids: string[]): { cellId: string; rest: string
 }
 
 /**
+ * The unit of the merge in `mergeDisplay` (binding/patterns.ts): link, shape, status and hover merge key by key,
+ * every other setting, and every array (the hover rows), is replaced as a whole.
+ */
+const NESTED = new Set(['link', 'shape', 'status', 'hover']);
+function provenanceKey(rest: string): { section: keyof DisplayConfig; key?: string } {
+  const [first, second] = rest.split('.');
+  const section = first.replace(/\[\d+\]$/, '') as keyof DisplayConfig;
+  return NESTED.has(section) && second ? { section, key: second.replace(/\[\d+\]$/, '') } : { section };
+}
+
+/** The owner whose value of a display path is the effective one after the merge: the last that sets it. */
+function effectiveOwner<T extends { display: Partial<DisplayConfig> }>(owners: T[], rest: string): T | undefined {
+  const { section, key } = provenanceKey(rest);
+  let winner: T | undefined;
+  let kind: string | undefined;
+  for (const owner of owners) {
+    const value = owner.display[section] as Record<string, unknown> | undefined;
+    if (value === undefined) {
+      continue;
+    }
+    // A status of another kind replaces the earlier status: nothing of the earlier one survives.
+    if (section === 'status' && kind !== undefined && value.kind !== kind) {
+      winner = undefined;
+    }
+    if (section === 'status') {
+      kind = value.kind as string;
+    }
+    if (key === undefined || (typeof value === 'object' && value[key] !== undefined)) {
+      winner = owner;
+    }
+  }
+  return winner;
+}
+
+/**
  * Build the rows of the "All bindings" list from the config, the cells of the diagram and the diagnostics that the
  * editor and the engine already produce (config validation, pattern resolution, metric resolution, hover cards).
  * Pure: the caller decides which diagnostics it has. Matching uses the selector code of the engine (`cellMatches`).
@@ -68,31 +120,36 @@ function cellOfPath(path: string, ids: string[]): { cellId: string; rest: string
 export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], diagnostics: Diagnostic[]): BindingsList {
   const ids = cells.map((c) => c.id);
   const byId = new Map(cells.map((c) => [c.id, c]));
-  const patternMatches = config.patterns.map((p) => cells.filter((c) => cellMatches(p.select, c)).map((c) => c.id));
+  const patternMatches = config.patterns.map((p) => cells.filter((c) => cellMatches(p.select, c)));
   const patterns: PatternRow[] = config.patterns.map((p, i) => ({
     kind: 'pattern',
-    key: `pattern:${p.id}`,
+    key: `pattern:${i}:${p.id}`,
+    index: i,
     patternId: p.id,
     name: p.name,
     selector: p.select.kind ?? 'any',
-    queryIds: unique(displayBindings(p.display).map(({ binding }) => binding.queryId)),
-    matched: patternMatches[i],
+    queryIds: queryIdsOf(p.display),
+    matched: patternMatches[i].map((c) => c.id),
+    matchedLabels: patternMatches[i].map((c) => c.labelText).filter(Boolean),
     problems: [],
   }));
-  const overrides: OverrideRow[] = config.overrides.map((o) => ({
+  const overrides: OverrideRow[] = config.overrides.map((o, i) => ({
     kind: 'override',
-    key: `override:${o.cellId}`,
+    key: `override:${i}:${o.cellId}`,
+    index: i,
     cellId: o.cellId,
     label: byId.get(o.cellId)?.labelText ?? '',
     keys: Object.entries(o.display)
       .filter(([, value]) => value !== undefined)
       .map(([key]) => key),
+    queryIds: queryIdsOf(o.display),
     exists: byId.has(o.cellId),
     problems: [],
   }));
-  const widgets: WidgetRow[] = config.widgets.map((w) => ({
+  const widgets: WidgetRow[] = config.widgets.map((w, i) => ({
     kind: 'widget',
-    key: `widget:${w.id}`,
+    key: `widget:${i}:${w.id}`,
+    index: i,
     widgetId: w.id,
     label: w.label,
     widgetKind: w.kind,
@@ -102,49 +159,72 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     problems: [],
   }));
 
+  const general: RowProblem[] = [];
   const seen = new Set<string>();
   const add = (row: BindingRow | undefined, problem: RowProblem) => {
-    const id = `${row?.key}|${problem.code}|${problem.cellId ?? ''}|${problem.message}`;
-    if (row && !seen.has(id)) {
+    const id = `${row?.key ?? 'general'}|${problem.code}|${problem.path}|${problem.cellId ?? ''}|${problem.message}`;
+    if (!seen.has(id)) {
       seen.add(id);
-      row.problems.push(problem);
+      (row ? row.problems : general).push(problem);
     }
   };
   const indexed = (path: string, section: string) => {
     const match = new RegExp(`^${section}\\[(\\d+)\\]`).exec(path);
     return match ? Number(match[1]) : undefined;
   };
+  const referencing = (queryId: string): BindingRow[] => [
+    ...patterns.filter((row) => row.queryIds.includes(queryId)),
+    ...overrides.filter((row) => row.queryIds.includes(queryId)),
+    ...widgets.filter((row) => row.queryId === queryId),
+  ];
   for (const d of diagnostics) {
-    const problem = { code: d.code, message: d.message };
+    const problem: RowProblem = { code: d.code, message: d.message, path: d.path };
     const p = indexed(d.path, 'patterns');
     const o = indexed(d.path, 'overrides');
     const w = indexed(d.path, 'widgets');
-    if (p !== undefined) {
-      add(patterns[p], problem);
-    } else if (o !== undefined) {
+    const q = indexed(d.path, 'queries');
+    if (p !== undefined && patterns[p]) {
+      // A colliding ID is a problem of every pattern that has it: any of them would open the wrong one.
+      const rows =
+        d.code === 'duplicate-pattern-id'
+          ? patterns.filter((r) => r.patternId === patterns[p].patternId)
+          : [patterns[p]];
+      rows.forEach((row) => add(row, problem));
+    } else if (o !== undefined && overrides[o]) {
       add(overrides[o], problem);
-    } else if (w !== undefined) {
-      add(widgets[w], problem);
+    } else if (w !== undefined && widgets[w]) {
+      const rows =
+        d.code === 'duplicate-widget-id' ? widgets.filter((r) => r.widgetId === widgets[w].widgetId) : [widgets[w]];
+      rows.forEach((row) => add(row, problem));
+    } else if (q !== undefined && config.queries[q]) {
+      const rows = referencing(config.queries[q].id);
+      if (rows.length) {
+        rows.forEach((row) => add(row, problem));
+      } else {
+        add(undefined, problem);
+      }
     } else {
       const hit = cellOfPath(d.path, ids);
       if (!hit) {
+        add(undefined, problem);
         continue;
       }
-      // Blame the owners of the display section the diagnostic came from: the patterns that match the cell and
-      // the override of the cell. When none of them sets the section, the merge is the cause: blame all of them.
-      const section = hit.rest.split(/[.[]/)[0] as keyof DisplayConfig;
-      const matching = patterns.filter((_, i) => patternMatches[i].includes(hit.cellId));
+      // Blame the owner whose value is the effective one after the merge: the matching patterns in config order,
+      // then the override of the cell. When no owner sets the path, the merge is the cause: blame all of them.
+      const matching = patterns.filter((_, i) => patternMatches[i].some((c) => c.id === hit.cellId));
       const override = overrides.find((row) => row.cellId === hit.cellId);
-      const owners: BindingRow[] = [
-        ...matching.filter(
-          (row) => config.patterns.find((x) => x.id === row.patternId)?.display[section] !== undefined
-        ),
-        ...(override && config.overrides.find((x) => x.cellId === hit.cellId)?.display[section] !== undefined
-          ? [override]
+      const chain: Array<{ row: BindingRow; display: Partial<DisplayConfig> }> = [
+        ...matching.map((row) => ({ row, display: (config.patterns[row.index] as Pattern).display })),
+        ...(override
+          ? [{ row: override as BindingRow, display: (config.overrides[override.index] as ElementOverride).display }]
           : []),
       ];
-      for (const row of owners.length ? owners : [...matching, ...(override ? [override] : [])]) {
+      const owner = effectiveOwner(chain, hit.rest);
+      for (const row of owner ? [owner.row] : chain.map((c) => c.row)) {
         add(row, { ...problem, cellId: hit.cellId });
+      }
+      if (!chain.length) {
+        add(undefined, problem);
       }
     }
   }
@@ -152,24 +232,33 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
   if (cells.length > 0) {
     for (const row of patterns) {
       if (!row.matched.length) {
-        add(row, { code: 'no-match', message: 'The selector matches no element of the diagram.' });
+        add(row, {
+          code: 'no-match',
+          path: `patterns[${row.index}].select`,
+          message: 'The selector matches no element of the diagram.',
+        });
       }
     }
     for (const row of overrides) {
       if (!row.exists) {
         add(row, {
           code: 'missing-cell',
+          path: `overrides[${row.index}].cellId`,
           message: `Override refers to missing cell ${row.cellId}. Select an existing cell or remove the override.`,
         });
       }
     }
     for (const row of widgets) {
       if (!row.exists) {
-        add(row, { code: 'missing-anchor', message: `Widget ${row.widgetId} needs anchor ${row.anchorCellId}.` });
+        add(row, {
+          code: 'missing-anchor',
+          path: `widgets[${row.index}].anchorCellId`,
+          message: `Widget ${row.widgetId} needs anchor ${row.anchorCellId}.`,
+        });
       }
     }
   }
-  return { patterns, overrides, widgets };
+  return { patterns, overrides, widgets, general };
 }
 
 export interface BindingsFilter {
@@ -188,17 +277,19 @@ export function rowMatches(row: BindingRow, filter: BindingsFilter): boolean {
   }
   const haystack =
     row.kind === 'pattern'
-      ? [row.name, row.patternId, row.selector, ...row.queryIds, ...row.matched]
+      ? [row.name, row.patternId, row.selector, ...row.queryIds, ...row.matched, ...row.matchedLabels]
       : row.kind === 'override'
-        ? [row.cellId, row.label, ...row.keys]
+        ? [row.cellId, row.label, ...row.keys, ...row.queryIds]
         : [row.label, row.widgetId, row.anchorCellId, row.queryId];
   return haystack.some((text) => text.toLowerCase().includes(needle));
 }
 
+/** The general problems stay in every filter: they belong to no row. */
 export function filterBindings(list: BindingsList, filter: BindingsFilter): BindingsList {
   return {
     patterns: list.patterns.filter((row) => rowMatches(row, filter)),
     overrides: list.overrides.filter((row) => rowMatches(row, filter)),
     widgets: list.widgets.filter((row) => rowMatches(row, filter)),
+    general: list.general,
   };
 }

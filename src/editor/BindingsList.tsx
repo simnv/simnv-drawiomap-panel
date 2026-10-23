@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Checkbox, ConfirmModal, Icon, IconButton, Input, useStyles2 } from '@grafana/ui';
@@ -8,6 +8,7 @@ import {
   type BindingsList as BindingsListModel,
   type OverrideRow,
   type PatternRow,
+  type RowProblem,
   type WidgetRow,
 } from './bindingsModel';
 import { EditorSection } from './EditorLayout';
@@ -24,6 +25,8 @@ export interface BindingsListProps {
   onHighlight?: (cellIds: string[]) => void;
 }
 
+const problemText = (problem: RowProblem) =>
+  `${problem.cellId ? `${problem.cellId}: ` : ''}${problem.message} (${problem.path})`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function BindingsList({
@@ -40,7 +43,15 @@ export function BindingsList({
   const [problemsOnly, setProblemsOnly] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<BindingRow>();
+  const [hot, setHot] = useState<string>();
   const filtered = useMemo(() => filterBindings(list, { text, problemsOnly }), [list, text, problemsOnly]);
+  // The marks on the diagram follow the hovered pattern row. They end with the row: a filter, a refresh or an unmount.
+  const hotRow = filtered.patterns.find((row) => row.key === hot);
+  const hotCells = hotRow?.matched.join('\n');
+  useEffect(() => {
+    onHighlight?.(hotCells ? hotCells.split('\n') : []);
+  }, [hotCells, onHighlight]);
+  useEffect(() => () => onHighlight?.([]), [onHighlight]);
   const total = list.patterns.length + list.overrides.length + list.widgets.length;
   const toggle = (key: string) =>
     setExpanded((old) => {
@@ -73,10 +84,10 @@ export function BindingsList({
             className={styles.main}
             aria-label={`Edit ${row.kind} ${name}`}
             onClick={onOpen}
-            onMouseEnter={() => row.kind === 'pattern' && onHighlight?.(row.matched)}
-            onMouseLeave={() => row.kind === 'pattern' && onHighlight?.([])}
-            onFocus={() => row.kind === 'pattern' && onHighlight?.(row.matched)}
-            onBlur={() => row.kind === 'pattern' && onHighlight?.([])}
+            onMouseEnter={() => row.kind === 'pattern' && setHot(row.key)}
+            onMouseLeave={() => setHot(undefined)}
+            onFocus={() => row.kind === 'pattern' && setHot(row.key)}
+            onBlur={() => setHot(undefined)}
           >
             <span className={styles.title}>
               {problems > 0 && <Icon name="exclamation-triangle" className={styles.warn} title="Has problems" />}
@@ -97,7 +108,7 @@ export function BindingsList({
         {open && problems > 0 && (
           <ul aria-label={`Problems of ${name}`} className={styles.problems}>
             {row.problems.map((problem, i) => (
-              <li key={i}>{problem.cellId ? `${problem.cellId}: ${problem.message}` : problem.message}</li>
+              <li key={i}>{problemText(problem)}</li>
             ))}
           </ul>
         )}
@@ -151,6 +162,16 @@ export function BindingsList({
           This panel uses {plural(legacyRules, 'legacy rule')}. Edit them in the Rules editor of the panel options.
           Pattern, override and chart bindings appear here after you create them.
         </p>
+      )}
+      {list.general.length > 0 && (
+        <div role="alert" aria-label="General problems" className={styles.general}>
+          <strong>General problems ({list.general.length})</strong>
+          <ul>
+            {list.general.map((problem, i) => (
+              <li key={i}>{problemText(problem)}</li>
+            ))}
+          </ul>
+        </div>
       )}
       <label htmlFor={inputId} className={styles.label}>
         Filter bindings
@@ -245,5 +266,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
   title: css({ fontWeight: theme.typography.fontWeightMedium, overflowWrap: 'anywhere' }),
   warn: css({ color: theme.colors.warning.text, marginRight: theme.spacing(0.5) }),
   summary: css({ color: theme.colors.text.secondary, overflowWrap: 'anywhere' }),
+  general: css({
+    margin: theme.spacing(0, 0, 1),
+    padding: theme.spacing(1),
+    border: `1px solid ${theme.colors.warning.border}`,
+    borderRadius: theme.shape.radius.default,
+    color: theme.colors.warning.text,
+  }),
   problems: css({ margin: theme.spacing(0, 0, 1, 3), color: theme.colors.warning.text }),
 });

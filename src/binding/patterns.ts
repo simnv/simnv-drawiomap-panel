@@ -21,7 +21,12 @@ export interface EffectiveCellBinding {
 }
 export interface BindingPlan {
   cells: Record<string, EffectiveCellBinding>;
-  widgets: Array<{ widget: Widget; anchorCellId: string; scope: TemplateScope }>;
+  widgets: Array<{
+    widget: Widget;
+    anchorCellId: string;
+    scope: TemplateScope;
+    /** index in config.widgets */ index: number;
+  }>;
   diagnostics: Diagnostic[];
 }
 
@@ -166,7 +171,7 @@ export function resolvePatterns(cells: CellMeta[], input: DiagramConfigV2): Bind
         message: `Widget ${widget.id} needs anchor ${widget.anchorCellId}.`,
       });
     } else if (parameters(widget.binding, anchor.scope, `widgets[${i}].binding`)) {
-      plan.widgets.push({ widget, anchorCellId: anchor.cellId, scope: anchor.scope });
+      plan.widgets.push({ widget, anchorCellId: anchor.cellId, scope: anchor.scope, index: i });
     }
   });
   return plan;

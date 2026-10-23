@@ -15,7 +15,7 @@ import {
 } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, LinkRule, Rule, SeriesInfo } from '../types';
-import { bind, bindPlan, collectBindingDemands, resolveBinding } from './engine';
+import { bind, bindPlan, collectBindingDemands, resolveBinding, widgetDiagnostics } from './engine';
 import { resolvePatterns } from './patterns';
 import type { DiagramConfigV2, QueryBinding } from '../model/config';
 import { toHistory } from '../query/frames';
@@ -1133,5 +1133,38 @@ describe('one capacity per direction', () => {
       [500, 'series', 8],
       [500, 'series', 2],
     ]);
+  });
+});
+
+describe('widgetDiagnostics', () => {
+  const binding: QueryBinding = { queryId: 'q', match: {}, reducer: 'last' };
+  const config: DiagramConfigV2 = {
+    version: 2,
+    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+    patterns: [],
+    overrides: [],
+    widgets: [
+      { id: 'gone', anchorCellId: 'missing', kind: 'bar', label: 'Gone', binding },
+      { id: 'w', anchorCellId: 'a', kind: 'sparkline', label: 'Load', binding },
+    ],
+  };
+  const plan = resolvePatterns([cellMetaFromAttrs('a', {}, false)], config);
+  it('resolves each widget at its anchor and reports a missing metric under the widget index', () => {
+    const seen: Array<[string, string]> = [];
+    const out = widgetDiagnostics(plan, (cellId, b) => {
+      seen.push([cellId, b.queryId]);
+      return { state: 'empty' } as never;
+    });
+    expect(seen).toEqual([['a', 'q']]);
+    expect(out).toEqual([
+      { code: 'unmatched-metric', path: 'widgets[1].binding', message: 'No metric matches query q.' },
+    ]);
+  });
+  it('reports a failed or ambiguous query and nothing for a resolved or pending one', () => {
+    const state = (s: object) => widgetDiagnostics(plan, () => s as never).map((d) => d.code);
+    expect(state({ state: 'error', message: 'Ambiguous match' })).toEqual(['ambiguous-metric']);
+    expect(state({ state: 'unsupported', message: 'no' })).toEqual(['unsupported-metric']);
+    expect(state({ state: 'loading' })).toEqual([]);
+    expect(state({ state: 'ready' })).toEqual([]);
   });
 });

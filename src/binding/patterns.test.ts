@@ -263,6 +263,7 @@ describe('resolvePatterns', () => {
       {
         widget: config.widgets[0],
         anchorCellId: 'link',
+        index: 0,
         scope: {
           cell: { ...cell.attrs, id: 'link', key: 'link', label: '' },
           from: { node: 'a', port: 'p1', ordinal: '1', raw: 'a:p1' },

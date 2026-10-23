@@ -109,6 +109,34 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
   }
   return demands;
 }
+/** The one place that words a metric that did not resolve: no match, an ambiguous match, an error. */
+export function metricProblem(
+  model: HistoryModel,
+  binding: QueryBinding
+): { code: string; message: string } | undefined {
+  if (model.state !== 'empty' && model.state !== 'unsupported' && model.state !== 'error') {
+    return undefined;
+  }
+  const message = model.state === 'empty' ? `No metric matches query ${binding.queryId}.` : model.message;
+  return {
+    code:
+      model.state === 'empty'
+        ? 'unmatched-metric'
+        : message.toLowerCase().includes('ambiguous')
+          ? 'ambiguous-metric'
+          : `${model.state}-metric`,
+    message,
+  };
+}
+
+/** Resolve the binding of every chart region at its anchor cell, as bindPlan does for the cells. */
+export function widgetDiagnostics(plan: BindingPlan, resolve: BindingResolver): Diagnostic[] {
+  return plan.widgets.flatMap((entry) => {
+    const problem = metricProblem(resolve(entry.anchorCellId, entry.widget.binding), entry.widget.binding);
+    return problem ? [{ ...problem, path: `widgets[${entry.index}].binding` }] : [];
+  });
+}
+
 export interface PlanBindResult {
   patches: Map<string, PlanCellPatch>;
   diagnostics: Diagnostic[];
@@ -149,18 +177,10 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
     );
     const read = (binding: QueryBinding, path: string): HistoryModel => {
       const model = resolve(cell.cellId, binding);
-      if (model.state === 'empty' || model.state === 'unsupported' || model.state === 'error') {
-        const message = model.state === 'empty' ? `No metric matches query ${binding.queryId}.` : model.message;
-        result.diagnostics.push({
-          code:
-            model.state === 'empty'
-              ? 'unmatched-metric'
-              : message.toLowerCase().includes('ambiguous')
-                ? 'ambiguous-metric'
-                : `${model.state}-metric`,
-          path: `cells.${cell.cellId}.${path}`,
-          message,
-        });
+      const problem = metricProblem(model, binding);
+      if (problem) {
+        const { message } = problem;
+        result.diagnostics.push({ ...problem, path: `cells.${cell.cellId}.${path}` });
         patch.statusView ??= {
           state: 'missing',
           reason: message,
