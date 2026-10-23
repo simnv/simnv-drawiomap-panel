@@ -28,7 +28,7 @@ import { DEFAULT_OPTIONS, Options, type CellPatch, type LegendCorner } from '../
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
 import { useHeld } from './useHeld';
-import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
+import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
 import { EMPTY_CONFIG } from '../editor/draft';
 import type { Diagnostic } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
@@ -209,7 +209,7 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
     >
       {/* Sandbox hosts do not provide a definite percentage-height containing block. */}
       <div style={{ width: props.width, height: props.height }}>
-        <DrawioMapPanelView {...props} editing={editing} paused={!!popup} onOpenBindings={openPopup} />
+        <PanelBody {...props} editing={editing} paused={!!popup} onOpenBindings={openPopup} />
       </div>
       {editing && popup ? (
         <LazyBindingsPopup
@@ -228,7 +228,7 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
   );
 }
 
-interface ViewProps extends PanelProps<Options> {
+interface BodyProps extends PanelProps<Options> {
   /** The panel is open in the panel editor. */
   editing: boolean;
   /**
@@ -237,6 +237,20 @@ interface ViewProps extends PanelProps<Options> {
    */
   paused: boolean;
   onOpenBindings: (target: PopupTarget) => void;
+}
+
+/**
+ * Reads the query context outside of the paused view: a new context (a refresh changes the request id or the time
+ * range) renders only this small component, and the view gets the held service. The view never reads the context.
+ */
+function PanelBody(props: BodyProps) {
+  const queryService = useHeld(useContext(PanelQueryContext), props.paused);
+  return <DrawioMapPanelView {...props} queryService={queryService} />;
+}
+
+interface ViewProps extends BodyProps {
+  /** The query service of the panel; held by the parent while the panel is paused. */
+  queryService: PanelQueryService | undefined;
 }
 
 /** While the popup is open and the panel is paused, a new props object of the dashboard does not render the view. */
@@ -253,7 +267,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   const timeZone = useHeld(props.timeZone, paused);
   const timeRange = useHeld(props.timeRange, paused);
   const theme = useTheme2();
-  const queryService = useHeld(useContext(PanelQueryContext), paused);
+  const { queryService } = props;
   const opts = {
     ...DEFAULT_OPTIONS,
     ...options,

@@ -89,6 +89,7 @@ function Region({
   const last = useRef<{ match: string; preview: QueryPreview }>();
   const shown = useHeld(response, paused);
   // The watch callback reads the flag when it runs. A change of the flag must not restart the watch.
+  const pending = useRef<{ key: string; match: string; preview: QueryPreview }>();
   const pausedRef = useRef(paused);
   useEffect(() => {
     pausedRef.current = paused;
@@ -179,12 +180,18 @@ function Region({
     updateRef.current?.();
   }, [revision]);
 
-  // After the pause the parent gets the latest result that the watch received meanwhile.
+  // After the pause the widget shows, and the parent gets, the latest result that the watch received meanwhile. An
+  // emission while paused went to the `pending` ref: no state update, no render.
   useEffect(() => {
-    if (!paused && response && response.key === key) {
-      onPrepared?.(entry.widget.id, response.preview);
+    const received = pending.current;
+    if (!paused && received) {
+      pending.current = undefined;
+      setResponse(received);
+      if (received.key === key) {
+        onPrepared?.(entry.widget.id, received.preview);
+      }
     }
-    // Only the end of a pause publishes here; the watch callback publishes in every other case.
+    // Only the end of a pause applies the pending result; the watch callback applies every other one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused]);
 
@@ -219,8 +226,10 @@ function Region({
                   : kept.snapshot,
             };
           }
-          setResponse({ key, match, preview });
-          if (!pausedRef.current) {
+          if (pausedRef.current) {
+            pending.current = { key, match, preview };
+          } else {
+            setResponse({ key, match, preview });
             onPrepared?.(entry.widget.id, preview);
           }
         }

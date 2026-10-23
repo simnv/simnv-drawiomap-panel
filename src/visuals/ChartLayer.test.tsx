@@ -529,7 +529,10 @@ describe('ChartLayer', () => {
     expect(s.host.textContent).toContain('20');
     view.rerender(<ChartLayer {...props} paused />);
     onPrepared.mockClear();
+    const drawn = sparkline.mock.calls.length;
     act(() => listeners[0](ready(77)));
+    // No state update while paused: the widget does not render for the emission.
+    expect(sparkline.mock.calls.length).toBe(drawn);
     expect(s.host.textContent).toContain('20');
     expect(s.host.textContent).not.toContain('77');
     expect(onPrepared).not.toHaveBeenCalled();

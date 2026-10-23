@@ -2026,6 +2026,48 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(work.viewRenders - before.renders).toBeLessThanOrEqual(3);
     });
 
+    it('a refresh that changes the request id and the time range renders nothing while paused, and the latest result shows once after close', async () => {
+      nativeQuery.mockReset().mockImplementation(
+        (request) =>
+          new Observable((observer) => {
+            observer.next({ data: [frame('D', {}, [request.range.from.valueOf() === 1000 ? 84 : 11])] });
+            return () => {};
+          })
+      );
+      const p = props({ id: 61 });
+      const saved = { ...options, rules: [], config: labelled(), diagram };
+      const view = render(<DrawioMapPanel {...p} options={saved} />);
+      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
+      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
+      openPopup();
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const renders = work.viewRenders;
+      const applies = panelApplies();
+      const panelRequests = () =>
+        nativeQuery.mock.calls.filter(([request]) => request.range.from.valueOf() === 1000).length;
+      for (const requestId of ['r2', 'r3']) {
+        view.rerender(
+          <DrawioMapPanel
+            {...p}
+            options={saved}
+            data={{ ...p.data, request: { ...p.data.request, requestId } as never }}
+            timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }}
+          />
+        );
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+      }
+      // The popup runs its own requests for the new context. The panel view renders nothing and draws nothing.
+      expect(work.viewRenders).toBe(renders);
+      expect(panelApplies()).toBe(applies);
+      expect(panelLabel()).toBe('Saved 11');
+      const before = panelRequests();
+      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      await waitFor(() => expect(panelLabel()).toBe('Saved 84'));
+      // The popup and the panel share the cached request: the panel needs no more than one request per query scope.
+      expect(panelRequests() - before).toBeLessThanOrEqual(2);
+      expect(work.viewRenders - renders).toBeLessThanOrEqual(6);
+    });
+
     it('keeps the paint of a controller emission away from the panel until close, then shows the latest result', async () => {
       const receivers: Array<(value: number) => void> = [];
       nativeQuery.mockReset().mockImplementation(

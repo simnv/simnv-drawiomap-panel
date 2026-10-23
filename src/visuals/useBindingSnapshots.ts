@@ -68,6 +68,19 @@ export function useBindingSnapshots(
   );
   const active = useRef(new Map<string, { key: string; release: () => void }>());
   const [snapshots, setSnapshots] = useState<Record<string, Held>>({});
+  // While paused an emission goes to this ref, not to state: the hook renders nothing. The resume applies the latest
+  // emission of each consumer once.
+  const pausedRef = useRef(paused);
+  const pending = useRef(new Map<string, Array<(state: Record<string, Held>) => Record<string, Held>>>());
+  useEffect(() => {
+    pausedRef.current = paused;
+    if (!paused && pending.current.size) {
+      const apply = Array.from(pending.current.values()).flat();
+      pending.current.clear();
+      // One update for all consumers.
+      setSnapshots((previous) => apply.reduce((state, fn) => fn(state), previous));
+    }
+  }, [paused]);
   const controller = service?.controller;
   useEffect(() => {
     const subscriptions = active.current;
@@ -99,7 +112,7 @@ export function useBindingSnapshots(
           if (subscriptions.get(id) !== item) {
             return;
           }
-          setSnapshots((previous) => {
+          const update = (previous: Record<string, Held>) => {
             const preview = {
               query: demand.request.query,
               cellId: demand.cellId,
@@ -108,7 +121,15 @@ export function useBindingSnapshots(
             };
             const last = settled(snapshot) ? { match: demand.match, preview } : previous[id]?.last;
             return { ...previous, [id]: { key: demand.key, preview, last } };
-          });
+          };
+          if (pausedRef.current) {
+            // Keep every emission in order, so that `last` (the last settled result) stays right. A consumer that is
+            // released before the resume is dropped.
+            const guarded = (state: Record<string, Held>) => (subscriptions.get(id) === item ? update(state) : state);
+            pending.current.set(id, [...(pending.current.get(id) ?? []), guarded]);
+          } else {
+            setSnapshots(update);
+          }
         });
       }
     }
