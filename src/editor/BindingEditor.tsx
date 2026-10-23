@@ -68,6 +68,14 @@ export interface BindingEditorProps {
   onRequestClose: () => void;
   /** Drop the draft and start again from the saved options. */
   onReload?: () => void;
+  /** The popup reads the undo and redo of the draft here, for its key handler. */
+  onControls?: (controls: HistoryControls | null) => void;
+}
+
+/** The undo and redo of the draft, for a key handler outside the editor. */
+export interface HistoryControls {
+  undo: () => void;
+  redo: () => void;
 }
 
 type Selection = InspectorSelection;
@@ -87,11 +95,14 @@ export function BindingEditor({
   onApply,
   onRequestClose,
   onReload,
+  onControls,
 }: BindingEditorProps) {
   const theme = useTheme2();
   const styles = useStyles2(getStyles);
   const [history, dispatch] = useReducer(reduceHistory, undefined, () => createHistory(createDraft(config, diagram)));
   const draft = history.present;
+  const canUndo = history.past.length > 0;
+  const canRedo = history.future.length > 0;
   const dirty = isDirty(draft);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
@@ -532,6 +543,19 @@ export function BindingEditor({
   };
 
   // ---- draft actions ----
+  // The datasource query editors keep their own text: a remount shows the text of the restored draft.
+  const undo = useCallback(() => {
+    dispatch({ type: 'undo' });
+    setResetEpoch((value) => value + 1);
+  }, []);
+  const redo = useCallback(() => {
+    dispatch({ type: 'redo' });
+    setResetEpoch((value) => value + 1);
+  }, []);
+  useEffect(() => {
+    onControls?.({ undo, redo });
+    return () => onControls?.(null);
+  }, [onControls, undo, redo]);
   const cancelChanges = () => {
     dispatch({ type: 'reset' });
     setGeometryError('');
@@ -575,6 +599,28 @@ export function BindingEditor({
         </Button>
         <Button variant="primary" size="sm" disabled={blocked} onClick={() => apply(true)}>
           Apply and close
+        </Button>
+        <Button
+          variant="secondary"
+          fill="text"
+          size="sm"
+          icon="arrow-left"
+          aria-keyshortcuts="Control+Z Meta+Z"
+          disabled={!canUndo}
+          onClick={undo}
+        >
+          Undo
+        </Button>
+        <Button
+          variant="secondary"
+          fill="text"
+          size="sm"
+          icon="arrow-right"
+          aria-keyshortcuts="Control+Shift+Z Control+Y Meta+Shift+Z"
+          disabled={!canRedo}
+          onClick={redo}
+        >
+          Redo
         </Button>
         <Button variant="secondary" size="sm" aria-label="Cancel changes" onClick={cancelChanges}>
           Cancel

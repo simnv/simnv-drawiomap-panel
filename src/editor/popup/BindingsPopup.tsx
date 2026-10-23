@@ -5,13 +5,13 @@ import { ConfirmModal, useTheme2 } from '@grafana/ui';
 import { bindContextFor } from '../../binding/context';
 import { DEFAULT_OPTIONS, type Diagram, type Options } from '../../types';
 import type { DiagramConfigV2 } from '../../model/config';
-import { BindingEditor } from '../BindingEditor';
+import { BindingEditor, type HistoryControls } from '../BindingEditor';
 import { EMPTY_CONFIG } from '../draft';
 import { baseRevision, hasConflict } from '../revision';
 import { PluginDialog } from './PluginDialog';
 import { useOverlay } from './overlayStack';
 import type { PopupTarget } from './popupBus';
-import { useEscOwner } from './useEscOwner';
+import { usePopupKeys } from './usePopupKeys';
 
 export interface BindingsPopupProps {
   /** The panel id. The query consumers of the popup are named `popup:<id>`. */
@@ -64,7 +64,18 @@ export function BindingsPopup({
   }, [onClose]);
 
   useOverlay(OVERLAY_ID);
-  const esc = useEscOwner({ id: OVERLAY_ID, dialogRef: bodyRef, enabled: true, onEscape: requestClose });
+  const controls = useRef<HistoryControls | null>(null);
+  const onControls = useCallback((value: HistoryControls | null) => {
+    controls.current = value;
+  }, []);
+  const esc = usePopupKeys({
+    id: OVERLAY_ID,
+    dialogRef: bodyRef,
+    enabled: true,
+    onEscape: requestClose,
+    onUndo: () => controls.current?.undo(),
+    onRedo: () => controls.current?.redo(),
+  });
 
   const linkWidth = options.linkWidth;
   const bindContext = useMemo(
@@ -112,6 +123,7 @@ export function BindingsPopup({
             onApply={apply}
             onRequestClose={requestClose}
             onReload={reload}
+            onControls={onControls}
           />
         </div>
       </PluginDialog>

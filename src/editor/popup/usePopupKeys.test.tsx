@@ -4,12 +4,22 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { Select } from '@grafana/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pop, push } from './overlayStack';
-import { useEscOwner } from './useEscOwner';
+import { usePopupKeys } from './usePopupKeys';
 
-function Harness({ onEscape, enabled = true }: { onEscape: () => void; enabled?: boolean }) {
+function Harness({
+  onEscape,
+  enabled = true,
+  onUndo,
+  onRedo,
+}: {
+  onEscape: () => void;
+  enabled?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+}) {
   const body = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState<string>();
-  const keys = useEscOwner({ id: 'test', dialogRef: body, enabled, onEscape });
+  const keys = usePopupKeys({ id: 'test', dialogRef: body, enabled, onEscape, onUndo, onRedo });
   return (
     <div role="dialog" aria-label="Own">
       <button type="button">Header</button>
@@ -24,6 +34,11 @@ function Harness({ onEscape, enabled = true }: { onEscape: () => void; enabled?:
           onChange={(option) => setValue(option.value)}
         />
         <input aria-label="Plain" />
+        <input type="checkbox" aria-label="Toggle" />
+        <textarea aria-label="Area" />
+        <div contentEditable suppressContentEditableWarning aria-label="Editable" role="textbox">
+          x
+        </div>
       </div>
       <div role="dialog" aria-label="Nested">
         <input aria-label="Nested field" />
@@ -32,7 +47,7 @@ function Harness({ onEscape, enabled = true }: { onEscape: () => void; enabled?:
   );
 }
 
-describe('useEscOwner', () => {
+describe('usePopupKeys', () => {
   afterEach(() => pop('test'));
 
   it('closes an open Select menu first and calls onEscape on the next Esc', () => {
@@ -123,5 +138,40 @@ describe('useEscOwner', () => {
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Plain' }), { key: 'Escape' });
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(onEscape).not.toHaveBeenCalled();
+  });
+
+  describe('history keys', () => {
+    it('undoes and redoes outside a text field, and not in one', () => {
+      push('test');
+      const onUndo = vi.fn();
+      const onRedo = vi.fn();
+      render(<Harness onEscape={vi.fn()} onUndo={onUndo} onRedo={onRedo} />);
+      const header = screen.getByRole('button', { name: 'Header' });
+      fireEvent.keyDown(header, { key: 'z', ctrlKey: true });
+      fireEvent.keyDown(header, { key: 'z', metaKey: true, shiftKey: true });
+      fireEvent.keyDown(header, { key: 'y', ctrlKey: true });
+      fireEvent.keyDown(screen.getByRole('checkbox', { name: 'Toggle' }), { key: 'z', ctrlKey: true });
+      expect(onUndo).toHaveBeenCalledTimes(2);
+      expect(onRedo).toHaveBeenCalledTimes(2);
+      for (const name of ['Plain', 'Area', 'Nested field']) {
+        fireEvent.keyDown(screen.getByRole('textbox', { name }), { key: 'z', ctrlKey: true });
+      }
+      fireEvent.keyDown(screen.getByLabelText('Editable'), { key: 'z', ctrlKey: true });
+      expect(onUndo).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores plain z, Alt+Z and a covered popup', () => {
+      push('test');
+      const onUndo = vi.fn();
+      render(<Harness onEscape={vi.fn()} onUndo={onUndo} />);
+      const header = screen.getByRole('button', { name: 'Header' });
+      fireEvent.keyDown(header, { key: 'z' });
+      fireEvent.keyDown(header, { key: 'z', ctrlKey: true, altKey: true });
+      push('upper');
+      fireEvent.keyDown(header, { key: 'z', ctrlKey: true });
+      fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+      pop('upper');
+      expect(onUndo).not.toHaveBeenCalled();
+    });
   });
 });

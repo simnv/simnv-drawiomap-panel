@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from 'react';
 import { isTop } from './overlayStack';
 
-export interface EscOwnerOptions {
+export interface PopupKeysOptions {
   /** The id of the overlay in `overlayStack`. */
   id: string;
   /** The dialog body. Key events in it reach the React props that this hook returns. */
   dialogRef: RefObject<HTMLElement>;
   enabled: boolean;
   onEscape: () => void;
+  /** Cmd/Ctrl+Z. Fires only where the browser has no undo of its own to run (see `ownsUndo`). */
+  onUndo?: () => void;
+  /** Shift+Cmd/Ctrl+Z and Ctrl+Y. */
+  onRedo?: () => void;
 }
 
-export interface EscOwnerProps {
+export interface PopupKeysProps {
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   onKeyDownCapture: (event: KeyboardEvent<HTMLElement>) => void;
 }
@@ -31,8 +35,44 @@ function inForeignDialog(target: EventTarget | null, own: Element | null | undef
 
 const isEscape = (event: { key: string; isComposing?: boolean }) => event.key === 'Escape' && !event.isComposing;
 
+/** Input types without text: the browser has no text undo for them, so the draft undo can take the key. */
+const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'file', 'color', 'image']);
+
+/**
+ * The target keeps the native undo: a text input, a textarea, a `contenteditable` element or the Monaco editor
+ * (spec 4.3, Q2). The header buttons always undo the draft.
+ */
+export function hasNativeUndo(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  if (target instanceof HTMLInputElement) {
+    return !NON_TEXT_INPUTS.has(target.type);
+  }
+  return (
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable) ||
+    !!target.closest('[contenteditable]:not([contenteditable="false"]), .monaco-editor')
+  );
+}
+
+type HistoryKey = 'undo' | 'redo';
+/** Cmd/Ctrl+Z undoes, Shift+Cmd/Ctrl+Z and Ctrl+Y redo. */
+function historyKey(event: { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }) {
+  if (event.altKey || (!event.ctrlKey && !event.metaKey)) {
+    return undefined;
+  }
+  const key = event.key.toLowerCase();
+  if (key === 'z') {
+    return (event.shiftKey ? 'redo' : 'undo') satisfies HistoryKey;
+  }
+  return key === 'y' && event.ctrlKey && !event.shiftKey ? ('redo' satisfies HistoryKey) : undefined;
+}
+
 /**
  * Esc ownership of a modal that sets `closeOnEscape={false}` (spec 4.3). Two layers:
+ *
+ * The same two layers handle the history keys (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y), except in a target that owns undo.
  *
  * 1. The returned React props go on the dialog body. They run after react-select, Monaco and nested React handlers.
  *    React's `stopPropagation` stops the native event at the root container, before the Grafana `esc` key binding.
@@ -43,11 +83,31 @@ const isEscape = (event: { key: string; isComposing?: boolean }) => event.key ==
  * Both layers ignore an Esc that something else already handled (`defaultPrevented`) and an Esc inside a dialog
  * that this owner does not own.
  */
-export function useEscOwner({ id, dialogRef, enabled, onEscape }: EscOwnerOptions): EscOwnerProps {
-  const latest = useRef({ enabled, onEscape });
+export function usePopupKeys({ id, dialogRef, enabled, onEscape, onUndo, onRedo }: PopupKeysOptions): PopupKeysProps {
+  const latest = useRef({ enabled, onEscape, onUndo, onRedo });
   useLayoutEffect(() => {
-    latest.current = { enabled, onEscape };
+    latest.current = { enabled, onEscape, onUndo, onRedo };
   });
+  /** Run the undo or redo of a key event, if it is one and the target does not own undo. True when it ran. */
+  const runHistory = useCallback(
+    (event: {
+      key: string;
+      ctrlKey: boolean;
+      metaKey: boolean;
+      shiftKey: boolean;
+      altKey: boolean;
+      target: unknown;
+    }) => {
+      const kind = historyKey(event);
+      const run = kind === 'undo' ? latest.current.onUndo : kind === 'redo' ? latest.current.onRedo : undefined;
+      if (!run || hasNativeUndo(event.target as EventTarget | null)) {
+        return false;
+      }
+      run();
+      return true;
+    },
+    []
+  );
   // react-select calls preventDefault for every Esc, also with a closed menu. Read the state before it handles the key.
   const wasOpen = useRef(new WeakMap<Event, boolean>());
 
@@ -61,7 +121,14 @@ export function useEscOwner({ id, dialogRef, enabled, onEscape }: EscOwnerOption
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      if (!latest.current.enabled || !isEscape(event) || inForeignDialog(event.target, ownDialog())) {
+      if (!latest.current.enabled || inForeignDialog(event.target, ownDialog())) {
+        return;
+      }
+      if (!isEscape(event)) {
+        if (!event.defaultPrevented && isTop(id) && runHistory(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
       if (event.defaultPrevented) {
@@ -76,7 +143,7 @@ export function useEscOwner({ id, dialogRef, enabled, onEscape }: EscOwnerOption
       event.stopPropagation();
       latest.current.onEscape();
     },
-    [ownDialog]
+    [ownDialog, id, runHistory]
   );
 
   useEffect(() => {
@@ -84,7 +151,7 @@ export function useEscOwner({ id, dialogRef, enabled, onEscape }: EscOwnerOption
       return;
     }
     const listener = (event: globalThis.KeyboardEvent) => {
-      if (!latest.current.enabled || !isEscape(event) || event.defaultPrevented || !isTop(id)) {
+      if (!latest.current.enabled || event.defaultPrevented || !isTop(id)) {
         return;
       }
       if (event.target instanceof Node && dialogRef.current?.contains(event.target)) {
@@ -93,12 +160,17 @@ export function useEscOwner({ id, dialogRef, enabled, onEscape }: EscOwnerOption
       if (inForeignDialog(event.target, ownDialog())) {
         return;
       }
-      event.stopPropagation();
-      latest.current.onEscape();
+      if (isEscape(event)) {
+        event.stopPropagation();
+        latest.current.onEscape();
+      } else if (runHistory(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     document.addEventListener('keydown', listener, true);
     return () => document.removeEventListener('keydown', listener, true);
-  }, [enabled, id, dialogRef, ownDialog]);
+  }, [enabled, id, dialogRef, ownDialog, runHistory]);
 
   return { onKeyDown, onKeyDownCapture };
 }
