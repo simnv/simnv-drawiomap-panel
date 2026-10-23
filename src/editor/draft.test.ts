@@ -521,3 +521,112 @@ describe('batch', () => {
     expect(next.config.overrides.map((o) => o.cellId)).toEqual(['b']);
   });
 });
+
+describe('display-many', () => {
+  const rows = [{ kind: 'metadata' as const, label: 'Identity', path: 'cell.key' }];
+  const linkBinding = { queryId: 'q', match: {}, reducer: 'last' as const };
+  const base = () =>
+    createDraft({
+      ...saved,
+      patterns: [
+        {
+          id: 'devices',
+          name: 'Devices',
+          select: { kind: 'node' },
+          display: { label: 'Shared', hover: { rows }, link: { a2bBinding: linkBinding } },
+        },
+      ],
+      overrides: [
+        { cellId: 'a', display: { url: '/d/a', hover: { rows: [{ ...rows[0], label: 'A rows' }] } } },
+        { cellId: 'b', display: { label: 'B label' } },
+      ],
+    });
+  const ids = ['a', 'b', 'c'];
+
+  it('sets a leaf in the override of each cell and creates the missing overrides', () => {
+    const next = reduceDraft(base(), { type: 'display-many', cellIds: ids, ops: [{ path: 'label', value: 'New' }] });
+    expect(next.config.overrides.map((o) => o.cellId)).toEqual(['a', 'b', 'c']);
+    expect(next.config.overrides.map((o) => o.display.label)).toEqual(['New', 'New', 'New']);
+  });
+
+  it('keeps every other leaf of the existing overrides, hover rows included', () => {
+    const next = reduceDraft(base(), { type: 'display-many', cellIds: ids, ops: [{ path: 'label', value: 'New' }] });
+    expect(next.config.overrides[0].display).toEqual({
+      url: '/d/a',
+      hover: { rows: [{ ...rows[0], label: 'A rows' }] },
+      label: 'New',
+    });
+    expect(next.config.overrides[1].display).toEqual({ label: 'New' });
+  });
+
+  it('creates an override with the set leaves only, so inherited fields stay inherited', () => {
+    const next = reduceDraft(base(), { type: 'display-many', cellIds: ['c'], ops: [{ path: 'label', value: 'New' }] });
+    expect(next.config.overrides.find((o) => o.cellId === 'c')!.display).toEqual({ label: 'New' });
+    // The pattern is untouched.
+    expect(next.config.patterns[0].display).toEqual(base().config.patterns[0].display);
+  });
+
+  it('merges with the pattern: the effective display of the cell keeps the inherited rows and link binding', () => {
+    const next = reduceDraft(base(), { type: 'display-many', cellIds: ['c'], ops: [{ path: 'label', value: 'New' }] });
+    const cell = {
+      id: 'c',
+      key: 'c',
+      kind: 'node' as const,
+      attrs: {},
+      labelText: '',
+      isEdge: false,
+    };
+    const effective = mergeCell(next.config, cell).display;
+    expect(effective.label).toBe('New');
+    expect(effective.hover?.rows).toEqual(rows);
+    expect(effective.link?.a2bBinding).toEqual(linkBinding);
+  });
+
+  it('writes a leaf inside a binding without replacing the binding', () => {
+    const start = reduceDraft(base(), {
+      type: 'display-many',
+      cellIds: ['a'],
+      ops: [{ path: 'shape.binding', value: { queryId: 'q', match: { job: 'x' }, reducer: 'last' } }],
+    });
+    const next = reduceDraft(start, {
+      type: 'display-many',
+      cellIds: ['a', 'b'],
+      ops: [{ path: 'shape.binding.queryId', value: 'r' }],
+    });
+    expect(next.config.overrides[0].display.shape?.binding).toEqual({
+      queryId: 'r',
+      match: { job: 'x' },
+      reducer: 'last',
+    });
+    expect(next.config.overrides[1].display.shape).toEqual({ binding: { queryId: 'r' } });
+  });
+
+  it('removes a leaf, drops an override that holds nothing any more and creates none for a removal', () => {
+    const next = reduceDraft(base(), {
+      type: 'display-many',
+      cellIds: ids,
+      ops: [{ path: 'label', value: undefined }],
+    });
+    expect(next.config.overrides.map((o) => o.cellId)).toEqual(['a']);
+    expect(next.config.overrides[0].display.label).toBeUndefined();
+  });
+
+  it('is no change, and no history entry, when nothing differs', () => {
+    const draft = base();
+    expect(
+      reduceDraft(draft, { type: 'display-many', cellIds: ['b'], ops: [{ path: 'label', value: 'B label' }] })
+    ).toBe(draft);
+    expect(reduceDraft(draft, { type: 'display-many', cellIds: ids, ops: [] })).toBe(draft);
+  });
+
+  it('is one step in a batch with the removal of overrides', () => {
+    const next = reduceDraft(base(), {
+      type: 'batch',
+      actions: [
+        { type: 'display-many', cellIds: ['c'], ops: [{ path: 'label', value: 'N' }] },
+        { type: 'remove-override', cellId: 'a' },
+      ],
+    });
+    expect(next.config.overrides.map((o) => o.cellId)).toEqual(['b', 'c']);
+  });
+});

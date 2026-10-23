@@ -831,6 +831,10 @@ export function BindingEditor({
                       selectionVersion,
                       onMarks: showMarks,
                       onCreatePattern: createPatternFrom,
+                      plan,
+                      config: draft.config,
+                      fields,
+                      dispatch,
                     }
                   : undefined
               }

@@ -1,5 +1,9 @@
 import React, { useLayoutEffect, useRef } from 'react';
+import type { BindingPlan } from '../../binding/patterns';
+import type { DiagramConfigV2 } from '../../model/config';
 import type { CellMeta, CellSelector } from '../../types';
+import type { DraftAction } from '../draft';
+import { BulkPane } from './BulkPane';
 import { PatternFromSelection } from './PatternFromSelection';
 
 export interface MultiSelectionProps {
@@ -13,6 +17,10 @@ export interface MultiSelectionProps {
   onMarks: (extra: string[], missed: string[]) => void;
   /** Create a pattern with this selector. */
   onCreatePattern: (select: CellSelector) => void;
+  plan: BindingPlan;
+  config: DiagramConfigV2;
+  fields: string[];
+  dispatch: (action: DraftAction) => void;
 }
 
 /** The inspector body for two or more selected cells. */
@@ -22,6 +30,10 @@ export function MultiSelectionPane({
   selectionVersion,
   onMarks,
   onCreatePattern,
+  plan,
+  config,
+  fields,
+  dispatch,
 }: MultiSelectionProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
@@ -41,6 +53,7 @@ export function MultiSelectionPane({
         </ul>
       </section>
       <PatternFromSelection cells={cells} selectedIds={cellIds} onMarks={onMarks} onCreate={onCreatePattern} />
+      <BulkPane cellIds={cellIds} plan={plan} config={config} fields={fields} dispatch={dispatch} />
     </>
   );
 }

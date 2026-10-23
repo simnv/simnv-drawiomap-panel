@@ -309,3 +309,44 @@ describe('history of a batch', () => {
     expect(s.past).toHaveLength(2);
   });
 });
+
+describe('history of a bulk edit', () => {
+  const many = (label: string, cellIds = ['a', 'b', 'c']): DraftAction => ({
+    type: 'display-many',
+    cellIds,
+    ops: [{ path: 'label', value: label }],
+  });
+
+  it('is one step for the cells, and typing in one field joins one step', () => {
+    let s = run(start(), [
+      [many('x'), 1000],
+      [many('xy'), 1100],
+      [many('xyz'), 1200],
+    ]);
+    expect(s.past).toHaveLength(1);
+    s = reduceHistory(s, { type: 'undo' });
+    expect(s.present.config.overrides).toEqual([]);
+  });
+
+  it('starts a new step for other cells, another leaf or after the window', () => {
+    expect(
+      run(start(), [
+        [many('x'), 1000],
+        [many('y', ['a', 'b']), 1100],
+      ]).past
+    ).toHaveLength(2);
+    const other: DraftAction = { type: 'display-many', cellIds: ['a', 'b', 'c'], ops: [{ path: 'url', value: '/u' }] };
+    expect(
+      run(start(), [
+        [many('x'), 1000],
+        [other, 1100],
+      ]).past
+    ).toHaveLength(2);
+    expect(
+      run(start(), [
+        [many('x'), 1000],
+        [many('y'), 5000],
+      ]).past
+    ).toHaveLength(2);
+  });
+});
