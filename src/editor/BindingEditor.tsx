@@ -26,9 +26,10 @@ import type { BindContext, Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { buildBindingsList, problemsOf, type PatternRow, type ProblemEntry } from './bindingsModel';
-import { commitDraft, createDraft, draftPatternIndex, isDirty, reduceDraft } from './draft';
+import { commitDraft, createDraft, draftPatternIndex, isDirty } from './draft';
 import { draftQueryService } from './draftContext';
 import { DrawioModal } from './DrawioModal';
+import { createHistory, reduceHistory } from './history';
 import { previewPattern, type PatternPreview } from './patternPreview';
 import { createPreviewResolver, previewSnapshot, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
 import { DiagramStage } from './popup/DiagramStage';
@@ -89,7 +90,8 @@ export function BindingEditor({
 }: BindingEditorProps) {
   const theme = useTheme2();
   const styles = useStyles2(getStyles);
-  const [draft, dispatch] = useReducer(reduceDraft, undefined, () => createDraft(config, diagram));
+  const [history, dispatch] = useReducer(reduceHistory, undefined, () => createHistory(createDraft(config, diagram)));
+  const draft = history.present;
   const dirty = isDirty(draft);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
