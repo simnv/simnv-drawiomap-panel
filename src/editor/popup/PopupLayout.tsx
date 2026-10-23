@@ -10,9 +10,18 @@ import React, {
 } from 'react';
 import { css, cx } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
-import { useStyles2 } from '@grafana/ui';
+import { Tab, TabsBar, useStyles2 } from '@grafana/ui';
 
 export const PANES_STORAGE_KEY = 'dmap.bindingsPopup.panes';
+
+/** Below this width of the popup the three panes become the tabs List, Diagram and Inspector. */
+export const TABS_BELOW = 1000;
+export type PopupTab = 'list' | 'stage' | 'inspector';
+const TABS: Array<{ id: PopupTab; label: string }> = [
+  { id: 'list', label: 'List' },
+  { id: 'stage', label: 'Diagram' },
+  { id: 'inspector', label: 'Inspector' },
+];
 
 type Pane = 'list' | 'inspector';
 const LIMITS = {
@@ -89,6 +98,9 @@ export interface PopupLayoutProps {
   inspector: ReactNode;
   /** The inspector shows a wide editor (a query): it takes a larger share until the user sets a size. */
   wideInspector?: boolean;
+  /** The visible pane in tab mode. Without it the layout keeps its own choice. */
+  activeTab?: PopupTab;
+  onTabChange?: (tab: PopupTab) => void;
 }
 
 /**
@@ -98,7 +110,14 @@ export interface PopupLayoutProps {
  * `useSplitter` of `@grafana/ui` sizes only the second pane of a split. It would resize the left pane in the wrong
  * direction, and nested splitters would change the list when the inspector changes. So the layout has its own handles.
  */
-export function PopupLayout({ list, stage, inspector, wideInspector = false }: PopupLayoutProps) {
+export function PopupLayout({
+  list,
+  stage,
+  inspector,
+  wideInspector = false,
+  activeTab,
+  onTabChange,
+}: PopupLayoutProps) {
   const styles = useStyles2(getStyles);
   const containerRef = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState(readSizes);
@@ -120,6 +139,13 @@ export function PopupLayout({ list, stage, inspector, wideInspector = false }: P
     return () => observer.disconnect();
   }, []);
   const shown = useMemo(() => fitSizes(sizes, width), [sizes, width]);
+  const tabs = width > 0 && width < TABS_BELOW;
+  const [ownTab, setOwnTab] = useState<PopupTab>('list');
+  const tab = activeTab ?? ownTab;
+  const changeTab = (next: PopupTab) => {
+    setOwnTab(next);
+    onTabChange?.(next);
+  };
   const shownRef = useRef(shown);
   useLayoutEffect(() => {
     shownRef.current = shown;
@@ -144,28 +170,61 @@ export function PopupLayout({ list, stage, inspector, wideInspector = false }: P
   }, []);
   const commit = useCallback(() => writeSizes(latest.current), []);
 
+  // The three panes stay mounted in both modes: the stage index and the editors keep their state. A hidden pane has
+  // `display: none`. The slots of the optional elements keep their place, so a mode change does not remount a pane.
+  const paneProps = (id: PopupTab) =>
+    tabs
+      ? {
+          id: `dmap-popup-pane-${id}`,
+          role: 'tabpanel',
+          'aria-labelledby': `dmap-popup-tab-${id}`,
+          hidden: tab !== id,
+        }
+      : {};
   return (
-    <div ref={containerRef} className={styles.container} data-testid="dmap-popup-layout">
-      <div
-        className={cx(styles.pane, styles.side)}
-        style={{ flexBasis: shown.list }}
-        data-testid="dmap-pane-list"
-        data-pane-size={shown.list}
-      >
-        {list}
-      </div>
-      <Handle pane="list" value={shown.list} maxFor={maxFor} resize={resize} commit={commit} />
-      <div className={cx(styles.pane, styles.centre)} data-testid="dmap-pane-stage">
-        {stage}
-      </div>
-      <Handle pane="inspector" value={shown.inspector} maxFor={maxFor} resize={resize} commit={commit} />
-      <div
-        className={cx(styles.pane, styles.side)}
-        style={{ flexBasis: wideInspector && !inspectorSet ? WIDE_INSPECTOR : shown.inspector }}
-        data-testid="dmap-pane-inspector"
-        data-pane-size={shown.inspector}
-      >
-        {inspector}
+    <div className={styles.root} data-testid="dmap-popup-layout" data-dmap-layout={tabs ? 'tabs' : 'panes'}>
+      {tabs && (
+        <TabsBar className={styles.tabs}>
+          {TABS.map(({ id, label }) => (
+            <Tab
+              key={id}
+              id={`dmap-popup-tab-${id}`}
+              aria-controls={`dmap-popup-pane-${id}`}
+              label={label}
+              active={tab === id}
+              onChangeTab={() => changeTab(id)}
+            />
+          ))}
+        </TabsBar>
+      )}
+      <div ref={containerRef} className={styles.container}>
+        <div
+          className={cx(styles.pane, styles.side, tabs && styles.tabPane)}
+          style={tabs ? undefined : { flexBasis: shown.list }}
+          data-testid="dmap-pane-list"
+          data-pane-size={shown.list}
+          {...paneProps('list')}
+        >
+          {list}
+        </div>
+        {!tabs && <Handle pane="list" value={shown.list} maxFor={maxFor} resize={resize} commit={commit} />}
+        <div
+          className={cx(styles.pane, styles.centre, tabs && styles.tabPane)}
+          data-testid="dmap-pane-stage"
+          {...paneProps('stage')}
+        >
+          {stage}
+        </div>
+        {!tabs && <Handle pane="inspector" value={shown.inspector} maxFor={maxFor} resize={resize} commit={commit} />}
+        <div
+          className={cx(styles.pane, styles.side, tabs && styles.tabPane)}
+          style={tabs ? undefined : { flexBasis: wideInspector && !inspectorSet ? WIDE_INSPECTOR : shown.inspector }}
+          data-testid="dmap-pane-inspector"
+          data-pane-size={shown.inspector}
+          {...paneProps('inspector')}
+        >
+          {inspector}
+        </div>
       </div>
     </div>
   );
@@ -233,14 +292,19 @@ function Handle({ pane, value, maxFor, resize, commit }: HandleProps) {
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  root: css({ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: 0 }),
+  tabs: css({ flex: 'none' }),
   container: css({
+    flex: '1 1 auto',
     display: 'flex',
     flexDirection: 'row',
     width: '100%',
-    height: '100%',
     minHeight: 0,
     overflow: 'hidden',
   }),
+  // Tab mode: the visible pane takes the whole width. `hidden` is display none (the stylesheet default) unless a class
+  // sets display, so the class must not set it for a hidden pane.
+  tabPane: css({ flex: '1 1 auto', width: '100%', maxWidth: 'none', '&[hidden]': { display: 'none' } }),
   pane: css({ display: 'flex', flexDirection: 'column', position: 'relative', minHeight: 0 }),
   side: css({ flexGrow: 0, flexShrink: 0, maxWidth: LIMITS.inspector.max }),
   centre: css({ flex: '1 1 0', minWidth: 0, overflow: 'hidden' }),

@@ -38,7 +38,7 @@ import { DiagramStage } from './popup/DiagramStage';
 import { InspectorPane, type InspectorSelection } from './popup/InspectorPane';
 import type { QueryUser } from './popup/QueryPane';
 import { ListPane } from './popup/ListPane';
-import { PopupLayout } from './popup/PopupLayout';
+import { PopupLayout, type PopupTab } from './popup/PopupLayout';
 import type { PopupTarget } from './popup/popupBus';
 import type { BaseRevision } from './revision';
 
@@ -117,6 +117,8 @@ export function BindingEditor({
   const [selection, setSelection] = useState<Selection>({ kind: 'none' });
   const [filter, setFilter] = useState({ text: '', problemsOnly: false });
   const [highlight, setHighlight] = useState<string[]>([]);
+  // The visible pane in tab mode. A selection opens the inspector.
+  const [tab, setTab] = useState<PopupTab>('list');
   const [geometryOpen, setGeometryOpen] = useState(false);
   const [geometryError, setGeometryError] = useState('');
   const [selectionVersion, setSelectionVersion] = useState(0);
@@ -380,6 +382,7 @@ export function BindingEditor({
     dispatch({ type: 'select', cellId });
     setSelectionVersion((v) => v + 1);
     setSelection({ kind: 'cell' });
+    setTab('inspector');
   };
   // A pattern is edited through one of its cells, in the pattern scope.
   const openPattern = (row: { patternId: string; index: number; matched: string[] }) => {
@@ -391,12 +394,14 @@ export function BindingEditor({
     dispatch({ type: 'scope', scope: 'pattern', patternId: row.patternId, patternIndex: row.index });
     setSelectionVersion((v) => v + 1);
     setSelection({ kind: 'cell' });
+    setTab('inspector');
     setHighlight([]);
   };
   const openQuery = (id: string) => {
     setQueryId(id);
     setQueryError('');
     setSelection({ kind: 'query', queryId: id });
+    setTab('inspector');
   };
   const openProblem = (entry: ProblemEntry) => {
     const row = entry.row;
@@ -687,6 +692,8 @@ export function BindingEditor({
       )}
       <div className={styles.layout}>
         <PopupLayout
+          activeTab={tab}
+          onTabChange={setTab}
           wideInspector={selection.kind === 'query'}
           list={
             <ListPane

@@ -720,4 +720,23 @@ describe('binding inspector', () => {
     expect(screen.queryByRole('button', { name: 'Edit query CPU' })).toBeNull();
     expect(save).not.toHaveBeenCalled();
   });
+
+  it('switches to the Inspector tab after a stage click in tab mode and keeps the selection across tabs', () => {
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    setup();
+    expect(screen.getByTestId('dmap-popup-layout').getAttribute('data-dmap-layout')).toBe('tabs');
+    expect(screen.getByRole('tab', { name: 'List' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Diagram' }));
+    expect(screen.getByTestId('dmap-pane-stage').hasAttribute('hidden')).toBe(false);
+    selectStageCell('device-1');
+    expect(screen.getByRole('tab', { name: 'Inspector' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('dmap-pane-inspector').hasAttribute('hidden')).toBe(false);
+    expect(screen.getByRole('heading', { name: 'device-1 bindings' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Diagram' }));
+    expect(stageCell('device-1').getAttribute('data-dmap-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: 'List' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Inspector' }));
+    expect(screen.getByRole('heading', { name: 'device-1 bindings' })).toBeTruthy();
+    width.mockRestore();
+  });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PANES_STORAGE_KEY, PopupLayout } from './PopupLayout';
 
@@ -156,5 +156,91 @@ describe('PopupLayout', () => {
     } finally {
       Object.defineProperty(window, 'localStorage', original);
     }
+  });
+
+  describe('tab mode', () => {
+    const at = (width: number) => vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(width);
+    const hiddenPanes = () =>
+      ['list', 'stage', 'inspector'].filter((id) => screen.getByTestId(`dmap-pane-${id}`).hasAttribute('hidden'));
+
+    it('shows three panes and no tabs at 1000 px and above', () => {
+      const width = at(1000);
+      render(layout());
+      expect(screen.getByTestId('dmap-popup-layout').getAttribute('data-dmap-layout')).toBe('panes');
+      expect(screen.queryByRole('tablist')).toBeNull();
+      expect(hiddenPanes()).toEqual([]);
+      width.mockRestore();
+    });
+
+    it('shows the tabs List, Diagram and Inspector below 1000 px with one visible pane and no handles', () => {
+      const width = at(855);
+      render(layout());
+      expect(screen.getByTestId('dmap-popup-layout').getAttribute('data-dmap-layout')).toBe('tabs');
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['List', 'Diagram', 'Inspector']);
+      expect(screen.queryAllByRole('separator')).toHaveLength(0);
+      expect(screen.getByRole('tab', { name: 'List' }).getAttribute('aria-selected')).toBe('true');
+      expect(hiddenPanes()).toEqual(['stage', 'inspector']);
+      expect(screen.getByRole('tabpanel', { name: 'List' })).toBe(screen.getByTestId('dmap-pane-list'));
+      width.mockRestore();
+    });
+
+    it('switches the visible pane with a tab and keeps every pane mounted', () => {
+      const width = at(700);
+      render(
+        <PopupLayout list={<i data-testid="l" />} stage={<i data-testid="s" />} inspector={<i data-testid="i" />} />
+      );
+      const stage = screen.getByTestId('s');
+      fireEvent.click(screen.getByRole('tab', { name: 'Diagram' }));
+      expect(hiddenPanes()).toEqual(['list', 'inspector']);
+      fireEvent.click(screen.getByRole('tab', { name: 'Inspector' }));
+      expect(hiddenPanes()).toEqual(['list', 'stage']);
+      // The DOM of the stage survives a tab change.
+      expect(screen.getByTestId('s')).toBe(stage);
+      width.mockRestore();
+    });
+
+    it('follows a controlled tab and reports a change', () => {
+      const width = at(700);
+      const onTabChange = vi.fn();
+      const view = render(
+        <PopupLayout list={<i />} stage={<i />} inspector={<i />} activeTab="inspector" onTabChange={onTabChange} />
+      );
+      expect(hiddenPanes()).toEqual(['list', 'stage']);
+      fireEvent.click(screen.getByRole('tab', { name: 'List' }));
+      expect(onTabChange).toHaveBeenCalledWith('list');
+      view.rerender(
+        <PopupLayout list={<i />} stage={<i />} inspector={<i />} activeTab="stage" onTabChange={onTabChange} />
+      );
+      expect(hiddenPanes()).toEqual(['list', 'inspector']);
+      width.mockRestore();
+    });
+
+    it('keeps the stage DOM when the dialog changes between panes and tabs', () => {
+      const callbacks: Array<() => void> = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(callback: () => void) {
+            callbacks.push(callback);
+          }
+          observe() {}
+          disconnect() {}
+        }
+      );
+      const width = at(1200);
+      render(<PopupLayout list={<i />} stage={<i data-testid="s" />} inspector={<i />} />);
+      const stage = screen.getByTestId('s');
+      expect(screen.getByTestId('dmap-popup-layout').getAttribute('data-dmap-layout')).toBe('panes');
+      width.mockReturnValue(800);
+      act(() => callbacks.forEach((callback) => callback()));
+      expect(screen.getByTestId('dmap-popup-layout').getAttribute('data-dmap-layout')).toBe('tabs');
+      expect(screen.getByTestId('s')).toBe(stage);
+      width.mockReturnValue(1200);
+      act(() => callbacks.forEach((callback) => callback()));
+      expect(screen.getByTestId('dmap-popup-layout').getAttribute('data-dmap-layout')).toBe('panes');
+      expect(screen.getByTestId('s')).toBe(stage);
+      width.mockRestore();
+      vi.unstubAllGlobals();
+    });
   });
 });
