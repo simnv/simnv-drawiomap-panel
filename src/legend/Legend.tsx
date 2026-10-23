@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Icon, useStyles2 } from '@grafana/ui';
@@ -12,6 +12,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     position: absolute;
     z-index: 2;
     box-sizing: border-box;
+    /* The size must not depend on the place: an absolute box shrinks near the right edge, and the clamp would loop. */
+    width: max-content;
     max-width: min(280px, calc(100% - 8px));
     max-height: 50%;
     overflow-y: auto;
@@ -113,8 +115,22 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   ref
 ) {
   const styles = useStyles2(getStyles);
-  const rootRef = useRef<HTMLElement>(null);
-  useImperativeHandle(ref, () => rootRef.current!, []);
+  // The element is state: the legend renders nothing without blocks, so the node comes and goes. A callback ref gives
+  // the forwarded ref and the effects below the current node at all times.
+  const rootRef = useRef<HTMLElement | null>(null);
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  const setRoot = useCallback(
+    (node: HTMLElement | null) => {
+      rootRef.current = node;
+      setEl(node);
+      if (typeof ref === 'function') {
+        ref(node);
+      } else if (ref) {
+        ref.current = node;
+      }
+    },
+    [ref]
+  );
   const [open, setOpen] = useState(!collapsed);
   // A change of the option, or of the corner, resets the legend (state adjustment during render).
   const [wasCollapsed, setWasCollapsed] = useState(collapsed);
@@ -124,6 +140,9 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   }
   // The place after a move, in px from the top-left of the parent; null: the corner.
   const [pos, setPos] = useState<Point | null>(null);
+  // The most height of the legend at its corner, so that the corner offset (the reset button, the status band) never
+  // pushes it out of a small panel; it scrolls inside. Null when the place is set by a move.
+  const [cornerMax, setCornerMax] = useState<number | null>(null);
   const [wasCorner, setWasCorner] = useState(corner);
   if (wasCorner !== corner) {
     setWasCorner(corner);
@@ -154,20 +173,31 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     [measure]
   );
   // The legend never leaves the panel: also when the panel gets smaller or the legend grows (it opens).
+  // It reads the place from a ref and sets plain values, so a stale callback of the observer does no harm.
+  const posRef = useRef(pos);
+  posRef.current = pos;
   const reclamp = useCallback(() => {
     const m = measure();
     // a hidden panel has no size: keep the place
     if (!m || (m.area.width === 0 && m.area.height === 0)) {
       return;
     }
-    setPos((p) => {
-      const c = p && clampPoint(p, m.box, m.area);
-      return !p || !c || (c.x === p.x && c.y === p.y) ? p : c;
-    });
-  }, [measure]);
-  useLayoutEffect(reclamp, [reclamp, pos, open, blocks]);
+    const p = posRef.current;
+    if (p === null) {
+      const top = typeof style?.top === 'number' ? style.top : 4;
+      setCornerMax(Math.max(24, Math.min(m.area.height / 2, m.area.height - top - 4)));
+      return;
+    }
+    setCornerMax(null);
+    const c = clampPoint(p, m.box, m.area);
+    if (c.x !== p.x || c.y !== p.y) {
+      setPos(c);
+    }
+  }, [measure, style?.top]);
+  useLayoutEffect(() => {
+    reclamp();
+  }, [reclamp, pos, open, blocks, el]);
   useEffect(() => {
-    const el = rootRef.current;
     if (!el || !el.parentElement || typeof ResizeObserver === 'undefined') {
       return;
     }
@@ -175,7 +205,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     observer.observe(el);
     observer.observe(el.parentElement);
     return () => observer.disconnect();
-  }, [reclamp]);
+  }, [el, reclamp]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     const m = measure();
@@ -191,6 +221,11 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     if (!d || d.id !== e.pointerId) {
       return;
     }
+    // no button is down: the release was lost
+    if (e.buttons === 0) {
+      drag.current = null;
+      return;
+    }
     const dx = e.clientX - d.sx;
     const dy = e.clientY - d.sy;
     if (!d.moved && !isDrag(dx, dy)) {
@@ -199,15 +234,22 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     d.moved = true;
     place({ x: d.ox + dx, y: d.oy + dy });
   };
-  const onPointerEnd = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (drag.current?.id !== e.pointerId) {
       return;
     }
-    // the click after a drag is not a toggle
+    // the click that follows a real drag is not a toggle
     swallowClick.current = drag.current.moved;
     drag.current = null;
   };
+  // A cancel or a lost capture ends the drag and leaves no click to swallow.
+  const onPointerLost = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (drag.current?.id === e.pointerId) {
+      drag.current = null;
+    }
+  };
   const onKeyDown = (e: React.KeyboardEvent) => {
+    swallowClick.current = false;
     if (e.key === 'Home' && e.target === e.currentTarget.querySelector('button')) {
       e.preventDefault();
       setPos(null);
@@ -260,9 +302,13 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   );
   return (
     <section
-      ref={rootRef}
+      ref={setRoot}
       className={styles.legend}
-      style={pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : style}
+      style={
+        pos
+          ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
+          : { ...style, ...(cornerMax === null ? {} : { maxHeight: cornerMax }) }
+      }
       aria-label="Colour legend"
       data-testid="dmap-legend"
       data-dmap-corner={corner}
@@ -276,12 +322,15 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
         data-testid="dmap-legend-handle"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerLost}
+        onLostPointerCapture={onPointerLost}
         onDoubleClick={() => setPos(null)}
-        onClick={() => {
-          if (swallowClick.current) {
-            swallowClick.current = false;
+        onClick={(e) => {
+          const swallow = swallowClick.current;
+          swallowClick.current = false;
+          // a keyboard click (detail 0) always toggles
+          if (swallow && e.detail > 0) {
             return;
           }
           setOpen((v) => !v);

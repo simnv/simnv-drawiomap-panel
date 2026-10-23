@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createRef } from 'react';
 import { createTheme } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
@@ -126,7 +126,10 @@ describe('Legend', () => {
       }
       return rect(0, 0, PANEL.w, PANEL.h);
     });
-    afterEach(() => spy.mockClear());
+    afterEach(() => {
+      spy.mockClear();
+      PANEL.h = 300;
+    });
     const at = (legend: HTMLElement) => ({ x: parseFloat(legend.style.left), y: parseFloat(legend.style.top) });
     const drag = (handle: HTMLElement, from: [number, number], to: [number, number]) => {
       fireEvent.pointerDown(handle, {
@@ -136,9 +139,15 @@ describe('Legend', () => {
         clientX: from[0],
         clientY: from[1],
       });
-      fireEvent.pointerMove(handle, { pointerId: 1, pointerType: 'mouse', clientX: to[0], clientY: to[1] });
+      fireEvent.pointerMove(handle, {
+        pointerId: 1,
+        pointerType: 'mouse',
+        buttons: 1,
+        clientX: to[0],
+        clientY: to[1],
+      });
       fireEvent.pointerUp(handle, { pointerId: 1, pointerType: 'mouse', clientX: to[0], clientY: to[1] });
-      fireEvent.click(handle);
+      fireEvent.click(handle, { detail: 1 });
     };
 
     it('moves with a drag and does not toggle', () => {
@@ -197,12 +206,108 @@ describe('Legend', () => {
       fireEvent.keyDown(handle, { key: 'Home' });
       expect(legend.style.left).toBe('');
     });
+    const down = (handle: HTMLElement) =>
+      fireEvent.pointerDown(handle, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 300, clientY: 260 });
+    const move = (handle: HTMLElement, x: number, y: number, buttons = 1) =>
+      fireEvent.pointerMove(handle, { pointerId: 1, pointerType: 'mouse', buttons, clientX: x, clientY: y });
+
+    it('ends the drag on pointercancel and on a lost capture, and moves only while a button is down', () => {
+      const { legend } = view({ collapsed: true });
+      const handle = within(legend).getByRole('button', { name: 'Legend' });
+      down(handle);
+      move(handle, 250, 200);
+      expect(at(legend)).toEqual({ x: 240, y: 190 });
+      fireEvent.pointerCancel(handle, { pointerId: 1 });
+      move(handle, 100, 100);
+      expect(at(legend)).toEqual({ x: 240, y: 190 });
+      down(handle);
+      fireEvent.lostPointerCapture(handle, { pointerId: 1 });
+      move(handle, 100, 100);
+      expect(at(legend)).toEqual({ x: 240, y: 190 });
+      // a move with no button down: the release was lost
+      down(handle);
+      move(handle, 100, 100, 0);
+      move(handle, 100, 100, 1);
+      expect(at(legend)).toEqual({ x: 240, y: 190 });
+    });
+    it('swallows only the click right after a real drag: not after a cancel, not a keyboard click', () => {
+      const { legend } = view({ collapsed: true });
+      const handle = within(legend).getByRole('button', { name: 'Legend' });
+      down(handle);
+      move(handle, 250, 200);
+      fireEvent.pointerCancel(handle, { pointerId: 1 });
+      // Enter or Space after the cancel
+      fireEvent.click(handle, { detail: 0 });
+      expect(handle.getAttribute('aria-expanded')).toBe('true');
+      // a real drag whose click never comes: the keyboard click still works
+      down(handle);
+      move(handle, 200, 150);
+      fireEvent.pointerUp(handle, { pointerId: 1, pointerType: 'mouse' });
+      fireEvent.click(handle, { detail: 0 });
+      expect(handle.getAttribute('aria-expanded')).toBe('false');
+      // and the pointer click of the drag is swallowed
+      down(handle);
+      move(handle, 150, 100);
+      fireEvent.pointerUp(handle, { pointerId: 1, pointerType: 'mouse' });
+      fireEvent.click(handle, { detail: 1 });
+      expect(handle.getAttribute('aria-expanded')).toBe('false');
+    });
+    it('keeps the legend in a small panel at its corner: the corner offset caps its height', () => {
+      PANEL.h = 100;
+      const { legend } = view({ collapsed: true, corner: 'top-left', style: { left: 4, top: 60 } });
+      // 100 - 60 offset - 4 gap, and never more than half of the panel
+      expect(legend.style.maxHeight).toBe('36px');
+      const handle = within(legend).getByRole('button', { name: 'Legend' });
+      drag(handle, [300, 260], [250, 200]);
+      expect(legend.style.maxHeight).toBe('');
+      fireEvent.doubleClick(handle);
+      expect(legend.style.maxHeight).toBe('36px');
+      fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+      fireEvent.keyDown(handle, { key: 'Home' });
+      expect(legend.style.maxHeight).toBe('36px');
+    });
+
     it('keeps the entries highlight working in an open legend that moved', () => {
       const { legend, onHighlight } = view({ collapsed: false });
       drag(within(legend).getByRole('button', { name: 'Legend' }), [300, 260], [200, 160]);
       fireEvent.mouseEnter(within(legend).getAllByTestId('dmap-legend-entry')[1]);
       expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
     });
+  });
+  it('points the forwarded ref at the current element when the blocks come late or come back', () => {
+    const ref = createRef<HTMLElement>();
+    const props = { maxBlocks: 4, collapsed: false, onHighlight: () => {} };
+    const { rerender } = render(<Legend ref={ref} blocks={[]} {...props} />);
+    expect(ref.current).toBeNull();
+    rerender(<Legend ref={ref} blocks={blocks} {...props} />);
+    expect(ref.current).toBe(screen.getByTestId('dmap-legend'));
+    rerender(<Legend ref={ref} blocks={[]} {...props} />);
+    expect(ref.current).toBeNull();
+    rerender(<Legend ref={ref} blocks={blocks} {...props} />);
+    expect(ref.current).toBe(screen.getByTestId('dmap-legend'));
+    const seen: Array<HTMLElement | null> = [];
+    const callback = (n: HTMLElement | null) => seen.push(n);
+    rerender(<Legend ref={callback} blocks={blocks} {...props} />);
+    expect(seen[seen.length - 1]).toBe(screen.getByTestId('dmap-legend'));
+  });
+  it('observes the size of the legend and of the panel when the blocks come late', () => {
+    const observed: Element[] = [];
+    class Observer {
+      observe = (el: Element) => observed.push(el);
+      disconnect = () => {};
+    }
+    vi.stubGlobal('ResizeObserver', Observer);
+    try {
+      const props = { maxBlocks: 4, collapsed: false, onHighlight: () => {} };
+      const { rerender } = render(<Legend blocks={[]} {...props} />);
+      expect(observed).toHaveLength(0);
+      rerender(<Legend blocks={blocks} {...props} />);
+      const legend = screen.getByTestId('dmap-legend');
+      expect(observed).toContain(legend);
+      expect(observed).toContain(legend.parentElement);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
   it('follows a data refresh: the active entry highlights its new cells', () => {
     const { legend, onHighlight, rerender } = view();
