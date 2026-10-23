@@ -4,6 +4,7 @@ import {
   commitDraft,
   createDraft,
   draftPatternIndex,
+  isDirty,
   reduceDraft,
   exportPatternDocument,
   previewPatternImport,
@@ -320,5 +321,63 @@ describe('duplicate pattern IDs', () => {
     expect(replaced.config.patterns).toHaveLength(1);
     const imported = reduceDraft(createDraft(saved), { type: 'import', config: saved });
     expect(imported.diagnostics.map((d) => d.code)).toContain('import-pattern-conflict');
+  });
+});
+
+describe('draft diagram', () => {
+  const diagram = (hash: string) => ({ svg: `<svg data-${hash}/>`, xml: `<mxfile ${hash}/>`, hash, updatedAt: '' });
+  it('starts with the diagram and without a change', () => {
+    const draft = createDraft(saved, diagram('a'));
+    expect(draft.diagram?.hash).toBe('a');
+    expect(draft.savedDiagram?.hash).toBe('a');
+    expect(isDirty(draft)).toBe(false);
+  });
+  it('takes a new diagram and is dirty until the diagram returns', () => {
+    const draft = reduceDraft(createDraft(saved, diagram('a')), { type: 'diagram', diagram: diagram('b') });
+    expect(draft.diagram?.hash).toBe('b');
+    expect(draft.savedDiagram?.hash).toBe('a');
+    expect(isDirty(draft)).toBe(true);
+    expect(isDirty(reduceDraft(draft, { type: 'diagram', diagram: diagram('a') }))).toBe(false);
+  });
+  it('restores the saved diagram on reset', () => {
+    const changed = reduceDraft(createDraft(saved, diagram('a')), { type: 'diagram', diagram: diagram('b') });
+    const reset = reduceDraft(changed, { type: 'reset' });
+    expect(reset.diagram?.hash).toBe('a');
+    expect(isDirty(reset)).toBe(false);
+  });
+  it('copies the diagram into the saved diagram on applied', () => {
+    const changed = reduceDraft(createDraft(saved, diagram('a')), { type: 'diagram', diagram: diagram('b') });
+    const applied = reduceDraft(changed, { type: 'applied' });
+    expect(applied.savedDiagram?.hash).toBe('b');
+    expect(isDirty(applied)).toBe(false);
+    expect(reduceDraft(applied, { type: 'reset' }).diagram?.hash).toBe('b');
+  });
+  it('handles a draft without a diagram', () => {
+    const draft = createDraft(saved);
+    expect(draft.diagram).toBeUndefined();
+    expect(isDirty(draft)).toBe(false);
+  });
+});
+
+describe('isDirty', () => {
+  it('is true after a config edit and false after Apply and after reset', () => {
+    const edited = reduceDraft(createDraft(saved), { type: 'select', cellId: 'device-1' });
+    expect(isDirty(edited)).toBe(false);
+    const changed = reduceDraft(edited, { type: 'display', display: { label: 'New' } });
+    expect(isDirty(changed)).toBe(true);
+    expect(isDirty(reduceDraft(changed, { type: 'applied' }))).toBe(false);
+    expect(isDirty(reduceDraft(changed, { type: 'reset' }))).toBe(false);
+  });
+  it('is false again when an edit is typed back to the saved value', () => {
+    const base = reduceDraft(createDraft(saved), {
+      type: 'scope',
+      scope: 'pattern',
+      patternId: 'devices',
+      patternIndex: 0,
+    });
+    const there = reduceDraft(base, { type: 'display', display: { label: 'X' } });
+    const back = reduceDraft(there, { type: 'display', display: { label: 'Shared' } });
+    expect(isDirty(there)).toBe(true);
+    expect(isDirty(back)).toBe(false);
   });
 });

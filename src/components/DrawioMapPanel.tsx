@@ -10,20 +10,21 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import { css } from '@emotion/css';
-import { getDisplayProcessor, PanelProps } from '@grafana/data';
+import { PanelProps } from '@grafana/data';
 import { IconButton, useTheme2 } from '@grafana/ui';
 import { locationService } from '@grafana/runtime';
 import { bind, bindPlan } from '../binding/engine';
+import { bindContextFor, cardContextFor } from '../binding/context';
 import { resolvePatterns } from '../binding/patterns';
 import { extractSeries } from '../binding/series';
-import { buildCard, buildConfiguredCard, DisplayOverride, opensCard } from '../interact/cardModel';
+import { buildCard, buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind, interactiveCells, patchAt } from '../interact/hit';
 import { applyPatches, INTERACTIVE_ATTR, markInteractive } from '../render/applier';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
-import { DEFAULT_OPTIONS, Options, SeriesInfo, type CellPatch, type Diagram, type LegendCorner } from '../types';
+import { DEFAULT_OPTIONS, Options, type CellPatch, type Diagram, type LegendCorner } from '../types';
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
 import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
@@ -254,20 +255,16 @@ function DrawioMapPanelView({
   }
 
   const series = useMemo(() => extractSeries(data.series), [data.series]);
-  // Grafana attaches field.display (effective config incl. overrides) to panel data; fall back for tests.
-  const display = useCallback(
-    (s: SeriesInfo, v: number) => (s.field.display ?? getDisplayProcessor({ field: s.field, theme, timeZone }))(v),
-    [theme, timeZone]
-  );
   const bindingContext = useMemo(
-    () => ({
-      theme,
-      fieldThresholds: fieldConfig.defaults.thresholds,
-      replaceVariables,
-      display,
-      linkWidth: { min: opts.linkWidth.min, max: opts.linkWidth.max },
-    }),
-    [theme, fieldConfig.defaults.thresholds, replaceVariables, display, opts.linkWidth.min, opts.linkWidth.max]
+    () =>
+      bindContextFor({
+        theme,
+        fieldThresholds: fieldConfig.defaults.thresholds,
+        replaceVariables,
+        timeZone,
+        linkWidth: { min: opts.linkWidth.min, max: opts.linkWidth.max },
+      }),
+    [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, opts.linkWidth.min, opts.linkWidth.max]
   );
   const plan = useMemo(
     () => resolvePatterns(cellMetas(stage.index), opts.config ?? EMPTY_CONFIG),
@@ -382,22 +379,17 @@ function DrawioMapPanelView({
     // the rules or the diagram changed and the cell has no patch now
     setCard(null);
   }
-  const cardContext = useMemo(() => {
-    const displayFor = (s: SeriesInfo, v: number, o?: DisplayOverride) => {
-      if (!o) {
-        return display(s, v);
-      }
-      const config = { ...s.field.config };
-      if (o.unit !== undefined) {
-        config.unit = o.unit;
-      }
-      if (o.decimals !== undefined) {
-        config.decimals = o.decimals;
-      }
-      return getDisplayProcessor({ field: { ...s.field, config }, theme, timeZone })(v);
-    };
-    return { series, theme, display: displayFor, replaceVariables, fieldThresholds: fieldConfig.defaults.thresholds };
-  }, [series, theme, timeZone, display, replaceVariables, fieldConfig.defaults.thresholds]);
+  const cardContext = useMemo(
+    () =>
+      cardContextFor({
+        series,
+        theme,
+        timeZone,
+        replaceVariables,
+        fieldThresholds: fieldConfig.defaults.thresholds,
+      }),
+    [series, theme, timeZone, replaceVariables, fieldConfig.defaults.thresholds]
+  );
   const configured = !!opts.config;
   const model = useMemo(() => {
     if (!cardPatch) {

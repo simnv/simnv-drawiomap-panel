@@ -7,7 +7,7 @@ import {
   type Pattern,
   type Widget,
 } from '../model/config';
-import type { CellSelector } from '../types';
+import type { CellSelector, Diagram } from '../types';
 import { previewPatternImport, type ImportResolution } from './portable';
 export { exportPatternDocument, previewPatternImport } from './portable';
 
@@ -21,6 +21,10 @@ export interface BindingDraft {
   /** The exact pattern when pattern IDs collide; the ID alone is ambiguous then. */
   patternIndex?: number;
   diagnostics: Diagnostic[];
+  /** The diagram of the draft. A geometry save in draw.io changes it. */
+  diagram?: Diagram;
+  /** The diagram of the last Apply, or the one the draft started with. */
+  savedDiagram?: Diagram;
 }
 export type DraftAction =
   | { type: 'select'; cellId: string }
@@ -35,6 +39,7 @@ export type DraftAction =
   | { type: 'remove-override'; cellId: string }
   | { type: 'import'; config: unknown }
   | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
+  | { type: 'diagram'; diagram: Diagram }
   | { type: 'reset' | 'applied' };
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfig>): DisplayConfig {
@@ -52,8 +57,21 @@ export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternI
     ? draft.patternIndex
     : patterns.findIndex((p) => p.id === draft.patternId);
 }
-export function createDraft(config: DiagramConfigV2): BindingDraft {
-  return { saved: copy(config), config: copy(config), scope: 'element', diagnostics: [] };
+export function createDraft(config: DiagramConfigV2, diagram?: Diagram): BindingDraft {
+  return {
+    saved: copy(config),
+    config: copy(config),
+    scope: 'element',
+    diagnostics: [],
+    diagram,
+    savedDiagram: diagram,
+  };
+}
+/** True when the config or the diagram differs from the last saved state. */
+export function isDirty(draft: BindingDraft): boolean {
+  return (
+    JSON.stringify(draft.config) !== JSON.stringify(draft.saved) || draft.diagram?.hash !== draft.savedDiagram?.hash
+  );
 }
 export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDraft {
   if (action.type === 'select') {
@@ -63,10 +81,15 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     return { ...draft, scope: action.scope, patternId: action.patternId, patternIndex: action.patternIndex };
   }
   if (action.type === 'reset') {
-    return { ...draft, config: copy(draft.saved), diagnostics: [] };
+    return { ...draft, config: copy(draft.saved), diagram: draft.savedDiagram, diagnostics: [] };
   }
   if (action.type === 'applied') {
-    return { ...draft, saved: commitDraft(draft), diagnostics: [] };
+    // The committed config is the normalised one. The draft takes it, so that the draft is not dirty after Apply.
+    const saved = commitDraft(draft);
+    return { ...draft, saved, config: copy(saved), savedDiagram: draft.diagram, diagnostics: [] };
+  }
+  if (action.type === 'diagram') {
+    return { ...draft, diagram: action.diagram };
   }
   let config = draft.config;
   if (action.type === 'import-patterns') {
