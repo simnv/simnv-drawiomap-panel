@@ -20,6 +20,8 @@ export const test = base.extend<{
       zoom?: Record<string, unknown>;
       /** Grafana panel queries; default: none */
       targets?: unknown[];
+      /** Dashboard auto refresh, for example `5s`; default: off */
+      refresh?: string;
     }
   ) => Promise<string>;
   sandboxSettings: void;
@@ -52,6 +54,7 @@ export const test = base.extend<{
             title: uid,
             schemaVersion: 39,
             editable: true,
+            ...(settings.refresh ? { refresh: settings.refresh } : {}),
             time: { from: 'now-1h', to: 'now' },
             templating: {
               list: [

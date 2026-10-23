@@ -100,10 +100,11 @@ export function reduceHistory(state: HistoryState, action: HistoryAction, now = 
     return { ...state, present: result, session: undefined };
   }
   // The leaves that this step changed, from a diff of the owner's display: the editor writes a whole binding or a
-  // whole section for an edit of one field.
-  const changed = changedLeaves(ownDisplayOf(present), ownDisplayOf(result));
-  if (action.type === 'display' && state.coalesceMs > 0 && changed.length > 0) {
-    const owner = ownerOf(present);
+  // whole section for an edit of one field. A bulk edit names its leaves: they are its operations.
+  const bulk = action.type === 'display-many';
+  const changed = bulk ? action.ops.map((op) => op.path) : changedLeaves(ownDisplayOf(present), ownDisplayOf(result));
+  if ((action.type === 'display' || bulk) && state.coalesceMs > 0 && changed.length > 0) {
+    const owner = bulk ? `many:${[...new Set(action.cellIds)].sort().join(',')}` : ownerOf(present);
     const session = state.session;
     if (
       changed.length === 1 &&

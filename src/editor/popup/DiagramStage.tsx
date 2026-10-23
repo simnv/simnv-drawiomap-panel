@@ -11,9 +11,18 @@ import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../components/usePanZoom';
 import type { Stage } from '../../components/useStage';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
+import { boxTargets } from './boxTargets';
+import { useBoxSelect } from './useBoxSelect';
 
 export interface StageSelection {
+  /** Every selected cell. The primary one is the last. */
   selected: string[];
+  /** The cell that the single-cell sections edit. */
+  primary?: string;
+  /** Cells that a proposed selector would match and the selection does not hold. */
+  extra?: string[];
+  /** Selected cells that a proposed selector would miss. */
+  missed?: string[];
   /** The cells that the edited pattern or override changes. */
   affected: string[];
   /** The cells that a list row points at. */
@@ -26,7 +35,10 @@ export interface DiagramStageProps {
   stageRef: React.MutableRefObject<HTMLDivElement | null>;
   patches: PatchMap;
   selection: StageSelection;
+  /** A click or Enter. Shift toggles the cell in the selection. */
   onSelect: (cellId: string, options: { shift: boolean }) => void;
+  /** A box select ended: the cells that the band touches, to add to the selection. */
+  onBox?: (cellIds: string[]) => void;
   /** The chart widgets of the draft. Without it the stage shows no charts. */
   chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision' | 'owner'>;
   /** Namespace of the query consumers of the charts, for example `popup:3`. */
@@ -47,6 +59,7 @@ export function DiagramStage({
   patches,
   selection,
   onSelect,
+  onBox,
   chartLayer,
   owner,
   hash,
@@ -129,6 +142,12 @@ export function DiagramStage({
     }
   }, [stage.root, stage.base, size, view, stageRef]);
 
+  const box = useBoxSelect({
+    wrapperRef,
+    targets: () => boxTargets(stage.index),
+    onSelect: (ids) => onBox?.(Array.from(new Set(ids))),
+    ignore: (target) => target instanceof Node && !!resetRef.current?.contains(target),
+  });
   const panZoom = usePanZoom({
     wrapperRef,
     root: stage.root,
@@ -138,11 +157,12 @@ export function DiagramStage({
     wheel: true,
     dragPan: true,
     align: 'center',
-    ignore: (target) => target instanceof Node && !!resetRef.current?.contains(target),
+    // A band owns the pointer: the pan does not start.
+    ignore: (target) => box.active() || (target instanceof Node && !!resetRef.current?.contains(target)),
   });
 
   // The editor layer of the cell attributes: the patch applier does not touch it.
-  const { selected, affected, highlight } = selection;
+  const { selected, affected, highlight, primary, extra, missed } = selection;
   useEffect(() => {
     for (const [id, cell] of stage.index) {
       setOwnedAttrs(cell.group, 'editor', {
@@ -150,11 +170,14 @@ export function DiagramStage({
         role: 'button',
         'aria-label': `${id} diagram element`,
         'data-dmap-selected': selected.includes(id) ? 'true' : 'false',
+        'data-dmap-primary': id === primary ? 'true' : 'false',
+        'data-dmap-extra': extra?.includes(id) ? 'true' : 'false',
+        'data-dmap-missed': missed?.includes(id) ? 'true' : 'false',
         'data-dmap-affected': affected.includes(id) ? 'true' : 'false',
         'data-dmap-highlight': highlight.includes(id) ? 'true' : 'false',
       });
     }
-  }, [stage.index, selected, affected, highlight]);
+  }, [stage.index, selected, affected, highlight, primary, extra, missed]);
   useEffect(() => {
     const index = stage.index;
     return () => index.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
@@ -173,10 +196,10 @@ export function DiagramStage({
     <div
       ref={wrapperRef}
       className={styles.wrapper}
-      style={{ colorScheme: isDark ? 'dark' : 'light', touchAction: 'none' }}
+      style={{ colorScheme: isDark ? 'dark' : 'light', touchAction: 'none', userSelect: 'none' }}
       onClick={(e) => {
-        // A drag that moved the view is not a click.
-        if (panZoom.takeClick()) {
+        // A drag that moved the view, or a band, is not a click.
+        if (box.takeClick() || panZoom.takeClick()) {
           e.stopPropagation();
           return;
         }
@@ -200,6 +223,13 @@ export function DiagramStage({
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
+      {box.rect ? (
+        <div
+          className={styles.band}
+          data-testid="dmap-box-select"
+          style={{ left: box.rect.left, top: box.rect.top, width: box.rect.width, height: box.rect.height }}
+        />
+      ) : null}
       {panZoom.zoomed ? (
         <div ref={resetRef} className={styles.reset}>
           <IconButton
@@ -233,7 +263,20 @@ const getStyles = (theme: GrafanaTheme2) => ({
     "& [data-cell-id][role='button']": { cursor: 'pointer' },
     '& [data-dmap-affected="true"]': { outline: '2px dashed currentColor' },
     '& [data-dmap-selected="true"]': { outline: '3px solid currentColor' },
+    // The last selected cell is the one that the single-cell sections edit.
+    '& [data-dmap-primary="true"]': { outlineOffset: '2px' },
+    // A proposed selector would also match these cells.
+    '& [data-dmap-extra="true"]': { outline: `3px dashed ${theme.colors.warning.border}`, outlineOffset: '2px' },
+    // The proposed selector misses these selected cells.
+    '& [data-dmap-missed="true"]': { outline: `3px double ${theme.colors.error.border}`, outlineOffset: '2px' },
     '& [data-dmap-highlight="true"]': { outline: '3px dotted currentColor' },
+  }),
+  band: css({
+    position: 'absolute',
+    zIndex: 2,
+    pointerEvents: 'none',
+    border: `1px solid ${theme.colors.primary.border}`,
+    background: theme.colors.primary.transparent,
   }),
   empty: css({ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.7 }),
   reset: css({

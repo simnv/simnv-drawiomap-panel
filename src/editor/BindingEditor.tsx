@@ -25,7 +25,7 @@ import { PanelQueryContext } from '../query/panel';
 import type { QuerySnapshot } from '../query/types';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import { sanitizeSvg } from '../render/sanitize';
-import type { BindContext, Diagram } from '../types';
+import type { BindContext, CellSelector, Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { buildBindingsList, problemsOf, type BindingsList, type PatternRow, type ProblemEntry } from './bindingsModel';
@@ -118,6 +118,17 @@ export function BindingEditor({
   const [selection, setSelection] = useState<Selection>({ kind: 'none' });
   const [filter, setFilter] = useState({ text: '', problemsOnly: false });
   const [highlight, setHighlight] = useState<string[]>([]);
+  // The cells that the proposed selector of the multi-selection matches too, and the selected ones it misses.
+  const [marks, setMarks] = useState<{ extra: string[]; missed: string[] }>({ extra: [], missed: [] });
+  const showMarks = useCallback(
+    (extra: string[], missed: string[]) =>
+      setMarks((old) =>
+        old.extra.join('\u0000') === extra.join('\u0000') && old.missed.join('\u0000') === missed.join('\u0000')
+          ? old
+          : { extra, missed }
+      ),
+    []
+  );
   // The visible pane in tab mode. A selection opens the inspector.
   const [tab, setTab] = useState<PopupTab>('list');
   const [geometryOpen, setGeometryOpen] = useState(false);
@@ -379,6 +390,23 @@ export function BindingEditor({
   );
 
   // ---- selection ----
+  // The cells of the selection that the diagram still has. A cell that a geometry save removed leaves it.
+  const selectedIds =
+    selection.kind === 'many'
+      ? selection.cellIds.filter((id) => cells.has(id))
+      : selection.kind === 'cell' && draft.cellId
+        ? [draft.cellId]
+        : [];
+  if (selection.kind === 'many' && selectedIds.length !== selection.cellIds.length) {
+    if (selectedIds.length >= 2) {
+      setSelection({ kind: 'many', cellIds: selectedIds });
+    } else {
+      setSelection(selectedIds.length === 1 ? { kind: 'cell' } : { kind: 'none' });
+      if (selectedIds.length === 1) {
+        dispatch({ type: 'select', cellId: selectedIds[0] });
+      }
+    }
+  }
   const openCell = (cellId: string) => {
     dispatch({ type: 'select', cellId });
     setSelectionVersion((v) => v + 1);
@@ -386,6 +414,48 @@ export function BindingEditor({
     setTab('inspector');
   };
   // A pattern is edited through one of its cells, in the pattern scope.
+  /** Replace the selection by these cells; the last one is the primary cell of the draft. */
+  const pickCells = (ids: string[]) => {
+    if (ids.length === 0) {
+      setSelection({ kind: 'none' });
+      return;
+    }
+    dispatch({ type: 'select', cellId: ids[ids.length - 1] });
+    setSelectionVersion((v) => v + 1);
+    setSelection(ids.length === 1 ? { kind: 'cell' } : { kind: 'many', cellIds: ids });
+    setTab('inspector');
+  };
+  // Shift + click toggles a cell in the selection. A plain click replaces it.
+  const toggleCell = (cellId: string) =>
+    pickCells(selectedIds.includes(cellId) ? selectedIds.filter((id) => id !== cellId) : [...selectedIds, cellId]);
+  // A box select adds the cells under the band to the selection (the band starts with Shift).
+  const addCells = (ids: string[]) => {
+    const fresh = ids.filter((id) => !selectedIds.includes(id));
+    if (fresh.length) {
+      pickCells([...selectedIds, ...fresh]);
+    }
+  };
+  // A new pattern from the selection: one step in the history. The pattern opens in the pattern scope.
+  const createPatternFrom = (select: CellSelector) => {
+    let n = 1;
+    while (draft.config.patterns.some((p) => p.id === `pattern-${n}`)) {
+      n++;
+    }
+    const id = `pattern-${n}`;
+    const first = metas.find((cell) => cellMatches(select, cell))?.id ?? selectedIds[selectedIds.length - 1];
+    dispatch({
+      type: 'batch',
+      actions: [
+        { type: 'pattern', pattern: { id, name: `Pattern ${n}`, select, display: {} } },
+        { type: 'select', cellId: first },
+        { type: 'scope', scope: 'pattern', patternId: id, patternIndex: draft.config.patterns.length },
+      ],
+    });
+    setSelectionVersion((v) => v + 1);
+    setSelection({ kind: 'cell' });
+    setTab('inspector');
+    setMarks({ extra: [], missed: [] });
+  };
   const openPattern = (row: { patternId: string; index: number; matched: string[] }) => {
     const cellId = row.matched[0] ?? cells.keys().next().value;
     if (cellId === undefined) {
@@ -736,11 +806,15 @@ export function BindingEditor({
               stageRef={stageRef}
               patches={bound.patches}
               selection={{
-                selected: selection.kind === 'cell' && draft.cellId ? [draft.cellId] : [],
+                selected: selectedIds,
+                primary: selectedIds.length ? selectedIds[selectedIds.length - 1] : undefined,
+                extra: selection.kind === 'many' ? marks.extra : undefined,
+                missed: selection.kind === 'many' ? marks.missed : undefined,
                 affected: selection.kind === 'cell' ? affected : [],
                 highlight,
               }}
-              onSelect={(cellId) => openCell(cellId)}
+              onSelect={(cellId, { shift }) => (shift ? toggleCell(cellId) : openCell(cellId))}
+              onBox={addCells}
               chartLayer={chartLayer}
               owner={owner}
               hash={draft.diagram?.hash}
@@ -749,6 +823,21 @@ export function BindingEditor({
           inspector={
             <InspectorPane
               selection={selection}
+              many={
+                selection.kind === 'many'
+                  ? {
+                      cellIds: selectedIds,
+                      cells: metas,
+                      selectionVersion,
+                      onMarks: showMarks,
+                      onCreatePattern: createPatternFrom,
+                      plan,
+                      config: draft.config,
+                      fields,
+                      dispatch,
+                    }
+                  : undefined
+              }
               canEditGeometry={!!draft.diagram}
               onEditGeometry={() => setGeometryOpen(true)}
               card={{

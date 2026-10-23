@@ -283,3 +283,70 @@ describe('history', () => {
     expect(undone.present.diagram?.hash).toBe(`h${MAX_DIAGRAMS + 2}`);
   });
 });
+
+describe('history of a batch', () => {
+  it('is one step: one undo removes the whole batch, one redo restores it', () => {
+    let s = start();
+    s = reduceHistory(s, {
+      type: 'batch',
+      actions: [
+        { type: 'pattern', pattern: { id: 'n', name: 'N', select: { ids: ['a', 'b'] }, display: {} } },
+        { type: 'select', cellId: 'b' },
+        { type: 'scope', scope: 'pattern', patternId: 'n', patternIndex: 1 },
+      ],
+    });
+    expect(s.past).toHaveLength(1);
+    expect(s.present.config.patterns).toHaveLength(2);
+    s = reduceHistory(s, { type: 'undo' });
+    expect(s.present.config.patterns).toHaveLength(1);
+    s = reduceHistory(s, { type: 'redo' });
+    expect(s.present.config.patterns).toHaveLength(2);
+  });
+
+  it('does not join the edit run of a field: the edit before it stays its own step', () => {
+    let s = run(start(), [[display('x'), 0]]);
+    s = reduceHistory(s, { type: 'batch', actions: [display('y')] }, 100);
+    expect(s.past).toHaveLength(2);
+  });
+});
+
+describe('history of a bulk edit', () => {
+  const many = (label: string, cellIds = ['a', 'b', 'c']): DraftAction => ({
+    type: 'display-many',
+    cellIds,
+    ops: [{ path: 'label', value: label }],
+  });
+
+  it('is one step for the cells, and typing in one field joins one step', () => {
+    let s = run(start(), [
+      [many('x'), 1000],
+      [many('xy'), 1100],
+      [many('xyz'), 1200],
+    ]);
+    expect(s.past).toHaveLength(1);
+    s = reduceHistory(s, { type: 'undo' });
+    expect(s.present.config.overrides).toEqual([]);
+  });
+
+  it('starts a new step for other cells, another leaf or after the window', () => {
+    expect(
+      run(start(), [
+        [many('x'), 1000],
+        [many('y', ['a', 'b']), 1100],
+      ]).past
+    ).toHaveLength(2);
+    const other: DraftAction = { type: 'display-many', cellIds: ['a', 'b', 'c'], ops: [{ path: 'url', value: '/u' }] };
+    expect(
+      run(start(), [
+        [many('x'), 1000],
+        [other, 1100],
+      ]).past
+    ).toHaveLength(2);
+    expect(
+      run(start(), [
+        [many('x'), 1000],
+        [many('y'), 5000],
+      ]).past
+    ).toHaveLength(2);
+  });
+});

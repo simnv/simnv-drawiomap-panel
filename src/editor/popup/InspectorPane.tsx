@@ -10,9 +10,15 @@ import { BindingInspector } from '../BindingInspector';
 import type { BindingDraft, DraftAction } from '../draft';
 import { EditorSection, getEditorStyles } from '../EditorLayout';
 import { CardPreview, type CardPreviewProps } from './CardPreview';
+import { MultiSelectionPane, type MultiSelectionProps } from './MultiSelectionPane';
 import { QueryPane, type QueryPaneProps } from './QueryPane';
 
-export type InspectorSelection = { kind: 'none' } | { kind: 'cell' } | { kind: 'query'; queryId: string };
+export type InspectorSelection =
+  | { kind: 'none' }
+  | { kind: 'cell' }
+  /** Two or more cells; the last one is the primary cell of the draft. */
+  | { kind: 'many'; cellIds: string[] }
+  | { kind: 'query'; queryId: string };
 
 /** Everything the cell body shows. The editor computes it; the pane only renders it. */
 export interface CellBodyProps {
@@ -53,10 +59,20 @@ export interface InspectorPaneProps {
   card?: CardPreviewProps;
   /** The props of the query pane for the selected query. */
   query?: QueryPaneProps;
+  /** The props of the pane for a selection of several cells. */
+  many?: MultiSelectionProps;
 }
 
 /** The right pane. It shows the selected cell, the selected query or a hint. */
-export function InspectorPane({ selection, canEditGeometry, onEditGeometry, cell, card, query }: InspectorPaneProps) {
+export function InspectorPane({
+  selection,
+  canEditGeometry,
+  onEditGeometry,
+  cell,
+  card,
+  query,
+  many,
+}: InspectorPaneProps) {
   const editor = useStyles2(getEditorStyles);
   const styles = useStyles2(getStyles);
   return (
@@ -77,6 +93,7 @@ export function InspectorPane({ selection, canEditGeometry, onEditGeometry, cell
                 {cell.geometryError}
               </Alert>
             )}
+            {selection.kind === 'many' && many && <MultiSelectionPane {...many} />}
             {selection.kind === 'none' && (
               <p className={styles.hint}>Select an element in the diagram or a row in the list.</p>
             )}

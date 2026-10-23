@@ -1,7 +1,8 @@
 import type { Page } from '@playwright/test';
 import type { DiagramConfigV2, NamedQuery } from '../src/model/config';
 import { binding, nativeQuery } from '../src/fixtures/authoring-config';
-import { expect, test } from './authoring-fixtures';
+import { openBindingsPopup, closeBindingsPopup } from './authoring-controls';
+import { expect, observeQueries, test } from './authoring-fixtures';
 
 // Three fictional devices. Each device has its own query and status condition.
 const COUNT = 3;
@@ -155,3 +156,130 @@ for (const kind of Object.keys(kinds) as Array<keyof typeof kinds>) {
     });
   });
 }
+
+test.describe('popup open', () => {
+  test('the panel behind does no work for a refresh while the popup is open and updates once on close', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+    readProvisionedDataSource,
+  }) => {
+    test.setTimeout(150_000);
+    const testdata = await readProvisionedDataSource({ fileName: 'authoring.yaml' });
+    const walk = binding('walk');
+    const live: DiagramConfigV2 = {
+      ...config,
+      queries: [{ id: 'walk', name: 'walk', source: { kind: 'panel', refId: 'A' } }],
+      patterns: [
+        {
+          id: 'links',
+          name: 'Links',
+          select: { ids: ['link-1'] },
+          display: {
+            link: { a2bBinding: walk, b2aBinding: walk, capacity: 100 },
+            hover: { rows: [{ kind: 'value', label: 'Walk', binding: walk }] },
+          },
+        },
+      ],
+      overrides: [],
+      widgets: [],
+    };
+    const uid = await createDiagram(live, {
+      refresh: '5s',
+      targets: [
+        {
+          refId: 'A',
+          datasource: { uid: testdata.uid, type: 'grafana-testdata-datasource' },
+          scenarioId: 'random_walk',
+        },
+      ],
+    });
+    const requests = observeQueries(page, uid);
+    // The last value of the walk in each response, in order: the latest result is the last one.
+    const values: number[] = [];
+    page.on('response', async (response) => {
+      if (!new URL(response.url()).pathname.endsWith('/api/ds/query')) {
+        return;
+      }
+      try {
+        const body = await response.json();
+        const column = body.results?.A?.frames?.[0]?.data?.values?.[1] as number[] | undefined;
+        if (column?.length) {
+          values.push(column[column.length - 1]);
+        }
+      } catch {
+        // a request that the page cancelled has no body
+      }
+    });
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const panel = page.getByTestId('dmap-panel');
+    const halves = panel.locator('polyline.dmap-half');
+    await expect(halves.first()).toBeAttached();
+    const snapshot = async () => ({
+      halves: await halves.evaluateAll((els) => els.map((el) => el.outerHTML)),
+      patched: await panel.getAttribute('data-dmap-patched'),
+    });
+    // Count every change under the panel: an attribute, a node, a text. The applier writes at least one per refresh.
+    await panel.evaluate((el) => {
+      const w = window as unknown as { __dmapMutations: number };
+      w.__dmapMutations = 0;
+      new MutationObserver((records) => {
+        w.__dmapMutations += records.length;
+      }).observe(el, { attributes: true, childList: true, subtree: true, characterData: true });
+    });
+    const mutations = () => page.evaluate(() => (window as unknown as { __dmapMutations: number }).__dmapMutations);
+
+    // Control: without the popup, a refresh changes the panel.
+    await page.waitForTimeout(1000);
+    const settled = await mutations();
+    const first = requests.length;
+    await expect.poll(() => requests.length, { timeout: 30_000 }).toBeGreaterThan(first);
+    await expect.poll(mutations, { timeout: 10_000 }).toBeGreaterThan(settled);
+
+    await openBindingsPopup(page);
+    const before = await snapshot();
+    const mutationsBefore = await mutations();
+    const asked = requests.length;
+    // Three dashboard refreshes reach the data source while the popup is open.
+    await expect.poll(() => requests.length - asked, { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
+    expect(await snapshot()).toEqual(before);
+    expect(await mutations()).toBe(mutationsBefore);
+
+    const valuesAtOpen = values.at(-1)!;
+    // Record each distinct picture of the link halves from the close on.
+    await panel.evaluate((el) => {
+      const w = window as unknown as { __dmapPictures: string[] };
+      w.__dmapPictures = [];
+      const read = () => Array.from(el.querySelectorAll('polyline.dmap-half'), (half) => half.outerHTML).join('\n');
+      new MutationObserver(() => {
+        const picture = read();
+        if (w.__dmapPictures.at(-1) !== picture) {
+          w.__dmapPictures.push(picture);
+        }
+      }).observe(el, { attributes: true, childList: true, subtree: true });
+    });
+    const pictures = () => page.evaluate(() => (window as unknown as { __dmapPictures: string[] }).__dmapPictures);
+    const responsesAtClose = values.length;
+    await closeBindingsPopup(page);
+    // The panel renders the latest data: its link halves change.
+    await expect.poll(async () => (await snapshot()).halves, { timeout: 15_000 }).not.toEqual(before.halves);
+    expect(await mutations()).toBeGreaterThan(mutationsBefore);
+    await page.waitForTimeout(1200);
+    // One update with the latest result: one new picture, plus one for each refresh that arrived after the close.
+    expect((await pictures()).length).toBeLessThanOrEqual(1 + (values.length - responsesAtClose));
+    // The hover card shows the latest value, not the one from before the pause.
+    const at = await halves.first().evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await page.mouse.move(at.x, at.y - 40);
+    await page.mouse.move(at.x, at.y, { steps: 5 });
+    const row = panel.getByRole('tooltip').getByTestId('dmap-card-row').first();
+    await expect(row).toContainText('Walk');
+    const shown = parseFloat(((await row.innerText()).match(/-?\d+(?:\.\d+)?/g) ?? []).at(-1) ?? 'NaN');
+    const latest = values.slice(-2);
+    const nearest = (candidates: number[]) => Math.min(...candidates.map((value) => Math.abs(value - shown)));
+    expect(nearest(latest)).toBeLessThan(Math.abs(valuesAtOpen - shown) + 1e-9);
+  });
+});

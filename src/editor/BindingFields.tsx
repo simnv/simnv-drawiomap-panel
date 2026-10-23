@@ -146,6 +146,7 @@ export function BindingFields({
   fields = [],
   onChange,
   path,
+  mixed,
   ...sources
 }: {
   label: string;
@@ -155,9 +156,19 @@ export function BindingFields({
   onChange: (value?: QueryBinding) => void;
   /** The display path of the binding, for example `link.a2bBinding`. */
   path?: string;
+  /** A bulk edit of bindings that differ: the section shows the chip and no field, so no partial binding is built. */
+  mixed?: boolean;
 } & SourceProps) {
   const fieldListId = useId();
   const source = sourceFor(sources, path);
+  if (mixed) {
+    return (
+      <EditorSection title={`${label} metric`} defaultOpen>
+        {source && <SourceRow label={`${label} metric`} source={source} />}
+        <p>Mixed, edit per element</p>
+      </EditorSection>
+    );
+  }
   return (
     <EditorSection title={`${label} metric`} defaultOpen>
       {source && <SourceRow label={`${label} metric`} source={source} />}
@@ -302,11 +313,17 @@ export function DisplayFields({
   onChange,
   sourceOf,
   onReset,
+  locked,
+  mixedBindings = [],
 }: {
   value: DisplayConfig;
   queries: NamedQuery[];
   fields?: string[];
   onChange: (display: Partial<DisplayConfig>) => void;
+  /** A section that cannot be edited here shows this note instead of its fields (a bulk edit of different rows). */
+  locked?: { hover?: string; status?: string };
+  /** Binding paths whose values differ between the selected elements: the binding shows "Mixed", no fields. */
+  mixedBindings?: readonly string[];
 } & SourceProps) {
   const src: SourceProps = { sourceOf, onReset };
   const first = queries[0]?.id ?? '';
@@ -358,6 +375,7 @@ export function DisplayFields({
         <BindingFields
           label="Shape"
           path="shape.binding"
+          mixed={mixedBindings.includes('shape.binding')}
           {...src}
           value={value.shape?.binding}
           queries={queries}
@@ -390,6 +408,7 @@ export function DisplayFields({
             key={key}
             label={['A to B', 'B to A', 'Capacity'][i]}
             path={`link.${key}`}
+            mixed={mixedBindings.includes(`link.${key}`)}
             {...src}
             value={value.link?.[key]}
             queries={queries}
@@ -407,7 +426,9 @@ export function DisplayFields({
         />
       </EditorSection>
       <EditorSection title="Explicit health status">
-        {!status ? (
+        {locked?.status ? (
+          <p>{locked.status}</p>
+        ) : !status ? (
           <Button
             variant="secondary"
             size="sm"
@@ -619,164 +640,170 @@ export function DisplayFields({
         )}
       </EditorSection>
       <EditorSection title="Hover rows">
-        <EditorField label="Enable hover rows" source={sourceFor(src, 'hover.enabled')}>
-          <Switch
-            aria-label="Enable hover rows"
-            value={value.hover?.enabled !== false}
-            onChange={(e) => onChange({ hover: { ...value.hover, rows, enabled: e.currentTarget.checked } })}
-          />
-        </EditorField>
-        {rows.map((row, i) => (
-          <div key={i}>
-            <EditorField label={`Hover row ${i + 1} kind`} source={sourceFor(src, `hover.rows[${i}]`)}>
-              <Select
-                aria-label={`Hover row ${i + 1} kind`}
-                value={row.kind}
-                onChange={(selection) => {
-                  const kind = selection.value ?? '';
-                  const label = row.label;
-                  setRow(
-                    i,
-                    kind === 'metadata'
-                      ? { kind, label, path: 'cell.key' }
-                      : kind === 'drilldown'
-                        ? { kind, label, url: '/d/' }
-                        : kind === 'history'
-                          ? { kind, label, binding: newBinding(first) }
-                          : { kind: 'value', label, binding: newBinding(first) }
-                  );
-                }}
-                options={['metadata', 'value', 'history', 'drilldown'].map((k) => ({ value: k, label: k }))}
-                menuShouldPortal
-                maxMenuHeight={240}
+        {locked?.hover ? (
+          <p>{locked.hover}</p>
+        ) : (
+          <>
+            <EditorField label="Enable hover rows" source={sourceFor(src, 'hover.enabled')}>
+              <Switch
+                aria-label="Enable hover rows"
+                value={value.hover?.enabled !== false}
+                onChange={(e) => onChange({ hover: { ...value.hover, rows, enabled: e.currentTarget.checked } })}
               />
             </EditorField>
-            <TextField
-              label={`Hover row ${i + 1} label`}
-              path={`hover.rows[${i}].label`}
-              {...src}
-              value={row.label}
-              onChange={(label) => setRow(i, { ...row, label })}
-            />
-            {row.kind === 'metadata' ? (
-              <TextField
-                label={`Hover row ${i + 1} path`}
-                path={`hover.rows[${i}].path`}
-                {...src}
-                value={row.path}
-                onChange={(path) => setRow(i, { ...row, path })}
-              />
-            ) : row.kind === 'drilldown' ? (
-              <TextField
-                label={`Hover row ${i + 1} URL`}
-                path={`hover.rows[${i}].url`}
-                {...src}
-                value={row.url}
-                onChange={(url) => setRow(i, { ...row, url })}
-              />
-            ) : (
-              <>
-                {'series' in row ? (
-                  row.series.map((s, j) => (
-                    <BindingFields
-                      key={s.direction}
-                      label={`Hover row ${i + 1} ${s.direction}`}
-                      path={`hover.rows[${i}].series[${j}].binding`}
+            {rows.map((row, i) => (
+              <div key={i}>
+                <EditorField label={`Hover row ${i + 1} kind`} source={sourceFor(src, `hover.rows[${i}]`)}>
+                  <Select
+                    aria-label={`Hover row ${i + 1} kind`}
+                    value={row.kind}
+                    onChange={(selection) => {
+                      const kind = selection.value ?? '';
+                      const label = row.label;
+                      setRow(
+                        i,
+                        kind === 'metadata'
+                          ? { kind, label, path: 'cell.key' }
+                          : kind === 'drilldown'
+                            ? { kind, label, url: '/d/' }
+                            : kind === 'history'
+                              ? { kind, label, binding: newBinding(first) }
+                              : { kind: 'value', label, binding: newBinding(first) }
+                      );
+                    }}
+                    options={['metadata', 'value', 'history', 'drilldown'].map((k) => ({ value: k, label: k }))}
+                    menuShouldPortal
+                    maxMenuHeight={240}
+                  />
+                </EditorField>
+                <TextField
+                  label={`Hover row ${i + 1} label`}
+                  path={`hover.rows[${i}].label`}
+                  {...src}
+                  value={row.label}
+                  onChange={(label) => setRow(i, { ...row, label })}
+                />
+                {row.kind === 'metadata' ? (
+                  <TextField
+                    label={`Hover row ${i + 1} path`}
+                    path={`hover.rows[${i}].path`}
+                    {...src}
+                    value={row.path}
+                    onChange={(path) => setRow(i, { ...row, path })}
+                  />
+                ) : row.kind === 'drilldown' ? (
+                  <TextField
+                    label={`Hover row ${i + 1} URL`}
+                    path={`hover.rows[${i}].url`}
+                    {...src}
+                    value={row.url}
+                    onChange={(url) => setRow(i, { ...row, url })}
+                  />
+                ) : (
+                  <>
+                    {'series' in row ? (
+                      row.series.map((s, j) => (
+                        <BindingFields
+                          key={s.direction}
+                          label={`Hover row ${i + 1} ${s.direction}`}
+                          path={`hover.rows[${i}].series[${j}].binding`}
+                          {...src}
+                          queries={queries}
+                          fields={fields}
+                          value={s.binding}
+                          onChange={(binding) =>
+                            setRow(i, {
+                              ...row,
+                              series: row.series.map((old, k) =>
+                                k === j ? { ...old, binding: binding ?? newBinding() } : old
+                              ),
+                            })
+                          }
+                        />
+                      ))
+                    ) : (
+                      <BindingFields
+                        label={`Hover row ${i + 1}`}
+                        path={`hover.rows[${i}].binding`}
+                        {...src}
+                        queries={queries}
+                        fields={fields}
+                        value={row.binding}
+                        onChange={(binding) => setRow(i, { ...row, binding: binding ?? newBinding() })}
+                      />
+                    )}
+                    <FreshnessFields
+                      label={`Hover row ${i + 1}`}
+                      path={`hover.rows[${i}].freshness`}
                       {...src}
-                      queries={queries}
-                      fields={fields}
-                      value={s.binding}
-                      onChange={(binding) =>
-                        setRow(i, {
-                          ...row,
-                          series: row.series.map((old, k) =>
-                            k === j ? { ...old, binding: binding ?? newBinding() } : old
-                          ),
-                        })
-                      }
+                      value={row.freshness}
+                      onChange={(freshness) => setRow(i, { ...row, freshness })}
                     />
-                  ))
-                ) : (
-                  <BindingFields
-                    label={`Hover row ${i + 1}`}
-                    path={`hover.rows[${i}].binding`}
-                    {...src}
-                    queries={queries}
-                    fields={fields}
-                    value={row.binding}
-                    onChange={(binding) => setRow(i, { ...row, binding: binding ?? newBinding() })}
-                  />
+                    <TextField
+                      label={`Hover row ${i + 1} unit`}
+                      path={`hover.rows[${i}].unit`}
+                      {...src}
+                      value={row.unit ?? ''}
+                      onChange={(unit) => setRow(i, { ...row, unit })}
+                    />
+                    <BoundField
+                      label={`Hover row ${i + 1} minimum`}
+                      path={`hover.rows[${i}].min`}
+                      {...src}
+                      auto
+                      value={row.min}
+                      onChange={(min) => setRow(i, { ...row, min })}
+                    />
+                    {'series' in row ? (
+                      <BoundField
+                        label={`Hover row ${i + 1} maximum`}
+                        path={`hover.rows[${i}].max`}
+                        {...src}
+                        keywords={['auto', 'capacity']}
+                        value={row.max}
+                        onChange={(max) => setRow(i, { ...row, max })}
+                      />
+                    ) : (
+                      <BoundField
+                        label={`Hover row ${i + 1} maximum`}
+                        path={`hover.rows[${i}].max`}
+                        {...src}
+                        value={row.max}
+                        onChange={(max) => setRow(i, { ...row, max })}
+                      />
+                    )}
+                    {row.kind === 'history' ? (
+                      <BoundField
+                        label={`Hover row ${i + 1} height`}
+                        path={`hover.rows[${i}].height`}
+                        {...src}
+                        value={row.height}
+                        onChange={(height) => setRow(i, { ...row, height })}
+                      />
+                    ) : null}
+                    <TextField
+                      label={`Hover row ${i + 1} URL`}
+                      path={`hover.rows[${i}].url`}
+                      {...src}
+                      value={row.url ?? ''}
+                      onChange={(url) => setRow(i, { ...row, url })}
+                    />
+                  </>
                 )}
-                <FreshnessFields
-                  label={`Hover row ${i + 1}`}
-                  path={`hover.rows[${i}].freshness`}
-                  {...src}
-                  value={row.freshness}
-                  onChange={(freshness) => setRow(i, { ...row, freshness })}
-                />
-                <TextField
-                  label={`Hover row ${i + 1} unit`}
-                  path={`hover.rows[${i}].unit`}
-                  {...src}
-                  value={row.unit ?? ''}
-                  onChange={(unit) => setRow(i, { ...row, unit })}
-                />
-                <BoundField
-                  label={`Hover row ${i + 1} minimum`}
-                  path={`hover.rows[${i}].min`}
-                  {...src}
-                  auto
-                  value={row.min}
-                  onChange={(min) => setRow(i, { ...row, min })}
-                />
-                {'series' in row ? (
-                  <BoundField
-                    label={`Hover row ${i + 1} maximum`}
-                    path={`hover.rows[${i}].max`}
-                    {...src}
-                    keywords={['auto', 'capacity']}
-                    value={row.max}
-                    onChange={(max) => setRow(i, { ...row, max })}
-                  />
-                ) : (
-                  <BoundField
-                    label={`Hover row ${i + 1} maximum`}
-                    path={`hover.rows[${i}].max`}
-                    {...src}
-                    value={row.max}
-                    onChange={(max) => setRow(i, { ...row, max })}
-                  />
-                )}
-                {row.kind === 'history' ? (
-                  <BoundField
-                    label={`Hover row ${i + 1} height`}
-                    path={`hover.rows[${i}].height`}
-                    {...src}
-                    value={row.height}
-                    onChange={(height) => setRow(i, { ...row, height })}
-                  />
-                ) : null}
-                <TextField
-                  label={`Hover row ${i + 1} URL`}
-                  path={`hover.rows[${i}].url`}
-                  {...src}
-                  value={row.url ?? ''}
-                  onChange={(url) => setRow(i, { ...row, url })}
-                />
-              </>
-            )}
-            <Button variant="secondary" size="sm" onClick={() => setRows(rows.filter((_, j) => i !== j))}>
-              Remove hover row {i + 1}
+                <Button variant="secondary" size="sm" onClick={() => setRows(rows.filter((_, j) => i !== j))}>
+                  Remove hover row {i + 1}
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setRows([...rows, { kind: 'metadata', label: 'Identity', path: 'cell.key' }])}
+            >
+              Add hover row
             </Button>
-          </div>
-        ))}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setRows([...rows, { kind: 'metadata', label: 'Identity', path: 'cell.key' }])}
-        >
-          Add hover row
-        </Button>
+          </>
+        )}
       </EditorSection>
     </>
   );

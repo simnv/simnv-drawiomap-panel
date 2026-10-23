@@ -9,7 +9,9 @@ import {
 } from '../model/config';
 import type { CellSelector, Diagram } from '../types';
 import { previewPatternImport, type ImportResolution } from './portable';
+import { setLeaf, unsetPath } from './leafPaths';
 export { exportPatternDocument, previewPatternImport } from './portable';
+export { unsetPath };
 
 export const EMPTY_CONFIG: DiagramConfigV2 = { version: 2, queries: [], patterns: [], overrides: [], widgets: [] };
 export interface BindingDraft {
@@ -30,6 +32,12 @@ export type DraftAction =
   | { type: 'select'; cellId: string }
   | { type: 'scope'; scope: 'element' | 'pattern'; patternId?: string; patternIndex?: number }
   | { type: 'display'; display: Partial<DisplayConfig> }
+  /**
+   * Set leaves in the override of each cell and touch nothing else: no other leaf of the override changes, the
+   * inherited fields stay inherited, and an override exists only when it holds a leaf. An `undefined` value removes
+   * the leaf from the override.
+   */
+  | { type: 'display-many'; cellIds: string[]; ops: Array<{ path: string; value: unknown }> }
   /** Remove a path from the display of the edited owner (the cell override or the edited pattern). */
   | { type: 'unset'; path: string }
   | { type: 'query'; query: NamedQuery }
@@ -44,6 +52,8 @@ export type DraftAction =
   | { type: 'import'; config: unknown }
   | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
   | { type: 'diagram'; diagram: Diagram }
+  /** Several actions applied in order. The history records one step for the whole batch. */
+  | { type: 'batch'; actions: DraftAction[] }
   | { type: 'reset' | 'applied' };
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfig>): DisplayConfig {
@@ -54,39 +64,6 @@ function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfi
     ...(patch.link ? { link: { ...base.link, ...patch.link } } : {}),
   });
 }
-/** True for a value that holds nothing: an object without keys (not an array). */
-const isEmptyObject = (value: unknown) =>
-  typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
-
-/**
- * The display without `path` (dotted keys, no indexes). Objects that become empty go away with it: a `hover` that
- * keeps another key, for example `enabled: false`, stays.
- */
-export function unsetPath<T extends Partial<DisplayConfig>>(display: T, path: string): T {
-  const keys = path.split('.');
-  const next = copy(display) as Record<string, unknown>;
-  const trail: Array<Record<string, unknown>> = [next];
-  for (const key of keys.slice(0, -1)) {
-    const child = trail[trail.length - 1][key];
-    if (typeof child !== 'object' || child === null || Array.isArray(child)) {
-      return display;
-    }
-    trail.push(child as Record<string, unknown>);
-  }
-  const leaf = keys[keys.length - 1];
-  if (!(leaf in trail[trail.length - 1])) {
-    return display;
-  }
-  delete trail[trail.length - 1][leaf];
-  for (let i = trail.length - 1; i > 0; i--) {
-    if (!isEmptyObject(trail[i])) {
-      break;
-    }
-    delete trail[i - 1][keys[i - 1]];
-  }
-  return next as T;
-}
-
 /** The index of the pattern that the draft edits. It honours the exact index while that pattern still has the ID. */
 export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternId' | 'patternIndex'>): number {
   const { patterns } = draft.config;
@@ -116,6 +93,9 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
   }
   if (action.type === 'scope') {
     return { ...draft, scope: action.scope, patternId: action.patternId, patternIndex: action.patternIndex };
+  }
+  if (action.type === 'batch') {
+    return action.actions.reduce(reduceDraft, draft);
   }
   if (action.type === 'reset') {
     return { ...draft, config: copy(draft.saved), diagram: draft.savedDiagram, diagnostics: [] };
@@ -196,6 +176,24 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
         ],
       };
     }
+  } else if (action.type === 'display-many') {
+    let overrides = config.overrides;
+    for (const cellId of new Set(action.cellIds)) {
+      const old = overrides.find((o) => o.cellId === cellId);
+      const display = action.ops.reduce((acc, op) => setLeaf(acc, op.path, op.value), old?.display ?? {});
+      if (Object.keys(display).length === 0) {
+        // An override that holds nothing goes away; a cell without one gets none.
+        overrides = overrides.filter((o) => o !== old);
+      } else if (old) {
+        overrides = overrides.map((o) => (o === old ? { ...o, display } : o));
+      } else {
+        overrides = [...overrides, { cellId, display }];
+      }
+    }
+    if (JSON.stringify(overrides) === JSON.stringify(config.overrides)) {
+      return draft;
+    }
+    config = { ...config, overrides };
   } else if (action.type === 'unset') {
     if (draft.scope === 'pattern') {
       const at = draftPatternIndex(draft);

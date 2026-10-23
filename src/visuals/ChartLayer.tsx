@@ -12,6 +12,7 @@ import type { CellIndex } from '../types';
 import { SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
 import type { QueryPreview } from '../editor/preview';
+import { useHeld } from '../components/useHeld';
 
 export interface ChartLayerProps {
   root?: SVGSVGElement;
@@ -26,6 +27,11 @@ export interface ChartLayerProps {
   owner: string;
   replaceVariables?: (value: string) => string;
   onPrepared?: (id: string, preview?: QueryPreview) => void;
+  /**
+   * The popup is open over the panel: show the last result and publish nothing. The watches stay open; the latest
+   * result shows and publishes after the pause.
+   */
+  paused?: boolean;
 }
 
 const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
@@ -71,6 +77,7 @@ function Region({
   entry: BindingPlan['widgets'][number];
 }) {
   const { root, cells, viewport, context, controller, queries, revision, replaceVariables, onPrepared, owner } = props;
+  const paused = !!props.paused;
   const { widget, scope } = entry;
   const cell = cells.get(entry.anchorCellId);
   const theme = useTheme2();
@@ -80,6 +87,13 @@ function Region({
   const [response, setResponse] = useState<{ key: string; match: string; preview: QueryPreview }>();
   /** The last result that is not loading, for the same query, scope and default datasource. */
   const last = useRef<{ match: string; preview: QueryPreview }>();
+  const shown = useHeld(response, paused);
+  // The watch callback reads the flag when it runs. A change of the flag must not restart the watch.
+  const pending = useRef<{ key: string; match: string; preview: QueryPreview }>();
+  const pausedRef = useRef(paused);
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
   const query = queries.find((q) => q.id === entry.widget.binding.queryId);
   const match = JSON.stringify([query, entry.scope, context.defaultDatasource]);
   const key = JSON.stringify([query, entry.scope, context, geometry?.resolution]);
@@ -166,6 +180,21 @@ function Region({
     updateRef.current?.();
   }, [revision]);
 
+  // After the pause the widget shows, and the parent gets, the latest result that the watch received meanwhile. An
+  // emission while paused went to the `pending` ref: no state update, no render.
+  useEffect(() => {
+    const received = pending.current;
+    if (!paused && received) {
+      pending.current = undefined;
+      setResponse(received);
+      if (received.key === key) {
+        onPrepared?.(entry.widget.id, received.preview);
+      }
+    }
+    // Only the end of a pause applies the pending result; the watch callback applies every other one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paused]);
+
   useEffect(() => {
     if (!geometry?.visible || !controller || !query) {
       return;
@@ -197,8 +226,12 @@ function Region({
                   : kept.snapshot,
             };
           }
-          setResponse({ key, match, preview });
-          onPrepared?.(entry.widget.id, preview);
+          if (pausedRef.current) {
+            pending.current = { key, match, preview };
+          } else {
+            setResponse({ key, match, preview });
+            onPrepared?.(entry.widget.id, preview);
+          }
         }
       }
     );
@@ -236,8 +269,8 @@ function Region({
   // Until the effect watches a new key, show the last result of the same query and scope.
   const snapshot: QuerySnapshot = !query
     ? { state: 'error', message: 'Choose a named query.' }
-    : response && (response.key === key || (response.match === match && settled(response.preview.snapshot)))
-      ? response.preview.snapshot
+    : shown && (shown.key === key || (shown.match === match && settled(shown.preview.snapshot)))
+      ? shown.preview.snapshot
       : { state: 'loading' };
   const model = resolveBinding(snapshot, widget.binding, scope, {
     theme,

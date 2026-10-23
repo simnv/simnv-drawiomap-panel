@@ -6,8 +6,11 @@ export { valueAtPath };
 
 /** Where the effective value of a field comes from, and what a reset would remove. */
 export interface FieldSource {
-  /** The owner of the effective value. `default` means that no pattern and no override sets it. */
-  owner: 'pattern' | 'override' | 'default';
+  /**
+   * The owner of the effective value. `default` means that no pattern and no override sets it. `mixed`: a bulk edit of
+   * several elements whose values differ.
+   */
+  owner: 'pattern' | 'override' | 'default' | 'mixed';
   /** The name of the pattern when `owner` is `pattern`. */
   name?: string;
   /** The edited owner's own display has a value at `resetPath`: a reset would remove it. */
@@ -73,18 +76,24 @@ export function fieldSourceOf(
   return { owner: 'default', resettable, resetPath };
 }
 
-/** The chip text: "Pattern Core routers", "Override" or "Default". */
+/** The chip text: "Pattern Core routers", "Override", "Mixed" or "Default". */
 export function sourceText(source: FieldSource): string {
   return source.owner === 'pattern'
     ? `Pattern ${source.name ?? ''}`.trim()
     : source.owner === 'override'
       ? 'Override'
-      : 'Default';
+      : source.owner === 'mixed'
+        ? 'Mixed'
+        : 'Default';
 }
 
 const UNIT_NAMES: Record<string, string> = { 'hover.rows': 'hover rows', status: 'health rule' };
 
 /** The accessible name of the reset button: "Reset Label template to pattern", "Reset hover rows to pattern". */
 export function resetLabel(label: string, source: FieldSource, scope: 'element' | 'pattern'): string {
+  if (source.owner === 'mixed') {
+    // A bulk edit: the button clears the field in the override of every selected element.
+    return `Clear ${UNIT_NAMES[source.resetPath] ?? label} in the selection`;
+  }
   return `Reset ${UNIT_NAMES[source.resetPath] ?? label} to ${scope === 'pattern' ? 'default' : 'pattern'}`;
 }

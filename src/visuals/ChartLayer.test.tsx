@@ -491,4 +491,61 @@ describe('ChartLayer', () => {
     view.unmount();
     s.host.remove();
   });
+  it('shows the held result and publishes nothing while paused, then shows and publishes the latest result', () => {
+    const s = setup();
+    const listeners: Array<Parameters<QueryController['watch']>[1]> = [];
+    s.watch.mockImplementation((_demand, listener) => {
+      listeners.push(listener);
+      return s.release;
+    });
+    const onPrepared = vi.fn();
+    const props = {
+      root: s.root,
+      cells: s.cells,
+      plan: s.plan,
+      queries: [query],
+      controller: s.controller,
+      context,
+      viewport: s.host,
+      onPrepared,
+    };
+    const ready = (last: number) =>
+      ({
+        state: 'ready',
+        fetchedAt: Date.now(),
+        fromCache: false,
+        frames: [
+          {
+            length: 2,
+            fields: [
+              { name: 'Time', type: FieldType.time, config: {}, values: [1000, 2000] },
+              { name: 'Value', type: FieldType.number, config: {}, values: [10, last] },
+            ],
+          },
+        ],
+      }) as any;
+    const view = render(<ChartLayer {...props} />);
+    act(() => listeners[0](ready(20)));
+    expect(s.host.textContent).toContain('20');
+    view.rerender(<ChartLayer {...props} paused />);
+    onPrepared.mockClear();
+    const drawn = sparkline.mock.calls.length;
+    act(() => listeners[0](ready(77)));
+    // No state update while paused: the widget does not render for the emission.
+    expect(sparkline.mock.calls.length).toBe(drawn);
+    expect(s.host.textContent).toContain('20');
+    expect(s.host.textContent).not.toContain('77');
+    expect(onPrepared).not.toHaveBeenCalled();
+    // The watch stays open through the pause.
+    expect(s.release).not.toHaveBeenCalled();
+    view.rerender(<ChartLayer {...props} paused={false} />);
+    expect(s.host.textContent).toContain('77');
+    expect(onPrepared).toHaveBeenCalledTimes(1);
+    expect(onPrepared).toHaveBeenLastCalledWith(
+      'w',
+      expect.objectContaining({ snapshot: expect.objectContaining({ state: 'ready' }) })
+    );
+    view.unmount();
+    s.host.remove();
+  });
 });
