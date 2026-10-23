@@ -32,19 +32,24 @@ const EDGE = 4;
 export interface CardProps {
   model: CardModel | ConfiguredCardModel;
   pinned: boolean;
-  /** pointer position in panel coordinates */
-  x: number;
-  y: number;
-  /** panel size: the card stays inside it */
+  /**
+   * `floating` (default) follows the pointer or sits fixed in the panel; narrow panels show it as a sheet.
+   * `inline` is part of the page flow: no placement, no close button, no sheet. The bindings popup uses it.
+   */
+  variant?: 'floating' | 'inline';
+  /** pointer position in panel coordinates (floating) */
+  x?: number;
+  y?: number;
+  /** panel size: the floating card stays inside it. For the inline card: the width of its container. */
   width: number;
-  height: number;
+  height?: number;
   /** the panel element: the sheet has its horizontal position */
   anchor?: HTMLElement | null;
   /** dashboard time range in ms, for the sparkline x axis */
   range?: { from: number; to: number };
   timeRange?: TimeRange;
   timeZone?: string;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -65,6 +70,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   hover: css`
     pointer-events: none;
+  `,
+  inline: css`
+    position: static;
+    z-index: auto;
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: none;
+    overflow: visible;
   `,
   // Fixed to the viewport, so the sheet is visible also in a panel that is taller than the screen. The panel
   // renders it in a portal: a CSS transform of a parent (the Grafana grid item) would move a fixed element.
@@ -304,15 +317,29 @@ const Row = memo(function Row({
  * The hover card. Unpinned it follows the pointer and ignores the pointer. Pinned it is a non-modal
  * dialog with a close button, row links and footer links. Narrow panels show it as a bottom sheet.
  */
-export function Card({ model, pinned, x, y, width, height, anchor, range, timeRange, timeZone, onClose }: CardProps) {
+export function Card({
+  model,
+  pinned,
+  variant = 'floating',
+  x = 0,
+  y = 0,
+  width,
+  height = 0,
+  anchor,
+  range,
+  timeRange,
+  timeZone,
+  onClose,
+}: CardProps) {
   const styles = useStyles2(getStyles);
   const ref = useRef<HTMLDivElement>(null);
-  const sheet = width < SHEET_BELOW;
+  const inline = variant === 'inline';
+  const sheet = !inline && width < SHEET_BELOW;
 
   // Place the card after it renders: the height is known only then.
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el) {
+    if (!el || inline) {
       return;
     }
     if (sheet) {
@@ -338,30 +365,30 @@ export function Card({ model, pinned, x, y, width, height, anchor, range, timeRa
   });
 
   useLayoutEffect(() => {
-    if (pinned) {
+    if (pinned && !inline) {
       ref.current?.focus({ preventScroll: true });
     }
-  }, [pinned, model.title]);
+  }, [pinned, inline, model.title]);
 
-  const style: React.CSSProperties = sheet
-    ? {}
-    : { width: W, maxHeight: height - 2 * EDGE, left: x + GAP, top: y + GAP };
+  const style: React.CSSProperties =
+    sheet || inline ? {} : { width: W, maxHeight: height - 2 * EDGE, left: x + GAP, top: y + GAP };
 
   return (
     <div
       ref={ref}
-      className={cx(styles.card, sheet && styles.sheet, !pinned && styles.hover)}
+      className={cx(styles.card, sheet && styles.sheet, inline && styles.inline, !pinned && !inline && styles.hover)}
       style={style}
-      role={pinned ? 'dialog' : 'tooltip'}
+      role={inline ? 'group' : pinned ? 'dialog' : 'tooltip'}
       aria-label={model.title}
       tabIndex={pinned ? -1 : undefined}
       data-testid="dmap-card"
       data-pinned={pinned}
       data-sheet={sheet}
+      data-variant={variant}
     >
       <div className={styles.header}>
         <div className={styles.title}>{model.title}</div>
-        {pinned ? <IconButton name="times" size="sm" aria-label="Close" onClick={onClose} /> : null}
+        {pinned && !inline ? <IconButton name="times" size="sm" aria-label="Close" onClick={onClose} /> : null}
       </div>
       {model.rows.map((r) => (
         <Row
@@ -380,7 +407,7 @@ export function Card({ model, pinned, x, y, width, height, anchor, range, timeRa
           timeZone={timeZone}
           pinned={pinned}
           styles={styles}
-          width={Math.max(1, Math.min(W, width) - 16)}
+          width={Math.max(1, (inline ? width : Math.min(W, width)) - 16)}
         />
       ))}
       {pinned && model.links.length ? (

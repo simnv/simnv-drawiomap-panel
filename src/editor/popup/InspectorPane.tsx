@@ -9,6 +9,7 @@ import type { CellIndex } from '../../types';
 import { BindingInspector } from '../BindingInspector';
 import type { BindingDraft, DraftAction } from '../draft';
 import { EditorSection, getEditorStyles } from '../EditorLayout';
+import { CardPreview, type CardPreviewProps } from './CardPreview';
 import { QueryPane, type QueryPaneProps } from './QueryPane';
 
 export type InspectorSelection = { kind: 'none' } | { kind: 'cell' } | { kind: 'query'; queryId: string };
@@ -48,12 +49,14 @@ export interface InspectorPaneProps {
   canEditGeometry: boolean;
   onEditGeometry: () => void;
   cell: CellBodyProps;
+  /** The live hover card of the selected element. It shows first for a cell selection. */
+  card?: CardPreviewProps;
   /** The props of the query pane for the selected query. */
   query?: QueryPaneProps;
 }
 
 /** The right pane. It shows the selected cell, the selected query or a hint. */
-export function InspectorPane({ selection, canEditGeometry, onEditGeometry, cell, query }: InspectorPaneProps) {
+export function InspectorPane({ selection, canEditGeometry, onEditGeometry, cell, card, query }: InspectorPaneProps) {
   const editor = useStyles2(getEditorStyles);
   const styles = useStyles2(getStyles);
   return (
@@ -63,6 +66,7 @@ export function InspectorPane({ selection, canEditGeometry, onEditGeometry, cell
           <QueryPane {...query} />
         ) : (
           <>
+            {selection.kind === 'cell' && card && <CardPreview {...card} />}
             {canEditGeometry && (
               <Button variant="secondary" size="sm" onClick={onEditGeometry}>
                 Edit geometry in draw.io

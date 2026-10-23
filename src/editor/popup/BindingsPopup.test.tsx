@@ -77,6 +77,16 @@ describe('BindingsPopup', () => {
     expect(screen.getByTestId('dmap-bindings-editor')).toBeTruthy();
   });
 
+  it('shows the hover card preview first in the inspector for a selected element', () => {
+    mount();
+    expect(screen.queryByRole('region', { name: 'Hover card preview' })).toBeNull();
+    selectStageCell('a');
+    const preview = screen.getByRole('region', { name: 'Hover card preview' });
+    expect(preview.textContent).toContain('No card for this element');
+    const inspector = screen.getByRole('complementary', { name: 'Diagram binding inspector' });
+    expect(inspector.querySelector('section')).toBe(preview);
+  });
+
   it('closes on Esc when the draft is clean', () => {
     const { onClose } = mount();
     esc();

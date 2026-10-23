@@ -16,6 +16,8 @@ import { bindPlan, widgetDiagnostics } from '../binding/engine';
 import { resolvePatterns } from '../binding/patterns';
 import { cellMatches } from '../binding/select';
 import { useStage } from '../components/useStage';
+import { cardContextFor } from '../binding/context';
+import { extractSeries } from '../binding/series';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfigV2, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
@@ -295,13 +297,26 @@ export function BindingEditor({
   );
   const bound = useMemo(() => bindPlan(plan, resolve, bindContext, nowMs), [plan, resolve, bindContext, nowMs]);
   const cardPatch = draft.cellId ? bound.patches.get(draft.cellId) : undefined;
+  // The context of the hover card, once per data update: the series come from the live panel data.
+  const series = useMemo(() => extractSeries(data.series), [data.series]);
+  const cardContext = useMemo(
+    () =>
+      cardContextFor({
+        series,
+        theme,
+        timeZone,
+        replaceVariables: bindContext.replaceVariables,
+        fieldThresholds: bindContext.fieldThresholds,
+      }),
+    [series, theme, timeZone, bindContext.replaceVariables, bindContext.fieldThresholds]
+  );
   // Built from the preview inputs only: a highlight or a selection change must not rebuild the card.
   const hoverPreview = useMemo(
     () =>
       (localPreview || patternResults.length > 0) && cardPatch
-        ? buildConfiguredCard(cardPatch, resolve, { ...bindContext, series: [] })
+        ? buildConfiguredCard(cardPatch, resolve, cardContext)
         : undefined,
-    [localPreview, patternResults, cardPatch, resolve, bindContext]
+    [localPreview, patternResults, cardPatch, resolve, cardContext]
   );
   const metricDiagnostics = [...bound.diagnostics, ...(hoverPreview?.diagnostics ?? [])];
   const diagnostics = [...draft.diagnostics, ...validateConfig(draft.config).diagnostics, ...plan.diagnostics];
@@ -340,7 +355,7 @@ export function BindingEditor({
   const deferred = useDeferredValue(listInput);
   const listDiagnostics = useMemo(() => {
     const cards = Array.from(deferred.bound.patches.values()).flatMap(
-      (patch) => buildConfiguredCard(patch, deferred.resolve, { ...bindContext, series: [] }).diagnostics
+      (patch) => buildConfiguredCard(patch, deferred.resolve, cardContext).diagnostics
     );
     return [
       ...deferred.draftDiagnostics,
@@ -349,7 +364,7 @@ export function BindingEditor({
       ...widgetDiagnostics(deferred.plan, deferred.resolve),
       ...cards,
     ];
-  }, [deferred, bindContext]);
+  }, [deferred, cardContext]);
   const bindingsList = useMemo(
     () => buildBindingsList(deferred.config, metas, listDiagnostics),
     [deferred.config, metas, listDiagnostics]
@@ -715,6 +730,13 @@ export function BindingEditor({
               selection={selection}
               canEditGeometry={!!draft.diagram}
               onEditGeometry={() => setGeometryOpen(true)}
+              card={{
+                patch: cardPatch,
+                resolve,
+                cardContext,
+                timeRange: data.timeRange,
+                timeZone,
+              }}
               cell={{
                 draft,
                 dispatch,
