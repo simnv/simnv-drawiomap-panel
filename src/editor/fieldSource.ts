@@ -91,5 +91,9 @@ const UNIT_NAMES: Record<string, string> = { 'hover.rows': 'hover rows', status:
 
 /** The accessible name of the reset button: "Reset Label template to pattern", "Reset hover rows to pattern". */
 export function resetLabel(label: string, source: FieldSource, scope: 'element' | 'pattern'): string {
+  if (source.owner === 'mixed') {
+    // A bulk edit: the button clears the field in the override of every selected element.
+    return `Clear ${UNIT_NAMES[source.resetPath] ?? label} in the selection`;
+  }
   return `Reset ${UNIT_NAMES[source.resetPath] ?? label} to ${scope === 'pattern' ? 'default' : 'pattern'}`;
 }

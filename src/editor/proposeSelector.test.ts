@@ -74,20 +74,29 @@ describe('proposeSelector', () => {
     expect(proposals[0]).toMatchObject({ kind: 'ids', select: { ids: ['a', 'b', 'c'] } });
   });
 
-  it('keeps ids behind a semantic candidate even when the ids have no extras and the attributes have many', () => {
+  it('ranks the label and the attributes together by extra cells, and keeps ids last', () => {
     const proposals = proposeSelector(pick('pg-node~rtr-a', 'pg-node~rtr-b'), demo);
-    expect(proposals.at(-1)!.kind).toBe('ids');
-    expect(proposals[0].kind).not.toBe('ids');
-    expect(proposals[0].extra.length).toBeGreaterThan(proposals.at(-1)!.extra.length);
+    expect(proposals.map((p) => p.kind)).toEqual(['label', 'attrs', 'ids']);
+    expect(proposals.map((p) => p.extra.length)).toEqual([0, 8, 0]);
   });
 
-  it('on the demo diagram two routers share the node kind and the rtr- label prefix', () => {
+  it('on the demo diagram /^rtr-/ (no extra) ranks above the node kind (8 extra)', () => {
     const proposals = proposeSelector(pick('pg-node~rtr-a', 'pg-node~rtr-b'), demo);
-    expect(proposals[0]).toMatchObject({ kind: 'attrs', select: { kind: 'node' }, missed: [] });
-    expect(proposals[0].extra).toContain('pg-node~isp-a');
-    const label = proposals.find((p) => p.kind === 'label')!;
-    expect(label.select).toEqual({ kind: 'node', label: '/^rtr-/' });
-    expect(label.extra).toEqual([]);
+    expect(proposals[0]).toMatchObject({
+      kind: 'label',
+      select: { kind: 'node', label: '/^rtr-/' },
+      extra: [],
+      missed: [],
+    });
+    expect(proposals[1]).toMatchObject({ kind: 'attrs', select: { kind: 'node' }, missed: [] });
+    expect(proposals[1].extra).toContain('pg-node~isp-a');
+  });
+
+  it('breaks a tie of extras with the attributes first, and the order is the same on every call', () => {
+    const cells = [meta('a', { role: 'x' }, 'core-1'), meta('b', { role: 'x' }, 'core-2'), meta('c', {}, 'edge-3')];
+    const first = proposeSelector([cells[0], cells[1]], cells).map((p) => p.kind);
+    expect(first).toEqual(['attrs', 'label', 'ids']);
+    expect(proposeSelector([cells[0], cells[1]], cells).map((p) => p.kind)).toEqual(first);
   });
 
   it('uses an exact match for an attribute value that looks like a regular expression', () => {

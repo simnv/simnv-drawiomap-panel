@@ -24,10 +24,20 @@ export function leafPaths(partial: Partial<DisplayConfig>, units: readonly strin
 }
 
 /**
- * The paths that merge as one unit, besides every array: a health rule is replaced as a whole when its kind changes
- * (`mergeDisplay`), so a lone leaf inside it is not a valid override. Bulk edit writes these paths whole.
+ * The paths that a bulk edit writes whole, besides every array (which `leafPaths` already stops at): the health rule,
+ * which is replaced as a whole when its kind changes (`mergeDisplay`), and every metric binding. A binding is one unit
+ * because the editor writes the whole effective binding (`BindingFields` spreads it), and a partial binding in an
+ * override is not valid. A binding in a hover row is inside `hover.rows`, which is already one array.
  */
-export const UNIT_PATHS = ['status'] as const;
+export const UNIT_PATHS = [
+  'status',
+  'shape.binding',
+  'link.a2bBinding',
+  'link.b2aBinding',
+  'link.capacityBinding',
+  'link.capacityA2bBinding',
+  'link.capacityB2aBinding',
+] as const;
 
 /** The value of a dotted path (with `[i]` indexes) in a display, or `undefined`. */
 export function valueAtPath(display: unknown, path: string): unknown {

@@ -1,10 +1,10 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { resolvePatterns } from '../../binding/patterns';
-import type { DiagramConfigV2, DisplayConfig, HoverRow } from '../../model/config';
+import { validateConfig, type DiagramConfigV2, type DisplayConfig, type HoverRow } from '../../model/config';
 import type { CellMeta } from '../../types';
 import { renderEditor, svgOf } from '../editorHarness';
-import { editorField, openSection } from '../testUtils';
+import { chooseOption, editorField, openSection } from '../testUtils';
 import { commonLeaves } from './BulkPane';
 
 const row = (label: string): HoverRow => ({ kind: 'metadata', label, path: 'cell.key' });
@@ -89,11 +89,12 @@ describe('BulkPane in the editor', () => {
     fireEvent.click(screen.getByTestId('dmap-popup-stage').querySelector(`[data-cell-id="${id}"] rect`) as Element, {
       shiftKey,
     });
-  const open = (cfg = config()) => {
+  const open = (cfg = config(), cells = ['a', 'b', 'c']) => {
     const view = renderEditor({ config: cfg, svg: svgOf('a', 'b', 'c') });
-    stageCell('a');
-    stageCell('b', true);
-    stageCell('c', true);
+    stageCell(cells[0]);
+    for (const id of cells.slice(1)) {
+      stageCell(id, true);
+    }
     return view;
   };
   const apply = (view: ReturnType<typeof open>) => {
@@ -172,5 +173,77 @@ describe('BulkPane in the editor', () => {
     ).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(apply(view).overrides.map((o) => o.cellId)).toEqual(['a', 'b']);
+  });
+
+  describe('bindings are one unit', () => {
+    const shape = (match: Record<string, string>, reducer: 'last' | 'mean' = 'last') => ({
+      shape: { binding: { queryId: 'q', match, reducer } },
+    });
+
+    it('writes the whole effective binding after a reducer change: the overrides validate and Apply stays enabled', () => {
+      const cfg = config({
+        patterns: [{ id: 'p', name: 'P', select: { ids: ['a', 'b', 'c'] }, display: shape({ job: 'x' }) }],
+        overrides: [],
+      });
+      const view = open(cfg);
+      chooseOption('Shape reducer', 'mean');
+      const apply = screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement;
+      expect(apply.disabled).toBe(false);
+      fireEvent.click(apply);
+      const written = view.save.mock.calls.at(-1)![0] as DiagramConfigV2;
+      expect(written.overrides.map((o) => o.display)).toEqual([
+        shape({ job: 'x' }, 'mean'),
+        shape({ job: 'x' }, 'mean'),
+        shape({ job: 'x' }, 'mean'),
+      ]);
+      expect(validateConfig(written).diagnostics).toEqual([]);
+    });
+
+    it('shows Mixed, with no binding fields and no crash, when one matcher differs', () => {
+      const cfg = config({
+        patterns: [],
+        overrides: [
+          { cellId: 'a', display: shape({ device: 'a' }) },
+          { cellId: 'b', display: shape({ device: 'b' }) },
+        ],
+      });
+      open(cfg, ['a', 'b']);
+      openSection('Shape');
+      expect(screen.queryByLabelText('Shape query')).toBeNull();
+      expect(screen.queryByLabelText('Shape reducer')).toBeNull();
+      const chips = screen.getAllByTestId('dmap-field-source').map((chip) => chip.textContent);
+      expect(chips.some((text) => text?.includes('Mixed'))).toBe(true);
+    });
+
+    it('commonLeaves has no key for a binding that differs in one sub-leaf', () => {
+      const cfg = config({
+        patterns: [],
+        overrides: [
+          { cellId: 'a', display: shape({ device: 'a' }) },
+          { cellId: 'b', display: shape({ device: 'a' }, 'mean') },
+        ],
+      });
+      const { common, mixedPaths } = commonLeaves(['a', 'b'], resolvePatterns(['a', 'b'].map(meta), cfg));
+      expect(mixedPaths).toEqual(['shape.binding']);
+      expect(common.shape).toBeUndefined();
+    });
+  });
+
+  describe('a mixed field', () => {
+    it('is left alone until it is cleared; Clear removes the field from every selected override', () => {
+      const cfg = config({
+        patterns: [],
+        overrides: [
+          { cellId: 'a', display: { link: { capacity: 100 }, label: 'A' } },
+          { cellId: 'b', display: { link: { capacity: 200 } } },
+        ],
+      });
+      const view = open(cfg, ['a', 'b']);
+      openSection('Link');
+      expect((editorField('Link capacity') as HTMLInputElement).value).toBe('');
+      fireEvent.click(screen.getByRole('button', { name: 'Clear Link capacity in the selection' }));
+      const saved = apply(view);
+      expect(saved.overrides.map((o) => [o.cellId, o.display])).toEqual([['a', { label: 'A' }]]);
+    });
   });
 });

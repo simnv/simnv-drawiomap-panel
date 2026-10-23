@@ -5,12 +5,16 @@ import type { DiagramConfigV2, DisplayConfig } from '../../model/config';
 import { DisplayFields } from '../BindingFields';
 import type { DraftAction } from '../draft';
 import { EditorSection, type FieldSourceView } from '../EditorLayout';
+import { resetPathOf } from '../fieldSource';
 import { diffLeaves, getLeaf, leafPaths, setLeaf, UNIT_PATHS } from '../leafPaths';
 
 const MIXED_NOTE = 'Mixed, edit per element';
 
 /** The paths that are one unit in a bulk edit: every array leaf (leafPaths) and a health rule. */
 const units: readonly string[] = UNIT_PATHS;
+const BINDING_PATHS = UNIT_PATHS.filter(
+  (path) => path.endsWith('Binding') || path.endsWith('.binding')
+) as readonly string[];
 
 /**
  * The display leaves that the cells share and the leaves where they differ, over the effective displays (patterns and
@@ -63,8 +67,11 @@ export interface BulkPaneProps {
 export function BulkPane({ cellIds, plan, config, fields, dispatch }: BulkPaneProps) {
   const { common, mixedPaths } = useMemo(() => commonLeaves(cellIds, plan), [cellIds, plan]);
   const isMixed = (path: string) => mixedPaths.some((mixed) => pathRelated(mixed, path) || pathRelated(path, mixed));
+  // A mixed field offers a clear button: it removes the field from the override of every selected element. An untouched
+  // mixed value changes nothing; only this button, or a typed value, writes.
   const sourceOf = (path: string): FieldSourceView | undefined =>
-    isMixed(path) ? { owner: 'mixed', resettable: false, resetPath: path, scope: 'element' } : undefined;
+    isMixed(path) ? { owner: 'mixed', resettable: true, resetPath: resetPathOf(path), scope: 'element' } : undefined;
+  const mixedBindings = mixedPaths.filter((path) => BINDING_PATHS.includes(path));
   const locked = {
     hover: mixedPaths.includes('hover.rows') ? MIXED_NOTE : undefined,
     status: mixedPaths.some((path) => path === 'status') ? MIXED_NOTE : undefined,
@@ -94,6 +101,8 @@ export function BulkPane({ cellIds, plan, config, fields, dispatch }: BulkPanePr
           queries={config.queries}
           fields={fields}
           sourceOf={sourceOf}
+          onReset={(path) => dispatch({ type: 'display-many', cellIds, ops: [{ path, value: undefined }] })}
+          mixedBindings={mixedBindings}
           locked={locked}
           onChange={change}
         />

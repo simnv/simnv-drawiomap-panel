@@ -146,6 +146,7 @@ export function BindingFields({
   fields = [],
   onChange,
   path,
+  mixed,
   ...sources
 }: {
   label: string;
@@ -155,9 +156,19 @@ export function BindingFields({
   onChange: (value?: QueryBinding) => void;
   /** The display path of the binding, for example `link.a2bBinding`. */
   path?: string;
+  /** A bulk edit of bindings that differ: the section shows the chip and no field, so no partial binding is built. */
+  mixed?: boolean;
 } & SourceProps) {
   const fieldListId = useId();
   const source = sourceFor(sources, path);
+  if (mixed) {
+    return (
+      <EditorSection title={`${label} metric`} defaultOpen>
+        {source && <SourceRow label={`${label} metric`} source={source} />}
+        <p>Mixed, edit per element</p>
+      </EditorSection>
+    );
+  }
   return (
     <EditorSection title={`${label} metric`} defaultOpen>
       {source && <SourceRow label={`${label} metric`} source={source} />}
@@ -303,6 +314,7 @@ export function DisplayFields({
   sourceOf,
   onReset,
   locked,
+  mixedBindings = [],
 }: {
   value: DisplayConfig;
   queries: NamedQuery[];
@@ -310,6 +322,8 @@ export function DisplayFields({
   onChange: (display: Partial<DisplayConfig>) => void;
   /** A section that cannot be edited here shows this note instead of its fields (a bulk edit of different rows). */
   locked?: { hover?: string; status?: string };
+  /** Binding paths whose values differ between the selected elements: the binding shows "Mixed", no fields. */
+  mixedBindings?: readonly string[];
 } & SourceProps) {
   const src: SourceProps = { sourceOf, onReset };
   const first = queries[0]?.id ?? '';
@@ -361,6 +375,7 @@ export function DisplayFields({
         <BindingFields
           label="Shape"
           path="shape.binding"
+          mixed={mixedBindings.includes('shape.binding')}
           {...src}
           value={value.shape?.binding}
           queries={queries}
@@ -393,6 +408,7 @@ export function DisplayFields({
             key={key}
             label={['A to B', 'B to A', 'Capacity'][i]}
             path={`link.${key}`}
+            mixed={mixedBindings.includes(`link.${key}`)}
             {...src}
             value={value.link?.[key]}
             queries={queries}

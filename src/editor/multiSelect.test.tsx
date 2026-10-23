@@ -81,8 +81,11 @@ describe('pattern from the selection', () => {
     return view;
   };
 
-  it('proposes the shared attribute first, shows the counts and marks the extra cell', () => {
+  it('proposes the label with no extra first; the attribute proposal shows its counts and marks the extra cell', () => {
     open();
+    expect((editorField('Proposed label regex') as HTMLInputElement).value).toBe('/^core-/');
+    expect(marks('data-dmap-extra')).toEqual([]);
+    fireEvent.click(screen.getByRole('radio', { name: /Attributes/ }));
     const counts = () => screen.getByTestId('dmap-proposal-counts').textContent;
     expect(screen.getByRole('heading', { name: '2 elements' })).toBeTruthy();
     expect((editorField('Proposed attributes') as HTMLTextAreaElement).value).toBe('role=router');
@@ -114,6 +117,7 @@ describe('pattern from the selection', () => {
 
   it('creates the pattern as one step, opens it in the pattern scope and clears the marks', () => {
     const view = open();
+    fireEvent.click(screen.getByRole('radio', { name: /Attributes/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Create pattern' }));
     expect(marks('data-dmap-extra')).toEqual([]);
     expect(screen.getByRole('heading', { name: 'r1 bindings' })).toBeTruthy();

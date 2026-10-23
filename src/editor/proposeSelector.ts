@@ -46,7 +46,8 @@ export function measure(select: CellSelector, selected: CellMeta[], all: CellMet
 /**
  * Selectors for a group of selected cells, best first. Meaning comes before identity: a selector on shared attributes
  * or on a shared label prefix goes before the plain list of ids, which stays last as the fallback. A candidate that
- * misses a selected cell is dropped. Among the attribute candidates the one with the fewest extra cells wins.
+ * misses a selected cell is dropped. The attribute and label candidates rank together by the fewest extra cells; on a
+ * tie the attributes come first.
  */
 export function proposeSelector(selected: CellMeta[], all: CellMeta[]): Proposal[] {
   if (selected.length === 0) {
@@ -96,8 +97,10 @@ export function proposeSelector(selected: CellMeta[], all: CellMeta[]): Proposal
 
   // 3. The ids: it always matches the selection and nothing else.
   const ids: CellSelector = { ids: selected.map((cell) => cell.id) };
+  // The semantic candidates (attributes and label) rank together by their extra cells; on a tie the attributes come
+  // first. The sort is stable and the tie rule is total, so the order is deterministic.
   const order = { attrs: 0, label: 1, ids: 2 };
-  proposals.sort((a, b) => order[a.kind] - order[b.kind] || a.extra.length - b.extra.length);
+  proposals.sort((a, b) => a.extra.length - b.extra.length || order[a.kind] - order[b.kind]);
   proposals.push({ select: ids, ...measure(ids, selected, all), kind: 'ids' });
   return proposals;
 }
