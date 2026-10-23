@@ -52,6 +52,8 @@ export function useBoxSelect({ wrapperRef, targets, onSelect, ignore }: BoxSelec
     latest.current = { targets, onSelect, ignore };
   });
   const band = useRef<Band | null>(null);
+  /** The pressed pointer, from the press to its release or cancel. `escaped`: Esc cancelled the band while it was down. */
+  const pressed = useRef<{ pointerId: number; escaped: boolean } | null>(null);
   const suppress = useRef(0);
   const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
@@ -99,8 +101,31 @@ export function useBoxSelect({ wrapperRef, targets, onSelect, ignore }: BoxSelec
       e.stopImmediatePropagation();
       e.preventDefault();
       stop(b.pointerId);
-      // The pointer is still down: its release must not click the cell under it.
-      markClick();
+      // The pointer is still down: its release must not click the cell under it, however long it stays down. The
+      // window handler marks the click when this pointer ends.
+      if (pressed.current?.pointerId === b.pointerId) {
+        pressed.current.escaped = true;
+      }
+    }
+    /**
+     * The end of the pressed pointer anywhere in the window. It clears a band that the stage never saw end (a press
+     * near the edge that left before the capture and was released outside), and it ends the click suppression of an
+     * Esc cancel.
+     */
+    function onWindowEnd(e: PointerEvent) {
+      const p = pressed.current;
+      if (!p || p.pointerId !== e.pointerId) {
+        return;
+      }
+      pressed.current = null;
+      window.removeEventListener('pointerup', onWindowEnd);
+      window.removeEventListener('pointercancel', onWindowEnd);
+      if (band.current?.pointerId === e.pointerId) {
+        stop(e.pointerId);
+      }
+      if (p.escaped) {
+        markClick();
+      }
     }
     const onDown = (e: PointerEvent) => {
       suppress.current = 0;
@@ -115,6 +140,13 @@ export function useBoxSelect({ wrapperRef, targets, onSelect, ignore }: BoxSelec
       if (band.current) {
         stop(band.current.pointerId);
       }
+      if (pressed.current) {
+        window.removeEventListener('pointerup', onWindowEnd);
+        window.removeEventListener('pointercancel', onWindowEnd);
+      }
+      pressed.current = { pointerId: e.pointerId, escaped: false };
+      window.addEventListener('pointerup', onWindowEnd);
+      window.addEventListener('pointercancel', onWindowEnd);
       band.current = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, moved: false };
       window.addEventListener('keydown', onKey, true);
     };
@@ -180,7 +212,10 @@ export function useBoxSelect({ wrapperRef, targets, onSelect, ignore }: BoxSelec
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerup', onWindowEnd);
+      window.removeEventListener('pointercancel', onWindowEnd);
       band.current = null;
+      pressed.current = null;
     };
   }, [wrapperRef]);
 

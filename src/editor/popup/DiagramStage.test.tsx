@@ -343,6 +343,51 @@ describe('DiagramStage box select', () => {
     expect(root.getAttribute('viewBox')).toBe(before);
   });
 
+  it('keeps suppressing the click after Esc until that pointer ends, however long it was down', () => {
+    vi.useFakeTimers();
+    try {
+      const { onSelect, stage, wrapper } = setup();
+      start(wrapper, 50, 50);
+      move(wrapper, 250, 200);
+      fireEvent.keyDown(window, { key: 'Escape' });
+      // The pointer stays down for much longer than the click window.
+      vi.advanceTimersByTime(5000);
+      release(wrapper, 250, 200);
+      fireEvent.click(stage.querySelector('[data-cell-id="device-1"] rect')!);
+      expect(onSelect).not.toHaveBeenCalled();
+      // The click that follows is a normal click again.
+      fireEvent.click(stage.querySelector('[data-cell-id="device-1"] rect')!);
+      expect(onSelect).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears a pending band when its pointer ends outside the stage before the capture, so the pan works again', async () => {
+    const { wrapper, stage } = setup();
+    await frame();
+    const root = stage.querySelector('svg')!;
+    const before = root.getAttribute('viewBox');
+    // A Shift press that leaves before the slop: the stage never sees the release.
+    start(wrapper, 5, 5);
+    fireEvent.pointerUp(document.body, { ...mouse, clientX: 900, clientY: 900 });
+    // A plain drag pans the view.
+    fireEvent.pointerDown(wrapper, { ...mouse, pointerId: 2, shiftKey: false, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(wrapper, { ...mouse, pointerId: 2, clientX: 360, clientY: 300 });
+    fireEvent.pointerUp(wrapper, { ...mouse, pointerId: 2, clientX: 360, clientY: 300 });
+    await frame();
+    expect(root.getAttribute('viewBox')).not.toBe(before);
+  });
+
+  it('clears a pending band on pointercancel outside the stage', () => {
+    const { wrapper } = setup();
+    start(wrapper, 5, 5);
+    fireEvent.pointerCancel(document.body, { ...mouse });
+    start(wrapper, 50, 50, false);
+    move(wrapper, 250, 200);
+    expect(screen.queryByTestId('dmap-box-select')).toBeNull();
+  });
+
   it('marks the primary, the extra and the missed cells', () => {
     render(
       <Harness
