@@ -47,11 +47,11 @@ test('the All bindings tab lists patterns, overrides and widgets, filters them a
   );
   await attachJson(testInfo, 'list-overflow', overflow);
 
-  await inspector.getByRole('checkbox', { name: 'Problems only' }).check();
+  await inspector.getByText('Problems only').click();
   await expect(inspector.getByRole('button', { name: 'Edit pattern Repeated routers' })).toHaveCount(0);
   await expect(ghost).toBeVisible();
   await expect(inspector.getByRole('button', { name: 'Edit override removed-cell' })).toBeVisible();
-  await inspector.getByRole('checkbox', { name: 'Problems only' }).uncheck();
+  await inspector.getByText('Problems only').click();
 
   await inspector.getByLabel('Filter bindings').fill('device-2');
   await expect(inspector.getByRole('button', { name: 'Edit override device-2' })).toBeVisible();
@@ -90,3 +90,48 @@ test('a pattern row opens the pattern for editing and an override can be deleted
   await inspector.getByRole('button', { name: 'Cancel changes' }).click();
   await expect(inspector.getByRole('button', { name: 'Overrides (1)', exact: true })).toBeVisible();
 });
+
+for (const [name, viewport] of [
+  ['desktop', { width: 1440, height: 1200 }],
+  ['narrow', { width: 760, height: 1100 }],
+] as const) {
+  test(`the All bindings tab fits the inspector (${name})`, async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }) => {
+    config.patterns = [
+      ...config.patterns.filter((p) => p.id === 'routers'),
+      {
+        id: 'ghost',
+        name: 'Ghost pattern with a rather long display name',
+        select: { ids: ['no-such-cell'] },
+        display: {},
+      },
+    ];
+    config.overrides = [
+      { cellId: 'device-2', display: { label: 'Second router' } },
+      { cellId: 'removed-cell', display: { label: 'Old' } },
+    ];
+    const uid = await createDiagram(config);
+    await page.setViewportSize(viewport);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
+    await inspector.getByRole('tab', { name: /All bindings/ }).click();
+    if (process.env.DMAP_SHOTS) {
+      await page.screenshot({
+        path: `${process.env.DMAP_SHOTS}/all-bindings-${name}-groups-${process.env.GRAFANA_URL?.slice(-4)}.png`,
+      });
+    }
+    await inspector.getByRole('button', { name: /Show problems of Ghost/ }).click();
+    expect(await inspector.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const body = inspector.getByRole('region', { name: 'All bindings list' });
+    expect(await body.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    if (process.env.DMAP_SHOTS) {
+      await page.screenshot({
+        path: `${process.env.DMAP_SHOTS}/all-bindings-${name}-${process.env.GRAFANA_URL?.slice(-4)}.png`,
+      });
+    }
+  });
+}
