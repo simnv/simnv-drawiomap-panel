@@ -2,7 +2,7 @@
 # Spec section 6 item 6: view mode must load no draw.io scripts.
 # The importer legitimately parses <mxGraphModel>, so do not grep for "mxGraph". Check instead:
 #  1. no draw.io / maxGraph package in the dependency tree,
-#  2. no draw.io runtime globals in dist/module.js (GraphViewer, mxClient, viewer-static, @maxgraph),
+#  2. no draw.io runtime globals in any plugin script dist/*.js, the lazy chunks too (GraphViewer, mxClient, viewer-static, @maxgraph),
 #  3. the bundle stays small,
 #  4. @grafana/react-detect finds no React 19 breakers.
 # The runtime check (no request to the editor origin in view mode) is tests/no-drawio.spec.ts.
@@ -22,14 +22,17 @@ if (cd "$root" && npm ls @maxgraph/core mxgraph 2>/dev/null) | grep -qE '@maxgra
   echo "FAIL: transitive maxGraph/mxGraph package"
   bad=1
 fi
-for token in GraphViewer mxClient viewer-static '@maxgraph' 'maxgraph/core'; do
-  if grep -q -- "$token" "$f"; then
-    echo "FAIL: $token found in dist/module.js"
-    bad=1
-  fi
+# The popup lives in a lazy chunk next to module.js. The bundled editor is in dist/drawio and is not scanned.
+for chunk in "$root"/dist/*.js; do
+  for token in GraphViewer mxClient viewer-static '@maxgraph' 'maxgraph/core'; do
+    if grep -q -- "$token" "$chunk"; then
+      echo "FAIL: $token found in dist/$(basename "$chunk")"
+      bad=1
+    fi
+  done
+  echo "dist/$(basename "$chunk"): $(wc -c <"$chunk" | tr -d ' ') bytes"
 done
 size=$(wc -c <"$f" | tr -d ' ')
-echo "dist/module.js: $size bytes"
 if [ "$size" -gt 400000 ]; then
   echo "FAIL: bundle larger than 400 KB"
   bad=1

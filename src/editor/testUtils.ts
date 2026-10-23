@@ -46,9 +46,22 @@ export function chooseOption(label: string, option: string, queries: Queries = s
   fireEvent.click(screen.getByRole('option', { name: option }));
 }
 
-export function selectElement(id: string, queries: Queries = screen) {
-  const input = queries.getByRole('combobox', { name: 'Diagram element' });
-  fireEvent.change(input, { target: { value: id } });
-  fireEvent.keyDown(input, { key: 'ArrowDown' });
-  fireEvent.click(screen.getByRole('option', { name: id }));
+/** Click a cell in the stage of the bindings popup, as a user does. */
+export function selectStageCell(id: string, scope: { getByTestId: typeof screen.getByTestId } = screen) {
+  const stage = scope.getByTestId('dmap-popup-stage');
+  const group = stage.querySelector(`[data-cell-id="${id}"]`);
+  if (!group) {
+    throw new Error(`Cell ${id} is not in the popup stage.`);
+  }
+  fireEvent.click(group.querySelector('rect, path, text, image, ellipse') ?? group);
+}
+
+/** Open the query pane of a row of the list. */
+export function openQueryRow(name: string, queries: Pick<typeof screen, 'getByRole'> = screen) {
+  fireEvent.click(queries.getByRole('button', { name: `Edit query ${name}` }));
+}
+
+/** Type into the filter of the list pane. */
+export function filterBindings(text: string, queries: Pick<typeof screen, 'getByRole'> = screen) {
+  fireEvent.change(queries.getByRole('textbox', { name: 'Filter bindings' }), { target: { value: text } });
 }

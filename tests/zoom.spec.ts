@@ -178,14 +178,14 @@ test.describe('live zoom on the desktop', () => {
     await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
     await fits('panel view');
     const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
-    await expect(page.getByRole('complementary', { name: 'Diagram binding inspector' })).toBeVisible();
+    await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
     await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
     await fits('panel edit');
     await page.setViewportSize({ width: 1100, height: 760 });
     await fits('panel edit after a window resize');
     await page.setViewportSize({ width: 1440, height: 900 });
     await edit.backToDashboard();
-    await expect(page.getByRole('complementary', { name: 'Diagram binding inspector' })).toHaveCount(0);
+    await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
     await fits('view after panel edit');
   });
 });
@@ -198,7 +198,10 @@ test.describe('live zoom on the desktop', () => {
 async function outside(page: Page) {
   const svgs = page.getByTestId('dmap-panel').locator('[data-testid="dmap-stage"] > svg');
   await expect(svgs.first()).toBeVisible();
-  expect(await svgs.count()).toBeGreaterThan(0);
+  // Grafana rebuilds the panel when it leaves panel edit: the svg may be absent for a moment. The poll retries.
+  if ((await svgs.count()) === 0) {
+    return ['the svg is not loaded yet'];
+  }
   return page.getByTestId('dmap-panel').evaluateAll((wrappers) =>
     wrappers.flatMap((wrapper) => {
       const stageEl = wrapper.querySelector('[data-testid="dmap-stage"]')!;

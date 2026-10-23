@@ -36,6 +36,7 @@ test('the Diagram option buttons stay inside the options pane at the narrowest w
 
   const buttons = [
     page.getByTestId('dmap-open-editor'),
+    page.getByTestId('dmap-edit-bindings-option'),
     group.getByRole('button', { name: 'Import .drawio' }),
     group.getByRole('button', { name: 'Clear', exact: true }),
   ];

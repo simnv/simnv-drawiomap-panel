@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { Alert, Button, Modal, Spinner } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
@@ -13,6 +13,7 @@ import {
   parseMessage,
   ProtocolState,
 } from './protocol';
+import { useOverlay } from './popup/overlayStack';
 import { parseFileRequest, readEditorFile } from './files';
 import { bundledEditorBase, editorTarget } from './target';
 import { EditorLoad, HELLO_TIMEOUT_MS, nextLoad, probeEditor } from './availability';
@@ -67,6 +68,8 @@ const FAILURES: Partial<Record<EditorLoad, { title: string; hint: string }>> = {
 
 /** Shows the bundled draw.io editor in embed mode inside a sandboxed iframe. Only this component loads draw.io code. */
 export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: DrawioModalProps) {
+  // The modal is on top of the overlay stack, so the bindings popup under it ignores Esc.
+  useOverlay(`drawio-${useId()}`);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stateRef = useRef<ProtocolState>(initialState(xml));
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');

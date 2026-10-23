@@ -101,7 +101,8 @@ export function observeQueries(page: Page, dashboardUid?: string) {
   page.on('request', (request) => {
     const referer = request.headers().referer;
     const belongsToDashboard = !dashboardUid || (referer && new URL(referer).pathname.includes(`/d/${dashboardUid}`));
-    if (new URL(request.url()).pathname === '/api/ds/query' && belongsToDashboard)
+    // under app_sub_url the path has a prefix
+    if (new URL(request.url()).pathname.endsWith('/api/ds/query') && belongsToDashboard)
       requests.push(request.postDataJSON());
   });
   return requests;
@@ -119,7 +120,7 @@ export async function saveDashboard(page: Page, panelEditPage: PanelEditPage) {
     return (
       response.request().method() !== 'GET' &&
       response.ok() &&
-      (path === '/api/dashboards/db' || path.startsWith('/apis/dashboard.grafana.app/'))
+      (path.endsWith('/api/dashboards/db') || path.includes('/apis/dashboard.grafana.app/'))
     );
   });
   await page

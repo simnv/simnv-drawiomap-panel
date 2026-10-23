@@ -23,8 +23,11 @@ export function useBindingSnapshots(
   service: PanelQueryService | undefined,
   openCellId: string | undefined,
   maxDataPoints: number,
-  prepared: QueryPreview[] = NO_PREPARED
+  preparedResults: QueryPreview[] | undefined,
+  /** Namespace of the consumer ids. Two owners on one controller never release each other's watches. */
+  owner: string
 ): QueryPreview[] {
+  const prepared = preparedResults ?? NO_PREPARED;
   const demands = useMemo(
     () =>
       collectBindingDemands(plan, openCellId).flatMap((demand) => {
@@ -37,7 +40,7 @@ export function useBindingSnapshots(
           demand.rowIndex === undefined
             ? undefined
             : `${demand.rowIndex}${demand.seriesIndex === undefined ? '' : `.${demand.seriesIndex}`}`;
-        const consumerId = `binding:${demand.role}:${demand.cellId}:${row ?? JSON.stringify(demand.binding)}`;
+        const consumerId = `${owner}:binding:${demand.role}:${demand.cellId}:${row ?? JSON.stringify(demand.binding)}`;
         const request = { consumerId, query, scope, context: service.context, maxDataPoints };
         const snapshot = preparedSnapshot(
           query,
@@ -55,7 +58,7 @@ export function useBindingSnapshots(
         const match = JSON.stringify([query, scope, demand.cellId, service.context.defaultDatasource]);
         return [{ request, cellId: demand.cellId, key: JSON.stringify(request), match, reuse }];
       }),
-    [plan, config, service, openCellId, maxDataPoints, prepared]
+    [plan, config, service, openCellId, maxDataPoints, prepared, owner]
   );
   const active = useRef(new Map<string, { key: string; release: () => void }>());
   const [snapshots, setSnapshots] = useState<Record<string, Held>>({});

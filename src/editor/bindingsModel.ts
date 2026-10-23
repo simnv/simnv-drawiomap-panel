@@ -46,11 +46,20 @@ export interface WidgetRow extends RowBase {
   queryId: string;
   exists: boolean;
 }
-export type BindingRow = PatternRow | OverrideRow | WidgetRow;
+/** A named query. `uses` counts the patterns, overrides and widgets that refer to it. */
+export interface QueryRow extends RowBase {
+  kind: 'query';
+  queryId: string;
+  name: string;
+  sourceKind: 'datasource' | 'panel';
+  uses: number;
+}
+export type BindingRow = PatternRow | OverrideRow | WidgetRow | QueryRow;
 export interface BindingsList {
   patterns: PatternRow[];
   overrides: OverrideRow[];
   widgets: WidgetRow[];
+  queries: QueryRow[];
   /** Problems that no row owns: invalid structure, a query nobody uses, an unowned cell. */
   general: RowProblem[];
 }
@@ -118,6 +127,21 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     problems: [],
   }));
 
+  const referencingCount = (queryId: string) =>
+    patterns.filter((row) => row.queryIds.includes(queryId)).length +
+    overrides.filter((row) => row.queryIds.includes(queryId)).length +
+    widgets.filter((row) => row.queryId === queryId).length;
+  const queries: QueryRow[] = config.queries.map((q, i) => ({
+    kind: 'query',
+    key: `query:${i}:${q.id}`,
+    index: i,
+    queryId: q.id,
+    name: q.name,
+    sourceKind: q.source.kind,
+    uses: referencingCount(q.id),
+    problems: [],
+  }));
+
   const provenance = new Map<string, ReturnType<typeof displayProvenance>>();
   const provenanceOf = (cell: CellMeta) => {
     if (!provenance.has(cell.id)) {
@@ -162,13 +186,9 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
       const rows =
         d.code === 'duplicate-widget-id' ? widgets.filter((r) => r.widgetId === widgets[w].widgetId) : [widgets[w]];
       rows.forEach((row) => add(row, problem));
-    } else if (q !== undefined && config.queries[q]) {
-      const rows = referencing(config.queries[q].id);
-      if (rows.length) {
-        rows.forEach((row) => add(row, problem));
-      } else {
-        add(undefined, problem);
-      }
+    } else if (q !== undefined && queries[q]) {
+      // The query row owns the problem. The rows that use the query show it too.
+      [queries[q], ...referencing(queries[q].queryId)].forEach((row) => add(row, problem));
     } else {
       const hit = cellOfPath(d.path, ids);
       if (!hit) {
@@ -225,7 +245,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
       }
     }
   }
-  return { patterns, overrides, widgets, general };
+  return { patterns, overrides, widgets, queries, general };
 }
 
 export interface BindingsFilter {
@@ -247,7 +267,9 @@ export function rowMatches(row: BindingRow, filter: BindingsFilter): boolean {
       ? [row.name, row.patternId, row.selector, ...row.queryIds, ...row.matched, ...row.matchedLabels]
       : row.kind === 'override'
         ? [row.cellId, row.label, ...row.keys, ...row.queryIds]
-        : [row.label, row.widgetId, row.anchorCellId, row.queryId];
+        : row.kind === 'widget'
+          ? [row.label, row.widgetId, row.anchorCellId, row.queryId]
+          : [row.name, row.queryId, row.sourceKind];
   return haystack.some((text) => text.toLowerCase().includes(needle));
 }
 
@@ -257,6 +279,62 @@ export function filterBindings(list: BindingsList, filter: BindingsFilter): Bind
     patterns: list.patterns.filter((row) => rowMatches(row, filter)),
     overrides: list.overrides.filter((row) => rowMatches(row, filter)),
     widgets: list.widgets.filter((row) => rowMatches(row, filter)),
+    queries: list.queries.filter((row) => rowMatches(row, filter)),
     general: list.general,
   };
+}
+
+/** One problem of the list with the row that owns it. A problem that no row owns has no row. */
+export interface ProblemEntry {
+  /** stable key; the same problem under two rows is one entry */
+  key: string;
+  row?: BindingRow;
+  problem: RowProblem;
+}
+
+/**
+ * All problems of the list, each once. A problem that several rows show (a query problem shows under the query and
+ * under the rows that use it) belongs to the first row in the order queries, patterns, overrides, widgets.
+ */
+export function problemsOf(list: BindingsList): ProblemEntry[] {
+  const seen = new Set<string>();
+  const entries: ProblemEntry[] = [];
+  const add = (row: BindingRow | undefined, problem: RowProblem) => {
+    const key = [problem.code, problem.path, problem.cellId ?? '', problem.message].join('|');
+    if (!seen.has(key)) {
+      seen.add(key);
+      entries.push({ key, row, problem });
+    }
+  };
+  for (const row of [...list.queries, ...list.patterns, ...list.overrides, ...list.widgets]) {
+    row.problems.forEach((problem) => add(row, problem));
+  }
+  list.general.forEach((problem) => add(undefined, problem));
+  return entries;
+}
+
+/**
+ * The cells that a filter text finds: the exact id first, then the ids that start with the text, then the ids
+ * or labels that contain it. Case-insensitive. Empty text finds nothing. It returns all matches; the UI pages them.
+ */
+export function cellRows(text: string, cells: CellMeta[]): CellMeta[] {
+  const needle = text.trim().toLowerCase();
+  if (!needle) {
+    return [];
+  }
+  const tier = (cell: CellMeta) => {
+    const id = cell.id.toLowerCase();
+    if (id === needle) {
+      return 0;
+    }
+    if (id.startsWith(needle)) {
+      return 1;
+    }
+    return id.includes(needle) || (cell.labelText ?? '').toLowerCase().includes(needle) ? 2 : 3;
+  };
+  return cells
+    .map((cell, order) => ({ cell, order, rank: tier(cell) }))
+    .filter((entry) => entry.rank < 3)
+    .sort((a, b) => a.rank - b.rank || a.order - b.order)
+    .map((entry) => entry.cell);
 }

@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { StandardEditorProps } from '@grafana/data';
-import { Button, Field, Stack, TextArea, useTheme2 } from '@grafana/ui';
+import { Button, Field, Stack, TextArea, Tooltip, useTheme2 } from '@grafana/ui';
 import { contractWarning } from '../adapter/portograph';
 import { DrawioModal } from '../editor/DrawioModal';
+import { currentAddress, requestOpen } from '../editor/popup/popupBus';
 import { Diagram, Options } from '../types';
 import { fnv1a } from '../util/hash';
 import { importDiagram } from './importDiagram';
@@ -15,6 +16,7 @@ export function DiagramEditor({ value, onChange }: Props) {
   const [xmlForModal, setXmlForModal] = useState('');
   const [paste, setPaste] = useState('');
   const [message, setMessage] = useState<string>('');
+  const [noEditor, setNoEditor] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const svg = value?.svg;
   const contract = useMemo(() => (svg ? contractWarning(svg) : undefined), [svg]);
@@ -50,8 +52,8 @@ export function DiagramEditor({ value, onChange }: Props) {
   return (
     <div>
       <p>
-        Draw.io edits geometry. Use the panel inspector to assign chart regions and bindings. Replacing the diagram
-        keeps assignments; missing anchors require explicit removal.
+        Draw.io edits geometry. Use Edit bindings to assign chart regions and bindings. Replacing the diagram keeps
+        assignments; missing anchors require explicit removal.
       </p>
       <div
         style={{ marginBottom: theme.spacing(1) }}
@@ -86,6 +88,21 @@ export function DiagramEditor({ value, onChange }: Props) {
           Import .drawio
         </Button>
         <input ref={fileRef} type="file" accept=".drawio,.xml,.svg" style={{ display: 'none' }} onChange={onFile} />
+        {/* The panel of this editor session opens the popup. No panel listens: the user is not in a panel editor. */}
+        <Tooltip content="Open the panel editor first" show={noEditor} placement="top">
+          <span>
+            <Button
+              data-testid="dmap-edit-bindings-option"
+              variant="secondary"
+              icon="link"
+              disabled={!value?.svg}
+              onClick={() => setNoEditor(!requestOpen(currentAddress(), { kind: 'none' }))}
+              onBlur={() => setNoEditor(false)}
+            >
+              Edit bindings
+            </Button>
+          </span>
+        </Tooltip>
         {value ? (
           <Button variant="destructive" icon="trash-alt" onClick={() => onChange(undefined)}>
             Clear

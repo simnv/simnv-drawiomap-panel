@@ -12,18 +12,18 @@ bindings, queries and diagram geometry. The real panel behind the popup stays as
 
 ## 2. Approved decisions (do not reopen)
 
-| #   | Decision                                                                                                                                                                                                                                               |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Panel edit only. Three entry points: an "Edit bindings" button in the Diagram options category, a small button in the panel corner in panel edit, a click on the warning badge (opens at that problem). The inline inspector is removed.               |
-| 2   | Grafana `Modal`, 95vw x 90vh. Three resizable panes: left list (filter; groups Problems, Patterns, Overrides, Widgets, Queries), centre live diagram with panel data (zoom, pan, click to select), right inspector.                                    |
-| 3   | Queries are rows of the left list. A click opens the datasource query editor (`src/editor/QueryEditor.tsx`) in the right pane with a preview result table, error marks and use counts.                                                                 |
-| 4   | The inspector keeps the sections of today and adds: a live hover-card preview with real data at the top; for each field the effective value and its source (pattern or override) with "Reset to pattern".                                              |
-| 5   | One draft for all edits, including a draw.io geometry save made from the popup. Apply writes the panel options; "Apply and close"; Cancel discards; a close with unsaved changes asks. Undo/redo with Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z and header buttons. |
-| 6   | draw.io stays a separate modal (opaque-origin iframe, ADR 0001) that opens on top of the popup.                                                                                                                                                        |
-| 7   | Multi-select on the canvas (shift-click, box select). "Create pattern from selection" proposes a selector; "Bulk edit" writes one override per selected cell and shows mixed values.                                                                   |
-| 8   | While the popup is open, the panel behind keeps its last render and does no per-refresh work. It renders once on close.                                                                                                                                |
-| 9   | Below about 1000 px the three panes become the tabs List, Diagram, Inspector.                                                                                                                                                                          |
-| 10  | Phases: P1 shell, panes, entry points, move the editor and the list in, remove the inline inspector. P2 live card, field sources, undo/redo, narrow layout. P3 multi-select, pattern from selection, bulk edit, pause behind.                          |
+| #   | Decision                                                                                                                                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Panel edit only. Three entry points: an "Edit bindings" button in the Diagram options category, a small button in the panel corner in panel edit, a click on the warning badge (opens at that problem). The inline inspector is removed.                                                          |
+| 2   | Plugin-owned dialog with the look of a Grafana `Modal` (see section 11, "Sandbox DOM access"), 95vw x 90vh. Three resizable panes: left list (filter; groups Problems, Patterns, Overrides, Widgets, Queries), centre live diagram with panel data (zoom, pan, click to select), right inspector. |
+| 3   | Queries are rows of the left list. A click opens the datasource query editor (`src/editor/QueryEditor.tsx`) in the right pane with a preview result table, error marks and use counts.                                                                                                            |
+| 4   | The inspector keeps the sections of today and adds: a live hover-card preview with real data at the top; for each field the effective value and its source (pattern or override) with "Reset to pattern".                                                                                         |
+| 5   | One draft for all edits, including a draw.io geometry save made from the popup. Apply writes the panel options; "Apply and close"; Cancel discards; a close with unsaved changes asks. Undo/redo with Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z and header buttons.                                            |
+| 6   | draw.io stays a separate modal (opaque-origin iframe, ADR 0001) that opens on top of the popup.                                                                                                                                                                                                   |
+| 7   | Multi-select on the canvas (shift-click, box select). "Create pattern from selection" proposes a selector; "Bulk edit" writes one override per selected cell and shows mixed values.                                                                                                              |
+| 8   | While the popup is open, the panel behind keeps its last render and does no per-refresh work. It renders once on close.                                                                                                                                                                           |
+| 9   | Below about 1000 px the three panes become the tabs List, Diagram, Inspector.                                                                                                                                                                                                                     |
+| 10  | Phases: P1 shell, panes, entry points, move the editor and the list in, remove the inline inspector. P2 live card, field sources, undo/redo, narrow layout. P3 multi-select, pattern from selection, bulk edit, pause behind.                                                                     |
 
 ## 3. Facts from the code that the design depends on
 
@@ -184,6 +184,8 @@ P1 starts with a spike (phase 1, Task 0): a trivial lazy component behind a temp
   `tests/no-drawio.spec.ts` asserts no chunk request in view mode.
 - Any red: static import. `scripts/check-bundle.sh` limit goes to 500 000 bytes with the reason in `docs/acceptance.md`
   and in this section. View mode still loads no draw.io code (the invariant of `CODING_STANDARDS.md`).
+
+**Task 0 result (2026-10-23): lazy.** All seven variants load the chunk. See `docs/acceptance.md`, table "Bindings popup: Task 0".
 
 ### 4.7 Draft operations
 
@@ -381,6 +383,7 @@ close; external conflict; real `Select` Esc order; freshness deadline during the
   everywhere else and through the header buttons. Tests include a datasource code editor and a nested dialog.
 - **Q3 Stage build timing.** `useStage` builds in render, so the shell cannot paint first with it. P1 Task 0 measures;
   above 200 ms on the large fixtures the build moves into an effect behind a spinner in P1, not P2.
+  **Task 0 result: build in render.** The 2000-cell diagram builds in 77 ms (limit 200 ms); a second stage adds 0.7 to 1.6 MB.
 - **Q4 Cells group.** Shown whenever the filter has text: exact id first, then id prefix, then contains in id or label;
   20 rows and a "Show more" button.
 - **Q5 Box select.** Shift+drag with pointer capture, Esc cancel, outside release clipped, click suppression (6, P3).
@@ -424,3 +427,25 @@ Review of `276d5da` by Codex (astra). Each claim was checked against the code. P
 | P3 reset inside arrays             | Arrays replace whole; reset the whole array; eligibility from the edited owner.                         | Accepted               | Verified: `mergeDisplay` comment "Arrays replace". Section 6 P2.                                                                                                                                                                                                                                                                                                                 |
 | P4 selector ranking                | `missed*1000+extra` always ranks `ids` first.                                                           | Accepted               | Verified arithmetic. Semantic candidates first, `ids` as the fallback (6, P3).                                                                                                                                                                                                                                                                                                   |
 | P5 test migration details          | editor-refresh semantics, draft isolation, geometry test, combobox helper, undo after Apply, new tests. | Accepted               | Section 7 rows updated; the phase 3 e2e undoes before Apply; the new test list is in section 7.                                                                                                                                                                                                                                                                                  |
+
+### Sandbox DOM access: Grafana `Modal` replaced by a plugin-owned dialog
+
+Found in P1 on the sandbox variants 3122, 3123 and 3143. Decided by the second consilium (Fable and astra, option 1).
+
+- **Fact.** `getSafeSandboxDomElement` (Grafana `documentSandbox.ts`, 12.4.13 and 13.2.4) gives plugin code the real element only if
+  its `parentNode` is `document.body`, it is outside `#reactRoot`, or it is inside `[data-plugin-sandbox=<plugin id>]`. Any other
+  element in `#reactRoot` arrives as a detached mock. `#grafana-portal-container`, the portal of `Modal`, is inside `#reactRoot`.
+  So the `ref` of the diagram stage in a `Modal` was a mock, and the imperative DOM work of the stage did not reach the page.
+- **Decision.** The popup is a plugin-owned dialog (`src/editor/popup/PluginDialog.tsx`). Its host is a `div` that carries
+  `data-plugin-sandbox=<plugin id>` and sits directly in `document.body` while the dialog is mounted. It renders a backdrop and a
+  `role="dialog" aria-modal="true"` box through `createPortal`, with the tokens of `getModalStyles` (size 95vw x 90vh).
+- **Z-order.** The dialog uses `zIndex.modal - 1` and the backdrop `zIndex.modalBackdrop - 1`. A Grafana `ConfirmModal`, the draw.io
+  `DrawioModal` and the `Select` menus (Grafana portals) paint above it.
+- **Focus.** Own trap: initial focus inside, Tab and Shift+Tab wrap, focus returns to the opener on close (the panel records the
+  opener at the click, because the chunk loader mounts later), body scroll lock. Outside the dialog, `inert` is set on the page
+  except on the ancestors of the portal container, so that a nested Grafana modal stays usable. In the sandbox the portal container
+  is a mock and its place is unknown: the app root stays usable, and `aria-modal`, the backdrop and the trap keep the user inside.
+  `@floating-ui/react` is not added.
+- **Esc.** `useEscOwner` treats an event target that is a sandbox mock (`data-grafana-plugin-sandbox-element`) as an element of
+  another owner. The document layer runs in the capture phase, so the Grafana `esc` key binding does not leave panel edit.
+- **Loading and error states** use the same dialog, not a Grafana `Modal`, so that no Grafana focus manager competes for the focus.

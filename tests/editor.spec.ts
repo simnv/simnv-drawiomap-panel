@@ -1,4 +1,4 @@
-import { selectDiagramElement } from './authoring-controls';
+import { openBindingsPopup, popupInspector, selectStageCell } from './authoring-controls';
 import { expect, saveDashboard, test } from './authoring-fixtures';
 import { inflateRawSync } from 'node:zlib';
 
@@ -127,8 +127,8 @@ test('geometry export keeps semantic identities and chart assignments through da
 }) => {
   const uid = await createDiagram(config);
   const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-  const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
-  await inspector.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+  const popup = await openBindingsPopup(page);
+  await popupInspector(popup).getByRole('button', { name: 'Edit geometry in draw.io' }).click();
   await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', {
     timeout: 60000,
   });
@@ -137,12 +137,21 @@ test('geometry export keeps semantic identities and chart assignments through da
   await frame.locator('.geSidebar .geItem').first().click();
   const stage = page.getByTestId('dmap-panel');
   const previousHash = await stage.getAttribute('data-dmap-hash');
+  const popupStage = popup.getByTestId('dmap-popup-stage');
   await frame.getByTitle(/^Save \(/).dispatchEvent('click');
+  // The new geometry is a draft in the popup stage. The panel behind keeps the saved diagram until Apply.
+  await expect(popupStage).not.toHaveAttribute('data-dmap-hash', previousHash!);
+  await expect(stage).toHaveAttribute('data-dmap-hash', previousHash!);
+  await page
+    .getByRole('dialog')
+    .filter({ has: page.getByTestId('dmap-editor-modal') })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
+  await expect(popupStage.locator('[data-cell-id="device-1"]')).toHaveAttribute('data-meta-pg-id', 'device-1');
+  await expect(popupStage.locator('[data-cell-id="chart-1"]')).toBeAttached();
+  await popup.getByRole('button', { name: 'Apply and close', exact: true }).click();
   await expect(stage).not.toHaveAttribute('data-dmap-hash', previousHash!);
-  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
   await expect(stage.locator('[data-cell-id="device-1"]')).toHaveAttribute('data-meta-pg-id', 'device-1');
-  await expect(stage.locator('[data-cell-id="chart-1"]')).toBeAttached();
-  await inspector.getByRole('button', { name: 'Apply bindings', exact: true }).click();
   await saveDashboard(page, panelEditPage);
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   const options = saved.dashboard.panels[0].options;
@@ -153,6 +162,7 @@ test('geometry export keeps semantic identities and chart assignments through da
   expect(decoded).toContain('pg-id="device-1"');
   expect(options.config.widgets[0].anchorCellId).toBe('chart-1');
   await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-  await selectDiagramElement(inspector, 'chart-1');
-  await expect(inspector.getByLabel('Chart label', { exact: true })).toHaveValue('Standalone trend');
+  const again = await openBindingsPopup(page);
+  await selectStageCell(again, 'chart-1');
+  await expect(popupInspector(again).getByLabel('Chart label', { exact: true })).toHaveValue('Standalone trend');
 });
