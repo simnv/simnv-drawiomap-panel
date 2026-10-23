@@ -1,6 +1,6 @@
 import { editorField, chooseOption, filterBindings, openQueryRow, openSection, selectStageCell } from './testUtils';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { DiagramConfigV2 } from '../model/config';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
 import { createQueryController } from '../query/controller';
@@ -738,5 +738,65 @@ describe('binding inspector', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Inspector' }));
     expect(screen.getByRole('heading', { name: 'device-1 bindings' })).toBeTruthy();
     width.mockRestore();
+  });
+
+  describe('undo and the local state of the query pane', () => {
+    const nativeConfig: DiagramConfigV2 = {
+      ...config,
+      defaultDatasource: { uid: 'test' },
+      queries: [{ id: 'q', name: 'Native', source: { kind: 'datasource', target: { refId: 'D' }, parameters: {} } }],
+    };
+    function setupNative() {
+      let controls: { undo: () => void; redo: () => void } | null = null;
+      const controller = createQueryController(vi.fn());
+      renderEditor({
+        config: nativeConfig,
+        svg: svgOf('device-1'),
+        service: { controller, context: queryContext },
+        onControls: (value) => {
+          controls = value;
+        },
+      });
+      return { controls: () => controls!, controller };
+    }
+    const json = () => editorField('Native target JSON') as HTMLTextAreaElement;
+    const importText = (text: string) => {
+      fireEvent.change(json(), { target: { value: text } });
+      fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+    };
+
+    it('keeps typed JSON that is not imported when there is nothing to undo or redo', async () => {
+      const { controls, controller } = setupNative();
+      openQueryRow('Native');
+      await screen.findByText(/No supported native query editor/);
+      fireEvent.change(json(), { target: { value: '{"refId":"D","expr":"typed"}' } });
+      const editor = json();
+      act(() => controls().undo());
+      act(() => controls().redo());
+      // The same element with the same text: the editor was not remounted.
+      expect(json()).toBe(editor);
+      expect(json().value).toBe('{"refId":"D","expr":"typed"}');
+      // After a real step the editor shows the restored draft.
+      importText('{"refId":"D","expr":"one"}');
+      fireEvent.change(json(), { target: { value: '{"typed":"again"}' } });
+      act(() => controls().undo());
+      expect(JSON.parse(json().value)).toEqual({ refId: 'D' });
+      controller.dispose();
+    });
+
+    it('clears the validity message of the old draft when undo changes the draft, so Apply works again', async () => {
+      const { controls, controller } = setupNative();
+      openQueryRow('Native');
+      await screen.findByText(/No supported native query editor/);
+      importText('{"refId":"D","expr":"one"}');
+      importText('{invalid');
+      expect(applyButton().disabled).toBe(true);
+      act(() => controls().undo());
+      expect(applyButton().disabled).toBe(false);
+      expect(screen.getByRole('region', { name: 'Query Native' }).textContent).not.toContain(
+        'Invalid native target JSON'
+      );
+      controller.dispose();
+    });
   });
 });

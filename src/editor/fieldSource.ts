@@ -1,5 +1,8 @@
 import { ownersOfPath, type DisplayOwner, type DisplayProvenance } from '../binding/patterns';
 import type { DiagramConfigV2, DisplayConfig } from '../model/config';
+import { valueAtPath } from './leafPaths';
+
+export { valueAtPath };
 
 /** Where the effective value of a field comes from, and what a reset would remove. */
 export interface FieldSource {
@@ -24,19 +27,6 @@ export function resetPathOf(path: string): string {
   }
   // A health rule is replaced as a whole when the kind changes, and its schema needs the binding and the default.
   return path === 'status' || path.startsWith('status.') ? 'status' : path;
-}
-
-/** The value of a dotted path (with `[i]` indexes) in a display, or `undefined`. */
-export function valueAtPath(display: unknown, path: string): unknown {
-  let at: unknown = display;
-  for (const part of path.split(/\.|(?=\[)/).filter(Boolean)) {
-    if (typeof at !== 'object' || at === null) {
-      return undefined;
-    }
-    const index = /^\[(\d+)\]$/.exec(part);
-    at = (at as Record<string, unknown>)[index ? index[1] : part];
-  }
-  return at;
 }
 
 /** The own display of the edited owner. */

@@ -1,6 +1,5 @@
-import type { Diagram } from '../types';
 import { draftPatternIndex, reduceDraft, type BindingDraft, type DraftAction } from './draft';
-import { leafPaths } from './leafPaths';
+import { changedLeaves } from './leafPaths';
 
 /** The most undo steps that the history keeps. */
 export const MAX_STEPS = 200;
@@ -8,9 +7,12 @@ export const MAX_STEPS = 200;
 export const MAX_DIAGRAMS = 5;
 const DEFAULT_COALESCE_MS = 800;
 
-/** The edit run that the next `display` action may join: one leaf path of one owner. */
+/**
+ * The edit run that the next `display` action may join. `paths` are the leaves that the run changed: one while the run
+ * edits one field, several when its first step created a value (a new binding has many leaves).
+ */
 interface Session {
-  path: string;
+  paths: string[];
   owner: string;
   at: number;
 }
@@ -31,6 +33,13 @@ export function createHistory(draft: BindingDraft, { coalesceMs = DEFAULT_COALES
 }
 
 /** Who the draft edits right now: the override of the cell or the pattern of the scope. */
+/** The display that the draft edits: the override of the cell or the pattern of the scope. */
+function ownDisplayOf(draft: BindingDraft) {
+  return draft.scope === 'pattern'
+    ? draft.config.patterns[draftPatternIndex(draft)]?.display
+    : draft.config.overrides.find((o) => o.cellId === draft.cellId)?.display;
+}
+
 function ownerOf(draft: BindingDraft): string {
   return draft.scope === 'pattern' ? `pattern:${draftPatternIndex(draft)}` : `override:${draft.cellId ?? ''}`;
 }
@@ -47,18 +56,18 @@ function restore(present: BindingDraft, target: BindingDraft): BindingDraft {
   return next;
 }
 
-/** Drop the oldest steps while the history holds too many diagram revisions. */
-function capDiagrams(past: BindingDraft[], future: BindingDraft[]): BindingDraft[] {
-  const count = (entries: BindingDraft[]) => {
-    const seen = new Set<Diagram | undefined>();
-    for (const entry of entries) {
-      seen.add(entry.diagram);
-    }
-    return seen.size;
-  };
-  let kept = past;
-  while (kept.length > 0 && count([...kept, ...future]) > MAX_DIAGRAMS) {
-    kept = kept.slice(1);
+/**
+ * Keep at most `MAX_DIAGRAMS` distinct diagram revisions in `past` and `future` together. Whole steps go: the oldest
+ * past steps first, then the newest future steps, so that every step that stays restores its own diagram.
+ */
+function capDiagrams(past: BindingDraft[], future: BindingDraft[]): { past: BindingDraft[]; future: BindingDraft[] } {
+  const count = (entries: BindingDraft[]) => new Set(entries.map((entry) => entry.diagram)).size;
+  let kept = { past, future };
+  while (count([...kept.past, ...kept.future]) > MAX_DIAGRAMS) {
+    kept =
+      kept.past.length > 0
+        ? { past: kept.past.slice(1), future: kept.future }
+        : { past: [], future: kept.future.slice(0, -1) };
   }
   return kept;
 }
@@ -70,23 +79,17 @@ function capDiagrams(past: BindingDraft[], future: BindingDraft[]): BindingDraft
  */
 export function reduceHistory(state: HistoryState, action: HistoryAction, now = Date.now()): HistoryState {
   const { present } = state;
-  if (action.type === 'undo') {
-    const previous = state.past[state.past.length - 1];
-    return previous
-      ? {
-          ...state,
-          past: state.past.slice(0, -1),
-          present: restore(present, previous),
-          future: [present, ...state.future],
-          session: undefined,
-        }
-      : state;
-  }
-  if (action.type === 'redo') {
-    const [next, ...rest] = state.future;
-    return next
-      ? { ...state, past: [...state.past, present], present: restore(present, next), future: rest, session: undefined }
-      : state;
+  if (action.type === 'undo' || action.type === 'redo') {
+    // Both end the edit run, also when there is nothing to undo or redo.
+    const undo = action.type === 'undo';
+    const target = undo ? state.past[state.past.length - 1] : state.future[0];
+    if (!target) {
+      return { ...state, session: undefined };
+    }
+    const kept = undo
+      ? capDiagrams(state.past.slice(0, -1), [present, ...state.future])
+      : capDiagrams([...state.past, present], state.future.slice(1));
+    return { ...state, ...kept, present: restore(present, target), session: undefined };
   }
   const result = reduceDraft(present, action);
   if (action.type === 'applied' || action.type === 'reset') {
@@ -96,27 +99,28 @@ export function reduceHistory(state: HistoryState, action: HistoryAction, now = 
     // Not a step (a selection, a scope change, a rejected action). It ends the edit run.
     return { ...state, present: result, session: undefined };
   }
-  if (action.type === 'display' && state.coalesceMs > 0) {
-    const paths = leafPaths(action.display);
+  // The leaves that this step changed, from a diff of the owner's display: the editor writes a whole binding or a
+  // whole section for an edit of one field.
+  const changed = changedLeaves(ownDisplayOf(present), ownDisplayOf(result));
+  if (action.type === 'display' && state.coalesceMs > 0 && changed.length > 0) {
     const owner = ownerOf(present);
     const session = state.session;
-    if (paths.length === 1) {
-      if (
-        session &&
-        session.path === paths[0] &&
-        session.owner === owner &&
-        now - session.at <= state.coalesceMs &&
-        state.past.length > 0
-      ) {
-        return { ...state, present: result, session: { ...session, at: now } };
-      }
-      return push(state, result, { path: paths[0], owner, at: now });
+    if (
+      changed.length === 1 &&
+      session &&
+      session.owner === owner &&
+      session.paths.includes(changed[0]) &&
+      now - session.at <= state.coalesceMs &&
+      state.past.length > 0
+    ) {
+      return { ...state, present: result, session: { owner, paths: changed, at: now } };
     }
+    return push(state, result, { paths: changed, owner, at: now });
   }
   return push(state, result, undefined);
 }
 
 function push(state: HistoryState, present: BindingDraft, session: Session | undefined): HistoryState {
-  const past = capDiagrams([...state.past, state.present].slice(-MAX_STEPS), []);
+  const { past } = capDiagrams([...state.past, state.present].slice(-MAX_STEPS), []);
   return { ...state, past, present, future: [], session };
 }

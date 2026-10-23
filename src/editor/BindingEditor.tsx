@@ -3,6 +3,7 @@ import React, {
   useContext,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -569,14 +570,22 @@ export function BindingEditor({
 
   // ---- draft actions ----
   // The datasource query editors keep their own text: a remount shows the text of the restored draft.
-  const undo = useCallback(() => {
-    dispatch({ type: 'undo' });
-    setResetEpoch((value) => value + 1);
+  // A step through the history changes the draft under the local state: the query editors show the restored text, and
+  // a validity message of the old draft must not block Apply. A key press with nothing to undo changes none of it.
+  const available = useRef({ undo: false, redo: false });
+  useLayoutEffect(() => {
+    available.current = { undo: canUndo, redo: canRedo };
+  });
+  const step = useCallback((type: 'undo' | 'redo') => {
+    dispatch({ type });
+    if (available.current[type]) {
+      setResetEpoch((value) => value + 1);
+      setQueryError('');
+      setGeometryError('');
+    }
   }, []);
-  const redo = useCallback(() => {
-    dispatch({ type: 'redo' });
-    setResetEpoch((value) => value + 1);
-  }, []);
+  const undo = useCallback(() => step('undo'), [step]);
+  const redo = useCallback(() => step('redo'), [step]);
   useEffect(() => {
     onControls?.({ undo, redo });
     return () => onControls?.(null);

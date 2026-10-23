@@ -47,10 +47,27 @@ describe('history', () => {
     expect(s.future).toHaveLength(0);
   });
 
-  it('does nothing at the ends', () => {
+  it('changes nothing at the ends but the edit run', () => {
     const s = start();
-    expect(reduceHistory(s, { type: 'undo' })).toBe(s);
-    expect(reduceHistory(s, { type: 'redo' })).toBe(s);
+    expect(reduceHistory(s, { type: 'undo' })).toEqual(s);
+    expect(reduceHistory(s, { type: 'redo' })).toEqual(s);
+  });
+
+  it('ends the edit run when there is nothing to undo or redo', () => {
+    // "a" is a step; an undo with an empty past does not exist here, so build the case: undo, then a key press that
+    // finds nothing to undo, then an edit of the same leaf within the window must be a new step.
+    let s = run(start(), [[display('a'), 1000], [{ type: 'undo' }], [{ type: 'undo' }, 1100]]);
+    expect(s.session).toBeUndefined();
+    s = run(s, [
+      [display('x'), 1200],
+      [{ type: 'redo' }, 1250],
+      [display('xy'), 1300],
+    ]);
+    expect(s.past).toHaveLength(2);
+    // A redo with an empty future ends the run as well.
+    const edited = run(start(), [[display('a'), 1000]]);
+    expect(edited.session).toBeDefined();
+    expect(reduceHistory(edited, { type: 'redo' }, 1010).session).toBeUndefined();
   });
 
   it('does not count a selection or a scope change as a step', () => {
@@ -187,6 +204,70 @@ describe('history', () => {
       s = reduceHistory(s, display(`v${i}`));
     }
     expect(s.past).toHaveLength(MAX_STEPS);
+  });
+
+  it('coalesces typing into one field of a binding that the editor writes whole', () => {
+    const binding = (field: string) => ({ queryId: 'q', match: {}, reducer: 'last' as const, field });
+    const typing = (input: HistoryState) =>
+      run(input, [
+        [{ type: 'display', display: { shape: { binding: binding('a') } } }, 1000],
+        [{ type: 'display', display: { shape: { binding: binding('ab') } } }, 1100],
+        [{ type: 'display', display: { shape: { binding: binding('abc') } } }, 1200],
+      ]);
+    // A fresh override: the first keystroke creates the binding (many leaves), the next ones change one leaf.
+    const fresh = typing(start());
+    expect(fresh.past).toHaveLength(1);
+    expect(fresh.present.config.overrides[0].display.shape?.binding?.field).toBe('abc');
+    // An existing binding: one leaf per keystroke from the start.
+    const withBinding: DiagramConfigV2 = {
+      ...config,
+      overrides: [{ cellId: 'a', display: { shape: { binding: binding('') } } }],
+    };
+    const existing = typing(reduceHistory(createHistory(createDraft(withBinding)), { type: 'select', cellId: 'a' }));
+    expect(existing.past).toHaveLength(1);
+    // Another leaf of the same binding is another step.
+    const other = reduceHistory(
+      existing,
+      { type: 'display', display: { shape: { binding: { ...binding('abc'), reducer: 'max' } } } },
+      1300
+    );
+    expect(other.past).toHaveLength(2);
+    // Pattern scope.
+    const pattern = typing(
+      reduceHistory(start(), { type: 'scope', scope: 'pattern', patternId: 'p', patternIndex: 0 })
+    );
+    expect(pattern.past).toHaveLength(1);
+  });
+
+  it('keeps the diagram cap when undo and redo move steps between past and future', () => {
+    const entry = (d: Diagram) => ({ ...createDraft(config, d) });
+    const [d1, d2, d3, d4, d5, d6] = [1, 2, 3, 4, 5, 6].map(diagram);
+    const base = createHistory(entry(d6));
+    // Five distinct revisions in the past (d5 twice) and a sixth in the present.
+    let s: HistoryState = { ...base, past: [d1, d2, d3, d4, d5, d5].map(entry) };
+    const distinct = (x: HistoryState) => new Set([...x.past, ...x.future].map((e) => e.diagram)).size;
+    expect(distinct(s)).toBe(5);
+    s = reduceHistory(s, { type: 'undo' });
+    expect(distinct(s)).toBeLessThanOrEqual(MAX_DIAGRAMS);
+    // The oldest whole step went; the steps that stay keep their own diagram.
+    expect(s.past[0].diagram).toBe(d2);
+    expect(s.present.diagram).toBe(d5);
+    expect(s.future.map((e) => e.diagram)).toEqual([d6]);
+    // Redo into a state that would exceed it again: the cap holds on this path too.
+    const wide: HistoryState = {
+      ...base,
+      present: entry(d5),
+      past: [d1, d2, d3, d4].map(entry),
+      future: [d5, d6].map(entry),
+    };
+    const back = reduceHistory(
+      { ...wide, present: entry(d6), past: [d1, d2, d3, d4, d5].map(entry), future: [] },
+      { type: 'undo' }
+    );
+    expect(distinct(back)).toBeLessThanOrEqual(MAX_DIAGRAMS);
+    const forward = reduceHistory(back, { type: 'redo' });
+    expect(distinct(forward)).toBeLessThanOrEqual(MAX_DIAGRAMS);
+    expect(forward.present.diagram).toBe(d6);
   });
 
   it('caps the distinct diagram revisions in past and future', () => {
