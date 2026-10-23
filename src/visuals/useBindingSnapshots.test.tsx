@@ -293,4 +293,51 @@ describe('useBindingSnapshots while paused', () => {
     hook.rerender({ generation: 1, expr: 'down', paused: false });
     expect(hook.result.current.map((p) => p.snapshot.state)).toEqual(['loading']);
   });
+
+  it('shows the latest buffered result as the kept result when the resume comes with a new generation', () => {
+    const { hook, emit } = pausedSetup();
+    emit(0, 1);
+    hook.rerender({ generation: 1, paused: true });
+    emit(0, 2);
+    // The resume brings a new generation (a new request key): the new request loads, the display keeps 2, not 1.
+    hook.rerender({ generation: 2, paused: false });
+    expect(hook.result.current).toHaveLength(1);
+    expect(hook.result.current[0]).toMatchObject({ kept: true });
+    expect(hook.result.current[0].snapshot).toMatchObject({ state: 'ready', frames: [frame(2)], fromCache: true });
+  });
+
+  it('keeps one buffered value per consumer: 1000 emissions while paused give one update at the resume', () => {
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const controller = createQueryController(execute);
+    let renders = 0;
+    const hook = renderHook(
+      ({ paused }: { paused: boolean }) => {
+        renders++;
+        return useBindingSnapshots(
+          plan,
+          config(),
+          { controller, context: context(1) },
+          undefined,
+          100,
+          undefined,
+          'test',
+          paused
+        );
+      },
+      { initialProps: { paused: false } }
+    );
+    const emit = (value: number) =>
+      act(() => execute.mock.calls[0][1]({ state: 'ready', frames: [frame(value)], fetchedAt: 0, fromCache: false }));
+    emit(0);
+    hook.rerender({ paused: true });
+    const paused = renders;
+    for (let i = 1; i <= 1000; i++) {
+      emit(i);
+    }
+    expect(renders).toBe(paused);
+    hook.rerender({ paused: false });
+    expect(renders - paused).toBe(2);
+    expect(hook.result.current).toHaveLength(1);
+    expect(hook.result.current[0].snapshot).toMatchObject({ frames: [frame(1000)] });
+  });
 });

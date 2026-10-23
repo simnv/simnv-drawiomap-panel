@@ -68,27 +68,35 @@ export function useBindingSnapshots(
   );
   const active = useRef(new Map<string, { key: string; release: () => void }>());
   const [snapshots, setSnapshots] = useState<Record<string, Held>>({});
-  // While paused an emission goes to this ref, not to state: the hook renders nothing. The resume applies the latest
-  // emission of each consumer once.
+  // While paused an emission goes to this ref, not to state: the hook renders nothing. The ref holds DATA, the
+  // latest emission of each consumer with its request key; the resume applies them in one update. Render accepts a
+  // value only for the same key (current) or the same match (last), so no live lookup is needed at apply time.
   const pausedRef = useRef(paused);
-  const pending = useRef(new Map<string, Array<(state: Record<string, Held>) => Record<string, Held>>>());
+  const pending = useRef(new Map<string, Held>());
   useEffect(() => {
     pausedRef.current = paused;
     if (!paused && pending.current.size) {
-      const apply = Array.from(pending.current.values()).flat();
+      const received = Array.from(pending.current);
       pending.current.clear();
-      // One update for all consumers.
-      setSnapshots((previous) => apply.reduce((state, fn) => fn(state), previous));
+      setSnapshots((previous) => {
+        const next = { ...previous };
+        for (const [id, held] of received) {
+          next[id] = { ...held, last: held.last ?? previous[id]?.last };
+        }
+        return next;
+      });
     }
   }, [paused]);
   const controller = service?.controller;
   useEffect(() => {
     const subscriptions = active.current;
+    const buffered = pending.current;
     return () => {
       for (const item of subscriptions.values()) {
         item.release();
       }
       subscriptions.clear();
+      buffered.clear();
     };
   }, [controller]);
   useEffect(() => {
@@ -97,6 +105,7 @@ export function useBindingSnapshots(
     for (const [id, item] of subscriptions) {
       if (desired.get(id)?.key !== item.key) {
         subscriptions.delete(id);
+        pending.current.delete(id);
         item.release();
       }
     }
@@ -112,23 +121,22 @@ export function useBindingSnapshots(
           if (subscriptions.get(id) !== item) {
             return;
           }
-          const update = (previous: Record<string, Held>) => {
-            const preview = {
-              query: demand.request.query,
-              cellId: demand.cellId,
-              context: demand.request.context,
-              snapshot,
-            };
-            const last = settled(snapshot) ? { match: demand.match, preview } : previous[id]?.last;
-            return { ...previous, [id]: { key: demand.key, preview, last } };
+          const preview = {
+            query: demand.request.query,
+            cellId: demand.cellId,
+            context: demand.request.context,
+            snapshot,
           };
+          const fresh = settled(snapshot) ? { match: demand.match, preview } : undefined;
           if (pausedRef.current) {
-            // Keep every emission in order, so that `last` (the last settled result) stays right. A consumer that is
-            // released before the resume is dropped.
-            const guarded = (state: Record<string, Held>) => (subscriptions.get(id) === item ? update(state) : state);
-            pending.current.set(id, [...(pending.current.get(id) ?? []), guarded]);
+            // Only the latest emission is kept. `last` (the last settled result) stays right: a settled emission
+            // replaces it, another one keeps the earlier settled result of this pause.
+            pending.current.set(id, { key: demand.key, preview, last: fresh ?? pending.current.get(id)?.last });
           } else {
-            setSnapshots(update);
+            setSnapshots((previous) => ({
+              ...previous,
+              [id]: { key: demand.key, preview, last: fresh ?? previous[id]?.last },
+            }));
           }
         });
       }
