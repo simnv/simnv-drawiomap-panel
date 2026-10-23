@@ -202,3 +202,51 @@ describe('useBindingSnapshots consumer owners', () => {
     expect(release).not.toHaveBeenCalled();
   });
 });
+
+describe('useBindingSnapshots while paused', () => {
+  function pausedSetup() {
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const controller = createQueryController(execute);
+    const hook = renderHook(
+      ({ generation, expr, paused }: { generation: number; expr?: string; paused: boolean }) =>
+        useBindingSnapshots(
+          plan,
+          config(expr),
+          { controller, context: context(generation) },
+          undefined,
+          100,
+          undefined,
+          'test',
+          paused
+        ),
+      { initialProps: { generation: 1, paused: false } as { generation: number; expr?: string; paused: boolean } }
+    );
+    const emit = (call: number, value: number) =>
+      act(() =>
+        execute.mock.calls[call][1]({ state: 'ready', frames: [frame(value)], fetchedAt: 0, fromCache: false })
+      );
+    return { execute, hook, emit };
+  }
+
+  it('does not show a controller emission while paused, and shows it after the pause', () => {
+    const { hook, emit } = pausedSetup();
+    emit(0, 1);
+    const live = hook.result.current;
+    hook.rerender({ generation: 1, paused: true });
+    emit(0, 2);
+    expect(hook.result.current).toBe(live);
+    expect(hook.result.current[0].snapshot).toMatchObject({ frames: [frame(1)] });
+    hook.rerender({ generation: 1, paused: false });
+    expect(hook.result.current[0].snapshot).toMatchObject({ state: 'ready', frames: [frame(2)] });
+  });
+
+  it('drops a result whose query changed during the pause when the pause ends', () => {
+    const { hook, emit } = pausedSetup();
+    emit(0, 1);
+    hook.rerender({ generation: 1, paused: true });
+    hook.rerender({ generation: 1, expr: 'down', paused: true });
+    expect(hook.result.current[0].snapshot).toMatchObject({ state: 'ready', frames: [frame(1)] });
+    hook.rerender({ generation: 1, expr: 'down', paused: false });
+    expect(hook.result.current.map((p) => p.snapshot.state)).toEqual(['loading']);
+  });
+});

@@ -5,6 +5,7 @@ import type { DiagramConfigV2 } from '../model/config';
 import type { PanelQueryService } from '../query/panel';
 import { preparedSnapshot, type QueryPreview } from '../editor/preview';
 import type { QuerySnapshot } from '../query/types';
+import { useHeld } from '../components/useHeld';
 
 const NO_PREPARED: QueryPreview[] = [];
 const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
@@ -25,7 +26,12 @@ export function useBindingSnapshots(
   maxDataPoints: number,
   preparedResults: QueryPreview[] | undefined,
   /** Namespace of the consumer ids. Two owners on one controller never release each other's watches. */
-  owner: string
+  owner: string,
+  /**
+   * The popup is open over the panel: keep returning the last live result. The subscriptions stay open; an emission
+   * is stored and shows on the first render after the pause.
+   */
+  paused = false
 ): QueryPreview[] {
   const prepared = preparedResults ?? NO_PREPARED;
   const demands = useMemo(
@@ -124,7 +130,7 @@ export function useBindingSnapshots(
       attached = false;
     };
   }, [controller, demands, snapshots]);
-  return useMemo(
+  const shown = useMemo(
     () =>
       demands.flatMap((demand) => {
         if (demand.reuse) {
@@ -173,4 +179,5 @@ export function useBindingSnapshots(
       }),
     [demands, snapshots, prepared, config]
   );
+  return useHeld(shown, paused);
 }
