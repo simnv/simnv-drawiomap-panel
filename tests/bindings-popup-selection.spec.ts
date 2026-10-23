@@ -85,7 +85,7 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
     await cell(dialog, 'r2').click({ modifiers: ['Shift'] });
     await cell(dialog, 'r3').click({ modifiers: ['Shift'] });
     await expect(heading(dialog, '3 elements')).toBeFocused();
-    expect(await ids(selected(dialog))).toEqual(['r1', 'r2', 'r3']);
+    await expect.poll(() => ids(selected(dialog))).toEqual(['r1', 'r2', 'r3']);
     await expect(cell(dialog, 'r3')).toHaveAttribute('data-dmap-primary', 'true');
     await expect(group(dialog, 'Overrides', 0)).toBeVisible();
     await labelField(dialog).fill('Bulk ${cell.key}');
@@ -127,11 +127,11 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
       await expect(stageOf(dialog).locator('xpath=..').getByTestId('dmap-box-select')).toBeVisible();
     });
     await expect(heading(dialog, '2 elements')).toBeFocused();
-    expect(await ids(selected(dialog))).toEqual(['r1', 'r2']);
+    await expect.poll(() => ids(selected(dialog))).toEqual(['r1', 'r2']);
     const inspector = popupInspector(dialog);
     await expect(inspector.getByLabel('Proposed attributes', { exact: true })).toHaveValue('role=router');
     await expect(inspector.getByTestId('dmap-proposal-counts')).toHaveText('matches 3, extra 1, missed 0');
-    expect(await ids(stageOf(dialog).locator('[data-dmap-extra="true"]'))).toEqual(['r3']);
+    await expect.poll(() => ids(stageOf(dialog).locator('[data-dmap-extra="true"]'))).toEqual(['r3']);
     // The proposals: attributes, label, then the ids.
     const proposals = inspector.getByRole('radiogroup', { name: 'Proposal' }).getByRole('radio');
     expect(
@@ -174,7 +174,7 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
     // From the gap left of r2 to the inspector pane, 120 px right of the stage.
     await shiftDrag(page, { x: r2.x - 8, y: r2.y - 8 }, { x: pane.x + pane.width + 120, y: r2.y + r2.height + 8 });
     await expect(heading(dialog, '2 elements')).toBeFocused();
-    expect(await ids(selected(dialog))).toEqual(['r2', 'r3']);
+    await expect.poll(() => ids(selected(dialog))).toEqual(['r2', 'r3']);
     // The dialog is still open and the release did not click anything in the inspector.
     await expect(dialog).toBeVisible();
   });
@@ -205,7 +205,7 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
 
     // The Shift + click that a release over a cell would make is suppressed: it would toggle the new selection off.
     await shiftDrag(page, { x: r1.x - 8, y: r1.y - 8 }, { x: r1.x + r1.width / 2, y: r1.y + r1.height / 2 });
-    expect(await ids(selected(dialog))).toEqual(['r1']);
+    await expect.poll(() => ids(selected(dialog))).toEqual(['r1']);
     await expect(heading(dialog, 'r1 bindings')).toBeVisible();
   });
 

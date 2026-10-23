@@ -153,3 +153,53 @@ Decisions and deviations:
 - A reset of `hover.rows` removes only that key; `hover.enabled` stays (a hover with only `enabled` is valid and merges with the
   rows of the patterns).
 - The tabs follow the ARIA tabs pattern (one tab stop, arrow keys, Home and End).
+
+## Bindings popup: Phase 3 results
+
+Phase 3 adds multi-select on the stage, the box select, a pattern from the selection, bulk edit with leaf operations, and the
+pause of the panel behind the popup (spec `2026-10-23-bindings-popup-design.md`, section 6, P3, and section 11).
+
+| Acceptance item (spec section 6, P3)                                                                                    | Evidence                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shift-click three cells, bulk label: three overrides; rows and link bindings unchanged; one undo removes all three      | e2e `bindings-popup-selection.spec.ts` test 1: Overrides (0) → (3), one Undo → (0), Redo → (3), Apply, reopen: three overrides, the hover rows of a cell unchanged. Unit `BulkPane.test.tsx`, `draft.test.ts` (`display-many`, `batch`), `history.test.ts`.       |
+| Box select over two routers proposes the shared attributes first, the others as extras, `ids` last; Create adds it      | e2e test 2 (a diagram whose nodes carry a `role` attribute): `role=router`, "matches 3, extra 1", the extra marked on the canvas, ids last; ids clears the extras; Create is one step. Unit `proposeSelector.test.ts`, `multiSelect.test.tsx`.                    |
+| A band released outside the stage selects the clipped band; Esc selects nothing; the click after a band selects nothing | e2e tests 3 and 4. Unit `DiagramStage.test.tsx` (capture, cancel, outside release, click suppression, touch, no pan), `boxTargets.test.ts`.                                                                                                                       |
+| With a 5 s refresh the panel behind keeps its paint for three refreshes; on close it updates once                       | e2e `refresh.spec.ts` "popup open": the link halves and `data-dmap-patched` do not change and the panel subtree has zero DOM mutations over three refreshes; after Close the halves change. A control (no popup) shows mutations. Unit `DrawioMapPanel.test.tsx`. |
+| A status deadline during the pause marks the status stale                                                               | Unit `DrawioMapPanel.test.tsx`: the band shows "stale" with the popup open, with one applier call; the popup stays open.                                                                                                                                          |
+| A close during a loading preview leaves the panel consumers attached                                                    | Unit `DrawioMapPanel.test.tsx`: after Discard and close, a value on the panel's request reaches the panel.                                                                                                                                                        |
+
+Measurement (unit, jsdom, `DrawioMapPanel.test.tsx`, demo diagram with legacy rules, three dashboard refreshes with new data):
+
+| Run        | Panel applier calls during the 3 refreshes | Panel view renders during the 3 refreshes | After close                          |
+| ---------- | ------------------------------------------ | ----------------------------------------- | ------------------------------------ |
+| no popup   | 3                                          | 6                                         | not applicable                       |
+| popup open | 0                                          | 0                                         | 1 applier call, 2 renders (one data) |
+
+In the browser (e2e): zero DOM mutations in `dmap-panel` over three refreshes while the popup is open.
+
+Bundle: `dist/module.js` 339 288 bytes (P2: 337 072), `dist/bindings-popup.js` 123 389 bytes (P2: 108 048); `check:bundle` passes.
+
+Screenshots (written by the browser tests to `/tmp/dmap-popup-p3/`): `pattern-from-selection-<port>.png` (two routers boxed, the
+proposal with its counts, the extra router outlined on the canvas) and `bulk-mixed-<port>.png` (bulk pane with the chip Mixed and
+"Mixed, edit per element").
+
+Decisions and deviations:
+
+- The pointer capture of the box starts when the pointer leaves the 4 px click slop, not at the press. A captured press sends its
+  click to the stage, so Shift + click could not toggle the cell under it. The release and `pointercancel` still reach the stage
+  from outside.
+- A box select always adds to the selection: the band starts with Shift, and Shift keeps the earlier cells. A plain click starts a
+  new selection.
+- The band tests the elements of the diagram: the nodes (with their ports and icon), the links (with their label) and other plain
+  cells. The canvas, layers, groups, the legend, and any cell that holds nodes or links (a root that draw.io nests) never join.
+- The demo diagram has no `router` attribute: every node has `pg-kind="node"`. Two demo routers get `{ kind: 'node' }` first (the
+  other nodes as extras) and the label proposal `/^rtr-/` with no extra. The e2e test uses a diagram with a `role` attribute to show the
+  attribute proposal of the spec. The ranking is the spec's: attributes, label, ids.
+- Hover rows, other arrays and the health rule (`status`) count as one leaf each in a bulk edit. The health rule is replaced as a
+  whole when its kind changes, so a lone leaf of it is not a valid override. `status.rules` of the plan is `status` here.
+- A bulk change that clears a field removes it from the overrides. It cannot hide a value that a pattern gives the element.
+- A bulk edit joins one undo step while the same cells and the same leaf change within the window, as a single element does.
+- "Create pattern" is one `batch`: the pattern, then the selection of the first match, then the pattern scope (a selection resets the
+  scope, so it comes before it).
+- The panel view does not render at all while paused (a `React.memo` that ignores new props of the dashboard while it is paused),
+  and holds its inputs and its query service with `useHeld`. The popup's own consumers (`popup:<id>`) keep running on the live data.

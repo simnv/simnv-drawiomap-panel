@@ -305,7 +305,7 @@ preview, sources, array reset, undo/redo keys incl. the Prometheus code editor a
 ### P3: multi-select, pattern from selection, bulk edit, pause behind
 
 Scope: selection `string[]` (primary = last). Shift-click toggles. **Box select** (Q5): Shift+pointerdown on the stage
-with a mouse or pen calls `setPointerCapture`; the band follows `pointermove`; `pointerup` or `pointercancel` anywhere
+with a mouse or pen starts a band; once the pointer leaves the 4 px click slop the stage calls `setPointerCapture` (a captured press would send its click to the stage, so Shift-click could not toggle the cell under it); the band follows `pointermove`; `pointerup` or `pointercancel` anywhere
 ends it (capture delivers them); Esc cancels it; a release outside the stage counts the band clipped to the stage; the
 next `click` after a band is suppressed (a `takeClick`-style flag); a plain drag pans. Cells whose group
 `getBoundingClientRect` intersects the band are selected.
@@ -318,7 +318,7 @@ exists. The stage marks extras and missed cells; the selector is editable; "Crea
 **Bulk edit:** `commonLeaves(cellIds, plan)` returns the leaf paths with equal values across the effective displays and
 `mixedPaths`; `BulkPane` renders `DisplayFields` with the common leaves and the chip "Mixed" on mixed paths; a change
 is turned into leaf operations (`diffLeaves(before, after)`) and dispatched as `display-many { cellIds, ops: [{ path, value }] }`, which sets each leaf in each override and leaves every other leaf, inherited or own, untouched. Array
-fields (`hover.rows`, `status.rules`) are editable in bulk only when all cells have identical arrays; otherwise the
+fields (`hover.rows` and every other array) and the health rule `status` (replaced as a whole when its kind changes) are editable in bulk only when all cells have identical values; otherwise the
 section shows "Mixed, edit per element". Pause behind as in 4.4.
 
 Acceptance:
