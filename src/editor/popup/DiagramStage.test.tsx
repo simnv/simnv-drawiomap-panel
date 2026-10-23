@@ -25,6 +25,7 @@ interface HarnessProps {
   patches?: PatchMap;
   selection?: StageSelection;
   onSelect?: (id: string, options: { shift: boolean }) => void;
+  onBox?: (ids: string[]) => void;
   onStage?: (stage: ReturnType<typeof useStage>) => void;
 }
 function Harness({
@@ -33,6 +34,7 @@ function Harness({
   patches: map = new Map(),
   selection = NONE,
   onSelect,
+  onBox,
   onStage,
 }: HarnessProps) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -45,6 +47,7 @@ function Harness({
       patches={map}
       selection={selection}
       onSelect={onSelect ?? (() => {})}
+      onBox={onBox}
       owner="popup:1"
     />
   );
@@ -174,5 +177,189 @@ describe('DiagramStage', () => {
     await frame();
     expect(root.getAttribute('viewBox')).toBe('0 0 640 320');
     expect(screen.queryByTestId('dmap-popup-reset-zoom')).toBeNull();
+  });
+});
+
+describe('DiagramStage box select', () => {
+  // The stage is 800 x 600. device-1 is at x 100..200, device-2 at 300..400, link-1 at 850..950 (outside the stage).
+  const rects: Record<string, [number, number, number, number]> = {
+    'device-1': [100, 100, 200, 160],
+    'device-2': [300, 100, 400, 160],
+    'link-1': [850, 100, 950, 160],
+  };
+  const rectOf = (l: number, t: number, r: number, b: number) =>
+    ({ left: l, top: t, right: r, bottom: b, width: r - l, height: b - t, x: l, y: t }) as DOMRect;
+  let capture: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const id = this.getAttribute('data-cell-id');
+      if (!id) {
+        return rectOf(0, 0, 800, 600);
+      }
+      // A cell without a rectangle in the table sits far away from every band.
+      return rectOf(...(rects[id] ?? [3000, 3000, 3010, 3010]));
+    });
+    capture = vi.fn();
+    Object.assign(HTMLElement.prototype, {
+      setPointerCapture: capture,
+      releasePointerCapture: vi.fn(),
+      hasPointerCapture: () => true,
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Reflect.deleteProperty(HTMLElement.prototype, 'setPointerCapture');
+    Reflect.deleteProperty(HTMLElement.prototype, 'releasePointerCapture');
+    Reflect.deleteProperty(HTMLElement.prototype, 'hasPointerCapture');
+  });
+
+  const setup = (props: HarnessProps = {}) => {
+    const onBox = vi.fn();
+    const onSelect = vi.fn();
+    render(<Harness onBox={onBox} onSelect={onSelect} {...props} />);
+    const stage = screen.getByTestId('dmap-popup-stage');
+    return { onBox, onSelect, stage, wrapper: stage.parentElement as HTMLElement };
+  };
+  const mouse = { pointerType: 'mouse', pointerId: 1, button: 0 };
+  const start = (el: Element, x: number, y: number, shiftKey = true) =>
+    fireEvent.pointerDown(el, { ...mouse, shiftKey, clientX: x, clientY: y });
+  const move = (el: Element, x: number, y: number) => fireEvent.pointerMove(el, { ...mouse, clientX: x, clientY: y });
+  const release = (el: Element, x: number, y: number) => fireEvent.pointerUp(el, { ...mouse, clientX: x, clientY: y });
+
+  it('draws a band under Shift + drag, requests the pointer capture and selects the cells it touches', () => {
+    const { onBox, wrapper } = setup();
+    start(wrapper, 50, 50);
+    expect(screen.queryByTestId('dmap-box-select')).toBeNull();
+    move(wrapper, 250, 200);
+    const band = screen.getByTestId('dmap-box-select');
+    expect(band.style.left).toBe('50px');
+    expect(band.style.width).toBe('200px');
+    expect(capture).toHaveBeenCalledWith(1);
+    release(wrapper, 250, 200);
+    expect(screen.queryByTestId('dmap-box-select')).toBeNull();
+    expect(onBox).toHaveBeenCalledWith(['device-1']);
+  });
+
+  it('selects every cell that the band touches, in the order of the diagram', () => {
+    const { onBox, wrapper } = setup();
+    start(wrapper, 150, 120);
+    move(wrapper, 350, 140);
+    release(wrapper, 350, 140);
+    expect(onBox).toHaveBeenCalledWith(['device-1', 'device-2']);
+  });
+
+  it('clips a band that ends outside the stage to the stage', () => {
+    const { onBox, wrapper } = setup();
+    start(wrapper, 250, 120);
+    // The release arrives at the stage by capture, 300 px right of its edge.
+    move(wrapper, 1100, 140);
+    expect(screen.getByTestId('dmap-box-select').style.width).toBe('550px');
+    release(wrapper, 1100, 140);
+    // link-1 sits at 850..950: outside the clipped band.
+    expect(onBox).toHaveBeenCalledWith(['device-2']);
+  });
+
+  it('cancels the band on Esc: nothing is selected, the release and its click do nothing', () => {
+    const { onBox, onSelect, stage, wrapper } = setup();
+    start(wrapper, 50, 50);
+    move(wrapper, 250, 200);
+    expect(screen.getByTestId('dmap-box-select')).toBeTruthy();
+    const keydown = fireEvent.keyDown(window, { key: 'Escape' });
+    expect(keydown).toBe(false);
+    expect(screen.queryByTestId('dmap-box-select')).toBeNull();
+    release(wrapper, 250, 200);
+    fireEvent.click(stage.querySelector('[data-cell-id="device-1"] rect')!);
+    expect(onBox).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('does not let Esc reach other handlers while a band is active, and lets it pass afterwards', () => {
+    const { wrapper } = setup();
+    const other = vi.fn();
+    document.addEventListener('keydown', other, true);
+    start(wrapper, 50, 50);
+    move(wrapper, 250, 200);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(other).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(other).toHaveBeenCalledTimes(1);
+    document.removeEventListener('keydown', other, true);
+  });
+
+  it('suppresses the click after a band once, then clicks work again', () => {
+    const { onSelect, stage, wrapper } = setup();
+    start(wrapper, 50, 50);
+    move(wrapper, 250, 200);
+    release(wrapper, 250, 200);
+    const rect = stage.querySelector('[data-cell-id="device-2"] rect')!;
+    fireEvent.click(rect);
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(rect);
+    expect(onSelect).toHaveBeenCalledWith('device-2', { shift: false });
+  });
+
+  it('keeps a Shift + click without a drag as a toggle click', () => {
+    const { onBox, onSelect, stage, wrapper } = setup();
+    const rect = stage.querySelector('[data-cell-id="device-2"] rect')!;
+    start(rect, 350, 120);
+    release(rect, 350, 120);
+    fireEvent.click(rect, { shiftKey: true });
+    expect(onBox).not.toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledWith('device-2', { shift: true });
+    expect(wrapper).toBeTruthy();
+  });
+
+  it('ends the band on pointercancel and selects nothing', () => {
+    const { onBox, wrapper } = setup();
+    start(wrapper, 50, 50);
+    move(wrapper, 250, 200);
+    fireEvent.pointerCancel(wrapper, { ...mouse });
+    expect(screen.queryByTestId('dmap-box-select')).toBeNull();
+    release(wrapper, 250, 200);
+    expect(onBox).not.toHaveBeenCalled();
+  });
+
+  it('ignores touch pointers, a press without Shift and a press on the reset button', () => {
+    const { onBox, wrapper } = setup();
+    fireEvent.pointerDown(wrapper, { pointerType: 'touch', pointerId: 2, shiftKey: true, clientX: 50, clientY: 50 });
+    fireEvent.pointerMove(wrapper, { pointerType: 'touch', pointerId: 2, clientX: 250, clientY: 200 });
+    expect(screen.queryByTestId('dmap-box-select')).toBeNull();
+    start(wrapper, 50, 50, false);
+    move(wrapper, 250, 200);
+    release(wrapper, 250, 200);
+    expect(screen.queryByTestId('dmap-box-select')).toBeNull();
+    expect(onBox).not.toHaveBeenCalled();
+  });
+
+  it('does not pan the view while the band is active', async () => {
+    const { wrapper, stage } = setup();
+    await frame();
+    const root = stage.querySelector('svg')!;
+    const before = root.getAttribute('viewBox');
+    start(wrapper, 50, 50);
+    move(wrapper, 250, 200);
+    release(wrapper, 250, 200);
+    await frame();
+    expect(root.getAttribute('viewBox')).toBe(before);
+  });
+
+  it('marks the primary, the extra and the missed cells', () => {
+    render(
+      <Harness
+        selection={{
+          ...NONE,
+          selected: ['device-1', 'link-1'],
+          primary: 'link-1',
+          extra: ['device-2'],
+          missed: ['link-1'],
+        }}
+      />
+    );
+    const cell = (id: string) => screen.getByTestId('dmap-popup-stage').querySelector(`g[data-cell-id="${id}"]`)!;
+    expect(cell('link-1').getAttribute('data-dmap-primary')).toBe('true');
+    expect(cell('device-1').getAttribute('data-dmap-primary')).toBe('false');
+    expect(cell('device-2').getAttribute('data-dmap-extra')).toBe('true');
+    expect(cell('link-1').getAttribute('data-dmap-missed')).toBe('true');
+    expect(cell('device-1').getAttribute('data-dmap-missed')).toBe('false');
   });
 });

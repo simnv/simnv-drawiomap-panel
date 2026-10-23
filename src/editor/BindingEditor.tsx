@@ -379,6 +379,23 @@ export function BindingEditor({
   );
 
   // ---- selection ----
+  // The cells of the selection that the diagram still has. A cell that a geometry save removed leaves it.
+  const selectedIds =
+    selection.kind === 'many'
+      ? selection.cellIds.filter((id) => cells.has(id))
+      : selection.kind === 'cell' && draft.cellId
+        ? [draft.cellId]
+        : [];
+  if (selection.kind === 'many' && selectedIds.length !== selection.cellIds.length) {
+    if (selectedIds.length >= 2) {
+      setSelection({ kind: 'many', cellIds: selectedIds });
+    } else {
+      setSelection(selectedIds.length === 1 ? { kind: 'cell' } : { kind: 'none' });
+      if (selectedIds.length === 1) {
+        dispatch({ type: 'select', cellId: selectedIds[0] });
+      }
+    }
+  }
   const openCell = (cellId: string) => {
     dispatch({ type: 'select', cellId });
     setSelectionVersion((v) => v + 1);
@@ -386,6 +403,27 @@ export function BindingEditor({
     setTab('inspector');
   };
   // A pattern is edited through one of its cells, in the pattern scope.
+  /** Replace the selection by these cells; the last one is the primary cell of the draft. */
+  const pickCells = (ids: string[]) => {
+    if (ids.length === 0) {
+      setSelection({ kind: 'none' });
+      return;
+    }
+    dispatch({ type: 'select', cellId: ids[ids.length - 1] });
+    setSelectionVersion((v) => v + 1);
+    setSelection(ids.length === 1 ? { kind: 'cell' } : { kind: 'many', cellIds: ids });
+    setTab('inspector');
+  };
+  // Shift + click toggles a cell in the selection. A plain click replaces it.
+  const toggleCell = (cellId: string) =>
+    pickCells(selectedIds.includes(cellId) ? selectedIds.filter((id) => id !== cellId) : [...selectedIds, cellId]);
+  // A box select adds the cells under the band to the selection (the band starts with Shift).
+  const addCells = (ids: string[]) => {
+    const fresh = ids.filter((id) => !selectedIds.includes(id));
+    if (fresh.length) {
+      pickCells([...selectedIds, ...fresh]);
+    }
+  };
   const openPattern = (row: { patternId: string; index: number; matched: string[] }) => {
     const cellId = row.matched[0] ?? cells.keys().next().value;
     if (cellId === undefined) {
@@ -736,11 +774,13 @@ export function BindingEditor({
               stageRef={stageRef}
               patches={bound.patches}
               selection={{
-                selected: selection.kind === 'cell' && draft.cellId ? [draft.cellId] : [],
+                selected: selectedIds,
+                primary: selectedIds.length ? selectedIds[selectedIds.length - 1] : undefined,
                 affected: selection.kind === 'cell' ? affected : [],
                 highlight,
               }}
-              onSelect={(cellId) => openCell(cellId)}
+              onSelect={(cellId, { shift }) => (shift ? toggleCell(cellId) : openCell(cellId))}
+              onBox={addCells}
               chartLayer={chartLayer}
               owner={owner}
               hash={draft.diagram?.hash}
@@ -749,6 +789,7 @@ export function BindingEditor({
           inspector={
             <InspectorPane
               selection={selection}
+              many={selection.kind === 'many' ? { cellIds: selectedIds, selectionVersion } : undefined}
               canEditGeometry={!!draft.diagram}
               onEditGeometry={() => setGeometryOpen(true)}
               card={{
