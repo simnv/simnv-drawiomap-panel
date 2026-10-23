@@ -182,11 +182,30 @@ describe('PluginDialog', () => {
         </>
       );
       screen.getByText('two').focus();
+      const root = document.createElement('div');
+      root.id = 'reactRoot';
       const outside = document.createElement('button');
-      document.body.appendChild(outside);
+      root.appendChild(outside);
+      document.body.appendChild(root);
       act(() => outside.focus());
       await waitFor(() => expect(document.activeElement).toBe(screen.getByText('two')));
-      outside.remove();
+      root.remove();
+      pop('guard-test');
+    });
+
+    it('lets the focus stay in a body-level popover of another library outside #reactRoot', async () => {
+      push('guard-test');
+      guarded(<button>one</button>);
+      const root = document.createElement('div');
+      root.id = 'reactRoot';
+      document.body.appendChild(root);
+      const popover = document.createElement('input');
+      document.body.appendChild(popover);
+      act(() => popover.focus());
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(document.activeElement).toBe(popover);
+      popover.remove();
+      root.remove();
       pop('guard-test');
     });
 

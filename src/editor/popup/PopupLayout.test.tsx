@@ -40,6 +40,22 @@ describe('PopupLayout', () => {
     width.mockRestore();
   });
 
+  it('grows a fitted pane from the displayed sizes and stores them', () => {
+    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify({ list: 520, inspector: 720 }));
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1216);
+    render(layout());
+    const [list, inspector] = [size('dmap-pane-list'), size('dmap-pane-inspector')];
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize list pane' }), { key: 'ArrowRight' });
+    expect(size('dmap-pane-list')).toBeGreaterThan(list);
+    expect(size('dmap-pane-list')).toBeLessThanOrEqual(list + 16);
+    expect(size('dmap-pane-inspector')).toBe(inspector);
+    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({
+      list: size('dmap-pane-list'),
+      inspector,
+    });
+    width.mockRestore();
+  });
+
   it('keeps the stored widths when the dialog is wide enough', () => {
     window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify({ list: 520, inspector: 720 }));
     const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1800);

@@ -140,17 +140,28 @@ export function PluginDialog({ title, onDismiss, onEscape, overlayId, children }
 
   // Focus guard. A removed focused element (a replaced subtree, a deleted row) drops the focus on the body, and no key
   // event starts inside the dialog then. While the dialog is the top overlay, a focus outside the dialog and outside the
-  // allowed portals goes back to the last focused element of the dialog, or to its first tabbable element.
+  // background goes back to the last focused element of the dialog, or to its first tabbable element.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) {
       return;
     }
     let last: HTMLElement | null = null;
-    const allowed = (el: Element) =>
-      dialog.contains(el) ||
-      (el instanceof HTMLElement && el.dataset.grafanaPluginSandboxElement !== undefined) ||
-      !!el.closest('#grafana-portal-container, [role="dialog"]');
+    // Only the page behind the dialog is background: the elements inside #reactRoot outside the Grafana portal container,
+    // and the sandbox mocks (detached stand-ins of such elements). A real element outside #reactRoot is a body-level
+    // portal of another library (a datasource listbox): the focus may stay there.
+    const allowed = (el: Element) => {
+      if (dialog.contains(el)) {
+        return true;
+      }
+      if (el instanceof HTMLElement && el.dataset.grafanaPluginSandboxElement !== undefined) {
+        return false;
+      }
+      if (el.closest('#grafana-portal-container, [role="dialog"]')) {
+        return true;
+      }
+      return !el.closest('#reactRoot');
+    };
     const check = () => {
       if (!isTop(guardId)) {
         return;

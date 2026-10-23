@@ -133,8 +133,10 @@ export function PopupLayout({ list, stage, inspector, wideInspector = false }: P
     return width ? Math.max(limit.min, Math.min(limit.max, width - other - MIN_CENTRE - 2 * HANDLE)) : limit.max;
   }, []);
   const resize = useCallback((pane: Pane, size: number) => {
-    const next = { ...latest.current, [pane]: clamp(size, LIMITS[pane].min, LIMITS[pane].max) };
+    // The base is what the user sees (the fitted sizes), not the stored ones: a resize stores the displayed sizes.
+    const next = { ...shownRef.current, [pane]: clamp(size, LIMITS[pane].min, LIMITS[pane].max) };
     latest.current = next;
+    shownRef.current = next;
     setSizes(next);
     if (pane === 'inspector') {
       setInspectorSet(true);
