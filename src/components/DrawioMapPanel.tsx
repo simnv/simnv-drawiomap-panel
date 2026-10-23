@@ -313,7 +313,8 @@ function DrawioMapPanelView({
     queryService,
     editing ? undefined : card?.cellId,
     Math.max(1, Math.min(264, width - 16)),
-    chartSnapshots
+    chartSnapshots,
+    `panel:${id}`
   );
   const activeSnapshots = useMemo(() => [...bindingSnapshots, ...chartSnapshots], [bindingSnapshots, chartSnapshots]);
   const patternSnapshots = useMemo(
@@ -705,6 +706,7 @@ function DrawioMapPanelView({
           controller={queryService.controller}
           context={queryService.context}
           viewport={viewport}
+          owner={`panel:${id}`}
           revision={`${viewKey}|${stageHeight}${JSON.stringify(view)}`}
           replaceVariables={replaceVariables}
           onPrepared={onChartPrepared}

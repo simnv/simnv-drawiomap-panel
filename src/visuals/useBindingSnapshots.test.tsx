@@ -70,7 +70,8 @@ function setup() {
         { controller, context: context(generation) },
         undefined,
         100,
-        prepared
+        prepared,
+        'test'
       );
       renders.push(previews.map((p) => p.snapshot.state));
       return previews;
@@ -151,5 +152,53 @@ describe('useBindingSnapshots keeps the last result during a refresh', () => {
     emit(0, 1);
     hook.rerender({ generation: 3 });
     expect(hook.result.current.map((p) => p.snapshot.state)).toEqual(['loading']);
+  });
+});
+
+describe('useBindingSnapshots consumer owners', () => {
+  const owned = (owner: string, service: Parameters<typeof useBindingSnapshots>[2]) =>
+    renderHook(() => useBindingSnapshots(plan, config(), service, undefined, 100, undefined, owner));
+  const consumerIds = (watch: { mock: { calls: unknown[][] } }) =>
+    watch.mock.calls.map(([demand]) => (demand as { consumerId: string }).consumerId);
+
+  it('prefixes every consumer id with the owner', () => {
+    const watch = vi.fn(() => () => {});
+    const service = { controller: { watch, setPanelData: vi.fn() }, context: context(1) };
+    owned('panel:1', service as never);
+    expect(consumerIds(watch)).toEqual([expect.stringMatching(/^panel:1:binding:/)]);
+  });
+
+  it('keeps the watches of two owners on one controller and releases only its own', () => {
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const service = { controller: createQueryController(execute), context: context(1) };
+    const panel = owned('panel:1', service);
+    const popup = owned('popup:1', service);
+    const emit = (call: number, value: number) =>
+      act(() =>
+        execute.mock.calls[call][1]({ state: 'ready', frames: [frame(value)], fetchedAt: 0, fromCache: false })
+      );
+    // Equal requests share one executor call: the second owner joins the first entry.
+    expect(execute).toHaveBeenCalledTimes(1);
+    emit(0, 5);
+    expect(panel.result.current.map((p) => p.snapshot.state)).toEqual(['ready']);
+    expect(popup.result.current.map((p) => p.snapshot.state)).toEqual(['ready']);
+    popup.unmount();
+    // The panel still holds its watch: a later result still reaches it.
+    emit(0, 6);
+    expect(panel.result.current[0].snapshot).toMatchObject({ state: 'ready', frames: [frame(6)] });
+    // A new popup joins the cached entry and fills at once, without a new executor call.
+    const again = owned('popup:1', service);
+    expect(again.result.current.map((p) => p.snapshot.state)).toEqual(['ready']);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a second owner with the same ids take the watch of the first', () => {
+    const release = vi.fn();
+    const watch = vi.fn(() => release);
+    const service = { controller: { watch, setPanelData: vi.fn() }, context: context(1) };
+    owned('panel:1', service as never);
+    owned('popup:1', service as never);
+    expect(new Set(consumerIds(watch)).size).toBe(2);
+    expect(release).not.toHaveBeenCalled();
   });
 });

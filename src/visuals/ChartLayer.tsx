@@ -23,6 +23,8 @@ export interface ChartLayerProps {
   context: QueryContext;
   viewport: HTMLElement | null;
   revision?: unknown;
+  /** Namespace of the consumer ids, for example `panel:3` or `popup:3`. */
+  owner: string;
   replaceVariables?: (value: string) => string;
   onPrepared?: (id: string, preview?: QueryPreview) => void;
   draft?: {
@@ -83,7 +85,8 @@ function Region({
   monitorOnly?: boolean;
   draftOnly?: boolean;
 }) {
-  const { root, cells, viewport, context, controller, queries, revision, replaceVariables, draft, onPrepared } = props;
+  const { root, cells, viewport, context, controller, queries, revision, replaceVariables, draft, onPrepared, owner } =
+    props;
   const { widget, scope } = presentation ?? entry;
   const cell = cells.get(entry.anchorCellId);
   const theme = useTheme2();
@@ -188,7 +191,7 @@ function Region({
     let current = true;
     const release = controller.watch(
       {
-        consumerId: `widget:${entry.widget.id}`,
+        consumerId: `${owner}:widget:${entry.widget.id}`,
         query,
         scope: entry.scope,
         context,
@@ -235,6 +238,7 @@ function Region({
     match,
     draftOnly,
     onPrepared,
+    owner,
   ]);
 
   if (monitorOnly) {

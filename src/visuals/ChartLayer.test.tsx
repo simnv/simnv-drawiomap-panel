@@ -2,13 +2,17 @@ import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createTheme, FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
-import { ChartLayer } from './ChartLayer';
+import { ChartLayer as OwnedChartLayer, type ChartLayerProps } from './ChartLayer';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { readChartAnchor } from '../render/geometry';
 import { createQueryController } from '../query/controller';
 import type { BindingPlan } from '../binding/patterns';
 import type { QueryController, QueryContext, QueryExecutor } from '../query/types';
 import type { NamedQuery, Widget } from '../model/config';
+
+const ChartLayer = (props: Omit<ChartLayerProps, 'owner'> & { owner?: string }) => (
+  <OwnedChartLayer owner="test" {...props} />
+);
 
 const { sparkline } = vi.hoisted(() => ({ sparkline: vi.fn((_props: any) => <canvas />) }));
 vi.mock('@grafana/ui', () => ({
@@ -342,6 +346,24 @@ describe('ChartLayer', () => {
     rerender(<ChartLayer {...props} revision={2} />);
     expect(s.root.querySelector('foreignObject') === portal).toBe(true);
     expect(s.watch).toHaveBeenCalledTimes(1);
+    unmount();
+    s.host.remove();
+  });
+  it('prefixes the widget consumer id with the owner', () => {
+    const s = setup();
+    const { unmount } = render(
+      <ChartLayer
+        root={s.root}
+        cells={s.cells}
+        plan={s.plan}
+        queries={[query]}
+        controller={s.controller}
+        context={context}
+        viewport={s.host}
+        owner="popup:7"
+      />
+    );
+    expect(s.watch.mock.calls.map(([demand]) => demand.consumerId)).toEqual(['popup:7:widget:w']);
     unmount();
     s.host.remove();
   });
