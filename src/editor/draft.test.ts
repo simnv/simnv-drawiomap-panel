@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { DiagramConfigV2 } from '../model/config';
+import { mergeCell } from '../binding/patterns';
+import { validateConfig, type DiagramConfigV2 } from '../model/config';
 import {
   commitDraft,
   createDraft,
@@ -420,9 +421,18 @@ describe('unset', () => {
     expect(kept.config.overrides[0].display).toEqual({ link: { enabled: false } });
   });
 
-  it('removes an array path whole, and a hover with it (a hover needs its rows)', () => {
-    const next = reduceDraft(withOverride({ hover: { enabled: true, rows } }), { type: 'unset', path: 'hover.rows' });
-    expect(next.config.overrides).toEqual([]);
+  it('removes only hover.rows: hover.enabled stays and the config stays valid', () => {
+    const next = reduceDraft(withOverride({ hover: { enabled: false, rows } }), { type: 'unset', path: 'hover.rows' });
+    expect(next.config.overrides[0].display).toEqual({ hover: { enabled: false } });
+    expect(validateConfig(next.config).diagnostics).toEqual([]);
+    // The merge keeps the override's `enabled` and takes the rows of the pattern.
+    const cell = { id: 'a', kind: 'node', key: 'a', attrs: {}, labelText: '', isEdge: false } as const;
+    expect(mergeCell(next.config, cell).display.hover).toEqual({ enabled: false, rows });
+  });
+
+  it('removes the hover when hover.rows was its only key, and hover.enabled alone', () => {
+    const next = reduceDraft(withOverride({ hover: { rows }, label: 'Mine' }), { type: 'unset', path: 'hover.rows' });
+    expect(next.config.overrides[0].display).toEqual({ label: 'Mine' });
     const enabledOnly = reduceDraft(withOverride({ hover: { enabled: true, rows } }), {
       type: 'unset',
       path: 'hover.enabled',

@@ -207,30 +207,33 @@ const directionSeries = z
 const hoverSchema = z
   .object({
     enabled: z.boolean().optional(),
-    rows: z.array(
-      z.discriminatedUnion('kind', [
-        z.object({ kind: z.literal('value'), ...dataRow, binding: bindingSchema }).strict(),
-        // A history row has one binding, or a series list (a combined up/down row). Refined below.
-        z
-          .object({
-            kind: z.literal('history'),
-            ...dataRow,
-            binding: bindingSchema.optional(),
-            series: z.array(directionSeries).min(1).max(2).optional(),
-            capacity: rowCapacity.optional(),
-            height: z.number().finite().min(ROW_HEIGHT_MIN).max(ROW_HEIGHT_MAX).optional(),
-            // a combined row (series) also takes "auto" and "capacity"; refined below
-            max: z.union([z.number().finite(), z.literal('auto'), z.literal('capacity')]).optional(),
-          })
-          .strict(),
-        z.object({ kind: z.literal('metadata'), label: nonempty, path: scopePath }).strict(),
-        z.object({ kind: z.literal('drilldown'), label: nonempty, url: nonempty }).strict(),
-      ])
-    ),
+    // An override may hold only `enabled`: the rows then come from the patterns (`mergeDisplay` fills in an empty list).
+    rows: z
+      .array(
+        z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('value'), ...dataRow, binding: bindingSchema }).strict(),
+          // A history row has one binding, or a series list (a combined up/down row). Refined below.
+          z
+            .object({
+              kind: z.literal('history'),
+              ...dataRow,
+              binding: bindingSchema.optional(),
+              series: z.array(directionSeries).min(1).max(2).optional(),
+              capacity: rowCapacity.optional(),
+              height: z.number().finite().min(ROW_HEIGHT_MIN).max(ROW_HEIGHT_MAX).optional(),
+              // a combined row (series) also takes "auto" and "capacity"; refined below
+              max: z.union([z.number().finite(), z.literal('auto'), z.literal('capacity')]).optional(),
+            })
+            .strict(),
+          z.object({ kind: z.literal('metadata'), label: nonempty, path: scopePath }).strict(),
+          z.object({ kind: z.literal('drilldown'), label: nonempty, url: nonempty }).strict(),
+        ])
+      )
+      .optional(),
   })
   .strict()
   .superRefine((hover, ctx) => {
-    hover.rows.forEach((row, i) => {
+    (hover.rows ?? []).forEach((row, i) => {
       if (row.kind !== 'history') {
         return;
       }
@@ -382,7 +385,7 @@ export function displayBindings(display: DisplayConfig): Array<{ binding: QueryB
   add(display.link?.capacityB2aBinding, 'link.capacityB2aBinding');
   add(display.shape?.binding, 'shape.binding');
   add(display.status?.binding, 'status.binding');
-  display.hover?.rows.forEach((row, i) => {
+  display.hover?.rows?.forEach((row, i) => {
     rowBindings(row).forEach(({ binding, path }) => add(binding, `hover.rows[${i}].${path}`));
   });
   return found;
@@ -514,7 +517,7 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
   ] as const) {
     entries.forEach((entry, i) => {
       displayBindings(entry.display).forEach(({ binding, path }) => reference(binding, `${key}[${i}].display.${path}`));
-      entry.display.hover?.rows.forEach((row, j) => {
+      entry.display.hover?.rows?.forEach((row, j) => {
         if (row.kind === 'value' || row.kind === 'history') {
           checkFreshness(row.freshness, `${key}[${i}].display.hover.rows[${j}].freshness`);
           if (typeof row.min === 'number' && typeof row.max === 'number' && row.min >= row.max) {

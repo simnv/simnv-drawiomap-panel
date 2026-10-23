@@ -59,11 +59,11 @@ const isEmptyObject = (value: unknown) =>
   typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
 
 /**
- * The display without `path` (dotted keys, no indexes). Objects that become empty go away with it. A hover without
- * rows is not valid, so removing `hover.rows` removes the whole hover.
+ * The display without `path` (dotted keys, no indexes). Objects that become empty go away with it: a `hover` that
+ * keeps another key, for example `enabled: false`, stays.
  */
 export function unsetPath<T extends Partial<DisplayConfig>>(display: T, path: string): T {
-  const keys = path === 'hover.rows' ? ['hover'] : path.split('.');
+  const keys = path.split('.');
   const next = copy(display) as Record<string, unknown>;
   const trail: Array<Record<string, unknown>> = [next];
   for (const key of keys.slice(0, -1)) {

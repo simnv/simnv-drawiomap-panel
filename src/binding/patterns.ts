@@ -164,7 +164,9 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
     };
   }
   if (patch.hover) {
-    result.hover = mergeFields(base.hover, patch.hover, track, 'hover');
+    // An owner may set only `hover.enabled`: the merged hover always has a rows list.
+    const hover = mergeFields(base.hover, patch.hover, track, 'hover')!;
+    result.hover = { ...hover, rows: hover.rows ?? [] };
   }
   if (patch.status) {
     const sameKind = base.status?.kind === patch.status.kind;
