@@ -201,7 +201,7 @@ export const getEditorStyles = (theme: GrafanaTheme2) => ({
     background: theme.colors.background.secondary,
     border: `1px solid ${theme.colors.border.weak}`,
     color: theme.colors.text.secondary,
-    fontSize: theme.typography.size.xs,
+    fontSize: theme.typography.pxToRem(11),
     lineHeight: theme.typography.bodySmall.lineHeight,
   }),
   sectionHeader: css({ padding: theme.spacing(1), fontSize: theme.typography.body.fontSize }),
