@@ -24,6 +24,31 @@ import type { Options } from '../types';
 import type { DiagramConfigV2 } from '../model/config';
 import { Observable } from 'rxjs';
 const nativeQuery = vi.hoisted(() => vi.fn());
+/** Calls of the panel work that a refresh must not repeat while the popup is open: the applier and the view renders. */
+const work = vi.hoisted(() => ({ applied: [] as unknown[], viewRenders: 0, panelStage: 'dmap-stage' }));
+vi.mock('../render/applier', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../render/applier')>();
+  return {
+    ...actual,
+    applyPatches: (...args: Parameters<typeof actual.applyPatches>) => {
+      work.applied.push(args[0]);
+      return actual.applyPatches(...args);
+    },
+  };
+});
+vi.mock('./useStage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useStage')>();
+  return {
+    ...actual,
+    useStage: (...args: Parameters<typeof actual.useStage>) => {
+      // The ref of the panel stage points to the element with the panel test id.
+      if ((args[0].current as HTMLElement | null)?.dataset?.testid === work.panelStage) {
+        work.viewRenders++;
+      }
+      return actual.useStage(...args);
+    },
+  };
+});
 const sourceLookups = vi.hoisted(() => vi.fn());
 vi.mock('@grafana/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/runtime')>()),
@@ -1792,6 +1817,10 @@ describe('DrawioMapPanel bindings popup', () => {
     expect(panelLabel()).toBe('Saved 42');
     expect(view.save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    // The panel behind stays paused until the popup closes.
+    expect(view.save).toHaveBeenCalledTimes(1);
+    expect(panelLabel()).toBe('Saved 42');
+    fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
     await waitFor(() => expect(panelLabel()).toBe('Saved 84'));
     expect(nativeQuery.mock.calls.filter(([request]) => request.targets[0].expr === 'changed').length).toBeGreaterThan(
       0
@@ -1948,5 +1977,178 @@ describe('DrawioMapPanel bindings popup', () => {
     const asked = nativeQuery.mock.calls.slice(before).map(([request]) => request.maxDataPoints);
     expect(asked).toContain(160);
     expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
+  });
+
+  describe('pause behind', () => {
+    /** The applier calls on the stage of the panel (the popup stage also applies patches). */
+    const panelApplies = () =>
+      work.applied.filter((index) =>
+        (index as Map<string, { group: Element }>).values().next().value?.group.closest('[data-testid="dmap-stage"]')
+      ).length;
+    const halves = (root: Element) =>
+      Array.from(root.querySelectorAll('polyline.dmap-half'))
+        .map((el) => el.outerHTML)
+        .join('\n');
+    const seriesWith = (value: number) => {
+      const base = props({ id: 61 });
+      return {
+        ...base.data,
+        series: [frame('A', { job: 'node-isp-a', device: 'pppoe' }, [value]), ...base.data.series.slice(1)],
+      };
+    };
+
+    it('does no per-refresh work for the panel behind and renders the latest data once on close', async () => {
+      const base = props({ id: 61 });
+      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      openPopup();
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const panel = screen.getByTestId('dmap-panel');
+      const before = {
+        halves: halves(panel),
+        patched: panel.getAttribute('data-dmap-patched'),
+        applies: panelApplies(),
+        renders: work.viewRenders,
+      };
+      for (const value of [95e6, 5e6, 99e6]) {
+        view.rerender(<DrawioMapPanel {...base} data={seriesWith(value)} />);
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+      }
+      expect(halves(panel)).toBe(before.halves);
+      expect(panel.getAttribute('data-dmap-patched')).toBe(before.patched);
+      expect(panelApplies()).toBe(before.applies);
+      // The view is not rendered at all while it is paused: no loop, no per-refresh render.
+      expect(work.viewRenders).toBe(before.renders);
+      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      await waitFor(() => expect(halves(screen.getByTestId('dmap-panel'))).not.toBe(before.halves));
+      expect(panelApplies()).toBe(before.applies + 1);
+      expect(work.viewRenders - before.renders).toBeLessThanOrEqual(3);
+    });
+
+    it('keeps the paint of a controller emission away from the panel until close, then shows the latest result', async () => {
+      const receivers: Array<(value: number) => void> = [];
+      nativeQuery.mockReset().mockImplementation(
+        () =>
+          new Observable((observer) => {
+            const receive = (value: number) => observer.next({ data: [frame('D', {}, [value])] });
+            receivers.push(receive);
+            receive(11);
+            return () => {};
+          })
+      );
+      const view = renderSaved(labelled());
+      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
+      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
+      openPopup();
+      const applies = panelApplies();
+      act(() => receivers.forEach((receive) => receive(77)));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      expect(panelLabel()).toBe('Saved 11');
+      expect(panelApplies()).toBe(applies);
+      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      await waitFor(() => expect(panelLabel()).toBe('Saved 77'));
+    });
+
+    it('lets a freshness deadline mark the status stale while paused, with one applier call', async () => {
+      const binding = { queryId: 'q', match: {}, reducer: 'last' } as const;
+      const config: DiagramConfigV2 = {
+        version: 2,
+        queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
+        patterns: [],
+        widgets: [],
+        overrides: [
+          {
+            cellId: 'a',
+            display: {
+              status: {
+                kind: 'mapping',
+                binding,
+                default: { state: 'normal', reason: 'Healthy' },
+                mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+                freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
+              },
+            },
+          },
+        ],
+      };
+      const fresh = toDataFrame({
+        refId: 'Q',
+        fields: [
+          { name: 'Time', type: FieldType.time, values: [Date.now()] },
+          { name: 'Value', type: FieldType.number, values: [1] },
+        ],
+      });
+      const base = props({ id: 61 });
+      const saved = { ...options, rules: [], config, diagram };
+      const view = render(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
+      const status = () => screen.queryByTestId('dmap-status-band')?.textContent ?? '';
+      await waitFor(() => expect(view.container.querySelector('[data-cell-id="a"]')).toBeTruthy());
+      expect(status()).not.toContain('stale');
+      openPopup();
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const applies = panelApplies();
+      view.rerender(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
+      await waitFor(() => expect(status()).toContain('stale'), { timeout: 2000 });
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      expect(panelApplies()).toBe(applies + 1);
+      expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
+    });
+
+    it('Apply while open changes the panel on close only', async () => {
+      const view = renderSaved(labelled());
+      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
+      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
+      selectElement('a');
+      fireEvent.change(editorField('Label template'), { target: { value: 'Draft ${value}' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+      expect(view.save).toHaveBeenCalledTimes(1);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      expect(panelLabel()).toBe('Saved 11');
+      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      await waitFor(() => expect(panelLabel()).toBe('Draft 11'));
+    });
+
+    it('closes a pinned card when the popup opens', async () => {
+      const view = render(<DrawioMapPanel {...props({ id: 61 })} />);
+      await waitFor(() => expect(view.container.querySelector('polyline.dmap-half')).not.toBeNull());
+      const half = view.container.querySelector(
+        'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~isp-a:pppoe->rtr-a:wan1"]'
+      )!;
+      fireEvent.click(half, { clientX: 50, clientY: 40 });
+      await screen.findByTestId('dmap-card');
+      openPopup();
+      await waitFor(() => expect(screen.queryByTestId('dmap-card')).toBeNull());
+    });
+
+    it('leaves the panel consumers attached when the popup closes during a loading preview', async () => {
+      const receivers: Array<(value: number) => void> = [];
+      nativeQuery.mockReset().mockImplementation(
+        () =>
+          new Observable((observer) => {
+            receivers.push((value) => observer.next({ data: [frame('D', {}, [value])] }));
+            if (receivers.length <= 2) {
+              observer.next({ data: [frame('D', {}, [11])] });
+            }
+            return () => {};
+          })
+      );
+      const view = renderSaved(labelled());
+      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
+      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
+      openPopup();
+      openQueryRow('Metric');
+      fireEvent.change(editorField('Native target JSON'), {
+        target: { value: JSON.stringify({ refId: 'D', expr: 'slow' }) },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+      selectElement('a');
+      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+      await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
+      // The first two requests belong to the panel. A later value on them still reaches the panel.
+      act(() => receivers.slice(0, 2).forEach((receive) => receive(55)));
+      await waitFor(() => expect(panelLabel()).toBe('Saved 55'));
+    });
   });
 });

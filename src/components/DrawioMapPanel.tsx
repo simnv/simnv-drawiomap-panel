@@ -27,6 +27,7 @@ import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from './usePanZoom';
 import { useStage } from './useStage';
+import { useHeld } from './useHeld';
 import { PanelQueryContext, PanelQueryProvider } from '../query/panel';
 import { EMPTY_CONFIG } from '../editor/draft';
 import type { Diagnostic } from '../model/config';
@@ -208,7 +209,7 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
     >
       {/* Sandbox hosts do not provide a definite percentage-height containing block. */}
       <div style={{ width: props.width, height: props.height }}>
-        <DrawioMapPanelView {...props} editing={editing} popupOpen={!!popup} onOpenBindings={openPopup} />
+        <DrawioMapPanelView {...props} editing={editing} paused={!!popup} onOpenBindings={openPopup} />
       </div>
       {editing && popup ? (
         <LazyBindingsPopup
@@ -230,27 +231,29 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
 interface ViewProps extends PanelProps<Options> {
   /** The panel is open in the panel editor. */
   editing: boolean;
-  /** The bindings popup is open. */
-  popupOpen: boolean;
+  /**
+   * The bindings popup is open: the view keeps its last render and does no per-refresh work. Each input is held
+   * apart (ref-based, no state write in render). The clock runs on: a freshness deadline still re-binds once.
+   */
+  paused: boolean;
   onOpenBindings: (target: PopupTarget) => void;
 }
 
-function DrawioMapPanelView({
-  id,
-  options,
-  data,
-  width,
-  height,
-  fieldConfig,
-  replaceVariables,
-  timeZone,
-  timeRange,
-  editing,
-  popupOpen,
-  onOpenBindings,
-}: ViewProps) {
+/** While the popup is open and the panel is paused, a new props object of the dashboard does not render the view. */
+const bothPaused = (a: ViewProps, b: ViewProps) => a.paused && b.paused;
+
+const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewProps) {
+  const { id, editing, paused, onOpenBindings } = props;
+  const options = useHeld(props.options, paused);
+  const data = useHeld(props.data, paused);
+  const width = useHeld(props.width, paused);
+  const height = useHeld(props.height, paused);
+  const fieldConfig = useHeld(props.fieldConfig, paused);
+  const replaceVariables = useHeld(props.replaceVariables, paused);
+  const timeZone = useHeld(props.timeZone, paused);
+  const timeRange = useHeld(props.timeRange, paused);
   const theme = useTheme2();
-  const queryService = useContext(PanelQueryContext);
+  const queryService = useHeld(useContext(PanelQueryContext), paused);
   const opts = {
     ...DEFAULT_OPTIONS,
     ...options,
@@ -302,7 +305,7 @@ function DrawioMapPanelView({
   }
 
   // Opening the popup closes the card of the panel (state adjustment during render).
-  if (popupOpen && card) {
+  if (paused && card) {
     setCard(null);
   }
   const openBindings = (target: PopupTarget) => {
@@ -363,7 +366,8 @@ function DrawioMapPanelView({
     card?.cellId,
     Math.max(1, Math.min(264, width - 16)),
     chartSnapshots,
-    `panel:${id}`
+    `panel:${id}`,
+    paused
   );
   const activeSnapshots = useMemo(() => [...bindingSnapshots, ...chartSnapshots], [bindingSnapshots, chartSnapshots]);
   const resolve = useMemo(
@@ -466,6 +470,10 @@ function DrawioMapPanelView({
   }, [legendOptions.show, queries, result.patches, theme, fieldConfig.defaults.thresholds]);
   const legendMembers = useMemo(() => [...new Set(legendBlocks.flatMap((b) => b.cellIds))], [legendBlocks]);
   const [legendHits, setLegendHits] = useState<string[] | null>(null);
+  // Opening the popup also ends the legend highlight.
+  if (paused && legendHits) {
+    setLegendHits(null);
+  }
   const legendRef = useRef<HTMLElement>(null);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
@@ -730,6 +738,7 @@ function DrawioMapPanelView({
           revision={`${viewKey}|${stageHeight}${JSON.stringify(view)}`}
           replaceVariables={replaceVariables}
           onPrepared={onChartPrepared}
+          paused={paused}
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
@@ -823,4 +832,4 @@ function DrawioMapPanelView({
         : null}
     </div>
   );
-}
+}, bothPaused);
