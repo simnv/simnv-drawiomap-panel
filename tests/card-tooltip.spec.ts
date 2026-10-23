@@ -123,13 +123,27 @@ test.describe('tooltip on the charts of the pinned card', () => {
     expect(await tooltip.evaluate((el, p) => !p?.contains(el), await panel.elementHandle())).toBe(true);
     await shot(page, 'right-edge', chart);
     // also with a narrow window the tooltip stays inside
-    await page.setViewportSize({ width: 700, height: 800 });
+    const narrow = { width: 700, height: 800 };
+    await page.setViewportSize(narrow);
     await page.mouse.move(1, 1);
-    const grown = await dialog.getByTestId('dmap-chart-hover').first().boundingBox();
-    if (grown) {
-      await moveOnChart(page, dialog.getByTestId('dmap-chart-hover').first(), 0.97);
-      await expect(tooltip).toBeInViewport({ ratio: 1 });
-    }
+    await expect(tooltip).toHaveCount(0);
+    // Grafana 12.4 lays the dashboard out in steps: the nav undocks, the panel narrows to a width below the sheet
+    // breakpoint for one frame (the card is a sheet in the body then), and the panel takes its final width. Wait
+    // until the panel is inside the narrow viewport and the pinned card is back in it, then measure the chart.
+    const stage = panel.getByTestId('dmap-panel');
+    await expect
+      .poll(async () => {
+        const box = await stage.boundingBox();
+        return box ? box.x + box.width : Infinity;
+      })
+      .toBeLessThanOrEqual(narrow.width);
+    await expect(dialog).toHaveAttribute('data-pinned', 'true');
+    await expect(dialog).toHaveAttribute('data-sheet', 'false');
+    const chartNarrow = dialog.getByTestId('dmap-chart-hover').first();
+    await expect(chartNarrow).toBeInViewport({ ratio: 1 });
+    await moveOnChart(page, chartNarrow, 0.97);
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toBeInViewport({ ratio: 1 });
   });
 
   test('a click on the chart still follows the row link and the card stays pinned', async ({
