@@ -89,11 +89,6 @@ const styles = {
       opacity: 0.2;
     }
   `,
-  // The legend stays in its corner of the panel: it is outside the stage, which scrolls and zooms.
-  legend: css`
-    position: absolute;
-    z-index: 1;
-  `,
   empty: css`
     display: flex;
     align-items: center;
@@ -101,7 +96,7 @@ const styles = {
     height: 100%;
     opacity: 0.7;
   `,
-  // The top-left stack: the reset button and the warning badge in one row, then the legend (top-left corner).
+  // The top-left stack: the reset button and the warning badge in one row.
   // The top-right corner is free: Grafana puts its panel menu button there.
   corner: css`
     position: absolute;
@@ -110,7 +105,8 @@ const styles = {
     align-items: flex-start;
     gap: 4px;
     max-width: calc(100% - 8px);
-    z-index: 1;
+    /* above the legend: in a tiny panel the legend may cover the corner, but the reset button stays clickable */
+    z-index: 2;
     /* The empty space beside the row is part of the diagram: only the row and the legend catch the pointer. */
     pointer-events: none;
   `,
@@ -118,9 +114,6 @@ const styles = {
     display: flex;
     align-items: center;
     gap: 4px;
-    pointer-events: auto;
-  `,
-  stackedLegend: css`
     pointer-events: auto;
   `,
   // 32 px: a touch target for a finger
@@ -647,28 +640,26 @@ function DrawioMapPanelView({
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
-  // The legend corner. The top-left legend is the last item of the top-left stack, below the reset button and the
+  // The start place of the legend (the user can drag it): the top-left legend is below the reset button and the
   // warning badge. The top-right legend starts below the area of the Grafana panel menu button.
   // On a narrow panel the open legend can reach the left side: it goes below the row of the reset button and the badge.
   const rowHeight = panZoom.zoomed ? RESET_SIZE : warnings.length ? BADGE_HEIGHT : 0;
   const topRightLegendTop =
     width < SHEET_BELOW && rowHeight ? band.height + 4 + rowHeight + 4 : Math.max(band.height + 4, MENU_CLEARANCE);
   const corners: Partial<Record<LegendCorner, React.CSSProperties>> = {
+    'top-left': { left: 4, top: band.height + 4 + (rowHeight ? rowHeight + 4 : 0) },
     'top-right': { right: 4, top: topRightLegendTop },
     'bottom-left': { left: 4, bottom: 4 },
     'bottom-right': { right: 4, bottom: 4 },
   };
-  const legendCorner: LegendCorner =
-    legendOptions.corner === 'top-left' || corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
-  const stacked = legendCorner === 'top-left';
+  const legendCorner: LegendCorner = corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
   const legend = legendOptions.show ? (
     <Legend
       ref={legendRef}
       blocks={legendBlocks}
       maxBlocks={legendOptions.maxBlocks}
-      narrow={width < SHEET_BELOW}
+      collapsed={legendOptions.collapsed}
       onHighlight={setLegendHits}
-      className={stacked ? styles.stackedLegend : styles.legend}
       style={corners[legendCorner]}
       corner={legendCorner}
     />
@@ -767,9 +758,8 @@ function DrawioMapPanelView({
             ) : null}
           </div>
         ) : null}
-        {stacked ? legend : null}
       </div>
-      {stacked ? null : legend}
+      {legend}
       {open && model && card
         ? portalSheet(
             <div ref={cardRef}>

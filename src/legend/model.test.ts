@@ -13,7 +13,7 @@ import {
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 import type { HalfState, SeriesInfo, ShapeState } from '../types';
-import { buildLegend, type LegendContext } from './model';
+import { buildLegend, chipSwatch, type LegendBlock, type LegendContext } from './model';
 
 const theme = createTheme();
 const named = (c: string) => theme.visualization.getColorByName(c);
@@ -262,5 +262,20 @@ describe('buildLegend', () => {
   it('has no block for Shades: each series has its own shade', () => {
     const s = series({ color: { mode: FieldColorModeId.Shades, fixedColor: 'blue' } });
     expect(buildLegend(new Map([link('l1', half(s))]), ctx)).toEqual([]);
+  });
+});
+
+describe('chipSwatch', () => {
+  const block = (colors: string[], gradient = false): LegendBlock => ({
+    key: 'k',
+    entries: colors.map((color, i) => ({ key: `s${i}`, label: `${i}`, color, cellIds: [] })),
+    gradient: gradient ? { colors, min: '0', max: '1' } : undefined,
+    cellIds: [],
+  });
+  it('is a gradient of the first scale, a plain colour for one colour, and transparent without blocks', () => {
+    expect(chipSwatch([block(['#0f0', '#f00'])])).toBe('linear-gradient(to right, #0f0, #f00)');
+    expect(chipSwatch([block(['#0f0', '#ff0', '#f00'], true)])).toContain('#ff0');
+    expect(chipSwatch([block(['#0f0'])])).toBe('#0f0');
+    expect(chipSwatch([])).toBe('transparent');
   });
 });

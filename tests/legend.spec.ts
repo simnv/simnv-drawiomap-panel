@@ -17,12 +17,20 @@ async function demoCopy(request: APIRequestContext, uid: string, options: Record
 
 const box = async (locator: Locator) => (await locator.boundingBox())!;
 
+const openLegend = async (legend: Locator) => {
+  const handle = legend.getByRole('button', { name: 'Legend' });
+  await handle.click();
+  await expect(handle).toHaveAttribute('aria-expanded', 'true');
+  return handle;
+};
+
 test('the demo shows the colour legend in the bottom-right corner', async ({ page, gotoDashboardPage }) => {
   await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = page.getByTestId('dmap-panel').first();
   const legend = panel.getByTestId('dmap-legend');
   await expect(legend).toBeVisible();
   await expect(legend).toHaveAttribute('data-dmap-corner', 'bottom-right');
+  await openLegend(legend);
   await expect(legend.getByRole('group', { name: /^Link load %/ }).first()).toBeVisible();
   const p = await box(panel);
   const l = await box(legend);
@@ -33,6 +41,7 @@ test('the demo shows the colour legend in the bottom-right corner', async ({ pag
 test('hovering a legend entry highlights the cells in that band', async ({ page, gotoDashboardPage }) => {
   await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = page.getByTestId('dmap-panel').first();
+  await openLegend(panel.getByTestId('dmap-legend'));
   const block = panel.getByTestId('dmap-legend').getByRole('group', { name: 'Link load % (A)' });
   // the first threshold entry that has cells now
   const entries = block.getByTestId('dmap-legend-entry');
@@ -93,6 +102,125 @@ test('the legend stays in its corner when the diagram zooms and the stage scroll
   }
 });
 
+test('the legend starts collapsed; a click and Enter or Space toggle it', async ({ page, gotoDashboardPage }) => {
+  await gotoDashboardPage({ uid: 'drawiomap-demo' });
+  const legend = page.getByTestId('dmap-panel').first().getByTestId('dmap-legend');
+  const handle = legend.getByRole('button', { name: 'Legend' });
+  await expect(handle).toHaveAttribute('aria-expanded', 'false');
+  await expect(legend.getByTestId('dmap-legend-block')).toHaveCount(0);
+  await handle.click();
+  await expect(handle).toHaveAttribute('aria-expanded', 'true');
+  await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();
+  await handle.focus();
+  await page.keyboard.press('Enter');
+  await expect(handle).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Space');
+  await expect(handle).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Space');
+  await expect(handle).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('legend.collapsed false opens the legend at the start', async ({ page, request, gotoDashboardPage }, testInfo) => {
+  const uid = await demoCopy(request, `legend-open-${testInfo.workerIndex}-${Date.now()}`, {
+    legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false },
+  });
+  try {
+    await gotoDashboardPage({ uid });
+    const legend = page.getByTestId('dmap-panel').getByTestId('dmap-legend');
+    await expect(legend.getByRole('button', { name: 'Legend' })).toHaveAttribute('aria-expanded', 'true');
+    await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});
+
+const inside = (inner: { x: number; y: number; width: number; height: number }, outer: typeof inner) =>
+  inner.x >= outer.x - 0.5 &&
+  inner.y >= outer.y - 0.5 &&
+  inner.x + inner.width <= outer.x + outer.width + 0.5 &&
+  inner.y + inner.height <= outer.y + outer.height + 0.5;
+
+// The demo panel is taller than the default viewport: the mouse needs the whole panel on the screen.
+test.describe('legend drag', () => {
+  test.use({ viewport: { width: 1280, height: 1000 } });
+
+  test('a drag moves the legend inside the panel and does not toggle it, pan or open a card', async ({
+    page,
+    gotoDashboardPage,
+  }) => {
+    await gotoDashboardPage({ uid: 'drawiomap-demo' });
+    const panel = page.getByTestId('dmap-panel').first();
+    const legend = panel.getByTestId('dmap-legend');
+    const handle = legend.getByRole('button', { name: 'Legend' });
+    await expect(handle).toHaveAttribute('aria-expanded', 'false');
+    await expect.poll(async () => inside(await box(legend), await box(panel))).toBe(true);
+    const viewBox = await panel.locator('svg').first().getAttribute('viewBox');
+    const before = await box(legend);
+    const h = await box(handle);
+    const p = await box(panel);
+    // to the middle of the diagram
+    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(p.x + p.width / 2, p.y + p.height / 2, { steps: 8 });
+    await page.mouse.up();
+    const moved = await box(legend);
+    expect(moved.x).toBeLessThan(before.x - 50);
+    expect(moved.y).toBeLessThan(before.y - 50);
+    expect(inside(moved, p)).toBe(true);
+    await expect(handle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await panel.locator('svg').first().getAttribute('viewBox')).toBe(viewBox);
+    await expect(panel.getByTestId('dmap-reset-zoom')).toHaveCount(0);
+    // far outside the panel: it stops at the edge
+    const h2 = await box(handle);
+    await page.mouse.move(h2.x + h2.width / 2, h2.y + h2.height / 2);
+    await page.mouse.down();
+    // beyond the top-right corner of the panel, but still on the screen
+    await page.mouse.move(1279, 1, { steps: 8 });
+    await page.mouse.up();
+    const edge = await box(legend);
+    const q = await box(panel);
+    expect(inside(edge, q)).toBe(true);
+    expect(edge.x + edge.width).toBeGreaterThan(q.x + q.width - 1);
+    expect(edge.y).toBeLessThan(q.y + 1);
+    // arrow keys move it by 10 px, Shift by 50 px; a click still toggles
+    await handle.focus();
+    await page.keyboard.press('ArrowLeft');
+    expect((await box(legend)).x).toBeCloseTo(edge.x - 10, 0);
+    await page.keyboard.press('Shift+ArrowDown');
+    expect((await box(legend)).y).toBeCloseTo(edge.y + 50, 0);
+    await handle.click();
+    await expect(handle).toHaveAttribute('aria-expanded', 'true');
+    // an open legend that grows at the panel edge stays inside
+    expect(inside(await box(legend), await box(panel))).toBe(true);
+    await handle.dblclick();
+    // the corner is bottom-right: the right edge is back (the two clicks of the double click toggle twice)
+    await expect
+      .poll(async () => {
+        const l = await box(legend);
+        return l.x + l.width;
+      })
+      .toBeCloseTo(before.x + before.width, 0);
+  });
+
+  test('the legend stays inside a smaller panel after a resize', async ({ page, gotoDashboardPage }) => {
+    await gotoDashboardPage({ uid: 'drawiomap-demo' });
+    const panel = page.getByTestId('dmap-panel').first();
+    const legend = panel.getByTestId('dmap-legend');
+    await openLegend(legend);
+    const handle = legend.getByRole('button', { name: 'Legend' });
+    const h = await box(handle);
+    const p = await box(panel);
+    await page.mouse.move(h.x + 10, h.y + h.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(p.x + p.width - 20, p.y + p.height - 20, { steps: 6 });
+    await page.mouse.up();
+    // the browser window gets narrower, so the panel gets narrower
+    await page.setViewportSize({ width: 900, height: 1000 });
+    await expect.poll(async () => inside(await box(legend), await box(panel))).toBe(true);
+  });
+});
+
 test('legend.show false hides the legend', async ({ page, request, gotoDashboardPage }, testInfo) => {
   const uid = await demoCopy(request, `legend-off-${testInfo.workerIndex}-${Date.now()}`, {
     legend: { show: false },
@@ -118,6 +246,9 @@ test.describe('legend on a phone', () => {
       const chip = legend.getByRole('button', { name: 'Legend' });
       await expect(chip).toHaveAttribute('aria-expanded', 'false');
       await expect(legend.getByTestId('dmap-legend-block')).toHaveCount(0);
+      // only the handle takes the touches: a finger on the rest of the page still scrolls
+      await expect(chip).toHaveCSS('touch-action', 'none');
+      await expect(legend).not.toHaveCSS('touch-action', 'none');
       await chip.tap();
       await expect(chip).toHaveAttribute('aria-expanded', 'true');
       await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();

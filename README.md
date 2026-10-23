@@ -435,20 +435,33 @@ Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elemen
 
 ![Elements below 60 % load highlighted](docs/images/legend-highlight.png)
 
-The legend stays in its corner when you zoom, pan or scroll the diagram. In the top-left corner, it is below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it leaves free the area of the Grafana panel menu button. It catches the pointer only inside its own box. In a panel narrower than 480 px (a phone), the legend starts closed as a **Legend** chip; tap the chip to open or close it. On a wider panel, click **Legend** to close it.
+The legend starts as a small chip with a colour swatch and the word **Legend**. Click or tap the chip, or focus it and press Enter or Space, to open the full legend. Click the **Legend** header again to close it. The pictures above show the open legend.
+
+You can move the legend, closed or open, to any place in the panel:
+
+- Drag the header with the mouse or a finger. A move of less than 4 px is a click. A drag does not open or close the legend, does not pan or zoom the diagram and does not open a card.
+- With the focus on the legend, the arrow keys move it by 10 px. Shift with an arrow key moves it by 50 px.
+- Double-click the header, or press Home, to put it back in its corner.
+
+The legend never leaves the panel, also when you make the panel smaller. The **Corner** option sets the place where it starts. The place and the open or closed state are not saved: a reload shows the legend again as the options say.
+
+The legend stays in its place when you zoom, pan or scroll the diagram. In the top-left corner, it starts below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it starts below the area of the Grafana panel menu button. It catches the pointer only inside its own box. It is above the diagram and below the hover cards.
 
 The options are in the **Legend** group:
 
-| Option         | Path               | Meaning                                                                    |
-| -------------- | ------------------ | -------------------------------------------------------------------------- |
-| Show legend    | `legend.show`      | Default on.                                                                |
-| Corner         | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`.        |
-| Maximum scales | `legend.maxBlocks` | The legend shows at most this number of blocks, then `+N more`. Default 4. |
+| Option          | Path               | Meaning                                                                    |
+| --------------- | ------------------ | -------------------------------------------------------------------------- |
+| Show legend     | `legend.show`      | Default on.                                                                |
+| Corner          | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`.        |
+| Maximum scales  | `legend.maxBlocks` | The legend shows at most this number of blocks, then `+N more`. Default 4. |
+| Start collapsed | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.              |
+
+A saved panel without `legend.collapsed` starts collapsed.
 
 In the panel JSON:
 
 ```json
-{ "legend": { "show": true, "corner": "bottom-right", "maxBlocks": 4 } }
+{ "legend": { "show": true, "corner": "bottom-right", "maxBlocks": 4, "collapsed": true } }
 ```
 
 ### Capacity
