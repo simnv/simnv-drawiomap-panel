@@ -56,6 +56,17 @@ export function hasNativeUndo(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Another dialog is open on the page: a datasource dialog, a confirmation. The popup is not the dialog that the user
+ * works in, even when the focus has not moved into the other dialog yet.
+ */
+function foreignDialogOpen(own: Element | null | undefined): boolean {
+  return Array.from(document.querySelectorAll('[role="dialog"]')).some(
+    (dialog) =>
+      dialog !== own && !dialog.contains(own ?? null) && !own?.contains(dialog) && dialog.getClientRects().length > 0
+  );
+}
+
 type HistoryKey = 'undo' | 'redo';
 /** Cmd/Ctrl+Z undoes, Shift+Cmd/Ctrl+Z and Ctrl+Y redo. */
 function historyKey(event: { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }) {
@@ -88,6 +99,7 @@ export function usePopupKeys({ id, dialogRef, enabled, onEscape, onUndo, onRedo 
   useLayoutEffect(() => {
     latest.current = { enabled, onEscape, onUndo, onRedo };
   });
+  const ownDialog = useCallback(() => dialogRef.current?.closest('[role="dialog"]'), [dialogRef]);
   /** Run the undo or redo of a key event, if it is one and the target does not own undo. True when it ran. */
   const runHistory = useCallback(
     (event: {
@@ -100,18 +112,16 @@ export function usePopupKeys({ id, dialogRef, enabled, onEscape, onUndo, onRedo 
     }) => {
       const kind = historyKey(event);
       const run = kind === 'undo' ? latest.current.onUndo : kind === 'redo' ? latest.current.onRedo : undefined;
-      if (!run || hasNativeUndo(event.target as EventTarget | null)) {
+      if (!run || hasNativeUndo(event.target as EventTarget | null) || foreignDialogOpen(ownDialog())) {
         return false;
       }
       run();
       return true;
     },
-    []
+    [ownDialog]
   );
   // react-select calls preventDefault for every Esc, also with a closed menu. Read the state before it handles the key.
   const wasOpen = useRef(new WeakMap<Event, boolean>());
-
-  const ownDialog = useCallback(() => dialogRef.current?.closest('[role="dialog"]'), [dialogRef]);
 
   const onKeyDownCapture = useCallback((event: KeyboardEvent<HTMLElement>) => {
     if (isEscape(event) && event.target instanceof Element) {

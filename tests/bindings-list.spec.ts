@@ -107,7 +107,7 @@ test('a pattern row opens the pattern for editing, a query row opens its editor,
 
 for (const [name, viewport] of [
   ['desktop', { width: 1440, height: 900 }],
-  ['narrow', { width: 900, height: 800 }],
+  ['narrow', { width: 760, height: 800 }],
 ] as const) {
   test(`the list pane fits its pane (${name})`, async ({ page, config, createDiagram, gotoPanelEditPage }) => {
     config.patterns = [
@@ -128,6 +128,12 @@ for (const [name, viewport] of [
     await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const dialog = await openBindingsPopup(page);
     const list = listOf(dialog);
+    // At 760 px the popup is in tab mode; the List tab is the first one shown.
+    await expect(page.getByTestId('dmap-popup-layout')).toHaveAttribute(
+      'data-dmap-layout',
+      name === 'narrow' ? 'tabs' : 'panes'
+    );
+    await expect(list).toBeVisible();
     if (process.env.DMAP_SHOTS) {
       await page.screenshot({
         path: `${process.env.DMAP_SHOTS}/bindings-list-${name}-groups-${process.env.GRAFANA_URL?.slice(-4)}.png`,

@@ -160,6 +160,23 @@ describe('usePopupKeys', () => {
       expect(onUndo).toHaveBeenCalledTimes(2);
     });
 
+    it('does nothing while another dialog is open on the page, also with the focus still in the popup', () => {
+      push('test');
+      const onUndo = vi.fn();
+      render(<Harness onEscape={vi.fn()} onUndo={onUndo} />);
+      const other = document.createElement('div');
+      other.setAttribute('role', 'dialog');
+      document.body.appendChild(other);
+      // jsdom has no layout: the dialog counts as shown when it has client rects.
+      vi.spyOn(other, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+      const header = screen.getByRole('button', { name: 'Header' });
+      fireEvent.keyDown(header, { key: 'z', ctrlKey: true });
+      expect(onUndo).not.toHaveBeenCalled();
+      other.remove();
+      fireEvent.keyDown(header, { key: 'z', ctrlKey: true });
+      expect(onUndo).toHaveBeenCalledTimes(1);
+    });
+
     it('ignores plain z, Alt+Z and a covered popup', () => {
       push('test');
       const onUndo = vi.fn();
