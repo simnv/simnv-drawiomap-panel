@@ -204,27 +204,29 @@ test.describe('bindings popup: undo and redo', () => {
     const original = await text();
     await editor.click();
     await page.keyboard.press('ControlOrMeta+End');
-    await page.keyboard.type('zzz');
+    // One insertion is one undo unit for Monaco; typed keys can be several.
+    await page.keyboard.insertText('zzz');
     await expect(editor).toContainText('zzz');
     // Monaco takes its own undo: the typed text goes, the draft keeps its step.
     await page.keyboard.press('ControlOrMeta+z');
     await expect(editor).not.toContainText('zzz');
-    expect(await text()).toBe(original);
+    await expect.poll(text).toBe(original);
     await expect(group(dialog, 'Overrides', 1)).toBeVisible();
     await expect(undoButton(dialog)).toBeEnabled();
     // Outside Monaco the key undoes the last draft step: the label override.
     // The editor syncs its text into the draft as one step: the draft has the label step and that step. Each press of
-    // the key outside Monaco undoes one draft step and never changes the query text.
+    // the key outside Monaco undoes one draft step and never changes the query text (a restored draft remounts the
+    // editor, which loads its text a moment later).
     await undoButton(dialog).focus();
     await page.keyboard.press('ControlOrMeta+z');
-    expect(await text()).toBe(original);
+    await expect.poll(text).toBe(original);
     if (await undoButton(dialog).isEnabled()) {
       await expect(group(dialog, 'Overrides', 1)).toBeVisible();
       await page.keyboard.press('ControlOrMeta+z');
     }
     await expect(group(dialog, 'Overrides', 0)).toBeVisible();
     await expect(undoButton(dialog)).toBeDisabled();
-    expect(await text()).toBe(original);
+    await expect.poll(text).toBe(original);
     await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
     await closeBindingsPopup(page);
   });
