@@ -30,6 +30,8 @@ export type DraftAction =
   | { type: 'select'; cellId: string }
   | { type: 'scope'; scope: 'element' | 'pattern'; patternId?: string; patternIndex?: number }
   | { type: 'display'; display: Partial<DisplayConfig> }
+  /** Remove a path from the display of the edited owner (the cell override or the edited pattern). */
+  | { type: 'unset'; path: string }
   | { type: 'query'; query: NamedQuery }
   | { type: 'default-datasource'; datasource: DiagramConfigV2['defaultDatasource'] }
   | { type: 'pattern'; pattern: Pattern }
@@ -50,6 +52,39 @@ function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfi
     ...(patch.link ? { link: { ...base.link, ...patch.link } } : {}),
   });
 }
+/** True for a value that holds nothing: an object without keys (not an array). */
+const isEmptyObject = (value: unknown) =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
+
+/**
+ * The display without `path` (dotted keys, no indexes). Objects that become empty go away with it. A hover without
+ * rows is not valid, so removing `hover.rows` removes the whole hover.
+ */
+export function unsetPath<T extends Partial<DisplayConfig>>(display: T, path: string): T {
+  const keys = path === 'hover.rows' ? ['hover'] : path.split('.');
+  const next = copy(display) as Record<string, unknown>;
+  const trail: Array<Record<string, unknown>> = [next];
+  for (const key of keys.slice(0, -1)) {
+    const child = trail[trail.length - 1][key];
+    if (typeof child !== 'object' || child === null || Array.isArray(child)) {
+      return display;
+    }
+    trail.push(child as Record<string, unknown>);
+  }
+  const leaf = keys[keys.length - 1];
+  if (!(leaf in trail[trail.length - 1])) {
+    return display;
+  }
+  delete trail[trail.length - 1][leaf];
+  for (let i = trail.length - 1; i > 0; i--) {
+    if (!isEmptyObject(trail[i])) {
+      break;
+    }
+    delete trail[i - 1][keys[i - 1]];
+  }
+  return next as T;
+}
+
 /** The index of the pattern that the draft edits. It honours the exact index while that pattern still has the ID. */
 export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternId' | 'patternIndex'>): number {
   const { patterns } = draft.config;
@@ -157,6 +192,29 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
           ...config.overrides.filter((o) => o.cellId !== draft.cellId),
           { cellId: draft.cellId, display: changeDisplay(old?.display ?? {}, action.display) },
         ],
+      };
+    }
+  } else if (action.type === 'unset') {
+    if (draft.scope === 'pattern') {
+      const at = draftPatternIndex(draft);
+      const display = config.patterns[at]?.display;
+      const next = display && unsetPath(display, action.path);
+      if (!next || next === display) {
+        return draft;
+      }
+      config = { ...config, patterns: config.patterns.map((p, i) => (i === at ? { ...p, display: next } : p)) };
+    } else {
+      const old = config.overrides.find((o) => o.cellId === draft.cellId);
+      const next = old && unsetPath(old.display, action.path);
+      if (!old || !next || next === old.display) {
+        return draft;
+      }
+      // An override that holds nothing any more goes away.
+      config = {
+        ...config,
+        overrides: Object.keys(next).length
+          ? config.overrides.map((o) => (o === old ? { ...o, display: next } : o))
+          : config.overrides.filter((o) => o !== old),
       };
     }
   } else if (action.type === 'query') {

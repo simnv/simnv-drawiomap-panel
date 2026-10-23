@@ -1,17 +1,74 @@
 import React, { useId, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
-import { CollapsableSection, Field, Select, useStyles2, type FieldProps } from '@grafana/ui';
+import { CollapsableSection, Field, IconButton, Select, useStyles2, type FieldProps } from '@grafana/ui';
+import { resetLabel, sourceText, type FieldSource } from './fieldSource';
 
-/** Associate visible field labels with controls, including Select's search input. */
-export function EditorField({ children, ...props }: FieldProps) {
+/** What the editor shows about the source of a field. `scope` decides the words "to pattern" or "to default". */
+export interface FieldSourceView extends FieldSource {
+  scope: 'element' | 'pattern';
+}
+/** The source of a field with its reset action. */
+export type EditorSource = FieldSourceView & { onReset?: () => void };
+/** Props that a field takes to show its source: the lookup of the editor and the reset action. */
+export interface SourceProps {
+  sourceOf?: (path: string) => FieldSourceView | undefined;
+  onReset?: (resetPath: string) => void;
+}
+/** The source of one path with its reset bound to the reset path. Undefined when the editor gives no sources. */
+export function sourceFor({ sourceOf, onReset }: SourceProps, path?: string): EditorSource | undefined {
+  const source = path ? sourceOf?.(path) : undefined;
+  return source && { ...source, onReset: onReset ? () => onReset(source.resetPath) : undefined };
+}
+
+/** The chip "Pattern Core routers", "Override" or "Default", and the reset button when a reset has an effect. */
+export function SourceChip({ label, source }: { label: string; source: EditorSource }) {
+  const styles = useStyles2(getEditorStyles);
+  return (
+    <span className={styles.source} data-testid="dmap-field-source" data-source={source.owner}>
+      <span className={styles.chip}>{sourceText(source)}</span>
+      {source.resettable && source.onReset && (
+        <IconButton
+          name="times"
+          size="sm"
+          tooltip={resetLabel(label, source, source.scope)}
+          aria-label={resetLabel(label, source, source.scope)}
+          onClick={source.onReset}
+        />
+      )}
+    </span>
+  );
+}
+
+/** The chip of a group of controls that has no single label to carry it, for example a metric binding. */
+export function SourceRow({ label, source }: { label: string; source: EditorSource }) {
+  const styles = useStyles2(getEditorStyles);
+  return (
+    <div className={styles.sourceRow}>
+      <SourceChip label={label} source={source} />
+    </div>
+  );
+}
+
+/** Associate visible field labels with controls, including Select's search input. The chip sits on the label line. */
+export function EditorField({ children, source, ...props }: FieldProps & { source?: EditorSource }) {
   const id = useId();
+  const styles = useStyles2(getEditorStyles);
   const suppliedId = children.props.inputId ?? children.props.id;
   const controlId = typeof suppliedId === 'string' ? suppliedId : id;
-  return (
+  const field = (
     <Field {...props} htmlFor={controlId}>
       {React.cloneElement(children, children.type === Select ? { inputId: controlId } : { id: controlId })}
     </Field>
+  );
+  // The chip is a sibling of the label, not a part of it: the accessible name of the control stays the label.
+  return source ? (
+    <div className={styles.sourced}>
+      {field}
+      <SourceChip label={typeof props.label === 'string' ? props.label : 'field'} source={source} />
+    </div>
+  ) : (
+    field
   );
 }
 
@@ -121,6 +178,31 @@ export const getEditorStyles = (theme: GrafanaTheme2) => ({
     marginBottom: theme.spacing(1),
     '& > div:first-child': { minWidth: 0 },
     '& > div:first-child > div': { minWidth: 0, overflowWrap: 'anywhere' },
+  }),
+  sourced: css({ position: 'relative' }),
+  sourceRow: css({ position: 'relative', minHeight: theme.spacing(3), marginBottom: theme.spacing(0.5) }),
+  source: css({
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    maxWidth: '65%',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: theme.spacing(0.5),
+    minHeight: theme.spacing(2.5),
+  }),
+  chip: css({
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    padding: theme.spacing(0, 0.75),
+    borderRadius: theme.shape.radius.pill,
+    background: theme.colors.background.secondary,
+    border: `1px solid ${theme.colors.border.weak}`,
+    color: theme.colors.text.secondary,
+    fontSize: theme.typography.size.xs,
+    lineHeight: theme.typography.bodySmall.lineHeight,
   }),
   sectionHeader: css({ padding: theme.spacing(1), fontSize: theme.typography.body.fontSize }),
   sectionContent: css({ padding: theme.spacing(0, 2, 2), minWidth: 0 }),

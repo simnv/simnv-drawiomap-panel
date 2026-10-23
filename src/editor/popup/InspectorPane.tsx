@@ -114,6 +114,7 @@ function CellBody({
           dispatch={dispatch}
           fields={fields}
           chartEligible={chartEligible}
+          meta={draft.cellId ? cells.get(draft.cellId)?.meta : undefined}
         />
       )}
       {draft.config.widgets
