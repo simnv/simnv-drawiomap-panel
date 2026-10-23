@@ -147,15 +147,16 @@ export function PluginDialog({ title, onDismiss, onEscape, overlayId, children }
       return;
     }
     let last: HTMLElement | null = null;
-    // Only the page behind the dialog is background: the elements inside #reactRoot outside the Grafana portal container,
-    // and the sandbox mocks (detached stand-ins of such elements). A real element outside #reactRoot is a body-level
-    // portal of another library (a datasource listbox): the focus may stay there.
+    // Only the page behind the dialog is background: the elements inside #reactRoot outside the Grafana portal container.
+    // A real element outside #reactRoot is a body-level portal of another library (a datasource listbox): the focus may
+    // stay there. A sandbox mock is ambiguous: in the sandbox, every element of #reactRoot reaches the plugin as a mock,
+    // the focused element of a nested Grafana modal (metrics explorer) too, so a mock is allowed.
     const allowed = (el: Element) => {
       if (dialog.contains(el)) {
         return true;
       }
       if (el instanceof HTMLElement && el.dataset.grafanaPluginSandboxElement !== undefined) {
-        return false;
+        return true;
       }
       if (el.closest('#grafana-portal-container, [role="dialog"]')) {
         return true;
