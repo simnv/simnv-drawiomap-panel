@@ -120,12 +120,16 @@ export function FreshnessFields({
         <>
           <TextField
             label={`${label} expected sample interval ms`}
+            path={path && `${path}.expectedIntervalMs`}
+            {...sources}
             type="number"
             value={value.expectedIntervalMs}
             onChange={(v) => onChange({ ...value, expectedIntervalMs: Number(v) })}
           />
           <TextField
             label={`${label} stale after ms`}
+            path={path && `${path}.staleAfterMs`}
+            {...sources}
             type="number"
             value={value.staleAfterMs}
             onChange={(v) => onChange({ ...value, staleAfterMs: Number(v) })}
@@ -258,14 +262,18 @@ function ConditionFields({
   label,
   condition,
   onChange,
+  path,
+  ...sources
 }: {
   label: string;
   condition: StatusCondition;
   onChange: (c: StatusCondition) => void;
-}) {
+  /** The display path of the condition, for example `status.default`. */
+  path?: string;
+} & SourceProps) {
   return (
     <>
-      <EditorField label={`${label} state`}>
+      <EditorField label={`${label} state`} source={sourceFor(sources, path && `${path}.state`)}>
         <Select
           aria-label={`${label} state`}
           value={condition.state}
@@ -279,6 +287,8 @@ function ConditionFields({
       </EditorField>
       <TextField
         label={`${label} reason`}
+        path={path && `${path}.reason`}
+        {...sources}
         value={condition.reason}
         onChange={(reason) => onChange({ ...condition, reason })}
       />
@@ -468,78 +478,87 @@ export function DisplayFields({
             </EditorField>
             <ConditionFields
               label="Default health"
+              path="status.default"
+              {...src}
               condition={status.default}
               onChange={(fallback) => setStatus({ ...status, default: fallback })}
             />
-            {(status.kind === 'mapping' ? status.mappings : status.predicates).map((c, i) => (
-              <div key={i}>
-                <TextField
-                  label={`Health condition ${i + 1} value`}
-                  type="number"
-                  value={c.value}
-                  onChange={(v) => {
-                    if (status.kind === 'mapping') {
-                      setStatus({
-                        ...status,
-                        mappings: status.mappings.map((old, j) => (i === j ? { ...old, value: Number(v) } : old)),
-                      });
-                    } else {
-                      setStatus({
-                        ...status,
-                        predicates: status.predicates.map((old, j) => (i === j ? { ...old, value: Number(v) } : old)),
-                      });
-                    }
-                  }}
-                />
-                {status.kind === 'predicates' && (
-                  <EditorField label={`Health condition ${i + 1} operator`}>
-                    <Select
-                      aria-label={`Health condition ${i + 1} operator`}
-                      value={status.predicates[i].op}
-                      onChange={(selection) =>
+            {(status.kind === 'mapping' ? status.mappings : status.predicates).map((c, i) => {
+              const at = `status.${status.kind === 'mapping' ? 'mappings' : 'predicates'}[${i}]`;
+              return (
+                <div key={i}>
+                  <TextField
+                    label={`Health condition ${i + 1} value`}
+                    path={`${at}.value`}
+                    {...src}
+                    type="number"
+                    value={c.value}
+                    onChange={(v) => {
+                      if (status.kind === 'mapping') {
                         setStatus({
                           ...status,
-                          predicates: status.predicates.map((old, j) =>
-                            i === j ? { ...old, op: (selection.value ?? '') as 'gt' } : old
-                          ),
-                        })
+                          mappings: status.mappings.map((old, j) => (i === j ? { ...old, value: Number(v) } : old)),
+                        });
+                      } else {
+                        setStatus({
+                          ...status,
+                          predicates: status.predicates.map((old, j) => (i === j ? { ...old, value: Number(v) } : old)),
+                        });
                       }
-                      options={['eq', 'ne', 'gt', 'gte', 'lt', 'lte'].map((op) => ({ value: op, label: op }))}
-                      menuShouldPortal
-                      maxMenuHeight={240}
-                    />
-                  </EditorField>
-                )}
-                <ConditionFields
-                  label={`Health condition ${i + 1}`}
-                  condition={c}
-                  onChange={(next) => {
-                    if (status.kind === 'mapping') {
-                      setStatus({
-                        ...status,
-                        mappings: status.mappings.map((old, j) => (i === j ? { ...old, ...next } : old)),
-                      });
-                    } else {
-                      setStatus({
-                        ...status,
-                        predicates: status.predicates.map((old, j) => (i === j ? { ...old, ...next } : old)),
-                      });
+                    }}
+                  />
+                  {status.kind === 'predicates' && (
+                    <EditorField label={`Health condition ${i + 1} operator`} source={sourceFor(src, `${at}.op`)}>
+                      <Select
+                        aria-label={`Health condition ${i + 1} operator`}
+                        value={status.predicates[i].op}
+                        onChange={(selection) =>
+                          setStatus({
+                            ...status,
+                            predicates: status.predicates.map((old, j) =>
+                              i === j ? { ...old, op: (selection.value ?? '') as 'gt' } : old
+                            ),
+                          })
+                        }
+                        options={['eq', 'ne', 'gt', 'gte', 'lt', 'lte'].map((op) => ({ value: op, label: op }))}
+                        menuShouldPortal
+                        maxMenuHeight={240}
+                      />
+                    </EditorField>
+                  )}
+                  <ConditionFields
+                    label={`Health condition ${i + 1}`}
+                    path={at}
+                    {...src}
+                    condition={c}
+                    onChange={(next) => {
+                      if (status.kind === 'mapping') {
+                        setStatus({
+                          ...status,
+                          mappings: status.mappings.map((old, j) => (i === j ? { ...old, ...next } : old)),
+                        });
+                      } else {
+                        setStatus({
+                          ...status,
+                          predicates: status.predicates.map((old, j) => (i === j ? { ...old, ...next } : old)),
+                        });
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      status.kind === 'mapping'
+                        ? setStatus({ ...status, mappings: status.mappings.filter((_, j) => i !== j) })
+                        : setStatus({ ...status, predicates: status.predicates.filter((_, j) => i !== j) })
                     }
-                  }}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() =>
-                    status.kind === 'mapping'
-                      ? setStatus({ ...status, mappings: status.mappings.filter((_, j) => i !== j) })
-                      : setStatus({ ...status, predicates: status.predicates.filter((_, j) => i !== j) })
-                  }
-                >
-                  Remove health condition {i + 1}
-                </Button>
-              </div>
-            ))}
+                  >
+                    Remove health condition {i + 1}
+                  </Button>
+                </div>
+              );
+            })}
             <Button
               variant="secondary"
               size="sm"
@@ -560,7 +579,7 @@ export function DisplayFields({
             >
               Add health condition
             </Button>
-            <EditorField label="Check sample freshness">
+            <EditorField label="Check sample freshness" source={sourceFor(src, 'status.freshness')}>
               <Switch
                 aria-label="Check sample freshness"
                 value={!!status.freshness}
@@ -576,6 +595,8 @@ export function DisplayFields({
               <>
                 <TextField
                   label="Expected sample interval ms"
+                  path="status.freshness.expectedIntervalMs"
+                  {...src}
                   type="number"
                   value={status.freshness.expectedIntervalMs}
                   onChange={(v) =>
@@ -584,6 +605,8 @@ export function DisplayFields({
                 />
                 <TextField
                   label="Stale after ms"
+                  path="status.freshness.staleAfterMs"
+                  {...src}
                   type="number"
                   value={status.freshness.staleAfterMs}
                   onChange={(v) =>
@@ -638,12 +661,16 @@ export function DisplayFields({
             {row.kind === 'metadata' ? (
               <TextField
                 label={`Hover row ${i + 1} path`}
+                path={`hover.rows[${i}].path`}
+                {...src}
                 value={row.path}
                 onChange={(path) => setRow(i, { ...row, path })}
               />
             ) : row.kind === 'drilldown' ? (
               <TextField
                 label={`Hover row ${i + 1} URL`}
+                path={`hover.rows[${i}].url`}
+                {...src}
                 value={row.url}
                 onChange={(url) => setRow(i, { ...row, url })}
               />
@@ -682,16 +709,22 @@ export function DisplayFields({
                 )}
                 <FreshnessFields
                   label={`Hover row ${i + 1}`}
+                  path={`hover.rows[${i}].freshness`}
+                  {...src}
                   value={row.freshness}
                   onChange={(freshness) => setRow(i, { ...row, freshness })}
                 />
                 <TextField
                   label={`Hover row ${i + 1} unit`}
+                  path={`hover.rows[${i}].unit`}
+                  {...src}
                   value={row.unit ?? ''}
                   onChange={(unit) => setRow(i, { ...row, unit })}
                 />
                 <BoundField
                   label={`Hover row ${i + 1} minimum`}
+                  path={`hover.rows[${i}].min`}
+                  {...src}
                   auto
                   value={row.min}
                   onChange={(min) => setRow(i, { ...row, min })}
@@ -699,6 +732,8 @@ export function DisplayFields({
                 {'series' in row ? (
                   <BoundField
                     label={`Hover row ${i + 1} maximum`}
+                    path={`hover.rows[${i}].max`}
+                    {...src}
                     keywords={['auto', 'capacity']}
                     value={row.max}
                     onChange={(max) => setRow(i, { ...row, max })}
@@ -706,6 +741,8 @@ export function DisplayFields({
                 ) : (
                   <BoundField
                     label={`Hover row ${i + 1} maximum`}
+                    path={`hover.rows[${i}].max`}
+                    {...src}
                     value={row.max}
                     onChange={(max) => setRow(i, { ...row, max })}
                   />
@@ -713,12 +750,16 @@ export function DisplayFields({
                 {row.kind === 'history' ? (
                   <BoundField
                     label={`Hover row ${i + 1} height`}
+                    path={`hover.rows[${i}].height`}
+                    {...src}
                     value={row.height}
                     onChange={(height) => setRow(i, { ...row, height })}
                   />
                 ) : null}
                 <TextField
                   label={`Hover row ${i + 1} URL`}
+                  path={`hover.rows[${i}].url`}
+                  {...src}
                   value={row.url ?? ''}
                   onChange={(url) => setRow(i, { ...row, url })}
                 />

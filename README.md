@@ -96,7 +96,7 @@ The draft has a history. **Undo** and **Redo** in the toolbar, **Ctrl/Cmd+Z**, *
 
 ### Field sources
 
-Each field of the inspector shows where its effective value comes from: **Pattern** and the pattern name, **Override** (the element override), or **Default** (nothing sets it). When the edited owner sets the value itself, a small button resets it: **Reset ... to pattern** for an element, **Reset ... to default** in the scope of a pattern. The reset removes the value from the override (or the pattern) so that the value of the pattern (or the default) applies again. An override that holds nothing any more is removed. Hover rows and the health rule are one unit each: a reset inside a hover row resets all **hover rows** at once, and a reset inside the health rule resets the whole **health rule**. The **Effective binding preview** shows the result.
+Each field of the inspector shows where its effective value comes from (the controls of one metric binding, such as query, result field, reducer and matchers, share one chip on the metric section): **Pattern** and the pattern name, **Override** (the element override), or **Default** (nothing sets it). When the edited owner sets the value itself, a small button resets it: **Reset ... to pattern** for an element, **Reset ... to default** in the scope of a pattern. The reset removes the value from the override (or the pattern) so that the value of the pattern (or the default) applies again. An override that holds nothing any more is removed. Hover rows and the health rule are one unit each: a reset inside a hover row resets all **hover rows** at once, and a reset inside the health rule resets the whole **health rule**. The **Effective binding preview** shows the result.
 
 ### Narrow screens
 
