@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { DiagramConfigV2 } from '../model/config';
+import { mergeCell } from '../binding/patterns';
+import { validateConfig, type DiagramConfigV2 } from '../model/config';
 import {
   commitDraft,
   createDraft,
   draftPatternIndex,
   isDirty,
   reduceDraft,
+  unsetPath,
   exportPatternDocument,
   previewPatternImport,
 } from './draft';
@@ -379,5 +381,111 @@ describe('isDirty', () => {
     const back = reduceDraft(there, { type: 'display', display: { label: 'Shared' } });
     expect(isDirty(there)).toBe(true);
     expect(isDirty(back)).toBe(false);
+  });
+});
+
+describe('unset', () => {
+  const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
+  const rows = [{ kind: 'metadata' as const, label: 'Device', path: 'cell.key' }];
+  const withOverride = (display: DiagramConfigV2['overrides'][number]['display']) =>
+    reduceDraft(
+      createDraft({
+        ...saved,
+        patterns: [{ ...saved.patterns[0], display: { label: 'Shared', hover: { rows } } }],
+        overrides: [{ cellId: 'a', display }],
+      }),
+      { type: 'select', cellId: 'a' }
+    );
+
+  it('removes a leaf from the override and keeps the other fields', () => {
+    const next = reduceDraft(withOverride({ label: 'Mine', url: '/d/x' }), { type: 'unset', path: 'label' });
+    expect(next.config.overrides).toEqual([{ cellId: 'a', display: { url: '/d/x' } }]);
+    expect(next.saved.overrides[0].display.label).toBe('Mine');
+  });
+
+  it('removes the override when it holds nothing any more', () => {
+    const next = reduceDraft(withOverride({ label: 'Mine' }), { type: 'unset', path: 'label' });
+    expect(next.config.overrides).toEqual([]);
+  });
+
+  it('removes a nested leaf and the objects that become empty', () => {
+    const next = reduceDraft(withOverride({ link: { a2bBinding: binding }, label: 'Mine' }), {
+      type: 'unset',
+      path: 'link.a2bBinding',
+    });
+    expect(next.config.overrides[0].display).toEqual({ label: 'Mine' });
+    const kept = reduceDraft(withOverride({ link: { a2bBinding: binding, enabled: false } }), {
+      type: 'unset',
+      path: 'link.a2bBinding',
+    });
+    expect(kept.config.overrides[0].display).toEqual({ link: { enabled: false } });
+  });
+
+  it('removes only hover.rows: hover.enabled stays and the config stays valid', () => {
+    const next = reduceDraft(withOverride({ hover: { enabled: false, rows } }), { type: 'unset', path: 'hover.rows' });
+    expect(next.config.overrides[0].display).toEqual({ hover: { enabled: false } });
+    expect(validateConfig(next.config).diagnostics).toEqual([]);
+    // The merge keeps the override's `enabled` and takes the rows of the pattern.
+    const cell = { id: 'a', kind: 'node', key: 'a', attrs: {}, labelText: '', isEdge: false } as const;
+    expect(mergeCell(next.config, cell).display.hover).toEqual({ enabled: false, rows });
+  });
+
+  it('removes the hover when hover.rows was its only key, and hover.enabled alone', () => {
+    const next = reduceDraft(withOverride({ hover: { rows }, label: 'Mine' }), { type: 'unset', path: 'hover.rows' });
+    expect(next.config.overrides[0].display).toEqual({ label: 'Mine' });
+    const enabledOnly = reduceDraft(withOverride({ hover: { enabled: true, rows } }), {
+      type: 'unset',
+      path: 'hover.enabled',
+    });
+    expect(enabledOnly.config.overrides[0].display).toEqual({ hover: { rows } });
+  });
+
+  it('removes a path from the edited pattern in pattern scope and keeps the pattern', () => {
+    const base = reduceDraft(withOverride({ label: 'Mine' }), {
+      type: 'scope',
+      scope: 'pattern',
+      patternId: 'devices',
+      patternIndex: 0,
+    });
+    const next = reduceDraft(base, { type: 'unset', path: 'label' });
+    expect(next.config.patterns[0].display).toEqual({ hover: { rows } });
+    expect(next.config.overrides[0].display.label).toBe('Mine');
+    expect(reduceDraft(next, { type: 'unset', path: 'hover.rows' }).config.patterns[0]).toMatchObject({
+      id: 'devices',
+      display: {},
+    });
+  });
+
+  it('does nothing for a path that the owner does not set', () => {
+    const draft = withOverride({ label: 'Mine' });
+    expect(reduceDraft(draft, { type: 'unset', path: 'url' })).toBe(draft);
+    expect(reduceDraft(draft, { type: 'unset', path: 'link.a2bBinding' })).toBe(draft);
+    const noOverride = reduceDraft(createDraft(saved), { type: 'select', cellId: 'zzz' });
+    expect(reduceDraft(noOverride, { type: 'unset', path: 'label' })).toBe(noOverride);
+  });
+
+  it('leaves the input of unsetPath untouched', () => {
+    const display = { label: 'x', link: { enabled: true } };
+    expect(unsetPath(display, 'link.enabled')).toEqual({ label: 'x' });
+    expect(display.link.enabled).toBe(true);
+  });
+});
+
+describe('remove-query', () => {
+  it('removes only the query from the draft and keeps the saved config and the bindings that use it', () => {
+    const binding = { queryId: 'q1', match: {}, reducer: 'last' as const };
+    const base = createDraft({
+      ...saved,
+      queries: [
+        { id: 'q1', name: 'One', source: { kind: 'panel', refId: 'A' } },
+        { id: 'q2', name: 'Two', source: { kind: 'panel', refId: 'B' } },
+      ],
+      overrides: [{ cellId: 'a', display: { shape: { binding } } }],
+    });
+    const next = reduceDraft(base, { type: 'remove-query', id: 'q1' });
+    expect(next.config.queries.map((q) => q.id)).toEqual(['q2']);
+    expect(next.config.overrides).toEqual(base.config.overrides);
+    expect(next.saved.queries).toHaveLength(2);
+    expect(reduceDraft(base, { type: 'remove-query', id: 'nope' }).config.queries).toHaveLength(2);
   });
 });

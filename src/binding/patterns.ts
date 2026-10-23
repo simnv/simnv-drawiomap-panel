@@ -164,7 +164,9 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
     };
   }
   if (patch.hover) {
-    result.hover = mergeFields(base.hover, patch.hover, track, 'hover');
+    // An owner may set only `hover.enabled`: the merged hover always has a rows list.
+    const hover = mergeFields(base.hover, patch.hover, track, 'hover')!;
+    result.hover = { ...hover, rows: hover.rows ?? [] };
   }
   if (patch.status) {
     const sameKind = base.status?.kind === patch.status.kind;
@@ -249,12 +251,14 @@ export function displayProvenance(config: DiagramConfigV2, cell: CellMeta): Disp
   return provenance;
 }
 
+/** Path `a` is `b` or lies below it (a nested key or an array index). The one test of "below" for provenance paths. */
+export const pathRelated = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
+
 /**
  * The owners behind a path: those of the path itself, of anything below it, or of an array above it. A path with no
  * owner at or under it (for example a parameter of a binding) goes to the closest ancestor that has owners.
  */
 export function ownersOfPath(provenance: DisplayProvenance, path: string): DisplayOwner[] {
-  const related = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
   const parent = (at: string) => {
     const up = at.replace(/(\.[^.[\]]*|\[\d+\])$/, '');
     return up === at ? '' : up;
@@ -262,7 +266,7 @@ export function ownersOfPath(provenance: DisplayProvenance, path: string): Displ
   for (let at = path; at; at = parent(at)) {
     const found: DisplayOwner[] = [];
     for (const [key, owners] of provenance) {
-      if (related(at, key) || related(key, at)) {
+      if (pathRelated(at, key) || pathRelated(key, at)) {
         for (const owner of owners) {
           if (!found.some((x) => x.kind === owner.kind && JSON.stringify(x) === JSON.stringify(owner))) {
             found.push(owner);

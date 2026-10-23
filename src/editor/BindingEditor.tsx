@@ -3,6 +3,7 @@ import React, {
   useContext,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -16,6 +17,8 @@ import { bindPlan, widgetDiagnostics } from '../binding/engine';
 import { resolvePatterns } from '../binding/patterns';
 import { cellMatches } from '../binding/select';
 import { useStage } from '../components/useStage';
+import { cardContextFor } from '../binding/context';
+import { extractSeries } from '../binding/series';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfigV2, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
@@ -25,16 +28,18 @@ import { sanitizeSvg } from '../render/sanitize';
 import type { BindContext, Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
-import { buildBindingsList, problemsOf, type PatternRow, type ProblemEntry } from './bindingsModel';
-import { commitDraft, createDraft, draftPatternIndex, isDirty, reduceDraft } from './draft';
+import { buildBindingsList, problemsOf, type BindingsList, type PatternRow, type ProblemEntry } from './bindingsModel';
+import { commitDraft, createDraft, draftPatternIndex, isDirty } from './draft';
 import { draftQueryService } from './draftContext';
 import { DrawioModal } from './DrawioModal';
+import { createHistory, reduceHistory } from './history';
 import { previewPattern, type PatternPreview } from './patternPreview';
 import { createPreviewResolver, previewSnapshot, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
 import { DiagramStage } from './popup/DiagramStage';
 import { InspectorPane, type InspectorSelection } from './popup/InspectorPane';
+import type { QueryUser } from './popup/QueryPane';
 import { ListPane } from './popup/ListPane';
-import { PopupLayout } from './popup/PopupLayout';
+import { PopupLayout, type PopupTab } from './popup/PopupLayout';
 import type { PopupTarget } from './popup/popupBus';
 import type { BaseRevision } from './revision';
 
@@ -67,6 +72,14 @@ export interface BindingEditorProps {
   onRequestClose: () => void;
   /** Drop the draft and start again from the saved options. */
   onReload?: () => void;
+  /** The popup reads the undo and redo of the draft here, for its key handler. */
+  onControls?: (controls: HistoryControls | null) => void;
+}
+
+/** The undo and redo of the draft, for a key handler outside the editor. */
+export interface HistoryControls {
+  undo: () => void;
+  redo: () => void;
 }
 
 type Selection = InspectorSelection;
@@ -86,10 +99,14 @@ export function BindingEditor({
   onApply,
   onRequestClose,
   onReload,
+  onControls,
 }: BindingEditorProps) {
   const theme = useTheme2();
   const styles = useStyles2(getStyles);
-  const [draft, dispatch] = useReducer(reduceDraft, undefined, () => createDraft(config, diagram));
+  const [history, dispatch] = useReducer(reduceHistory, undefined, () => createHistory(createDraft(config, diagram)));
+  const draft = history.present;
+  const canUndo = history.past.length > 0;
+  const canRedo = history.future.length > 0;
   const dirty = isDirty(draft);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
@@ -101,6 +118,8 @@ export function BindingEditor({
   const [selection, setSelection] = useState<Selection>({ kind: 'none' });
   const [filter, setFilter] = useState({ text: '', problemsOnly: false });
   const [highlight, setHighlight] = useState<string[]>([]);
+  // The visible pane in tab mode. A selection opens the inspector.
+  const [tab, setTab] = useState<PopupTab>('list');
   const [geometryOpen, setGeometryOpen] = useState(false);
   const [geometryError, setGeometryError] = useState('');
   const [selectionVersion, setSelectionVersion] = useState(0);
@@ -138,6 +157,10 @@ export function BindingEditor({
   );
   if (previewState && previewState.key !== previewKey) {
     setPreviewState(undefined);
+  }
+  // The query is gone (deleted, or an undo removed it): the pane closes.
+  if (selection.kind === 'query' && !query) {
+    setSelection({ kind: 'none' });
   }
   // Text that the user typed into the query pane and did not import never reaches the draft: it stops blocking
   // Apply when the pane closes (state adjustment during render).
@@ -282,13 +305,26 @@ export function BindingEditor({
   );
   const bound = useMemo(() => bindPlan(plan, resolve, bindContext, nowMs), [plan, resolve, bindContext, nowMs]);
   const cardPatch = draft.cellId ? bound.patches.get(draft.cellId) : undefined;
+  // The context of the hover card, once per data update: the series come from the live panel data.
+  const series = useMemo(() => extractSeries(data.series), [data.series]);
+  const cardContext = useMemo(
+    () =>
+      cardContextFor({
+        series,
+        theme,
+        timeZone,
+        replaceVariables: bindContext.replaceVariables,
+        fieldThresholds: bindContext.fieldThresholds,
+      }),
+    [series, theme, timeZone, bindContext.replaceVariables, bindContext.fieldThresholds]
+  );
   // Built from the preview inputs only: a highlight or a selection change must not rebuild the card.
   const hoverPreview = useMemo(
     () =>
       (localPreview || patternResults.length > 0) && cardPatch
-        ? buildConfiguredCard(cardPatch, resolve, { ...bindContext, series: [] })
+        ? buildConfiguredCard(cardPatch, resolve, cardContext)
         : undefined,
-    [localPreview, patternResults, cardPatch, resolve, bindContext]
+    [localPreview, patternResults, cardPatch, resolve, cardContext]
   );
   const metricDiagnostics = [...bound.diagnostics, ...(hoverPreview?.diagnostics ?? [])];
   const diagnostics = [...draft.diagnostics, ...validateConfig(draft.config).diagnostics, ...plan.diagnostics];
@@ -327,7 +363,7 @@ export function BindingEditor({
   const deferred = useDeferredValue(listInput);
   const listDiagnostics = useMemo(() => {
     const cards = Array.from(deferred.bound.patches.values()).flatMap(
-      (patch) => buildConfiguredCard(patch, deferred.resolve, { ...bindContext, series: [] }).diagnostics
+      (patch) => buildConfiguredCard(patch, deferred.resolve, cardContext).diagnostics
     );
     return [
       ...deferred.draftDiagnostics,
@@ -336,7 +372,7 @@ export function BindingEditor({
       ...widgetDiagnostics(deferred.plan, deferred.resolve),
       ...cards,
     ];
-  }, [deferred, bindContext]);
+  }, [deferred, cardContext]);
   const bindingsList = useMemo(
     () => buildBindingsList(deferred.config, metas, listDiagnostics),
     [deferred.config, metas, listDiagnostics]
@@ -347,6 +383,7 @@ export function BindingEditor({
     dispatch({ type: 'select', cellId });
     setSelectionVersion((v) => v + 1);
     setSelection({ kind: 'cell' });
+    setTab('inspector');
   };
   // A pattern is edited through one of its cells, in the pattern scope.
   const openPattern = (row: { patternId: string; index: number; matched: string[] }) => {
@@ -358,12 +395,14 @@ export function BindingEditor({
     dispatch({ type: 'scope', scope: 'pattern', patternId: row.patternId, patternIndex: row.index });
     setSelectionVersion((v) => v + 1);
     setSelection({ kind: 'cell' });
+    setTab('inspector');
     setHighlight([]);
   };
   const openQuery = (id: string) => {
     setQueryId(id);
     setQueryError('');
     setSelection({ kind: 'query', queryId: id });
+    setTab('inspector');
   };
   const openProblem = (entry: ProblemEntry) => {
     const row = entry.row;
@@ -530,6 +569,27 @@ export function BindingEditor({
   };
 
   // ---- draft actions ----
+  // The datasource query editors keep their own text: a remount shows the text of the restored draft.
+  // A step through the history changes the draft under the local state: the query editors show the restored text, and
+  // a validity message of the old draft must not block Apply. A key press with nothing to undo changes none of it.
+  const available = useRef({ undo: false, redo: false });
+  useLayoutEffect(() => {
+    available.current = { undo: canUndo, redo: canRedo };
+  });
+  const step = useCallback((type: 'undo' | 'redo') => {
+    dispatch({ type });
+    if (available.current[type]) {
+      setResetEpoch((value) => value + 1);
+      setQueryError('');
+      setGeometryError('');
+    }
+  }, []);
+  const undo = useCallback(() => step('undo'), [step]);
+  const redo = useCallback(() => step('redo'), [step]);
+  useEffect(() => {
+    onControls?.({ undo, redo });
+    return () => onControls?.(null);
+  }, [onControls, undo, redo]);
   const cancelChanges = () => {
     dispatch({ type: 'reset' });
     setGeometryError('');
@@ -573,6 +633,28 @@ export function BindingEditor({
         </Button>
         <Button variant="primary" size="sm" disabled={blocked} onClick={() => apply(true)}>
           Apply and close
+        </Button>
+        <Button
+          variant="secondary"
+          fill="text"
+          size="sm"
+          icon="arrow-left"
+          aria-keyshortcuts="Control+Z Meta+Z"
+          disabled={!canUndo}
+          onClick={undo}
+        >
+          Undo
+        </Button>
+        <Button
+          variant="secondary"
+          fill="text"
+          size="sm"
+          icon="arrow-right"
+          aria-keyshortcuts="Control+Shift+Z Control+Y Meta+Shift+Z"
+          disabled={!canRedo}
+          onClick={redo}
+        >
+          Redo
         </Button>
         <Button variant="secondary" size="sm" aria-label="Cancel changes" onClick={cancelChanges}>
           Cancel
@@ -619,6 +701,8 @@ export function BindingEditor({
       )}
       <div className={styles.layout}>
         <PopupLayout
+          activeTab={tab}
+          onTabChange={setTab}
           wideInspector={selection.kind === 'query'}
           list={
             <ListPane
@@ -667,6 +751,13 @@ export function BindingEditor({
               selection={selection}
               canEditGeometry={!!draft.diagram}
               onEditGeometry={() => setGeometryOpen(true)}
+              card={{
+                patch: cardPatch,
+                resolve,
+                cardContext,
+                timeRange: data.timeRange,
+                timeZone,
+              }}
               cell={{
                 draft,
                 dispatch,
@@ -705,7 +796,10 @@ export function BindingEditor({
                       epoch: resetEpoch,
                       context,
                       data,
+                      timeZone,
                       uses: bindingsList.queries.find((row) => row.queryId === query.id)?.uses ?? 0,
+                      usedBy: usersOfQuery(bindingsList, query.id, { openPattern, openCell }),
+                      onDelete: () => dispatch({ type: 'remove-query', id: query.id }),
                       snapshot,
                       fields,
                       queryError,
@@ -746,6 +840,25 @@ export function BindingEditor({
       )}
     </div>
   );
+}
+
+/** The patterns, overrides and charts that use a query, as buttons that select the user. */
+function usersOfQuery(
+  list: BindingsList,
+  queryId: string,
+  open: { openPattern: (row: PatternRow) => void; openCell: (cellId: string) => void }
+): QueryUser[] {
+  return [
+    ...list.patterns
+      .filter((row) => row.queryIds.includes(queryId))
+      .map((row) => ({ key: row.key, label: `Pattern ${row.name}`, open: () => open.openPattern(row) })),
+    ...list.overrides
+      .filter((row) => row.queryIds.includes(queryId))
+      .map((row) => ({ key: row.key, label: `Override ${row.cellId}`, open: () => open.openCell(row.cellId) })),
+    ...list.widgets
+      .filter((row) => row.queryId === queryId)
+      .map((row) => ({ key: row.key, label: `Chart ${row.label}`, open: () => open.openCell(row.anchorCellId) })),
+  ];
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({

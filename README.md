@@ -67,7 +67,7 @@ Open it in one of three ways: the link button in the top-left corner of the pane
 
 - **List** (left): **Filter bindings** matches a name, a cell ID or label, or a query ID. **Problems only** hides the rows without a problem. The groups are Problems, Patterns, Overrides, Widgets and Queries, each with a count. A row shows its selector kind, the queries it uses, the number of matched cells and the number of problems. Use the arrow at the start of a row to read its problems. Override and widget rows have a delete button with a confirmation; the deletion goes into the draft. The footer holds **Add named query**, **Add eager panel reference**, **Default datasource UID** and the portable patterns.
 - **Diagram** (centre): a live copy of the diagram with the draft bindings and the data of the panel. Pan and zoom as in the panel. Click an element to select it, **Shift**-click for more. Pointing at a list row marks its cells.
-- **Inspector** (right): the selected element, pattern, override, chart region or query.
+- **Inspector** (right): the selected element, pattern, override, chart region or query. For an element it starts with a live **Hover card preview**: the card that the panel shows for the element, built from the draft and the panel data. It updates on each data refresh and on each edit. An element without hover rows shows "No card for this element".
 
 ![The bindings popup with a selected element](docs/images/bindings-popup.png)
 
@@ -89,6 +89,22 @@ Draw.io owns geometry and stable cell IDs. The inspector owns queries, formattin
 **Export patterns** copies a versioned document with referenced queries, charts and overrides. **Preview pattern import** reports conflicts, datasource context and anchor applicability. Choose Replace or New identity explicitly. Import stages a draft; Apply activates it. Native datasource UIDs stay explicit across panels.
 
 The third demo panel, **Sanitized authoring topology**, has fictional repeated routers, a directional link and one standalone chart. Its Prometheus and TestData queries use synthetic data only.
+
+### Undo and redo
+
+The draft has a history. **Undo** and **Redo** in the toolbar, **Ctrl/Cmd+Z**, **Shift+Ctrl/Cmd+Z** and **Ctrl+Y** step through it. A step is one edit of the bindings, a query change, a deletion or a geometry save from draw.io. Typing in one field is one step; a pause of about one second, a selection of another element or an edit of another field starts a new step. In a text field, a text area and the datasource code editor, **Ctrl/Cmd+Z** keeps its normal meaning and undoes the typing there. With another dialog open (for example the Prometheus metrics explorer), the keys do nothing to the draft. **Apply** and **Cancel** clear the history; the toolbar buttons and the keys then stop until the next edit. The history keeps the last 200 steps and the last 5 geometry saves.
+
+### Field sources
+
+Each field of the inspector shows where its effective value comes from (the controls of one metric binding, such as query, result field, reducer and matchers, share one chip on the metric section): **Pattern** and the pattern name, **Override** (the element override), or **Default** (nothing sets it). When the edited owner sets the value itself, a small button resets it: **Reset ... to pattern** for an element, **Reset ... to default** in the scope of a pattern. The reset removes the value from the override (or the pattern) so that the value of the pattern (or the default) applies again. An override that holds nothing any more is removed. Hover rows and the health rule are one unit each: a reset inside a hover row resets all **hover rows** at once, and a reset inside the health rule resets the whole **health rule**. The **Effective binding preview** shows the result.
+
+### Narrow screens
+
+Below 1000 px of popup width (a browser window narrower than about 1050 px) the three panes become the tabs **List**, **Diagram** and **Inspector**. One pane shows at a time. A click on an element in the diagram, or on a list row, opens the **Inspector** tab. The selection, the zoom of the diagram and the open editors stay when you change tabs.
+
+### Delete a query
+
+Select a query row, then **Delete query**. The query pane also shows a table with the first 20 rows of the first frame of **Preview query**, and a **Used by** list of the patterns, overrides and charts that use the query; select an entry to open it. A query that is used asks **Delete query?** first. The bindings that use it stay and report an unknown query until you pick another. **Undo** brings the query back.
 
 ### Demand, cache and sample freshness
 

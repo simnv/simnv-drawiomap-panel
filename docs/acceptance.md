@@ -113,3 +113,43 @@ for the variants (`AUTHORING_SANDBOX=1` on the sandbox ports).
 - `tests/authoring-compat.spec.ts` tests a separate probe component (`tests/authoring-compat.probe.tsx`) against Grafana panel APIs.
   It does not use the inspector of the plugin, so it needs no migration. Run it with `AUTHORING_COMPAT=1` and
   `tests/authoring-compat.config.ts` on the isolated stack that `tests/authoring-stack.mjs` generates.
+
+## Bindings popup: Phase 2 results
+
+Phase 2 adds the live hover card preview, field sources with reset, undo and redo, the tab layout below 1000 px, and the
+query result table, "Used by" list and deletion (spec `2026-10-23-bindings-popup-design.md`, section 6, P2).
+
+| Acceptance item (spec section 6, P2)                                                                      | Evidence                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The card preview shows the rows of the panel card for the same element and data                           | `tests/bindings-popup-inspector.spec.ts`: rows of the preview equal the rows of the hover card of `device-1` in the panel. Unit: `CardPreview.test.tsx`, `Card.test.tsx`. |
+| The preview updates on a data refresh without a click; an element without hover rows has a message        | Unit `CardPreview.test.tsx` (new resolver changes the rows; empty states). e2e: "No card for this element" for `chart-1`.                                                 |
+| A pattern field shows the pattern name; an override shows "Override" with a reset button                  | e2e: chip "Pattern Repeated routers"; "Override" after an edit; "Reset Label template to pattern". Unit `fieldSource.test.ts`, `BindingInspector.test.tsx`.               |
+| A reset inside a hover row resets the whole rows array; the Effective binding preview agrees              | e2e: after the reset the Overrides group count drops to 0 and the pattern rows show. Unit `BindingInspector.test.tsx`, `draft.test.ts` (`unset`).                         |
+| Ten edits and ten undos restore the saved config; redo replays; one field is one step; a selection splits | Unit `history.test.ts`: ten edits, "abc" in one field, two fields, selection between keystrokes, owner change, window, `coalesceMs: 0`, caps of 200 steps and 5 diagrams. |
+| A geometry save is one step; Apply clears the history                                                     | Unit `history.test.ts`; `BindingsPopup.test.tsx` (Apply clears). e2e: Apply disables Undo and Redo.                                                                       |
+| Ctrl+Z in a text input or the Monaco editor keeps the native undo; with a nested dialog it does nothing   | Unit `usePopupKeys.test.tsx`, `BindingsPopup.test.tsx`. e2e: Label template, the Prometheus code editor, the metrics explorer dialog.                                     |
+| At 1280 px three panes; at 900 px three tabs; the tabs keep the selection                                 | e2e: 1280x800 `panes`, 900x700 `tabs`; a stage click opens the Inspector tab; the selection survives tab changes. Unit `PopupLayout.test.tsx`.                            |
+| The query pane shows a result table, a "Used by" list and deletes with a confirmation                     | e2e: table of `Standalone trend`, used-by of `health`, Esc keeps the query, delete then Undo. Unit `QueryPane.test.tsx`, `draft.test.ts` (`remove-query`).                |
+
+Screenshots (written by the browser tests to `/tmp/dmap-popup-p2/`): `inspector-desktop-<port>.png` (1440x900, card preview and
+source chips), `sources-desktop-<port>.png` (an override with reset buttons), `query-table-<port>.png`, and
+`tabs-list|diagram|inspector-900-<port>.png` (900x700 tab mode).
+
+Decisions and deviations:
+
+- The tab threshold is the width of the popup (95 vw of the window minus padding), not the window: a 1024 px window has tabs.
+- A text-like `input` keeps the native undo. A checkbox or a switch has no text undo, so Ctrl+Z there undoes the draft.
+- The history keys also do nothing while another `[role="dialog"]` is visible in the page, also when the focus has not moved into
+  it yet. In the frontend sandbox a Grafana dialog is a mock that this check cannot see; the focus guard and the event target
+  check of the Esc owner still apply there.
+- The reset of a path in the health rule resets the whole `status` rule (its schema needs the binding and the default), as a hover
+  row path resets `hover.rows`.
+- Coalescing joins edits that change exactly one leaf. The leaves come from a diff of the owner's display before and after the
+  edit, so typing into one field of a binding (which the editor writes whole) is one step. When the first step creates a value
+  with many leaves (a new binding), the next edit of one of them within the window joins it.
+- Undo and redo keep the 5-revision diagram cap: whole steps go, the oldest past steps first. An undo or redo with nothing to do
+  ends the edit run, and leaves the query editors and the validity messages alone; a real step clears the validity messages and
+  remounts the query editors.
+- A reset of `hover.rows` removes only that key; `hover.enabled` stays (a hover with only `enabled` is valid and merges with the
+  rows of the patterns).
+- The tabs follow the ARIA tabs pattern (one tab stop, arrow keys, Home and End).

@@ -363,3 +363,32 @@ it('sets the hover width of a single chart to the chart width, not the row', () 
   renderCard(cardOf(chartRow({ history: readyHistory([1, 2]) })));
   expect(screen.getByTestId('dmap-chart-hover').style.width).toBe('264px');
 });
+it('renders the inline variant in the page flow: no sheet, no close button, no placement, full width', () => {
+  const model: ConfiguredCardModel = {
+    title: 'Router',
+    links: [{ title: 'Docs', href: '/docs', target: '_blank', origin: {} as never }],
+    demands: [],
+    diagnostics: [],
+    rows: [{ key: 'b', kind: 'value', title: 'Temperature', text: '42 °C', state: 'ready' }],
+  };
+  // A narrow width would make a floating card a bottom sheet.
+  render(<Card model={model} pinned={true} variant="inline" width={300} timeRange={getDefaultTimeRange()} />);
+  const card = screen.getByTestId('dmap-card');
+  expect(card.getAttribute('data-variant')).toBe('inline');
+  expect(card.getAttribute('data-sheet')).toBe('false');
+  expect(card.getAttribute('role')).toBe('group');
+  expect(card.style.left).toBe('');
+  expect(card.style.top).toBe('');
+  expect(card.style.width).toBe('');
+  expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+  expect(screen.getByText('42 °C')).toBeTruthy();
+  // The inline card has no click to pin: it shows the links as they are, and no "Click for links" hint.
+  expect(screen.getByRole('link', { name: 'Docs' }).getAttribute('href')).toBe('/docs');
+  expect(screen.queryByText('Click for links')).toBeNull();
+});
+it('keeps the floating card a sheet below the breakpoint', () => {
+  const model: ConfiguredCardModel = { title: 'Router', links: [], demands: [], diagnostics: [], rows: [] };
+  render(<Card model={model} pinned={true} x={0} y={0} width={300} height={300} onClose={() => {}} />);
+  expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
+  expect(screen.getByTestId('dmap-card').getAttribute('data-variant')).toBe('floating');
+});

@@ -80,7 +80,15 @@ for (const theme of ['dark', 'light'] as const) {
     await expect(cancel).toBeEnabled();
     await cancel.click();
     await expect(heading).toBeVisible();
-    // the three panes stay inside the popup
+    // Below 1000 px the popup is in tab mode: the Inspector tab shows (a cell was selected) and the other panes stay
+    // mounted but hidden. Above, the three panes stay inside the popup.
+    await expect(page.getByTestId('dmap-popup-layout')).toHaveAttribute('data-dmap-layout', 'tabs');
+    await expect(dialog.getByTestId('dmap-pane-inspector')).toBeInViewport({ ratio: 0.9 });
+    for (const pane of ['dmap-pane-list', 'dmap-pane-stage']) {
+      await expect(dialog.getByTestId(pane)).toBeHidden();
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.getByTestId('dmap-popup-layout')).toHaveAttribute('data-dmap-layout', 'panes');
     for (const pane of ['dmap-pane-list', 'dmap-pane-stage', 'dmap-pane-inspector']) {
       await expect(dialog.getByTestId(pane)).toBeInViewport({ ratio: 0.9 });
     }

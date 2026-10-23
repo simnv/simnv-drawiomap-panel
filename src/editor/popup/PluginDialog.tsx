@@ -14,7 +14,7 @@ import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
 import pluginJson from '../../plugin.json';
 import { isTop, pop, push } from './overlayStack';
-import { useEscOwner } from './useEscOwner';
+import { usePopupKeys } from './usePopupKeys';
 
 /**
  * A plugin-owned dialog with the look of a Grafana `Modal`.
@@ -105,7 +105,7 @@ export function PluginDialog({ title, onDismiss, onEscape, overlayId, children }
     return () => pop(escId);
   }, [hasEscape, escId]);
   const guardId = overlayId ?? escId;
-  const esc = useEscOwner({ id: escId, dialogRef, enabled: hasEscape, onEscape: onEscape ?? noop });
+  const esc = usePopupKeys({ id: escId, dialogRef, enabled: hasEscape, onEscape: onEscape ?? noop });
   const [host] = useState(() => {
     const el = document.createElement('div');
     el.dataset.pluginSandbox = pluginJson.id;

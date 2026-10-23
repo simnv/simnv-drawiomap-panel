@@ -77,6 +77,16 @@ describe('BindingsPopup', () => {
     expect(screen.getByTestId('dmap-bindings-editor')).toBeTruthy();
   });
 
+  it('shows the hover card preview first in the inspector for a selected element', () => {
+    mount();
+    expect(screen.queryByRole('region', { name: 'Hover card preview' })).toBeNull();
+    selectStageCell('a');
+    const preview = screen.getByRole('region', { name: 'Hover card preview' });
+    expect(preview.textContent).toContain('No card for this element');
+    const inspector = screen.getByRole('complementary', { name: 'Diagram binding inspector' });
+    expect(inspector.querySelector('section')).toBe(preview);
+  });
+
   it('closes on Esc when the draft is clean', () => {
     const { onClose } = mount();
     esc();
@@ -183,5 +193,93 @@ describe('BindingsPopup', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     update(onOptionsChange.mock.calls[0][0]);
     expect(screen.queryByText(CONFLICT)).toBeNull();
+  });
+
+  describe('undo and redo', () => {
+    const label = () => (screen.getByLabelText('Label template') as HTMLInputElement).value;
+    const undoButton = () => screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement;
+    const redoButton = () => screen.getByRole('button', { name: 'Redo' }) as HTMLButtonElement;
+    const ctrl = (target: Element, key: string, extra: Record<string, boolean> = {}) =>
+      fireEvent.keyDown(target, { key, ctrlKey: true, ...extra });
+
+    it('disables the buttons at the ends and lists the shortcuts', () => {
+      mount();
+      expect(undoButton().disabled).toBe(true);
+      expect(redoButton().disabled).toBe(true);
+      expect(undoButton().getAttribute('aria-keyshortcuts')).toContain('Control+Z');
+      expect(redoButton().getAttribute('aria-keyshortcuts')).toContain('Control+Shift+Z');
+      makeDirty();
+      expect(undoButton().disabled).toBe(false);
+      expect(redoButton().disabled).toBe(true);
+      fireEvent.click(undoButton());
+      expect(label()).toBe('');
+      expect(undoButton().disabled).toBe(true);
+      expect(redoButton().disabled).toBe(false);
+      fireEvent.click(redoButton());
+      expect(label()).toBe('Changed');
+    });
+
+    it('undoes and redoes with the keys when the focus is on a button', () => {
+      mount();
+      makeDirty();
+      const target = screen.getByRole('button', { name: 'Close bindings' });
+      ctrl(target, 'z');
+      expect(label()).toBe('');
+      ctrl(target, 'Z', { shiftKey: true });
+      expect(label()).toBe('Changed');
+      ctrl(target, 'z');
+      ctrl(target, 'y');
+      expect(label()).toBe('Changed');
+      fireEvent.keyDown(target, { key: 'z', metaKey: true });
+      expect(label()).toBe('');
+    });
+
+    it('undoes with the focus on the page body while the popup is the top overlay', () => {
+      mount();
+      makeDirty();
+      ctrl(document.body, 'z');
+      expect(label()).toBe('');
+    });
+
+    it('leaves the key to a text input, a Monaco root and a nested dialog', () => {
+      mount();
+      makeDirty();
+      ctrl(screen.getByLabelText('Label template'), 'z');
+      expect(label()).toBe('Changed');
+      const body = screen.getByTestId('dmap-bindings-popup');
+      const monaco = document.createElement('div');
+      monaco.className = 'monaco-editor';
+      monaco.tabIndex = 0;
+      body.appendChild(monaco);
+      ctrl(monaco, 'z');
+      expect(label()).toBe('Changed');
+      const nested = document.createElement('div');
+      nested.setAttribute('role', 'dialog');
+      const inner = document.createElement('button');
+      nested.appendChild(inner);
+      body.appendChild(nested);
+      ctrl(inner, 'z');
+      expect(label()).toBe('Changed');
+      monaco.remove();
+      nested.remove();
+    });
+
+    it('does not undo while the discard confirmation is on top', async () => {
+      mount();
+      makeDirty();
+      esc();
+      await screen.findByText('Discard changes?');
+      ctrl(document.body, 'z');
+      expect(label()).toBe('Changed');
+    });
+
+    it('clears the history with Apply', () => {
+      mount();
+      makeDirty();
+      fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+      expect(undoButton().disabled).toBe(true);
+      expect(redoButton().disabled).toBe(true);
+      expect(label()).toBe('Changed');
+    });
   });
 });

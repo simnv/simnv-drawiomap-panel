@@ -1,6 +1,8 @@
 import { Button, Select } from '@grafana/ui';
-import React, { useLayoutEffect, useRef } from 'react';
-import type { EffectiveCellBinding } from '../binding/patterns';
+import React, { useLayoutEffect, useMemo, useRef } from 'react';
+import { displayProvenance, type DisplayOwner, type EffectiveCellBinding } from '../binding/patterns';
+import type { CellMeta } from '../types';
+import { fieldSourceOf } from './fieldSource';
 import { draftPatternIndex, type BindingDraft, type DraftAction } from './draft';
 import { DisplayFields, newBinding, TextField } from './BindingFields';
 import type { DisplayConfig } from '../model/config';
@@ -15,6 +17,8 @@ export interface BindingInspectorProps {
   dispatch: (action: DraftAction) => void;
   fields?: string[];
   chartEligible?: boolean;
+  /** The identity of the selected cell: the sources of its fields come from the merge of the draft. */
+  meta?: CellMeta;
 }
 export function BindingInspector({
   draft,
@@ -24,8 +28,10 @@ export function BindingInspector({
   dispatch,
   fields,
   chartEligible,
+  meta,
 }: BindingInspectorProps) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const provenance = useMemo(() => (meta ? displayProvenance(draft.config, meta) : undefined), [draft.config, meta]);
   useLayoutEffect(() => {
     if (!draft.cellId) {
       return;
@@ -38,6 +44,12 @@ export function BindingInspector({
   }
   const pattern = draft.scope === 'pattern' ? draft.config.patterns[draftPatternIndex(draft)] : undefined;
   const editDisplay = pattern?.display ?? binding.display;
+  const editing: DisplayOwner = pattern
+    ? { kind: 'pattern', index: draftPatternIndex(draft) }
+    : { kind: 'override', cellId: draft.cellId };
+  const sourceOf = provenance
+    ? (path: string) => ({ ...fieldSourceOf(provenance, path, editing, draft.config), scope: draft.scope })
+    : undefined;
   return (
     <section aria-label="Element bindings">
       <h3 ref={heading} tabIndex={-1}>
@@ -165,6 +177,8 @@ export function BindingInspector({
         value={editDisplay}
         queries={draft.config.queries}
         fields={fields}
+        sourceOf={sourceOf}
+        onReset={(path) => dispatch({ type: 'unset', path })}
         onChange={(display) => {
           const patch: Partial<DisplayConfig> = { ...display };
           // Preserve shared section settings unless the user changed that setting explicitly.
