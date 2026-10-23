@@ -302,3 +302,16 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
   }
   return out;
 }
+
+/** The swatch of the collapsed legend chip: the colours of the first scale, low to high. */
+export function chipSwatch(blocks: LegendBlock[]): string {
+  const first = blocks[0];
+  const colors = first?.gradient?.colors ?? first?.entries.map((e) => e.color) ?? [];
+  if (colors.length === 0) {
+    return 'transparent';
+  }
+  if (colors.length === 1) {
+    return colors[0];
+  }
+  return `linear-gradient(to right, ${colors.join(', ')})`;
+}

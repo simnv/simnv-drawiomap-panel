@@ -175,4 +175,12 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         settings: { min: 1, integer: true },
         showIf: (o) => o.legend?.show !== false,
       })
+      .addBooleanSwitch({
+        path: 'legend.collapsed',
+        name: 'Start collapsed',
+        description: 'The legend starts as a small chip. Click the chip to open it. Drag it to move it.',
+        category: ['Legend'],
+        defaultValue: DEFAULT_OPTIONS.legend!.collapsed,
+        showIf: (o) => o.legend?.show !== false,
+      })
   );
