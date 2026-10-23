@@ -56,3 +56,35 @@ The services of the compose profile `isolation` (see `docker-compose.yaml`). Com
 - The failed test in the sandbox is `live zoom on a phone › the fitted diagram is at the top of a tall panel and
 centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The fitted diagram fills the full panel
   height on a phone viewport in the sandbox. This is an open item.
+
+## Bindings popup: Task 0
+
+Spike and measurements for the bindings popup (spec `2026-10-23-bindings-popup-design.md`, sections 4.5 and 4.6).
+The spike was a `React.lazy(() => import('./spike'))` component that shows `data-testid="dmap-spike"` in panel edit.
+The test opened the panel editor and expected the element. The chunk (`164.js`, 321 bytes) loaded in all variants.
+
+| Grafana | Setting                   | URL                           | Chunk loads |
+| ------- | ------------------------- | ----------------------------- | ----------- |
+| 12.4.13 | none                      | http://localhost:3012         | pass        |
+| 13.2.4  | none                      | http://localhost:3013         | pass        |
+| 12.4.13 | frontend sandbox          | http://localhost:3122         | pass        |
+| 13.2.4  | frontend sandbox          | http://localhost:3123         | pass        |
+| 13.2.4  | `content_security_policy` | http://localhost:3133         | pass        |
+| 13.2.4  | sandbox + CSP             | http://localhost:3143         | pass        |
+| 13.2.4  | `app_sub_url=/grafana`    | http://localhost:3153/grafana | pass        |
+
+Stage build time (`sanitizeSvg` + `mountSvg` + `buildCellIndex`, `performance.now()`, Grafana 12.4.13, Chromium, first
+build after page load) and JS heap after two forced garbage collections (CDP `Runtime.getHeapUsage`):
+
+| Diagram                                          | SVG size | Cells | Build time | Heap, one stage | Heap, two stages |
+| ------------------------------------------------ | -------- | ----- | ---------- | --------------- | ---------------- |
+| `demo-l3.svg`                                    | 72 kB    | 108   | 8 ms       | 38.0 MB         | 38.7 MB          |
+| `demo-l1.svg`                                    | 101 kB   | 172   | 11 ms      | 38.1 MB         | 38.9 MB          |
+| `legacy-html-labels.svg`                         | 386 kB   | 100   | 12 ms      | 39.1 MB         | 38.8 MB          |
+| synthetic (`scripts/gen-synthetic-svg.mjs 2000`) | 668 kB   | 2001  | 77 ms      | 43.8 MB         | 45.4 MB          |
+
+Decisions:
+
+- Import strategy (spec 4.6): **lazy** (`React.lazy`). All seven variants are green.
+- Stage build (spec Q3): **in render** (`useStage` as it is). The largest synthetic diagram builds in 77 ms, below the
+  200 ms limit. A second stage adds 0.7 to 1.6 MB.

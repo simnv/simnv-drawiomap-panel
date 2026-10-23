@@ -185,6 +185,8 @@ P1 starts with a spike (phase 1, Task 0): a trivial lazy component behind a temp
 - Any red: static import. `scripts/check-bundle.sh` limit goes to 500 000 bytes with the reason in `docs/acceptance.md`
   and in this section. View mode still loads no draw.io code (the invariant of `CODING_STANDARDS.md`).
 
+**Task 0 result (2026-10-23): lazy.** All seven variants load the chunk. See `docs/acceptance.md`, table "Bindings popup: Task 0".
+
 ### 4.7 Draft operations
 
 - `display` (one cell or one pattern), `unset path` (P2), `display-many` (P3) and `batch` (P3) are reducer actions.
@@ -381,6 +383,7 @@ close; external conflict; real `Select` Esc order; freshness deadline during the
   everywhere else and through the header buttons. Tests include a datasource code editor and a nested dialog.
 - **Q3 Stage build timing.** `useStage` builds in render, so the shell cannot paint first with it. P1 Task 0 measures;
   above 200 ms on the large fixtures the build moves into an effect behind a spinner in P1, not P2.
+  **Task 0 result: build in render.** The 2000-cell diagram builds in 77 ms (limit 200 ms); a second stage adds 0.7 to 1.6 MB.
 - **Q4 Cells group.** Shown whenever the filter has text: exact id first, then id prefix, then contains in id or label;
   20 rows and a "Show more" button.
 - **Q5 Box select.** Shift+drag with pointer capture, Esc cancel, outside release clipped, click suppression (6, P3).
