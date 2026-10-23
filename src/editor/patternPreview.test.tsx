@@ -77,7 +77,7 @@ function setup() {
     timeRange: getDefaultTimeRange(),
     timeZone: 'utc',
     scopedVars: {},
-    refreshMs: 1000,
+    refreshMs: 0,
     intervalMs: 1000,
     generation: 1,
   };

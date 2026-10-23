@@ -1,4 +1,12 @@
-import { editorField, chooseOption, filterBindings, openQueryRow, openSection, selectStageCell } from './testUtils';
+import {
+  buttonNamed,
+  editorField,
+  chooseOption,
+  filterBindings,
+  openQueryRow,
+  openSection,
+  selectStageCell,
+} from './testUtils';
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { DiagramConfigV2 } from '../model/config';
@@ -26,7 +34,7 @@ const config: DiagramConfigV2 = {
     { id: 'devices', name: 'Devices', select: { ids: ['device-1', 'device-2'] }, display: { label: 'Shared' } },
   ],
 };
-const applyButton = () => screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement;
+const applyButton = () => buttonNamed('Apply bindings') as HTMLButtonElement;
 const stageCell = (id: string) => screen.getByTestId('dmap-popup-stage').querySelector(`g[data-cell-id="${id}"]`)!;
 const queryContext = {
   timeRange: getDefaultTimeRange(),
