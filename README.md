@@ -435,6 +435,277 @@ Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elemen
 
 ![Elements below 60 % load highlighted](docs/images/legend-highlight.png)
 
+The legend starts as a small chip with a colour swatch and the word **Legend**. Click or tap the chip, or focus it and press Enter or Space, to open the full legend. Click the **Legend** header again to close it. The pictures above show the open legend.
+
+You can move the legend, closed or open, to any place in the panel:
+
+- Drag the header with the mouse or a finger. A move of less than 4 px is a click. A drag does not open or close the legend, does not pan or zoom the diagram and does not open a card.
+- With the focus on the legend, the arrow keys move it by 10 px. Shift with an arrow key moves it by 50 px.
+- Double-click the header, or press Home, to put it back in its corner.
+
+The legend never leaves the panel, also when you make the panel smaller. The **Corner** option sets the place where it starts. The place and the open or closed state are not saved: a reload shows the legend again as the options say.
+
+The legend stays in its place when you zoom, pan or scroll the diagram. In the top-left corner, it starts below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it starts below the area of the Grafana panel menu button. It catches the pointer only inside its own box. It is above the diagram and below the hover cards.
+
+The options are in the **Legend** group:
+
+| Option          | Path               | Meaning                                                                    |
+| --------------- | ------------------ | -------------------------------------------------------------------------- |
+| Show legend     | `legend.show`      | Default on.                                                                |
+| Corner          | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`.        |
+| Maximum scales  | `legend.maxBlocks` | The legend shows at most this number of blocks, then `+N more`. Default 4. |
+| Start collapsed | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.              |
+
+A saved panel without `legend.collapsed` starts collapsed.
+
+In the panel JSON:
+
+```json
+{ "legend": { "show": true, "corner": "bottom-right", "maxBlocks": 4, "collapsed": true } }
+```
+
+### Capacity of each direction
+
+An asymmetric link has one capacity for each direction. Set `capacity` on a `series` entry (a number, or a template in bit/s). The percent and the colour of each direction use its own capacity.
+
+```json
+{
+  "kind": "history",
+  "label": "Traffic",
+  "unit": "bps",
+  "max": "capacity",
+  "series": [
+    {
+      "binding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "direction": "up",
+      "capacity": "${cell.capacity_a2b_bps}"
+    },
+    {
+      "binding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "direction": "down",
+      "capacity": "${cell.capacity_b2a_bps}"
+    }
+  ]
+}
+```
+
+For one direction, the order is: the `capacity` of the `series` entry, the row `capacity`, the **Max** of its field config, no percent. A `series` capacity or a row capacity that does not resolve gives no percent for the direction (see above). With `"max": "capacity"`, the half range is the larger of the two capacities. The legend title stays **Link load %**. The demo panel 3 has a link with the attributes `capacity_a2b_bps` (100 Mb/s) and `capacity_b2a_bps` (50 Mb/s), and its combined row uses them.
+
+#### Chart height
+
+A chart with both directions is 80 px tall by default. Each half is 40 px tall, the same height as a single sparkline. A row with one direction is 40 px tall. With both directions, the zero line stays in the middle of the chart.
+
+Set `height` on a V2 `display.hover.rows` history row to change the chart height. Use a number from 16 to 400, in pixels. This option applies to single and combined history rows. Legacy `shape.card` rows do not accept this option.
+
+Click or tap to pin the card before you scroll. The desktop card scrolls when its content exceeds the available panel height. In panels narrower than 480 px, the card becomes a bottom sheet. The sheet scrolls when its content exceeds 60% of the viewport height.
+
+```json
+{ "kind": "history", "label": "Traffic", "capacity": 100000000, "height": 120, "series": [] }
+{ "kind": "history", "label": "CPU", "height": 64, "binding": { "queryId": "cpu", "match": {}, "reducer": "last" } }
+```
+
+In the first example, replace the empty `series` with the two entries from the combined row example above. In the inspector, use **Hover row N height**. Clear the field to restore the default height.
+
+The third demo panel shows a combined row on its link (synthetic transmit and receive rate of `rtr-a:wan1`). The link has two capacities, 100 Mb/s up and 50 Mb/s down.
+
+### Status summary
+
+A band above the diagram has one row for each status cause: the state, the reason and the number of elements, for example `? missing   No data   26 elements`. Elements with the same state and reason share one row, also when each element has its own query. The most severe cause is first (down, critical, warning, stale, missing), then the cause with the most elements. Normal elements do not show in the band.
+
+The band has at most **Status summary rows** rows (default 3), and at most half of the panel height. When there are more causes, the last row is `+N more (M elements)` (with one row: `N causes (M elements)`). Click it to show all causes; **Show less** collapses the band again. The band takes its own height above the diagram, so it never covers the diagram. The diagram fits into the remaining height. Set **Status summary rows** to 0 to hide the band. The markers on the elements stay.
+
+### Supported query results and migration
+
+Finite Grafana data frames with one selected numeric series and one time field support histories. Null gaps retain their meaning. Empty, single-sample, failed and stale histories show text. Logs, traces, legacy datapoint objects, streaming/partial frames, ambiguous numeric fields and invalid timestamps receive validation messages. Direct queries do not automatically inherit Grafana panel transformations or field overrides; use returned field configuration or explicit inspector units.
+
+Only the installed Prometheus and TestData plugins in the [tested matrix](docs/research/authoring-compatibility.md) have browser evidence. Other datasource editors can require capabilities this panel does not supply. Without a supported editor, use validated native-target JSON import. This is not universal datasource compatibility.
+
+The plugin is unshipped. Recreate authoring configuration if a saved format cannot be migrated. Existing V1 rules remain available until a V2 config is applied; a V2 config takes precedence without deleting the saved legacy options or dashboard. Back up dashboard JSON before conversion. Revert the implementation commits and restore that JSON for rollback; draw.io XML/SVG alone does not contain plugin behavior.
+
+## Legacy rules
+
+Existing V1 panels use the **Legacy rules** option. Use the form or the YAML tab. Copy `demo/rules.yaml` as a start:
+
+```yaml
+- name: links
+  select: { kind: link }
+  link:
+    a2b: { refId: A, match: { job: 'node-${from.node}', device: '${from.port}' } }
+    b2a: { refId: A, match: { job: 'node-${to.node}', device: '${to.port}' } }
+    card: { title: '${from.node} ↔ ${to.node}' }
+  reducer: last
+  url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}'
+  urlTitle: 'Traffic of ${from.node}:${from.port}'
+- name: lan by port speed
+  select: { kind: link, attrs: { pg-to: '/:br-lan$/' } }
+  link:
+    capacity: { refId: S, match: { job: 'node-${to.node}', device: '${to.port}' } }
+- name: wan uplinks
+  select: { kind: link, attrs: { pg-to: '/^rtr-(a|b):(wan1|wan2|wan3|pppoe)$/' } }
+  link:
+    a2b: { refId: W, match: { job: 'node-${from.node}', device: '${from.port}' } }
+    b2a: { refId: W, match: { job: 'node-${to.node}', device: '${to.port}' } }
+- name: tunnels 100M
+  select: { kind: link, attrs: { pg-to: '/:(ts0|tun-in|relay-in)$/' } }
+  link: { capacity: 100000000 }
+- name: node up
+  select: { kind: node }
+  shape:
+    series: { refId: C, match: { job: 'node-${cell.pg-id}' } }
+    target: icon
+    card:
+      - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
+      - { title: load 1m, refId: D, match: { job: 'node-${cell.pg-id}' } }
+  url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}'
+  urlTitle: 'Host ${cell.pg-id}'
+- name: router cpu
+  select: { ids: [rtr-a, rtr-b] }
+  shape:
+    card:
+      - title: CPU
+        refId: E
+        match: { job: 'node-${cell.pg-id}' }
+        unit: percent
+        decimals: 0
+        url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}&var-metric=cpu'
+      - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
+```
+
+Rules are an ordered list. A later rule overrides an earlier rule for the same property of the same cell. In the example, the `lan by port speed` rule adds a capacity to the LAN links. The `wan uplinks` rule changes the series of the WAN links to query `W`. The last rule replaces the card rows of the two routers. The `series` and the `target` of the `node up` rule stay.
+
+The rules do not set colours. The colours come from the field config of the panel. See [How colours and thresholds work](#how-colours-and-thresholds-work).
+
+### Rule fields
+
+| Field        | Meaning                                                                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Name of the rule. The rule editor and the warnings show it.                                                                                         |
+| `select`     | Which cells the rule applies to. See below.                                                                                                         |
+| `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (see [Capacity](#capacity)). `card` sets the card of links. |
+| `shape`      | For shapes. See below.                                                                                                                              |
+| `reducer`    | `last` (default), `mean`, `max` or `min`. Reduces the series to one value. The card rows use it too.                                                |
+| `label`      | Template of the text that `shape.text` writes into the node label. The default is `${value}`. Links ignore it (the panel shows a warning).          |
+| `thresholds` | Removed. A rule with it still loads, but the panel ignores it and shows a warning. Set **Thresholds** in the field config.                          |
+| `url`        | Link in the card footer, and the click target of card rows without their own URL. It can use templates and dashboard variables.                     |
+| `urlTitle`   | Title of the `url` link in the card footer (a template). The default is `Open dashboard` for a `/d/<uid>` URL, else `Open <card title>`.            |
+
+A series selector has `refId` (the query), `name` and `match` (a map of label name to matcher).
+
+#### `shape`
+
+| Field    | Meaning                                                                                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `series` | The series that sets the state colour.                                                                                                                                          |
+| `target` | What the colour changes: `icon` (default), `shape` (the fill of the whole shape) or `stroke` (the outline). Without an icon, or with a bitmap icon, `icon` colours the outline. |
+| `text`   | `true` writes the value into the node label (see `label`).                                                                                                                      |
+| `card`   | A list of card rows. Without it, the card has one row for `series`.                                                                                                             |
+
+The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-icon~<pg-id>`. Some icons are a white glyph on a tile (`pg-iconTile~<pg-id>`). Then the tile takes the colour. A hover or a click on the icon or on the node description opens the card of the node. A hover on a link label (`pg-kind="link-label"` with `pg-of`, or `pg-linkLabel~<link pg-id>`) opens the card of the link. Each other cell with `pg-of` belongs to the node or link with that `pg-id`. Such sub-cells never open a card of their own.
+
+The old keys `fill: true` and `stroke: true` still work: they are the same as `target: shape` and `target: stroke`. The panel ignores the removed key `shape.sparkline` and shows a warning.
+
+#### Card rows (`shape.card`)
+
+Each row is a series selector with these extra fields:
+
+| Field      | Meaning                                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `title`    | Row title (a template). The default is the series name.                                                                    |
+| `unit`     | A Grafana unit id, for example `percent`. The default is the unit of the field config.                                     |
+| `decimals` | Number of decimals. The default comes from the field config.                                                               |
+| `url`      | Click target of the row (a template). `${labels.<name>}` uses the labels of the row series. The default is the rule `url`. |
+
+#### Link card (`link.card`)
+
+| Field   | Meaning                                                                               |
+| ------- | ------------------------------------------------------------------------------------- |
+| `title` | Card title (a template). The default is the label text of the link, else its `pg-id`. |
+| `url`   | Click target of the `a2b` and `b2a` rows (a template). The default is the rule `url`. |
+
+The card of a link always has one row for each bound direction: the current value, the percent of capacity and a sparkline.
+
+### Cell selectors (`select`)
+
+| Key       | Meaning                                                                        |
+| --------- | ------------------------------------------------------------------------------ |
+| `kind`    | `node`, `port`, `link`, `link-label`, `other` or `any`.                        |
+| `ids`     | A list of cell ids or `pg-id` values.                                          |
+| `attrs`   | A map of attribute name to matcher (the `data-meta-*` attributes of the cell). |
+| `label`   | A matcher for the label text.                                                  |
+| `between` | `[a, b]`. A link between two nodes, in any direction.                          |
+
+A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:(wan1|wan3)$/`.
+
+### Templates
+
+| Template                       | Value                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| `${cell.<attr>}`               | Any attribute of the cell, for example `${cell.pg-id}` or `${cell.capacity}`. |
+| `${from.node}`, `${from.port}` | The first end of a link (from `pg-from`).                                     |
+| `${to.node}`, `${to.port}`     | The second end of a link (from `pg-to`).                                      |
+| `${labels.<name>}`             | A label of the matched series. Use it in `url`.                               |
+| `${value}`                     | The value, formatted with the unit and decimals of the field config.          |
+| `${percent}`                   | The value as a percent of the capacity.                                       |
+
+`${value}` and `${percent}` are for `label`. Grafana dashboard variables also resolve in all URLs. If a template in a series selector does not resolve, the cell is "unbound". It is grey and the panel shows a warning.
+
+A missing series gives a grey "no data" state. It is never green.
+
+Unit, decimals, value mappings and data links come from the Grafana field config.
+
+## How colours and thresholds work
+
+The panel has no colour settings of its own. It uses the standard field config of Grafana, as all Grafana panels do:
+
+- **Standard options → Color scheme**: for example **From thresholds**, **Single color**, **Classic palette** or a continuous scheme such as **Green-Yellow-Red (by value)**.
+- **Thresholds**: the steps and their colours.
+- **Standard options → Max**: a capacity for links (see [Capacity](#capacity)).
+- **Overrides**: each of these settings for one query (**Fields returned by query**), one series name, or a regex. Use overrides to give each kind of link its own scale, for example a continuous scheme for the WAN query and thresholds for the LAN query.
+
+For each link half and each shape, the panel finds the matched series. Then it uses the field config of that series, with the overrides applied:
+
+```text
+matched series ─▶ field config (defaults + overrides)
+                        │
+        link half with a capacity?
+          │ yes                                   │ no (and all shapes)
+          ▼                                       ▼
+  percent = value in bit/s / capacity × 100       the display colour of the raw value:
+          │                                       value mappings, then thresholds
+          ├─ From thresholds: the steps are       and Color scheme (like a Stat panel)
+          │  percent (in Absolute and in
+          │  Percentage mode)
+          ├─ continuous scheme: percent / 100
+          │  is the position on the scale (0..1)
+          └─ other schemes: the colour of the scheme
+```
+
+- A link half with a capacity: the colour input is the utilisation, 0 to 100 %. A step at 85 means 85 % of the capacity. Values above 100 % get the end colour of a continuous scheme. The line width also follows the percent (option **Link width**).
+- A link half without a capacity, and every shape: the colour is the normal display colour of the raw value, as in any Grafana panel. For example, an `up` query with the thresholds base red and 1 green colours a node green when it is up.
+- No data: always grey, never green.
+
+The overlay attribute `data-dmap-step` is the index of the active threshold step.
+
+### Colour legend
+
+A small legend in a corner of the panel shows each colour that the bound cells can show now, with its threshold or its text. The panel makes it from the colour settings above. You do not configure the scales.
+
+![Colour legend of the demo network](docs/images/colour-legend.png)
+
+- One block for each colour scale, with the unit or the kind as the title: **Link load %** for links with a capacity, else the query name (or **Link** or **Node**) and the unit symbol, for example `PoE W`. The **Display name** of the field replaces this title. Two different scales with the same title get their queries in brackets, for example `Link load % (A)` and `Link load % (W)`.
+- **From thresholds**: one swatch for each step, from low to high: `< 60%`, `≥ 60%`, `≥ 85%`. Links with a capacity show percent. Other values show the field unit.
+- A continuous scheme: a gradient bar from `0%` to `100%` for links with a capacity, else from the field **Min** to **Max**.
+- **Single color** and **Shades**: one swatch, `All values`.
+- Value mappings with a colour: one swatch with the mapping text, before the threshold swatches. A link with a capacity takes its colour from the percent, so its mappings do not show.
+- **Classic palette** (a colour for each series): no block, because the colour does not tell a value.
+- **Status**: the colours of the status markers: `Down, critical`, `Warning, stale` and `Missing`. Normal elements have no marker.
+- **No data**: the grey of links and shapes without data.
+- Identical scales merge into one block, also when they come from different queries. An override that changes the thresholds or the scheme of one query gives that query its own block.
+
+Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elements in that band stay visible and the other elements of the legend dim. Move the pointer away, or move the focus, to show all elements again.
+
+![Elements below 60 % load highlighted](docs/images/legend-highlight.png)
+
 The legend stays in its corner when you zoom, pan or scroll the diagram. In the top-left corner, it is below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it leaves free the area of the Grafana panel menu button. It catches the pointer only inside its own box. In a panel narrower than 480 px (a phone), the legend starts closed as a **Legend** chip; tap the chip to open or close it. On a wider panel, click **Legend** to close it.
 
 The options are in the **Legend** group:

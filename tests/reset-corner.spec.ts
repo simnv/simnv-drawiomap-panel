@@ -79,6 +79,8 @@ for (const title of ['', 'Reset corner test']) {
         const reset = panel.getByRole('button', { name: 'Reset zoom' });
         await expect(band).toBeVisible();
         await expect(legend).toHaveAttribute('data-dmap-corner', corner);
+        // the legend starts as a chip: open it, the largest case for the overlap checks
+        await legend.getByRole('button', { name: 'Legend' }).click();
         await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();
         await expect(badge).toBeVisible();
         const viewBox = () => panel.locator('svg').first().getAttribute('viewBox');

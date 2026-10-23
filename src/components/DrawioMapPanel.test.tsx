@@ -1196,17 +1196,13 @@ describe('DrawioMapPanel live zoom', () => {
       const corner = screen.getByTestId('dmap-corner');
       const legend = screen.getByTestId('dmap-legend');
       expect(legend.getAttribute('data-dmap-corner')).toBe(c);
+      // its own corner: not in the top-left stack. The top-left legend starts below the button and the badge.
+      expect(corner.contains(legend)).toBe(false);
       if (c === 'top-left') {
-        // one stack: the reset button, the badge, then the legend, so the three never overlap
-        const order = [btn, screen.getByTestId('dmap-warning-badge'), legend];
-        expect(order.every((el) => corner.contains(el))).toBe(true);
-        order.slice(1).forEach((el, i) => {
-          expect(order[i].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        });
-        expect(legend.style.position).toBe('');
-      } else {
-        // its own corner: not in the top-left stack
-        expect(corner.contains(legend)).toBe(false);
+        expect(legend.style.left).toBe('4px');
+        // 4 px edge + 32 px button + 4 px gap
+        expect(parseFloat(legend.style.top)).toBeGreaterThanOrEqual(40);
+        expect(btn.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       }
       if (c === 'top-right') {
         // below the area of the panel menu button (28 px: the button and a gap), so the hover menu does not cover it
@@ -2341,13 +2337,22 @@ describe('DrawioMapPanel cards only for cells with content', () => {
 
 describe('DrawioMapPanel colour legend', () => {
   const legend = () => screen.queryByTestId('dmap-legend');
+  const openLegend = () =>
+    props({ options: { ...options, legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false } } });
   async function setup(p = props()) {
     const r = render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
     return r;
   }
-  it('shows the scales of the bound cells in the bottom-right corner by default', async () => {
+  it('starts as a collapsed chip in the bottom-right corner; a saved panel without the key is collapsed', async () => {
     await setup();
+    const el = legend()!;
+    expect(el.getAttribute('data-dmap-corner')).toBe('bottom-right');
+    expect(within(el).getByRole('button', { name: 'Legend' }).getAttribute('aria-expanded')).toBe('false');
+    expect(within(el).queryAllByTestId('dmap-legend-block')).toHaveLength(0);
+  });
+  it('shows the scales of the bound cells when it starts open', async () => {
+    await setup(openLegend());
     const el = legend()!;
     expect(el.getAttribute('data-dmap-corner')).toBe('bottom-right');
     expect(
@@ -2370,17 +2375,16 @@ describe('DrawioMapPanel colour legend', () => {
     );
     expect(legend()!.getAttribute('data-dmap-corner')).toBe('top-left');
   });
-  it('a narrow panel shows only the Legend chip until a tap opens it', async () => {
+  it('a click on the chip opens the legend and opens or pins no card', async () => {
     await setup(props({ width: 400 }));
     const chip = within(legend()!).getByRole('button', { name: 'Legend' });
     expect(chip.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(chip);
     expect(within(legend()!).getAllByTestId('dmap-legend-block').length).toBeGreaterThan(0);
-    // the click on the legend does not open or pin a card
     expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('hovering an entry highlights the cells in that band and dims the others; leaving clears it', async () => {
-    const { container } = await setup();
+    const { container } = await setup(openLegend());
     const block = within(legend()!)
       .getAllByTestId('dmap-legend-block')
       .find((b) => b.getAttribute('aria-label') === 'Link load %')!;
