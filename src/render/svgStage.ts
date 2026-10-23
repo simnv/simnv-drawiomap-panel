@@ -88,6 +88,11 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
     // draw.io edge polylines carry fill="none" AND pointer-events="stroke"; stencil outlines have fill="none" only.
     const line = paths.find((p) => p.getAttribute('fill') === 'none' && p.getAttribute('pointer-events') === 'stroke');
     const arrows = line ? paths.filter((p) => p !== line && p.getAttribute('pointer-events') === 'all') : [];
+    const ends = line
+      ? (ownDescendants(group, 'ellipse, circle').filter(
+          (el) => !el.closest('switch, foreignObject')
+        ) as SVGGraphicsElement[])
+      : [];
     let shape: SVGGraphicsElement | undefined;
     if (!line) {
       shape = ownDescendants(group, Array.from(SHAPE_TAGS).join(',')).find(
@@ -102,6 +107,7 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
       shape,
       line,
       arrows,
+      ends,
       label: label.el,
       original: {
         fill: shape?.style.fill,

@@ -364,3 +364,52 @@ describe('applyPatches with a patched icon cell', () => {
     expect((index.get('i1')!.shape as SVGElement).style.fill).toMatch(RED);
   });
 });
+
+describe('applyPatches on the dot of a bare link end (bare-end-dot)', () => {
+  const ID = 'pg-link~dot-a-b';
+  const load = () => {
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/bare-end-dot.svg'), 'utf8');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(raw).svg));
+    const [start, end] = index.get(ID)!.ends as SVGElement[];
+    return { index, entry: index.get(ID)!, start, end };
+  };
+  const link = (l: CellPatch['link']): PatchMap => new Map([[ID, patch(ID, { link: l })]]);
+  const AMBER = /ff8800|255, 136, 0/;
+  const BLUE = /0000ff|0, 0, 255/;
+
+  it('indexes the ellipses of the edge group as end markers', () => {
+    expect(load().entry.ends).toHaveLength(2);
+  });
+  it('paints each dot with the colour of the half at its end, fill and stroke', () => {
+    const { index, start, end } = load();
+    applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }), new Set());
+    expect(start.style.fill).toMatch(AMBER);
+    expect(start.style.stroke).toMatch(AMBER);
+    expect(end.style.fill).toMatch(BLUE);
+    // the end dot has stroke="none": no stroke is added
+    expect(end.style.stroke).toBe('');
+  });
+  it('paints both dots with the colour of the only half', () => {
+    const { index, start, end } = load();
+    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }), new Set());
+    expect(start.style.fill).toMatch(AMBER);
+    expect(end.style.fill).toMatch(AMBER);
+    prev = applyPatches(index, link({ b2a: ok({ color: '#0000ff' }) }), prev);
+    expect(start.style.fill).toMatch(BLUE);
+    expect(end.style.fill).toMatch(BLUE);
+  });
+  it('restores the original paint when the link has no patch any more', () => {
+    const { index, start, end } = load();
+    const before = [start, end].map((e) => [e.style.fill, e.style.stroke]);
+    const prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }), new Set());
+    applyPatches(index, new Map(), prev);
+    expect([start, end].map((e) => [e.style.fill, e.style.stroke])).toEqual(before);
+  });
+  it('restores the original paint when a refresh patch has no halves', () => {
+    const { index, start } = load();
+    const before = start.style.fill;
+    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }), new Set());
+    prev = applyPatches(index, link({}), prev);
+    expect(start.style.fill).toBe(before);
+  });
+});
