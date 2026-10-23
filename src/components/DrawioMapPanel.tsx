@@ -158,6 +158,13 @@ const canHover = () => !(typeof window.matchMedia === 'function' && window.match
 export function DrawioMapPanel(props: PanelProps<Options>) {
   const editing = usePanelEditing(props.id);
   const [popup, setPopup] = useState<PopupTarget | null>(null);
+  // The element that opened the popup gets the focus back on close. The chunk loader and the dialog mount later and
+  // would see another active element, so the panel records it at the click.
+  const opener = useRef<HTMLElement | null>(null);
+  const openPopup = useCallback((target: PopupTarget) => {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPopup(target);
+  }, []);
   // The popup lives as long as the edit session of this panel: leaving panel edit (navigation, "Back to dashboard",
   // browser back) or unmounting drops it with its draft, also while its chunk still loads.
   const [wasEditing, setWasEditing] = useState(editing);
@@ -172,9 +179,17 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
     if (!editing) {
       return;
     }
-    return subscribe(currentAddress(), setPopup);
-  }, [editing]);
-  const closePopup = useCallback(() => setPopup(null), []);
+    return subscribe(currentAddress(), openPopup);
+  }, [editing, openPopup]);
+  const closePopup = useCallback(() => {
+    setPopup(null);
+    const target = opener.current;
+    window.requestAnimationFrame(() => {
+      if (target?.isConnected) {
+        target.focus();
+      }
+    });
+  }, []);
   return (
     <PanelQueryProvider
       data={props.data}
@@ -185,7 +200,7 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
     >
       {/* Sandbox hosts do not provide a definite percentage-height containing block. */}
       <div style={{ width: props.width, height: props.height }}>
-        <DrawioMapPanelView {...props} editing={editing} popupOpen={!!popup} onOpenBindings={setPopup} />
+        <DrawioMapPanelView {...props} editing={editing} popupOpen={!!popup} onOpenBindings={openPopup} />
       </div>
       {editing && popup ? (
         <LazyBindingsPopup

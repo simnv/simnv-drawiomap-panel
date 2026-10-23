@@ -1,13 +1,14 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import type { FieldConfigSource, PanelData, PanelProps } from '@grafana/data';
-import { ConfirmModal, Modal, useTheme2 } from '@grafana/ui';
+import { ConfirmModal, useTheme2 } from '@grafana/ui';
 import { bindContextFor } from '../../binding/context';
 import { DEFAULT_OPTIONS, type Diagram, type Options } from '../../types';
 import type { DiagramConfigV2 } from '../../model/config';
 import { BindingEditor } from '../BindingEditor';
 import { EMPTY_CONFIG } from '../draft';
 import { baseRevision, hasConflict } from '../revision';
+import { PluginDialog } from './PluginDialog';
 import { useOverlay } from './overlayStack';
 import type { PopupTarget } from './popupBus';
 import { useEscOwner } from './useEscOwner';
@@ -93,15 +94,7 @@ export function BindingsPopup({
 
   return (
     <>
-      <Modal
-        isOpen
-        title="Edit bindings"
-        onDismiss={requestClose}
-        closeOnEscape={false}
-        closeOnBackdropClick={false}
-        className={styles.modal}
-        contentClassName={styles.content}
-      >
+      <PluginDialog title="Edit bindings" onDismiss={requestClose}>
         <div ref={bodyRef} className={styles.body} data-testid="dmap-bindings-popup" {...esc}>
           <BindingEditor
             key={session}
@@ -121,7 +114,7 @@ export function BindingsPopup({
             onReload={reload}
           />
         </div>
-      </Modal>
+      </PluginDialog>
       {confirming && <DiscardConfirm onDiscard={onClose} onKeepEditing={() => setConfirming(false)} />}
     </>
   );
@@ -143,19 +136,6 @@ function DiscardConfirm({ onDiscard, onKeepEditing }: { onDiscard: () => void; o
 }
 
 const classes = {
-  // The size of the draw.io modal.
-  modal: css`
-    width: 95vw;
-    max-width: 95vw;
-    height: 90vh;
-    display: flex;
-    flex-direction: column;
-  `,
-  content: css`
-    flex: 1;
-    min-height: 0;
-    display: flex;
-  `,
   body: css`
     flex: 1;
     min-width: 0;

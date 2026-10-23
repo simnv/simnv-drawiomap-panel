@@ -8,7 +8,7 @@ export const PANES_STORAGE_KEY = 'dmap.bindingsPopup.panes';
 type Pane = 'list' | 'inspector';
 const LIMITS = {
   list: { initial: 280, min: 200, max: 520 },
-  inspector: { initial: 380, min: 300, max: 640 },
+  inspector: { initial: 400, min: 300, max: 720 },
 };
 /** The centre pane keeps at least this width when a side pane grows. */
 const MIN_CENTRE = 320;
@@ -21,6 +21,9 @@ interface Sizes {
   list: number;
   inspector: number;
 }
+
+/** The share of the popup that the inspector takes by default while a query is open: a datasource editor needs room. */
+const WIDE_INSPECTOR = '45%';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -40,6 +43,15 @@ function readSizes(): Sizes {
   return sizes;
 }
 
+/** The user has set the inspector width in an earlier session. */
+function hasStoredInspector(): boolean {
+  try {
+    return typeof JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY) ?? 'null')?.inspector === 'number';
+  } catch {
+    return false;
+  }
+}
+
 function writeSizes(sizes: Sizes) {
   try {
     window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(sizes));
@@ -52,6 +64,8 @@ export interface PopupLayoutProps {
   list: ReactNode;
   stage: ReactNode;
   inspector: ReactNode;
+  /** The inspector shows a wide editor (a query): it takes a larger share until the user sets a size. */
+  wideInspector?: boolean;
 }
 
 /**
@@ -61,10 +75,11 @@ export interface PopupLayoutProps {
  * `useSplitter` of `@grafana/ui` sizes only the second pane of a split. It would resize the left pane in the wrong
  * direction, and nested splitters would change the list when the inspector changes. So the layout has its own handles.
  */
-export function PopupLayout({ list, stage, inspector }: PopupLayoutProps) {
+export function PopupLayout({ list, stage, inspector, wideInspector = false }: PopupLayoutProps) {
   const styles = useStyles2(getStyles);
   const containerRef = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState(readSizes);
+  const [inspectorSet, setInspectorSet] = useState(hasStoredInspector);
   const latest = useRef(sizes);
   /** The largest size of a pane: the container keeps the minimum of the centre and the other pane. */
   const maxFor = useCallback((pane: Pane) => {
@@ -77,6 +92,9 @@ export function PopupLayout({ list, stage, inspector }: PopupLayoutProps) {
     const next = { ...latest.current, [pane]: clamp(size, LIMITS[pane].min, LIMITS[pane].max) };
     latest.current = next;
     setSizes(next);
+    if (pane === 'inspector') {
+      setInspectorSet(true);
+    }
   }, []);
   const commit = useCallback(() => writeSizes(latest.current), []);
 
@@ -97,7 +115,7 @@ export function PopupLayout({ list, stage, inspector }: PopupLayoutProps) {
       <Handle pane="inspector" value={sizes.inspector} maxFor={maxFor} resize={resize} commit={commit} />
       <div
         className={cx(styles.pane, styles.side)}
-        style={{ flexBasis: sizes.inspector }}
+        style={{ flexBasis: wideInspector && !inspectorSet ? WIDE_INSPECTOR : sizes.inspector }}
         data-testid="dmap-pane-inspector"
         data-pane-size={sizes.inspector}
       >
@@ -178,7 +196,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     overflow: 'hidden',
   }),
   pane: css({ display: 'flex', flexDirection: 'column', position: 'relative', minHeight: 0 }),
-  side: css({ flexGrow: 0, flexShrink: 0 }),
+  side: css({ flexGrow: 0, flexShrink: 0, maxWidth: LIMITS.inspector.max }),
   centre: css({ flex: '1 1 0', minWidth: 0, overflow: 'hidden' }),
   handle: css({
     flex: `0 0 ${HANDLE}px`,

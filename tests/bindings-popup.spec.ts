@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { binding } from '../src/fixtures/authoring-config';
 import {
+  chooseEditorOption,
   closeBindingsPopup,
   filterBindings,
   openBindingsPopup,
@@ -350,5 +351,113 @@ test.describe('bindings popup: datasource query editors', () => {
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
     await closeBindingsPopup(page);
+  });
+});
+
+test.describe('bindings popup: plugin-owned dialog', () => {
+  test('the stage is attached to the page and holds no sandbox mock element', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }) => {
+    const uid = await createDiagram(config);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = await openBindingsPopup(page);
+    const stage = dialog.getByTestId('dmap-popup-stage');
+    await expect(stage.locator('svg [data-cell-id="device-1"]')).toBeAttached();
+    expect(
+      await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="dmap-popup-stage"]');
+        return !!el && document.contains(el) && !!el.querySelector('svg');
+      })
+    ).toBe(true);
+    await expect(page.locator('[data-grafana-plugin-sandbox-element]')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Edit bindings' })).toBeVisible();
+  });
+
+  test('the focus moves into the dialog, Tab wraps inside it and the focus returns to the opener on close', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }) => {
+    const uid = await createDiagram(config);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = page.getByRole('dialog', { name: 'Edit bindings' });
+    await openBindingsPopup(page);
+    const inside = () =>
+      page.evaluate(
+        () => !!document.activeElement?.closest('[role="dialog"][aria-label], [role="dialog"][aria-labelledby]')
+      );
+    expect(await inside()).toBe(true);
+    // Tab and Shift+Tab never leave the dialog
+    for (let i = 0; i < 70; i++) {
+      await page.keyboard.press('Tab');
+      expect(await inside(), `Tab ${i}`).toBe(true);
+    }
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press('Shift+Tab');
+      expect(await inside(), `Shift+Tab ${i}`).toBe(true);
+    }
+    await closeBindingsPopup(page);
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId('dmap-edit-bindings')).toBeFocused();
+  });
+
+  test('the discard question, a Select menu and the draw.io modal paint above the dialog', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }) => {
+    const uid = await createDiagram(config);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = await openBindingsPopup(page);
+    await selectStageCell(dialog, 'device-1');
+    // a Select menu: the click on its option needs an unobscured target
+    await chooseEditorOption(popupInspector(dialog), 'Edit scope', 'All elements matching this pattern');
+    await expect(popupInspector(dialog).getByText('All elements matching this pattern', { exact: true })).toBeVisible();
+    // the draw.io modal opens on top and takes the focus
+    await popupInspector(dialog).getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+    const editor = page.getByRole('dialog').filter({ has: page.getByTestId('dmap-editor-modal') });
+    await expect(editor).toBeVisible();
+    await editor.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.getByTestId('dmap-editor-modal')).toHaveCount(0);
+    // the discard question
+    await popupInspector(dialog).getByLabel('Label template', { exact: true }).fill('Dirty');
+    await dialog.getByRole('button', { name: 'Close bindings', exact: true }).click();
+    const question = page.getByRole('dialog', { name: 'Discard changes?' });
+    await expect(question).toBeVisible();
+    await question.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await expect(question).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+  });
+
+  test('the diagram fills the stage pane and ignores the zoom options of the panel', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }) => {
+    const uid = await createDiagram(config, {
+      zoom: { mode: 'fit', percent: 300, wheel: false, pan: false, minScale: 3 },
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = await openBindingsPopup(page);
+    const pane = dialog.getByTestId('dmap-pane-stage');
+    const svg = dialog.getByTestId('dmap-popup-stage').locator('> svg');
+    await expect(svg).toBeVisible();
+    await expect
+      .poll(async () => {
+        const [p, s] = [(await pane.boundingBox())!, (await svg.boundingBox())!];
+        // fitted: the svg touches the pane on one axis and stays inside it on both
+        const fillsWidth = s.width >= p.width * 0.9;
+        const fillsHeight = s.height >= p.height * 0.9;
+        const inside = s.width <= p.width + 1 && s.height <= p.height + 1;
+        return inside && (fillsWidth || fillsHeight);
+      })
+      .toBe(true);
   });
 });

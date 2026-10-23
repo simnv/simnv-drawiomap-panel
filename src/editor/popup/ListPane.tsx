@@ -124,10 +124,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
   }),
   footer: css({
     flex: 'none',
-    maxHeight: '35%',
+    maxHeight: '30%',
     overflowY: 'auto',
-    padding: theme.spacing(1),
+    padding: theme.spacing(0.5, 1),
     borderTop: `1px solid ${theme.colors.border.weak}`,
+    // Compact: the Grafana field and section margins are tall for a footer.
+    '& > div': { marginBottom: theme.spacing(0.5) },
   }),
-  actions: css({ display: 'flex', flexWrap: 'wrap', gap: theme.spacing(1), marginBottom: theme.spacing(1) }),
+  actions: css({ display: 'flex', flexWrap: 'wrap', gap: theme.spacing(0.5), marginBottom: theme.spacing(0.5) }),
 });

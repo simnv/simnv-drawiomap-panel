@@ -134,6 +134,14 @@ describe('BindingsPopup', () => {
     });
   });
 
+  it('warns when the saved diagram changed while a geometry draft or bindings draft is open', () => {
+    const { update } = mount();
+    makeDirty();
+    update({ ...optionsOf(), diagram: diagramOf(svgOf('a', 'b', 'c'), 'replacement') });
+    expect(screen.getByText(CONFLICT)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('Reload saved starts a new draft from the new saved bindings', () => {
     const { update, onOptionsChange } = mount();
     makeDirty();

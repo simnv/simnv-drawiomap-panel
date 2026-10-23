@@ -15,6 +15,18 @@ const size = (testId: string) => Number(screen.getByTestId(testId).getAttribute(
 describe('PopupLayout', () => {
   beforeEach(() => window.localStorage.removeItem(PANES_STORAGE_KEY));
 
+  it('gives a wide inspector 45% until the user sets a size', () => {
+    const wide = <PopupLayout list={<i />} stage={<i />} inspector={<i />} wideInspector />;
+    const view = render(wide);
+    expect(screen.getByTestId('dmap-pane-inspector').style.flexBasis).toBe('45%');
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize inspector pane' }), { key: 'ArrowLeft' });
+    expect(screen.getByTestId('dmap-pane-inspector').style.flexBasis).toBe('416px');
+    view.unmount();
+    // the stored size of an earlier session counts as set
+    render(wide);
+    expect(screen.getByTestId('dmap-pane-inspector').style.flexBasis).toBe('416px');
+  });
+
   it('shows the three regions and two handles with the default sizes', () => {
     render(layout());
     expect(screen.getByTestId('dmap-pane-list')).toHaveProperty('textContent', 'list content');
@@ -22,7 +34,7 @@ describe('PopupLayout', () => {
     expect(screen.getByTestId('dmap-pane-inspector')).toHaveProperty('textContent', 'inspector content');
     expect(screen.getAllByRole('separator')).toHaveLength(2);
     expect(size('dmap-pane-list')).toBe(280);
-    expect(size('dmap-pane-inspector')).toBe(380);
+    expect(size('dmap-pane-inspector')).toBe(400);
   });
 
   it('keeps the centre pane shrinkable and clipped', () => {
@@ -46,7 +58,7 @@ describe('PopupLayout', () => {
     fireEvent.pointerDown(inspectorHandle, { clientX: 900, pointerId: 1 });
     fireEvent.pointerMove(inspectorHandle, { clientX: 850, pointerId: 1 });
     fireEvent.pointerUp(inspectorHandle, { clientX: 850, pointerId: 1 });
-    expect(size('dmap-pane-inspector')).toBe(430);
+    expect(size('dmap-pane-inspector')).toBe(450);
   });
 
   it('limits the sizes', () => {
@@ -63,11 +75,11 @@ describe('PopupLayout', () => {
     const [listHandle, inspectorHandle] = screen.getAllByRole('separator');
     fireEvent.keyDown(listHandle, { key: 'ArrowRight', shiftKey: true });
     fireEvent.keyDown(inspectorHandle, { key: 'ArrowLeft' });
-    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ list: 344, inspector: 396 });
+    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ list: 344, inspector: 416 });
     first.unmount();
     render(layout());
     expect(size('dmap-pane-list')).toBe(344);
-    expect(size('dmap-pane-inspector')).toBe(396);
+    expect(size('dmap-pane-inspector')).toBe(416);
   });
 
   it('resets a pane on a double click', () => {
@@ -86,7 +98,7 @@ describe('PopupLayout', () => {
     window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify({ list: 'wide', inspector: 9999 }));
     render(layout());
     expect(screen.getAllByTestId('dmap-pane-inspector').map((el) => el.getAttribute('data-pane-size'))).toContain(
-      '640'
+      '720'
     );
   });
 

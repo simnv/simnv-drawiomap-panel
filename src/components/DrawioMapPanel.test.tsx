@@ -1768,4 +1768,76 @@ describe('DrawioMapPanel bindings popup', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
     expect(sourceLookups.mock.calls.filter(([ref]) => ref?.uid === 'other').length).toBe(other);
   });
+  it('runs an edited native target for the popup only, keeps the panel watch alive, and the panel runs it after Apply', async () => {
+    const release = vi.fn();
+    nativeQuery.mockReset().mockImplementation(
+      (request) =>
+        new Observable((observer) => {
+          observer.next({ data: [frame('D', {}, [request.targets[0].expr === 'changed' ? 84 : 42])] });
+          return release;
+        })
+    );
+    const view = renderSaved(labelled());
+    const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
+    await waitFor(() => expect(panelLabel()).toBe('Saved 42'));
+    openPopup();
+    openQueryRow('Metric');
+    fireEvent.change(editorField('Native target JSON'), {
+      target: { value: JSON.stringify({ refId: 'D', expr: 'changed' }) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+    selectElement('a');
+    await waitFor(() => expect(stageText('a')).toBe('Saved 84'));
+    expect(panelLabel()).toBe('Saved 42');
+    expect(view.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    await waitFor(() => expect(panelLabel()).toBe('Saved 84'));
+    expect(nativeQuery.mock.calls.filter(([request]) => request.targets[0].expr === 'changed').length).toBeGreaterThan(
+      0
+    );
+  });
+
+  it('ignores a late result of an obsolete context in the popup stage and follows the new context', async () => {
+    const receivers: Array<{ range: number; receive: (value: number) => void }> = [];
+    nativeQuery.mockReset().mockImplementation(
+      (request) =>
+        new Observable((observer) => {
+          const receive = (value: number) => observer.next({ data: [frame('D', {}, [value])] });
+          receivers.push({ range: Number(request.range.from.valueOf()), receive });
+          receive(request.range.from.valueOf() === 1000 ? 84 : 42);
+          return () => {};
+        })
+    );
+    const config = labelled();
+    const p = props({ id: 61 });
+    const saved = { ...options, rules: [], config, diagram };
+    const view = render(<DrawioMapPanel {...p} options={saved} />);
+    openPopup();
+    await waitFor(() => expect(stageText('a')).toBe('Saved 42'));
+    const old = receivers.slice();
+    view.rerender(
+      <DrawioMapPanel {...p} options={saved} timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }} />
+    );
+    await waitFor(() => expect(stageText('a')).toBe('Saved 84'));
+    act(() => old.forEach((entry) => entry.receive(999)));
+    expect(stageText('a')).toBe('Saved 84');
+  });
+
+  it('releases every query demand of the panel and of the popup on unmount', async () => {
+    const release = vi.fn();
+    nativeQuery.mockReset().mockImplementation(
+      () =>
+        new Observable((observer) => {
+          observer.next({ data: [frame('D', {}, [42])] });
+          return release;
+        })
+    );
+    const view = renderSaved(labelled());
+    openPopup();
+    await waitFor(() => expect(stageText('a')).toBe('Saved 42'));
+    const started = nativeQuery.mock.calls.length;
+    expect(started).toBeGreaterThan(0);
+    view.unmount();
+    expect(release).toHaveBeenCalledTimes(started);
+  });
 });

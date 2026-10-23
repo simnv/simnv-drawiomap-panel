@@ -603,6 +603,7 @@ export function BindingEditor({
       )}
       <div className={styles.layout}>
         <PopupLayout
+          wideInspector={selection.kind === 'query'}
           list={
             <ListPane
               list={bindingsList}
