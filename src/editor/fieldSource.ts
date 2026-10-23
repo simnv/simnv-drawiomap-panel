@@ -1,4 +1,4 @@
-import { ownersOfPath, type DisplayOwner, type DisplayProvenance } from '../binding/patterns';
+import { ownersOfPath, pathRelated, type DisplayOwner, type DisplayProvenance } from '../binding/patterns';
 import type { DiagramConfigV2, DisplayConfig } from '../model/config';
 import { valueAtPath } from './leafPaths';
 
@@ -42,8 +42,7 @@ export function ownDisplay(config: DiagramConfigV2, editing: DisplayOwner): Part
  */
 function ownersAt(provenance: DisplayProvenance, path: string): DisplayOwner[] {
   const target = path.replace(/\[\d+\].*$/, '');
-  const related = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
-  const set = Array.from(provenance.keys()).some((key) => related(target, key) || related(key, target));
+  const set = Array.from(provenance.keys()).some((key) => pathRelated(target, key) || pathRelated(key, target));
   return set ? ownersOfPath(provenance, target) : [];
 }
 

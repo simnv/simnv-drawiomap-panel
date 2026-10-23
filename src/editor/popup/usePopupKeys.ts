@@ -56,14 +56,22 @@ export function hasNativeUndo(target: EventTarget | null): boolean {
   );
 }
 
+/** The element takes part in the page: laid out, not `visibility: hidden`, and not hidden or inert through an ancestor. */
+function isShown(el: Element): boolean {
+  return (
+    el.getClientRects().length > 0 &&
+    getComputedStyle(el).visibility !== 'hidden' &&
+    !el.closest('[aria-hidden="true"], [inert]')
+  );
+}
+
 /**
  * Another dialog is open on the page: a datasource dialog, a confirmation. The popup is not the dialog that the user
  * works in, even when the focus has not moved into the other dialog yet.
  */
 function foreignDialogOpen(own: Element | null | undefined): boolean {
   return Array.from(document.querySelectorAll('[role="dialog"]')).some(
-    (dialog) =>
-      dialog !== own && !dialog.contains(own ?? null) && !own?.contains(dialog) && dialog.getClientRects().length > 0
+    (dialog) => dialog !== own && !dialog.contains(own ?? null) && !own?.contains(dialog) && isShown(dialog)
   );
 }
 

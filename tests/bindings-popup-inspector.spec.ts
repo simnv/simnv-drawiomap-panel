@@ -200,11 +200,31 @@ test.describe('bindings popup: undo and redo', () => {
     await dialog.getByRole('button', { name: 'Edit query health' }).click();
     const editor = popupInspector(dialog).locator('.monaco-editor .view-lines');
     await expect(editor).toBeVisible();
+    const text = async () => (await editor.innerText()).replace(/\s+/g, ' ').trim();
+    const original = await text();
     await editor.click();
     await page.keyboard.press('ControlOrMeta+End');
-    await page.keyboard.type(' ');
+    await page.keyboard.type('zzz');
+    await expect(editor).toContainText('zzz');
+    // Monaco takes its own undo: the typed text goes, the draft keeps its step.
     await page.keyboard.press('ControlOrMeta+z');
+    await expect(editor).not.toContainText('zzz');
+    expect(await text()).toBe(original);
     await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+    await expect(undoButton(dialog)).toBeEnabled();
+    // Outside Monaco the key undoes the last draft step: the label override.
+    // The editor syncs its text into the draft as one step: the draft has the label step and that step. Each press of
+    // the key outside Monaco undoes one draft step and never changes the query text.
+    await undoButton(dialog).focus();
+    await page.keyboard.press('ControlOrMeta+z');
+    expect(await text()).toBe(original);
+    if (await undoButton(dialog).isEnabled()) {
+      await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+      await page.keyboard.press('ControlOrMeta+z');
+    }
+    await expect(group(dialog, 'Overrides', 0)).toBeVisible();
+    await expect(undoButton(dialog)).toBeDisabled();
+    expect(await text()).toBe(original);
     await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
     await closeBindingsPopup(page);
   });
@@ -304,6 +324,16 @@ test.describe('bindings popup: narrow screens', () => {
     await expect(dialog.getByTestId('dmap-pane-stage')).toBeHidden();
     fs.mkdirSync(SHOTS, { recursive: true });
     await page.screenshot({ path: `${SHOTS}/tabs-list-900-${port()}.png` });
+    // The ARIA tabs pattern: one tab stop; the arrow keys move focus and selection; Home goes back.
+    await expect(dialog.getByRole('tab', { name: 'List' })).toHaveAttribute('tabindex', '0');
+    await expect(dialog.getByRole('tab', { name: 'Diagram' })).toHaveAttribute('tabindex', '-1');
+    await dialog.getByRole('tab', { name: 'List' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(dialog.getByRole('tab', { name: 'Diagram' })).toBeFocused();
+    await expect(dialog.getByRole('tab', { name: 'Diagram' })).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Home');
+    await expect(dialog.getByRole('tab', { name: 'List' })).toBeFocused();
+    await expect(list(dialog)).toBeVisible();
     await dialog.getByRole('tab', { name: 'Diagram' }).click();
     await expect(dialog.getByTestId('dmap-pane-stage')).toBeVisible();
     await expect(list(dialog)).toBeHidden();

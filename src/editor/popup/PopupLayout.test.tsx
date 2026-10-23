@@ -199,6 +199,34 @@ describe('PopupLayout', () => {
       width.mockRestore();
     });
 
+    it('follows the ARIA tabs pattern: one tab stop, arrow keys, Home and End move focus and selection', () => {
+      const width = at(700);
+      render(layout());
+      const tab = (name: string) => screen.getByRole('tab', { name });
+      const stops = () => screen.getAllByRole('tab').map((el) => el.tabIndex);
+      expect(stops()).toEqual([0, -1, -1]);
+      tab('List').focus();
+      fireEvent.keyDown(tab('List'), { key: 'ArrowRight' });
+      expect(tab('Diagram').getAttribute('aria-selected')).toBe('true');
+      expect(document.activeElement).toBe(tab('Diagram'));
+      expect(stops()).toEqual([-1, 0, -1]);
+      fireEvent.keyDown(tab('Diagram'), { key: 'End' });
+      expect(document.activeElement).toBe(tab('Inspector'));
+      expect(hiddenPanes()).toEqual(['list', 'stage']);
+      // The ends wrap.
+      fireEvent.keyDown(tab('Inspector'), { key: 'ArrowRight' });
+      expect(document.activeElement).toBe(tab('List'));
+      fireEvent.keyDown(tab('List'), { key: 'ArrowLeft' });
+      expect(document.activeElement).toBe(tab('Inspector'));
+      fireEvent.keyDown(tab('Inspector'), { key: 'Home' });
+      expect(document.activeElement).toBe(tab('List'));
+      expect(stops()).toEqual([0, -1, -1]);
+      // Other keys do nothing.
+      fireEvent.keyDown(tab('List'), { key: 'a' });
+      expect(tab('List').getAttribute('aria-selected')).toBe('true');
+      width.mockRestore();
+    });
+
     it('follows a controlled tab and reports a change', () => {
       const width = at(700);
       const onTabChange = vi.fn();

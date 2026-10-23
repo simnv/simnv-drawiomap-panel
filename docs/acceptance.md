@@ -144,5 +144,12 @@ Decisions and deviations:
   check of the Esc owner still apply there.
 - The reset of a path in the health rule resets the whole `status` rule (its schema needs the binding and the default), as a hover
   row path resets `hover.rows`.
-- Coalescing joins edits that touch exactly one leaf path. An edit of a binding field sends the whole binding (several leaf
-  paths), so each such edit is its own step.
+- Coalescing joins edits that change exactly one leaf. The leaves come from a diff of the owner's display before and after the
+  edit, so typing into one field of a binding (which the editor writes whole) is one step. When the first step creates a value
+  with many leaves (a new binding), the next edit of one of them within the window joins it.
+- Undo and redo keep the 5-revision diagram cap: whole steps go, the oldest past steps first. An undo or redo with nothing to do
+  ends the edit run, and leaves the query editors and the validity messages alone; a real step clears the validity messages and
+  remounts the query editors.
+- A reset of `hover.rows` removes only that key; `hover.enabled` stays (a hover with only `enabled` is valid and merges with the
+  rows of the patterns).
+- The tabs follow the ARIA tabs pattern (one tab stop, arrow keys, Home and End).

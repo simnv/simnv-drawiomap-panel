@@ -146,6 +146,34 @@ export function PopupLayout({
     setOwnTab(next);
     onTabChange?.(next);
   };
+  // The ARIA tabs pattern: only the active tab is a tab stop (the `Tab` component sets no tabindex of its own), and the
+  // arrow keys, Home and End move the focus and the selection together.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    for (const el of tabsRef.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []) {
+      el.tabIndex = el.id === `dmap-popup-tab-${tab}` ? 0 : -1;
+    }
+  }, [tab, tabs]);
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const at = TABS.findIndex(({ id }) => `dmap-popup-tab-${id}` === (event.target as HTMLElement).id);
+    const next =
+      at < 0
+        ? undefined
+        : event.key === 'ArrowRight'
+          ? (at + 1) % TABS.length
+          : event.key === 'ArrowLeft'
+            ? (at + TABS.length - 1) % TABS.length
+            : event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? TABS.length - 1
+                : undefined;
+    if (next !== undefined) {
+      event.preventDefault();
+      changeTab(TABS[next].id);
+      tabsRef.current?.querySelector<HTMLElement>(`#dmap-popup-tab-${TABS[next].id}`)?.focus();
+    }
+  };
   const shownRef = useRef(shown);
   useLayoutEffect(() => {
     shownRef.current = shown;
@@ -184,18 +212,20 @@ export function PopupLayout({
   return (
     <div className={styles.root} data-testid="dmap-popup-layout" data-dmap-layout={tabs ? 'tabs' : 'panes'}>
       {tabs && (
-        <TabsBar className={styles.tabs}>
-          {TABS.map(({ id, label }) => (
-            <Tab
-              key={id}
-              id={`dmap-popup-tab-${id}`}
-              aria-controls={`dmap-popup-pane-${id}`}
-              label={label}
-              active={tab === id}
-              onChangeTab={() => changeTab(id)}
-            />
-          ))}
-        </TabsBar>
+        <div ref={tabsRef} className={styles.tabs} onKeyDown={onTabKeyDown}>
+          <TabsBar>
+            {TABS.map(({ id, label }) => (
+              <Tab
+                key={id}
+                id={`dmap-popup-tab-${id}`}
+                aria-controls={`dmap-popup-pane-${id}`}
+                label={label}
+                active={tab === id}
+                onChangeTab={() => changeTab(id)}
+              />
+            ))}
+          </TabsBar>
+        </div>
       )}
       <div ref={containerRef} className={styles.container}>
         <div

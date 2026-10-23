@@ -414,7 +414,7 @@ export function Card({
           width={Math.max(1, inline ? width - INLINE_CHROME : Math.min(W, width) - 16)}
         />
       ))}
-      {pinned && model.links.length ? (
+      {(pinned || inline) && model.links.length ? (
         <div className={styles.footer}>
           {model.links.map((l, i) => (
             <LinkButton
@@ -433,7 +433,7 @@ export function Card({
           ))}
         </div>
       ) : null}
-      {!pinned && (model.links.length || model.rows.some((r) => r.href)) ? (
+      {!pinned && !inline && (model.links.length || model.rows.some((r) => r.href)) ? (
         <div className={styles.hint}>Click for links</div>
       ) : null}
     </div>

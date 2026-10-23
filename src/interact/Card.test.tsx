@@ -382,6 +382,9 @@ it('renders the inline variant in the page flow: no sheet, no close button, no p
   expect(card.style.width).toBe('');
   expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
   expect(screen.getByText('42 °C')).toBeTruthy();
+  // The inline card has no click to pin: it shows the links as they are, and no "Click for links" hint.
+  expect(screen.getByRole('link', { name: 'Docs' }).getAttribute('href')).toBe('/docs');
+  expect(screen.queryByText('Click for links')).toBeNull();
 });
 it('keeps the floating card a sheet below the breakpoint', () => {
   const model: ConfiguredCardModel = { title: 'Router', links: [], demands: [], diagnostics: [], rows: [] };

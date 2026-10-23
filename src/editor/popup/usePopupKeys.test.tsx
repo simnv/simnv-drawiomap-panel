@@ -177,6 +177,32 @@ describe('usePopupKeys', () => {
       expect(onUndo).toHaveBeenCalledTimes(1);
     });
 
+    it.each([
+      ['display: none', (el: HTMLElement) => (el.style.display = 'none')],
+      ['visibility: hidden', (el: HTMLElement) => (el.style.visibility = 'hidden')],
+      ['aria-hidden on itself', (el: HTMLElement) => el.setAttribute('aria-hidden', 'true')],
+      ['aria-hidden on an ancestor', (el: HTMLElement) => el.parentElement!.setAttribute('aria-hidden', 'true')],
+      ['inert', (el: HTMLElement) => el.setAttribute('inert', '')],
+    ])('does not count a hidden dialog (%s) as open', (_name, hide) => {
+      push('test');
+      const onUndo = vi.fn();
+      render(<Harness onEscape={vi.fn()} onUndo={onUndo} />);
+      const wrapper = document.createElement('div');
+      const other = document.createElement('div');
+      other.setAttribute('role', 'dialog');
+      wrapper.appendChild(other);
+      document.body.appendChild(wrapper);
+      vi.spyOn(other, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+      hide(other);
+      // `display: none` has no client rects in a browser; the spy cannot tell, so check the other cases by the key.
+      if (other.style.display === 'none') {
+        vi.spyOn(other, 'getClientRects').mockReturnValue([] as unknown as DOMRectList);
+      }
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Header' }), { key: 'z', ctrlKey: true });
+      expect(onUndo).toHaveBeenCalledTimes(1);
+      wrapper.remove();
+    });
+
     it('ignores plain z, Alt+Z and a covered popup', () => {
       push('test');
       const onUndo = vi.fn();

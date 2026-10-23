@@ -86,6 +86,14 @@ describe('CardPreview', () => {
     expect(screen.getByText('77 %')).toBeTruthy();
   });
 
+  it('shows the links of a card that has only a drilldown, with no "Click for links" hint', () => {
+    const only = patch({ rows: [{ kind: 'drilldown', label: 'Dashboard', url: '/d/device' }] });
+    render(view(only, resolverFor(1)));
+    expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/d/device');
+    expect(screen.queryByText('Click for links')).toBeNull();
+    expect(screen.queryByText('No card for this element')).toBeNull();
+  });
+
   it('shows an empty state for an element without a card and for no element', () => {
     const { rerender } = render(view(patch(), resolverFor(1)));
     expect(screen.getByText('No card for this element')).toBeTruthy();
