@@ -20,6 +20,11 @@ function inForeignDialog(target: EventTarget | null, own: Element | null | undef
   if (!(target instanceof Element)) {
     return false;
   }
+  // In the frontend sandbox, an element of the Grafana app (a nested Grafana modal, a datasource dialog) reaches plugin code
+  // as a mock without attributes. The mock carries this marker. Such an element belongs to another owner.
+  if (target instanceof HTMLElement && target.dataset.grafanaPluginSandboxElement !== undefined) {
+    return true;
+  }
   const dialog = target.closest('[role="dialog"], iframe');
   return !!dialog && dialog !== own;
 }

@@ -311,6 +311,11 @@ test.describe('bindings popup: datasource query editors', () => {
     const dialog = await openBindingsPopup(page);
     await dialog.getByRole('button', { name: 'Edit query health' }).click();
     const editor = popupInspector(dialog).locator('.monaco-editor .view-lines');
+    await expect(editor).toBeVisible();
+    fs.mkdirSync(SHOTS, { recursive: true });
+    await page.screenshot({
+      path: `${SHOTS}/popup-query-${new URL(process.env.GRAFANA_URL ?? 'http://localhost:3012').port}.png`,
+    });
     await editor.click();
     await page.keyboard.press('ControlOrMeta+A');
     await page.keyboard.type('node_netw');

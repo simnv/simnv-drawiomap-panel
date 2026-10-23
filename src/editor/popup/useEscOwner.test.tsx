@@ -92,6 +92,18 @@ describe('useEscOwner', () => {
     expect(onEscape).not.toHaveBeenCalled();
   });
 
+  it('does nothing for an Esc whose target is a sandbox mock of a Grafana element', () => {
+    push('test');
+    const onEscape = vi.fn();
+    render(<Harness onEscape={onEscape} />);
+    const mock = document.createElement('div');
+    mock.dataset.grafanaPluginSandboxElement = 'true';
+    document.body.appendChild(mock);
+    fireEvent.keyDown(mock, { key: 'Escape' });
+    mock.remove();
+    expect(onEscape).not.toHaveBeenCalled();
+  });
+
   it('ignores an Esc that another handler already handled', () => {
     push('test');
     const onEscape = vi.fn();

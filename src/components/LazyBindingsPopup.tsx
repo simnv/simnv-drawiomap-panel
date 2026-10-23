@@ -1,5 +1,6 @@
 import React, { Component, Suspense, useState, type ReactNode } from 'react';
-import { Alert, Button, Modal, Spinner } from '@grafana/ui';
+import { Alert, Button, Spinner } from '@grafana/ui';
+import { PluginDialog } from '../editor/popup/PluginDialog';
 import type { BindingsPopupProps } from '../editor/popup/BindingsPopup';
 
 /** A new lazy component. React keeps a rejected load, so a retry needs a new factory. */
@@ -18,25 +19,27 @@ class LoadBoundary extends Component<
       return this.props.children;
     }
     return (
-      <Modal isOpen title="Edit bindings" onDismiss={this.props.onClose}>
-        <Alert title="The editor could not load" severity="error">
-          <p>The bindings editor files did not load. Check the network, then try again.</p>
-        </Alert>
-        <Modal.ButtonRow>
-          <Button variant="secondary" onClick={this.props.onClose}>
-            Close
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              this.setState({ failed: false });
-              this.props.onRetry();
-            }}
-          >
-            Retry
-          </Button>
-        </Modal.ButtonRow>
-      </Modal>
+      <PluginDialog title="Edit bindings" onDismiss={this.props.onClose} onEscape={this.props.onClose}>
+        <div>
+          <Alert title="The editor could not load" severity="error">
+            <p>The bindings editor files did not load. Check the network, then try again.</p>
+          </Alert>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="secondary" onClick={this.props.onClose}>
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                this.setState({ failed: false });
+                this.props.onRetry();
+              }}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      </PluginDialog>
     );
   }
 }
@@ -51,11 +54,11 @@ export function LazyBindingsPopup(props: BindingsPopupProps) {
     <LoadBoundary onRetry={() => setPopup(makeLazy)} onClose={props.onClose}>
       <Suspense
         fallback={
-          <Modal isOpen title="Edit bindings" onDismiss={props.onClose}>
+          <PluginDialog title="Edit bindings" onDismiss={props.onClose} onEscape={props.onClose}>
             <div role="status" aria-label="Loading the bindings editor">
               <Spinner inline /> Loading the bindings editor…
             </div>
-          </Modal>
+          </PluginDialog>
         }
       >
         <Popup {...props} />

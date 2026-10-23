@@ -1,5 +1,6 @@
 import React, {
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -12,6 +13,8 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
 import pluginJson from '../../plugin.json';
+import { pop, push } from './overlayStack';
+import { useEscOwner } from './useEscOwner';
 
 /**
  * A plugin-owned dialog with the look of a Grafana `Modal`.
@@ -25,6 +28,8 @@ import pluginJson from '../../plugin.json';
  * modal and the `Select` menus (all Grafana portals) paint above it.
  */
 
+const noop = () => {};
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
@@ -32,6 +37,11 @@ export interface PluginDialogProps {
   title: string;
   /** The close button of the header calls it. Esc and the backdrop are the business of the owner. */
   onDismiss: () => void;
+  /**
+   * Take the Esc of the dialog: the dialog joins the overlay stack and closes with this callback. The bindings popup
+   * does not use it, because it has its own owner with a close confirmation.
+   */
+  onEscape?: () => void;
   children: ReactNode;
 }
 
@@ -79,10 +89,20 @@ export function inertOutside(keep: Array<Element | null>): () => void {
   return () => marked.forEach((el) => el.removeAttribute('inert'));
 }
 
-export function PluginDialog({ title, onDismiss, children }: PluginDialogProps) {
+export function PluginDialog({ title, onDismiss, onEscape, children }: PluginDialogProps) {
   const styles = useStyles2(getStyles);
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const escId = `plugin-dialog-${titleId}`;
+  const hasEscape = !!onEscape;
+  useEffect(() => {
+    if (!hasEscape) {
+      return;
+    }
+    push(escId);
+    return () => pop(escId);
+  }, [hasEscape, escId]);
+  const esc = useEscOwner({ id: escId, dialogRef, enabled: hasEscape, onEscape: onEscape ?? noop });
   const [host] = useState(() => {
     const el = document.createElement('div');
     el.dataset.pluginSandbox = pluginJson.id;
@@ -150,7 +170,11 @@ export function PluginDialog({ title, onDismiss, children }: PluginDialogProps) 
         aria-labelledby={titleId}
         tabIndex={-1}
         className={styles.dialog}
-        onKeyDown={onKeyDown}
+        onKeyDown={(event) => {
+          onKeyDown(event);
+          esc.onKeyDown(event);
+        }}
+        onKeyDownCapture={esc.onKeyDownCapture}
       >
         <div className={styles.header}>
           <h2 id={titleId} className={styles.title}>
@@ -198,7 +222,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     padding: theme.spacing(0.5, 2, 0),
     color: theme.colors.text.primary,
   }),
-  title: css({ margin: 0, fontSize: theme.typography.size.lg, fontWeight: theme.typography.fontWeightMedium }),
+  title: css({ margin: 0, fontSize: theme.typography.h4.fontSize, fontWeight: theme.typography.fontWeightMedium }),
   content: css({
     flex: 1,
     minHeight: 0,
