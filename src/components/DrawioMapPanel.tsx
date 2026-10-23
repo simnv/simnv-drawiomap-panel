@@ -795,6 +795,7 @@ function DrawioMapPanelView({
     <BindingEditor
       key={savedRevision}
       config={options.config ?? EMPTY_CONFIG}
+      legacyRules={options.config ? 0 : (options.rules?.length ?? 0)}
       cells={stage.index}
       data={data}
       inspectorWidth={inspectorWidth}

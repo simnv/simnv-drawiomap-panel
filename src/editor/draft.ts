@@ -30,6 +30,7 @@ export type DraftAction =
   | { type: 'selector'; select: CellSelector }
   | { type: 'widget'; widget: Widget }
   | { type: 'remove-widget'; id: string }
+  | { type: 'remove-override'; cellId: string }
   | { type: 'import'; config: unknown }
   | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
   | { type: 'reset' | 'applied' };
@@ -157,6 +158,8 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     config = { ...config, widgets: [...config.widgets.filter((w) => w.id !== action.widget.id), copy(action.widget)] };
   } else if (action.type === 'remove-widget') {
     config = { ...config, widgets: config.widgets.filter((w) => w.id !== action.id) };
+  } else if (action.type === 'remove-override') {
+    config = { ...config, overrides: config.overrides.filter((o) => o.cellId !== action.cellId) };
   }
   return { ...draft, config, diagnostics: [] };
 }

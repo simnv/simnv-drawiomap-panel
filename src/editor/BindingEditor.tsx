@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getDisplayProcessor, type PanelData } from '@grafana/data';
-import { useTheme2, useStyles2, Alert, Button, Select } from '@grafana/ui';
+import { useTheme2, useStyles2, Alert, Button, Select, Tab, TabsBar } from '@grafana/ui';
 import { resolvePatterns } from '../binding/patterns';
 import { cellAt } from '../interact/hit';
 import { validateConfig, type DiagramConfigV2 } from '../model/config';
@@ -24,6 +24,8 @@ import { clearOwnedAttrs, setOwnedAttrs } from '../render/cellAttrs';
 import { sanitizeSvg } from '../render/sanitize';
 import { fnv1a } from '../util/hash';
 import { EditorField, EditorSection, getEditorStyles } from './EditorLayout';
+import { BindingsList } from './BindingsList';
+import { buildBindingsList } from './bindingsModel';
 export interface BindingEditorProps {
   config: DiagramConfigV2;
   cells: CellIndex;
@@ -38,6 +40,8 @@ export interface BindingEditorProps {
   bindContext?: BindContext;
   diagram?: Diagram;
   onDiagramPreview?: (diagram: Diagram) => void;
+  /** Number of legacy rules of a panel that has no V2 config; the list points to the Rules editor. */
+  legacyRules?: number;
 }
 export function BindingEditor({
   config,
@@ -53,6 +57,7 @@ export function BindingEditor({
   bindContext,
   diagram,
   onDiagramPreview,
+  legacyRules,
 }: BindingEditorProps) {
   const theme = useTheme2();
   const styles = useStyles2(getEditorStyles);
@@ -60,6 +65,8 @@ export function BindingEditor({
   const [draft, dispatch] = useReducer(reduceDraft, config, createDraft);
   const [savedDiagram, setSavedDiagram] = useState(diagram);
   const [draftDiagram, setDraftDiagram] = useState(diagram);
+  const [tab, setTab] = useState<'element' | 'all'>('element');
+  const [highlight, setHighlight] = useState<string[]>([]);
   const [geometryOpen, setGeometryOpen] = useState(false);
   const [geometryError, setGeometryError] = useState('');
   const reset = () => {
@@ -151,6 +158,22 @@ export function BindingEditor({
     dispatch({ type: 'select', cellId });
     setSelectionVersion((v) => v + 1);
   };
+  // A list row opens the Element tab. A pattern is edited through one of its cells, in the pattern scope.
+  const openCell = (cellId: string) => {
+    select(cellId);
+    setTab('element');
+  };
+  const openPattern = (row: { patternId: string; matched: string[] }) => {
+    const cellId = row.matched[0] ?? cells.keys().next().value;
+    if (cellId === undefined) {
+      return;
+    }
+    dispatch({ type: 'select', cellId });
+    dispatch({ type: 'scope', scope: 'pattern', patternId: row.patternId });
+    setSelectionVersion((v) => v + 1);
+    setTab('element');
+    setHighlight([]);
+  };
   useEffect(() => {
     onPreview?.(draft.config);
   }, [draft.config, onPreview]);
@@ -164,12 +187,13 @@ export function BindingEditor({
         'aria-label': `${id} diagram element`,
         'data-dmap-selected': id === draft.cellId ? 'true' : 'false',
         'data-dmap-affected': affected.includes(id) ? 'true' : 'false',
+        'data-dmap-highlight': highlight.includes(id) ? 'true' : 'false',
       });
     }
     return () => cells.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
     // affectedKey represents the complete list without an unstable array dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, draft.cellId, affectedKey]);
+  }, [cells, draft.cellId, affectedKey, highlight]);
   const diagnostics = [...draft.diagnostics, ...validateConfig(draft.config).diagnostics, ...plan.diagnostics];
   const localPreview: QueryPreview | undefined =
     query && context && previewState?.key === previewKey
@@ -254,6 +278,30 @@ export function BindingEditor({
   const hasMetricErrors = metricDiagnostics.some((d) =>
     ['ambiguous-metric', 'unsupported-metric', 'unresolved-metadata', 'invalid-url'].includes(d.code)
   );
+  // Every diagnostic that the editor already knows, plus the hover card ones of all cells. Only the open tab pays for it.
+  const listDiagnostics = useMemo(() => {
+    if (tab !== 'all') {
+      return [];
+    }
+    const cards =
+      bound && resolve
+        ? Array.from(bound.patches.values()).flatMap(
+            (patch) => buildConfiguredCard(patch, resolve, { ...formatting, series: [] }).diagnostics
+          )
+        : [];
+    return [
+      ...draft.diagnostics,
+      ...validateConfig(draft.config).diagnostics,
+      ...(bound?.diagnostics ?? plan.diagnostics),
+      ...cards,
+    ];
+    // formatting and resolve change on every render; bound is the memo-worthy input
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, draft.config, draft.diagnostics, plan, bound]);
+  const bindingsList = useMemo(
+    () => (tab === 'all' ? buildBindingsList(draft.config, cellMetas(cells), listDiagnostics) : undefined),
+    [tab, draft.config, cells, listDiagnostics]
+  );
   const selected = draft.cellId ? cells.get(draft.cellId) : undefined;
   const override = draft.config.overrides.find((o) => o.cellId === draft.cellId);
   // Invalid drafts still expose their raw fields for correction. Validation blocks Apply.
@@ -299,7 +347,7 @@ export function BindingEditor({
     >
       <style>
         {
-          '[data-dmap-affected="true"] { outline: 2px dashed currentColor; } [data-dmap-selected="true"] { outline: 3px solid currentColor; }'
+          '[data-dmap-affected="true"] { outline: 2px dashed currentColor; } [data-dmap-selected="true"] { outline: 3px solid currentColor; } [data-dmap-highlight="true"] { outline: 3px dotted currentColor; }'
         }
       </style>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
@@ -319,8 +367,30 @@ export function BindingEditor({
               noOptionsMessage="No matching elements"
             />
           </EditorField>
+          <TabsBar className={styles.tabs}>
+            <Tab label="Element" active={tab === 'element'} onChangeTab={() => setTab('element')} />
+            <Tab
+              label="All bindings"
+              counter={draft.config.patterns.length + draft.config.overrides.length + draft.config.widgets.length}
+              active={tab === 'all'}
+              onChangeTab={() => setTab('all')}
+            />
+          </TabsBar>
         </div>
-        <div className={styles.body} role="region" aria-label="Binding editor fields">
+        {bindingsList && (
+          <div className={styles.body} role="region" aria-label="All bindings list">
+            <BindingsList
+              list={bindingsList}
+              legacyRules={config.patterns.length || config.overrides.length || config.widgets.length ? 0 : legacyRules}
+              onSelectCell={openCell}
+              onSelectPattern={openPattern}
+              onDeleteOverride={(cellId) => dispatch({ type: 'remove-override', cellId })}
+              onDeleteWidget={(id) => dispatch({ type: 'remove-widget', id })}
+              onHighlight={setHighlight}
+            />
+          </div>
+        )}
+        <div className={styles.body} role="region" aria-label="Binding editor fields" hidden={tab !== 'element'}>
           {draftDiagram && (
             <Button variant="secondary" size="sm" onClick={() => setGeometryOpen(true)}>
               Edit geometry in draw.io

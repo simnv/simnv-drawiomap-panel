@@ -78,10 +78,12 @@ export function BindingInspector({
             value={draft.patternId ?? ''}
             onChange={(selection) => dispatch({ type: 'scope', scope: 'pattern', patternId: selection.value ?? '' })}
             options={[
-              ...binding.patternIds.map((id) => ({
-                value: id,
-                label: draft.config.patterns.find((p) => p.id === id)?.name,
-              })),
+              ...Array.from(new Set([...binding.patternIds, ...(draft.patternId ? [draft.patternId] : [])])).map(
+                (id) => ({
+                  value: id,
+                  label: draft.config.patterns.find((p) => p.id === id)?.name,
+                })
+              ),
             ]}
             menuShouldPortal
             maxMenuHeight={240}

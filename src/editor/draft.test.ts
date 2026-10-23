@@ -10,6 +10,22 @@ export const saved: DiagramConfigV2 = {
   patterns: [{ id: 'devices', name: 'Devices', select: { kind: 'node' }, display: { label: 'Shared' } }],
 };
 
+describe('remove-override', () => {
+  it('removes only the override of the cell from the draft and keeps the saved config', () => {
+    const base = createDraft({
+      ...saved,
+      overrides: [
+        { cellId: 'a', display: { label: 'A' } },
+        { cellId: 'b', display: { label: 'B' } },
+      ],
+    });
+    const next = reduceDraft(base, { type: 'remove-override', cellId: 'a' });
+    expect(next.config.overrides.map((o) => o.cellId)).toEqual(['b']);
+    expect(next.saved.overrides).toHaveLength(2);
+    expect(reduceDraft(next, { type: 'reset' }).config.overrides).toHaveLength(2);
+  });
+});
+
 describe('binding draft', () => {
   it('requires a destination anchor and rejects invalid identity or query remapping without mutating the panel', () => {
     const document = exportPatternDocument({
