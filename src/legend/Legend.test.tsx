@@ -267,6 +267,18 @@ describe('Legend', () => {
       expect(legend.style.maxHeight).toBe('36px');
     });
 
+    it('keeps an 80 px panel: the corner top is clamped so the legend bottom stays inside', () => {
+      PANEL.h = 80;
+      // a 24 px status band and a 32 px reset button: top 64. The legend gets at least 24 px and moves up to 56.
+      const { legend } = view({ collapsed: true, corner: 'top-left', style: { left: 4, top: 64 } });
+      expect(legend.style.maxHeight).toBe('24px');
+      expect(legend.style.top).toBe('56px');
+      expect(parseFloat(legend.style.top) + parseFloat(legend.style.maxHeight)).toBeLessThanOrEqual(PANEL.h);
+      const handle = within(legend).getByRole('button', { name: 'Legend' });
+      drag(handle, [300, 260], [250, 200]);
+      fireEvent.doubleClick(handle);
+      expect(legend.style.top).toBe('56px');
+    });
     it('keeps the entries highlight working in an open legend that moved', () => {
       const { legend, onHighlight } = view({ collapsed: false });
       drag(within(legend).getByRole('button', { name: 'Legend' }), [300, 260], [200, 160]);

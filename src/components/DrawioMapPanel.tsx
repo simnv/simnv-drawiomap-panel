@@ -105,7 +105,8 @@ const styles = {
     align-items: flex-start;
     gap: 4px;
     max-width: calc(100% - 8px);
-    z-index: 1;
+    /* above the legend: in a tiny panel the legend may cover the corner, but the reset button stays clickable */
+    z-index: 2;
     /* The empty space beside the row is part of the diagram: only the row and the legend catch the pointer. */
     pointer-events: none;
   `,

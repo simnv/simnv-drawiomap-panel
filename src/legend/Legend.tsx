@@ -7,10 +7,10 @@ import { chipSwatch, type LegendBlock, type LegendEntry } from './model';
 import { clampPoint, isDrag, keyMove, type Point } from './position';
 
 const getStyles = (theme: GrafanaTheme2) => ({
-  // Outside the stage, above the diagram and the corner buttons, below the cards (z-index 3).
+  // Outside the stage, above the diagram, below the corner buttons (z-index 2) and the cards (z-index 3).
   legend: css`
     position: absolute;
-    z-index: 2;
+    z-index: 1;
     box-sizing: border-box;
     /* The size must not depend on the place: an absolute box shrinks near the right edge, and the clamp would loop. */
     width: max-content;
@@ -142,7 +142,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   const [pos, setPos] = useState<Point | null>(null);
   // The most height of the legend at its corner, so that the corner offset (the reset button, the status band) never
   // pushes it out of a small panel; it scrolls inside. Null when the place is set by a move.
-  const [cornerMax, setCornerMax] = useState<number | null>(null);
+  const [cornerFit, setCornerFit] = useState<{ maxHeight: number; top: number | null } | null>(null);
   const [wasCorner, setWasCorner] = useState(corner);
   if (wasCorner !== corner) {
     setWasCorner(corner);
@@ -184,11 +184,15 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     }
     const p = posRef.current;
     if (p === null) {
-      const top = typeof style?.top === 'number' ? style.top : 4;
-      setCornerMax(Math.max(24, Math.min(m.area.height / 2, m.area.height - top - 4)));
+      const top = typeof style?.top === 'number' ? style.top : null;
+      const maxHeight = Math.max(24, Math.min(m.area.height / 2, m.area.height - (top ?? 4) - 4));
+      // the top offset (the reset button, the status band) never pushes the legend out of a short panel
+      const height = Math.min(Math.max(m.box.height, rootRef.current?.scrollHeight ?? 0), maxHeight);
+      const fitTop = top === null ? null : Math.max(0, Math.min(top, m.area.height - height));
+      setCornerFit((c) => (c?.maxHeight === maxHeight && c.top === fitTop ? c : { maxHeight, top: fitTop }));
       return;
     }
-    setCornerMax(null);
+    setCornerFit(null);
     const c = clampPoint(p, m.box, m.area);
     if (c.x !== p.x || c.y !== p.y) {
       setPos(c);
@@ -307,7 +311,12 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
       style={
         pos
           ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
-          : { ...style, ...(cornerMax === null ? {} : { maxHeight: cornerMax }) }
+          : {
+              ...style,
+              ...(cornerFit === null
+                ? {}
+                : { maxHeight: cornerFit.maxHeight, ...(cornerFit.top === null ? {} : { top: cornerFit.top }) }),
+            }
       }
       aria-label="Colour legend"
       data-testid="dmap-legend"
