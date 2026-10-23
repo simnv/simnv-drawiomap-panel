@@ -1,7 +1,7 @@
 import { Button, Select } from '@grafana/ui';
 import React, { useLayoutEffect, useRef } from 'react';
 import type { EffectiveCellBinding } from '../binding/patterns';
-import type { BindingDraft, DraftAction } from './draft';
+import { draftPatternIndex, type BindingDraft, type DraftAction } from './draft';
 import { DisplayFields, newBinding, TextField } from './BindingFields';
 import type { DisplayConfig } from '../model/config';
 import { ChartFields } from './ChartFields';
@@ -36,7 +36,7 @@ export function BindingInspector({
   if (!draft.cellId || !binding) {
     return <p>Select a diagram element to edit its bindings.</p>;
   }
-  const pattern = draft.scope === 'pattern' ? draft.config.patterns.find((p) => p.id === draft.patternId) : undefined;
+  const pattern = draft.scope === 'pattern' ? draft.config.patterns[draftPatternIndex(draft)] : undefined;
   const editDisplay = pattern?.display ?? binding.display;
   return (
     <section aria-label="Element bindings">
@@ -78,10 +78,12 @@ export function BindingInspector({
             value={draft.patternId ?? ''}
             onChange={(selection) => dispatch({ type: 'scope', scope: 'pattern', patternId: selection.value ?? '' })}
             options={[
-              ...binding.patternIds.map((id) => ({
-                value: id,
-                label: draft.config.patterns.find((p) => p.id === id)?.name,
-              })),
+              ...Array.from(new Set([...binding.patternIds, ...(draft.patternId ? [draft.patternId] : [])])).map(
+                (id) => ({
+                  value: id,
+                  label: draft.config.patterns.find((p) => p.id === id)?.name,
+                })
+              ),
             ]}
             menuShouldPortal
             maxMenuHeight={240}

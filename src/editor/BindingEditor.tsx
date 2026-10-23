@@ -1,20 +1,20 @@
-import React, { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getDisplayProcessor, type PanelData } from '@grafana/data';
-import { useTheme2, useStyles2, Alert, Button, Select } from '@grafana/ui';
+import { useTheme2, useStyles2, Alert, Button, Select, Tab, TabsBar } from '@grafana/ui';
 import { resolvePatterns } from '../binding/patterns';
 import { cellAt } from '../interact/hit';
 import { validateConfig, type DiagramConfigV2 } from '../model/config';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import type { BindContext, CellIndex, Diagram } from '../types';
 import { BindingInspector } from './BindingInspector';
-import { commitDraft, createDraft, reduceDraft } from './draft';
+import { commitDraft, createDraft, draftPatternIndex, reduceDraft } from './draft';
 import { QueryEditor } from './QueryEditor';
 import { PanelQueryContext } from '../query/panel';
 import type { QuerySnapshot } from '../query/types';
 import { TextField } from './BindingFields';
 import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { cellMatches } from '../binding/select';
-import { bindPlan } from '../binding/engine';
+import { bindPlan, widgetDiagnostics } from '../binding/engine';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { createPreviewResolver, previewSnapshot, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
 import { previewPattern, type PatternPreview } from './patternPreview';
@@ -24,6 +24,9 @@ import { clearOwnedAttrs, setOwnedAttrs } from '../render/cellAttrs';
 import { sanitizeSvg } from '../render/sanitize';
 import { fnv1a } from '../util/hash';
 import { EditorField, EditorSection, getEditorStyles } from './EditorLayout';
+import { BindingsList } from './BindingsList';
+import { buildBindingsList } from './bindingsModel';
+const NO_RESULTS: QueryPreview[] = [];
 export interface BindingEditorProps {
   config: DiagramConfigV2;
   cells: CellIndex;
@@ -38,6 +41,8 @@ export interface BindingEditorProps {
   bindContext?: BindContext;
   diagram?: Diagram;
   onDiagramPreview?: (diagram: Diagram) => void;
+  /** Number of legacy rules of a panel that has no V2 config; the list points to the Rules editor. */
+  legacyRules?: number;
 }
 export function BindingEditor({
   config,
@@ -49,10 +54,11 @@ export function BindingEditor({
   inspectorWidth = 320,
   onQueryPreview,
   onPatternPreview,
-  prepared = [],
+  prepared = NO_RESULTS,
   bindContext,
   diagram,
   onDiagramPreview,
+  legacyRules,
 }: BindingEditorProps) {
   const theme = useTheme2();
   const styles = useStyles2(getEditorStyles);
@@ -60,6 +66,8 @@ export function BindingEditor({
   const [draft, dispatch] = useReducer(reduceDraft, config, createDraft);
   const [savedDiagram, setSavedDiagram] = useState(diagram);
   const [draftDiagram, setDraftDiagram] = useState(diagram);
+  const [tab, setTab] = useState<'element' | 'all'>('element');
+  const [highlight, setHighlight] = useState<string[]>([]);
   const [geometryOpen, setGeometryOpen] = useState(false);
   const [geometryError, setGeometryError] = useState('');
   const reset = () => {
@@ -90,10 +98,11 @@ export function BindingEditor({
       config: draft.config,
       scope: draft.scope,
       patternId: draft.patternId,
+      patternIndex: draft.patternIndex,
       cells,
       previewEpoch,
     }),
-    [query, context, draft.cellId, draft.config, draft.scope, draft.patternId, cells, previewEpoch]
+    [query, context, draft.cellId, draft.config, draft.scope, draft.patternId, draft.patternIndex, cells, previewEpoch]
   );
   if (previewState && previewState.key !== previewKey) {
     setPreviewState(undefined);
@@ -120,25 +129,36 @@ export function BindingEditor({
     },
     [previewKey, onQueryPreview]
   );
-  const plan = useMemo(() => resolvePatterns(cellMetas(cells), draft.config), [cells, draft.config]);
+  const metas = useMemo(() => cellMetas(cells), [cells]);
+  const plan = useMemo(() => resolvePatterns(metas, draft.config), [metas, draft.config]);
+  // The exact pattern of the draft, by index: duplicate pattern IDs must not widen the scope to another pattern.
+  const editedPattern = draft.config.patterns[draftPatternIndex(draft)];
   const affected =
     draft.scope === 'pattern'
-      ? Object.values(plan.cells)
-          .filter((c) => c.patternIds.includes(draft.patternId ?? ''))
-          .map((c) => c.cellId)
+      ? editedPattern
+        ? metas.filter((c) => cellMatches(editedPattern.select, c)).map((c) => c.id)
+        : []
       : draft.cellId
         ? [draft.cellId]
         : [];
   const [patternState, setPatternState] = useState<{ key: object; value: PatternPreview }>();
   const patternRelease = useRef<() => void>();
   const patternKey = useMemo(
-    () => ({ config: draft.config, scope: draft.scope, patternId: draft.patternId, cells, context, previewEpoch }),
-    [draft.config, draft.scope, draft.patternId, cells, context, previewEpoch]
+    () => ({
+      config: draft.config,
+      scope: draft.scope,
+      patternId: draft.patternId,
+      patternIndex: draft.patternIndex,
+      cells,
+      context,
+      previewEpoch,
+    }),
+    [draft.config, draft.scope, draft.patternId, draft.patternIndex, cells, context, previewEpoch]
   );
   if (patternState && patternState.key !== patternKey) {
     setPatternState(undefined);
   }
-  const patternResults = patternState?.key === patternKey ? patternState.value.previews : [];
+  const patternResults = patternState?.key === patternKey ? patternState.value.previews : NO_RESULTS;
   useEffect(() => {
     return () => {
       const stop = patternRelease.current;
@@ -150,6 +170,27 @@ export function BindingEditor({
   const select = (cellId: string) => {
     dispatch({ type: 'select', cellId });
     setSelectionVersion((v) => v + 1);
+  };
+  // A list row opens the Element tab. A pattern is edited through one of its cells, in the pattern scope.
+  const showHighlight = useCallback(
+    (ids: string[]) =>
+      setHighlight((old) => (old.length === ids.length && old.every((id, i) => id === ids[i]) ? old : ids)),
+    []
+  );
+  const openCell = (cellId: string) => {
+    select(cellId);
+    setTab('element');
+  };
+  const openPattern = (row: { patternId: string; index: number; matched: string[] }) => {
+    const cellId = row.matched[0] ?? cells.keys().next().value;
+    if (cellId === undefined) {
+      return;
+    }
+    dispatch({ type: 'select', cellId });
+    dispatch({ type: 'scope', scope: 'pattern', patternId: row.patternId, patternIndex: row.index });
+    setSelectionVersion((v) => v + 1);
+    setTab('element');
+    setHighlight([]);
   };
   useEffect(() => {
     onPreview?.(draft.config);
@@ -164,49 +205,63 @@ export function BindingEditor({
         'aria-label': `${id} diagram element`,
         'data-dmap-selected': id === draft.cellId ? 'true' : 'false',
         'data-dmap-affected': affected.includes(id) ? 'true' : 'false',
+        'data-dmap-highlight': highlight.includes(id) ? 'true' : 'false',
       });
     }
     return () => cells.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
     // affectedKey represents the complete list without an unstable array dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, draft.cellId, affectedKey]);
+  }, [cells, draft.cellId, affectedKey, highlight]);
   const diagnostics = [...draft.diagnostics, ...validateConfig(draft.config).diagnostics, ...plan.diagnostics];
-  const localPreview: QueryPreview | undefined =
-    query && context && previewState?.key === previewKey
-      ? {
-          query,
-          cellId: draft.cellId,
-          context: { ...context, defaultDatasource: draft.config.defaultDatasource },
-          snapshot,
-        }
-      : undefined;
-  const format = { theme, timeZone: context?.timeZone, generation: context?.generation };
-  const explicit = localPreview ? [localPreview] : [];
-  const reportResults = previewAction === 'query' ? [...explicit, ...patternResults] : [...patternResults, ...explicit];
-  const savedResolve = data ? createPreviewResolver(plan, draft.config, data, undefined, format, prepared) : undefined;
+  // The resolver and the bound result depend on their real inputs only, so a highlight or a tab change reuses them.
+  const defaultDatasource = draft.config.defaultDatasource;
+  const localPreview: QueryPreview | undefined = useMemo(
+    () =>
+      query && context && previewState?.key === previewKey
+        ? {
+            query,
+            cellId: draft.cellId,
+            context: { ...context, defaultDatasource },
+            snapshot: previewState.snapshot,
+          }
+        : undefined,
+    [query, context, previewState, previewKey, draft.cellId, defaultDatasource]
+  );
+  const timeZone = context?.timeZone;
+  const generation = context?.generation;
+  const format = useMemo(() => ({ theme, timeZone, generation }), [theme, timeZone, generation]);
+  const reportResults = useMemo(() => {
+    const explicit = localPreview ? [localPreview] : [];
+    return previewAction === 'query' ? [...explicit, ...patternResults] : [...patternResults, ...explicit];
+  }, [localPreview, previewAction, patternResults]);
+  const savedResolve = useMemo(
+    () => (data ? createPreviewResolver(plan, draft.config, data, undefined, format, prepared) : undefined),
+    [data, plan, draft.config, format, prepared]
+  );
   // The inspector reports the requested outcome, including pending and failed requests.
   // Resolve each candidate separately so display's terminal-result ranking cannot skip it.
-  const reportResolvers = data
-    ? reportResults.map((result) => ({
-        result,
-        resolve: createPreviewResolver(plan, draft.config, data, undefined, format, [result]),
-      }))
-    : [];
-  const resolve: typeof savedResolve = savedResolve
-    ? (cellId, binding) => {
-        for (const entry of reportResolvers) {
-          // A batch outcome belongs to its requested scope, even for an unparameterized query.
-          if (patternResults.includes(entry.result) && entry.result.cellId !== cellId) {
-            continue;
-          }
-          const model = entry.resolve(cellId, binding);
-          if (model.state !== 'idle') {
-            return model;
-          }
+  const resolve: typeof savedResolve = useMemo(() => {
+    if (!savedResolve || !data) {
+      return undefined;
+    }
+    const reportResolvers = reportResults.map((result) => ({
+      result,
+      resolve: createPreviewResolver(plan, draft.config, data, undefined, format, [result]),
+    }));
+    return (cellId, binding) => {
+      for (const entry of reportResolvers) {
+        // A batch outcome belongs to its requested scope, even for an unparameterized query.
+        if (patternResults.includes(entry.result) && entry.result.cellId !== cellId) {
+          continue;
         }
-        return savedResolve(cellId, binding);
+        const model = entry.resolve(cellId, binding);
+        if (model.state !== 'idle') {
+          return model;
+        }
       }
-    : undefined;
+      return savedResolve(cellId, binding);
+    };
+  }, [savedResolve, data, reportResults, plan, draft.config, format, patternResults]);
   const nowMs = usePreviewTime(
     data,
     context?.generation,
@@ -214,18 +269,30 @@ export function BindingEditor({
     patternResults.map((result) => result.snapshot),
     resolve ? statusDeadlines(plan, resolve) : []
   );
-  const formatting: BindContext = bindContext ?? {
-    theme,
-    replaceVariables: (text) => text,
-    linkWidth: { min: 2, max: 10 },
-    display: (series, value) => (series.field.display ?? getDisplayProcessor({ field: series.field, theme }))(value),
-  };
-  const bound = resolve ? bindPlan(plan, resolve, formatting, nowMs) : undefined;
+  const formatting: BindContext = useMemo(
+    () =>
+      bindContext ?? {
+        theme,
+        replaceVariables: (text) => text,
+        linkWidth: { min: 2, max: 10 },
+        display: (series, value) =>
+          (series.field.display ?? getDisplayProcessor({ field: series.field, theme }))(value),
+      },
+    [bindContext, theme]
+  );
+  const bound = useMemo(
+    () => (resolve ? bindPlan(plan, resolve, formatting, nowMs) : undefined),
+    [plan, resolve, formatting, nowMs]
+  );
   const cardPatch = draft.cellId ? bound?.patches.get(draft.cellId) : undefined;
-  const hoverPreview =
-    (localPreview || patternResults.length > 0) && cardPatch && resolve
-      ? buildConfiguredCard(cardPatch, resolve, { ...formatting, series: [] })
-      : undefined;
+  // Built from the preview inputs only: a highlight or a tab change must not rebuild the card.
+  const hoverPreview = useMemo(
+    () =>
+      (localPreview || patternResults.length > 0) && cardPatch && resolve
+        ? buildConfiguredCard(cardPatch, resolve, { ...formatting, series: [] })
+        : undefined,
+    [localPreview, patternResults, cardPatch, resolve, formatting]
+  );
   const metricDiagnostics = [...(bound?.diagnostics ?? []), ...(hoverPreview?.diagnostics ?? [])];
   const matchPreviews = affected.map((cellId) => {
     const bindings = [
@@ -253,6 +320,29 @@ export function BindingEditor({
   const incompletePreview = matchPreviews.some((match) => match.state !== 'resolved');
   const hasMetricErrors = metricDiagnostics.some((d) =>
     ['ambiguous-metric', 'unsupported-metric', 'unresolved-metadata', 'invalid-url'].includes(d.code)
+  );
+  // Every diagnostic that the editor already knows, plus the hover card ones of all cells. Only the open tab pays for it.
+  const listDiagnostics = useMemo(() => {
+    if (tab !== 'all') {
+      return [];
+    }
+    const cards =
+      bound && resolve
+        ? Array.from(bound.patches.values()).flatMap(
+            (patch) => buildConfiguredCard(patch, resolve, { ...formatting, series: [] }).diagnostics
+          )
+        : [];
+    return [
+      ...draft.diagnostics,
+      ...validateConfig(draft.config).diagnostics,
+      ...(bound?.diagnostics ?? plan.diagnostics),
+      ...(resolve ? widgetDiagnostics(plan, resolve) : []),
+      ...cards,
+    ];
+  }, [tab, draft.config, draft.diagnostics, plan, bound, resolve, formatting]);
+  const bindingsList = useMemo(
+    () => (tab === 'all' ? buildBindingsList(draft.config, metas, listDiagnostics) : undefined),
+    [tab, draft.config, metas, listDiagnostics]
   );
   const selected = draft.cellId ? cells.get(draft.cellId) : undefined;
   const override = draft.config.overrides.find((o) => o.cellId === draft.cellId);
@@ -299,7 +389,7 @@ export function BindingEditor({
     >
       <style>
         {
-          '[data-dmap-affected="true"] { outline: 2px dashed currentColor; } [data-dmap-selected="true"] { outline: 3px solid currentColor; }'
+          '[data-dmap-affected="true"] { outline: 2px dashed currentColor; } [data-dmap-selected="true"] { outline: 3px solid currentColor; } [data-dmap-highlight="true"] { outline: 3px dotted currentColor; }'
         }
       </style>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
@@ -319,8 +409,37 @@ export function BindingEditor({
               noOptionsMessage="No matching elements"
             />
           </EditorField>
+          <TabsBar className={styles.tabs}>
+            <Tab
+              label="Element"
+              active={tab === 'element'}
+              onChangeTab={() => {
+                setTab('element');
+                setHighlight([]);
+              }}
+            />
+            <Tab
+              label="All bindings"
+              counter={draft.config.patterns.length + draft.config.overrides.length + draft.config.widgets.length}
+              active={tab === 'all'}
+              onChangeTab={() => setTab('all')}
+            />
+          </TabsBar>
         </div>
-        <div className={styles.body} role="region" aria-label="Binding editor fields">
+        {bindingsList && (
+          <div className={styles.body} role="region" aria-label="All bindings list">
+            <BindingsList
+              list={bindingsList}
+              legacyRules={config.patterns.length || config.overrides.length || config.widgets.length ? 0 : legacyRules}
+              onSelectCell={openCell}
+              onSelectPattern={openPattern}
+              onDeleteOverride={(cellId) => dispatch({ type: 'remove-override', cellId })}
+              onDeleteWidget={(id) => dispatch({ type: 'remove-widget', id })}
+              onHighlight={showHighlight}
+            />
+          </div>
+        )}
+        <div className={styles.body} role="region" aria-label="Binding editor fields" hidden={tab !== 'element'}>
           {draftDiagram && (
             <Button variant="secondary" size="sm" onClick={() => setGeometryOpen(true)}>
               Edit geometry in draw.io

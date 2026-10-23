@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
-import { resolvePatterns } from './patterns';
+import { displayProvenance, mergeCell, mergeDisplay, ownersOfPath, resolvePatterns } from './patterns';
 import type { DiagramConfigV2 } from '../model/config';
 
 const empty = (): DiagramConfigV2 => ({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] });
@@ -263,6 +263,7 @@ describe('resolvePatterns', () => {
       {
         widget: config.widgets[0],
         anchorCellId: 'link',
+        index: 0,
         scope: {
           cell: { ...cell.attrs, id: 'link', key: 'link', label: '' },
           from: { node: 'a', port: 'p1', ordinal: '1', raw: 'a:p1' },
@@ -292,5 +293,112 @@ describe('resolvePatterns', () => {
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ code: 'missing-parameter-path', path: 'widgets[0].binding.parameters.dm_device' })
     );
+  });
+});
+
+describe('display provenance', () => {
+  const sel = (match: Record<string, string>) => ({ queryId: 'q', match, reducer: 'last' as const });
+  const config: DiagramConfigV2 = {
+    ...empty(),
+    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+    patterns: [
+      {
+        id: 'p1',
+        name: 'P1',
+        select: { ids: ['a'] },
+        display: { label: 'one', shape: { binding: sel({ job: 'absent' }) } },
+      },
+      { id: 'p2', name: 'P2', select: { ids: ['a'] }, display: { shape: { binding: sel({ device: 'router-a' }) } } },
+      { id: 'other', name: 'Other', select: { ids: ['b'] }, display: { label: 'b' } },
+    ],
+    overrides: [{ cellId: 'a', display: { label: 'over' } }],
+  };
+  const cell = cellMetaFromAttrs('a', {}, false);
+  const owners = (path: string) => ownersOfPath(displayProvenance(config, cell), path);
+
+  it('keeps each matcher key with the pattern that set it, and the binding with all contributors', () => {
+    expect(owners('shape.binding.match.job')).toEqual([{ kind: 'pattern', index: 0 }]);
+    expect(owners('shape.binding.match.device')).toEqual([{ kind: 'pattern', index: 1 }]);
+    expect(owners('shape.binding')).toEqual([
+      { kind: 'pattern', index: 0 },
+      { kind: 'pattern', index: 1 },
+    ]);
+  });
+  it('gives a replaced scalar to the override only', () => {
+    expect(owners('label')).toEqual([{ kind: 'override', cellId: 'a' }]);
+  });
+  it('does not change the merged display of the view-mode callers', () => {
+    const plan = resolvePatterns([cell], config);
+    expect(plan.cells.a.display).toEqual({
+      label: 'over',
+      shape: { binding: { queryId: 'q', match: { job: 'absent', device: 'router-a' }, reducer: 'last' } },
+    });
+    const before = JSON.stringify(plan.cells.a);
+    displayProvenance(config, cell);
+    expect(JSON.stringify(resolvePatterns([cell], config).cells.a)).toBe(before);
+    expect(plan.cells.a.patternIds).toEqual(['p1', 'p2']);
+  });
+});
+
+describe('display provenance of a status and of the fast path', () => {
+  const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
+  const mapping = (reason: string) =>
+    ({
+      kind: 'mapping',
+      binding,
+      default: { state: 'normal', reason },
+      mappings: [{ value: 1, state: 'down', reason }],
+    }) as never;
+  const config: DiagramConfigV2 = {
+    ...empty(),
+    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+    patterns: [
+      { id: 'p1', name: 'P1', select: { ids: ['a'] }, display: { status: mapping('one') } },
+      { id: 'p2', name: 'P2', select: { ids: ['a'] }, display: { status: mapping('two') } },
+    ],
+  };
+  const cell = cellMetaFromAttrs('a', {}, false);
+
+  it('gives a fully rewritten same-kind status binding to the later pattern only', () => {
+    const provenance = displayProvenance(config, cell);
+    expect(ownersOfPath(provenance, 'status.binding')).toEqual([{ kind: 'pattern', index: 1 }]);
+    expect(ownersOfPath(provenance, 'status')).toEqual([{ kind: 'pattern', index: 1 }]);
+  });
+  it('gives a status of another kind to the later pattern only', () => {
+    const predicates = {
+      kind: 'predicates',
+      binding,
+      default: { state: 'normal', reason: 'x' },
+      predicates: [{ op: 'gt', value: 1, state: 'down', reason: 'x' }],
+    } as never;
+    const other: DiagramConfigV2 = {
+      ...config,
+      patterns: [config.patterns[0], { ...config.patterns[1], display: { status: predicates } }],
+    };
+    expect(ownersOfPath(displayProvenance(other, cell), 'status')).toEqual([{ kind: 'pattern', index: 1 }]);
+  });
+  it('sends a path below a binding that has no owner to the owners of the closest ancestor', () => {
+    const owners = (path: string) => ownersOfPath(displayProvenance(config, cell), path);
+    expect(owners('status.binding.parameters.dm_port')).toEqual([{ kind: 'pattern', index: 1 }]);
+    expect(owners('url')).toEqual([]);
+  });
+
+  it('tracks nothing and builds no owners without a track', () => {
+    const entries = vi.spyOn(Object, 'entries');
+    const flat = vi.spyOn(Array.prototype, 'flatMap');
+    try {
+      const plain = mergeCell(config, cell);
+      expect(plain.patternIds).toEqual(['p1', 'p2']);
+      mergeDisplay({}, config.patterns[0].display);
+      expect(entries).not.toHaveBeenCalled();
+      expect(flat).not.toHaveBeenCalled();
+      const track = vi.fn();
+      mergeDisplay({}, config.patterns[0].display, track);
+      expect(track).toHaveBeenCalledWith('status.binding.queryId');
+      expect(entries).toHaveBeenCalled();
+    } finally {
+      entries.mockRestore();
+      flat.mockRestore();
+    }
   });
 });

@@ -13,7 +13,13 @@ import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import type { BindStatus, CardRow, CellPatch, HalfState, SeriesInfo } from '../types';
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
-import { historySeries, type BindingDemand, type BindingResolver, type PlanCellPatch } from '../binding/engine';
+import {
+  historySeries,
+  metricProblem,
+  type BindingDemand,
+  type BindingResolver,
+  type PlanCellPatch,
+} from '../binding/engine';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import {
   rowBindings,
@@ -193,18 +199,9 @@ function readBinding(
   diagnostics: Diagnostic[]
 ): HistoryModel {
   const model = resolve(patch.cellId, binding);
-  if (model.state === 'empty' || model.state === 'error' || model.state === 'unsupported') {
-    const message = model.state === 'empty' ? `No metric matches query ${binding.queryId}.` : model.message;
-    diagnostics.push({
-      code:
-        model.state === 'empty'
-          ? 'unmatched-metric'
-          : message.toLowerCase().includes('ambiguous')
-            ? 'ambiguous-metric'
-            : `${model.state}-metric`,
-      path: `cells.${patch.cellId}.${path}`,
-      message,
-    });
+  const problem = metricProblem(model, binding);
+  if (problem) {
+    diagnostics.push({ ...problem, path: `cells.${patch.cellId}.${path}` });
   }
   if (model.state !== 'ready' || unit === undefined) {
     return model;

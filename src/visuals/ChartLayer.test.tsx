@@ -64,7 +64,7 @@ function setup() {
   const controller: QueryController = { watch, setPanelData: vi.fn(), dispose: vi.fn() };
   const plan: BindingPlan = {
     cells: {},
-    widgets: [{ widget, anchorCellId: 'chart', scope: { cell: {} } }],
+    widgets: [{ widget, anchorCellId: 'chart', scope: { cell: {} }, index: 0 }],
     diagnostics: [],
   };
   return {

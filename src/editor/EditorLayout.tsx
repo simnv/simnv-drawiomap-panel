@@ -84,7 +84,13 @@ export const getEditorStyles = (theme: GrafanaTheme2) => ({
     '& button > span': { whiteSpace: 'normal', overflowWrap: 'anywhere' },
     '& output': { display: 'block', marginTop: theme.spacing(1), color: theme.colors.text.secondary },
   }),
-  header: css({ padding: theme.spacing(1.5, 2), borderBottom: `1px solid ${theme.colors.border.weak}` }),
+  header: css({ padding: theme.spacing(1.5, 2, 0), borderBottom: `1px solid ${theme.colors.border.weak}` }),
+  tabs: css({
+    marginTop: theme.spacing(1),
+    borderBottom: 0,
+    '& button, & button > span': { whiteSpace: 'nowrap' },
+    '& button': { padding: theme.spacing(1, 1) },
+  }),
   body: css({
     flex: '1 1 auto',
     minHeight: 0,

@@ -18,11 +18,13 @@ export interface BindingDraft {
   cellId?: string;
   scope: 'element' | 'pattern';
   patternId?: string;
+  /** The exact pattern when pattern IDs collide; the ID alone is ambiguous then. */
+  patternIndex?: number;
   diagnostics: Diagnostic[];
 }
 export type DraftAction =
   | { type: 'select'; cellId: string }
-  | { type: 'scope'; scope: 'element' | 'pattern'; patternId?: string }
+  | { type: 'scope'; scope: 'element' | 'pattern'; patternId?: string; patternIndex?: number }
   | { type: 'display'; display: Partial<DisplayConfig> }
   | { type: 'query'; query: NamedQuery }
   | { type: 'default-datasource'; datasource: DiagramConfigV2['defaultDatasource'] }
@@ -30,6 +32,7 @@ export type DraftAction =
   | { type: 'selector'; select: CellSelector }
   | { type: 'widget'; widget: Widget }
   | { type: 'remove-widget'; id: string }
+  | { type: 'remove-override'; cellId: string }
   | { type: 'import'; config: unknown }
   | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
   | { type: 'reset' | 'applied' };
@@ -42,15 +45,22 @@ function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfi
     ...(patch.link ? { link: { ...base.link, ...patch.link } } : {}),
   });
 }
+/** The index of the pattern that the draft edits. It honours the exact index while that pattern still has the ID. */
+export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternId' | 'patternIndex'>): number {
+  const { patterns } = draft.config;
+  return draft.patternIndex !== undefined && patterns[draft.patternIndex]?.id === draft.patternId
+    ? draft.patternIndex
+    : patterns.findIndex((p) => p.id === draft.patternId);
+}
 export function createDraft(config: DiagramConfigV2): BindingDraft {
   return { saved: copy(config), config: copy(config), scope: 'element', diagnostics: [] };
 }
 export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDraft {
   if (action.type === 'select') {
-    return { ...draft, cellId: action.cellId, scope: 'element', patternId: undefined };
+    return { ...draft, cellId: action.cellId, scope: 'element', patternId: undefined, patternIndex: undefined };
   }
   if (action.type === 'scope') {
-    return { ...draft, scope: action.scope, patternId: action.patternId };
+    return { ...draft, scope: action.scope, patternId: action.patternId, patternIndex: action.patternIndex };
   }
   if (action.type === 'reset') {
     return { ...draft, config: copy(draft.saved), diagnostics: [] };
@@ -103,13 +113,14 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     };
   } else if (action.type === 'display') {
     if (draft.scope === 'pattern') {
-      if (!config.patterns.some((p) => p.id === draft.patternId)) {
+      const at = draftPatternIndex(draft);
+      if (at < 0) {
         return draft;
       }
       config = {
         ...config,
-        patterns: config.patterns.map((p) =>
-          p.id === draft.patternId ? { ...p, display: changeDisplay(p.display, action.display) } : p
+        patterns: config.patterns.map((p, i) =>
+          i === at ? { ...p, display: changeDisplay(p.display, action.display) } : p
         ),
       };
     } else {
@@ -151,12 +162,16 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
   } else if (action.type === 'selector') {
     config = {
       ...config,
-      patterns: config.patterns.map((p) => (p.id === draft.patternId ? { ...p, select: copy(action.select) } : p)),
+      patterns: config.patterns.map((p, i) =>
+        i === draftPatternIndex(draft) ? { ...p, select: copy(action.select) } : p
+      ),
     };
   } else if (action.type === 'widget') {
     config = { ...config, widgets: [...config.widgets.filter((w) => w.id !== action.widget.id), copy(action.widget)] };
   } else if (action.type === 'remove-widget') {
     config = { ...config, widgets: config.widgets.filter((w) => w.id !== action.id) };
+  } else if (action.type === 'remove-override') {
+    config = { ...config, overrides: config.overrides.filter((o) => o.cellId !== action.cellId) };
   }
   return { ...draft, config, diagnostics: [] };
 }

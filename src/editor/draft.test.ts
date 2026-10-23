@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { DiagramConfigV2 } from '../model/config';
-import { commitDraft, createDraft, reduceDraft, exportPatternDocument, previewPatternImport } from './draft';
+import {
+  commitDraft,
+  createDraft,
+  draftPatternIndex,
+  reduceDraft,
+  exportPatternDocument,
+  previewPatternImport,
+} from './draft';
 
 export const saved: DiagramConfigV2 = {
   version: 2,
@@ -9,6 +16,22 @@ export const saved: DiagramConfigV2 = {
   widgets: [],
   patterns: [{ id: 'devices', name: 'Devices', select: { kind: 'node' }, display: { label: 'Shared' } }],
 };
+
+describe('remove-override', () => {
+  it('removes only the override of the cell from the draft and keeps the saved config', () => {
+    const base = createDraft({
+      ...saved,
+      overrides: [
+        { cellId: 'a', display: { label: 'A' } },
+        { cellId: 'b', display: { label: 'B' } },
+      ],
+    });
+    const next = reduceDraft(base, { type: 'remove-override', cellId: 'a' });
+    expect(next.config.overrides.map((o) => o.cellId)).toEqual(['b']);
+    expect(next.saved.overrides).toHaveLength(2);
+    expect(reduceDraft(next, { type: 'reset' }).config.overrides).toHaveLength(2);
+  });
+});
 
 describe('binding draft', () => {
   it('requires a destination anchor and rejects invalid identity or query remapping without mutating the panel', () => {
@@ -262,5 +285,40 @@ describe('binding draft', () => {
     draft = reduceDraft(draft, { type: 'display', display: { shape: { target: 'stroke' } } });
     draft = reduceDraft(draft, { type: 'display', display: { shape: { text: true } } });
     expect(commitDraft(draft).overrides[0].display.shape).toEqual({ target: 'stroke', text: true });
+  });
+});
+
+describe('duplicate pattern IDs', () => {
+  const dup: DiagramConfigV2 = {
+    ...saved,
+    patterns: [
+      { id: 'same', name: 'First', select: { kind: 'node' }, display: {} },
+      { id: 'same', name: 'Second', select: { kind: 'link' }, display: {} },
+    ],
+  };
+  it('edits only the pattern at the exact index', () => {
+    let draft = reduceDraft(createDraft(dup), { type: 'select', cellId: 'a' });
+    draft = reduceDraft(draft, { type: 'scope', scope: 'pattern', patternId: 'same', patternIndex: 1 });
+    draft = reduceDraft(draft, { type: 'display', display: { label: 'Edited' } });
+    draft = reduceDraft(draft, { type: 'selector', select: { kind: 'port' } });
+    expect(draft.config.patterns.map((p) => [p.display.label, p.select.kind])).toEqual([
+      [undefined, 'node'],
+      ['Edited', 'port'],
+    ]);
+  });
+  it('falls back to the first pattern with the ID without an index, and ignores a stale index', () => {
+    let draft = reduceDraft(createDraft(dup), { type: 'scope', scope: 'pattern', patternId: 'same' });
+    expect(draftPatternIndex(draft)).toBe(0);
+    draft = reduceDraft(draft, { type: 'scope', scope: 'pattern', patternId: 'same', patternIndex: 5 });
+    expect(draftPatternIndex(draft)).toBe(0);
+  });
+  it('does not add a second pattern with an existing ID, and flags an import with one', () => {
+    const replaced = reduceDraft(createDraft(saved), {
+      type: 'pattern',
+      pattern: { id: 'devices', name: 'Again', select: {}, display: {} },
+    });
+    expect(replaced.config.patterns).toHaveLength(1);
+    const imported = reduceDraft(createDraft(saved), { type: 'import', config: saved });
+    expect(imported.diagnostics.map((d) => d.code)).toContain('import-pattern-conflict');
   });
 });
