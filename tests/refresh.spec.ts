@@ -176,7 +176,10 @@ test.describe('popup open', () => {
           id: 'links',
           name: 'Links',
           select: { ids: ['link-1'] },
-          display: { link: { a2bBinding: walk, b2aBinding: walk, capacity: 100 } },
+          display: {
+            link: { a2bBinding: walk, b2aBinding: walk, capacity: 100 },
+            hover: { rows: [{ kind: 'value', label: 'Walk', binding: walk }] },
+          },
         },
       ],
       overrides: [],
@@ -193,6 +196,22 @@ test.describe('popup open', () => {
       ],
     });
     const requests = observeQueries(page, uid);
+    // The last value of the walk in each response, in order: the latest result is the last one.
+    const values: number[] = [];
+    page.on('response', async (response) => {
+      if (!new URL(response.url()).pathname.endsWith('/api/ds/query')) {
+        return;
+      }
+      try {
+        const body = await response.json();
+        const column = body.results?.A?.frames?.[0]?.data?.values?.[1] as number[] | undefined;
+        if (column?.length) {
+          values.push(column[column.length - 1]);
+        }
+      } catch {
+        // a request that the page cancelled has no body
+      }
+    });
     await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const panel = page.getByTestId('dmap-panel');
     const halves = panel.locator('polyline.dmap-half');
@@ -227,9 +246,40 @@ test.describe('popup open', () => {
     expect(await snapshot()).toEqual(before);
     expect(await mutations()).toBe(mutationsBefore);
 
+    const valuesAtOpen = values.at(-1)!;
+    // Record each distinct picture of the link halves from the close on.
+    await panel.evaluate((el) => {
+      const w = window as unknown as { __dmapPictures: string[] };
+      w.__dmapPictures = [];
+      const read = () => Array.from(el.querySelectorAll('polyline.dmap-half'), (half) => half.outerHTML).join('\n');
+      new MutationObserver(() => {
+        const picture = read();
+        if (w.__dmapPictures.at(-1) !== picture) {
+          w.__dmapPictures.push(picture);
+        }
+      }).observe(el, { attributes: true, childList: true, subtree: true });
+    });
+    const pictures = () => page.evaluate(() => (window as unknown as { __dmapPictures: string[] }).__dmapPictures);
+    const responsesAtClose = values.length;
     await closeBindingsPopup(page);
-    // The panel renders the latest data: its link halves change at once.
+    // The panel renders the latest data: its link halves change.
     await expect.poll(async () => (await snapshot()).halves, { timeout: 15_000 }).not.toEqual(before.halves);
     expect(await mutations()).toBeGreaterThan(mutationsBefore);
+    await page.waitForTimeout(1200);
+    // One update with the latest result: one new picture, plus one for each refresh that arrived after the close.
+    expect((await pictures()).length).toBeLessThanOrEqual(1 + (values.length - responsesAtClose));
+    // The hover card shows the latest value, not the one from before the pause.
+    const at = await halves.first().evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await page.mouse.move(at.x, at.y - 40);
+    await page.mouse.move(at.x, at.y, { steps: 5 });
+    const row = panel.getByRole('tooltip').getByTestId('dmap-card-row').first();
+    await expect(row).toContainText('Walk');
+    const shown = parseFloat(((await row.innerText()).match(/-?\d+(?:\.\d+)?/g) ?? []).at(-1) ?? 'NaN');
+    const latest = values.slice(-2);
+    const nearest = (candidates: number[]) => Math.min(...candidates.map((value) => Math.abs(value - shown)));
+    expect(nearest(latest)).toBeLessThan(Math.abs(valuesAtOpen - shown) + 1e-9);
   });
 });

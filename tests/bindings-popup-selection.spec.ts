@@ -1,7 +1,14 @@
 import fs from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
 import type { DiagramConfigV2 } from '../src/model/config';
-import { closeBindingsPopup, openBindingsPopup, popupInspector, selectStageCell } from './authoring-controls';
+import {
+  chooseEditorOption,
+  closeBindingsPopup,
+  openBindingsPopup,
+  popupInspector,
+  selectStageCell,
+} from './authoring-controls';
+import { binding, nativeQuery } from '../src/fixtures/authoring-config';
 import { expect, test } from './authoring-fixtures';
 
 const SHOTS = '/tmp/dmap-popup-p3';
@@ -111,7 +118,7 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
     await expect(labelField(dialog)).toHaveValue('Bulk ${cell.key}');
   });
 
-  test('Shift + drag over two routers proposes the shared attribute first, marks the extras and keeps the ids last', async ({
+  test('Shift + drag over two routers proposes by extras, marks the extras of the attributes and keeps the ids last', async ({
     page,
     createDiagram,
     gotoPanelEditPage,
@@ -129,6 +136,10 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
     await expect(heading(dialog, '2 elements')).toBeFocused();
     await expect.poll(() => ids(selected(dialog))).toEqual(['r1', 'r2']);
     const inspector = popupInspector(dialog);
+    // The label proposal has no extra cell: it ranks above the attributes (one extra). The ids stay last.
+    await expect(inspector.getByLabel('Proposed label regex', { exact: true })).toHaveValue('/^core-/');
+    await expect(inspector.getByTestId('dmap-proposal-counts')).toHaveText('matches 2, extra 0, missed 0');
+    await inspector.getByRole('radiogroup', { name: 'Proposal' }).getByRole('radio').nth(1).check({ force: true });
     await expect(inspector.getByLabel('Proposed attributes', { exact: true })).toHaveValue('role=router');
     await expect(inspector.getByTestId('dmap-proposal-counts')).toHaveText('matches 3, extra 1, missed 0');
     await expect.poll(() => ids(stageOf(dialog).locator('[data-dmap-extra="true"]'))).toEqual(['r3']);
@@ -136,7 +147,7 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
     const proposals = inspector.getByRole('radiogroup', { name: 'Proposal' }).getByRole('radio');
     expect(
       await proposals.evaluateAll((els) => els.map((el) => (el as HTMLInputElement).labels?.[0]?.textContent?.trim()))
-    ).toEqual(['Attributes', 'Label', 'Element IDs']);
+    ).toEqual(['Label', 'Attributes', 'Element IDs']);
     fs.mkdirSync(SHOTS, { recursive: true });
     await page.screenshot({ path: `${SHOTS}/pattern-from-selection-${port()}.png` });
 
@@ -246,5 +257,87 @@ test.describe('bindings popup: multi-select, pattern from selection, bulk edit',
     await expect(popupInspector(reopened).getByRole('region', { name: 'Hover card preview' })).toContainText(
       'Other rows'
     );
+  });
+
+  test.describe('metric bindings', () => {
+    const shapeOf = (match: Record<string, string>) => ({
+      shape: { binding: { ...binding('health'), match }, target: 'shape' as const },
+    });
+    const metrics = (prometheus: string, over: Partial<DiagramConfigV2>): DiagramConfigV2 =>
+      baseConfig({
+        defaultDatasource: { uid: prometheus, type: 'prometheus' },
+        queries: [
+          nativeQuery('health', 'label_replace(vector(1), "device", "$dm_key", "", "")', { dm_key: 'cell.key' }),
+        ],
+        ...over,
+      });
+
+    test('a reducer change of an inherited binding writes the whole binding: Apply stays enabled', async ({
+      page,
+      createDiagram,
+      gotoPanelEditPage,
+      readProvisionedDataSource,
+    }) => {
+      const prometheus = (await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' })).uid;
+      const config = metrics(prometheus, {
+        patterns: [
+          {
+            id: 'routers',
+            name: 'Routers',
+            select: { ids: ['r1', 'r2', 'r3'] },
+            display: { shape: { binding: binding('health'), target: 'shape' } },
+          },
+        ],
+      });
+      const uid = await createDiagram(config, { svg });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+      const dialog = await openBindingsPopup(page);
+      await selectStageCell(dialog, 'r1');
+      await cell(dialog, 'r2').click({ modifiers: ['Shift'] });
+      await cell(dialog, 'r3').click({ modifiers: ['Shift'] });
+      const inspector = popupInspector(dialog);
+      await expect(heading(dialog, '3 elements')).toBeFocused();
+      await inspector.getByRole('button', { name: 'Shape', exact: true }).click();
+      await chooseEditorOption(inspector, 'Shape reducer', 'mean');
+      await expect(group(dialog, 'Overrides', 3)).toBeVisible();
+      await expect(inspector.getByRole('alert', { name: 'Binding diagnostics' })).toHaveCount(0);
+      const apply = dialog.getByRole('button', { name: 'Apply bindings', exact: true });
+      await expect(apply).toBeEnabled();
+      await apply.click();
+      await closeBindingsPopup(page);
+      const reopened = await openBindingsPopup(page);
+      await selectStageCell(reopened, 'r2');
+      await expect(group(reopened, 'Overrides', 3)).toBeVisible();
+    });
+
+    test('bindings with different matchers show Mixed and no binding fields, without a crash', async ({
+      page,
+      createDiagram,
+      gotoPanelEditPage,
+      readProvisionedDataSource,
+    }) => {
+      const prometheus = (await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' })).uid;
+      const config = metrics(prometheus, {
+        patterns: [],
+        overrides: [
+          { cellId: 'r1', display: shapeOf({ device: 'a' }) },
+          { cellId: 'r2', display: shapeOf({ device: 'b' }) },
+        ],
+      });
+      const uid = await createDiagram(config, { svg });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+      const dialog = await openBindingsPopup(page);
+      await selectStageCell(dialog, 'r1');
+      await cell(dialog, 'r2').click({ modifiers: ['Shift'] });
+      const inspector = popupInspector(dialog);
+      await expect(heading(dialog, '2 elements')).toBeFocused();
+      await inspector.getByRole('button', { name: 'Shape', exact: true }).click();
+      await expect(inspector.getByText('Mixed, edit per element').first()).toBeVisible();
+      await expect(inspector.getByRole('combobox', { name: 'Shape query', exact: true })).toHaveCount(0);
+      await expect(inspector.getByTestId('dmap-field-source').filter({ hasText: 'Mixed' }).first()).toBeVisible();
+      await expect(dialog).toBeVisible();
+    });
   });
 });

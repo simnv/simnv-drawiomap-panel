@@ -75,8 +75,8 @@ no per-refresh work while the popup is open and renders once on close.
       Candidates: (1) `{ kind, attrs }` with every attribute equal across the selection except `pg-id`, `id`, `label`,
       `pg-schema`; drop attributes one by one from the least selective while missed stays zero and extras do not grow;
       (2) `{ kind, label: '/^<escaped common prefix>/' }` when the common prefix of `labelText` has three or more
-      characters; (3) `{ ids }`. Ranking: drop candidates with missed cells; order `attrs` (fewest extras first), then
-      `label`, then `ids`. `ids` is never first when an `attrs` or `label` candidate exists. Use `cellMatches`.
+      characters; (3) `{ ids }`. Ranking: drop candidates with missed cells; sort `attrs` and `label` together by extras (fewest first), attrs before label on
+      a tie; `ids` is always last. Use `cellMatches`.
 - [ ] `src/editor/popup/PatternFromSelection.tsx`: for two or more selected cells: the best proposal in the pattern
       selector fields (kind, ids, attrs as "key=value" rows, label regex), the counts "matches N, extra M, missed K",
       the other proposals as a `RadioButtonGroup`, "Create pattern". Edits re-evaluate with `cellMatches`. While open,
@@ -96,8 +96,9 @@ no per-refresh work while the popup is open and renders once on close.
       sets each leaf in the override of each cell (creating overrides as needed) and touches nothing else. `batch` as
       in Task 4. Tests: inherited and unrelated fields survive; hover rows of each cell stay; an override is created only
       with the set leaves.
-- [ ] `src/editor/popup/BulkPane.tsx`: `commonLeaves(cellIds, plan)` returns `{ common: Partial<DisplayConfig>; mixedPaths: string[] }` over the effective displays; `hover.rows` and `status.rules` count as one leaf each and are
-      common only when deep-equal across all cells. Renders `DisplayFields` with `value = common`; `sourceOf` returns
+- [ ] `src/editor/popup/BulkPane.tsx`: `commonLeaves(cellIds, plan)` returns `{ common: Partial<DisplayConfig>; mixedPaths: string[] }` over the effective displays; `hover.rows`, every array, `status` and every metric binding (`shape.binding`, `link.*Binding`) count as one
+      unit leaf each and are common only when deep-equal across all cells; a mixed binding shows the chip and mounts no
+      `BindingFields`; a mixed field has a Clear button (remove op for each selected override). Renders `DisplayFields` with `value = common`; `sourceOf` returns
       the chip "Mixed" for mixed paths; the hover and status sections show "Mixed, edit per element" when their arrays
       are mixed and render no rows. A change becomes `diffLeaves(common, next)` → `display-many`. "Remove overrides of
       the selection" dispatches a `batch` of `remove-override`.
