@@ -188,7 +188,6 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
     }
     return subscribe(currentAddress(), openPopup);
     // The session is the address: a new one subscribes again.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, editing, openPopup]);
   const closePopup = useCallback(() => {
     setPopup(null);
