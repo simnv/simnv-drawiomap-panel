@@ -183,7 +183,7 @@ export const getEditorStyles = (theme: GrafanaTheme2) => ({
   sourceRow: css({ position: 'relative', minHeight: theme.spacing(3), marginBottom: theme.spacing(0.5) }),
   source: css({
     position: 'absolute',
-    top: 0,
+    top: -3,
     right: 0,
     maxWidth: '65%',
     display: 'inline-flex',
