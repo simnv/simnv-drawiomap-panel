@@ -86,6 +86,9 @@ test.describe('bindings popup: live card and field sources', () => {
     ).toBeVisible();
     await expect(inspector.getByRole('button', { name: /^Reset / })).toHaveCount(0);
 
+    // The card preview must not widen its pane: the pane keeps its width while the card has charts and rows change.
+    const paneWidth = async () => (await dialog.getByTestId('dmap-pane-inspector').boundingBox())!.width;
+    const widthBefore = await paneWidth();
     // Edit a label of a hover row: the override copies the rows and owns them.
     await openEditorSection(inspector, 'Hover rows');
     const rowLabel = inspector.getByLabel('Hover row 1 label', { exact: true });
@@ -93,6 +96,8 @@ test.describe('bindings popup: live card and field sources', () => {
     await rowLabel.fill('Own detail');
     await expect(group(dialog, 'Overrides', 1)).toBeVisible();
     await expect(preview(dialog)).toContainText('Own detail');
+    await page.waitForTimeout(500);
+    expect(Math.abs((await paneWidth()) - widthBefore)).toBeLessThanOrEqual(1);
     const reset = inspector.getByRole('button', { name: 'Reset hover rows to pattern' }).first();
     await expect(reset).toBeVisible();
     fs.mkdirSync(SHOTS, { recursive: true });
@@ -252,6 +257,7 @@ test.describe('bindings popup: queries', () => {
     await expect(table).toBeVisible();
     expect(await table.getByRole('columnheader').count()).toBeGreaterThan(1);
     expect(await table.getByRole('row').count()).toBeLessThanOrEqual(21);
+    await table.scrollIntoViewIfNeeded();
     fs.mkdirSync(SHOTS, { recursive: true });
     await page.screenshot({ path: `${SHOTS}/query-table-${port()}.png` });
 
@@ -304,6 +310,10 @@ test.describe('bindings popup: narrow screens', () => {
     // The stage keeps its fitted diagram: the svg has a size in the tab.
     const box = await dialog.getByTestId('dmap-popup-stage').locator('svg').first().boundingBox();
     expect(box!.width).toBeGreaterThan(100);
+    // The chart region loads when its tab shows: a hidden stage has no size, and a shown one fills the chart.
+    await expect(dialog.getByTestId('dmap-popup-stage').locator('[data-dmap-widget="trend-region"]')).not.toContainText(
+      'Loading'
+    );
     await page.screenshot({ path: `${SHOTS}/tabs-diagram-900-${port()}.png` });
     await dialog.getByTestId('dmap-popup-stage').locator('[data-cell-id="device-1"]').first().click();
     await expect(dialog.getByRole('tab', { name: 'Inspector' })).toHaveAttribute('aria-selected', 'true');

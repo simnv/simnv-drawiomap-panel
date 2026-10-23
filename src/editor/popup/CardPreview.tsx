@@ -66,7 +66,7 @@ export function CardPreview({ patch, resolve, cardContext, timeRange, timeZone, 
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
-  section: css({ flex: 'none', minWidth: 0 }),
+  section: css({ flex: 'none', minWidth: 0, overflow: 'hidden' }),
   empty: css({
     margin: 0,
     padding: theme.spacing(1),

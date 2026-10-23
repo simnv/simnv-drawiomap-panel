@@ -306,7 +306,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
   // sets display, so the class must not set it for a hidden pane.
   tabPane: css({ flex: '1 1 auto', width: '100%', maxWidth: 'none', '&[hidden]': { display: 'none' } }),
   pane: css({ display: 'flex', flexDirection: 'column', position: 'relative', minHeight: 0 }),
-  side: css({ flexGrow: 0, flexShrink: 0, maxWidth: LIMITS.inspector.max }),
+  // min-width 0: the content of a side pane must not widen it beyond its size.
+  side: css({ flexGrow: 0, flexShrink: 0, minWidth: 0, maxWidth: LIMITS.inspector.max }),
   centre: css({ flex: '1 1 0', minWidth: 0, overflow: 'hidden' }),
   handle: css({
     flex: `0 0 ${HANDLE}px`,

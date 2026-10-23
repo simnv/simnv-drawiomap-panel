@@ -28,6 +28,8 @@ export const SHEET_BELOW = 480;
 const W = 280;
 const GAP = 14;
 const EDGE = 4;
+/** Padding (8 px each side) and border (1 px each side) of the card: the charts of an inline card are narrower by this. */
+const INLINE_CHROME = 18;
 
 export interface CardProps {
   model: CardModel | ConfiguredCardModel;
@@ -77,7 +79,9 @@ const getStyles = (theme: GrafanaTheme2) => ({
     width: 100%;
     box-sizing: border-box;
     box-shadow: none;
-    overflow: visible;
+    /* The charts have the width of the card. A chart a few px too wide would widen its pane, and the pane the chart. */
+    min-width: 0;
+    overflow: hidden;
   `,
   // Fixed to the viewport, so the sheet is visible also in a panel that is taller than the screen. The panel
   // renders it in a portal: a CSS transform of a parent (the Grafana grid item) would move a fixed element.
@@ -407,7 +411,7 @@ export function Card({
           timeZone={timeZone}
           pinned={pinned}
           styles={styles}
-          width={Math.max(1, (inline ? width : Math.min(W, width)) - 16)}
+          width={Math.max(1, inline ? width - INLINE_CHROME : Math.min(W, width) - 16)}
         />
       ))}
       {pinned && model.links.length ? (

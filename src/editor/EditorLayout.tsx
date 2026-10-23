@@ -189,7 +189,8 @@ export const getEditorStyles = (theme: GrafanaTheme2) => ({
     display: 'inline-flex',
     alignItems: 'center',
     gap: theme.spacing(0.5),
-    minHeight: theme.spacing(2.5),
+    // The label line has this height. The reset button is taller and centres on it.
+    height: theme.spacing(2.5),
   }),
   chip: css({
     minWidth: 0,
