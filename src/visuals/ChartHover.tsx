@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import {
   createTheme,
@@ -127,6 +127,11 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       ),
     [series]
   );
+  // the frame callback reads the data and range of the latest render, not those of the render that queued it
+  const latest = useRef({ ready, from, to });
+  useLayoutEffect(() => {
+    latest.current = { ready, from, to };
+  });
   const rows = useMemo(() => {
     if (!enabled || !hover) {
       return undefined;
@@ -161,14 +166,23 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
     if (!r || r.width <= 0) {
       return;
     }
-    const picked = alignedSamples(ready, timeAt((clientX - r.left) / r.width, from, to));
+    const { ready: rd, from: f, to: t } = latest.current;
+    const picked = alignedSamples(rd, timeAt((clientX - r.left) / r.width, f, t));
     if (!picked) {
       return;
     }
-    const fraction = to > from ? Math.min(1, Math.max(0, (picked.time - from) / (to - from))) : 0;
-    const next: Hover = { time: picked.time, fraction, x: r.left + fraction * r.width, y: r.top + r.height / 2, kind };
-    // the same sample keeps the same state object: React skips the render
-    setHover((cur) => (cur && cur.time === next.time && cur.kind === kind ? cur : next));
+    const fraction = t > f ? Math.min(1, Math.max(0, (picked.time - f) / (t - f))) : 0;
+    const next: Hover = {
+      time: picked.time,
+      fraction,
+      x: Math.round(r.left + fraction * r.width),
+      y: Math.round(r.top + r.height / 2),
+      kind,
+    };
+    // the same sample at the same place keeps the same state object: React skips the render
+    setHover((cur) =>
+      cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y ? cur : next
+    );
   };
   const move = (ev: React.PointerEvent) => {
     pending.current = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? 'touch' : 'mouse' };
@@ -194,10 +208,14 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       (ev.currentTarget as HTMLElement).closest('a')?.click();
       return;
     }
-    if (ev.key === 'Escape' && hover) {
-      ev.stopPropagation();
-      ev.preventDefault();
-      clear();
+    if (ev.key === 'Escape') {
+      // a queued frame must not open the tooltip after Escape; the event goes on to close the card when nothing was open
+      cancelFrame();
+      if (hover) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        setHover(undefined);
+      }
       return;
     }
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') {

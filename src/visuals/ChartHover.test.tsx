@@ -5,13 +5,14 @@ import { createTheme, dateTime, FieldType, type TimeRange } from '@grafana/data'
 import { ChartHover, formatSample, type HoverSeries } from './ChartHover';
 import type { HistoryModel } from '../query/frames';
 
-const counts = vi.hoisted(() => ({ table: 0, container: 0 }));
+const counts = vi.hoisted(() => ({ table: 0, container: 0, positions: [] as Array<{ x: number; y: number }> }));
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
   useStyles2: (fn: (theme: ReturnType<typeof createTheme>) => unknown) => fn(createTheme()),
   Portal: ({ children }: any) => <div data-testid="portal">{children}</div>,
-  VizTooltipContainer: ({ children }: any) => {
+  VizTooltipContainer: ({ children, position }: any) => {
     counts.container++;
+    counts.positions.push(position);
     return <div data-testid="container">{children}</div>;
   },
   SeriesTable: ({ timestamp, series }: any) => {
@@ -43,6 +44,7 @@ beforeEach(() => {
   nextFrame = 1;
   counts.table = 0;
   counts.container = 0;
+  counts.positions = [];
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
     frames.set(nextFrame, cb);
     return nextFrame++;
@@ -298,6 +300,68 @@ describe('ChartHover cost while scrubbing', () => {
     fireEvent.keyDown(el, { key: 'ArrowLeft' });
     expect(screen.getByTestId('series').textContent).toBe('up=3');
     expect(frames.size).toBe(0);
+  });
+});
+
+describe('ChartHover frame races', () => {
+  const box = (el: HTMLElement, left = 0) => {
+    el.getBoundingClientRect = () =>
+      ({ left, width: 100, top: 0, height: 20, right: left + 100, bottom: 20 }) as DOMRect;
+    return el;
+  };
+  const moveTo = (el: HTMLElement, x: number) =>
+    fireEvent.pointerMove(el, { clientX: x, clientY: 5, pointerType: 'mouse' });
+
+  it('uses the data and range of the latest render when a refresh lands before the frame', () => {
+    const view = render(
+      <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
+        <i />
+      </ChartHover>
+    );
+    const el = box(screen.getByTestId('dmap-chart-hover'));
+    moveTo(el, 80);
+    // refresh: other samples (0, 80, 100) and a new range before the frame runs
+    const fresh = { ...history([7, 8, 9], 'short'), timestamps: [0, 80, 100] } as HistoryModel;
+    view.rerender(
+      <ChartHover enabled series={series(fresh)} timeRange={timeRange}>
+        <i />
+      </ChartHover>
+    );
+    flushFrame();
+    expect(screen.getByTestId('series').textContent).toBe('up=8');
+    expect(screen.getByTestId('dmap-chart-crosshair').style.left).toBe('80%');
+    expect(counts.positions.at(-1)).toEqual({ x: 80, y: 10 });
+  });
+
+  it('moves the anchor when the chart moves and the same sample is picked', () => {
+    render(
+      <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
+        <i />
+      </ChartHover>
+    );
+    const el = box(screen.getByTestId('dmap-chart-hover'));
+    moveTo(el, 50);
+    flushFrame();
+    expect(counts.positions.at(-1)).toEqual({ x: 50, y: 10 });
+    box(el, 200); // the chart scrolled: sample 50 is now at x = 250
+    moveTo(el, 250);
+    flushFrame();
+    expect(counts.positions.at(-1)).toEqual({ x: 250, y: 10 });
+  });
+
+  it('Escape before the first frame stops the frame from opening the tooltip', () => {
+    render(
+      <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
+        <i />
+      </ChartHover>
+    );
+    const el = box(screen.getByTestId('dmap-chart-hover'));
+    moveTo(el, 50);
+    expect(frames.size).toBe(1);
+    fireEvent.keyDown(el, { key: 'Escape' });
+    expect(frames.size).toBe(0);
+    flushFrame();
+    expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
   });
 });
 
