@@ -30,65 +30,224 @@ export interface BindingPlan {
   diagnostics: Diagnostic[];
 }
 
-function mergeFields<T extends object>(base: T | undefined, patch: T | undefined): T | undefined {
+/** Called for each effective display path that a patch sets; a replacing patch also ends everything below the path. */
+type Track = (path: string) => void;
+
+function mergeFields<T extends object>(
+  base: T | undefined,
+  patch: T | undefined,
+  track?: Track,
+  path = ''
+): T | undefined {
+  if (patch !== undefined && track) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) {
+        track(`${path}.${key}`);
+      }
+    }
+  }
   return patch === undefined ? base : { ...base, ...patch };
 }
 
 function mergeSelector<T extends SeriesSelector | QueryBinding>(
   base: T | undefined,
-  patch: T | undefined
+  patch: T | undefined,
+  track?: Track,
+  path = ''
 ): T | undefined {
-  return patch === undefined ? base : { ...base, ...patch, match: mergeFields(base?.match, patch.match) };
+  if (patch !== undefined && track) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (key !== 'match' && value !== undefined) {
+        track(`${path}.${key}`);
+      }
+    }
+  }
+  return patch === undefined
+    ? base
+    : { ...base, ...patch, match: mergeFields(base?.match, patch.match, track, `${path}.match`) };
 }
 
-/** Merge only the known nested settings. Arrays replace; changing a status kind replaces that rule. */
-function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefined): DisplayConfig {
+const LINK_SELECTORS = [
+  'a2b',
+  'b2a',
+  'a2bBinding',
+  'b2aBinding',
+  'capacityBinding',
+  'capacityA2bBinding',
+  'capacityB2aBinding',
+] as const;
+
+/**
+ * Merge only the known nested settings. Arrays replace; changing a status kind replaces that rule.
+ * With `track`, every effective path that the patch sets is reported, down to each matcher key and nested key:
+ * the same granularity as the merge, from the same code.
+ */
+function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefined, track?: Track): DisplayConfig {
   if (!patch) {
     return base;
   }
   const result: DisplayConfig = { ...base, ...patch };
+  if (track) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined && !['link', 'shape', 'hover', 'status'].includes(key)) {
+        track(key);
+      }
+    }
+  }
   if (patch.link) {
     const previous = base.link;
+    if (track) {
+      for (const [key, value] of Object.entries(patch.link)) {
+        const handled =
+          (LINK_SELECTORS as readonly string[]).includes(key) ||
+          key === 'card' ||
+          (key === 'capacity' && typeof value === 'object');
+        if (value !== undefined && !handled) {
+          track(`link.${key}`);
+        }
+      }
+    }
     result.link = {
       ...previous,
       ...patch.link,
-      a2b: mergeSelector(previous?.a2b, patch.link.a2b),
-      b2a: mergeSelector(previous?.b2a, patch.link.b2a),
-      a2bBinding: mergeSelector(previous?.a2bBinding, patch.link.a2bBinding),
-      b2aBinding: mergeSelector(previous?.b2aBinding, patch.link.b2aBinding),
-      capacityBinding: mergeSelector(previous?.capacityBinding, patch.link.capacityBinding),
-      capacityA2bBinding: mergeSelector(previous?.capacityA2bBinding, patch.link.capacityA2bBinding),
-      capacityB2aBinding: mergeSelector(previous?.capacityB2aBinding, patch.link.capacityB2aBinding),
+      a2b: mergeSelector(previous?.a2b, patch.link.a2b, track, 'link.a2b'),
+      b2a: mergeSelector(previous?.b2a, patch.link.b2a, track, 'link.b2a'),
+      a2bBinding: mergeSelector(previous?.a2bBinding, patch.link.a2bBinding, track, 'link.a2bBinding'),
+      b2aBinding: mergeSelector(previous?.b2aBinding, patch.link.b2aBinding, track, 'link.b2aBinding'),
+      capacityBinding: mergeSelector(
+        previous?.capacityBinding,
+        patch.link.capacityBinding,
+        track,
+        'link.capacityBinding'
+      ),
+      capacityA2bBinding: mergeSelector(
+        previous?.capacityA2bBinding,
+        patch.link.capacityA2bBinding,
+        track,
+        'link.capacityA2bBinding'
+      ),
+      capacityB2aBinding: mergeSelector(
+        previous?.capacityB2aBinding,
+        patch.link.capacityB2aBinding,
+        track,
+        'link.capacityB2aBinding'
+      ),
       capacity:
         typeof patch.link.capacity === 'object'
-          ? mergeSelector(typeof previous?.capacity === 'object' ? previous.capacity : undefined, patch.link.capacity)
+          ? mergeSelector(
+              typeof previous?.capacity === 'object' ? previous.capacity : undefined,
+              patch.link.capacity,
+              track,
+              'link.capacity'
+            )
           : (patch.link.capacity ?? previous?.capacity),
-      card: mergeFields(previous?.card, patch.link.card),
+      card: mergeFields(previous?.card, patch.link.card, track, 'link.card'),
     };
   }
   if (patch.shape) {
+    if (track) {
+      for (const [key, value] of Object.entries(patch.shape)) {
+        if (value !== undefined && !['series', 'binding', 'sparkline'].includes(key)) {
+          track(`shape.${key}`);
+        }
+      }
+    }
     result.shape = {
       ...base.shape,
       ...patch.shape,
-      series: mergeSelector(base.shape?.series, patch.shape.series),
-      binding: mergeSelector(base.shape?.binding, patch.shape.binding),
-      sparkline: mergeSelector(base.shape?.sparkline, patch.shape.sparkline),
+      series: mergeSelector(base.shape?.series, patch.shape.series, track, 'shape.series'),
+      binding: mergeSelector(base.shape?.binding, patch.shape.binding, track, 'shape.binding'),
+      sparkline: mergeSelector(base.shape?.sparkline, patch.shape.sparkline, track, 'shape.sparkline'),
     };
   }
   if (patch.hover) {
-    result.hover = mergeFields(base.hover, patch.hover);
+    result.hover = mergeFields(base.hover, patch.hover, track, 'hover');
   }
   if (patch.status && base.status?.kind === patch.status.kind) {
+    if (track) {
+      for (const [key, value] of Object.entries(patch.status)) {
+        if (value !== undefined && !['binding', 'default', 'freshness'].includes(key)) {
+          track(`status.${key}`);
+        }
+      }
+    }
     result.status = {
       ...base.status,
       ...patch.status,
-      binding: mergeSelector(base.status.binding, patch.status.binding)!,
-      default: mergeFields(base.status.default, patch.status.default)!,
-      freshness: mergeFields(base.status.freshness, patch.status.freshness),
+      binding: mergeSelector(base.status.binding, patch.status.binding, track, 'status.binding')!,
+      default: mergeFields(base.status.default, patch.status.default, track, 'status.default')!,
+      freshness: mergeFields(base.status.freshness, patch.status.freshness, track, 'status.freshness'),
     };
+  } else if (patch.status) {
+    track?.('status');
   }
   // The schema admits JSON settings only. Clone inherited arrays/records so cells never share mutable settings.
   return JSON.parse(JSON.stringify(result));
+}
+
+/** Who contributes to a merged display: a pattern by its index in the config, or the override of the cell. */
+export type DisplayOwner = { kind: 'pattern'; index: number } | { kind: 'override'; cellId: string };
+/** The display paths that the owners set, in the order of the merge. A replacing owner ends the earlier ones below it. */
+export type DisplayProvenance = Map<string, DisplayOwner[]>;
+
+/** The merge of one cell: the matching patterns in config order, then its override. The one place of this rule. */
+function mergeCell(
+  config: DiagramConfigV2,
+  cell: CellMeta,
+  provenance?: DisplayProvenance
+): { display: DisplayConfig; patternIds: string[]; override?: DiagramConfigV2['overrides'][number] } {
+  const owners: Array<{ owner: DisplayOwner; display: DisplayConfig }> = [];
+  config.patterns.forEach((p, index) => {
+    if (cellMatches(p.select, cell)) {
+      owners.push({ owner: { kind: 'pattern', index }, display: p.display });
+    }
+  });
+  const override = config.overrides.find((o) => o.cellId === cell.id);
+  if (override) {
+    owners.push({ owner: { kind: 'override', cellId: cell.id }, display: override.display });
+  }
+  let display: DisplayConfig = {};
+  for (const { owner, display: patch } of owners) {
+    const track: Track | undefined = provenance
+      ? (path) => {
+          for (const key of Array.from(provenance.keys())) {
+            if (key === path || key.startsWith(`${path}.`) || key.startsWith(`${path}[`)) {
+              provenance.delete(key);
+            }
+          }
+          provenance.set(path, [...(provenance.get(path) ?? []), owner]);
+        }
+      : undefined;
+    display = mergeDisplay(display, patch, track);
+  }
+  return {
+    display,
+    override,
+    patternIds: owners.flatMap(({ owner }) => (owner.kind === 'pattern' ? [config.patterns[owner.index].id] : [])),
+  };
+}
+
+/** Which owners the effective display of a cell comes from, by path. Only the editor asks for it. */
+export function displayProvenance(config: DiagramConfigV2, cell: CellMeta): DisplayProvenance {
+  const provenance: DisplayProvenance = new Map();
+  mergeCell(config, cell, provenance);
+  return provenance;
+}
+
+/** The owners behind a path, or behind anything below or above it: a diagnostic may name a binding or one field. */
+export function ownersOfPath(provenance: DisplayProvenance, path: string): DisplayOwner[] {
+  const found: DisplayOwner[] = [];
+  for (const [key, owners] of provenance) {
+    const related = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
+    if (related(path, key) || related(key, path)) {
+      for (const owner of owners) {
+        if (!found.some((x) => JSON.stringify(x) === JSON.stringify(owner))) {
+          found.push(owner);
+        }
+      }
+    }
+  }
+  return found;
 }
 
 function activeBindings(display: DisplayConfig): ReturnType<typeof displayBindings> {
@@ -134,12 +293,7 @@ export function resolvePatterns(cells: CellMeta[], input: DiagramConfigV2): Bind
     return valid;
   };
   for (const cell of cells) {
-    const matching = config.patterns.filter((p) => cellMatches(p.select, cell));
-    const override = config.overrides.find((o) => o.cellId === cell.id);
-    let display: DisplayConfig = {};
-    for (const patch of [...matching.map((p) => p.display), override?.display]) {
-      display = mergeDisplay(display, patch);
-    }
+    const { display, override, patternIds } = mergeCell(config, cell);
     const scope = cellScope(cell);
     const bindings = activeBindings(display).filter(({ binding, path }) =>
       parameters(binding, scope, `cells.${cell.id}.${path}`)
@@ -148,7 +302,7 @@ export function resolvePatterns(cells: CellMeta[], input: DiagramConfigV2): Bind
       cellId: cell.id,
       scope,
       display,
-      patternIds: matching.map((p) => p.id),
+      patternIds,
       overridden: !!override,
       bindings: bindings.map(({ binding }) => binding),
     };

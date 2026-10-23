@@ -230,6 +230,25 @@ describe('owner of a merged setting', () => {
     ]);
     expect(list.patterns.map((r) => r.problems.length)).toEqual([0, 1]);
   });
+  it('blames every pattern that contributed a matcher key of the same binding', () => {
+    const shape = (match: Record<string, string>) => ({ binding: { queryId: 'q1', match, reducer: 'last' as const } });
+    const cfg: DiagramConfigV2 = {
+      ...merged,
+      patterns: [
+        { id: 'p1', name: 'P1', select: { ids: ['core'] }, display: { shape: shape({ job: 'absent' }) } },
+        { id: 'p2', name: 'P2', select: { ids: ['core'] }, display: { shape: shape({ device: 'router-a' }) } },
+      ],
+      overrides: [],
+    };
+    const at = (path: string) =>
+      buildBindingsList(cfg, cells, [{ code: 'ambiguous-metric', path, message: 'x' }]).patterns.map(
+        (r) => r.problems.length
+      );
+    expect(at('cells.core.shape.binding')).toEqual([1, 1]);
+    // a diagnostic on one matcher key names only the pattern that set it
+    expect(at('cells.core.shape.binding.match.job')).toEqual([1, 0]);
+    expect(at('cells.core.shape.binding.match.device')).toEqual([0, 1]);
+  });
   it('blames all candidates when no owner sets the path', () => {
     expect(owners('cells.core.url')).toEqual(['pattern:0:p1', 'pattern:1:p2', 'override:0:core']);
   });

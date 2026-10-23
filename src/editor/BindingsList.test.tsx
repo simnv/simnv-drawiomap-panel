@@ -1,4 +1,6 @@
-import { openSection } from './testUtils';
+import { openSection, selectElement } from './testUtils';
+import { createQueryController } from '../query/controller';
+import { PanelQueryContext } from '../query/panel';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -281,5 +283,46 @@ describe('all bindings tab', () => {
     fireEvent.mouseLeave(row);
     fireEvent.focus(row);
     expect(calls.mock.calls.length).toBe(before);
+  });
+
+  it('does not rebuild any card on a highlight change while a query preview is active', async () => {
+    const calls = vi.mocked(cardModel.buildConfiguredCard);
+    const controller = createQueryController(vi.fn(() => () => {}));
+    const timeRange = getDefaultTimeRange();
+    const context = { timeRange, timeZone: 'utc', scopedVars: {}, refreshMs: 0, intervalMs: 1000, generation: 1 };
+    const data = { state: LoadingState.Done, series: [], timeRange };
+    const native: DiagramConfigV2 = {
+      ...config,
+      overrides: [],
+      widgets: [],
+      defaultDatasource: { uid: 'ds' },
+      queries: [{ id: 'q1', name: 'One', source: { kind: 'datasource', target: { refId: 'D' }, parameters: {} } }],
+    };
+    const host = document.createElement('div');
+    host.innerHTML = '<svg><g data-cell-id="device-1"><rect/></g><g data-cell-id="device-2"><rect/></g></svg>';
+    render(
+      <PanelQueryContext.Provider value={{ controller, context }}>
+        <BindingEditor
+          config={native}
+          cells={buildCellIndex(host.querySelector('svg')!)}
+          data={data}
+          onSave={vi.fn()}
+        />
+      </PanelQueryContext.Provider>
+    );
+    selectElement('device-1');
+    openSection('Named queries');
+    await screen.findByText(/No supported native query editor/);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    // the active preview builds the hover card of the selected cell
+    expect(calls.mock.calls.some(([patch]) => patch.cellId === 'device-1')).toBe(true);
+    openAll();
+    const before = calls.mock.calls.length;
+    const row = screen.getByRole('button', { name: 'Edit pattern Devices' });
+    fireEvent.mouseEnter(row);
+    fireEvent.mouseLeave(row);
+    fireEvent.focus(row);
+    expect(calls.mock.calls.length).toBe(before);
+    controller.dispose();
   });
 });

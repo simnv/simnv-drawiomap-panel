@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
-import { resolvePatterns } from './patterns';
+import { displayProvenance, ownersOfPath, resolvePatterns } from './patterns';
 import type { DiagramConfigV2 } from '../model/config';
 
 const empty = (): DiagramConfigV2 => ({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] });
@@ -293,5 +293,49 @@ describe('resolvePatterns', () => {
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ code: 'missing-parameter-path', path: 'widgets[0].binding.parameters.dm_device' })
     );
+  });
+});
+
+describe('display provenance', () => {
+  const sel = (match: Record<string, string>) => ({ queryId: 'q', match, reducer: 'last' as const });
+  const config: DiagramConfigV2 = {
+    ...empty(),
+    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+    patterns: [
+      {
+        id: 'p1',
+        name: 'P1',
+        select: { ids: ['a'] },
+        display: { label: 'one', shape: { binding: sel({ job: 'absent' }) } },
+      },
+      { id: 'p2', name: 'P2', select: { ids: ['a'] }, display: { shape: { binding: sel({ device: 'router-a' }) } } },
+      { id: 'other', name: 'Other', select: { ids: ['b'] }, display: { label: 'b' } },
+    ],
+    overrides: [{ cellId: 'a', display: { label: 'over' } }],
+  };
+  const cell = cellMetaFromAttrs('a', {}, false);
+  const owners = (path: string) => ownersOfPath(displayProvenance(config, cell), path);
+
+  it('keeps each matcher key with the pattern that set it, and the binding with all contributors', () => {
+    expect(owners('shape.binding.match.job')).toEqual([{ kind: 'pattern', index: 0 }]);
+    expect(owners('shape.binding.match.device')).toEqual([{ kind: 'pattern', index: 1 }]);
+    expect(owners('shape.binding')).toEqual([
+      { kind: 'pattern', index: 0 },
+      { kind: 'pattern', index: 1 },
+    ]);
+  });
+  it('gives a replaced scalar to the override only', () => {
+    expect(owners('label')).toEqual([{ kind: 'override', cellId: 'a' }]);
+  });
+  it('does not change the merged display of the view-mode callers', () => {
+    const plan = resolvePatterns([cell], config);
+    expect(plan.cells.a.display).toEqual({
+      label: 'over',
+      shape: { binding: { queryId: 'q', match: { job: 'absent', device: 'router-a' }, reducer: 'last' } },
+    });
+    const before = JSON.stringify(plan.cells.a);
+    displayProvenance(config, cell);
+    expect(JSON.stringify(resolvePatterns([cell], config).cells.a)).toBe(before);
+    expect(plan.cells.a.patternIds).toEqual(['p1', 'p2']);
   });
 });

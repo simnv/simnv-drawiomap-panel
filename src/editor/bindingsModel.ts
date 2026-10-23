@@ -1,12 +1,6 @@
-import {
-  displayBindings,
-  type DiagramConfigV2,
-  type Diagnostic,
-  type DisplayConfig,
-  type ElementOverride,
-  type Pattern,
-} from '../model/config';
+import { displayBindings, type DiagramConfigV2, type Diagnostic, type DisplayConfig } from '../model/config';
 import { cellMatches } from '../binding/select';
+import { displayProvenance, ownersOfPath } from '../binding/patterns';
 import type { CellMeta } from '../types';
 
 /** One problem of a list row. A per-cell diagnostic of a shared pattern keeps its cell id. */
@@ -78,41 +72,6 @@ function cellOfPath(path: string, ids: string[]): { cellId: string; rest: string
 }
 
 /**
- * The unit of the merge in `mergeDisplay` (binding/patterns.ts): link, shape, status and hover merge key by key,
- * every other setting, and every array (the hover rows), is replaced as a whole.
- */
-const NESTED = new Set(['link', 'shape', 'status', 'hover']);
-function provenanceKey(rest: string): { section: keyof DisplayConfig; key?: string } {
-  const [first, second] = rest.split('.');
-  const section = first.replace(/\[\d+\]$/, '') as keyof DisplayConfig;
-  return NESTED.has(section) && second ? { section, key: second.replace(/\[\d+\]$/, '') } : { section };
-}
-
-/** The owner whose value of a display path is the effective one after the merge: the last that sets it. */
-function effectiveOwner<T extends { display: Partial<DisplayConfig> }>(owners: T[], rest: string): T | undefined {
-  const { section, key } = provenanceKey(rest);
-  let winner: T | undefined;
-  let kind: string | undefined;
-  for (const owner of owners) {
-    const value = owner.display[section] as Record<string, unknown> | undefined;
-    if (value === undefined) {
-      continue;
-    }
-    // A status of another kind replaces the earlier status: nothing of the earlier one survives.
-    if (section === 'status' && kind !== undefined && value.kind !== kind) {
-      winner = undefined;
-    }
-    if (section === 'status') {
-      kind = value.kind as string;
-    }
-    if (key === undefined || (typeof value === 'object' && value[key] !== undefined)) {
-      winner = owner;
-    }
-  }
-  return winner;
-}
-
-/**
  * Build the rows of the "All bindings" list from the config, the cells of the diagram and the diagnostics that the
  * editor and the engine already produce (config validation, pattern resolution, metric resolution, hover cards).
  * Pure: the caller decides which diagnostics it has. Matching uses the selector code of the engine (`cellMatches`).
@@ -159,6 +118,13 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     problems: [],
   }));
 
+  const provenance = new Map<string, ReturnType<typeof displayProvenance>>();
+  const provenanceOf = (cell: CellMeta) => {
+    if (!provenance.has(cell.id)) {
+      provenance.set(cell.id, displayProvenance(config, cell));
+    }
+    return provenance.get(cell.id)!;
+  };
   const general: RowProblem[] = [];
   const seen = new Set<string>();
   const add = (row: BindingRow | undefined, problem: RowProblem) => {
@@ -209,18 +175,19 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
         add(undefined, problem);
         continue;
       }
-      // Blame the owner whose value is the effective one after the merge: the matching patterns in config order,
-      // then the override of the cell. When no owner sets the path, the merge is the cause: blame all of them.
+      // Blame every owner that contributed a field of the failing path to the merge (the shared merge says who).
+      // When none did, the merge itself is the cause: blame all the owners of the cell.
       const matching = patterns.filter((_, i) => patternMatches[i].some((c) => c.id === hit.cellId));
       const override = overrides.find((row) => row.cellId === hit.cellId);
-      const chain: Array<{ row: BindingRow; display: Partial<DisplayConfig> }> = [
-        ...matching.map((row) => ({ row, display: (config.patterns[row.index] as Pattern).display })),
-        ...(override
-          ? [{ row: override as BindingRow, display: (config.overrides[override.index] as ElementOverride).display }]
-          : []),
-      ];
-      const owner = effectiveOwner(chain, hit.rest);
-      for (const row of owner ? [owner.row] : chain.map((c) => c.row)) {
+      const chain: BindingRow[] = [...matching, ...(override ? [override] : [])];
+      const meta = byId.get(hit.cellId);
+      const contributed = meta ? ownersOfPath(provenanceOf(meta), hit.rest) : [];
+      const owners: BindingRow[] = contributed.flatMap((owner) =>
+        owner.kind === 'pattern'
+          ? [patterns[owner.index] as BindingRow]
+          : overrides.filter((row) => row.cellId === owner.cellId)
+      );
+      for (const row of owners.length ? owners : chain) {
         add(row, { ...problem, cellId: hit.cellId });
       }
       if (!chain.length) {

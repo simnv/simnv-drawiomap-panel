@@ -285,10 +285,14 @@ export function BindingEditor({
     [plan, resolve, formatting, nowMs]
   );
   const cardPatch = draft.cellId ? bound?.patches.get(draft.cellId) : undefined;
-  const hoverPreview =
-    (localPreview || patternResults.length > 0) && cardPatch && resolve
-      ? buildConfiguredCard(cardPatch, resolve, { ...formatting, series: [] })
-      : undefined;
+  // Built from the preview inputs only: a highlight or a tab change must not rebuild the card.
+  const hoverPreview = useMemo(
+    () =>
+      (localPreview || patternResults.length > 0) && cardPatch && resolve
+        ? buildConfiguredCard(cardPatch, resolve, { ...formatting, series: [] })
+        : undefined,
+    [localPreview, patternResults, cardPatch, resolve, formatting]
+  );
   const metricDiagnostics = [...(bound?.diagnostics ?? []), ...(hoverPreview?.diagnostics ?? [])];
   const matchPreviews = affected.map((cellId) => {
     const bindings = [
