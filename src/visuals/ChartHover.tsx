@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import {
   createTheme,
@@ -69,8 +69,9 @@ export function formatSample(
 }
 
 interface Hover {
-  /** the hovered time in ms */
-  t: number;
+  /** time of the hovered sample in ms: the state changes only when this changes */
+  time: number;
+  /** the crosshair and the tooltip sit on the sample, not on the pointer (as the Grafana tooltip does) */
   fraction: number;
   x: number;
   y: number;
@@ -89,6 +90,17 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
   const theme = useTheme2();
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Hover>();
+  const frame = useRef<number>();
+  const pending = useRef<{ clientX: number; kind: 'mouse' | 'touch' }>();
+
+  const cancelFrame = useCallback(() => {
+    if (frame.current !== undefined) {
+      cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+    }
+    pending.current = undefined;
+  }, []);
+  useEffect(() => cancelFrame, [cancelFrame]);
 
   const kind = hover?.kind;
   useEffect(() => {
@@ -98,12 +110,13 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
     // a touch tooltip stays after the finger lifts; the next touch outside the chart removes it
     const away = (ev: PointerEvent) => {
       if (!ref.current?.contains(ev.target as Node)) {
+        cancelFrame();
         setHover(undefined);
       }
     };
     document.addEventListener('pointerdown', away);
     return () => document.removeEventListener('pointerdown', away);
-  }, [kind]);
+  }, [kind, cancelFrame]);
 
   const from = timeRange.from.valueOf();
   const to = timeRange.to.valueOf();
@@ -114,11 +127,16 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       ),
     [series]
   );
+  // the frame callback reads the data and range of the latest render, not those of the render that queued it
+  const latest = useRef({ ready, from, to });
+  useLayoutEffect(() => {
+    latest.current = { ready, from, to };
+  });
   const rows = useMemo(() => {
     if (!enabled || !hover) {
       return undefined;
     }
-    const picked = alignedSamples(ready, hover.t);
+    const picked = alignedSamples(ready, hover.time);
     if (!picked) {
       return undefined;
     }
@@ -141,19 +159,48 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
   if (!enabled) {
     return <>{children}</>;
   }
-  const move = (ev: React.PointerEvent) => {
+  // Pointer events only note the latest position. One animation frame turns it into a sample; the state
+  // changes only when the sample changes, so a fast scrub renders at most once per frame and once per sample.
+  const place = (clientX: number, kind: 'mouse' | 'touch') => {
     const r = ref.current?.getBoundingClientRect();
     if (!r || r.width <= 0) {
       return;
     }
-    const fraction = (ev.clientX - r.left) / r.width;
-    setHover({
-      t: timeAt(fraction, from, to),
+    const { ready: rd, from: f, to: t } = latest.current;
+    const picked = alignedSamples(rd, timeAt((clientX - r.left) / r.width, f, t));
+    if (!picked) {
+      return;
+    }
+    const fraction = t > f ? Math.min(1, Math.max(0, (picked.time - f) / (t - f))) : 0;
+    const next: Hover = {
+      time: picked.time,
       fraction,
-      x: ev.clientX,
-      y: ev.clientY,
-      kind: ev.pointerType === 'touch' ? 'touch' : 'mouse',
+      x: Math.round(r.left + fraction * r.width),
+      y: Math.round(r.top + r.height / 2),
+      kind,
+    };
+    // the same sample at the same place keeps the same state object: React skips the render
+    setHover((cur) =>
+      cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y ? cur : next
+    );
+  };
+  const move = (ev: React.PointerEvent) => {
+    pending.current = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? 'touch' : 'mouse' };
+    if (frame.current !== undefined) {
+      return;
+    }
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      const p = pending.current;
+      pending.current = undefined;
+      if (p) {
+        place(p.clientX, p.kind);
+      }
     });
+  };
+  const clear = () => {
+    cancelFrame();
+    setHover(undefined);
   };
   const key = (ev: React.KeyboardEvent) => {
     if (ev.key === 'Enter') {
@@ -161,10 +208,14 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       (ev.currentTarget as HTMLElement).closest('a')?.click();
       return;
     }
-    if (ev.key === 'Escape' && hover) {
-      ev.stopPropagation();
-      ev.preventDefault();
-      setHover(undefined);
+    if (ev.key === 'Escape') {
+      // a queued frame must not open the tooltip after Escape; the event goes on to close the card when nothing was open
+      cancelFrame();
+      if (hover) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        setHover(undefined);
+      }
       return;
     }
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') {
@@ -176,11 +227,12 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       return;
     }
     ev.preventDefault();
+    cancelFrame();
     const step = ev.key === 'ArrowRight' ? 1 : -1;
-    const at = hover ? nearestIndex(times, hover.t) + step : times.length - 1;
+    const at = hover ? nearestIndex(times, hover.time) + step : times.length - 1;
     const t = times[Math.min(times.length - 1, Math.max(0, at))];
     const fraction = to > from ? Math.min(1, Math.max(0, (t - from) / (to - from))) : 0;
-    setHover({ t, fraction, x: r.left + fraction * r.width, y: r.top + r.height / 2, kind: 'key' });
+    setHover({ time: t, fraction, x: r.left + fraction * r.width, y: r.top + r.height / 2, kind: 'key' });
   };
   return (
     <div
@@ -196,11 +248,15 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       onPointerMove={move}
       onPointerLeave={(ev) => {
         if (ev.pointerType !== 'touch') {
+          cancelFrame();
           setHover((h) => (h?.kind === 'key' ? h : undefined));
         }
       }}
-      onPointerCancel={() => setHover(undefined)}
-      onBlur={() => setHover((h) => (h?.kind === 'key' ? undefined : h))}
+      onPointerCancel={clear}
+      onBlur={() => {
+        cancelFrame();
+        setHover((h) => (h?.kind === 'key' ? undefined : h));
+      }}
       onKeyDown={key}
     >
       {children}
