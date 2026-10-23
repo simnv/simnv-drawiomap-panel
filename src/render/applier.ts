@@ -1,6 +1,6 @@
 import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
-import { parsePathPoints, type Point } from './geometry';
+import { markerEnd } from './geometry';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 
 /** Labels that a patch wrote text into. Only these need a label reset. */
@@ -79,44 +79,60 @@ function applyShape(entry: CellEntry, patch: CellPatch, index: CellIndex): strin
   return target;
 }
 
-/** The inline paint of an end marker before the first patch, so that a reset puts it back. */
-const endOriginal = new WeakMap<Element, { fill: string; stroke: string }>();
+type Paint = { value: string; priority: string };
 
-const paints = (value: string | null): boolean => !!value && value !== 'none' && value !== 'transparent';
+/** The inline paint of an end marker before the first patch, so that a reset puts it back with its priority. */
+const endOriginal = new WeakMap<Element, { fill: Paint; stroke: Paint }>();
 
-/** Which half an end marker belongs to: the marker nearer to the start of the edge path takes a2b, the other b2a. */
-function endHalf(entry: CellEntry, marker: Element): 'start' | 'end' {
-  let pts: Point[] = [];
+const NO_PAINT = /^(none|transparent|rgba?\([^)]*,\s*0(\.0+)?\s*\))$/i;
+
+/** The effective value of a paint property: inline style, then the computed style (CSS rules), then the attribute. */
+function effective(m: SVGElement, prop: string, fallback: string): string {
+  const inline = m.style.getPropertyValue(prop).trim();
+  if (inline) {
+    return inline;
+  }
+  let computed = '';
   try {
-    pts = parsePathPoints(entry.line?.getAttribute('d') ?? '');
+    computed = getComputedStyle(m).getPropertyValue(prop).trim();
   } catch {
-    // no usable geometry: the marker takes the start half
+    // no computed style in this host
   }
-  const x = parseFloat(marker.getAttribute('cx') ?? '');
-  const y = parseFloat(marker.getAttribute('cy') ?? '');
-  if (pts.length < 2 || !Number.isFinite(x) || !Number.isFinite(y)) {
-    return 'start';
-  }
-  const d = (p: Point) => (p.x - x) ** 2 + (p.y - y) ** 2;
-  return d(pts[pts.length - 1]) < d(pts[0]) ? 'end' : 'start';
+  return computed || (m.getAttribute(prop) ?? '').trim() || fallback;
 }
+
+/** True when the marker paints `prop` (fill or stroke): a colour that is not none or transparent, with some opacity. */
+function paints(m: SVGElement, prop: 'fill' | 'stroke'): boolean {
+  if (NO_PAINT.test(effective(m, prop, prop === 'fill' ? 'black' : 'none'))) {
+    return false;
+  }
+  return [`${prop}-opacity`, 'opacity'].every((o) => !(parseFloat(effective(m, o, '1')) <= 0));
+}
+
+const snapshot = (m: SVGElement, prop: 'fill' | 'stroke'): Paint => ({
+  value: m.style.getPropertyValue(prop),
+  priority: m.style.getPropertyPriority(prop),
+});
 
 /** Paints the end markers (the dot of a bare end) with the colour of the half that they close. */
 function paintEnds(entry: CellEntry, l: NonNullable<CellPatch['link']>): void {
   for (const marker of entry.ends ?? []) {
     const m = marker as SVGElement;
-    const half = endHalf(entry, marker) === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b);
+    const end = entry.line ? markerEnd(entry.line, marker) : undefined;
+    if (!end) {
+      continue;
+    }
+    const half = end === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b);
     if (!half) {
       continue;
     }
     if (!endOriginal.has(m)) {
-      endOriginal.set(m, { fill: m.style.fill, stroke: m.style.stroke });
+      endOriginal.set(m, { fill: snapshot(m, 'fill'), stroke: snapshot(m, 'stroke') });
     }
-    if (paints(m.getAttribute('fill') ?? 'black') && m.style.fill !== 'none') {
-      m.style.fill = half.color;
-    }
-    if (paints(m.getAttribute('stroke')) && m.style.stroke !== 'none') {
-      m.style.stroke = half.color;
+    for (const prop of ['fill', 'stroke'] as const) {
+      if (paints(m, prop)) {
+        m.style.setProperty(prop, half.color, endOriginal.get(m)![prop].priority);
+      }
     }
   }
 }
@@ -194,8 +210,14 @@ function reset(entry: CellEntry, index: CellIndex): void {
   for (const marker of entry.ends ?? []) {
     const original = endOriginal.get(marker);
     if (original) {
-      (marker as SVGElement).style.fill = original.fill;
-      (marker as SVGElement).style.stroke = original.stroke;
+      for (const prop of ['fill', 'stroke'] as const) {
+        const { value, priority } = original[prop];
+        if (value) {
+          (marker as SVGElement).style.setProperty(prop, value, priority);
+        } else {
+          (marker as SVGElement).style.removeProperty(prop);
+        }
+      }
       endOriginal.delete(marker);
     }
   }

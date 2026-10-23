@@ -3,33 +3,63 @@ import { fireEvent, screen } from '@testing-library/react';
 
 type Queries = Pick<typeof screen, 'getByRole' | 'queryByRole' | 'getByLabelText'>;
 
-/**
- * The button with this accessible name, found by its aria-label or its text. getByRole computes the accessible name of
- * every button, and in jsdom that cost dominates a test that clicks often. Only the one exact match is trusted; any
- * other result goes to the full query, which reports the problem as before.
- */
-export function buttonNamed(name: string, queries: Queries = screen): HTMLElement {
-  if (queries === screen) {
-    const found = Array.from(document.querySelectorAll('button, [role="button"]')).filter(
-      (el) => (el.getAttribute('aria-label') ?? el.textContent?.trim()) === name
-    );
-    if (found.length === 1) {
-      return found[0] as HTMLElement;
-    }
+/** True when the element, or an ancestor, is hidden from the user and from the accessibility tree. */
+function hidden(el: Element): boolean {
+  if (el.closest('[hidden], [aria-hidden="true"], [inert]')) {
+    return true;
   }
-  return queries.getByRole('button', { name });
-}
-
-function hasButton(name: string, queries: Queries): boolean {
-  if (queries === screen) {
-    const fast = Array.from(document.querySelectorAll('button, [role="button"]')).some(
-      (el) => (el.getAttribute('aria-label') ?? el.textContent?.trim()) === name
-    );
-    if (fast) {
+  for (let cur: Element | null = el; cur; cur = cur.parentElement) {
+    const style = (cur as HTMLElement).style;
+    if (style?.display === 'none' || style?.visibility === 'hidden') {
       return true;
     }
   }
-  return !!queries.queryByRole('button', { name, hidden: true });
+  return false;
+}
+
+/** The text of the elements that an aria-labelledby names. */
+function labelledText(el: Element): string {
+  return (el.getAttribute('aria-labelledby') ?? '')
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+    .join(' ')
+    .trim();
+}
+
+/**
+ * The one visible element in `candidates` whose own name is `name`: an aria-label, or the text when `byText` is set.
+ * Undefined when the answer is not certain, so the caller takes the full testing-library query: an element with
+ * aria-labelledby is never matched on its aria-label, a <label> or an aria-labelledby that gives the same name makes the
+ * answer ambiguous, and so does a second visible match.
+ */
+function uniqueNamed(candidates: Element[], name: string, byText: boolean): HTMLElement | undefined {
+  const named = (el: Element) =>
+    el.hasAttribute('aria-labelledby')
+      ? undefined
+      : (el.getAttribute('aria-label') ?? (byText ? el.textContent?.trim() : undefined));
+  const found = candidates.filter((el) => named(el) === name && !hidden(el));
+  const other =
+    Array.from(document.querySelectorAll('[aria-labelledby]')).some((el) => labelledText(el) === name) ||
+    (!byText && Array.from(document.querySelectorAll('label')).some((el) => el.textContent?.trim() === name));
+  return found.length === 1 && !other ? (found[0] as HTMLElement) : undefined;
+}
+
+const buttons = () => Array.from(document.querySelectorAll('button, [role="button"]'));
+
+/**
+ * The button with this accessible name. getByRole computes the accessible name of every button, and in jsdom that cost
+ * dominates a test that clicks often. Only a certain match is taken (see uniqueNamed); any other case goes to the full
+ * query, which reports the problem as before.
+ */
+export function buttonNamed(name: string, queries: Queries = screen): HTMLElement {
+  return (queries === screen ? uniqueNamed(buttons(), name, true) : undefined) ?? queries.getByRole('button', { name });
+}
+
+function hasButton(name: string, queries: Queries): boolean {
+  return (
+    (queries === screen && !!uniqueNamed(buttons(), name, true)) ||
+    !!queries.queryByRole('button', { name, hidden: true })
+  );
 }
 
 export function openSection(title: string, queries: Queries = screen) {
@@ -70,11 +100,9 @@ export function editorField(label: string, queries: Queries = screen) {
   // The fields have an aria-label, so one attribute selector finds them at a fraction of the cost. Zero or several
   // matches fall back to the full query, which reports the problem as before.
   if (queries === screen) {
-    const found = Array.from(document.querySelectorAll('[aria-label]')).filter(
-      (el) => el.getAttribute('aria-label') === label
-    );
-    if (found.length === 1) {
-      return found[0] as HTMLElement;
+    const found = uniqueNamed(Array.from(document.querySelectorAll('[aria-label]')), label, false);
+    if (found) {
+      return found;
     }
   }
   return queries.getByLabelText(label, { exact: true });
