@@ -27,7 +27,7 @@ import { sanitizeSvg } from '../render/sanitize';
 import type { BindContext, Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
-import { buildBindingsList, problemsOf, type PatternRow, type ProblemEntry } from './bindingsModel';
+import { buildBindingsList, problemsOf, type BindingsList, type PatternRow, type ProblemEntry } from './bindingsModel';
 import { commitDraft, createDraft, draftPatternIndex, isDirty } from './draft';
 import { draftQueryService } from './draftContext';
 import { DrawioModal } from './DrawioModal';
@@ -36,6 +36,7 @@ import { previewPattern, type PatternPreview } from './patternPreview';
 import { createPreviewResolver, previewSnapshot, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
 import { DiagramStage } from './popup/DiagramStage';
 import { InspectorPane, type InspectorSelection } from './popup/InspectorPane';
+import type { QueryUser } from './popup/QueryPane';
 import { ListPane } from './popup/ListPane';
 import { PopupLayout } from './popup/PopupLayout';
 import type { PopupTarget } from './popup/popupBus';
@@ -153,6 +154,10 @@ export function BindingEditor({
   );
   if (previewState && previewState.key !== previewKey) {
     setPreviewState(undefined);
+  }
+  // The query is gone (deleted, or an undo removed it): the pane closes.
+  if (selection.kind === 'query' && !query) {
+    setSelection({ kind: 'none' });
   }
   // Text that the user typed into the query pane and did not import never reaches the draft: it stops blocking
   // Apply when the pane closes (state adjustment during render).
@@ -775,7 +780,10 @@ export function BindingEditor({
                       epoch: resetEpoch,
                       context,
                       data,
+                      timeZone,
                       uses: bindingsList.queries.find((row) => row.queryId === query.id)?.uses ?? 0,
+                      usedBy: usersOfQuery(bindingsList, query.id, { openPattern, openCell }),
+                      onDelete: () => dispatch({ type: 'remove-query', id: query.id }),
                       snapshot,
                       fields,
                       queryError,
@@ -816,6 +824,25 @@ export function BindingEditor({
       )}
     </div>
   );
+}
+
+/** The patterns, overrides and charts that use a query, as buttons that select the user. */
+function usersOfQuery(
+  list: BindingsList,
+  queryId: string,
+  open: { openPattern: (row: PatternRow) => void; openCell: (cellId: string) => void }
+): QueryUser[] {
+  return [
+    ...list.patterns
+      .filter((row) => row.queryIds.includes(queryId))
+      .map((row) => ({ key: row.key, label: `Pattern ${row.name}`, open: () => open.openPattern(row) })),
+    ...list.overrides
+      .filter((row) => row.queryIds.includes(queryId))
+      .map((row) => ({ key: row.key, label: `Override ${row.cellId}`, open: () => open.openCell(row.cellId) })),
+    ...list.widgets
+      .filter((row) => row.queryId === queryId)
+      .map((row) => ({ key: row.key, label: `Chart ${row.label}`, open: () => open.openCell(row.anchorCellId) })),
+  ];
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({

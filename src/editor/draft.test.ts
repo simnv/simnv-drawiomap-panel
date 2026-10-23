@@ -460,3 +460,22 @@ describe('unset', () => {
     expect(display.link.enabled).toBe(true);
   });
 });
+
+describe('remove-query', () => {
+  it('removes only the query from the draft and keeps the saved config and the bindings that use it', () => {
+    const binding = { queryId: 'q1', match: {}, reducer: 'last' as const };
+    const base = createDraft({
+      ...saved,
+      queries: [
+        { id: 'q1', name: 'One', source: { kind: 'panel', refId: 'A' } },
+        { id: 'q2', name: 'Two', source: { kind: 'panel', refId: 'B' } },
+      ],
+      overrides: [{ cellId: 'a', display: { shape: { binding } } }],
+    });
+    const next = reduceDraft(base, { type: 'remove-query', id: 'q1' });
+    expect(next.config.queries.map((q) => q.id)).toEqual(['q2']);
+    expect(next.config.overrides).toEqual(base.config.overrides);
+    expect(next.saved.queries).toHaveLength(2);
+    expect(reduceDraft(base, { type: 'remove-query', id: 'nope' }).config.queries).toHaveLength(2);
+  });
+});

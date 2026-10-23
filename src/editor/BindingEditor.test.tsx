@@ -684,4 +684,40 @@ describe('binding inspector', () => {
     fireEvent.change(editorField('Shape result field'), { target: { value: 'Absent' } });
     expect(editorField('Metric resolution preview').textContent).toContain('No metric matches query q');
   });
+
+  it('deletes a query from its pane, lists the users first, and brings the query back with Undo', async () => {
+    const { save } = renderEditor({
+      config: {
+        ...config,
+        queries: [
+          { id: 'cpu', name: 'CPU', source: { kind: 'panel', refId: 'A' } },
+          { id: 'mem', name: 'Memory', source: { kind: 'panel', refId: 'B' } },
+        ],
+        overrides: [
+          {
+            cellId: 'device-1',
+            display: { shape: { binding: { queryId: 'cpu', match: {}, reducer: 'last' } } },
+          },
+        ],
+      },
+      svg: svgOf('device-1', 'device-2'),
+    });
+    openQueryRow('CPU');
+    const users = screen.getByRole('list', { name: 'Used by' });
+    expect(
+      within(users)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent)
+    ).toEqual(['Override device-1']);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete query' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Query bindings' })).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Edit query CPU' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit query Memory' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByRole('button', { name: 'Edit query CPU' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(screen.queryByRole('button', { name: 'Edit query CPU' })).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
 });

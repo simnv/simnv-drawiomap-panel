@@ -38,6 +38,8 @@ export type DraftAction =
   | { type: 'selector'; select: CellSelector }
   | { type: 'widget'; widget: Widget }
   | { type: 'remove-widget'; id: string }
+  /** Remove a named query. Bindings that still use it get a diagnostic. */
+  | { type: 'remove-query'; id: string }
   | { type: 'remove-override'; cellId: string }
   | { type: 'import'; config: unknown }
   | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
@@ -249,6 +251,8 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     };
   } else if (action.type === 'widget') {
     config = { ...config, widgets: [...config.widgets.filter((w) => w.id !== action.widget.id), copy(action.widget)] };
+  } else if (action.type === 'remove-query') {
+    config = { ...config, queries: config.queries.filter((q) => q.id !== action.id) };
   } else if (action.type === 'remove-widget') {
     config = { ...config, widgets: config.widgets.filter((w) => w.id !== action.id) };
   } else if (action.type === 'remove-override') {
