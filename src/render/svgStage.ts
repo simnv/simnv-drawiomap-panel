@@ -92,9 +92,10 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
     // Only the dot of a bare end: its centre lies on the first or the last point of the path. A circular label
     // background or a decoration on a waypoint is not an end marker.
     const ends = line
-      ? (ownDescendants(group, 'ellipse, circle').filter(
-          (el) => !el.closest('switch, foreignObject') && markerEnd(line, el as SVGGraphicsElement) !== undefined
-        ) as SVGGraphicsElement[])
+      ? ownDescendants(group, 'ellipse, circle').flatMap((el) => {
+          const end = el.closest('switch, foreignObject') ? undefined : markerEnd(line, el as SVGGraphicsElement);
+          return end ? [{ el: el as SVGGraphicsElement, end }] : [];
+        })
       : [];
     let shape: SVGGraphicsElement | undefined;
     if (!line) {

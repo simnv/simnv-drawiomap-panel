@@ -377,13 +377,19 @@ function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
   return m;
 }
 
+/** True for a matrix that can be inverted: finite entries and a determinant that is not near zero. */
+function usable(m: Matrix): boolean {
+  const det = m.a * m.d - m.b * m.c;
+  return [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite) && Number.isFinite(det) && Math.abs(det) >= 1e-9;
+}
+
 /** The matrix that takes the user space of `el` into the user space of `line`. Undefined when it cannot be resolved. */
 function toLineSpace(line: SVGPathElement, el: SVGGraphicsElement): Matrix | undefined {
   if (typeof el.getCTM === 'function' && typeof line.getCTM === 'function') {
     const a = el.getCTM();
     const b = line.getCTM();
     if (a && b) {
-      return multiply(invert(b), a);
+      return usable(a) && usable(b) ? multiply(invert(b), a) : undefined;
     }
   }
   // jsdom has no getCTM: compose the transform attributes up to the nearest common ancestor.
@@ -393,7 +399,7 @@ function toLineSpace(line: SVGPathElement, el: SVGGraphicsElement): Matrix | und
   }
   const up = localMatrix(el, common);
   const down = localMatrix(line, common);
-  return up && down ? multiply(invert(down), up) : undefined;
+  return up && down && usable(up) && usable(down) ? multiply(invert(down), up) : undefined;
 }
 
 /**
@@ -413,6 +419,9 @@ export function markerEnd(line: SVGPathElement, marker: SVGGraphicsElement): 'st
     return undefined;
   }
   const c = applyMatrix(m, { x: num('cx') || 0, y: num('cy') || 0 });
+  if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) {
+    return undefined;
+  }
   const tol = Math.max(r, 3) + 2;
   const dist = (p: Point) => Math.hypot(p.x - c.x, p.y - c.y);
   const ds = dist(pts[0]);

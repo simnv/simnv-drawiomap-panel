@@ -1,6 +1,5 @@
 import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
-import { markerEnd } from './geometry';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 
 /** Labels that a patch wrote text into. Only these need a label reset. */
@@ -84,7 +83,44 @@ type Paint = { value: string; priority: string };
 /** The inline paint of an end marker before the first patch, so that a reset puts it back with its priority. */
 const endOriginal = new WeakMap<Element, { fill: Paint; stroke: Paint }>();
 
-const NO_PAINT = /^(none|transparent|rgba?\([^)]*,\s*0(\.0+)?\s*\))$/i;
+/** The alpha of a CSS colour, 0 to 1. A colour that is not understood, or not a plain colour (url, var), counts as opaque. */
+export function colourAlpha(value: string): number {
+  const v = value.trim().toLowerCase();
+  if (v === 'none' || v === 'transparent') {
+    return 0;
+  }
+  const clamp = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1);
+  const token = (t: string) => {
+    const x = t.trim();
+    if (x === 'none') {
+      return 0;
+    }
+    return clamp(x.endsWith('%') ? parseFloat(x) / 100 : parseFloat(x));
+  };
+  if (v.startsWith('#')) {
+    const hex = v.slice(1);
+    if (!/^[0-9a-f]+$/.test(hex)) {
+      return 1;
+    }
+    if (hex.length === 4) {
+      return parseInt(hex[3] + hex[3], 16) / 255;
+    }
+    return hex.length === 8 ? parseInt(hex.slice(6), 16) / 255 : 1;
+  }
+  const fn = /^[a-z-]+\((.*)\)$/s.exec(v);
+  if (!fn) {
+    return 1;
+  }
+  const body = fn[1];
+  if (body.includes('/')) {
+    return token(body.split('/').pop()!);
+  }
+  if (body.includes(',')) {
+    const parts = body.split(',');
+    return parts.length === 4 ? token(parts[3]) : 1;
+  }
+  return 1;
+}
 
 /** The effective value of a paint property: inline style, then the computed style (CSS rules), then the attribute. */
 function effective(m: SVGElement, prop: string, fallback: string): string {
@@ -103,10 +139,10 @@ function effective(m: SVGElement, prop: string, fallback: string): string {
 
 /** True when the marker paints `prop` (fill or stroke): a colour that is not none or transparent, with some opacity. */
 function paints(m: SVGElement, prop: 'fill' | 'stroke'): boolean {
-  if (NO_PAINT.test(effective(m, prop, prop === 'fill' ? 'black' : 'none'))) {
+  if (colourAlpha(effective(m, prop, prop === 'fill' ? 'black' : 'none')) <= 0) {
     return false;
   }
-  return [`${prop}-opacity`, 'opacity'].every((o) => !(parseFloat(effective(m, o, '1')) <= 0));
+  return [`${prop}-opacity`, 'opacity'].every((o) => colourAlpha(effective(m, o, '1')) > 0);
 }
 
 const snapshot = (m: SVGElement, prop: 'fill' | 'stroke'): Paint => ({
@@ -116,12 +152,8 @@ const snapshot = (m: SVGElement, prop: 'fill' | 'stroke'): Paint => ({
 
 /** Paints the end markers (the dot of a bare end) with the colour of the half that they close. */
 function paintEnds(entry: CellEntry, l: NonNullable<CellPatch['link']>): void {
-  for (const marker of entry.ends ?? []) {
+  for (const { el: marker, end } of entry.ends ?? []) {
     const m = marker as SVGElement;
-    const end = entry.line ? markerEnd(entry.line, marker) : undefined;
-    if (!end) {
-      continue;
-    }
     const half = end === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b);
     if (!half) {
       continue;
@@ -207,7 +239,7 @@ function reset(entry: CellEntry, index: CellIndex): void {
   for (const a of entry.arrows) {
     a.style.opacity = '';
   }
-  for (const marker of entry.ends ?? []) {
+  for (const { el: marker } of entry.ends ?? []) {
     const original = endOriginal.get(marker);
     if (original) {
       for (const prop of ['fill', 'stroke'] as const) {

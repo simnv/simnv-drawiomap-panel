@@ -8,9 +8,10 @@ function hidden(el: Element): boolean {
   if (el.closest('[hidden], [aria-hidden="true"], [inert]')) {
     return true;
   }
+  // getComputedStyle applies the rules of <style> elements and inline styles; display does not inherit, so test every ancestor.
   for (let cur: Element | null = el; cur; cur = cur.parentElement) {
-    const style = (cur as HTMLElement).style;
-    if (style?.display === 'none' || style?.visibility === 'hidden') {
+    const style = getComputedStyle(cur);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
       return true;
     }
   }
@@ -24,6 +25,12 @@ function labelledText(el: Element): string {
     .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
     .join(' ')
     .trim();
+}
+
+/** True when a <label> names a button: it wraps one, or its `for` points at one. */
+function namesButton(label: Element): boolean {
+  const target = label.getAttribute('for') ? document.getElementById(label.getAttribute('for')!) : null;
+  return !!label.querySelector('button, [role="button"]') || !!target?.matches('button, [role="button"]');
 }
 
 /**
@@ -40,7 +47,9 @@ function uniqueNamed(candidates: Element[], name: string, byText: boolean): HTML
   const found = candidates.filter((el) => named(el) === name && !hidden(el));
   const other =
     Array.from(document.querySelectorAll('[aria-labelledby]')).some((el) => labelledText(el) === name) ||
-    (!byText && Array.from(document.querySelectorAll('label')).some((el) => el.textContent?.trim() === name));
+    Array.from(document.querySelectorAll('label')).some(
+      (el) => el.textContent?.trim() === name && (!byText || namesButton(el))
+    );
   return found.length === 1 && !other ? (found[0] as HTMLElement) : undefined;
 }
 
