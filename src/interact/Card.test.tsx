@@ -302,7 +302,13 @@ it('takes the row height option for a combined row and for a single row', () => 
 const hoverChart = () => {
   const el = screen.getByTestId('dmap-chart-hover');
   el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 40, right: 100, bottom: 40 }) as DOMRect;
+  // the hover updates on an animation frame: run it at once
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    cb(0);
+    return 1;
+  });
   fireEvent.pointerMove(el, { clientX: 100, clientY: 5, pointerType: 'mouse' });
+  vi.unstubAllGlobals();
 };
 it('shows the chart tooltip for a single history row only in the pinned card', () => {
   const model = cardOf(chartRow({ history: readyHistory([1, 2]) }));
