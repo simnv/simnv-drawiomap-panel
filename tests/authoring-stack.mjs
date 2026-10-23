@@ -18,11 +18,12 @@ for (const [name, version, port, sandbox] of [
     GF_DEFAULT_APP_MODE: 'development',
     GF_LOG_LEVEL: 'warn',
   };
-  if (sandbox)
-    {Object.assign(environment, {
+  if (sandbox) {
+    Object.assign(environment, {
       GF_SECURITY_ENABLE_FRONTEND_SANDBOX_FOR_PLUGINS: 'simnv-drawiomap-panel',
       GF_FEATURE_TOGGLES_ENABLE: 'pluginsFrontendSandbox',
-    });}
+    });
+  }
   services[name] = {
     image: `grafana/grafana:${version}`,
     ports: [`127.0.0.1:${port}:3000`],

@@ -94,7 +94,7 @@ export function BindingsPopup({
 
   return (
     <>
-      <PluginDialog title="Edit bindings" onDismiss={requestClose}>
+      <PluginDialog title="Edit bindings" onDismiss={requestClose} overlayId={OVERLAY_ID}>
         <div ref={bodyRef} className={styles.body} data-testid="dmap-bindings-popup" {...esc}>
           <BindingEditor
             key={session}

@@ -547,6 +547,11 @@ export function BindingEditor({
       onRequestClose();
     }
   };
+  // "Keep editing" folds the conflict alert. Apply stays blocked until the user overwrites or reloads.
+  const [conflictFolded, setConflictFolded] = useState(false);
+  if (!conflict && conflictFolded) {
+    setConflictFolded(false);
+  }
   const blocked = !!diagnostics.length || !!queryError || !!geometryError || hasMetricErrors || conflict;
 
   const chartLayer = context
@@ -581,7 +586,15 @@ export function BindingEditor({
           </span>
         )}
       </div>
-      {conflict && (
+      {conflict && conflictFolded && (
+        <div className={styles.actions} role="status">
+          <span className={styles.dirty}>The saved bindings changed. Apply is blocked.</span>
+          <Button variant="secondary" size="sm" onClick={() => setConflictFolded(false)}>
+            Resolve
+          </Button>
+        </div>
+      )}
+      {conflict && !conflictFolded && (
         <Alert title="The saved bindings changed while you edited" severity="warning">
           <div className={styles.conflict}>
             Another editor saved this panel after you opened it. Choose what to do with your draft.
@@ -596,6 +609,9 @@ export function BindingEditor({
               </Button>
               <Button variant="secondary" size="sm" onClick={onReload}>
                 Reload saved
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setConflictFolded(true)}>
+                Keep editing
               </Button>
             </div>
           </div>

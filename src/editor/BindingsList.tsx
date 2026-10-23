@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, ConfirmModal, Icon, IconButton, useStyles2 } from '@grafana/ui';
+import { useOverlay } from './popup/overlayStack';
 import type { CellMeta } from '../types';
 import {
   cellRows,
@@ -306,28 +307,52 @@ export function BindingsList({
           )}
         </EditorSection>
       )}
-      <ConfirmModal
-        isOpen={!!pending}
-        title={pending?.kind === 'widget' ? 'Delete widget' : 'Delete override'}
-        body={
-          pending?.kind === 'widget'
-            ? `Delete widget ${pending.label}? You can undo this with Cancel before you apply.`
-            : pending?.kind === 'override'
-              ? `Delete the override of ${pending.cellId}? You can undo this with Cancel before you apply.`
-              : ''
-        }
-        confirmText="Delete"
-        onConfirm={() => {
-          if (pending?.kind === 'override') {
-            onDeleteOverride(pending.cellId);
-          } else if (pending?.kind === 'widget') {
-            onDeleteWidget(pending.widgetId);
-          }
-          setPending(undefined);
-        }}
-        onDismiss={() => setPending(undefined)}
-      />
+      {pending && (
+        <DeleteConfirm
+          pending={pending}
+          onConfirm={() => {
+            if (pending.kind === 'override') {
+              onDeleteOverride(pending.cellId);
+            } else if (pending.kind === 'widget') {
+              onDeleteWidget(pending.widgetId);
+            }
+            setPending(undefined);
+          }}
+          onDismiss={() => setPending(undefined)}
+        />
+      )}
     </section>
+  );
+}
+
+export const DELETE_CONFIRM_ID = 'bindings-delete-confirm';
+
+/** The delete question. It is on the overlay stack while it is open, so that Esc closes it before the popup. */
+function DeleteConfirm({
+  pending,
+  onConfirm,
+  onDismiss,
+}: {
+  pending: BindingRow;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  useOverlay(DELETE_CONFIRM_ID);
+  return (
+    <ConfirmModal
+      isOpen
+      title={pending.kind === 'widget' ? 'Delete widget' : 'Delete override'}
+      body={
+        pending.kind === 'widget'
+          ? `Delete widget ${pending.label}? You can undo this with Cancel before you apply.`
+          : pending.kind === 'override'
+            ? `Delete the override of ${pending.cellId}? You can undo this with Cancel before you apply.`
+            : ''
+      }
+      confirmText="Delete"
+      onConfirm={onConfirm}
+      onDismiss={onDismiss}
+    />
   );
 }
 

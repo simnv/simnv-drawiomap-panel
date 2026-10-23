@@ -6,7 +6,9 @@ const panel = 'src/components/DrawioMapPanel.tsx';
 const rules = 'src/options/RulesEditor.tsx';
 const temporary = 'src/authoringCompatibilityProbe.tsx';
 const originals = new Map([panel, rules].map((file) => [file, fs.readFileSync(file, 'utf8')]));
-if (fs.existsSync(temporary)) {throw new Error(`Refusing to overwrite ${temporary}`);}
+if (fs.existsSync(temporary)) {
+  throw new Error(`Refusing to overwrite ${temporary}`);
+}
 try {
   fs.copyFileSync('tests/authoring-compat.probe.tsx', temporary);
   fs.writeFileSync(
@@ -30,10 +32,14 @@ try {
         )
   );
   const check = spawnSync('npm', ['run', 'typecheck'], { stdio: 'inherit' });
-  if (check.status !== 0) {throw new Error('Probe typecheck failed');}
+  if (check.status !== 0) {
+    throw new Error('Probe typecheck failed');
+  }
   const result = spawnSync('npm', ['run', 'build'], { stdio: 'inherit' });
   process.exitCode = result.status ?? 1;
 } finally {
-  for (const [file, original] of originals) {fs.writeFileSync(file, original);}
+  for (const [file, original] of originals) {
+    fs.writeFileSync(file, original);
+  }
   fs.rmSync(temporary, { force: true });
 }

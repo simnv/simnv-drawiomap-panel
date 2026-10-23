@@ -13,7 +13,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
 import pluginJson from '../../plugin.json';
-import { pop, push } from './overlayStack';
+import { isTop, pop, push } from './overlayStack';
 import { useEscOwner } from './useEscOwner';
 
 /**
@@ -42,6 +42,8 @@ export interface PluginDialogProps {
    * does not use it, because it has its own owner with a close confirmation.
    */
   onEscape?: () => void;
+  /** The overlay id of this dialog in `overlayStack`, when the owner registers it. The focus guard acts only on the top overlay. */
+  overlayId?: string;
   children: ReactNode;
 }
 
@@ -89,7 +91,7 @@ export function inertOutside(keep: Array<Element | null>): () => void {
   return () => marked.forEach((el) => el.removeAttribute('inert'));
 }
 
-export function PluginDialog({ title, onDismiss, onEscape, children }: PluginDialogProps) {
+export function PluginDialog({ title, onDismiss, onEscape, overlayId, children }: PluginDialogProps) {
   const styles = useStyles2(getStyles);
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -102,6 +104,7 @@ export function PluginDialog({ title, onDismiss, onEscape, children }: PluginDia
     push(escId);
     return () => pop(escId);
   }, [hasEscape, escId]);
+  const guardId = overlayId ?? escId;
   const esc = useEscOwner({ id: escId, dialogRef, enabled: hasEscape, onEscape: onEscape ?? noop });
   const [host] = useState(() => {
     const el = document.createElement('div');
@@ -134,6 +137,54 @@ export function PluginDialog({ title, onDismiss, onEscape, children }: PluginDia
       }
     };
   }, [host]);
+
+  // Focus guard. A removed focused element (a replaced subtree, a deleted row) drops the focus on the body, and no key
+  // event starts inside the dialog then. While the dialog is the top overlay, a focus outside the dialog and outside the
+  // allowed portals goes back to the last focused element of the dialog, or to its first tabbable element.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    let last: HTMLElement | null = null;
+    const allowed = (el: Element) =>
+      dialog.contains(el) ||
+      (el instanceof HTMLElement && el.dataset.grafanaPluginSandboxElement !== undefined) ||
+      !!el.closest('#grafana-portal-container, [role="dialog"]');
+    const check = () => {
+      if (!isTop(guardId)) {
+        return;
+      }
+      const active = document.activeElement;
+      if (active && active !== document.body && allowed(active)) {
+        return;
+      }
+      const target = last?.isConnected && dialog.contains(last) ? last : (focusableIn(dialog)[0] ?? dialog);
+      target.focus();
+    };
+    let frame = 0;
+    const later = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(check);
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement && dialog.contains(event.target)) {
+        last = event.target;
+      } else {
+        later();
+      }
+    };
+    const observer = new MutationObserver(later);
+    observer.observe(dialog, { childList: true, subtree: true });
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', later);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', later);
+    };
+  }, [guardId]);
 
   // Tab and Shift+Tab wrap inside the dialog. A nested Grafana modal is a React child, so its key events arrive here too:
   // only the keys of the elements inside the dialog count.

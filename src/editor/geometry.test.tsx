@@ -76,6 +76,8 @@ describe('draw.io geometry draft', () => {
     // The popup stage shows the new geometry at once. The selected cell stays selected.
     await waitFor(() => expect(stage().getAttribute('data-dmap-hash')).not.toBe('original'));
     expect(rectWidth()).toBe('260');
+    // The new root takes the colour scheme of the Grafana theme (dark here), not the system preference.
+    expect(stage().querySelector<SVGSVGElement>(':scope > svg')!.style.colorScheme).toBe('dark');
     expect(screen.getByRole('heading', { name: 'region bindings' })).toBeTruthy();
     expect(stage().querySelector('g[data-cell-id="region"]')!.getAttribute('data-dmap-selected')).toBe('true');
     expect(save).not.toHaveBeenCalled();

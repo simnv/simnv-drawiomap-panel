@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { binding } from '../src/fixtures/authoring-config';
+import { binding, nativeQuery } from '../src/fixtures/authoring-config';
 import {
   chooseEditorOption,
   closeBindingsPopup,
@@ -247,21 +247,57 @@ test.describe('bindings popup: persistence and loading', () => {
     expect(chunks).toHaveLength(first);
   });
 
-  test('the popup runs queries for the draft and the panel keeps its own subscription', async ({
+  test('the popup shows its own draft results, the panel keeps its saved ones and keeps updating after the popup closes', async ({
     page,
     config,
     createDiagram,
     gotoPanelEditPage,
+    selectors,
   }) => {
+    config.queries = [nativeQuery('live', 'vector(time())')];
+    config.patterns = [
+      {
+        id: 'live',
+        name: 'Live',
+        select: { ids: ['device-1'] },
+        display: {
+          label: 'Saved ${value}',
+          shape: { text: true, binding: binding('live') },
+        },
+      },
+    ];
+    config.overrides = [];
+    config.widgets = [];
     const uid = await createDiagram(config);
     const requests = observeQueries(page, uid);
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    await expect.poll(() => requests.length).toBeGreaterThan(0);
-    const before = requests.length;
+    const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const panelLabel = page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"] text').last();
+    await expect(panelLabel).toHaveText(/^Saved \d{9,}/);
     const dialog = await openBindingsPopup(page);
     await selectStageCell(dialog, 'device-1');
-    await expect(dialog.getByTestId('dmap-popup-stage')).toBeVisible();
-    expect(requests.length).toBeGreaterThanOrEqual(before);
+    // a draft query with another expression: the popup shows 84, the panel behind keeps the saved result
+    await dialog.getByRole('button', { name: 'Edit query live' }).click();
+    await popupInspector(dialog).getByText('Import native target JSON', { exact: true }).click();
+    await popupInspector(dialog)
+      .getByLabel('Native target JSON', { exact: true })
+      .fill(JSON.stringify({ refId: 'LIVE', expr: 'vector(84)', range: true }));
+    await popupInspector(dialog).getByRole('button', { name: 'Import native target', exact: true }).click();
+    const stageLabel = dialog.getByTestId('dmap-popup-stage').locator('[data-cell-id="device-1"] text').last();
+    await expect(stageLabel).toHaveText('Saved 84');
+    expect(requests.some((r) => r.queries.some((q) => q.expr === 'vector(84)'))).toBe(true);
+    await expect(panelLabel).not.toHaveText('Saved 84');
+    // close without applying; the panel still refreshes with its own query
+    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await closeBindingsPopup(page);
+    const before = requests.length;
+    await edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
+    // the refresh runs the saved query of the panel (not the draft one) and the panel renders its result
+    await expect
+      .poll(() => requests.slice(before).some((r) => r.queries.some((q) => q.expr === 'vector(time())')))
+      .toBe(true);
+    expect(requests.slice(before).some((r) => r.queries.some((q) => q.expr === 'vector(84)'))).toBe(false);
+    await expect(panelLabel).toHaveText(/^Saved \d{9,}/);
+    await expect(panelLabel).not.toHaveText('Saved 84');
   });
 });
 
@@ -322,11 +358,11 @@ test.describe('bindings popup: datasource query editors', () => {
     await expect(editor).toContainText('node_netw');
     const suggest = page.locator('.suggest-widget.visible');
     await page.keyboard.press('ControlOrMeta+Space');
-    if (await suggest.isVisible().catch(() => false)) {
-      await page.keyboard.press('Escape');
-      await expect(suggest).toHaveCount(0);
-      await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
-    }
+    // The suggestions must show. The first Esc closes them only.
+    await expect(suggest).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(suggest).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
     // The editor shows the saved text again, and the draft stays clean after the editor loses its focus.
@@ -371,13 +407,28 @@ test.describe('bindings popup: plugin-owned dialog', () => {
     const dialog = await openBindingsPopup(page);
     const stage = dialog.getByTestId('dmap-popup-stage');
     await expect(stage.locator('svg [data-cell-id="device-1"]')).toBeAttached();
+    // A sandbox mock is a detached element, so only a connected element proves that the stage is real.
     expect(
       await page.evaluate(() => {
-        const el = document.querySelector('[data-testid="dmap-popup-stage"]');
-        return !!el && document.contains(el) && !!el.querySelector('svg');
+        const stageEl = document.querySelector('[data-testid="dmap-popup-stage"]');
+        const dialogEl = stageEl?.closest('[role="dialog"]');
+        const root = stageEl?.querySelector(':scope > svg');
+        const active = document.activeElement;
+        return {
+          stageConnected: !!stageEl && document.contains(stageEl),
+          rootConnected: !!root && document.contains(root),
+          rootInDialog: !!dialogEl && !!root && dialogEl.contains(root),
+          focusConnected: !!active && document.contains(active),
+          focusInDialog: !!dialogEl && !!active && dialogEl.contains(active),
+        };
       })
-    ).toBe(true);
-    await expect(page.locator('[data-grafana-plugin-sandbox-element]')).toHaveCount(0);
+    ).toEqual({
+      stageConnected: true,
+      rootConnected: true,
+      rootInDialog: true,
+      focusConnected: true,
+      focusInDialog: true,
+    });
     await expect(page.getByRole('dialog', { name: 'Edit bindings' })).toBeVisible();
   });
 

@@ -93,14 +93,16 @@ export function DiagramStage({
     return () => observer.disconnect();
   }, []);
 
-  // The colour scheme of the svg follows the Grafana theme, not the system preference.
+  // The colour scheme of the svg follows the Grafana theme, not the system preference. The effect sets it on the root
+  // object itself: the editor attaches a new root to the container after this effect, so a lookup in the container would
+  // find the old one.
   const isDark = theme.isDark;
   useLayoutEffect(() => {
-    const root = stageRef.current?.querySelector<SVGSVGElement>(':scope > svg');
+    const root = stage.root;
     if (root) {
-      root.style.colorScheme = isDark ? 'dark' : 'light';
+      root.style.setProperty('color-scheme', isDark ? 'dark' : 'light');
     }
-  }, [stage.root, isDark, stageRef]);
+  }, [stage.root, isDark]);
 
   // Apply the draft patches and redraw the overlay in one frame.
   useEffect(() => {

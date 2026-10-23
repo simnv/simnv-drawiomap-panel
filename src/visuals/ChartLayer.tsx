@@ -70,8 +70,7 @@ function Region({
 }: ChartLayerProps & {
   entry: BindingPlan['widgets'][number];
 }) {
-  const { root, cells, viewport, context, controller, queries, revision, replaceVariables, onPrepared, owner } =
-    props;
+  const { root, cells, viewport, context, controller, queries, revision, replaceVariables, onPrepared, owner } = props;
   const { widget, scope } = entry;
   const cell = cells.get(entry.anchorCellId);
   const theme = useTheme2();

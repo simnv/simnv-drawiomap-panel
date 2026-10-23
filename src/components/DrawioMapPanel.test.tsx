@@ -1,4 +1,5 @@
-import { editorField, openQueryRow, selectStageCell } from '../editor/testUtils';
+import { chooseOption, editorField, openQueryRow, selectStageCell } from '../editor/testUtils';
+import { currentAddress, requestOpen } from '../editor/popup/popupBus';
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -1676,10 +1677,10 @@ describe('DrawioMapPanel bindings popup', () => {
     ],
   });
   /** A panel that keeps the saved options, as the dashboard does. */
-  function renderSaved(config: DiagramConfigV2, id = 61) {
+  function renderSaved(config: DiagramConfigV2, id = 61, shown = diagram) {
     const save = vi.fn();
     function SavedPanel() {
-      const [saved, setSaved] = React.useState<Options>({ ...options, rules: [], config, diagram });
+      const [saved, setSaved] = React.useState<Options>({ ...options, rules: [], config, diagram: shown });
       return (
         <DrawioMapPanel
           {...props({ id })}
@@ -1839,5 +1840,113 @@ describe('DrawioMapPanel bindings popup', () => {
     expect(started).toBeGreaterThan(0);
     view.unmount();
     expect(release).toHaveBeenCalledTimes(started);
+  });
+  it('closes the popup and drops its draft when the panel editor address changes, and listens at the new address', async () => {
+    renderSaved(labelled());
+    openPopup();
+    selectElement('a');
+    fireEvent.change(editorField('Label template'), { target: { value: 'Dirty ${value}' } });
+    expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
+    // the same panel id in the editor of another dashboard
+    act(() => locationService.push('/d/another-dashboard/x?editPanel=61'));
+    await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
+    act(() => {
+      expect(requestOpen(currentAddress(), { kind: 'none' })).toBe(true);
+    });
+    await screen.findByTestId('dmap-bindings-popup');
+    // the draft of the old session is gone
+    selectElement('a');
+    expect((editorField('Label template') as HTMLInputElement).value).toBe('Saved ${value}');
+  });
+
+  it('drops the prepared result of a removed chart before the next explicit preview', async () => {
+    const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
+    const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+    Object.defineProperties(SVGElement.prototype, {
+      getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
+      getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
+    });
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 400,
+      bottom: 200,
+      width: 400,
+      height: 200,
+      toJSON: () => ({}),
+    });
+    onTestFinished(() => {
+      rect.mockRestore();
+      for (const [key, descriptor] of [
+        ['getCTM', ctm],
+        ['getBBox', bbox],
+      ] as const) {
+        if (descriptor) {
+          Object.defineProperty(SVGElement.prototype, key, descriptor);
+        } else {
+          Reflect.deleteProperty(SVGElement.prototype, key);
+        }
+      }
+    });
+    nativeQuery.mockReset().mockImplementation(
+      () =>
+        new Observable((observer) => {
+          observer.next({ data: [frame('D', {}, [42])] });
+          return () => {};
+        })
+    );
+    const config: DiagramConfigV2 = {
+      version: 2,
+      overrides: [],
+      queries: [
+        {
+          id: 'q',
+          name: 'Chart data',
+          source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
+        },
+      ],
+      patterns: [
+        {
+          id: 'p',
+          name: 'Chart region',
+          select: { ids: ['chart'] },
+          display: {
+            hover: {
+              rows: [{ kind: 'value', label: 'Metric', binding: { queryId: 'q', match: {}, reducer: 'last' } }],
+            },
+          },
+        },
+      ],
+      widgets: [
+        {
+          id: 'w',
+          anchorCellId: 'chart',
+          kind: 'sparkline',
+          label: 'CPU chart',
+          binding: { queryId: 'q', match: {}, reducer: 'last' },
+        },
+      ],
+    };
+    const chartSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart"><rect width="180" height="70"/></g></svg>';
+    renderSaved(config, 61, { xml: '', svg: chartSvg, hash: 'drop-chart', updatedAt: '' });
+    openPopup();
+    const stage = () => within(screen.getByTestId('dmap-popup-stage'));
+    await waitFor(() => expect(stage().getByTestId('dmap-widget').textContent).toContain('42'));
+    // delete the chart in the draft: its watch is released and its prepared result goes away
+    fireEvent.click(screen.getByRole('button', { name: 'Delete widget CPU chart' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(stage().queryByTestId('dmap-widget')).toBeNull());
+    const before = nativeQuery.mock.calls.length;
+    selectElement('chart');
+    chooseOption('Edit scope', 'All elements matching this pattern');
+    fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
+    await waitFor(() => expect(editorField('Pattern preview progress').textContent).toContain('1 / 1'));
+    // the preview asks for its own result at its own resolution; nothing of the removed chart answers it
+    const asked = nativeQuery.mock.calls.slice(before).map(([request]) => request.maxDataPoints);
+    expect(asked).toContain(160);
+    expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
   });
 });

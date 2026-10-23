@@ -1,8 +1,9 @@
 import React, { StrictMode } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import pluginJson from '../../plugin.json';
 import { PluginDialog } from './PluginDialog';
+import { pop, push } from './overlayStack';
 
 const hosts = () => document.querySelectorAll(`body > [data-plugin-sandbox="${pluginJson.id}"]`);
 
@@ -140,5 +141,82 @@ describe('PluginDialog', () => {
     const { onDismiss } = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  describe('focus guard', () => {
+    const guarded = (children: React.ReactNode) =>
+      render(
+        <PluginDialog title="Edit bindings" onDismiss={() => {}} overlayId="guard-test">
+          {children}
+        </PluginDialog>
+      );
+    const insideDialog = () => !!document.activeElement?.closest('[role="dialog"]');
+
+    it('moves the focus back into the dialog when the focused element is removed', async () => {
+      push('guard-test');
+      function Swap() {
+        const [on, setOn] = React.useState(true);
+        return on ? (
+          <button key="a" onClick={() => setOn(false)}>
+            remove me
+          </button>
+        ) : (
+          <button key="b">other</button>
+        );
+      }
+      guarded(<Swap />);
+      const button = screen.getByText('remove me');
+      button.focus();
+      fireEvent.click(button);
+      expect(document.activeElement).toBe(document.body);
+      await waitFor(() => expect(insideDialog()).toBe(true));
+      pop('guard-test');
+    });
+
+    it('pulls a focus that lands outside the dialog back to the last focused element', async () => {
+      push('guard-test');
+      guarded(
+        <>
+          <button>one</button>
+          <button>two</button>
+        </>
+      );
+      screen.getByText('two').focus();
+      const outside = document.createElement('button');
+      document.body.appendChild(outside);
+      act(() => outside.focus());
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByText('two')));
+      outside.remove();
+      pop('guard-test');
+    });
+
+    it('lets the focus stay in the Grafana portal container and in another dialog', async () => {
+      push('guard-test');
+      guarded(<button>one</button>);
+      const portal = document.createElement('div');
+      portal.id = 'grafana-portal-container';
+      const inner = document.createElement('button');
+      portal.appendChild(inner);
+      document.body.appendChild(portal);
+      act(() => inner.focus());
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(document.activeElement).toBe(inner);
+      portal.remove();
+      pop('guard-test');
+    });
+
+    it('does nothing while another overlay is on top', async () => {
+      push('guard-test');
+      push('nested');
+      guarded(<button>one</button>);
+      const outside = document.createElement('button');
+      document.body.appendChild(outside);
+      act(() => outside.focus());
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(document.activeElement).toBe(outside);
+      outside.remove();
+      pop('nested');
+      pop('guard-test');
+    });
   });
 });

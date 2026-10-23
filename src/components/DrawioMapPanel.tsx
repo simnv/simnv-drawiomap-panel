@@ -50,13 +50,19 @@ const MENU_CLEARANCE = 32;
 const RESET_SIZE = 32;
 const BADGE_HEIGHT = 20;
 
+/** The address of the open edit session of this panel, or an empty string when the panel is not in panel edit. */
 function usePanelEditing(id: number) {
   const subscribe = useCallback((notify: () => void) => {
     const sub = locationService?.getLocationObservable().subscribe(notify);
     return () => sub?.unsubscribe();
   }, []);
-  const editPanel = useSyncExternalStore(subscribe, () => String(locationService?.getSearchObject().editPanel ?? ''));
-  return editPanel === String(id);
+  // The snapshot holds the pathname too: the same panel id on another dashboard is another edit session.
+  const snapshot = useSyncExternalStore(
+    subscribe,
+    () => `${locationService?.getLocation().pathname ?? ''}\n${locationService?.getSearchObject().editPanel ?? ''}`
+  );
+  const [pathname, editPanel] = snapshot.split('\n');
+  return editPanel === String(id) ? `${pathname}\n${editPanel}` : '';
 }
 
 const styles = {
@@ -156,7 +162,8 @@ const portalSheet = (card: React.ReactElement, sheet: boolean) =>
 const canHover = () => !(typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
 
 export function DrawioMapPanel(props: PanelProps<Options>) {
-  const editing = usePanelEditing(props.id);
+  const session = usePanelEditing(props.id);
+  const editing = session !== '';
   const [popup, setPopup] = useState<PopupTarget | null>(null);
   // The element that opened the popup gets the focus back on close. The chunk loader and the dialog mount later and
   // would see another active element, so the panel records it at the click.
@@ -167,12 +174,11 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
   }, []);
   // The popup lives as long as the edit session of this panel: leaving panel edit (navigation, "Back to dashboard",
   // browser back) or unmounting drops it with its draft, also while its chunk still loads.
-  const [wasEditing, setWasEditing] = useState(editing);
-  if (wasEditing !== editing) {
-    setWasEditing(editing);
-    if (!editing) {
-      setPopup(null);
-    }
+  // A change of the address (another dashboard, another panel id) is a new session too: the draft is dropped.
+  const [wasSession, setWasSession] = useState(session);
+  if (wasSession !== session) {
+    setWasSession(session);
+    setPopup(null);
   }
   // The "Edit bindings" button of the options pane asks for the popup through the addressed bus.
   useEffect(() => {
@@ -180,7 +186,9 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
       return;
     }
     return subscribe(currentAddress(), openPopup);
-  }, [editing, openPopup]);
+    // The session is the address: a new one subscribes again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, editing, openPopup]);
   const closePopup = useCallback(() => {
     setPopup(null);
     const target = opener.current;

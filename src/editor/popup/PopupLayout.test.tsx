@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PANES_STORAGE_KEY, PopupLayout } from './PopupLayout';
 
 const layout = () => (
@@ -25,6 +25,28 @@ describe('PopupLayout', () => {
     // the stored size of an earlier session counts as set
     render(wide);
     expect(screen.getByTestId('dmap-pane-inspector').style.flexBasis).toBe('416px');
+  });
+
+  it('fits restored side widths to a narrow dialog and keeps the centre at least 240 px', () => {
+    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify({ list: 520, inspector: 720 }));
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1216);
+    render(layout());
+    const [list, inspector] = [size('dmap-pane-list'), size('dmap-pane-inspector')];
+    expect(list).toBeLessThan(520);
+    expect(inspector).toBeLessThan(720);
+    expect(list + inspector + 16 + 240).toBeLessThanOrEqual(1216);
+    // the stored values stay as the user set them
+    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ list: 520, inspector: 720 });
+    width.mockRestore();
+  });
+
+  it('keeps the stored widths when the dialog is wide enough', () => {
+    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify({ list: 520, inspector: 720 }));
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1800);
+    render(layout());
+    expect(size('dmap-pane-list')).toBe(520);
+    expect(size('dmap-pane-inspector')).toBe(720);
+    width.mockRestore();
   });
 
   it('shows the three regions and two handles with the default sizes', () => {

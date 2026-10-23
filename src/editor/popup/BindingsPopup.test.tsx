@@ -142,6 +142,20 @@ describe('BindingsPopup', () => {
     expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('Keep editing folds the conflict alert, keeps the draft and the Apply block, and Resolve brings the choices back', () => {
+    const { update, onOptionsChange } = mount();
+    makeDirty();
+    update(optionsOf(config('Elsewhere')));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByText(CONFLICT)).toBeNull();
+    expect(screen.getByText('The saved bindings changed. Apply is blocked.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Changed');
+    expect(onOptionsChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    expect(screen.getByText(CONFLICT)).toBeTruthy();
+  });
+
   it('Reload saved starts a new draft from the new saved bindings', () => {
     const { update, onOptionsChange } = mount();
     makeDirty();
@@ -152,6 +166,15 @@ describe('BindingsPopup', () => {
     selectStageCell('a');
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Elsewhere');
     expect(screen.queryByText('Unsaved changes')).toBeNull();
+  });
+
+  it('keeps the focus in the dialog after Reload saved replaces the editor', async () => {
+    const { update } = mount();
+    makeDirty();
+    update(optionsOf(config('Elsewhere')));
+    screen.getByRole('button', { name: 'Reload saved' }).focus();
+    fireEvent.click(screen.getByRole('button', { name: 'Reload saved' }));
+    await waitFor(() => expect(document.activeElement?.closest('[role="dialog"]')).toBeTruthy());
   });
 
   it('does not report a conflict after its own Apply', () => {

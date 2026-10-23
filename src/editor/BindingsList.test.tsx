@@ -3,6 +3,8 @@ import { createQueryController } from '../query/controller';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderEditor, svgOf, type EditorHarnessProps } from './editorHarness';
+import { DELETE_CONFIRM_ID } from './BindingsList';
+import { isTop } from './popup/overlayStack';
 import * as cardModel from '../interact/cardModel';
 import { FieldType, LoadingState, getDefaultTimeRange, toDataFrame } from '@grafana/data';
 import type { DiagramConfigV2 } from '../model/config';
@@ -204,6 +206,15 @@ describe('bindings list', () => {
     await screen.findByRole('button', { name: 'Overrides (0)' });
     fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
     expect(save.mock.calls[0][0].overrides).toEqual([]);
+  });
+
+  it('puts the delete question on the overlay stack while it is open, so Esc reaches it first', async () => {
+    setup();
+    expect(isTop(DELETE_CONFIRM_ID)).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete override device-2' }));
+    expect(isTop(DELETE_CONFIRM_ID)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(isTop(DELETE_CONFIRM_ID)).toBe(false));
   });
 
   it('keeps an override when the confirmation is dismissed', () => {

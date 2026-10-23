@@ -1,4 +1,13 @@
-import React, { useCallback, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import React, {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import { css, cx } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
@@ -11,7 +20,7 @@ const LIMITS = {
   inspector: { initial: 400, min: 300, max: 720 },
 };
 /** The centre pane keeps at least this width when a side pane grows. */
-const MIN_CENTRE = 320;
+const MIN_CENTRE = 240;
 /** Width of a handle in px. */
 const HANDLE = 8;
 const KEY_STEP = 16;
@@ -60,6 +69,20 @@ function writeSizes(sizes: Sizes) {
   }
 }
 
+/**
+ * The sizes that fit the container. A stored size can be wider than a smaller dialog: the side panes shrink in proportion,
+ * so that the centre keeps its minimum. The stored sizes stay as the user set them.
+ */
+export function fitSizes(sizes: Sizes, width: number): Sizes {
+  const room = width - 2 * HANDLE - MIN_CENTRE;
+  const sum = sizes.list + sizes.inspector;
+  if (!width || sum <= room) {
+    return sizes;
+  }
+  const scale = Math.max(room, 0) / sum;
+  return { list: Math.floor(sizes.list * scale), inspector: Math.floor(sizes.inspector * scale) };
+}
+
 export interface PopupLayoutProps {
   list: ReactNode;
   stage: ReactNode;
@@ -80,11 +103,32 @@ export function PopupLayout({ list, stage, inspector, wideInspector = false }: P
   const containerRef = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState(readSizes);
   const [inspectorSet, setInspectorSet] = useState(hasStoredInspector);
+  // The width of the container: the restored sizes must fit it at the start and after each resize.
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) {
+      return;
+    }
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const shown = useMemo(() => fitSizes(sizes, width), [sizes, width]);
+  const shownRef = useRef(shown);
+  useLayoutEffect(() => {
+    shownRef.current = shown;
+  });
   const latest = useRef(sizes);
   /** The largest size of a pane: the container keeps the minimum of the centre and the other pane. */
   const maxFor = useCallback((pane: Pane) => {
     const width = containerRef.current?.clientWidth || 0;
-    const other = pane === 'list' ? latest.current.inspector : latest.current.list;
+    const other = pane === 'list' ? shownRef.current.inspector : shownRef.current.list;
     const limit = LIMITS[pane];
     return width ? Math.max(limit.min, Math.min(limit.max, width - other - MIN_CENTRE - 2 * HANDLE)) : limit.max;
   }, []);
@@ -102,22 +146,22 @@ export function PopupLayout({ list, stage, inspector, wideInspector = false }: P
     <div ref={containerRef} className={styles.container} data-testid="dmap-popup-layout">
       <div
         className={cx(styles.pane, styles.side)}
-        style={{ flexBasis: sizes.list }}
+        style={{ flexBasis: shown.list }}
         data-testid="dmap-pane-list"
-        data-pane-size={sizes.list}
+        data-pane-size={shown.list}
       >
         {list}
       </div>
-      <Handle pane="list" value={sizes.list} maxFor={maxFor} resize={resize} commit={commit} />
+      <Handle pane="list" value={shown.list} maxFor={maxFor} resize={resize} commit={commit} />
       <div className={cx(styles.pane, styles.centre)} data-testid="dmap-pane-stage">
         {stage}
       </div>
-      <Handle pane="inspector" value={sizes.inspector} maxFor={maxFor} resize={resize} commit={commit} />
+      <Handle pane="inspector" value={shown.inspector} maxFor={maxFor} resize={resize} commit={commit} />
       <div
         className={cx(styles.pane, styles.side)}
-        style={{ flexBasis: wideInspector && !inspectorSet ? WIDE_INSPECTOR : sizes.inspector }}
+        style={{ flexBasis: wideInspector && !inspectorSet ? WIDE_INSPECTOR : shown.inspector }}
         data-testid="dmap-pane-inspector"
-        data-pane-size={sizes.inspector}
+        data-pane-size={shown.inspector}
       >
         {inspector}
       </div>
