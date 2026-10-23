@@ -283,3 +283,29 @@ describe('history', () => {
     expect(undone.present.diagram?.hash).toBe(`h${MAX_DIAGRAMS + 2}`);
   });
 });
+
+describe('history of a batch', () => {
+  it('is one step: one undo removes the whole batch, one redo restores it', () => {
+    let s = start();
+    s = reduceHistory(s, {
+      type: 'batch',
+      actions: [
+        { type: 'pattern', pattern: { id: 'n', name: 'N', select: { ids: ['a', 'b'] }, display: {} } },
+        { type: 'select', cellId: 'b' },
+        { type: 'scope', scope: 'pattern', patternId: 'n', patternIndex: 1 },
+      ],
+    });
+    expect(s.past).toHaveLength(1);
+    expect(s.present.config.patterns).toHaveLength(2);
+    s = reduceHistory(s, { type: 'undo' });
+    expect(s.present.config.patterns).toHaveLength(1);
+    s = reduceHistory(s, { type: 'redo' });
+    expect(s.present.config.patterns).toHaveLength(2);
+  });
+
+  it('does not join the edit run of a field: the edit before it stays its own step', () => {
+    let s = run(start(), [[display('x'), 0]]);
+    s = reduceHistory(s, { type: 'batch', actions: [display('y')] }, 100);
+    expect(s.past).toHaveLength(2);
+  });
+});

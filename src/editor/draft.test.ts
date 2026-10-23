@@ -489,3 +489,35 @@ describe('remove-query', () => {
     expect(reduceDraft(base, { type: 'remove-query', id: 'nope' }).config.queries).toHaveLength(2);
   });
 });
+
+describe('batch', () => {
+  it('applies its actions in order', () => {
+    const next = reduceDraft(createDraft(saved), {
+      type: 'batch',
+      actions: [
+        { type: 'pattern', pattern: { id: 'new', name: 'New', select: { ids: ['a', 'b'] }, display: {} } },
+        { type: 'select', cellId: 'a' },
+        { type: 'scope', scope: 'pattern', patternId: 'new', patternIndex: 1 },
+      ],
+    });
+    expect(next.config.patterns.map((p) => p.id)).toEqual(['devices', 'new']);
+    expect(next.cellId).toBe('a');
+    expect(next.scope).toBe('pattern');
+    expect(draftPatternIndex(next)).toBe(1);
+  });
+
+  it('removes several overrides', () => {
+    const base = createDraft({
+      ...saved,
+      overrides: ['a', 'b', 'c'].map((cellId) => ({ cellId, display: { label: cellId } })),
+    });
+    const next = reduceDraft(base, {
+      type: 'batch',
+      actions: [
+        { type: 'remove-override', cellId: 'a' },
+        { type: 'remove-override', cellId: 'c' },
+      ],
+    });
+    expect(next.config.overrides.map((o) => o.cellId)).toEqual(['b']);
+  });
+});

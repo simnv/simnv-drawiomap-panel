@@ -44,6 +44,8 @@ export type DraftAction =
   | { type: 'import'; config: unknown }
   | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
   | { type: 'diagram'; diagram: Diagram }
+  /** Several actions applied in order. The history records one step for the whole batch. */
+  | { type: 'batch'; actions: DraftAction[] }
   | { type: 'reset' | 'applied' };
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfig>): DisplayConfig {
@@ -116,6 +118,9 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
   }
   if (action.type === 'scope') {
     return { ...draft, scope: action.scope, patternId: action.patternId, patternIndex: action.patternIndex };
+  }
+  if (action.type === 'batch') {
+    return action.actions.reduce(reduceDraft, draft);
   }
   if (action.type === 'reset') {
     return { ...draft, config: copy(draft.saved), diagram: draft.savedDiagram, diagnostics: [] };

@@ -1,7 +1,8 @@
 import { fireEvent, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_CONFIG } from './draft';
 import { renderEditor, svgOf } from './editorHarness';
+import { editorField } from './testUtils';
 
 const click = (id: string, shiftKey = false) =>
   fireEvent.click(screen.getByTestId('dmap-popup-stage').querySelector(`[data-cell-id="${id}"] rect`) as Element, {
@@ -58,5 +59,113 @@ describe('multi-select on the stage', () => {
     click('b', true);
     click('c');
     expect(marks('data-dmap-selected')).toEqual(['c']);
+  });
+});
+
+describe('pattern from the selection', () => {
+  const routers = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">${[
+    ['r1', 'router', 'core-1'],
+    ['r2', 'router', 'core-2'],
+    ['r3', 'router', 'edge-3'],
+    ['s1', 'switch', 'sw-1'],
+  ]
+    .map(
+      ([id, role, label], i) =>
+        `<g data-cell-id="${id}" data-meta-pg-kind="node" data-meta-role="${role}"><rect x="${i * 60}" y="10" width="50" height="30"/><text>${label}</text></g>`
+    )
+    .join('')}</svg>`;
+  const open = () => {
+    const view = renderEditor({ config: EMPTY_CONFIG, svg: routers });
+    click('r1');
+    click('r2', true);
+    return view;
+  };
+
+  it('proposes the shared attribute first, shows the counts and marks the extra cell', () => {
+    open();
+    const counts = () => screen.getByTestId('dmap-proposal-counts').textContent;
+    expect(screen.getByRole('heading', { name: '2 elements' })).toBeTruthy();
+    expect((editorField('Proposed attributes') as HTMLTextAreaElement).value).toBe('role=router');
+    expect((editorField('Proposed element IDs') as HTMLInputElement).value).toBe('');
+    expect(counts()).toBe('matches 3, extra 1, missed 0');
+    expect(marks('data-dmap-extra')).toEqual(['r3']);
+    expect(marks('data-dmap-missed')).toEqual([]);
+  });
+
+  it('re-evaluates when the selector is edited: ids clears the extras, a bad ids list shows the missed', () => {
+    open();
+    fireEvent.click(screen.getByRole('radio', { name: /Element IDs/ }));
+    expect(marks('data-dmap-extra')).toEqual([]);
+    expect(screen.getByTestId('dmap-proposal-counts').textContent).toBe('matches 2, extra 0, missed 0');
+    fireEvent.change(editorField('Proposed element IDs'), { target: { value: 'r1' } });
+    expect(marks('data-dmap-missed')).toEqual(['r2']);
+    expect(screen.getByTestId('dmap-proposal-counts').textContent).toBe('matches 1, extra 0, missed 1');
+  });
+
+  it('shows the label proposal and a regex error', () => {
+    open();
+    fireEvent.click(screen.getByRole('radio', { name: /Label/ }));
+    expect((editorField('Proposed label regex') as HTMLInputElement).value).toBe('/^core-/');
+    expect(screen.getByTestId('dmap-proposal-counts').textContent).toBe('matches 2, extra 0, missed 0');
+    fireEvent.change(editorField('Proposed label regex'), { target: { value: '/(/' } });
+    expect(screen.getByRole('alert').textContent).toContain('invalid regex');
+    expect((screen.getByRole('button', { name: 'Create pattern' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('creates the pattern as one step, opens it in the pattern scope and clears the marks', () => {
+    const view = open();
+    fireEvent.click(screen.getByRole('button', { name: 'Create pattern' }));
+    expect(marks('data-dmap-extra')).toEqual([]);
+    expect(screen.getByRole('heading', { name: 'r1 bindings' })).toBeTruthy();
+    // the pattern scope shows the selector of the new pattern
+    expect(editorField('Pattern element IDs')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(view.save.mock.calls[0][0].patterns).toEqual([
+      expect.objectContaining({
+        id: 'pattern-1',
+        name: 'Pattern 1',
+        select: { kind: 'other', attrs: { role: 'router' } },
+      }),
+    ]);
+  });
+
+  it('one undo removes the created pattern, one redo brings it back', () => {
+    const view = open();
+    fireEvent.click(screen.getByRole('button', { name: 'Create pattern' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(view.save.mock.calls[0][0].patterns).toEqual([]);
+  });
+
+  it('redo restores the created pattern', () => {
+    const view = open();
+    fireEvent.click(screen.getByRole('button', { name: 'Create pattern' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    expect(view.save.mock.calls[0][0].patterns).toHaveLength(1);
+  });
+
+  it('a box select adds the cells under the band to the selection', () => {
+    renderEditor({ config: EMPTY_CONFIG, svg: routers });
+    click('r1');
+    const stage = screen.getByTestId('dmap-popup-stage');
+    const rect = (l: number) => ({ left: l, top: 0, right: l + 50, bottom: 40, width: 50, height: 40 }) as DOMRect;
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const id = this.getAttribute('data-cell-id');
+      const at = ['r1', 'r2', 'r3', 's1'].indexOf(id ?? '');
+      return at >= 0
+        ? rect(at * 60)
+        : ({ left: 0, top: 0, right: 400, bottom: 200, width: 400, height: 200 } as DOMRect);
+    });
+    const wrapper = stage.parentElement as HTMLElement;
+    const mouse = { pointerType: 'mouse', pointerId: 1, button: 0 };
+    fireEvent.pointerDown(wrapper, { ...mouse, shiftKey: true, clientX: 55, clientY: 5 });
+    fireEvent.pointerMove(wrapper, { ...mouse, clientX: 170, clientY: 60 });
+    fireEvent.pointerUp(wrapper, { ...mouse, clientX: 170, clientY: 60 });
+    spy.mockRestore();
+    expect(marks('data-dmap-selected')).toEqual(['r1', 'r2', 'r3']);
+    expect(marks('data-dmap-primary')).toEqual(['r3']);
+    expect(screen.getByRole('heading', { name: '3 elements' })).toBeTruthy();
   });
 });
