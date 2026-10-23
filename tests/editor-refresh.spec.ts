@@ -1,3 +1,4 @@
+import { openBindingsPopup, popupInspector } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 // A dashboard refresh while the editor is open must not touch the editor: the same frame, the same srcdoc document
@@ -12,9 +13,9 @@ for (const entry of ['Diagram option', 'geometry'] as const) {
   }) => {
     const uid = await createDiagram(config);
     const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    if (entry === 'geometry') {
-      const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
-      await inspector.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+    const popup = entry === 'geometry' ? await openBindingsPopup(page) : undefined;
+    if (popup) {
+      await popupInspector(popup).getByRole('button', { name: 'Edit geometry in draw.io' }).click();
     } else {
       await panelEditPage.getCustomOptions('Diagram').expand();
       await page.getByTestId('dmap-open-editor').click();
@@ -45,7 +46,20 @@ for (const entry of ['Diagram option', 'geometry'] as const) {
     await frame.locator('.geSidebar .geItem').first().click({ timeout: 10_000 });
     const stage = page.getByTestId('dmap-panel');
     const previousHash = await stage.getAttribute('data-dmap-hash');
+    const popupStage = popup?.getByTestId('dmap-popup-stage');
     await frame.getByTitle(/^Save \(/).dispatchEvent('click');
+    if (popup && popupStage) {
+      // The geometry is a draft: the popup stage shows it, the panel behind keeps the saved diagram until Apply.
+      await expect(popupStage).not.toHaveAttribute('data-dmap-hash', previousHash!);
+      await expect(stage).toHaveAttribute('data-dmap-hash', previousHash!);
+      await page
+        .getByRole('dialog')
+        .filter({ has: page.getByTestId('dmap-editor-modal') })
+        .getByRole('button', { name: 'Close', exact: true })
+        .click();
+      await expect(page.getByTestId('dmap-editor-modal')).toHaveCount(0);
+      await popup.getByRole('button', { name: 'Apply and close', exact: true }).click();
+    }
     await expect(stage).not.toHaveAttribute('data-dmap-hash', previousHash!);
   });
 }

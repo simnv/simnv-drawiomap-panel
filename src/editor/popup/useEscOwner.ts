@@ -31,8 +31,9 @@ const isEscape = (event: { key: string; isComposing?: boolean }) => event.key ==
  *
  * 1. The returned React props go on the dialog body. They run after react-select, Monaco and nested React handlers.
  *    React's `stopPropagation` stops the native event at the root container, before the Grafana `esc` key binding.
- * 2. A `document` listener in the bubble phase takes the Esc of a target outside the body, for example focus on
- *    `document.body` or on the header. It acts only when this overlay is the top one.
+ * 2. A `document` listener in the capture phase takes the Esc of a target outside the body, for example focus on
+ *    `document.body` or on the close button of the header. The capture phase runs before the Grafana `esc` key
+ *    binding, which would leave the panel editor. It acts only when this overlay is the top one.
  *
  * Both layers ignore an Esc that something else already handled (`defaultPrevented`) and an Esc inside a dialog
  * that this owner does not own.
@@ -87,10 +88,11 @@ export function useEscOwner({ id, dialogRef, enabled, onEscape }: EscOwnerOption
       if (inForeignDialog(event.target, ownDialog())) {
         return;
       }
+      event.stopPropagation();
       latest.current.onEscape();
     };
-    document.addEventListener('keydown', listener);
-    return () => document.removeEventListener('keydown', listener);
+    document.addEventListener('keydown', listener, true);
+    return () => document.removeEventListener('keydown', listener, true);
   }, [enabled, id, dialogRef, ownDialog]);
 
   return { onKeyDown, onKeyDownCapture };

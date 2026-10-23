@@ -134,3 +134,39 @@ for (const title of ['', 'Reset corner test']) {
     });
   }
 }
+
+test('in panel edit the edit-bindings button joins the reset button and the badge in the corner without overlap', async ({
+  page,
+  request,
+  gotoPanelEditPage,
+}, testInfo) => {
+  const uid = await cornerDashboard(request, `rce-${testInfo.workerIndex}-${Date.now()}`, '', 'bottom-right');
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const panel = page.getByTestId('dmap-panel');
+    const badge = panel.getByTestId('dmap-warning-badge');
+    const edit = panel.getByTestId('dmap-edit-bindings');
+    const reset = panel.getByRole('button', { name: 'Reset zoom' });
+    await zoomIn(page, panel.getByTestId('dmap-stage'));
+    await expect(reset).toBeVisible();
+    await expect(badge).toBeVisible();
+    await expect(edit).toBeVisible();
+    const [r, b, e] = [await box(reset), await box(badge), await box(edit)];
+    expect(intersects(r, b), 'reset vs badge').toBe(false);
+    expect(intersects(r, e), 'reset vs edit').toBe(false);
+    expect(intersects(b, e), 'badge vs edit').toBe(false);
+    // the order of the stack: reset, badge, edit
+    expect(b.x).toBeGreaterThan(r.x);
+    expect(e.x).toBeGreaterThan(b.x);
+    expect(e.width).toBeGreaterThanOrEqual(32);
+    expect(e.height).toBeGreaterThanOrEqual(32);
+    await edit.hover();
+    await expect(page.getByRole('tooltip').filter({ hasText: 'Edit bindings' })).toBeVisible();
+    // the badge is a button here and opens the popup on the first problem
+    await badge.click();
+    await expect(page.getByTestId('dmap-bindings-popup')).toBeVisible();
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});

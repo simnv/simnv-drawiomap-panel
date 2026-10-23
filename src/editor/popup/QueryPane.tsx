@@ -7,6 +7,8 @@ import { QueryEditor } from '../QueryEditor';
 
 export interface QueryPaneProps {
   query: NamedQuery;
+  /** A new value remounts the datasource editor: its text must follow a Cancel. */
+  epoch: number;
   /** The draft query context: the default datasource of the draft applies. */
   context: QueryContext;
   data: PanelData;
@@ -25,6 +27,7 @@ export interface QueryPaneProps {
 /** The right pane for a query row: the datasource query editor of today, its preview result and its use count. */
 export function QueryPane({
   query,
+  epoch,
   context,
   data,
   uses,
@@ -48,7 +51,7 @@ export function QueryPane({
         {uses === 0 ? 'No binding uses this query.' : `Used by ${uses} ${uses === 1 ? 'binding' : 'bindings'}.`}
       </p>
       <QueryEditor
-        key={`${query.id}:${query.source.kind}`}
+        key={`${query.id}:${query.source.kind}:${epoch}`}
         query={query}
         context={context}
         data={data}

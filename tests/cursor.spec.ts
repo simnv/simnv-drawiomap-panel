@@ -87,30 +87,35 @@ test('in panel edit mode only the cells that open a card show the hand cursor; T
   const panel = page.getByTestId('dmap-panel');
   const shape = (id: string) => panel.locator(`[data-cell-id="${id}"] > :is(rect, path, ellipse)`).first();
   const cursor = (id: string) => shape(id).evaluate((el) => getComputedStyle(el).cursor);
-  // A click selects the cell: the binding editor makes every cell a role="button", and Grafana gives every
-  // role="button" the hand cursor.
+  // Panel edit shows the panel as the viewer sees it: the editor lives in the popup, so a cell without a card
+  // is no button and keeps the default cursor, and a click selects nothing.
   await shape('pg-node~rtr-a').click();
-  await expect(panel.locator('[data-cell-id="pg-canvas"]')).toHaveAttribute('role', 'button');
+  await page.keyboard.press('Escape');
+  await expect(panel.locator('[data-dmap-selected="true"]')).toHaveCount(0);
   await expect.poll(() => cursor('pg-node~rtr-a')).toBe('pointer');
   expect(await cursor('pg-link~a-b')).toBe('pointer');
   for (const id of ['pg-canvas', 'pg-group~core', 'pg-legend', 'pg-node~rtr-b']) {
     expect(await cursor(id), id).toBe('auto');
   }
-  // A data refresh with the same selection redraws the patches. The cells without a card keep the tab stop and
-  // the role of the binding editor.
+  // A data refresh redraws the patches. The cells without a card stay plain, and the cells with a card keep
+  // their tab stop.
   const dmapCell = (id: string) => panel.locator(`[data-cell-id="${id}"]`);
   const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/ds/query');
   await panelEditPage.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
   await (await refreshed).finished();
   // the new data goes through a React render and the patch frame
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  await expect(dmapCell('pg-node~rtr-a')).toHaveAttribute('data-dmap-selected', 'true');
   for (const id of ['pg-canvas', 'pg-group~core', 'pg-legend', 'pg-node~rtr-b']) {
-    await expect(dmapCell(id), id).toHaveAttribute('tabindex', '0');
-    await expect(dmapCell(id), id).toHaveAttribute('role', 'button');
+    await expect(dmapCell(id), id).not.toHaveAttribute('role', 'button');
     expect(await cursor(id), id).toBe('auto');
+  }
+  for (const id of ['pg-node~rtr-a', 'pg-link~a-b']) {
+    await expect(dmapCell(id), id).toHaveAttribute('role', 'button');
+    await expect(dmapCell(id), id).toHaveAttribute('tabindex', '0');
+    expect(await cursor(id), id).toBe('pointer');
   }
   await dmapCell('pg-node~rtr-a').focus();
   await page.keyboard.press('Tab');
-  await expect(dmapCell('pg-node~rtr-b')).toBeFocused();
+  await expect(dmapCell('pg-node~rtr-b')).not.toBeFocused();
+  await expect(panel.locator('[data-cell-id]:focus')).toHaveCount(1);
 });

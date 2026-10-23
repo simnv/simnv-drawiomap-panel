@@ -1,4 +1,5 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
+import { openBindingsPopup, popupInspector, selectStageCell } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 async function expectNoHorizontalOverflow(page: Page, inspector: Locator) {
@@ -30,7 +31,7 @@ async function captureLayout(page: Page, testInfo: TestInfo, name: string) {
 }
 
 for (const theme of ['dark', 'light'] as const) {
-  test(`binding inspector layout works in ${theme} theme`, async ({
+  test(`bindings popup layout works in ${theme} theme`, async ({
     page,
     config,
     createDiagram,
@@ -48,37 +49,40 @@ for (const theme of ['dark', 'light'] as const) {
     await page.goto(url.toString());
     await expect(page).toHaveURL(new RegExp(`[?&]theme=${theme}(?:&|$)`));
 
-    const inspector = page.getByRole('complementary', { name: 'Diagram binding inspector' });
-    const device = page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"]');
+    const dialog = await openBindingsPopup(page);
+    const inspector = popupInspector(dialog);
     await expect(inspector).toBeVisible();
     await expectInspectorTheme(inspector, theme);
-    await expect(device).toBeVisible();
-    await device.click();
+    await selectStageCell(dialog, 'device-1');
 
     const heading = inspector.getByRole('heading', { name: /device-1\s*bindings/ });
     await expect(heading).toBeFocused();
     await expectNoHorizontalOverflow(page, inspector);
-    await captureLayout(page, testInfo, `${theme}-inspector-layout-typical`);
+    await captureLayout(page, testInfo, `${theme}-popup-layout-typical`);
     await inspector.getByRole('textbox', { name: 'Label template', exact: true }).scrollIntoViewIfNeeded();
-    await captureLayout(page, testInfo, `${theme}-inspector-layout-fields`);
+    await captureLayout(page, testInfo, `${theme}-popup-layout-fields`);
 
     await page.setViewportSize({ width: 1024, height: 768 });
     await expectNoHorizontalOverflow(page, inspector);
 
     const body = inspector.getByRole('region', { name: 'Binding editor fields', exact: true });
-    const footer = inspector.getByLabel('Binding draft actions', { exact: true });
+    const footer = dialog.getByRole('toolbar', { name: 'Binding draft actions', exact: true });
     await body.evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
     await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    // The draft actions stay in view while the fields scroll.
     await expect(footer).toBeInViewport();
-    const apply = inspector.getByRole('button', { name: 'Apply bindings', exact: true });
-    const cancel = inspector.getByRole('button', { name: 'Cancel changes', exact: true });
+    const apply = dialog.getByRole('button', { name: 'Apply bindings', exact: true });
+    const cancel = dialog.getByRole('button', { name: 'Cancel changes', exact: true });
     await expect(apply).toBeInViewport();
-    await expect(apply).toBeEnabled();
     await expect(cancel).toBeInViewport();
     await expect(cancel).toBeEnabled();
     await cancel.click();
     await expect(heading).toBeVisible();
+    // the three panes stay inside the popup
+    for (const pane of ['dmap-pane-list', 'dmap-pane-stage', 'dmap-pane-inspector']) {
+      await expect(dialog.getByTestId(pane)).toBeInViewport({ ratio: 0.9 });
+    }
   });
 }

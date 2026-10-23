@@ -88,3 +88,25 @@ Decisions:
 - Import strategy (spec 4.6): **lazy** (`React.lazy`). All seven variants are green.
 - Stage build (spec Q3): **in render** (`useStage` as it is). The largest synthetic diagram builds in 77 ms, below the
   200 ms limit. A second stage adds 0.7 to 1.6 MB.
+
+## Bindings popup: Phase 1 results
+
+Commands: `npm run e2e:12`, `npm run e2e:13` (the full suite), and `GRAFANA_URL=<url> npx playwright test tests/bindings-popup.spec.ts`
+for the variants (`AUTHORING_SANDBOX=1` on the sandbox ports).
+
+| Grafana | Setting                | URL                           | Result                                                 |
+| ------- | ---------------------- | ----------------------------- | ------------------------------------------------------ |
+| 12.4.13 | none                   | http://localhost:3012         | full suite: 123 passed, 4 skipped                      |
+| 13.2.4  | none                   | http://localhost:3013         | full suite: 123 passed, 4 skipped (after one test fix) |
+| 13.2.4  | CSP                    | http://localhost:3133         | `bindings-popup.spec.ts`: 15 passed                    |
+| 13.2.4  | `app_sub_url=/grafana` | http://localhost:3153/grafana | `bindings-popup.spec.ts`: 15 passed                    |
+| 12.4.13 | frontend sandbox       | http://localhost:3122         | `bindings-popup.spec.ts`: 6 passed, 9 failed (blocker) |
+| 13.2.4  | frontend sandbox       | http://localhost:3123         | `bindings-popup.spec.ts`: 6 passed, 9 failed (blocker) |
+| 13.2.4  | sandbox + CSP          | http://localhost:3143         | `bindings-popup.spec.ts`: 6 passed, 9 failed (blocker) |
+
+- The popup chunk (`bindings-popup.js`, 92 KB) loads in all seven variants. `dist/module.js` is 328 KB; `check:bundle` scans every
+  `dist/*.js` for draw.io tokens and reports the sizes.
+- Blocker in the frontend sandbox: the popup stage is empty. Grafana gives plugin code a mock element for each DOM element that
+  is inside `#reactRoot` and outside `[data-plugin-sandbox]` (`getSafeSandboxDomElement`, `documentSandbox.ts`). The Grafana
+  `Modal` portal is such a place, so the `ref` of the stage container is a detached mock and its DOM changes do not reach the page.
+  Panes, Esc, Apply and the list work; every test that reads the stage fails. This needs a design decision.

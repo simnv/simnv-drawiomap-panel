@@ -105,6 +105,8 @@ export function BindingEditor({
   const [geometryError, setGeometryError] = useState('');
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [previewEpoch, setPreviewEpoch] = useState(0);
+  // The datasource query editors keep their own text (Monaco does not follow its value). Cancel remounts them.
+  const [resetEpoch, setResetEpoch] = useState(0);
   const [queryId, setQueryId] = useState(config.queries[0]?.id);
   const [queryError, setQueryError] = useState('');
   const [previewState, setPreviewState] = useState<{ key: object; snapshot: QuerySnapshot }>();
@@ -533,6 +535,7 @@ export function BindingEditor({
     setGeometryError('');
     setQueryError('');
     setPreviewEpoch((value) => value + 1);
+    setResetEpoch((value) => value + 1);
   };
   const apply = (close: boolean) => {
     setPreviewEpoch((value) => value + 1);
@@ -682,6 +685,7 @@ export function BindingEditor({
                 query && context
                   ? {
                       query,
+                      epoch: resetEpoch,
                       context,
                       data,
                       uses: bindingsList.queries.find((row) => row.queryId === query.id)?.uses ?? 0,
