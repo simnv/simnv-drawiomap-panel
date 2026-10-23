@@ -102,9 +102,11 @@ export function PatternFromSelection({ cells, selectedIds, onMarks, onCreate }: 
               size="sm"
               value={proposal.kind}
               onChange={(value) => setChosen(value)}
+              fullWidth
               options={proposals.map((p) => ({
                 value: p.kind,
-                label: `${PROPOSAL_LABEL[p.kind]} (${p.extra.length} extra)`,
+                label: PROPOSAL_LABEL[p.kind],
+                description: `${p.extra.length} extra, ${p.missed.length} missed`,
               }))}
             />
           </EditorField>

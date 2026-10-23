@@ -66,7 +66,7 @@ Bindings are edited in the **bindings popup**, a large dialog of the panel edito
 Open it in one of three ways: the link button in the top-left corner of the panel (**Edit bindings**), the warning badge (it opens the first problem), or the **Edit bindings** button in the Diagram options. The popup has three panes. Drag the handles between them to resize; the sizes are kept for the next time.
 
 - **List** (left): **Filter bindings** matches a name, a cell ID or label, or a query ID. **Problems only** hides the rows without a problem. The groups are Problems, Patterns, Overrides, Widgets and Queries, each with a count. A row shows its selector kind, the queries it uses, the number of matched cells and the number of problems. Use the arrow at the start of a row to read its problems. Override and widget rows have a delete button with a confirmation; the deletion goes into the draft. The footer holds **Add named query**, **Add eager panel reference**, **Default datasource UID** and the portable patterns.
-- **Diagram** (centre): a live copy of the diagram with the draft bindings and the data of the panel. Pan and zoom as in the panel. Click an element to select it, **Shift**-click for more. Pointing at a list row marks its cells.
+- **Diagram** (centre): a live copy of the diagram with the draft bindings and the data of the panel. Pan and zoom as in the panel. Click an element to select it. **Shift**-click adds or removes elements, **Shift**-drag draws a selection box (see [Select several elements](#select-several-elements)). Pointing at a list row marks its cells.
 - **Inspector** (right): the selected element, pattern, override, chart region or query. For an element it starts with a live **Hover card preview**: the card that the panel shows for the element, built from the draft and the panel data. It updates on each data refresh and on each edit. An element without hover rows shows "No card for this element".
 
 ![The bindings popup with a selected element](docs/images/bindings-popup.png)
@@ -80,7 +80,7 @@ Work in this order:
 5. Select a rectangle and choose **Assign chart region**. Choose a trend or a bar gauge with meaningful minimum and maximum bounds.
 6. Select **Apply** to keep the popup open, or **Apply and close**. Then save the Grafana dashboard. **Cancel** restores the saved bindings and geometry.
 
-The popup edits a draft. The panel behind it keeps the saved bindings and shows the draft only after Apply. The panel behind the popup updates on refresh until a later release. Close the popup with **Close bindings** or **Esc**. When the draft has changes, the popup asks **Discard changes?** first. **Esc** closes only the innermost layer: an open menu, a datasource dialog, the draw.io editor or the question. If another editor saves the panel while the popup is open, a warning appears and Apply stops. Choose **Overwrite** to save your draft, or **Reload saved** to start again from the saved bindings. Leaving the panel editor closes the popup and drops its draft.
+The popup edits a draft. The panel behind it keeps the saved bindings and shows the draft only after Apply or, with Apply while the popup is open, only after the popup closes (see [The panel while the popup is open](#the-panel-while-the-popup-is-open)). Close the popup with **Close bindings** or **Esc**. When the draft has changes, the popup asks **Discard changes?** first. **Esc** closes only the innermost layer: an open menu, a datasource dialog, the draw.io editor or the question. If another editor saves the panel while the popup is open, a warning appears and Apply stops. Choose **Overwrite** to save your draft, or **Reload saved** to start again from the saved bindings. Leaving the panel editor closes the popup and drops its draft.
 
 A warning icon marks a row with problems: an invalid config, an unknown query, an unresolved metadata template, no metric for a query, a pattern that matches no cell, and an override or chart whose cell no longer exists in the diagram. Each message shows the config path. A message for one cell is shown under the pattern or override whose value is the effective one after the merge. A problem of a named query is shown under every row that uses it. A problem with no owner row is shown in **General**; **Problems only** keeps it. A pattern ID that is used twice is flagged on every pattern with it. Select a row to open it. An override or widget selects its cell. A pattern selects its first matched cell with the scope **All elements matching this pattern**, so you can fix its selector. A row whose cell no longer exists only shows its problems; delete it or restore the cell. A panel that has only legacy rules shows a note that points to the Rules editor.
 
@@ -101,6 +101,32 @@ Each field of the inspector shows where its effective value comes from (the cont
 ### Narrow screens
 
 Below 1000 px of popup width (a browser window narrower than about 1050 px) the three panes become the tabs **List**, **Diagram** and **Inspector**. One pane shows at a time. A click on an element in the diagram, or on a list row, opens the **Inspector** tab. The selection, the zoom of the diagram and the open editors stay when you change tabs.
+
+### Select several elements
+
+In the diagram, **Shift**-click an element to add it to the selection, or to remove it when it is selected. A click without **Shift** selects that element alone. The last element you pick is the primary one; it has a gap in its outline. With two or more elements selected, the inspector shows the heading "N elements" with the list of IDs, **Create pattern from selection** and **Bulk edit**. With one element left, it shows the sections of that element again.
+
+**Shift**-drag on the diagram (mouse or pen) draws a selection box. The box adds every element that it touches to the selection. A node counts with its ports and icon, a link counts with its label; the canvas, layers, groups and the legend never join. You can release the pointer outside the diagram: the box is cut to the diagram. **Esc** during the drag cancels the box and selects nothing; the popup stays open. The click that ends a drag does not select anything. A plain drag still pans, a touch drag always pans, and a **Shift**-click without a drag still toggles.
+
+### Create a pattern from a selection
+
+With two or more elements selected, **Create pattern from selection** proposes a selector that matches them. It builds three kinds of proposal and shows the best one in editable fields: **Proposed kind**, **Proposed element IDs**, **Proposed attributes** (one `key=value` per line) and **Proposed label regex**.
+
+- **Attributes**: the kind (when all elements share it) and the attributes that are equal in all selected elements. The identity attributes (`pg-id`, `id`, `label`, `pg-schema`) never count. The editor drops attributes one by one, the most common first, while the selector still matches no more extra elements.
+- **Label**: the kind and a label regex that starts with the common label prefix, when the prefix has three characters or more.
+- **Element IDs**: the selected IDs. It is the fallback and always comes last.
+
+A proposal that misses a selected element is dropped. The attribute proposal comes first, then the label proposal, then the IDs, even when the IDs match fewer extra elements. Switch with the **Proposal** buttons. The line "matches N, extra M, missed K" counts what the shown selector matches. On the diagram, an element that the selector matches without being selected has a dashed warning outline (`extra`), and a selected element that it misses has a double error outline (`missed`). Both update with each edit of the fields. **Create pattern** adds one pattern with an empty display, opens it in the pattern scope, and is one step for **Undo**. Edit the pattern like any other.
+
+### Bulk edit
+
+With two or more elements selected, **Bulk edit** shows the fields of the display with the values that all selected elements share (the effective values after patterns and overrides). A field where the elements differ is empty and carries the chip **Mixed**. A change writes only that field, as a leaf, to the override of each selected element. Nothing else changes: the other fields of an override stay, the fields that an element inherits from a pattern stay inherited (an element without an override gets one that holds the new field alone), and the pattern is not touched. Clearing a field removes it from the overrides. It cannot hide a value that an element inherits from a pattern.
+
+Hover rows and the health rule are one unit each. They are editable in bulk only when all selected elements have equal ones; then a change replaces the unit in each override. When they differ, the section shows **Mixed, edit per element** and no fields. **Remove overrides of the selection** removes the overrides of all selected elements. A bulk change, and the removal, are one step for **Undo**; typing into one field joins one step.
+
+### The panel while the popup is open
+
+While the popup is open, the panel behind it does no work for dashboard refreshes: it keeps its last picture, and it does not run its bindings again, draw its overlay again or read new data. The dashboard keeps running its own queries. **Apply** writes the options at once, but the panel shows them only when the popup closes. When the popup closes, the panel renders once with the latest data and options. A result that arrived for the panel's queries in the meantime shows then. A result of a query that you changed is dropped. The clock keeps running: when a sample passes its freshness limit while the popup is open, the status of the panel behind turns stale, because stale data must never look fresh. Opening the popup closes the pinned card and the legend highlight of the panel.
 
 ### Delete a query
 
