@@ -249,6 +249,25 @@ describe('owner of a merged setting', () => {
     expect(at('cells.core.shape.binding.match.job')).toEqual([1, 0]);
     expect(at('cells.core.shape.binding.match.device')).toEqual([0, 1]);
   });
+  it('sends a parameter diagnostic below a binding to the pattern that has the binding only', () => {
+    const cfg: DiagramConfigV2 = {
+      ...merged,
+      patterns: [
+        { id: 'labels', name: 'Labels', select: { ids: ['core'] }, display: { label: 'x' } },
+        {
+          id: 'bound',
+          name: 'Bound',
+          select: { ids: ['core'] },
+          display: { shape: { binding: binding('q1') } },
+        },
+      ],
+      overrides: [],
+    };
+    const list = buildBindingsList(cfg, cells, [
+      { code: 'missing-parameter-path', path: 'cells.core.shape.binding.parameters.dm_port', message: 'x' },
+    ]);
+    expect(list.patterns.map((r) => r.problems.length)).toEqual([0, 1]);
+  });
   it('blames all candidates when no owner sets the path', () => {
     expect(owners('cells.core.url')).toEqual(['pattern:0:p1', 'pattern:1:p2', 'override:0:core']);
   });

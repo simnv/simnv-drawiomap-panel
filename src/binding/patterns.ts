@@ -30,8 +30,11 @@ export interface BindingPlan {
   diagnostics: Diagnostic[];
 }
 
-/** Called for each effective display path that a patch sets; a replacing patch also ends everything below the path. */
-type Track = (path: string) => void;
+/**
+ * Called for each leaf display path that a patch writes. It records the owner at the leaf only and ends the earlier
+ * owners at the leaf and below it. With `clear`, it only ends the owners below the path: a whole subtree is replaced.
+ */
+type Track = (path: string, clear?: boolean) => void;
 
 function mergeFields<T extends object>(
   base: T | undefined,
@@ -64,7 +67,7 @@ function mergeSelector<T extends SeriesSelector | QueryBinding>(
   }
   return patch === undefined
     ? base
-    : { ...base, ...patch, match: mergeFields(base?.match, patch.match, track, `${path}.match`) };
+    : { ...base, ...patch, match: mergeFields(base?.match, patch.match, track, track ? `${path}.match` : '') };
 }
 
 const LINK_SELECTORS = [
@@ -82,7 +85,7 @@ const LINK_SELECTORS = [
  * With `track`, every effective path that the patch sets is reported, down to each matcher key and nested key:
  * the same granularity as the merge, from the same code.
  */
-function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefined, track?: Track): DisplayConfig {
+export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefined, track?: Track): DisplayConfig {
   if (!patch) {
     return base;
   }
@@ -163,23 +166,32 @@ function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefined, tra
   if (patch.hover) {
     result.hover = mergeFields(base.hover, patch.hover, track, 'hover');
   }
-  if (patch.status && base.status?.kind === patch.status.kind) {
+  if (patch.status) {
+    const sameKind = base.status?.kind === patch.status.kind;
     if (track) {
+      // A status of another kind replaces the whole rule: clear it, then own the leaves that the patch writes.
+      if (!sameKind) {
+        track('status', true);
+      }
       for (const [key, value] of Object.entries(patch.status)) {
         if (value !== undefined && !['binding', 'default', 'freshness'].includes(key)) {
           track(`status.${key}`);
         }
       }
+      const previous = sameKind ? base.status : undefined;
+      mergeSelector(previous?.binding, patch.status.binding, track, 'status.binding');
+      mergeFields(previous?.default, patch.status.default, track, 'status.default');
+      mergeFields(previous?.freshness, patch.status.freshness, track, 'status.freshness');
     }
-    result.status = {
-      ...base.status,
-      ...patch.status,
-      binding: mergeSelector(base.status.binding, patch.status.binding, track, 'status.binding')!,
-      default: mergeFields(base.status.default, patch.status.default, track, 'status.default')!,
-      freshness: mergeFields(base.status.freshness, patch.status.freshness, track, 'status.freshness'),
-    };
-  } else if (patch.status) {
-    track?.('status');
+    if (sameKind) {
+      result.status = {
+        ...base.status,
+        ...patch.status,
+        binding: mergeSelector(base.status!.binding, patch.status.binding)!,
+        default: mergeFields(base.status!.default, patch.status.default)!,
+        freshness: mergeFields(base.status!.freshness, patch.status.freshness),
+      };
+    }
   }
   // The schema admits JSON settings only. Clone inherited arrays/records so cells never share mutable settings.
   return JSON.parse(JSON.stringify(result));
@@ -190,41 +202,44 @@ export type DisplayOwner = { kind: 'pattern'; index: number } | { kind: 'overrid
 /** The display paths that the owners set, in the order of the merge. A replacing owner ends the earlier ones below it. */
 export type DisplayProvenance = Map<string, DisplayOwner[]>;
 
-/** The merge of one cell: the matching patterns in config order, then its override. The one place of this rule. */
-function mergeCell(
+/**
+ * The merge of one cell: the matching patterns in config order, then its override. The one place of this rule.
+ * Without `provenance` this is the plain merge of view mode: no owner objects, no paths.
+ */
+export function mergeCell(
   config: DiagramConfigV2,
   cell: CellMeta,
   provenance?: DisplayProvenance
 ): { display: DisplayConfig; patternIds: string[]; override?: DiagramConfigV2['overrides'][number] } {
-  const owners: Array<{ owner: DisplayOwner; display: DisplayConfig }> = [];
-  config.patterns.forEach((p, index) => {
-    if (cellMatches(p.select, cell)) {
-      owners.push({ owner: { kind: 'pattern', index }, display: p.display });
-    }
-  });
+  const matching = config.patterns.filter((p) => cellMatches(p.select, cell));
   const override = config.overrides.find((o) => o.cellId === cell.id);
-  if (override) {
-    owners.push({ owner: { kind: 'override', cellId: cell.id }, display: override.display });
-  }
   let display: DisplayConfig = {};
-  for (const { owner, display: patch } of owners) {
-    const track: Track | undefined = provenance
-      ? (path) => {
-          for (const key of Array.from(provenance.keys())) {
-            if (key === path || key.startsWith(`${path}.`) || key.startsWith(`${path}[`)) {
-              provenance.delete(key);
-            }
-          }
-          provenance.set(path, [...(provenance.get(path) ?? []), owner]);
-        }
-      : undefined;
-    display = mergeDisplay(display, patch, track);
+  if (!provenance) {
+    for (const p of matching) {
+      display = mergeDisplay(display, p.display);
+    }
+    display = mergeDisplay(display, override?.display);
+    return { display, override, patternIds: matching.map((p) => p.id) };
   }
-  return {
-    display,
-    override,
-    patternIds: owners.flatMap(({ owner }) => (owner.kind === 'pattern' ? [config.patterns[owner.index].id] : [])),
-  };
+  const ownerTrack =
+    (owner: DisplayOwner): Track =>
+    (path, clear) => {
+      for (const key of Array.from(provenance.keys())) {
+        if (key === path || key.startsWith(`${path}.`) || key.startsWith(`${path}[`)) {
+          provenance.delete(key);
+        }
+      }
+      if (!clear) {
+        provenance.set(path, [owner]);
+      }
+    };
+  for (const p of matching) {
+    display = mergeDisplay(display, p.display, ownerTrack({ kind: 'pattern', index: config.patterns.indexOf(p) }));
+  }
+  if (override) {
+    display = mergeDisplay(display, override.display, ownerTrack({ kind: 'override', cellId: cell.id }));
+  }
+  return { display, override, patternIds: matching.map((p) => p.id) };
 }
 
 /** Which owners the effective display of a cell comes from, by path. Only the editor asks for it. */
@@ -234,20 +249,32 @@ export function displayProvenance(config: DiagramConfigV2, cell: CellMeta): Disp
   return provenance;
 }
 
-/** The owners behind a path, or behind anything below or above it: a diagnostic may name a binding or one field. */
+/**
+ * The owners behind a path: those of the path itself, of anything below it, or of an array above it. A path with no
+ * owner at or under it (for example a parameter of a binding) goes to the closest ancestor that has owners.
+ */
 export function ownersOfPath(provenance: DisplayProvenance, path: string): DisplayOwner[] {
-  const found: DisplayOwner[] = [];
-  for (const [key, owners] of provenance) {
-    const related = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
-    if (related(path, key) || related(key, path)) {
-      for (const owner of owners) {
-        if (!found.some((x) => JSON.stringify(x) === JSON.stringify(owner))) {
-          found.push(owner);
+  const related = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
+  const parent = (at: string) => {
+    const up = at.replace(/(\.[^.[\]]*|\[\d+\])$/, '');
+    return up === at ? '' : up;
+  };
+  for (let at = path; at; at = parent(at)) {
+    const found: DisplayOwner[] = [];
+    for (const [key, owners] of provenance) {
+      if (related(at, key) || related(key, at)) {
+        for (const owner of owners) {
+          if (!found.some((x) => x.kind === owner.kind && JSON.stringify(x) === JSON.stringify(owner))) {
+            found.push(owner);
+          }
         }
       }
     }
+    if (found.length) {
+      return found;
+    }
   }
-  return found;
+  return [];
 }
 
 function activeBindings(display: DisplayConfig): ReturnType<typeof displayBindings> {
