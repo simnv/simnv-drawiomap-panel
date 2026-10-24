@@ -98,10 +98,18 @@ interface Entry {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+/** The inactive results, by cache key, oldest first. A session may share one cache between controller instances. */
+export type QueryCache = Map<string, { snapshot: QuerySnapshot; values: number; bytes: number }>;
+
+/**
+ * @param cache The inactive result store. A shared cache outlives the controller: `dispose` leaves it as it is, so
+ * the next controller of the same panel session (the panel editor remounts the panel) reuses the results.
+ */
 export function createQueryController(
   execute: QueryExecutor,
   policy: QueryPolicy = DEFAULT_QUERY_POLICY,
-  now = Date.now
+  now = Date.now,
+  cache?: QueryCache
 ): QueryController {
   const entries = new Map<string, Entry>();
   const consumers = new Map<string, () => void>();
@@ -109,7 +117,8 @@ export function createQueryController(
   let panelData: PanelData | undefined;
   let active = 0;
   const queue = new Set<Entry>();
-  const cache = new Map<string, { snapshot: QuerySnapshot; values: number; bytes: number }>();
+  const shared = !!cache;
+  cache ??= new Map();
   const retain = (key: string, snapshot: QuerySnapshot) => {
     if (snapshot.state !== 'ready' && snapshot.state !== 'empty') {
       return;
@@ -318,33 +327,20 @@ export function createQueryController(
       }
       let entry = entries.get(request.cacheKey);
       let run = false;
-      // A pending renewal also has an expired kept result. Do not restart it.
-      if (
-        entry &&
-        !entry.running &&
-        !queue.has(entry) &&
-        (entry.snapshot.state === 'ready' || entry.snapshot.state === 'empty') &&
-        now() - entry.snapshot.fetchedAt >= policy.freshMs
-      ) {
-        stop(entry);
-        refreshing(entry);
-        run = true;
-      }
       if (!entry) {
+        // The key holds the generation and the frozen absolute range: a retained result of this key is the data of
+        // the current dashboard state at any age. Only a new generation (refresh, range or variable change) runs again.
         const cached = cache.get(request.cacheKey);
         cache.delete(request.cacheKey);
         const snapshot = cached?.snapshot;
-        const isFresh =
-          snapshot &&
-          (snapshot.state === 'ready' || snapshot.state === 'empty') &&
-          now() - snapshot.fetchedAt < policy.freshMs;
+        const hit = snapshot && (snapshot.state === 'ready' || snapshot.state === 'empty');
         entry = {
           request,
           listeners: new Map(),
-          snapshot: isFresh ? { ...snapshot, fromCache: true } : { state: 'loading' },
+          snapshot: hit ? { ...snapshot, fromCache: true } : { state: 'loading' },
           token: 0,
         };
-        run = !isFresh;
+        run = !hit;
         entries.set(request.cacheKey, entry);
       }
       const current = entry;
@@ -399,7 +395,9 @@ export function createQueryController(
       entries.clear();
       consumers.clear();
       queue.clear();
-      cache.clear();
+      if (!shared) {
+        cache.clear();
+      }
       panelData = undefined;
     },
   };

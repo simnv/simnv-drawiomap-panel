@@ -198,8 +198,12 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
       }
     });
   }, []);
+  // The query session follows the panel on its dashboard: the panel editor, a lazy scroll and a layout change mount
+  // a new component for the same panel, and it must not run every diagram query again.
+  const querySession = `${locationService?.getLocation().pathname ?? ''}#${props.id}`;
   return (
     <PanelQueryProvider
+      session={querySession}
       data={props.data}
       timeRange={props.timeRange}
       timeZone={props.timeZone}

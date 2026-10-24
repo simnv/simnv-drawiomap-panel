@@ -135,7 +135,7 @@ export function BindingEditor({
   const [geometryError, setGeometryError] = useState('');
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [previewEpoch, setPreviewEpoch] = useState(0);
-  // The datasource query editors keep their own text (Monaco does not follow its value). Cancel remounts them.
+  // The datasource query editors keep their own text (Monaco does not follow its value). Revert to saved remounts them.
   const [resetEpoch, setResetEpoch] = useState(0);
   const [queryId, setQueryId] = useState(config.queries[0]?.id);
   const [queryError, setQueryError] = useState('');
@@ -660,7 +660,9 @@ export function BindingEditor({
     onControls?.({ undo, redo });
     return () => onControls?.(null);
   }, [onControls, undo, redo]);
-  const cancelChanges = () => {
+  // "Revert to saved" restores the saved bindings in the open popup. "Cancel" closes it; the owner asks when the
+  // draft has changes.
+  const resetToSaved = () => {
     dispatch({ type: 'reset' });
     setGeometryError('');
     setQueryError('');
@@ -726,11 +728,11 @@ export function BindingEditor({
         >
           Redo
         </Button>
-        <Button variant="secondary" size="sm" aria-label="Cancel changes" onClick={cancelChanges}>
-          Cancel
+        <Button variant="secondary" size="sm" onClick={resetToSaved}>
+          Revert to saved
         </Button>
         <Button variant="secondary" size="sm" onClick={onRequestClose}>
-          Close bindings
+          Cancel
         </Button>
         {dirty && (
           <span className={styles.dirty} role="status">

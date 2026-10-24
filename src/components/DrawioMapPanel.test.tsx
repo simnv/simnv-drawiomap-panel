@@ -1762,7 +1762,7 @@ describe('DrawioMapPanel bindings popup', () => {
     await waitFor(() => expect(stageText('a')).toBe('Draft 11'));
     expect(panelLabel()).toBe('Saved 11');
     expect(view.save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
     await waitFor(() => expect(stageText('a')).toBe('Saved 11'));
     expect(panelLabel()).toBe('Saved 11');
   });
@@ -1774,7 +1774,7 @@ describe('DrawioMapPanel bindings popup', () => {
     await waitFor(() => expect(stageText('a')).toBe('Saved 11'));
     expect(stageText('b')).toBe('Saved 22');
     const calls = nativeQuery.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
     openPopup();
     await waitFor(() => expect(stageText('a')).toBe('Saved 11'));
@@ -1791,7 +1791,7 @@ describe('DrawioMapPanel bindings popup', () => {
     await waitFor(() => expect(sourceLookups.mock.calls.some(([ref]) => ref?.uid === 'other')).toBe(true));
     const other = sourceLookups.mock.calls.filter(([ref]) => ref?.uid === 'other').length;
     // The panel keeps its saved datasource: a cancel sends no further lookup for the draft one.
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
     expect(sourceLookups.mock.calls.filter(([ref]) => ref?.uid === 'other').length).toBe(other);
   });
   it('runs an edited native target for the popup only, keeps the panel watch alive, and the panel runs it after Apply', async () => {
@@ -1820,7 +1820,7 @@ describe('DrawioMapPanel bindings popup', () => {
     // The panel behind stays paused until the popup closes.
     expect(view.save).toHaveBeenCalledTimes(1);
     expect(panelLabel()).toBe('Saved 42');
-    fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(panelLabel()).toBe('Saved 84'));
     expect(nativeQuery.mock.calls.filter(([request]) => request.targets[0].expr === 'changed').length).toBeGreaterThan(
       0
@@ -2020,7 +2020,7 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(panelApplies()).toBe(before.applies);
       // The view is not rendered at all while it is paused: no loop, no per-refresh render.
       expect(work.viewRenders).toBe(before.renders);
-      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(halves(screen.getByTestId('dmap-panel'))).not.toBe(before.halves));
       expect(panelApplies()).toBe(before.applies + 1);
       expect(work.viewRenders - before.renders).toBeLessThanOrEqual(3);
@@ -2061,7 +2061,7 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(panelApplies()).toBe(applies);
       expect(panelLabel()).toBe('Saved 11');
       const before = panelRequests();
-      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(panelLabel()).toBe('Saved 84'));
       // The popup and the panel share the cached request: the panel needs no more than one request per query scope.
       expect(panelRequests() - before).toBeLessThanOrEqual(2);
@@ -2088,7 +2088,7 @@ describe('DrawioMapPanel bindings popup', () => {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       expect(panelLabel()).toBe('Saved 11');
       expect(panelApplies()).toBe(applies);
-      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(panelLabel()).toBe('Saved 77'));
     });
 
@@ -2147,7 +2147,7 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(view.save).toHaveBeenCalledTimes(1);
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       expect(panelLabel()).toBe('Saved 11');
-      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(panelLabel()).toBe('Draft 11'));
     });
 
@@ -2185,7 +2185,7 @@ describe('DrawioMapPanel bindings popup', () => {
       });
       fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
       selectElement('a');
-      fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
       await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
       // The first two requests belong to the panel. A later value on them still reaches the panel.

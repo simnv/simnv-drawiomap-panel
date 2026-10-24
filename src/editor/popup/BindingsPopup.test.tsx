@@ -112,10 +112,27 @@ describe('BindingsPopup', () => {
   it('keeps the dirty draft when the user chooses Keep editing', async () => {
     const { onClose } = mount();
     makeDirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Close bindings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Keep editing' }));
     expect(onClose).not.toHaveBeenCalled();
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Changed');
+  });
+
+  it('Cancel closes a clean draft at once, asks for a dirty one, and Discard closes; Revert to saved only restores', async () => {
+    const { onClose } = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Discard changes?')).toBeNull();
+    makeDirty();
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
+    expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('');
+    makeDirty();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
   });
 
   it('applies and closes in one step', () => {
@@ -222,7 +239,7 @@ describe('BindingsPopup', () => {
     it('undoes and redoes with the keys when the focus is on a button', () => {
       mount();
       makeDirty();
-      const target = screen.getByRole('button', { name: 'Close bindings' });
+      const target = screen.getByRole('button', { name: 'Cancel' });
       ctrl(target, 'z');
       expect(label()).toBe('');
       ctrl(target, 'Z', { shiftKey: true });

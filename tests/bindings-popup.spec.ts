@@ -125,7 +125,7 @@ test.describe('bindings popup: persistence and loading', () => {
     expect(requests.some((r) => r.queries.some((q) => q.expr === 'vector(84)'))).toBe(true);
     await expect(panelLabel).not.toHaveText('Saved 84');
     // close without applying; the panel still refreshes with its own query
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
     const before = requests.length;
     await edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
@@ -308,7 +308,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await page.keyboard.type('Random Walk');
     await page.keyboard.press('Enter');
     await expect(inspector.getByText('Random Walk', { exact: true }).first()).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
     await expect(page.getByTestId('dmap-edit-bindings')).toBeFocused();
   });
@@ -334,7 +334,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(suggest).toHaveCount(0);
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     // The editor shows the saved text again, and the draft stays clean after the editor loses its focus.
     await expect(popupInspector(dialog).locator('.monaco-editor .view-lines')).toContainText('label_replace');
     await expect(dialog.getByText('Unsaved changes')).toHaveCount(0);
@@ -353,7 +353,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(explorer).toHaveCount(0);
     await expect(dialog).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
   });
 
@@ -423,7 +423,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(page.getByTestId('dmap-editor-modal')).toHaveCount(0);
     // the discard question
     await popupInspector(dialog).getByLabel('Label template', { exact: true }).fill('Dirty');
-    await dialog.getByRole('button', { name: 'Close bindings', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     const question = page.getByRole('dialog', { name: 'Discard changes?' });
     await expect(question).toBeVisible();
     await question.getByRole('button', { name: 'Keep editing', exact: true }).click();

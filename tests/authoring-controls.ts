@@ -21,9 +21,9 @@ export async function openBindingsPopup(page: Page) {
   return dialog;
 }
 
-/** Close the popup with its Close button. The draft must be clean. */
+/** Close the popup with its Cancel button. The draft must be clean. */
 export async function closeBindingsPopup(page: Page) {
-  await page.getByRole('button', { name: 'Close bindings', exact: true }).click();
+  await page.getByTestId('dmap-bindings-popup').getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 
