@@ -44,12 +44,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
       outline-offset: 1px;
     }
   `,
+  // Own compositing layer. WebKit paints the card in the layer of the diagram: a move of the line would repaint
+  // the diagram under the card (slow on a dense diagram). With its own layer the move repaints nothing.
   line: css`
     position: absolute;
     top: 0;
     bottom: 0;
     width: 1px;
     pointer-events: none;
+    will-change: transform;
     background: ${theme.colors.text.secondary};
     opacity: 0.7;
   `,

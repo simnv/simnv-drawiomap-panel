@@ -336,6 +336,13 @@ describe('ChartHover cost while scrubbing', () => {
     expect(commits.length).toBe(opened + 2);
   });
 
+  it('gives the crosshair its own compositing layer: a move repaints nothing under the card', () => {
+    const { el } = profiled();
+    move(el, 50);
+    flushFrame();
+    expect(getComputedStyle(screen.getByTestId('dmap-chart-crosshair')).willChange).toBe('transform');
+  });
+
   it('places the box with a style write, below and right of the sample, and sets no transition', () => {
     const { el } = profiled();
     move(el, 50);

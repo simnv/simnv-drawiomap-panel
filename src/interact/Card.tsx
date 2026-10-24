@@ -69,10 +69,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-size: ${theme.typography.bodySmall.fontSize};
     color: ${theme.colors.text.primary};
     outline: none;
-    /* Own compositing layer. WebKit paints an absolute card in the layer of the diagram: a move of the card, or of
-       the crosshair in it, repaints the diagram under the card (slow on a dense diagram). With its own layer only
-       the card repaints. */
-    will-change: transform;
   `,
   hover: css`
     pointer-events: none;
@@ -80,7 +76,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
   inline: css`
     position: static;
     z-index: auto;
-    will-change: auto;
     width: 100%;
     box-sizing: border-box;
     box-shadow: none;
