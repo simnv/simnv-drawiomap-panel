@@ -732,7 +732,13 @@ export function BindingEditor({
           <Button variant="secondary" size="sm" onClick={onRequestClose}>
             Cancel
           </Button>
-          <Button variant="destructive" fill="outline" size="sm" disabled={!dirty} onClick={resetToSaved}>
+          <Button
+            variant="destructive"
+            fill="outline"
+            size="sm"
+            disabled={!dirty && !geometryError && !queryError}
+            onClick={resetToSaved}
+          >
             Discard
           </Button>
           <Button

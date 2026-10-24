@@ -476,7 +476,7 @@ test.describe('bindings popup: phone viewport', () => {
     expect(box.y).toBeCloseTo(0, 0);
     expect(box.width).toBeCloseTo(390, 0);
     expect(box.height).toBeCloseTo(844, 0);
-    for (const name of ['Cancel', 'Discard', 'Apply', 'Apply and close', 'Edit geometry in draw.io']) {
+    for (const name of ['Cancel', 'Discard', 'Apply bindings', 'Apply and close', 'Edit geometry in draw.io']) {
       await expect(dialog.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 });
     }
     const shot = testInfo.outputPath('bindings-popup-phone.png');
