@@ -102,8 +102,6 @@ export function bindSymbolLegend(
   const at = (e: Event) => symbolAt(e.target, root, groups);
   const isTouch = (e: Event) => (e as PointerEvent).pointerType === 'touch';
   const handlers: Array<[string, (e: Event) => void]> = [
-    ['pointerdown', (e) => void (touch = isTouch(e))],
-    ['keydown', () => void (touch = false)],
     ['pointerover', (e) => isTouch(e) || set(at(e))],
     ['pointerleave', (e) => isTouch(e) || set(null)],
     ['focusin', (e) => touch || set(at(e))],
@@ -121,9 +119,29 @@ export function bindSymbolLegend(
   for (const [type, fn] of handlers) {
     root.addEventListener(type, fn);
   }
+  // The page level: the kind of the last pointer (a key after a tap makes the focus work again), and a press outside
+  // the linked rows, in this panel or in another, ends a selection.
+  const pageHandlers: Array<[string, (e: Event) => void]> = [
+    [
+      'pointerdown',
+      (e) => {
+        touch = isTouch(e);
+        if (current !== null && at(e) === null) {
+          set(null);
+        }
+      },
+    ],
+    ['keydown', () => void (touch = false)],
+  ];
+  for (const [type, fn] of pageHandlers) {
+    document.addEventListener(type, fn, true);
+  }
   return () => {
     for (const [type, fn] of handlers) {
       root.removeEventListener(type, fn);
+    }
+    for (const [type, fn] of pageHandlers) {
+      document.removeEventListener(type, fn, true);
     }
     for (const el of marked) {
       el.removeAttribute(LEGEND_ROW_ATTR);

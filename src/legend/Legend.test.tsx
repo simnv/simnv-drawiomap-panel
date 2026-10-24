@@ -94,6 +94,46 @@ describe('Legend', () => {
     fireEvent.pointerDown(document.body, touch);
     expect(onHighlight).toHaveBeenLastCalledWith(null);
   });
+  it('a tap in another legend ends the tapped highlight of this one', () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    render(
+      <>
+        <Legend blocks={blocks} maxBlocks={4} collapsed={false} onHighlight={a} />
+        <Legend blocks={blocks} maxBlocks={4} collapsed={false} onHighlight={b} />
+      </>
+    );
+    const [legendA, legendB] = screen.getAllByTestId('dmap-legend');
+    const touch = { pointerType: 'touch' };
+    const entryA = within(legendA).getAllByTestId('dmap-legend-entry')[1];
+    const entryB = within(legendB).getAllByTestId('dmap-legend-entry')[1];
+    fireEvent.pointerDown(entryA, touch);
+    fireEvent.click(entryA);
+    expect(a).toHaveBeenLastCalledWith(['l2', 'l3']);
+    fireEvent.pointerDown(entryB, touch);
+    fireEvent.click(entryB);
+    expect(b).toHaveBeenLastCalledWith(['l2', 'l3']);
+    expect(a).toHaveBeenLastCalledWith(null);
+  });
+  it('the focus highlights again after a tap, a tap elsewhere and a key', () => {
+    const { legend, onHighlight } = view();
+    const [, high] = within(legend).getAllByTestId('dmap-legend-entry');
+    fireEvent.pointerDown(high, { pointerType: 'touch' });
+    fireEvent.click(high);
+    fireEvent.pointerDown(document.body, { pointerType: 'touch' });
+    expect(onHighlight).toHaveBeenLastCalledWith(null);
+    fireEvent.keyDown(document.body, { key: 'Tab' });
+    fireEvent.focus(high);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
+  });
+  it('a mouse move after a tap makes the hover work again', () => {
+    const { legend, onHighlight } = view();
+    const [, high] = within(legend).getAllByTestId('dmap-legend-entry');
+    fireEvent.pointerDown(high, { pointerType: 'touch' });
+    fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
+    fireEvent.focus(high);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
+  });
   it('shows at most maxBlocks blocks and tells how many it hides', () => {
     const { legend } = view({ maxBlocks: 2 });
     expect(within(legend).getAllByTestId('dmap-legend-block')).toHaveLength(2);

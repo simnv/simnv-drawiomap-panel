@@ -90,6 +90,31 @@ describe('bindSymbolLegend', () => {
     el('pg-node~m1').dispatchEvent(click());
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
+  it('a tap outside the linked rows ends a tapped highlight, and a tap on the row selects again', () => {
+    const { onChange, el } = setup();
+    const swatch = el('pg-legendSwatch~symbol:router');
+    swatch.dispatchEvent(pointer('pointerdown', 'touch'));
+    swatch.dispatchEvent(click());
+    expect(onChange).toHaveBeenCalledTimes(1);
+    swatch.dispatchEvent(pointer('pointerdown', 'touch'));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    document.body.dispatchEvent(pointer('pointerdown', 'touch'));
+    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    swatch.dispatchEvent(pointer('pointerdown', 'touch'));
+    swatch.dispatchEvent(click());
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ hits: ['pg-node~r1', 'pg-node~r2'] }));
+  });
+  it('the focus works again after a tap and a tap elsewhere in the page', () => {
+    const { onChange, el } = setup();
+    const row = el('pg-legendRow~symbol:router');
+    row.dispatchEvent(pointer('pointerdown', 'touch'));
+    document.body.dispatchEvent(pointer('pointerdown', 'touch'));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    row.dispatchEvent(new Event('focusin', { bubbles: true }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ hits: ['pg-node~r1', 'pg-node~r2'] }));
+  });
   it('cleanup removes the marks and the listeners and clears the highlight', () => {
     const { onChange, el, stop } = setup();
     el('pg-legendRow~symbol:router').dispatchEvent(pointer('pointerover', 'mouse'));

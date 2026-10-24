@@ -71,6 +71,27 @@ test('hovering a legend entry highlights the cells in that band', async ({ page,
   await expect(panel.locator('.dmap-legend-hit')).toHaveCount(0);
 });
 
+test('hovering a legend row of the diagram highlights the nodes of that symbol', async ({
+  page,
+  gotoDashboardPage,
+}, testInfo) => {
+  await gotoDashboardPage({ uid: 'drawiomap-demo' });
+  const panel = page.getByTestId('dmap-panel').first();
+  const row = panel.locator('g[data-cell-id="pg-legendSwatch~symbol:proxy"]');
+  await row.scrollIntoViewIfNeeded();
+  await row.hover({ force: true });
+  await expect(panel.locator('svg.dmap-legend-active')).toHaveCount(1);
+  const hits = panel.locator('g.dmap-legend-hit[data-cell-id^="pg-node~"]');
+  await expect(hits).toHaveCount(2);
+  await expect(hits.first()).toHaveAttribute('data-meta-pg-symbol', 'proxy');
+  const other = panel.locator('g.dmap-legend-member:not(.dmap-legend-hit)[data-cell-id^="pg-node~"]').first();
+  await expect.poll(() => other.evaluate((el) => getComputedStyle(el).opacity)).toBe('0.2');
+  await page.screenshot({ path: testInfo.outputPath('legend-row-hover.png') });
+  await page.mouse.move(0, 0);
+  await expect(panel.locator('svg.dmap-legend-active')).toHaveCount(0);
+  await expect(panel.locator('.dmap-legend-hit, .dmap-legend-member')).toHaveCount(0);
+});
+
 test('the legend stays in its corner when the diagram zooms and the stage scrolls', async ({
   page,
   request,

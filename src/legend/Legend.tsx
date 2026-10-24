@@ -270,17 +270,32 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   };
   // The active entry: "<block key>\n<entry key>", or "<block key>\n" for a gradient bar.
   const [active, setActive] = useState<string | null>(null);
+  // The kind of the last pointer of the page, or the keyboard. A tap gives the entry the focus: that focus must not
+  // undo the toggle, and a key after a tap must make the focus work again.
   const touch = useRef(false);
-  // A touch outside the entries ends a tapped highlight.
+  useEffect(() => {
+    const kind = (e: PointerEvent) => {
+      touch.current = e.pointerType === 'touch';
+    };
+    const key = () => {
+      touch.current = false;
+    };
+    document.addEventListener('pointerdown', kind, true);
+    document.addEventListener('keydown', key, true);
+    return () => {
+      document.removeEventListener('pointerdown', kind, true);
+      document.removeEventListener('keydown', key, true);
+    };
+  }, []);
+  // A touch outside the entries of this legend ends a tapped highlight.
   useEffect(() => {
     if (active === null || !el) {
       return;
     }
     const away = (e: PointerEvent) => {
-      if (
-        e.pointerType === 'touch' &&
-        !(e.target instanceof Element && e.target.closest('[data-testid="dmap-legend-entry"]'))
-      ) {
+      const inEntry =
+        e.target instanceof Element && el.contains(e.target) && e.target.closest('[data-testid="dmap-legend-entry"]');
+      if (e.pointerType === 'touch' && !inEntry) {
         setActive(null);
       }
     };
@@ -306,12 +321,6 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   // tap elsewhere ends it. The kind of the last pointer decides, so the focus that a tap gives does not undo the toggle.
   const activate = (key: string) => ({
     tabIndex: 0,
-    onPointerDown: (e: React.PointerEvent) => {
-      touch.current = e.pointerType === 'touch';
-    },
-    onKeyDown: () => {
-      touch.current = false;
-    },
     onPointerEnter: (e: React.PointerEvent) => e.pointerType !== 'touch' && setActive(key),
     onPointerLeave: (e: React.PointerEvent) => e.pointerType !== 'touch' && setActive(null),
     onFocus: () => touch.current || setActive(key),
