@@ -103,7 +103,7 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  // With a dirty draft, Cancel asks first; Keep editing stays, Discard closes. Revert to saved keeps the popup open.
+  // With a dirty draft, Cancel asks first; Keep editing stays, Discard closes. Discard keeps the popup open.
   const again = await openBindingsPopup(page);
   await selectStageCell(again, 'device-1');
   const label = popupInspector(again).getByRole('textbox', { name: 'Label template', exact: true });
@@ -111,12 +111,12 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   await again.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
   await expect(again).toBeVisible();
-  await again.getByRole('button', { name: 'Revert to saved', exact: true }).click();
+  await again.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(again).toBeVisible();
   await expect(label).toHaveValue('Saved ${value}');
   await label.fill('Draft ${value}');
   await again.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard and close', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]')).toHaveCount(3);
 });

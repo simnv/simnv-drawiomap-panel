@@ -58,6 +58,7 @@ export function ListPane({
       <div className={styles.header}>
         <Input
           aria-label="Filter bindings"
+          data-dmap-not-draft
           value={filter.text}
           placeholder="Filter by name, cell or query"
           onChange={(e) => onFilterChange({ ...filter, text: e.currentTarget.value })}

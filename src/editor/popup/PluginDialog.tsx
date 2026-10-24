@@ -30,6 +30,10 @@ import { usePopupKeys } from './usePopupKeys';
 
 const noop = () => {};
 
+/** Below this viewport width, or height, the dialog is a full-screen sheet. */
+export const SHEET_BELOW = 640;
+export const SHEET_BELOW_HEIGHT = 480;
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
@@ -259,23 +263,42 @@ const getStyles = (theme: GrafanaTheme2) => ({
     zIndex: theme.zIndex.modalBackdrop - 1,
     backgroundColor: theme.components.overlay.background,
   }),
-  dialog: css({
-    position: 'fixed',
-    zIndex: theme.zIndex.modal - 1,
-    top: '5vh',
-    left: '2.5vw',
-    width: '95vw',
-    height: '90vh',
-    maxWidth: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    background: theme.colors.background.primary,
-    boxShadow: theme.shadows.z3,
-    borderRadius: theme.shape.radius.lg,
-    border: `1px solid ${theme.colors.border.weak}`,
-    backgroundClip: 'padding-box',
-    outline: 'none',
-  }),
+  // A tall viewport value has a fallback: `dvh` follows the visible height on iPhone Safari (the toolbars come and go), `vh`
+  // is the height with the toolbars hidden. On a phone (narrow, or a short landscape screen) the dialog is a full-screen
+  // sheet. The safe-area insets keep the header and the buttons out of the notch and the home indicator. They are zero
+  // unless the page asks for `viewport-fit=cover`.
+  dialog: css`
+    position: fixed;
+    z-index: ${theme.zIndex.modal - 1};
+    top: 5vh;
+    top: 5dvh;
+    left: 2.5vw;
+    width: 95vw;
+    height: 90vh;
+    height: 90dvh;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: ${theme.colors.background.primary};
+    box-shadow: ${theme.shadows.z3};
+    border-radius: ${theme.shape.radius.lg};
+    border: 1px solid ${theme.colors.border.weak};
+    background-clip: padding-box;
+    outline: none;
+    @media (max-width: ${SHEET_BELOW}px), (max-height: ${SHEET_BELOW_HEIGHT}px) {
+      inset: 0;
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      max-height: 100%;
+      border: 0;
+      border-radius: 0;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+        env(safe-area-inset-left, 0px);
+    }
+  `,
   header: css({
     flex: 'none',
     display: 'flex',
@@ -289,7 +312,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
   content: css({
     flex: 1,
     minHeight: 0,
+    minWidth: 0,
     display: 'flex',
     padding: theme.spacing(0, 2, 2),
+    [`@media (max-width: ${SHEET_BELOW}px), (max-height: ${SHEET_BELOW_HEIGHT}px)`]: {
+      padding: theme.spacing(0, 1, 1),
+    },
   }),
 });

@@ -81,7 +81,7 @@ describe('draw.io geometry draft', () => {
     expect(screen.getByRole('heading', { name: 'region bindings' })).toBeTruthy();
     expect(stage().querySelector('g[data-cell-id="region"]')!.getAttribute('data-dmap-selected')).toBe('true');
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(buttonNamed('Revert to saved'));
+    fireEvent.click(buttonNamed('Discard'));
     expect(stage().getAttribute('data-dmap-hash')).toBe('original');
     expect(rectWidth()).toBe('180');
     fireEvent.click(buttonNamed('Edit geometry in draw.io'));
@@ -105,5 +105,12 @@ describe('draw.io geometry draft', () => {
     expect(await screen.findByText('Geometry could not be saved')).toBeTruthy();
     expect(screen.getByTestId('dmap-popup-stage').getAttribute('data-dmap-hash')).toBe('original');
     expect((buttonNamed('Apply bindings') as HTMLButtonElement).disabled).toBe(true);
+    // The draft is clean, so only Discard can clear the error: it stays enabled while the error shows.
+    const discard = buttonNamed('Discard') as HTMLButtonElement;
+    expect(discard.disabled).toBe(false);
+    fireEvent.click(discard);
+    expect(screen.queryByText('Geometry could not be saved')).toBeNull();
+    expect((buttonNamed('Apply bindings') as HTMLButtonElement).disabled).toBe(false);
+    expect((buttonNamed('Discard') as HTMLButtonElement).disabled).toBe(true);
   });
 });

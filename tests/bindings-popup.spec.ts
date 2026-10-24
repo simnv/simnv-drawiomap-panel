@@ -3,6 +3,7 @@ import { binding, nativeQuery } from '../src/fixtures/authoring-config';
 import {
   chooseEditorOption,
   closeBindingsPopup,
+  discardDraft,
   filterBindings,
   openBindingsPopup,
   popupInspector,
@@ -125,7 +126,7 @@ test.describe('bindings popup: persistence and loading', () => {
     expect(requests.some((r) => r.queries.some((q) => q.expr === 'vector(84)'))).toBe(true);
     await expect(panelLabel).not.toHaveText('Saved 84');
     // close without applying; the panel still refreshes with its own query
-    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
+    await discardDraft(dialog);
     await closeBindingsPopup(page);
     const before = requests.length;
     await edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
@@ -259,7 +260,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(question).toHaveCount(0);
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard and close', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
@@ -278,7 +279,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
 
   await test.step('Esc in the draw.io modal closes only it', async () => {
     const dialog = await openBindingsPopup(page);
-    await popupInspector(dialog).getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+    await dialog.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
     await expect(page.getByTitle('draw.io')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByTitle('draw.io')).toHaveCount(0);
@@ -308,7 +309,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await page.keyboard.type('Random Walk');
     await page.keyboard.press('Enter');
     await expect(inspector.getByText('Random Walk', { exact: true }).first()).toBeVisible();
-    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
+    await discardDraft(dialog);
     await closeBindingsPopup(page);
     await expect(page.getByTestId('dmap-edit-bindings')).toBeFocused();
   });
@@ -334,7 +335,19 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(suggest).toHaveCount(0);
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
+    // Monaco owns Esc (it prevents the default): Esc in the code editor never closes the popup, and the typed text stays.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
+    // Cancel at once, with no wait for the commit of the editor: the typed text counts, and the close asks.
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await expect(dialog).toBeVisible();
+    // The code editor commits its text when it loses focus: the blur makes the draft dirty, and Discard waits for that.
+    await popupInspector(dialog).getByRole('textbox', { name: 'Query name', exact: true }).click();
+    await expect(dialog.getByText('Unsaved changes')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
     // The editor shows the saved text again, and the draft stays clean after the editor loses its focus.
     await expect(popupInspector(dialog).locator('.monaco-editor .view-lines')).toContainText('label_replace');
     await expect(dialog.getByText('Unsaved changes')).toHaveCount(0);
@@ -353,7 +366,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(explorer).toHaveCount(0);
     await expect(dialog).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
-    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
+    await discardDraft(dialog);
     await closeBindingsPopup(page);
   });
 
@@ -416,7 +429,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await chooseEditorOption(popupInspector(dialog), 'Edit scope', 'All elements matching this pattern');
     await expect(popupInspector(dialog).getByText('All elements matching this pattern', { exact: true })).toBeVisible();
     // the draw.io modal opens on top and takes the focus
-    await popupInspector(dialog).getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+    await dialog.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
     const editor = page.getByRole('dialog').filter({ has: page.getByTestId('dmap-editor-modal') });
     await expect(editor).toBeVisible();
     await editor.getByRole('button', { name: 'Close', exact: true }).click();
@@ -431,7 +444,7 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(dialog).toBeVisible();
     // leave the draft clean and the popup closed for the next step
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard and close', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
@@ -447,12 +460,39 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard and close', exact: true }).click();
     await expect(page.getByTestId('dmap-bindings-popup')).toHaveCount(0);
     await openBindingsPopup(page);
     // The modal covers the button, so send the click event to it directly, as a keyboard shortcut or a link would.
     await page.getByTestId('data-testid Back to dashboard button').dispatchEvent('click');
     await expect(page.getByTestId('dmap-bindings-popup')).toHaveCount(0);
     await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
+  });
+});
+
+test.describe('bindings popup: phone viewport', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the popup is a full-screen sheet and every action button is inside the viewport', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }, testInfo) => {
+    const uid = await createDiagram(config);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = await openBindingsPopup(page);
+    const sheet = page.getByRole('dialog', { name: 'Edit bindings' });
+    const box = (await sheet.boundingBox())!;
+    expect(box.x).toBeCloseTo(0, 0);
+    expect(box.y).toBeCloseTo(0, 0);
+    expect(box.width).toBeCloseTo(390, 0);
+    expect(box.height).toBeCloseTo(844, 0);
+    for (const name of ['Cancel', 'Discard', 'Apply bindings', 'Apply and close', 'Edit geometry in draw.io']) {
+      await expect(dialog.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 });
+    }
+    const shot = testInfo.outputPath('bindings-popup-phone.png');
+    await page.screenshot({ path: shot });
+    await testInfo.attach('bindings-popup-phone', { path: shot, contentType: 'image/png' });
   });
 });

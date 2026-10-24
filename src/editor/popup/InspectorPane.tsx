@@ -51,9 +51,6 @@ export interface CellBodyProps {
 
 export interface InspectorPaneProps {
   selection: InspectorSelection;
-  /** The popup has a diagram: the geometry button shows. */
-  canEditGeometry: boolean;
-  onEditGeometry: () => void;
   cell: CellBodyProps;
   /** The live hover card of the selected element. It shows first for a cell selection. */
   card?: CardPreviewProps;
@@ -64,15 +61,7 @@ export interface InspectorPaneProps {
 }
 
 /** The right pane. It shows the selected cell, the selected query or a hint. */
-export function InspectorPane({
-  selection,
-  canEditGeometry,
-  onEditGeometry,
-  cell,
-  card,
-  query,
-  many,
-}: InspectorPaneProps) {
+export function InspectorPane({ selection, cell, card, query, many }: InspectorPaneProps) {
   const editor = useStyles2(getEditorStyles);
   const styles = useStyles2(getStyles);
   return (
@@ -83,11 +72,6 @@ export function InspectorPane({
         ) : (
           <>
             {selection.kind === 'cell' && card && <CardPreview {...card} />}
-            {canEditGeometry && (
-              <Button variant="secondary" size="sm" onClick={onEditGeometry}>
-                Edit geometry in draw.io
-              </Button>
-            )}
             {cell.geometryError && (
               <Alert title="Geometry could not be saved" severity="error">
                 {cell.geometryError}

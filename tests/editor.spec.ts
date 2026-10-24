@@ -128,7 +128,7 @@ test('geometry export keeps semantic identities and chart assignments through da
   const uid = await createDiagram(config);
   const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const popup = await openBindingsPopup(page);
-  await popupInspector(popup).getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+  await popup.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
   await expect(page.getByTestId('dmap-editor-modal')).toHaveAttribute('data-dmap-editor-phase', 'loaded', {
     timeout: 60000,
   });

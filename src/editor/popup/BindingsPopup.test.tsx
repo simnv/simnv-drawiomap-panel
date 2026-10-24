@@ -1,11 +1,12 @@
 import React from 'react';
 import { getDefaultTimeRange, LoadingState } from '@grafana/data';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createQueryController } from '../../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../../query/panel';
 import { DEFAULT_OPTIONS, type Options } from '../../types';
 import type { DiagramConfigV2 } from '../../model/config';
+import { nativeQuery } from '../../fixtures/authoring-config';
 import { diagramOf, svgOf } from '../editorHarness';
 import { buttonNamed, selectStageCell } from '../testUtils';
 import { BindingsPopup } from './BindingsPopup';
@@ -105,8 +106,43 @@ describe('BindingsPopup', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
     esc();
-    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard and close' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('commits a field that waits for its blur before Esc decides, so typed text is not lost silently', async () => {
+    const { onClose } = mount(optionsOf({ ...config(), queries: [nativeQuery('q', 'up', { p: 'cell.id' })] }));
+    fireEvent.click(buttonNamed('Edit query q'));
+    const field = screen.getByLabelText('p parameter name') as HTMLInputElement;
+    field.focus();
+    fireEvent.change(field, { target: { value: 'renamed' } });
+    // The parameter name commits on blur, so the draft is still clean here.
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    esc(field);
+    expect(await screen.findByText('Discard changes?')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('asks on Cancel at once after typing into a field that has not committed yet', async () => {
+    const { onClose } = mount(optionsOf({ ...config(), queries: [nativeQuery('q', 'up', { p: 'cell.id' })] }));
+    fireEvent.click(buttonNamed('Edit query q'));
+    const field = screen.getByLabelText('p parameter name') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'renamed' } });
+    fireEvent.input(field, { target: { value: 'renamed' } });
+    // No blur and no commit: the draft is clean. Cancel comes at once.
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    fireEvent.click(buttonNamed('Cancel'));
+    expect(await screen.findByText('Discard changes?')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not ask for text in the list filter, which is not draft text', () => {
+    const { onClose } = mount();
+    const filter = screen.getByLabelText('Filter bindings');
+    fireEvent.change(filter, { target: { value: 'x' } });
+    fireEvent.input(filter, { target: { value: 'x' } });
+    fireEvent.click(buttonNamed('Cancel'));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the dirty draft when the user chooses Keep editing', async () => {
@@ -118,21 +154,34 @@ describe('BindingsPopup', () => {
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Changed');
   });
 
-  it('Cancel closes a clean draft at once, asks for a dirty one, and Discard closes; Revert to saved only restores', async () => {
+  it('Cancel closes a clean draft at once, asks for a dirty one, and Discard and close closes; the Discard button only restores', async () => {
     const { onClose } = mount();
     fireEvent.click(buttonNamed('Cancel'));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Discard changes?')).toBeNull();
     makeDirty();
-    fireEvent.click(buttonNamed('Revert to saved'));
+    fireEvent.click(buttonNamed('Discard'));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('');
     makeDirty();
     fireEvent.click(buttonNamed('Cancel'));
     expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard and close' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps the Discard button disabled while the draft is clean', () => {
+    mount();
+    expect((buttonNamed('Discard') as HTMLButtonElement).disabled).toBe(true);
+    makeDirty();
+    expect((buttonNamed('Discard') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('puts the geometry button in the top toolbar', () => {
+    mount();
+    const toolbar = screen.getByRole('toolbar', { name: 'Binding draft actions' });
+    expect(within(toolbar).getByRole('button', { name: 'Edit geometry in draw.io' })).toBeTruthy();
   });
 
   it('applies and closes in one step', () => {

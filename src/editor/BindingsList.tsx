@@ -351,9 +351,9 @@ function DeleteConfirm({
       title={pending.kind === 'widget' ? 'Delete widget' : 'Delete override'}
       body={
         pending.kind === 'widget'
-          ? `Delete widget ${pending.label}? You can undo this with Undo or Revert to saved before you apply.`
+          ? `Delete widget ${pending.label}? You can undo this with Undo or Discard before you apply.`
           : pending.kind === 'override'
-            ? `Delete the override of ${rowName(pending)}? You can undo this with Undo or Revert to saved before you apply.`
+            ? `Delete the override of ${rowName(pending)}? You can undo this with Undo or Discard before you apply.`
             : ''
       }
       confirmText="Delete"
