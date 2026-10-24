@@ -17,7 +17,6 @@ test('panel-owned inspector focuses, saves and isolates cloned panels across rem
   const uid = `compat-${Date.now()}`;
   const options = {
     diagram: { svg, xml, hash: 'compat', updatedAt: '2026-10-18' },
-    rules: [],
     zoom: { mode: 'fit', wheel: true, pan: true },
     linkWidth: { min: 2, max: 10 },
   };
@@ -111,7 +110,7 @@ test('installed native datasource editors preserve targets and require explicit 
             title: 'Native editor',
             type: 'simnv-drawiomap-panel',
             gridPos: { x: 0, y: 0, w: 24, h: 20 },
-            options: { diagram: { svg, xml, hash: 'compat-query' }, rules: [] },
+            options: { diagram: { svg, xml, hash: 'compat-query' } },
             targets: [],
             fieldConfig: { defaults: {}, overrides: [] },
           },
@@ -216,7 +215,6 @@ test('Sparkline portal follows a nested affine anchor through fit, resize, pan a
                 xml,
                 hash: 'compat-geometry',
               },
-              rules: [],
               zoom: { mode: 'fit', wheel: true, pan: true },
             },
             targets: [],

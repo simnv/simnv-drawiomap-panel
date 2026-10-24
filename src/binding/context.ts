@@ -1,5 +1,5 @@
 import { getDisplayProcessor, type GrafanaTheme2, type ScopedVars, type ThresholdsConfig } from '@grafana/data';
-import type { CardContext, DisplayOverride } from '../interact/cardModel';
+import type { CardContext } from '../interact/cardModel';
 import type { BindContext, SeriesInfo } from '../types';
 
 export interface ContextInputs {
@@ -27,28 +27,9 @@ export function bindContextFor(inputs: ContextInputs): BindContext {
   };
 }
 
-/** The inputs of the hover card. A rule or a binding can replace the unit and the decimals of one row. */
-export function cardContextFor(inputs: Omit<ContextInputs, 'linkWidth'> & { series: SeriesInfo[] }): CardContext {
-  const { theme, timeZone } = inputs;
-  const display = displayOf(inputs);
-  const displayFor = (s: SeriesInfo, v: number, o?: DisplayOverride) => {
-    if (!o) {
-      return display(s, v);
-    }
-    const config = { ...s.field.config };
-    if (o.unit !== undefined) {
-      config.unit = o.unit;
-    }
-    if (o.decimals !== undefined) {
-      config.decimals = o.decimals;
-    }
-    return getDisplayProcessor({ field: { ...s.field, config }, theme, timeZone })(v);
-  };
-  return {
-    series: inputs.series,
-    theme,
-    display: displayFor,
-    replaceVariables: inputs.replaceVariables,
-    fieldThresholds: inputs.fieldThresholds,
-  };
+/** The inputs of the hover card. */
+export function cardContextFor(
+  inputs: Pick<ContextInputs, 'theme' | 'replaceVariables' | 'fieldThresholds'>
+): CardContext {
+  return { theme: inputs.theme, replaceVariables: inputs.replaceVariables, fieldThresholds: inputs.fieldThresholds };
 }

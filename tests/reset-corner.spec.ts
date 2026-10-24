@@ -16,8 +16,9 @@ const box = async (locator: Locator) => (await locator.boundingBox())!;
 
 /**
  * A copy of the demo dashboard (its legend has colour blocks) with a status band (two nodes without data), a warning
- * (an old rule with a sparkline shape). It has one panel for each legend corner, one below the other, so one page
- * load checks all corners. A panel title is `<title> <corner>`, or empty when `title` is empty. Returns the uid.
+ * (an override of a cell that the diagram does not have). It has one panel for each legend corner, one below the
+ * other, so one page load checks all corners. A panel title is `<title> <corner>`, or empty when `title` is empty.
+ * Returns the uid.
  */
 async function cornerDashboard(request: APIRequestContext, uid: string, title: string, corners: readonly string[]) {
   const demo = await (await request.get('/api/dashboards/uid/drawiomap-demo')).json();
@@ -28,22 +29,24 @@ async function cornerDashboard(request: APIRequestContext, uid: string, title: s
     queries: [nativeQuery('absent', 'absent(vector(1))')],
     patterns: [],
     widgets: [],
-    overrides: ['pg-node~net-a', 'pg-node~net-b'].map((cellId) => ({
-      cellId,
-      display: {
-        status: {
-          kind: 'mapping',
-          binding: binding('absent'),
-          default: { state: 'normal', reason: 'Healthy' },
-          mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
+    overrides: [
+      ...['pg-node~net-a', 'pg-node~net-b'].map((cellId) => ({
+        cellId,
+        display: {
+          status: {
+            kind: 'mapping',
+            binding: binding('absent'),
+            default: { state: 'normal', reason: 'Healthy' },
+            mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
+          },
         },
-      },
-    })),
+      })),
+      { cellId: 'pg-node~gone', display: { enabled: false } },
+    ],
   };
   const options = (corner: string) => ({
     ...panel.options,
     config,
-    rules: [...panel.options.rules, { name: 'old', select: { ids: ['pg-node~net-a'] }, shape: { sparkline: {} } }],
     zoom: { mode: 'fit', percent: 100, wheel: false, pan: true, align: 'top' },
     legend: { show: true, corner, maxBlocks: 4 },
   });

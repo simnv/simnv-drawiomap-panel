@@ -53,3 +53,6 @@ export const DEFAULT_QUERY_POLICY: QueryPolicy = {
   maxActiveResultValues: 100000,
   maxActiveResultBytes: 8388608,
 };
+
+/** A snapshot is settled once its query has finished, with or without data. */
+export const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';

@@ -140,7 +140,7 @@ describe('renderOverlay', () => {
     renderOverlay(
       root,
       index,
-      new Map([['n1', patch('n1', { card: { reducer: 'last', rows: [{ refId: 'D' }] } })]]),
+      new Map([['n1', patch('n1', { shape: { status: 'ok', color: '#0f0', target: 'icon', stepIndex: 0 } })]]),
       opts
     );
     expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(0);

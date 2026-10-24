@@ -237,10 +237,10 @@ describe('bindings list', () => {
     expect(stageCell('device-1').getAttribute('data-dmap-highlight')).toBe('false');
   });
 
-  it('points a legacy-only panel to the Rules editor', () => {
+  it('tells the author that the panel ignores its saved rules of version 1', () => {
     setup({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] }, { legacyRules: 3 });
-    expect(screen.getByText(/3 legacy rules/)).toBeTruthy();
-    expect(screen.getByText(/Rules editor/)).toBeTruthy();
+    expect(screen.getByText(/3 rules of version 1/)).toBeTruthy();
+    expect(screen.getByText(/ignores them/)).toBeTruthy();
   });
 
   it('shows the problem of a widget whose query matches no metric', () => {

@@ -49,16 +49,11 @@ describe('bindContextFor', () => {
 });
 
 describe('cardContextFor', () => {
-  it('formats like the bind context without an override', () => {
-    const series = seriesOf();
-    const card = cardContextFor({ ...inputs, series: [series] });
-    expect(card.series).toEqual([series]);
-    expect(card.display(series, 1500)).toEqual(bindContextFor(inputs).display(series, 1500));
-  });
-
-  it('replaces the unit and the decimals of one row', () => {
-    const series = seriesOf();
-    const card = cardContextFor({ ...inputs, series: [series] });
-    expect(card.display(series, 1500, { unit: 'none', decimals: 1 })).toMatchObject({ text: '1500.0' });
+  it('passes the theme, the variables and the panel thresholds through', () => {
+    const thresholds = { mode: ThresholdsMode.Absolute, steps: [{ value: -Infinity, color: 'green' }] };
+    const card = cardContextFor({ ...inputs, fieldThresholds: thresholds });
+    expect(card.theme).toBe(theme);
+    expect(card.replaceVariables).toBe(inputs.replaceVariables);
+    expect(card.fieldThresholds).toBe(thresholds);
   });
 });

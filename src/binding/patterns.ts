@@ -1,4 +1,4 @@
-import type { CellMeta, SeriesSelector, TemplateScope } from '../types';
+import type { CellMeta, TemplateScope } from '../types';
 import { cellMatches } from './select';
 import {
   displayBindings,
@@ -52,7 +52,7 @@ function mergeFields<T extends object>(
   return patch === undefined ? base : { ...base, ...patch };
 }
 
-function mergeSelector<T extends SeriesSelector | QueryBinding>(
+function mergeSelector<T extends QueryBinding>(
   base: T | undefined,
   patch: T | undefined,
   track?: Track,
@@ -71,8 +71,6 @@ function mergeSelector<T extends SeriesSelector | QueryBinding>(
 }
 
 const LINK_SELECTORS = [
-  'a2b',
-  'b2a',
   'a2bBinding',
   'b2aBinding',
   'capacityBinding',
@@ -101,11 +99,7 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
     const previous = base.link;
     if (track) {
       for (const [key, value] of Object.entries(patch.link)) {
-        const handled =
-          (LINK_SELECTORS as readonly string[]).includes(key) ||
-          key === 'card' ||
-          (key === 'capacity' && typeof value === 'object');
-        if (value !== undefined && !handled) {
+        if (value !== undefined && !(LINK_SELECTORS as readonly string[]).includes(key)) {
           track(`link.${key}`);
         }
       }
@@ -113,8 +107,6 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
     result.link = {
       ...previous,
       ...patch.link,
-      a2b: mergeSelector(previous?.a2b, patch.link.a2b, track, 'link.a2b'),
-      b2a: mergeSelector(previous?.b2a, patch.link.b2a, track, 'link.b2a'),
       a2bBinding: mergeSelector(previous?.a2bBinding, patch.link.a2bBinding, track, 'link.a2bBinding'),
       b2aBinding: mergeSelector(previous?.b2aBinding, patch.link.b2aBinding, track, 'link.b2aBinding'),
       capacityBinding: mergeSelector(
@@ -135,22 +127,13 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
         track,
         'link.capacityB2aBinding'
       ),
-      capacity:
-        typeof patch.link.capacity === 'object'
-          ? mergeSelector(
-              typeof previous?.capacity === 'object' ? previous.capacity : undefined,
-              patch.link.capacity,
-              track,
-              'link.capacity'
-            )
-          : (patch.link.capacity ?? previous?.capacity),
-      card: mergeFields(previous?.card, patch.link.card, track, 'link.card'),
+      capacity: patch.link.capacity ?? previous?.capacity,
     };
   }
   if (patch.shape) {
     if (track) {
       for (const [key, value] of Object.entries(patch.shape)) {
-        if (value !== undefined && !['series', 'binding', 'sparkline'].includes(key)) {
+        if (value !== undefined && key !== 'binding') {
           track(`shape.${key}`);
         }
       }
@@ -158,9 +141,7 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
     result.shape = {
       ...base.shape,
       ...patch.shape,
-      series: mergeSelector(base.shape?.series, patch.shape.series, track, 'shape.series'),
       binding: mergeSelector(base.shape?.binding, patch.shape.binding, track, 'shape.binding'),
-      sparkline: mergeSelector(base.shape?.sparkline, patch.shape.sparkline, track, 'shape.sparkline'),
     };
   }
   if (patch.hover) {

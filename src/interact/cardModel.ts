@@ -1,17 +1,6 @@
-import {
-  DisplayValue,
-  Field,
-  formattedValueToString,
-  GrafanaTheme2,
-  LinkModel,
-  ScopedVars,
-  ThresholdsConfig,
-} from '@grafana/data';
-import { reduceValues } from '../binding/reduce';
-import { findSeries } from '../binding/series';
+import { Field, formattedValueToString, GrafanaTheme2, LinkModel, ScopedVars, ThresholdsConfig } from '@grafana/data';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
-import type { BindStatus, CardRow, CellPatch, HalfState, SeriesInfo } from '../types';
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
 import {
   historySeries,
@@ -358,72 +347,20 @@ function combinedRow(
   };
 }
 
-/** What the card shows for one series. */
-export interface CardRowModel {
-  key: string;
-  title: string;
-  /** current value, for example "41 Mb/s · 41%", or "no data" / "unbound" */
-  text: string;
-  status: BindStatus;
-  color: string;
-  values: number[];
-  times?: number[];
-  /** formats a value of the series like the row text (unit, decimals); the chart tooltip uses it */
-  format?: (value: number) => string;
-  /** click target after template and dashboard variable resolution */
-  href?: string;
-  /** smallest and largest value of the series, formatted like the value */
-  min?: string;
-  max?: string;
-  /** Y range of the sparkline, see yDomain */
-  domain?: [number, number];
-}
-
-export interface CardModel {
-  title: string;
-  rows: CardRowModel[];
-  /** footer: the rule url and the field data links */
-  links: LinkModel[];
-}
-
-export interface DisplayOverride {
-  unit?: string;
-  decimals?: number;
-}
-
 export interface CardContext {
-  series: SeriesInfo[];
   theme: GrafanaTheme2;
-  /** formats a value with the field display processor; the override replaces the unit and decimals */
-  display: (series: SeriesInfo, value: number, override?: DisplayOverride) => DisplayValue;
   replaceVariables: (text: string, scopedVars?: ScopedVars) => string;
   /** the panel default thresholds: they apply when a field has none */
   fieldThresholds?: ThresholdsConfig;
 }
 
-const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound' } as const;
-
-/** The Min, Max and unit of the field config of a series, for yDomain. */
-function fieldBounds(s: SeriesInfo) {
-  const c = s.field.config ?? {};
-  return { fieldMin: c.min, fieldMax: c.max, unit: c.unit };
-}
-
-/** The formatted min and max of the finite values; nothing for a row without values. */
-function minMax(values: number[], format: (v: number) => string): Pick<CardRowModel, 'min' | 'max'> {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const v of values) {
-    if (Number.isFinite(v)) {
-      min = Math.min(min, v);
-      max = Math.max(max, v);
-    }
-  }
-  return min <= max ? { min: format(min), max: format(max) } : {};
-}
-
-/** Row url: the row template (resolved with the row series labels, encoded), else the first rule url. */
-function rowHref(patch: CellPatch, tpl: string | undefined, primary: Primary, ctx: CardContext): string | undefined {
+/** Row url: the row template (resolved with the row series labels, encoded), else the display url. */
+function rowHref(
+  patch: PlanCellPatch,
+  tpl: string | undefined,
+  primary: Primary,
+  ctx: CardContext
+): string | undefined {
   let url: string | undefined = patch.urls[0]?.url;
   if (tpl !== undefined) {
     const r = resolveTemplate(tpl, { ...patch.scope, labels: primary.series?.labels ?? {} }, encodeURIComponent);
@@ -437,105 +374,11 @@ function rowHref(patch: CellPatch, tpl: string | undefined, primary: Primary, ct
   return isAllowedUrl(href) ? href : undefined;
 }
 
-function halfRow(patch: CellPatch, key: 'a2b' | 'b2a', h: HalfState, ctx: CardContext): CardRowModel {
-  const { from, to } = patch.scope;
-  const [a, b] = key === 'a2b' ? [from?.node ?? 'A', to?.node ?? 'B'] : [to?.node ?? 'B', from?.node ?? 'A'];
-  const primary: Primary = { status: h.status, series: h.series, display: h.display, value: h.value };
-  const s = h.status === 'ok' ? h.series : undefined;
-  const values = s?.values ?? [];
-  // The state keeps the capacity in bit/s: convert it to the unit of the series (an unknown unit is bit/s).
-  // Without it, the capacity is value / percent.
-  const capacity =
-    s && h.capacity !== undefined
-      ? h.capacity / toBitsPerSecond(1, s.field.config?.unit).bits
-      : h.value !== undefined && h.percent
-        ? (h.value * 100) / h.percent
-        : undefined;
-  return {
-    key,
-    title: `${a} → ${b}`,
-    text: h.label,
-    status: h.status,
-    color: h.color,
-    values,
-    times: s?.times,
-    href: rowHref(patch, patch.card?.url, primary, ctx),
-    ...(s ? { format: (v: number) => formattedValueToString(ctx.display(s, v)) } : {}),
-    ...(s ? minMax(values, (v) => formattedValueToString(ctx.display(s, v))) : {}),
-    ...(s ? { domain: yDomain(values, { ...fieldBounds(s), capacity }) } : {}),
-  };
-}
-
-function seriesRow(patch: CellPatch, row: CardRow, i: number, ctx: CardContext): CardRowModel {
-  const scope = patch.scope;
-  const f = findSeries(row, ctx.series, scope);
-  const title = (s?: SeriesInfo) =>
-    resolveTemplate(row.title ?? s?.name ?? `row ${i + 1}`, { ...scope, labels: s?.labels ?? {} }).text;
-  // a row without data keeps its url: the target dashboard can tell why
-  const base = (s?: SeriesInfo) => ({
-    key: `row-${i}`,
-    title: title(s),
-    color: ctx.theme.colors.text.disabled,
-    values: [],
-    href: rowHref(patch, row.url, { status: 'nodata', series: s }, ctx),
-  });
-  if (f.unresolved.length) {
-    return { ...base(), text: STATUS_TEXT.unbound, status: 'unbound' };
-  }
-  const value = f.series ? reduceValues(f.series.values, patch.card?.reducer ?? 'last') : undefined;
-  if (!f.series || value === undefined) {
-    return { ...base(f.series), text: STATUS_TEXT.nodata, status: 'nodata' };
-  }
-  const override =
-    row.unit !== undefined || row.decimals !== undefined ? { unit: row.unit, decimals: row.decimals } : undefined;
-  const display = ctx.display(f.series, value, override);
-  const primary: Primary = { status: 'ok', series: f.series, display, value };
-  return {
-    key: `row-${i}`,
-    title: title(f.series),
-    text: formattedValueToString(display),
-    status: 'ok',
-    color: display.color ?? ctx.theme.colors.text.secondary,
-    values: f.series.values,
-    times: f.series.times,
-    format: (v: number) => formattedValueToString(ctx.display(f.series!, v, override)),
-    href: rowHref(patch, row.url, primary, ctx),
-    ...minMax(f.series.values, (v) => formattedValueToString(ctx.display(f.series!, v, override))),
-    domain: yDomain(f.series.values, { ...fieldBounds(f.series), unit: row.unit ?? f.series.field.config?.unit }),
-  };
-}
-
-/** The default node row: the series that colours the node. */
-function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined {
-  const s = patch.shape;
-  if (!s) {
-    return undefined;
-  }
-  const primary: Primary = { status: s.status, series: s.series, display: s.display, value: s.value };
-  const series = s.status === 'ok' ? s.series : undefined;
-  return {
-    key: 'shape',
-    title: s.series?.name ?? 'state',
-    text:
-      s.status === 'ok' && s.display
-        ? formattedValueToString(s.display)
-        : STATUS_TEXT[s.status === 'ok' ? 'nodata' : s.status],
-    status: s.status,
-    color: s.color,
-    values: series?.values ?? [],
-    times: series?.times,
-    ...(series ? { format: (v: number) => formattedValueToString(ctx.display(series, v)) } : {}),
-    href: rowHref(patch, undefined, primary, ctx),
-    ...(series ? minMax(series.values, (v) => formattedValueToString(ctx.display(series, v))) : {}),
-    ...(series ? { domain: yDomain(series.values, fieldBounds(series)) } : {}),
-  };
-}
-
-/** The card title: the title template of the pattern (hover.title, link.card.title), else the title of the cell. */
-function titleOf(patch: CellPatch & { hover?: { title?: string } }): string {
+/** The card title: the hover title template of the pattern, else the title of the cell. */
+function titleOf(patch: PlanCellPatch): string {
   const cell = patch.scope.cell;
   const fallback = patch.scope.cellTitle || cell.label || cell.key || patch.cellId;
-  const template = patch.hover?.title ?? patch.card?.title;
+  const template = patch.hover?.title;
   if (template === undefined) {
     return fallback;
   }
@@ -545,93 +388,19 @@ function titleOf(patch: CellPatch & { hover?: { title?: string } }): string {
 
 /**
  * True when the card of the cell has rows or links. It reads no series values, so the panel can call it for all
- * cells once per data update. `configured`: the patch comes from the authoring configuration (buildConfiguredCard).
+ * cells once per data update.
  */
-export function opensCard(patch: PlanCellPatch, configured: boolean, ctx: CardContext): boolean {
-  if (configured) {
-    if (patch.hover?.enabled === false) {
-      return false;
-    }
-    const rows = patch.hover?.rows;
-    const primary = primaryOf(patch);
-    if (rows?.some((row) => row.kind !== 'drilldown' || rowHref(patch, row.url, primary, ctx))) {
-      return true;
-    }
-    if (!patch.hover && patch.statusView) {
-      return true;
-    }
-  } else if (patch.link?.a2b || patch.link?.b2a || patch.card?.rows?.length || patch.shape) {
+export function opensCard(patch: PlanCellPatch, ctx: CardContext): boolean {
+  if (patch.hover?.enabled === false) {
+    return false;
+  }
+  const rows = patch.hover?.rows;
+  const primary = primaryOf(patch);
+  if (rows?.some((row) => row.kind !== 'drilldown' || rowHref(patch, row.url, primary, ctx))) {
     return true;
   }
-  return resolveLinks(patch, primaryOf(patch), ctx.replaceVariables, '').length > 0;
-}
-
-/** Resolves the card of one cell. The panel calls it only for the cell under the pointer or the pinned cell. */
-export function buildCard(patch: CellPatch, ctx: CardContext): CardModel {
-  const rows: CardRowModel[] = [];
-  if (patch.link) {
-    for (const key of ['a2b', 'b2a'] as const) {
-      const h = patch.link[key];
-      if (h) {
-        rows.push(halfRow(patch, key, h, ctx));
-      }
-    }
-  } else if (patch.card?.rows) {
-    rows.push(...patch.card.rows.map((r, i) => seriesRow(patch, r, i, ctx)));
-  } else {
-    const r = shapeRow(patch, ctx);
-    if (r) {
-      rows.push(r);
-    }
+  if (!patch.hover && patch.statusView) {
+    return true;
   }
-  const title = titleOf(patch);
-  return { title, rows, links: resolveLinks(patch, primaryOf(patch), ctx.replaceVariables, title) };
-}
-
-/**
- * Polyline points of a sparkline in a w × h box with 1 px padding. Values that are not finite are skipped.
- * Times map over the part of the dashboard range that has data (first to last sample), so the line fills
- * the width also when the series starts late or stops early. Without times or range the index is used.
- * The Y range is the domain, by default yDomain of the values.
- */
-export function sparkPoints(
-  values: number[],
-  times: number[] | undefined,
-  range: { from: number; to: number } | undefined,
-  w: number,
-  h: number,
-  domain: [number, number] = yDomain(values)
-): string {
-  // Long series: keep about two points per pixel.
-  const step = Math.max(1, Math.floor(values.length / (2 * Math.max(w, 1))));
-  const idx: number[] = [];
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    if (!Number.isFinite(v)) {
-      continue;
-    }
-    if (i % step === 0 || i === values.length - 1) {
-      idx.push(i);
-    }
-  }
-  if (idx.length < 2) {
-    return '';
-  }
-  const [lo, hi] = domain;
-  const span = hi - lo;
-  let t0 = 0;
-  let t1 = 0;
-  if (times && range && range.to > range.from) {
-    t0 = Math.max(range.from, times[idx[0]]);
-    t1 = Math.min(range.to, times[idx[idx.length - 1]]);
-    if (!(t1 > t0)) {
-      [t0, t1] = [range.from, range.to];
-    }
-  }
-  const useTime = t1 > t0;
-  const x = (i: number) => (useTime ? ((times![i] - t0) / (t1 - t0)) * w : (i / (values.length - 1)) * w);
-  const y = (v: number) => (span ? 1 + (1 - (v - lo) / span) * (h - 2) : h / 2);
-  // points outside the dashboard range (a time shift, a late sample) stay on the edge
-  const r = (n: number, max: number) => Math.round(Math.min(Math.max(n, 0), max) * 10) / 10;
-  return idx.map((i) => `${r(x(i), w)},${r(y(values[i]), h)}`).join(' ');
+  return resolveLinks(patch, primary, ctx.replaceVariables, '').length > 0;
 }

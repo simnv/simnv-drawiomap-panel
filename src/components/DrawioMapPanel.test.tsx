@@ -115,27 +115,67 @@ const frame = (refId: string, labels: Record<string, string>, values: number[], 
     ],
   });
 
+/** The bindings of the demo diagram over the panel queries A (traffic), C (up) and E (cpu). */
+const binding = (queryId: string, match: Record<string, string>) => ({ queryId, match, reducer: 'last' as const });
+const a2b = binding('A', { job: 'node-${from.node}', device: '${from.port}' });
+const b2a = binding('A', { job: 'node-${to.node}', device: '${to.port}' });
+const demoConfig: DiagramConfigV2 = {
+  version: 2,
+  queries: ['A', 'C', 'E'].map((id) => ({ id, name: id, source: { kind: 'panel', refId: id } })),
+  patterns: [
+    {
+      id: 'links',
+      name: 'links',
+      select: { kind: 'link' },
+      display: {
+        link: { a2bBinding: a2b, b2aBinding: b2a, capacity: 100000000 },
+        hover: {
+          rows: [
+            { kind: 'history', label: '${from.node} → ${to.node}', binding: a2b },
+            { kind: 'history', label: '${to.node} → ${from.node}', binding: b2a },
+          ],
+        },
+        url: '/d/x?job=${from.node}',
+      },
+    },
+    {
+      id: 'node up',
+      name: 'node up',
+      select: { kind: 'node' },
+      display: { shape: { binding: binding('C', { job: 'node-${cell.pg-id}' }), target: 'shape' } },
+    },
+  ],
+  overrides: [],
+  widgets: [],
+};
+/** The CPU row of one router, with its own url. */
+const cpuPattern: DiagramConfigV2['patterns'][number] = {
+  id: 'router cpu',
+  name: 'router cpu',
+  select: { ids: ['rtr-b'] },
+  display: {
+    hover: {
+      rows: [
+        {
+          kind: 'history',
+          label: 'CPU',
+          unit: 'percent',
+          binding: binding('E', { job: 'node-${cell.pg-id}' }),
+          url: '/d/cpu?h=${cell.pg-id}',
+        },
+      ],
+    },
+  },
+};
+const withPatterns = (...patterns: DiagramConfigV2['patterns']): DiagramConfigV2 => ({
+  ...demoConfig,
+  patterns: [...demoConfig.patterns, ...patterns],
+});
 const options: Options = {
   diagram: { xml: '<mxfile/>', svg, hash: fnv1a(svg), updatedAt: '2026-10-17T00:00:00Z' },
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false },
   linkWidth: { min: 2, max: 10 },
-  rules: [
-    {
-      name: 'links',
-      select: { kind: 'link' },
-      link: {
-        a2b: { refId: 'A', match: { job: 'node-${from.node}', device: '${from.port}' } },
-        b2a: { refId: 'A', match: { job: 'node-${to.node}', device: '${to.port}' } },
-        capacity: 100000000,
-      },
-      url: '/d/x?job=${from.node}',
-    },
-    {
-      name: 'node up',
-      select: { kind: 'node' },
-      shape: { series: { refId: 'C', match: { job: 'node-${cell.pg-id}' } }, target: 'shape' },
-    },
-  ],
+  config: demoConfig,
 };
 
 // an override for query C in Grafana
@@ -255,7 +295,6 @@ describe('DrawioMapPanel', () => {
           {...props({
             options: {
               ...options,
-              rules: [],
               config,
               diagram: { xml: '', svg: small, hash: 'explicit-chart', updatedAt: '' },
             },
@@ -291,6 +330,22 @@ describe('DrawioMapPanel', () => {
     const legacy = { ...options, editorUrl: 'http://localhost:8080' } as Options;
     const { findByTestId } = render(<DrawioMapPanel {...props({ options: legacy })} />);
     expect(await findByTestId('dmap-panel')).toBeTruthy();
+  });
+  it('ignores the saved rules of version 1, binds the version 2 config and adds one warning for them', async () => {
+    const p = props();
+    const { container, rerender, findByTestId } = render(<DrawioMapPanel {...p} />);
+    const wrapper = await findByTestId('dmap-panel');
+    await waitFor(() => expect(container.querySelector('polyline.dmap-half')).not.toBeNull());
+    const before = Number(wrapper.getAttribute('data-dmap-warnings'));
+    const saved = { ...options, rules: [{ name: 'links', select: { kind: 'link' } }, { name: 'old' }] };
+    rerender(<DrawioMapPanel {...p} options={saved} />);
+    await waitFor(() => expect(Number(wrapper.getAttribute('data-dmap-warnings'))).toBe(before + 1));
+    // the config still binds the links
+    expect(container.querySelector('polyline.dmap-half')).not.toBeNull();
+    const badge = screen.getByTestId('dmap-warning-badge');
+    expect(badge.getAttribute('title')!.split('\n')[0]).toBe(
+      'The panel ignores 2 rules of version 1. Create the bindings again in Edit bindings.'
+    );
   });
   it('mounts the svg, binds and draws overlay halves', async () => {
     const { container, findByTestId } = render(<DrawioMapPanel {...props()} />);
@@ -392,7 +447,6 @@ describe('DrawioMapPanel hover card', () => {
     const p = props({
       options: {
         ...options,
-        rules: [],
         config,
         diagram: { xml: '', svg: small, hash: 'shared-demand', updatedAt: '' },
       },
@@ -461,7 +515,7 @@ describe('DrawioMapPanel hover card', () => {
     const small =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/></g><g data-cell-id="b"><rect x="50" width="40" height="30"/></g></svg>';
     const p = props({
-      options: { ...options, rules: [], config, diagram: { xml: '', svg: small, hash: 'hover-demand', updatedAt: '' } },
+      options: { ...options, config, diagram: { xml: '', svg: small, hash: 'hover-demand', updatedAt: '' } },
     });
     const { container, unmount } = render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(screen.getByTestId('dmap-panel').getAttribute('data-dmap-patched')).toBe('2'));
@@ -486,24 +540,8 @@ describe('DrawioMapPanel hover card', () => {
     unmount();
   });
   const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
-  const cpuRule = {
-    name: 'router cpu',
-    select: { ids: ['rtr-b'] },
-    shape: {
-      card: [
-        {
-          title: 'CPU',
-          refId: 'E',
-          match: { job: 'node-${cell.pg-id}' },
-          unit: 'percent',
-          decimals: 0,
-          url: '/d/cpu?h=${cell.pg-id}',
-        },
-      ],
-    },
-  };
   const withCpu = (over: Partial<PanelProps<Options>> = {}) =>
-    props({ options: { ...options, rules: [...options.rules, cpuRule] }, ...over });
+    props({ options: { ...options, config: withPatterns(cpuPattern) }, ...over });
   async function setup(p = props()) {
     const r = render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
@@ -525,7 +563,7 @@ describe('DrawioMapPanel hover card', () => {
     const c = await screen.findByRole('tooltip');
     expect(c.textContent).toContain('isp-a → rtr-a');
     // the test frames have no unit; the title names the two ends
-    expect(c.textContent).toContain('41000000 · 41%');
+    expect(c.textContent).toContain('41000000');
     expect(c.getAttribute('aria-label')).toBe('ISP A pppoe ↔ rtr-a wan1');
     expect(c.textContent).toContain('rtr-a → isp-a');
     expect(c.getAttribute('data-pinned')).toBe('false');
@@ -648,7 +686,9 @@ describe('DrawioMapPanel hover card', () => {
     const { cell, half, rerender } = await setup(p);
     fireEvent.click(cell('pg-node~rtr-b'));
     await screen.findByRole('dialog');
-    rerender(<DrawioMapPanel {...p} options={{ ...options, rules: [options.rules[0]] }} />);
+    // the override turns the element off: it has no patch now
+    const off = withPatterns({ ...cpuPattern, display: { enabled: false } });
+    rerender(<DrawioMapPanel {...p} options={{ ...options, config: off }} />);
     expect(card()).toBeNull();
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toBeTruthy();
@@ -668,9 +708,11 @@ describe('DrawioMapPanel hover card', () => {
     expect(card()!.getAttribute('data-pinned')).toBe('true');
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(dialog.getAttribute('aria-label'));
   });
-  it('a rule urlTitle names the footer link', async () => {
-    const rules = options.rules.map((r) => (r.name === 'links' ? { ...r, urlTitle: 'Port ${from.port}' } : r));
-    const { half } = await setup(props({ options: { ...options, rules } }));
+  it('the urlTitle of the display names the footer link', async () => {
+    const patterns = demoConfig.patterns.map((p) =>
+      p.id === 'links' ? { ...p, display: { ...p.display, urlTitle: 'Port ${from.port}' } } : p
+    );
+    const { half } = await setup(props({ options: { ...options, config: { ...demoConfig, patterns } } }));
     fireEvent.click(half(linkId));
     await screen.findByRole('dialog');
     expect(screen.getByRole('link', { name: 'Port pppoe' }).getAttribute('href')).toBe('/d/x?job=isp-a');
@@ -682,7 +724,7 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.click(cell('pg-node~rtr-b'));
     await screen.findByRole('dialog');
     const row = screen.getAllByTestId('dmap-card-row')[0];
-    const [head, spark, minMax] = Array.from(row.children);
+    const [head, spark] = Array.from(row.children);
     expect(head.textContent).toContain('CPU');
     expect(head.textContent).toContain('42%');
     expect(spark.getAttribute('data-testid')).toBe('dmap-card-spark');
@@ -692,8 +734,6 @@ describe('DrawioMapPanel hover card', () => {
     expect(plot.getAttribute('width')).toBe('264');
     expect(plot.getAttribute('height')).toBe('40');
     expect(spark.querySelector('polyline')).toBeNull();
-    expect(minMax.getAttribute('data-testid')).toBe('dmap-card-range');
-    expect(minMax.textContent).toBe('min 12%max 42%');
   });
   it('a narrow panel shows the card as a sheet fixed to the bottom of the viewport, outside the panel', async () => {
     const { half, wrapper } = await setup(props({ width: 400, height: 2000 }));
@@ -863,14 +903,9 @@ describe('DrawioMapPanel live zoom', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  // a saved rule of version 1 gives the warning badge
   const withWarning = (legend?: Options['legend']) =>
-    props({
-      options: {
-        ...options,
-        ...(legend ? { legend } : {}),
-        rules: [...options.rules, { name: 'old', select: { ids: ['rtr-b'] }, shape: { sparkline: {} } } as never],
-      },
-    });
+    props({ options: { ...options, ...(legend ? { legend } : {}), rules: [{ name: 'old' }] } });
 
   // Grafana puts its panel menu button in the top-right corner of a panel without a title.
   it('the reset button and the warning badge stack in the top-left corner: the button first, then the badge', async () => {
@@ -1100,7 +1135,7 @@ describe('saved chart results in authoring previews', () => {
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart"><rect width="180" height="70"/></g><g data-cell-id="other"><rect x="200" width="180" height="70"/></g></svg>';
     return {
       ...props({ id: 818 }),
-      options: { ...options, rules: [], config, diagram: { xml: '', svg: small, hash: 'reuse-chart', updatedAt: '' } },
+      options: { ...options, config, diagram: { xml: '', svg: small, hash: 'reuse-chart', updatedAt: '' } },
     };
   }
   function hoverFixture() {
@@ -1447,7 +1482,6 @@ describe('DrawioMapPanel status band', () => {
     return props({
       options: {
         ...options,
-        rules: [],
         config,
         diagram: { xml: '', svg: svgText, hash: `band-${count}`, updatedAt: '' },
         ...over,
@@ -1530,7 +1564,6 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     return props({
       options: {
         ...options,
-        rules: [],
         config,
         diagram: { xml: '', svg: structureSvg, hash: `structure-${JSON.stringify([select, over])}`, updatedAt: '' },
         ...over,
@@ -1636,7 +1669,6 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
     props({
       options: {
         ...options,
-        rules: [],
         diagram: { xml: '', svg: svgWith(symbol), hash: `rows-${symbol}`, updatedAt: '' },
       },
     });
@@ -1748,7 +1780,7 @@ describe('DrawioMapPanel bindings popup', () => {
   function renderSaved(config: DiagramConfigV2, id = 61, shown = diagram) {
     const save = vi.fn();
     function SavedPanel() {
-      const [saved, setSaved] = React.useState<Options>({ ...options, rules: [], config, diagram: shown });
+      const [saved, setSaved] = React.useState<Options>({ ...options, config, diagram: shown });
       return (
         <DrawioMapPanel
           {...props({ id })}
@@ -1883,7 +1915,7 @@ describe('DrawioMapPanel bindings popup', () => {
     );
     const config = labelled();
     const p = props({ id: 61 });
-    const saved = { ...options, rules: [], config, diagram };
+    const saved = { ...options, config, diagram };
     const view = render(<DrawioMapPanel {...p} options={saved} />);
     openPopup();
     await waitFor(() => expect(stageText('a')).toBe('Saved 42'));
@@ -2078,7 +2110,7 @@ describe('DrawioMapPanel bindings popup', () => {
           })
       );
       const p = props({ id: 61 });
-      const saved = { ...options, rules: [], config: labelled(), diagram };
+      const saved = { ...options, config: labelled(), diagram };
       const view = render(<DrawioMapPanel {...p} options={saved} />);
       const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
       await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
@@ -2165,7 +2197,7 @@ describe('DrawioMapPanel bindings popup', () => {
         ],
       });
       const base = props({ id: 61 });
-      const saved = { ...options, rules: [], config, diagram };
+      const saved = { ...options, config, diagram };
       const view = render(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
       const status = () => screen.queryByTestId('dmap-status-band')?.textContent ?? '';
       await waitFor(() => expect(view.container.querySelector('[data-cell-id="a"]')).toBeTruthy());

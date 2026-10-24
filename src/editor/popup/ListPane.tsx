@@ -26,7 +26,7 @@ export interface ListPaneProps extends Pick<
   config: DiagramConfigV2;
   filter: BindingsFilter;
   onFilterChange: (filter: BindingsFilter) => void;
-  /** The panel has legacy rules and no V2 config. */
+  /** The panel has saved rules of version 1. The panel ignores them. */
   legacyRules?: number;
   onAddQuery: () => void;
   onAddPanelQuery: () => void;
@@ -73,8 +73,8 @@ export function ListPane({
       <div className={styles.body} role="region" aria-label="All bindings list">
         {legacyRules > 0 && !hasBindings && total === 0 && (
           <p>
-            This panel uses {plural(legacyRules, 'legacy rule')}. Edit them in the Rules editor of the panel options.
-            Pattern, override and chart bindings appear here after you create them.
+            This panel has {plural(legacyRules, 'rule')} of version 1. The panel ignores them: create the bindings again
+            here. Pattern, override and chart bindings appear in this list after you create them.
           </p>
         )}
         <BindingsList list={list} cells={cells} filter={filter} {...rows} />
