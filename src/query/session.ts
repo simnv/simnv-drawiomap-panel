@@ -12,6 +12,8 @@ export interface QuerySession {
   generations: Map<string, number>;
   /** The last generation given. */
   generation: number;
+  /** The last change of a mounted provider, so a repeated render of the same change gives the same generation. */
+  change?: { from: string; to: string; generation: number };
 }
 
 /** How many context signatures a session remembers. */
@@ -79,15 +81,25 @@ export function newQuerySession(): QuerySession {
 }
 
 /**
- * The generation of a context signature: a known signature keeps its generation, a new one gets the next.
- * Idempotent for one signature, so a repeated render is safe.
+ * The generation of a context signature. A mount (no `previous`) continues the generation of a known signature, so a
+ * remount runs no query again. A mounted provider whose signature changed (`previous` differs) always gets a new
+ * generation that no earlier context had: a return to an earlier value must fetch again, because results are reused
+ * at any age within a generation. A repeated call for the same change (a render that runs twice) gives the same
+ * generation.
  */
-export function generationOf(session: QuerySession, signature: string): number {
+export function generationOf(session: QuerySession, signature: string, previous?: string): number {
   const known = session.generations.get(signature);
-  if (known !== undefined) {
+  if (known !== undefined && (previous === undefined || previous === signature)) {
     return known;
   }
+  if (previous !== undefined && session.change?.from === previous && session.change.to === signature) {
+    return session.change.generation;
+  }
   session.generation++;
+  if (previous !== undefined) {
+    session.change = { from: previous, to: signature, generation: session.generation };
+  }
+  session.generations.delete(signature);
   session.generations.set(signature, session.generation);
   while (session.generations.size > SIGNATURES) {
     session.generations.delete(session.generations.keys().next().value!);

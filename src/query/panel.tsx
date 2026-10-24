@@ -4,7 +4,7 @@ import { getTemplateSrv } from '@grafana/runtime';
 import type { DataSourceRef } from '@grafana/schema';
 import { createQueryController } from './controller';
 import { createGrafanaExecutor } from './grafana';
-import { generationOf, newQuerySession, querySession, retainQuerySession } from './session';
+import { generationOf, newQuerySession, type QuerySession, querySession, retainQuerySession } from './session';
 import type { QueryContext, QueryController } from './types';
 
 export interface PanelQueryService {
@@ -37,14 +37,17 @@ export function PanelQueryProvider({
 }: Props) {
   const [privateSession] = useState(newQuerySession);
   const session = sessionKey === undefined ? privateSession : querySession(sessionKey);
-  const [controller, setController] = useState<QueryController>();
+  // The controller belongs to the session it was made for. After a session change the old controller is not exposed
+  // at once, so a consumer never watches a disposed one; the replacement is attached by the effect below.
+  const [attached, setAttached] = useState<{ session: QuerySession; controller: QueryController }>();
+  const controller = attached?.session === session ? attached.controller : undefined;
   useEffect(() => {
     const release = sessionKey === undefined ? undefined : retainQuerySession(sessionKey);
     const current = createQueryController(createGrafanaExecutor(), undefined, undefined, session.cache);
     let attached = true;
     queueMicrotask(() => {
       if (attached) {
-        setController(current);
+        setAttached({ session, controller: current });
       }
     });
     return () => {
@@ -90,7 +93,11 @@ export function PanelQueryProvider({
     context: { ...nextContext, generation: generationOf(session, signature) },
   }));
   if (resolved.signature !== signature) {
-    setResolved({ signature, context: { ...nextContext, generation: generationOf(session, signature) } });
+    // A change on a mounted provider always starts a new generation, even back to an earlier signature.
+    setResolved({
+      signature,
+      context: { ...nextContext, generation: generationOf(session, signature, resolved.signature) },
+    });
   }
   const context = resolved.context;
   const service = useMemo(() => ({ controller, context }), [controller, context]);

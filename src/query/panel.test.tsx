@@ -145,3 +145,39 @@ it('a remount of the same session keeps the generation and serves the retained r
   other.unmount();
   clearQuerySessions();
 });
+
+it('switching the session together with the range never exposes a disposed controller', async () => {
+  const range = { from: dateTime(1000), to: dateTime(2000), raw: { from: '1000', to: '2000' } };
+  const later = { from: dateTime(3000), to: dateTime(4000), raw: { from: '3000', to: '4000' } };
+  const dataFor = (r: typeof range): PanelData => ({
+    state: LoadingState.Done,
+    series: [],
+    timeRange: r,
+    request: { requestId: 'req-1', targets: [], range: r, scopedVars: {}, intervalMs: 1000 } as never,
+  });
+  get.mockResolvedValue({ query: vi.fn(() => of({ data: [probeFrame] })) });
+  const watching: QueryController[] = [];
+  const Probe = () => {
+    const service = useContext(PanelQueryContext);
+    useEffect(() => {
+      if (!service?.controller) {
+        return;
+      }
+      watching.push(service.controller);
+      return service.controller.watch(probeDemand(service.context), () => undefined);
+    }, [service]);
+    return null;
+  };
+  const element = (session: string, r: typeof range) => (
+    <PanelQueryProvider session={session} data={dataFor(r)} timeRange={r} timeZone="utc" replaceVariables={() => ''}>
+      <Probe />
+    </PanelQueryProvider>
+  );
+  const view = render(element('dash#1', range));
+  await waitFor(() => expect(watching).toHaveLength(1));
+  expect(() => view.rerender(element('dash#2', later))).not.toThrow();
+  await waitFor(() => expect(watching).toHaveLength(2));
+  expect(watching[1]).not.toBe(watching[0]);
+  view.unmount();
+  clearQuerySessions();
+});

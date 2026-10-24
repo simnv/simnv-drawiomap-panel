@@ -44,4 +44,16 @@ describe('query sessions', () => {
     // A forgotten signature gets a new generation.
     expect(generationOf(session, 'a')).toBe(11);
   });
+
+  it('starts a never-reused generation when a mounted provider changes its signature, so a return to A fetches again', () => {
+    const session = newQuerySession();
+    const a = generationOf(session, 'a');
+    const b = generationOf(session, 'b', 'a');
+    const again = generationOf(session, 'a', 'b');
+    expect([a, b, again]).toEqual([1, 2, 3]);
+    // A render that runs twice for one change gives the same generation.
+    expect(generationOf(session, 'a', 'b')).toBe(3);
+    // A remount with the current signature continues the latest generation of it.
+    expect(generationOf(session, 'a')).toBe(3);
+  });
 });
