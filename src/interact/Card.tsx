@@ -387,9 +387,9 @@ export function Card({
   // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes. The panel gives a
   // new cell or a pin another instance (a React key), so no frame outlives the state it was queued for.
   const frame = useRef<number>();
-  const latest = useRef({ target, width, height });
+  const latest = useRef({ target, width, height, floating: !sheet && !inline });
   useEffect(() => {
-    latest.current = { target, width, height };
+    latest.current = { target, width, height, floating: !sheet && !inline };
   });
   const move = useCallback(() => {
     if (frame.current !== undefined) {
@@ -398,10 +398,11 @@ export function Card({
     frame.current = requestAnimationFrame(() => {
       frame.current = undefined;
       const el = ref.current;
-      if (!el) {
+      const now = latest.current;
+      // a sheet has its place in the viewport, an inline card has none
+      if (!el || !now.floating) {
         return;
       }
-      const now = latest.current;
       const at = now.target();
       placeAt(el, at.x, at.y, now.width, now.height);
     });

@@ -488,3 +488,13 @@ it('a pin after a move back to the entry point keeps the pin place, not the hove
   expect(left()).toBe('34px');
   vi.unstubAllGlobals();
 });
+it('a queued pointer move leaves the viewport place of a sheet alone', () => {
+  const flush = frames();
+  const { pointer } = follow({ width: 400 });
+  const before = [left(), screen.getByTestId('dmap-card').style.top];
+  pointer(300, 200);
+  flush();
+  expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
+  expect([left(), screen.getByTestId('dmap-card').style.top]).toEqual(before);
+  vi.unstubAllGlobals();
+});
