@@ -901,6 +901,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
               <Card
                 key={`${card.cellId}:${pinned}`}
                 model={model}
+                cellId={card.cellId}
                 pinned={pinned}
                 x={card.x}
                 y={card.y}

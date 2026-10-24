@@ -53,6 +53,8 @@ export interface CardProps {
   timeRange?: TimeRange;
   timeZone?: string;
   onClose?: () => void;
+  /** The cell that the card shows, for probes: written as `data-dmap-cell`. */
+  cellId?: string;
   /** The latest pointer position of the panel, in client coordinates. The hover card places itself from it. */
   pointerRef?: React.MutableRefObject<{ x: number; y: number } | null>;
   /**
@@ -350,6 +352,7 @@ export function Card({
   timeRange,
   timeZone,
   onClose,
+  cellId,
   pointerRef,
   moveRef,
 }: CardProps) {
@@ -440,6 +443,7 @@ export function Card({
       aria-label={model.title}
       tabIndex={pinned ? -1 : undefined}
       data-testid="dmap-card"
+      data-dmap-cell={cellId}
       data-pinned={pinned}
       data-sheet={sheet}
       data-variant={variant}

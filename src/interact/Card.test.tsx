@@ -498,3 +498,11 @@ it('a queued pointer move leaves the viewport place of a sheet alone', () => {
   expect([left(), screen.getByTestId('dmap-card').style.top]).toEqual(before);
   vi.unstubAllGlobals();
 });
+it.each([
+  ['floating', 800, 'floating'],
+  ['sheet', 400, 'floating'],
+  ['inline', 800, 'inline'],
+] as const)('names its cell in data-dmap-cell (%s)', (_name, width, variant) => {
+  render(<Card model={followModel} cellId="rtr-a" pinned={false} variant={variant} width={width} height={600} />);
+  expect(screen.getByTestId('dmap-card').getAttribute('data-dmap-cell')).toBe('rtr-a');
+});
