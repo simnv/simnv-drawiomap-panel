@@ -53,11 +53,13 @@ export interface CardProps {
   timeRange?: TimeRange;
   timeZone?: string;
   onClose?: () => void;
+  /** The latest pointer position of the panel, in client coordinates. The hover card places itself from it. */
+  pointerRef?: React.MutableRefObject<{ x: number; y: number } | null>;
   /**
-   * The card sets this to a function that moves it to a new pointer position (client coordinates) without a render.
-   * The move is throttled to one frame: the panel rect and the card height are read first, then the style is written.
+   * The card sets this to a function that places it at the latest `pointerRef` in the next frame, with no render.
+   * The panel rect and the card height are read first, then the style is written.
    */
-  moveRef?: React.MutableRefObject<((clientX: number, clientY: number) => void) | null>;
+  moveRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -348,6 +350,7 @@ export function Card({
   timeRange,
   timeZone,
   onClose,
+  pointerRef,
   moveRef,
 }: CardProps) {
   const styles = useStyles2(getStyles);
@@ -355,8 +358,13 @@ export function Card({
   const inline = variant === 'inline';
   const sheet = !inline && width < SHEET_BELOW;
 
-  // The place of the last pointer move, with the props it was made under.
-  const moved = useRef<{ x: number; y: number; at: { x: number; y: number } } | null>(null);
+  // The place in the panel. A hover card follows the latest pointer position of the panel (`pointerRef`, client
+  // coordinates) and nothing else. A pinned card uses only its own x and y.
+  const target = () => {
+    const rect = anchor?.getBoundingClientRect();
+    const at = !pinned ? pointerRef?.current : undefined;
+    return at && rect ? { x: at.x - rect.left, y: at.y - rect.top } : { x, y };
+  };
   // Place the card after it renders: the height is known only then.
   useLayoutEffect(() => {
     const el = ref.current;
@@ -372,44 +380,32 @@ export function Card({
       }
       return;
     }
-    // After a move inside the cell the latest pointer place wins over the entry position in the props.
-    const at = moved.current && moved.current.x === x && moved.current.y === y ? moved.current.at : { x, y };
+    const at = target();
     placeAt(el, at.x, at.y, width, height);
   });
 
-  // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes.
+  // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes. The panel gives a
+  // new cell or a pin another instance (a React key), so no frame outlives the state it was queued for.
   const frame = useRef<number>();
-  const pointer = useRef({ x: 0, y: 0 });
-  const latest = useRef({ width, height, anchor, sheet, inline, pinned, x, y });
+  const latest = useRef({ target, width, height });
   useEffect(() => {
-    latest.current = { width, height, anchor, sheet, inline, pinned, x, y };
+    latest.current = { target, width, height };
   });
-  const move = useCallback((clientX: number, clientY: number) => {
-    pointer.current = { x: clientX, y: clientY };
+  const move = useCallback(() => {
     if (frame.current !== undefined) {
       return;
     }
     frame.current = requestAnimationFrame(() => {
       frame.current = undefined;
       const el = ref.current;
-      const now = latest.current;
-      const rect = now.anchor?.getBoundingClientRect();
-      if (!el || !rect || now.sheet || now.inline || now.pinned) {
+      if (!el) {
         return;
       }
-      const at = { x: pointer.current.x - rect.left, y: pointer.current.y - rect.top };
-      moved.current = { x: now.x, y: now.y, at };
+      const now = latest.current;
+      const at = now.target();
       placeAt(el, at.x, at.y, now.width, now.height);
     });
   }, []);
-  // A pin, another variant or another cell (a new title) ends the follow: no queued frame may place the card again.
-  useEffect(() => {
-    moved.current = null;
-    if (frame.current !== undefined) {
-      cancelAnimationFrame(frame.current);
-      frame.current = undefined;
-    }
-  }, [pinned, inline, sheet, model.title]);
   useEffect(() => {
     if (moveRef) {
       moveRef.current = move;

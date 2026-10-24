@@ -723,17 +723,19 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     opener.current = e.target;
     setCard({ cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top, pinned: true });
   };
-  const moveCard = useRef<((clientX: number, clientY: number) => void) | null>(null);
+  const moveCard = useRef<(() => void) | null>(null);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const onPointerMove = (e: React.PointerEvent) => {
     // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
     const stageEl = containerRef.current;
     if (e.pointerType === 'touch' || !canHover() || pinned || panZoom.busy() || !stageEl) {
       return;
     }
+    pointerRef.current = { x: e.clientX, y: e.clientY };
     const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
     if (patch && card?.cellId === patch.cellId) {
       // the same cell: only the card moves, with no render
-      moveCard.current?.(e.clientX, e.clientY);
+      moveCard.current?.();
       return;
     }
     if (!patch && !card) {
@@ -897,6 +899,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         ? portalSheet(
             <div ref={cardRef}>
               <Card
+                key={`${card.cellId}:${pinned}`}
                 model={model}
                 pinned={pinned}
                 x={card.x}
@@ -907,6 +910,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
                 timeRange={timeRange}
                 timeZone={timeZone}
                 onClose={close}
+                pointerRef={pointerRef}
                 moveRef={moveCard}
               />
             </div>,
