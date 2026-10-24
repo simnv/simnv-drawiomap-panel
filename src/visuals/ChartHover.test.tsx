@@ -1,20 +1,15 @@
-import React from 'react';
+import React, { Profiler } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createTheme, dateTime, FieldType, type TimeRange } from '@grafana/data';
 import { ChartHover, formatSample, type HoverSeries } from './ChartHover';
 import type { HistoryModel } from '../query/frames';
 
-const counts = vi.hoisted(() => ({ table: 0, container: 0, positions: [] as Array<{ x: number; y: number }> }));
+const counts = vi.hoisted(() => ({ table: 0 }));
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
   useStyles2: (fn: (theme: ReturnType<typeof createTheme>) => unknown) => fn(createTheme()),
   Portal: ({ children }: any) => <div data-testid="portal">{children}</div>,
-  VizTooltipContainer: ({ children, position }: any) => {
-    counts.container++;
-    counts.positions.push(position);
-    return <div data-testid="container">{children}</div>;
-  },
   SeriesTable: ({ timestamp, series }: any) => {
     counts.table++;
     return (
@@ -43,8 +38,6 @@ beforeEach(() => {
   frames = new Map();
   nextFrame = 1;
   counts.table = 0;
-  counts.container = 0;
-  counts.positions = [];
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
     frames.set(nextFrame, cb);
     return nextFrame++;
@@ -301,6 +294,49 @@ describe('ChartHover cost while scrubbing', () => {
     expect(screen.getByTestId('series').textContent).toBe('up=3');
     expect(frames.size).toBe(0);
   });
+
+  // The tooltip box places itself with a style write in its layout effect, not with a state write: a sample
+  // change is one commit of the hover tree, and the box has no transition that would trail the pointer.
+  const profiled = () => {
+    const commits: string[] = [];
+    render(
+      <Profiler id="hover" onRender={(_id, phase) => commits.push(phase)}>
+        <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
+          <i />
+        </ChartHover>
+      </Profiler>
+    );
+    return { el: box(screen.getByTestId('dmap-chart-hover')), commits };
+  };
+
+  it('a new sample is exactly one commit; a move inside the sample is none', () => {
+    const { el, commits } = profiled();
+    move(el, 10);
+    flushFrame();
+    const opened = commits.length;
+    expect(commits.slice(1)).toEqual(['update']);
+    move(el, 12);
+    flushFrame();
+    expect(commits.length).toBe(opened);
+    move(el, 60);
+    flushFrame();
+    expect(commits.length).toBe(opened + 1);
+    move(el, 95);
+    flushFrame();
+    expect(commits.length).toBe(opened + 2);
+  });
+
+  it('places the box with a style write, below and right of the sample, and sets no transition', () => {
+    const { el } = profiled();
+    move(el, 50);
+    flushFrame();
+    const tip = screen.getByTestId('dmap-chart-tooltip');
+    expect(tip.style.transform).toBe('translate(60px, 20px)');
+    expect(tip.style.transition).toBe('');
+    expect(tip.getAttribute('aria-live')).toBeNull();
+    fireEvent.keyDown(el, { key: 'ArrowRight' });
+    expect(screen.getByTestId('dmap-chart-tooltip').getAttribute('aria-live')).toBe('polite');
+  });
 });
 
 describe('ChartHover frame races', () => {
@@ -330,7 +366,7 @@ describe('ChartHover frame races', () => {
     flushFrame();
     expect(screen.getByTestId('series').textContent).toBe('up=8');
     expect(screen.getByTestId('dmap-chart-crosshair').style.left).toBe('80%');
-    expect(counts.positions.at(-1)).toEqual({ x: 80, y: 10 });
+    expect(screen.getByTestId('dmap-chart-tooltip').style.transform).toBe('translate(90px, 20px)');
   });
 
   it('moves the anchor when the chart moves and the same sample is picked', () => {
@@ -342,11 +378,12 @@ describe('ChartHover frame races', () => {
     const el = box(screen.getByTestId('dmap-chart-hover'));
     moveTo(el, 50);
     flushFrame();
-    expect(counts.positions.at(-1)).toEqual({ x: 50, y: 10 });
+    const tip = screen.getByTestId('dmap-chart-tooltip');
+    expect(tip.style.transform).toBe('translate(60px, 20px)');
     box(el, 200); // the chart scrolled: sample 50 is now at x = 250
     moveTo(el, 250);
     flushFrame();
-    expect(counts.positions.at(-1)).toEqual({ x: 250, y: 10 });
+    expect(tip.style.transform).toBe('translate(260px, 20px)');
   });
 
   it('Escape before the first frame stops the frame from opening the tooltip', () => {

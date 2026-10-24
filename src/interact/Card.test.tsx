@@ -392,3 +392,15 @@ it('keeps the floating card a sheet below the breakpoint', () => {
   expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
   expect(screen.getByTestId('dmap-card').getAttribute('data-variant')).toBe('floating');
 });
+it('gives the floating card its own compositing layer, the inline card none', () => {
+  const model: ConfiguredCardModel = { title: 'Router', links: [], demands: [], diagnostics: [], rows: [] };
+  const { unmount } = render(
+    <Card model={model} pinned={true} x={0} y={0} width={800} height={600} onClose={() => {}} />
+  );
+  // WebKit paints an absolute card in the layer of the diagram: its own layer keeps a move of the crosshair or of
+  // the card from repainting the diagram under it.
+  expect(getComputedStyle(screen.getByTestId('dmap-card')).willChange).toBe('transform');
+  unmount();
+  render(<Card model={model} pinned={true} variant="inline" width={300} timeRange={getDefaultTimeRange()} />);
+  expect(getComputedStyle(screen.getByTestId('dmap-card')).willChange).toBe('auto');
+});

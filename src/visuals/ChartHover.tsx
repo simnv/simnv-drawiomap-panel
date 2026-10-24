@@ -8,9 +8,10 @@ import {
   type GrafanaTheme2,
   type TimeRange,
 } from '@grafana/data';
-import { Portal, SeriesTable, useStyles2, useTheme2, VizTooltipContainer } from '@grafana/ui';
+import { Portal, SeriesTable, useStyles2, useTheme2 } from '@grafana/ui';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import { alignedSamples, nearestIndex, sampleTimes, timeAt } from './hoverSample';
+import { placeTooltip } from './tooltipPlace';
 
 /** One series of the tooltip. */
 export interface HoverSeries {
@@ -52,7 +53,74 @@ const getStyles = (theme: GrafanaTheme2) => ({
     background: ${theme.colors.text.secondary};
     opacity: 0.7;
   `,
+  // The look of the Grafana tooltip container (background, shadow, padding, radius, z-index). Its own
+  // compositing layer and no transition: a new sample repaints this box only, at once.
+  box: css`
+    position: fixed;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    will-change: transform;
+    overflow: hidden;
+    max-width: 800px;
+    padding: ${theme.spacing(1)};
+    background: ${theme.colors.background.elevated};
+    box-shadow: ${theme.shadows.z2};
+    border-radius: ${theme.shape.radius.default};
+    z-index: ${theme.zIndex.tooltip};
+  `,
 });
+
+/**
+ * The positioned box of the tooltip. The Grafana VizTooltipContainer places itself with a state write in a layout
+ * effect and a ResizeObserver (two to four commits for each sample) and moves with a 100 ms transition, so the
+ * box trails the pointer. This box writes its place to the DOM in the layout effect of the same commit: one
+ * commit for each sample, no transition. Only a keyboard step is a live region: a pointer scrub would flood a
+ * screen reader.
+ */
+function TooltipBox({
+  x,
+  y,
+  live,
+  className,
+  children,
+}: {
+  x: number;
+  y: number;
+  live: boolean;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    // the view without the scrollbars; jsdom has no client size
+    const root = document.documentElement;
+    const p = placeTooltip(
+      x,
+      y,
+      el.offsetWidth,
+      el.offsetHeight,
+      root.clientWidth || window.innerWidth,
+      root.clientHeight || window.innerHeight
+    );
+    el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  });
+  return (
+    <div
+      ref={ref}
+      className={className}
+      data-testid="dmap-chart-tooltip"
+      aria-live={live ? 'polite' : undefined}
+      aria-atomic="true"
+    >
+      {children}
+    </div>
+  );
+}
 
 /** The formatted value of a sample: the row formatter or the field display processor, "–" for a gap. */
 export function formatSample(
@@ -127,10 +195,10 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       ),
     [series]
   );
-  // the frame callback reads the data and range of the latest render, not those of the render that queued it
-  const latest = useRef({ ready, from, to });
+  // the frame callback reads the data, range and hover of the latest render, not those of the render that queued it
+  const latest = useRef({ ready, from, to, hover });
   useLayoutEffect(() => {
-    latest.current = { ready, from, to };
+    latest.current = { ready, from, to, hover };
   });
   const rows = useMemo(() => {
     if (!enabled || !hover) {
@@ -166,7 +234,7 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
     if (!r || r.width <= 0) {
       return;
     }
-    const { ready: rd, from: f, to: t } = latest.current;
+    const { ready: rd, from: f, to: t, hover: cur } = latest.current;
     const picked = alignedSamples(rd, timeAt((clientX - r.left) / r.width, f, t));
     if (!picked) {
       return;
@@ -179,10 +247,12 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       y: Math.round(r.top + r.height / 2),
       kind,
     };
-    // the same sample at the same place keeps the same state object: React skips the render
-    setHover((cur) =>
-      cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y ? cur : next
-    );
+    // The same sample at the same place: no state write at all. A write of an equal value would still run the
+    // component once before React drops the result.
+    if (cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y) {
+      return;
+    }
+    setHover(next);
   };
   const move = (ev: React.PointerEvent) => {
     pending.current = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? 'touch' : 'mouse' };
@@ -268,14 +338,12 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
             style={{ left: `${Math.min(1, Math.max(0, hover.fraction)) * 100}%` }}
           />
           <Portal>
-            <VizTooltipContainer position={{ x: hover.x, y: hover.y }} offset={{ x: 10, y: 10 }}>
-              <div data-testid="dmap-chart-tooltip">
-                <SeriesTable
-                  timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
-                  series={rows.list}
-                />
-              </div>
-            </VizTooltipContainer>
+            <TooltipBox x={hover.x} y={hover.y} live={hover.kind === 'key'} className={styles.box}>
+              <SeriesTable
+                timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
+                series={rows.list}
+              />
+            </TooltipBox>
           </Portal>
         </>
       ) : null}
