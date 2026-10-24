@@ -8,9 +8,10 @@ import {
   type GrafanaTheme2,
   type TimeRange,
 } from '@grafana/data';
-import { Portal, SeriesTable, useStyles2, useTheme2, VizTooltipContainer } from '@grafana/ui';
+import { Portal, SeriesTable, useStyles2, useTheme2 } from '@grafana/ui';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import { alignedSamples, nearestIndex, sampleTimes, timeAt } from './hoverSample';
+import { placeTooltip } from './tooltipPlace';
 
 /** One series of the tooltip. */
 export interface HoverSeries {
@@ -43,16 +44,145 @@ const getStyles = (theme: GrafanaTheme2) => ({
       outline-offset: 1px;
     }
   `,
+  // Own compositing layer. WebKit paints the card in the layer of the diagram: a move of the line would repaint
+  // the diagram under the card (slow on a dense diagram). With its own layer the move repaints nothing.
   line: css`
     position: absolute;
     top: 0;
     bottom: 0;
     width: 1px;
     pointer-events: none;
+    will-change: transform;
     background: ${theme.colors.text.secondary};
     opacity: 0.7;
   `,
+  // The look of the Grafana tooltip container (background, shadow, padding, radius, z-index). Its own
+  // compositing layer and no transition: a new sample repaints this box only, at once.
+  box: css`
+    position: fixed;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    will-change: transform;
+    overflow: hidden;
+    max-width: 800px;
+    padding: ${theme.spacing(1)};
+    background: ${theme.colors.background.elevated};
+    box-shadow: ${theme.shadows.z2};
+    border-radius: ${theme.shape.radius.default};
+    z-index: ${theme.zIndex.tooltip};
+  `,
 });
+
+/** Frames the box without a ResizeObserver waits for a size before it gives up. */
+const PLACE_RETRIES = 10;
+
+/**
+ * The positioned box of the tooltip. The Grafana VizTooltipContainer places itself with a state write in a layout
+ * effect and a ResizeObserver (two to four commits for each sample) and moves with a 100 ms transition, so the
+ * box trails the pointer. This box writes its place to the DOM, no state, no transition: one commit for each
+ * sample. Only a keyboard step is a live region: a pointer scrub would flood a screen reader.
+ *
+ * The Grafana Portal attaches its container in a layout effect of a parent, after the layout effect of this box:
+ * the first measurement sees no size. The box stays hidden until it has a size. A ResizeObserver reports the
+ * size when the box is in the document and on each change of its content; without one, frames retry. A change
+ * of the viewport places the box again.
+ */
+export function TooltipBox({
+  x,
+  y,
+  live,
+  className,
+  children,
+}: {
+  x: number;
+  y: number;
+  live: boolean;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  // the anchor of the latest commit, for a size report or a viewport change later
+  const anchor = useRef({ x, y });
+  // Places the box from its current size. True when the box is in the document and has a size.
+  const place = useCallback(() => {
+    const el = ref.current;
+    if (!el || !el.isConnected) {
+      return false;
+    }
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    // the view without the scrollbars; jsdom has no client size
+    const root = document.documentElement;
+    const p = placeTooltip(
+      anchor.current.x,
+      anchor.current.y,
+      w,
+      h,
+      root.clientWidth || window.innerWidth,
+      root.clientHeight || window.innerHeight
+    );
+    el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    if (w > 0 && h > 0) {
+      el.style.visibility = '';
+      return true;
+    }
+    return false;
+  }, []);
+  const observed = typeof ResizeObserver === 'function';
+  // Each commit: a new anchor or new content. Without a ResizeObserver, frames retry until the box has a size.
+  useLayoutEffect(() => {
+    anchor.current = { x, y };
+    if (place() || observed) {
+      return;
+    }
+    let tries = 0;
+    let frame: number | undefined;
+    const retry = () => {
+      frame = undefined;
+      if (!place() && ++tries < PLACE_RETRIES) {
+        frame = requestAnimationFrame(retry);
+      }
+    };
+    frame = requestAnimationFrame(retry);
+    return () => {
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+    };
+  });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const again = () => void place();
+    const observer = observed ? new ResizeObserver(again) : undefined;
+    observer?.observe(el);
+    const viewport = window.visualViewport;
+    window.addEventListener('resize', again);
+    viewport?.addEventListener('resize', again);
+    viewport?.addEventListener('scroll', again);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', again);
+      viewport?.removeEventListener('resize', again);
+      viewport?.removeEventListener('scroll', again);
+    };
+  }, [place, observed]);
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{ visibility: 'hidden' }}
+      data-testid="dmap-chart-tooltip"
+      aria-live={live ? 'polite' : undefined}
+      aria-atomic="true"
+    >
+      {children}
+    </div>
+  );
+}
 
 /** The formatted value of a sample: the row formatter or the field display processor, "–" for a gap. */
 export function formatSample(
@@ -127,10 +257,10 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       ),
     [series]
   );
-  // the frame callback reads the data and range of the latest render, not those of the render that queued it
-  const latest = useRef({ ready, from, to });
+  // the frame callback reads the data, range and hover of the latest render, not those of the render that queued it
+  const latest = useRef({ ready, from, to, hover });
   useLayoutEffect(() => {
-    latest.current = { ready, from, to };
+    latest.current = { ready, from, to, hover };
   });
   const rows = useMemo(() => {
     if (!enabled || !hover) {
@@ -166,7 +296,7 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
     if (!r || r.width <= 0) {
       return;
     }
-    const { ready: rd, from: f, to: t } = latest.current;
+    const { ready: rd, from: f, to: t, hover: cur } = latest.current;
     const picked = alignedSamples(rd, timeAt((clientX - r.left) / r.width, f, t));
     if (!picked) {
       return;
@@ -179,10 +309,12 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       y: Math.round(r.top + r.height / 2),
       kind,
     };
-    // the same sample at the same place keeps the same state object: React skips the render
-    setHover((cur) =>
-      cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y ? cur : next
-    );
+    // The same sample at the same place: no state write at all. A write of an equal value would still run the
+    // component once before React drops the result.
+    if (cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y) {
+      return;
+    }
+    setHover(next);
   };
   const move = (ev: React.PointerEvent) => {
     pending.current = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? 'touch' : 'mouse' };
@@ -268,14 +400,12 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
             style={{ left: `${Math.min(1, Math.max(0, hover.fraction)) * 100}%` }}
           />
           <Portal>
-            <VizTooltipContainer position={{ x: hover.x, y: hover.y }} offset={{ x: 10, y: 10 }}>
-              <div data-testid="dmap-chart-tooltip">
-                <SeriesTable
-                  timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
-                  series={rows.list}
-                />
-              </div>
-            </VizTooltipContainer>
+            <TooltipBox x={hover.x} y={hover.y} live={hover.kind === 'key'} className={styles.box}>
+              <SeriesTable
+                timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
+                series={rows.list}
+              />
+            </TooltipBox>
           </Portal>
         </>
       ) : null}
