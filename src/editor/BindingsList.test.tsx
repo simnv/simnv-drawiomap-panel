@@ -213,14 +213,14 @@ describe('bindings list', () => {
     expect(isTop(DELETE_CONFIRM_ID)).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Delete override device-2' }));
     expect(isTop(DELETE_CONFIRM_ID)).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep override' }));
     await waitFor(() => expect(isTop(DELETE_CONFIRM_ID)).toBe(false));
   });
 
   it('keeps an override when the confirmation is dismissed', () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: 'Delete override device-2' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep override' }));
     expect(screen.getByRole('button', { name: 'Edit override device-2' })).toBeTruthy();
   });
 

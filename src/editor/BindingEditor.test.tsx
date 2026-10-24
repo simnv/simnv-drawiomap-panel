@@ -155,7 +155,7 @@ describe('binding inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
     expect(execute).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
     fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].widgets).toEqual([]);
     fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
@@ -253,6 +253,22 @@ describe('binding inspector', () => {
     openSection('Element details');
     expect(screen.getByText('Patterns: Devices')).toBeTruthy();
   });
+  it('Cancel asks the owner to close; Revert to saved restores the draft and keeps the editor open', () => {
+    const { close, save } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(stageCell('device-1').querySelector('rect')!);
+    fireEvent.change(editorField('Label template'), { target: { value: 'Draft' } });
+    expect(screen.getByText('Unsaved changes')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    expect(screen.getByTestId('dmap-bindings-editor')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
   it('isolates cloned editors and reopens the saved binding after remount', () => {
     const svg = svgOf('device-1');
     const one = renderEditor({ config, svg });
@@ -297,13 +313,13 @@ describe('binding inspector', () => {
     expect(editorField('Affected binding preview').textContent).toContain('device-2');
     expect(stageCell('device-2').getAttribute('data-dmap-affected')).toBe('true');
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Shared');
     fireEvent.change(editorField('Label template'), { target: { value: 'Applied' } });
     fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].patterns[0].display.label).toBe('Applied');
     fireEvent.change(editorField('Label template'), { target: { value: 'Lost' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied');
   });
   it('selects unbound cells by pointer or keyboard while hover leaves focus alone', () => {

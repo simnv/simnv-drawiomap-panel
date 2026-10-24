@@ -111,7 +111,7 @@ test.describe('bindings popup: live card and field sources', () => {
     // The Effective binding preview agrees.
     await openEditorSection(inspector, 'Effective binding preview');
     await expect(inspector.locator('pre').filter({ hasText: '"rows"' })).toContainText('Detail value');
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
   });
 
@@ -135,7 +135,7 @@ test.describe('bindings popup: live card and field sources', () => {
     await inspector.getByRole('combobox', { name: 'Edit scope', exact: true }).click();
     await page.getByRole('option', { name: 'All elements matching this pattern', exact: true }).click();
     await expect(inspector.getByRole('button', { name: 'Reset Label template to default' })).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
   });
 });
@@ -227,7 +227,7 @@ test.describe('bindings popup: undo and redo', () => {
     await expect(group(dialog, 'Overrides', 0)).toBeVisible();
     await expect(undoButton(dialog)).toBeDisabled();
     await expect.poll(text).toBe(original);
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
   });
 
@@ -255,7 +255,7 @@ test.describe('bindings popup: undo and redo', () => {
     await expect(explorer).toHaveCount(0);
     await expect(group(dialog, 'Overrides', 1)).toBeVisible();
     await expect(undoButton(dialog)).toBeEnabled();
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
   });
 });
@@ -298,7 +298,7 @@ test.describe('bindings popup: queries', () => {
     await expect(group(dialog, 'Queries', 4)).toBeVisible();
     await undoButton(dialog).click();
     await expect(group(dialog, 'Queries', 5)).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cancel changes', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
     await closeBindingsPopup(page);
   });
 });

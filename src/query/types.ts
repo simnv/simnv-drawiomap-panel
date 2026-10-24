@@ -36,7 +36,6 @@ export interface QueryController {
   dispose(): void;
 }
 export interface QueryPolicy {
-  freshMs: number;
   maxEntries: number;
   maxCachedValues: number;
   maxCachedBytes: number;
@@ -46,7 +45,6 @@ export interface QueryPolicy {
   maxActiveResultBytes: number;
 }
 export const DEFAULT_QUERY_POLICY: QueryPolicy = {
-  freshMs: 15000,
   maxEntries: 64,
   maxCachedValues: 100000,
   maxCachedBytes: 8388608,

@@ -112,8 +112,10 @@ DrawioMapPanel (PanelProps)                       src/components/DrawioMapPanel.
    draft, show an `Alert` "The saved bindings changed while you edited" with "Overwrite" (apply the draft over the new
    options and re-pin), "Reload saved" (drop the draft, reload from the live options) and "Keep editing". Apply stays
    blocked until the user chooses. The popup is not keyed by the revision: it keeps its state.
-7. "Apply and close" applies, then closes (not when a conflict is pending). Cancel dispatches `reset`. Close with a
-   dirty draft opens `ConfirmModal` ("Discard changes?", confirm "Discard", dismiss "Keep editing").
+7. "Apply and close" applies, then closes (not when a conflict is pending). "Revert to saved" dispatches `reset`
+   (superseded: this button was "Cancel" until 2026-10-24; a user reads Cancel as "discard and close", so Cancel now
+   closes). Cancel, the close button and Esc close; with a dirty draft they open `ConfirmModal` ("Discard changes?",
+   confirm "Discard", dismiss "Keep editing").
 8. Close: `setPopup(null)`. The panel renders once with the live values (P3: the hold ends).
 
 Dirty = `isDirty(draft)`: the config JSON differs from `draft.saved`, or `draft.diagram?.hash !== draft.savedDiagram?.hash`.
@@ -224,10 +226,10 @@ P1 starts with a spike (phase 1, Task 0): a trivial lazy component behind a temp
 | removed code                                            | P1    | removed | The inline layout in `BindingEditor.tsx`, `inspectorWidth`, the `<style>` block, the `editing` cell wiring and `wasEditing` reset in the panel (replaced by the edit-session cleanup of 4.1).                                                                                                                                                                |
 
 Test IDs and labels. Keep: `role="complementary"` with `aria-label="Diagram binding inspector"` on the right pane,
-`aria-label="Binding draft actions"` on the header actions, buttons "Apply bindings" and "Cancel changes", region
+`aria-label="Binding draft actions"` on the header actions, buttons "Apply bindings" and "Revert to saved" (was "Cancel changes"), region
 "All bindings list" on the left pane list. New: `data-testid="dmap-bindings-popup"` on the dialog body,
 `data-testid="dmap-popup-stage"` on the centre stage (never `dmap-panel` or `dmap-stage`), `data-testid="dmap-edit-bindings"`
-(corner), `dmap-edit-bindings-option` (options pane), buttons "Apply and close", "Close bindings", "Undo", "Redo",
+(corner), `dmap-edit-bindings-option` (options pane), buttons "Apply and close", "Cancel" (closes; was "Close bindings"), "Undo", "Redo",
 "Overwrite", "Reload saved", group buttons "Problems (N)", "Queries (N)", "Cells (N)", row buttons `Edit query <name>`.
 
 ## 6. Phases, acceptance criteria and tests

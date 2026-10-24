@@ -132,14 +132,14 @@ it('starts queued work after a result, handles synchronous executors, and report
   sync.dispose();
 });
 
-it('reopens fresh data, expires it, and refreshes only while consumers remain', () => {
+it('reopens retained data of the same generation at any age, and refreshes only while consumers remain', () => {
   vi.useFakeTimers();
   let clock = 100;
   const execute = vi.fn<QueryExecutor>((_, emit) => {
     emit(ready());
     return () => {};
   });
-  const controller = createQueryController(execute, { ...DEFAULT_QUERY_POLICY, freshMs: 1000 }, () => clock);
+  const controller = createQueryController(execute, DEFAULT_QUERY_POLICY, () => clock);
   const a = demand();
   a.context.refreshMs = 500;
   controller.watch(a, vi.fn())();
@@ -154,11 +154,45 @@ it('reopens fresh data, expires it, and refreshes only while consumers remain', 
   release();
   vi.advanceTimersByTime(3000);
   expect(execute).toHaveBeenCalledTimes(2);
-  clock = 2000;
-  controller.watch(a, receive);
+  // The key holds the generation and the frozen range: the result is the data of this dashboard state at any age.
+  clock = 2_000_000;
+  controller.watch(a, receive)();
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ fromCache: true, fetchedAt: 700 }));
+  // A new generation runs again.
+  const next = demand();
+  next.context = { ...next.context, generation: 2 };
+  controller.watch(next, receive);
   expect(execute).toHaveBeenCalledTimes(3);
   controller.dispose();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('a shared cache outlives the controller: the next controller of the session serves the retained results', () => {
+  const cache = new Map();
+  const execute = vi.fn<QueryExecutor>((_, emit) => {
+    emit(ready());
+    return () => {};
+  });
+  const first = createQueryController(execute, DEFAULT_QUERY_POLICY, () => 100, cache);
+  first.watch(demand(), vi.fn())();
+  expect(execute).toHaveBeenCalledTimes(1);
+  first.dispose();
+  expect(cache.size).toBe(1);
+  const second = createQueryController(execute, DEFAULT_QUERY_POLICY, () => 50_000, cache);
+  const receive = vi.fn();
+  second.watch(demand(), receive);
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'ready', fromCache: true, fetchedAt: 100 }));
+  second.dispose();
+  // A private cache is cleared on dispose.
+  const own = createQueryController(execute, DEFAULT_QUERY_POLICY, () => 100);
+  own.watch(demand(), vi.fn())();
+  own.dispose();
+  const after = createQueryController(execute, DEFAULT_QUERY_POLICY, () => 100);
+  after.watch(demand(), vi.fn())();
+  expect(execute).toHaveBeenCalledTimes(3);
+  after.dispose();
 });
 
 it.each([
@@ -393,19 +427,19 @@ it('keeps subscriptions independent when two consumers pass the same listener', 
   controller.dispose();
 });
 
-it('renews an expired active result when another consumer requests it', () => {
+it('shares an active result with a later consumer at any age', () => {
   let clock = 0;
   const execute = vi.fn<QueryExecutor>((_, emit) => {
     emit(ready());
     return () => {};
   });
-  const controller = createQueryController(execute, { ...DEFAULT_QUERY_POLICY, freshMs: 100 }, () => clock);
+  const controller = createQueryController(execute, DEFAULT_QUERY_POLICY, () => clock);
   controller.watch(demand('a'), vi.fn());
-  clock = 101;
+  clock = 100_000;
   const receive = vi.fn();
   controller.watch(demand('b'), receive);
-  expect(execute).toHaveBeenCalledTimes(2);
-  expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 101 }));
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 0 }));
   controller.dispose();
 });
 
@@ -507,42 +541,19 @@ describe('keep the last result during a refresh', () => {
     controller.dispose();
   });
 
-  it('keeps ready data while a consumer renews an expired result', () => {
-    let clock = 0;
-    const execute = vi.fn<QueryExecutor>(() => () => {});
-    const controller = createQueryController(execute, { ...DEFAULT_QUERY_POLICY, freshMs: 100 }, () => clock);
-    const receiveA = vi.fn();
-    controller.watch(demand('a'), receiveA);
-    execute.mock.calls[0][1](ready());
-    clock = 101;
-    const receiveB = vi.fn();
-    controller.watch(demand('b'), receiveB);
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(states(receiveA)).toEqual(['loading', 'ready', 'ready']);
-    expect(states(receiveB)).toEqual(['ready']);
-    expect(receiveB).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 0, fromCache: true }));
-    execute.mock.calls[1][1](ready());
-    expect(receiveB).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 101, fromCache: false }));
-    controller.dispose();
-  });
-
-  it('does not restart a pending renewal when another consumer joins the expired entry', () => {
-    let clock = 0;
+  it('does not restart a pending run when another consumer joins the entry', () => {
     const cancel = vi.fn();
     const execute = vi.fn<QueryExecutor>(() => cancel);
-    const controller = createQueryController(execute, { ...DEFAULT_QUERY_POLICY, freshMs: 100 }, () => clock);
+    const controller = createQueryController(execute);
     controller.watch(demand('a'), vi.fn());
-    execute.mock.calls[0][1](ready());
-    clock = 101;
     controller.watch(demand('b'), vi.fn());
-    expect(execute).toHaveBeenCalledTimes(2);
-    cancel.mockClear();
+    expect(execute).toHaveBeenCalledTimes(1);
     const receiveC = vi.fn();
     controller.watch(demand('c'), receiveC);
-    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(cancel).not.toHaveBeenCalled();
-    execute.mock.calls[1][1](ready());
-    expect(receiveC).toHaveBeenLastCalledWith(expect.objectContaining({ fetchedAt: 101, fromCache: false }));
+    execute.mock.calls[0][1](ready());
+    expect(receiveC).toHaveBeenLastCalledWith(expect.objectContaining({ fromCache: false }));
     controller.dispose();
   });
 

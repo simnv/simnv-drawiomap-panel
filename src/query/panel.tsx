@@ -4,6 +4,7 @@ import { getTemplateSrv } from '@grafana/runtime';
 import type { DataSourceRef } from '@grafana/schema';
 import { createQueryController } from './controller';
 import { createGrafanaExecutor } from './grafana';
+import { generationOf, newQuerySession, querySession, retainQuerySession } from './session';
 import type { QueryContext, QueryController } from './types';
 
 export interface PanelQueryService {
@@ -14,6 +15,12 @@ export const PanelQueryContext = createContext<PanelQueryService | undefined>(un
 type Props = Pick<PanelProps, 'data' | 'timeRange' | 'timeZone' | 'replaceVariables'> & {
   defaultDatasource?: DataSourceRef;
   refreshMs?: number;
+  /**
+   * The session key of the panel (dashboard and panel id). A new component instance of the same session (the panel
+   * editor remounts the panel) continues the result cache and the generation. Without a key the provider has a
+   * private session.
+   */
+  session?: string;
   children: React.ReactNode;
 };
 
@@ -25,11 +32,15 @@ export function PanelQueryProvider({
   replaceVariables,
   defaultDatasource,
   refreshMs = 0,
+  session: sessionKey,
   children,
 }: Props) {
+  const [privateSession] = useState(newQuerySession);
+  const session = sessionKey === undefined ? privateSession : querySession(sessionKey);
   const [controller, setController] = useState<QueryController>();
   useEffect(() => {
-    const current = createQueryController(createGrafanaExecutor());
+    const release = sessionKey === undefined ? undefined : retainQuerySession(sessionKey);
+    const current = createQueryController(createGrafanaExecutor(), undefined, undefined, session.cache);
     let attached = true;
     queueMicrotask(() => {
       if (attached) {
@@ -39,8 +50,9 @@ export function PanelQueryProvider({
     return () => {
       attached = false;
       current.dispose();
+      release?.();
     };
-  }, []);
+  }, [sessionKey, session]);
   useEffect(() => {
     controller?.setPanelData(data);
   }, [controller, data]);
@@ -71,13 +83,14 @@ export function PanelQueryProvider({
     intervalMs: data.request?.intervalMs ?? 1000,
     refreshMs,
   };
-  // Guarded state adjustment freezes one resolved context for the whole generation.
+  // Guarded state adjustment freezes one resolved context for the whole generation. The session gives the
+  // generation: the same signature keeps it across a remount, a new signature starts the next one.
   const [resolved, setResolved] = useState<{ signature: string; context: QueryContext }>(() => ({
     signature,
-    context: { ...nextContext, generation: 1 },
+    context: { ...nextContext, generation: generationOf(session, signature) },
   }));
   if (resolved.signature !== signature) {
-    setResolved({ signature, context: { ...nextContext, generation: resolved.context.generation + 1 } });
+    setResolved({ signature, context: { ...nextContext, generation: generationOf(session, signature) } });
   }
   const context = resolved.context;
   const service = useMemo(() => ({ controller, context }), [controller, context]);
