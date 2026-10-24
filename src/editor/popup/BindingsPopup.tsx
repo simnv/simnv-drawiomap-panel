@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState, type FormEvent } from 'react';
 import { css } from '@emotion/css';
 import type { FieldConfigSource, PanelData, PanelProps } from '@grafana/data';
 import { ConfirmModal, useTheme2 } from '@grafana/ui';
@@ -29,6 +29,8 @@ export interface BindingsPopupProps {
 }
 
 const OVERLAY_ID = 'bindings-popup';
+/** Fields that hold no draft text: the filter of the list. */
+const NOT_DRAFT = '[data-dmap-not-draft]';
 const CONFIRM_ID = 'bindings-popup-confirm';
 /** The focused elements that can hold typed text that is not committed yet (Monaco keeps its text in a textarea). */
 const TEXT_FIELD = 'input:not([type=checkbox]):not([type=radio]), textarea, [contenteditable="true"]';
@@ -53,6 +55,17 @@ export function BindingsPopup({
   const [session, setSession] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const dirty = useRef(false);
+  // Text was typed since the last change of the draft. A field that commits on blur (the datasource code editor, a
+  // parameter name) holds text that the draft does not have yet, so a close must ask, with or without a commit.
+  const edited = useRef(false);
+  const onDraftSettled = useCallback(() => {
+    edited.current = false;
+  }, []);
+  const onInputCapture = useCallback((event: FormEvent<HTMLElement>) => {
+    if (event.target instanceof Element && !event.target.closest(NOT_DRAFT)) {
+      edited.current = true;
+    }
+  }, []);
   const onDirtyChange = useCallback((value: boolean) => {
     dirty.current = value;
   }, []);
@@ -62,7 +75,7 @@ export function BindingsPopup({
   // commit has reached `dirty`. Any other close decides at once.
   const requestClose = useCallback(() => {
     const decide = () => {
-      if (dirty.current) {
+      if (dirty.current || edited.current) {
         setConfirming(true);
       } else {
         onClose();
@@ -120,7 +133,13 @@ export function BindingsPopup({
   return (
     <>
       <PluginDialog title="Edit bindings" onDismiss={requestClose} overlayId={OVERLAY_ID}>
-        <div ref={bodyRef} className={styles.body} data-testid="dmap-bindings-popup" {...esc}>
+        <div
+          ref={bodyRef}
+          className={styles.body}
+          data-testid="dmap-bindings-popup"
+          onInputCapture={onInputCapture}
+          {...esc}
+        >
           <BindingEditor
             key={session}
             config={options.config ?? EMPTY_CONFIG}
@@ -134,6 +153,7 @@ export function BindingsPopup({
             initial={session === 0 ? target : { kind: 'none' }}
             legacyRules={options.rules?.length}
             onDirtyChange={onDirtyChange}
+            onDraftSettled={onDraftSettled}
             onApply={apply}
             onRequestClose={requestClose}
             onReload={reload}

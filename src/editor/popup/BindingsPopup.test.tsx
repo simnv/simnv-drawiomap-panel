@@ -123,6 +123,28 @@ describe('BindingsPopup', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('asks on Cancel at once after typing into a field that has not committed yet', async () => {
+    const { onClose } = mount(optionsOf({ ...config(), queries: [nativeQuery('q', 'up', { p: 'cell.id' })] }));
+    fireEvent.click(buttonNamed('Edit query q'));
+    const field = screen.getByLabelText('p parameter name') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'renamed' } });
+    fireEvent.input(field, { target: { value: 'renamed' } });
+    // No blur and no commit: the draft is clean. Cancel comes at once.
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    fireEvent.click(buttonNamed('Cancel'));
+    expect(await screen.findByText('Discard changes?')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not ask for text in the list filter, which is not draft text', () => {
+    const { onClose } = mount();
+    const filter = screen.getByLabelText('Filter bindings');
+    fireEvent.change(filter, { target: { value: 'x' } });
+    fireEvent.input(filter, { target: { value: 'x' } });
+    fireEvent.click(buttonNamed('Cancel'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the dirty draft when the user chooses Keep editing', async () => {
     const { onClose } = mount();
     makeDirty();

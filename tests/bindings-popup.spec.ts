@@ -339,6 +339,11 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await page.keyboard.press('Escape');
     await expect(dialog).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
+    // Cancel at once, with no wait for the commit of the editor: the typed text counts, and the close asks.
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await expect(dialog).toBeVisible();
     // The code editor commits its text when it loses focus: the blur makes the draft dirty, and Discard waits for that.
     await popupInspector(dialog).getByRole('textbox', { name: 'Query name', exact: true }).click();
     await expect(dialog.getByText('Unsaved changes')).toBeVisible();

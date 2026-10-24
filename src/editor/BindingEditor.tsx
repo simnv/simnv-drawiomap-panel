@@ -66,6 +66,8 @@ export interface BindingEditorProps {
   /** Number of legacy rules of a panel that has no V2 config; the list points to the Rules editor. */
   legacyRules?: number;
   onDirtyChange?: (dirty: boolean) => void;
+  /** The draft changed (a commit arrived), or it was discarded or applied: text typed before is settled. */
+  onDraftSettled?: () => void;
   /** Write the draft to the panel options. */
   onApply: (config: DiagramConfigV2, diagram?: Diagram) => void;
   /** Close the popup. The popup asks first when the draft has changes. */
@@ -96,6 +98,7 @@ export function BindingEditor({
   initial,
   legacyRules,
   onDirtyChange,
+  onDraftSettled,
   onApply,
   onRequestClose,
   onReload,
@@ -109,6 +112,7 @@ export function BindingEditor({
   const canRedo = history.future.length > 0;
   const dirty = isDirty(draft);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useEffect(() => onDraftSettled?.(), [draft, onDraftSettled]);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const stage = useStage(stageRef, draft.diagram?.svg, draft.diagram?.hash);
@@ -663,6 +667,7 @@ export function BindingEditor({
   // "Discard" restores the saved bindings in the open popup. "Cancel" closes it; the owner asks when the
   // draft has changes.
   const resetToSaved = () => {
+    onDraftSettled?.();
     dispatch({ type: 'reset' });
     setGeometryError('');
     setQueryError('');
@@ -670,6 +675,7 @@ export function BindingEditor({
     setResetEpoch((value) => value + 1);
   };
   const apply = (close: boolean) => {
+    onDraftSettled?.();
     setPreviewEpoch((value) => value + 1);
     onApply(commitDraft(draft), draft.diagram);
     dispatch({ type: 'applied' });
