@@ -1,4 +1,5 @@
 import { devices, type Locator, type Page } from '@playwright/test';
+import { hoverHalf, pointOnHalf } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';
@@ -50,7 +51,7 @@ async function shot(page: Page, name: string, around?: Locator) {
 test.describe('tooltip on the charts of the pinned card', () => {
   test('no tooltip while the card is not pinned', async ({ gotoDashboardPage, page }) => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
-    await half.hover({ force: true });
+    await hoverHalf(half);
     const card = panel.getByRole('tooltip');
     await expect(card).toContainText('radio ↔ rtr-a');
     // the hover card ignores the pointer, so the chart under it gets no pointer event
@@ -63,6 +64,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     page,
   }) => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
+    await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
     await expect(dialog).toContainText('radio → rtr-a');
@@ -93,6 +95,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
 
   test('a combined up/down row shows one tooltip with both directions', async ({ gotoDashboardPage, page }) => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'Sanitized authoring topology', 'link-1', 'panel-3');
+    await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
     const row = dialog.getByTestId('dmap-card-row').filter({ hasText: 'Traffic' });
@@ -112,6 +115,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     page,
   }) => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
+    await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
     const chart = dialog.getByTestId('dmap-chart-hover').first();
@@ -151,6 +155,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     page,
   }) => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
+    await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
     const node = panel.locator('[data-cell-id="pg-node~rtr-a"]');
@@ -178,6 +183,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     page,
   }) => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
+    await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
     const chart = dialog.getByTestId('dmap-chart-hover').first();

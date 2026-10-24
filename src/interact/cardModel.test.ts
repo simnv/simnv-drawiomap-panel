@@ -11,6 +11,7 @@ import {
   sparkPoints,
 } from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
+import { resolveTemplate, shield } from '../binding/template';
 import type { QueryBinding } from '../model/config';
 import { toHistory } from '../query/frames';
 
@@ -228,6 +229,35 @@ describe('buildCard for a node', () => {
     const p = nodePatch();
     p.scope.cell.label = '';
     expect(buildCard(p, ctx).title).toBe('rtr-a');
+  });
+});
+
+describe('buildCard no double expansion', () => {
+  // The label of a cell can hold text like ${var}. The template pass has resolved it; the pass of Grafana
+  // (replaceVariables) must not expand it again.
+  const evil = (s: string) => s.replaceAll('${evil}', 'EXPANDED');
+  it('keeps ${var} text of a cell label literal in the card title, a row title and a row url', () => {
+    const replaceVariables = vi.fn(evil);
+    const p = nodePatch({
+      scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: '${evil}' } },
+      card: {
+        reducer: 'last',
+        title: 'Router ${cell.label}',
+        rows: [{ title: 'CPU ${cell.label}', refId: 'E', match: { job: 'node-rtr-a' }, url: '/d/x?l=${cell.label}' }],
+      },
+    });
+    const c = buildCard(p, { ...ctx, replaceVariables });
+    expect(c.title).toBe('Router ${evil}');
+    expect(c.rows[0].title).toBe('CPU ${evil}');
+    expect(c.rows[0].href).toBe('/d/x?l=%24%7Bevil%7D');
+    expect(JSON.stringify(c)).not.toContain('EXPANDED');
+  });
+  it('keeps ${var} text of a cell label literal in the title of a rule url', () => {
+    const scope = { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: '${evil}' } };
+    // the engine resolves urlTitle with shield
+    const title = resolveTemplate('Open ${cell.label}', scope, shield).text;
+    const p = nodePatch({ scope, urls: [{ title, url: '/d/x' }] });
+    expect(buildCard(p, { ...ctx, replaceVariables: evil }).links[0].title).toBe('Open ${evil}');
   });
 });
 

@@ -1,3 +1,4 @@
+import { hoverHalf, pointOnHalf } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';
@@ -11,7 +12,7 @@ test('a flat series sparkline starts at zero: the line stays in a narrow band ne
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
   const half = panel.locator.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${RADIO}"]`);
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
-  await half.hover({ force: true });
+  await hoverHalf(half);
   // radio → rtr-a is a flat 90 Mb/s on a 100 Mb/s link: in the range 0 to 100 Mb/s the line is at 10% from the top
   const row = panel.locator.getByRole('tooltip').getByTestId('dmap-card-row').filter({ hasText: 'radio → rtr-a' });
   await expect(row).toContainText('90%');
@@ -50,7 +51,7 @@ test('a combined up/down row shows both values, a zero line and the down series 
   const panel = await dashboardPage.getPanelByTitle('Sanitized authoring topology');
   const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="link-1"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
-  await half.hover({ force: true });
+  await hoverHalf(half);
   const row = panel.locator.getByRole('tooltip').getByTestId('dmap-card-row').filter({ hasText: 'Traffic' });
   // synthetic rtr-a wan1: transmit 10 Mb/s of 100 Mb/s, receive 41 Mb/s of 50 Mb/s (an asymmetric link)
   await expect(row.getByTestId('dmap-card-value')).toHaveText(

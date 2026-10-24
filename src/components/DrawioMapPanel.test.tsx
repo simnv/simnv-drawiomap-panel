@@ -653,6 +653,21 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toBeTruthy();
   });
+  it('a pinned card stays open through a data refresh and shows the new value', async () => {
+    const p = withCpu();
+    const { cell, rerender } = await setup(p);
+    fireEvent.click(cell('pg-node~rtr-b'));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('42%');
+    const series = p.data.series.map((f) => (f.refId === 'E' ? frame('E', { job: 'node-rtr-b' }, [12, 30, 55]) : f));
+    rerender(
+      <DrawioMapPanel {...p} renderCounter={1} data={{ ...p.data, series, timeRange: getDefaultTimeRange() }} />
+    );
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('55%'));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(card()!.getAttribute('data-pinned')).toBe('true');
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(dialog.getAttribute('aria-label'));
+  });
   it('a rule urlTitle names the footer link', async () => {
     const rules = options.rules.map((r) => (r.name === 'links' ? { ...r, urlTitle: 'Port ${from.port}' } : r));
     const { half } = await setup(props({ options: { ...options, rules } }));

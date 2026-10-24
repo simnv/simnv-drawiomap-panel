@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Field, LinkModel } from '@grafana/data';
 import type { CellPatch, SeriesInfo } from '../types';
 import { buildScopedVars, defaultUrlTitle, primaryOf, resolveLinks } from './links';
+import { resolveTemplate, shield } from '../binding/template';
 
 const fieldLink: LinkModel<Field> = { href: '/d/field', title: 'Field link', target: '_blank', origin: {} as Field };
 const series: SeriesInfo = {
@@ -83,6 +84,23 @@ describe('resolveLinks', () => {
   it('a rule url title goes through replaceVariables', () => {
     const p = { ...patch, urls: [{ title: 'Port ${__value.text}', url: '/x' }] };
     expect(resolveLinks(p, primaryOf(p), (s) => s.replace('${__value.text}', '41'), 'x')[0].title).toBe('Port 41');
+  });
+  describe('no double expansion', () => {
+    // A value of the diagram can hold text like ${var}. The template pass has resolved it already; the pass of Grafana
+    // (replaceVariables) must not expand it again. Only text that the author typed in the template is for Grafana.
+    const expand = (s: string) => s.replaceAll('${evil}', 'EXPANDED').replaceAll('${dash}', 'dashboard value');
+    const scope = { ...patch.scope, from: { node: 'a', port: '${evil}' } };
+    it('a resolved value in urlTitle stays literal; a variable that the author typed is expanded', () => {
+      const title = resolveTemplate('Port ${from.port} on ${dash}', scope, shield);
+      const p = { ...patch, urls: [{ title: title.text, url: '/x' }] };
+      expect(resolveLinks(p, primaryOf(p), expand, 'x')[0].title).toBe('Port ${evil} on dashboard value');
+    });
+    it('a resolved value in a url is encoded, so it stays literal', () => {
+      const url = resolveTemplate('/d/x?port=${from.port}&v=${dash}', scope, encodeURIComponent);
+      const p = { ...patch, urls: [{ url: url.text }] };
+      const href = resolveLinks(p, primaryOf(p), expand, 'x')[0].href;
+      expect(href).toBe('/d/x?port=%24%7Bevil%7D&v=dashboard value');
+    });
   });
   it('a rule url without a title gets a default from the url and the card title', () => {
     const titles = (url: string) =>

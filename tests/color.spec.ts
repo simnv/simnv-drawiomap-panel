@@ -1,3 +1,4 @@
+import { hoverHalf, pointOnHalf } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 // The demo dashboard: WAN query W has the Color scheme "Green-Yellow-Red" and Max 100 Mb/s by an override.
@@ -47,7 +48,7 @@ test('the hover card shows the capacity of each source', async ({ gotoDashboardP
   const hover = async (cell: string) => {
     const half = panel.locator.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${cell}"]`);
     await expect(half).toHaveAttribute('data-dmap-status', 'ok');
-    await half.hover({ force: true });
+    await hoverHalf(half);
   };
   // field Max of the WAN query
   await hover(ISP_A);
@@ -68,6 +69,6 @@ test('the hand-drawn panel reads the capacity from a cell attribute', async ({ g
   // edge-ab has capacity="100000000"; the a2b series is 41 Mb/s
   const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="edge-ab"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
-  await half.hover({ force: true });
+  await hoverHalf(half);
   await expect(panel.locator.getByRole('tooltip')).toContainText('41% of 100 Mb/s');
 });

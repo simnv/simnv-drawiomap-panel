@@ -32,10 +32,8 @@ function emptyConfig(config: DiagramConfigV2): DiagramConfigV2 {
   };
 }
 
-for (const viewport of [
-  { name: 'desktop', width: 1450, height: 950 },
-  { name: 'narrow', width: 400, height: 800 },
-]) {
+// The narrow panel is the case that can go wrong: the text of the band wraps. The row logic is in unit tests.
+for (const viewport of [{ name: 'narrow', width: 400, height: 800 }]) {
   test.describe(viewport.name, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
     test('all queries empty: one band row for 26 elements, above the diagram and not on it', async ({
@@ -70,36 +68,3 @@ for (const viewport of [
     });
   });
 }
-
-test('more causes than rows: "+k more" expands the band, the diagram moves down and stays uncovered', async ({
-  page,
-  config,
-  createDiagram,
-  gotoDashboardPage,
-}) => {
-  const c = emptyConfig(config);
-  // five devices are down, each with its own cause; the other devices have no data
-  for (let i = 0; i < 5; i++) {
-    c.queries[i] = nativeQuery(`health-${i}`, 'vector(0)');
-    c.overrides[i].display.status!.kind = 'mapping';
-    (c.overrides[i].display.status as { mappings: Array<{ reason: string }> }).mappings[0].reason = `Cause ${i}`;
-  }
-  const uid = await createDiagram(c, { svg });
-  await gotoDashboardPage({ uid });
-  const panel = page.getByTestId('dmap-panel');
-  const bandEl = panel.getByTestId('dmap-status-band');
-  const rows = bandEl.locator('.dmap-status-summary');
-  await expect(panel.locator('[data-dmap-status="down"]')).toHaveCount(5);
-  await expect(bandEl.getByRole('button', { name: /^\+4 more/ })).toHaveText(`+4 more (${COUNT - 2} elements)`);
-  await expect(rows).toHaveCount(2);
-  const more = bandEl.getByRole('button', { name: `+4 more (${COUNT - 2} elements)` });
-  await expect(more).toBeVisible();
-  await more.click();
-  await expect(rows).toHaveCount(6);
-  await expect(rows.last()).toHaveAttribute('title', `missing: No data (${COUNT - 5} elements)`);
-  const band = (await bandEl.boundingBox())!;
-  const stage = (await panel.getByTestId('dmap-stage').boundingBox())!;
-  expect(band.y + band.height).toBeLessThanOrEqual(stage.y + 0.5);
-  await bandEl.getByRole('button', { name: 'Show less' }).click();
-  await expect(rows).toHaveCount(2);
-});

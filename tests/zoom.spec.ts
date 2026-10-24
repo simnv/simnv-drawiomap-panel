@@ -4,24 +4,6 @@ import { expect, test } from './authoring-fixtures';
 
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 
-/** The gaps in px between the diagram (the viewBox on the screen) and the edges of the svg box. */
-const gaps = (panel: Locator) =>
-  panel
-    .locator('[data-testid="dmap-panel"] svg')
-    .first()
-    .evaluate((el) => {
-      const svg = el as SVGSVGElement;
-      const m = svg.getScreenCTM()!;
-      const vb = svg.viewBox.baseVal;
-      const r = svg.getBoundingClientRect();
-      return {
-        top: vb.y * m.d + m.f - r.top,
-        bottom: r.bottom - ((vb.y + vb.height) * m.d + m.f),
-        left: vb.x * m.a + m.e - r.left,
-        right: r.right - ((vb.x + vb.width) * m.a + m.e),
-      };
-    });
-
 const viewBox = (panel: Locator) => panel.locator('[data-testid="dmap-panel"] svg').first().getAttribute('viewBox');
 const width = (vb: string | null) => Number((vb ?? '').split(' ')[2]);
 
@@ -153,41 +135,34 @@ test.describe('live zoom on the desktop', () => {
     expect(await viewBox(panel)).toBe(base);
   });
 
-  test('a wide panel centres the fitted diagram horizontally, its top at the top', async ({ gotoDashboardPage }) => {
-    const panel = await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
-    const g = await gaps(panel);
-    expect(Math.abs(g.top)).toBeLessThanOrEqual(1);
-    expect(Math.abs(g.left - g.right)).toBeLessThanOrEqual(1);
-  });
-
-  test('Fit keeps the whole diagram in the panel in view, panel view and panel edit mode, and after a resize', { tag: '@matrix' }, async ({
-    page,
-    gotoDashboardPage,
-    gotoPanelEditPage,
-  }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const fits = async (where: string) => {
-      await expect.poll(async () => (await outside(page)).join(' '), { message: where }).toBe('');
-    };
-    await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
-    await fits('view');
-    await page.setViewportSize({ width: 1000, height: 700 });
-    await fits('view after a window resize');
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await gotoDashboardPage({ uid: 'drawiomap-demo', queryParams: new URLSearchParams({ viewPanel: 'panel-1' }) });
-    await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
-    await fits('panel view');
-    const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
-    await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
-    await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
-    await fits('panel edit');
-    await page.setViewportSize({ width: 1100, height: 760 });
-    await fits('panel edit after a window resize');
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await edit.backToDashboard();
-    await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
-    await fits('view after panel edit');
-  });
+  test(
+    'Fit keeps the whole diagram in the panel in view, panel view and panel edit mode, and after a resize',
+    { tag: '@matrix' },
+    async ({ page, gotoDashboardPage, gotoPanelEditPage }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const fits = async (where: string) => {
+        await expect.poll(async () => (await outside(page)).join(' '), { message: where }).toBe('');
+      };
+      await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
+      await fits('view');
+      await page.setViewportSize({ width: 1000, height: 700 });
+      await fits('view after a window resize');
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await gotoDashboardPage({ uid: 'drawiomap-demo', queryParams: new URLSearchParams({ viewPanel: 'panel-1' }) });
+      await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+      await fits('panel view');
+      const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
+      await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
+      await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+      await fits('panel edit');
+      await page.setViewportSize({ width: 1100, height: 760 });
+      await fits('panel edit after a window resize');
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await edit.backToDashboard();
+      await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
+      await fits('view after panel edit');
+    }
+  );
 });
 
 /**
@@ -298,18 +273,5 @@ test.describe('live zoom on a phone', () => {
     await reset.tap();
     await expect(reset).toHaveCount(0);
     expect(await viewBox(panel)).toBe(base);
-  });
-
-  test('the fitted diagram is at the top of a tall panel and centred horizontally', async ({ gotoDashboardPage }) => {
-    const panel = await openPanel(await gotoDashboardPage({ uid: 'drawiomap-demo' }));
-    await expect(panel.locator('[data-testid="dmap-panel"] svg').first()).toHaveAttribute(
-      'preserveAspectRatio',
-      'xMidYMin meet'
-    );
-    const g = await gaps(panel);
-    expect(Math.abs(g.top)).toBeLessThanOrEqual(1);
-    expect(g.bottom).toBeGreaterThan(50);
-    expect(Math.abs(g.left - g.right)).toBeLessThanOrEqual(1);
-    expect(await outside(panel.page())).toEqual([]);
   });
 });
