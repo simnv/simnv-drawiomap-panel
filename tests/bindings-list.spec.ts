@@ -1,4 +1,4 @@
-import { filterBindings, openBindingsPopup, popupInspector } from './authoring-controls';
+import { discardDraft, filterBindings, openBindingsPopup, popupInspector } from './authoring-controls';
 import { attachJson, expect, test } from './authoring-fixtures';
 
 const listOf = (dialog: ReturnType<typeof openBindingsPopup> extends Promise<infer T> ? T : never) =>
@@ -101,7 +101,7 @@ test('a pattern row opens the pattern for editing, a query row opens its editor,
   await list.getByRole('button', { name: 'Delete override device-2' }).click();
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(list.getByRole('button', { name: 'Overrides (0)', exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+  await discardDraft(dialog);
   await expect(list.getByRole('button', { name: 'Overrides (1)', exact: true })).toBeVisible();
 });
 

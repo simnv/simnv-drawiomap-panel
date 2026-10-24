@@ -27,6 +27,14 @@ export async function closeBindingsPopup(page: Page) {
   await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 
+/** Press Discard when the draft has changes. The button is disabled while the draft is clean. */
+export async function discardDraft(dialog: Locator) {
+  const discard = dialog.getByRole('button', { name: 'Discard', exact: true });
+  if (await discard.isEnabled()) {
+    await discard.click();
+  }
+}
+
 /** The right pane of the popup. */
 export const popupInspector = (dialog: Locator) =>
   dialog.getByRole('complementary', { name: 'Diagram binding inspector' });

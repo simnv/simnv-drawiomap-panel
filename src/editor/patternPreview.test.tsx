@@ -178,6 +178,8 @@ describe('explicit full pattern preview', () => {
         s.rerenderWith({ ...s.context, generation: 2 });
       }
       if (action === 'cancel') {
+        // The Discard button waits for a change of the draft.
+        fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } });
         fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
       }
       if (action === 'apply') {

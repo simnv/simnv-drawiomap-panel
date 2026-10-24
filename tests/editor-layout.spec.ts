@@ -74,11 +74,9 @@ for (const theme of ['dark', 'light'] as const) {
     // The draft actions stay in view while the fields scroll.
     await expect(footer).toBeInViewport();
     const apply = dialog.getByRole('button', { name: 'Apply bindings', exact: true });
-    const cancel = dialog.getByRole('button', { name: 'Discard', exact: true });
+    const discard = dialog.getByRole('button', { name: 'Discard', exact: true });
     await expect(apply).toBeInViewport();
-    await expect(cancel).toBeInViewport();
-    await expect(cancel).toBeEnabled();
-    await cancel.click();
+    await expect(discard).toBeInViewport();
     await expect(heading).toBeVisible();
     // Below 1000 px the popup is in tab mode: the Inspector tab shows (a cell was selected) and the other panes stay
     // mounted but hidden. Above, the three panes stay inside the popup.

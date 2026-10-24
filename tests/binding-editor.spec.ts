@@ -3,6 +3,7 @@ import type { Locator } from '@playwright/test';
 import { nativeQuery } from '../src/fixtures/authoring-config';
 import {
   chooseEditorOption,
+  discardDraft,
   openBindingsPopup,
   openEditorSection,
   popupInspector,
@@ -56,7 +57,7 @@ test('the popup keeps one watch for its own chart size and reuses it for selecti
   await expect(inspector.getByLabel('Query preview result')).toContainText('ready');
   // The explicit query preview asks at its own resolution: at most one more request, never one per click.
   expect(count()).toBeLessThanOrEqual(base + 1);
-  await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+  await discardDraft(dialog);
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
   await expect.poll(count).toBeGreaterThan(base);
@@ -144,7 +145,7 @@ test('portable patterns keep their datasource across panels; Cancel drops an imp
   };
   await importDraft();
   await expect(dialog.getByRole('button', { name: /^Edit pattern Repeated routers/ })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+  await discardDraft(dialog);
   await expect(dialog.getByRole('button', { name: /^Edit pattern Repeated routers/ })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Export patterns', exact: true }).click();
   expect(

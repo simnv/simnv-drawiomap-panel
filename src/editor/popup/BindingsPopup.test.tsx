@@ -135,6 +135,13 @@ describe('BindingsPopup', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
   });
 
+  it('keeps the Discard button disabled while the draft is clean', () => {
+    mount();
+    expect((screen.getByRole('button', { name: 'Discard' }) as HTMLButtonElement).disabled).toBe(true);
+    makeDirty();
+    expect((screen.getByRole('button', { name: 'Discard' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('puts the geometry button in the top toolbar', () => {
     mount();
     const toolbar = screen.getByRole('toolbar', { name: 'Binding draft actions' });
