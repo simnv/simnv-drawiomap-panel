@@ -258,4 +258,28 @@ test.describe('legend on a phone', () => {
       await request.delete(`/api/dashboards/uid/${uid}`);
     }
   });
+
+  test('a tap on an entry toggles the highlight', async ({ page, request, gotoDashboardPage }, testInfo) => {
+    const uid = await demoCopy(request, `legend-tap-${testInfo.workerIndex}-${Date.now()}`, {
+      legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false },
+    });
+    try {
+      await gotoDashboardPage({ uid });
+      const panel = page.getByTestId('dmap-panel');
+      const entries = panel.getByTestId('dmap-legend').getByTestId('dmap-legend-entry');
+      await expect(entries.first()).toBeVisible();
+      const labels = await entries.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!));
+      const index = labels.findIndex((l) => !l.endsWith(': 0 elements'));
+      expect(index).toBeGreaterThanOrEqual(0);
+      await entries.nth(index).tap();
+      await expect(panel.locator('svg.dmap-legend-active')).toHaveCount(1);
+      await expect(panel.locator('g.dmap-legend-hit').first()).toBeAttached();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await entries.nth(index).tap();
+      await expect(panel.locator('svg.dmap-legend-active')).toHaveCount(0);
+      await expect(panel.locator('.dmap-legend-hit')).toHaveCount(0);
+    } finally {
+      await request.delete(`/api/dashboards/uid/${uid}`);
+    }
+  });
 });

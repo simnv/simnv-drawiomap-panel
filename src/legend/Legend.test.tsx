@@ -61,15 +61,38 @@ describe('Legend', () => {
   it('highlights the cells of an entry on hover and on focus, and clears on leave and on blur', () => {
     const { legend, onHighlight } = view();
     const [, high, gradient] = within(legend).getAllByTestId('dmap-legend-entry');
-    fireEvent.mouseEnter(high);
+    fireEvent.pointerEnter(high);
     expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
-    fireEvent.mouseLeave(high);
+    fireEvent.pointerLeave(high);
     expect(onHighlight).toHaveBeenLastCalledWith(null);
     fireEvent.focus(gradient);
     expect(onHighlight).toHaveBeenLastCalledWith(['w1']);
     fireEvent.blur(gradient);
     expect(onHighlight).toHaveBeenLastCalledWith(null);
     expect(high.tabIndex).toBe(0);
+  });
+  it('toggles the highlight on a tap, ignores the tap focus and emulated hover, and ends on a tap elsewhere', () => {
+    const { legend, onHighlight } = view();
+    const [, high, gradient] = within(legend).getAllByTestId('dmap-legend-entry');
+    const touch = { pointerType: 'touch' };
+    fireEvent.pointerDown(high, touch);
+    fireEvent.pointerEnter(high, touch);
+    fireEvent.focus(high);
+    fireEvent.click(high);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
+    fireEvent.pointerLeave(high, touch);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
+    fireEvent.pointerDown(gradient, touch);
+    fireEvent.click(gradient);
+    expect(onHighlight).toHaveBeenLastCalledWith(['w1']);
+    fireEvent.pointerDown(gradient, touch);
+    fireEvent.click(gradient);
+    expect(onHighlight).toHaveBeenLastCalledWith(null);
+    fireEvent.pointerDown(high, touch);
+    fireEvent.click(high);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
+    fireEvent.pointerDown(document.body, touch);
+    expect(onHighlight).toHaveBeenLastCalledWith(null);
   });
   it('shows at most maxBlocks blocks and tells how many it hides', () => {
     const { legend } = view({ maxBlocks: 2 });
@@ -282,7 +305,7 @@ describe('Legend', () => {
     it('keeps the entries highlight working in an open legend that moved', () => {
       const { legend, onHighlight } = view({ collapsed: false });
       drag(within(legend).getByRole('button', { name: 'Legend' }), [300, 260], [200, 160]);
-      fireEvent.mouseEnter(within(legend).getAllByTestId('dmap-legend-entry')[1]);
+      fireEvent.pointerEnter(within(legend).getAllByTestId('dmap-legend-entry')[1]);
       expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
     });
   });
@@ -323,7 +346,7 @@ describe('Legend', () => {
   });
   it('follows a data refresh: the active entry highlights its new cells', () => {
     const { legend, onHighlight, rerender } = view();
-    fireEvent.mouseEnter(within(legend).getAllByTestId('dmap-legend-entry')[1]);
+    fireEvent.pointerEnter(within(legend).getAllByTestId('dmap-legend-entry')[1]);
     expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
     const moved = blocks.map((b) =>
       b.key === 'load'

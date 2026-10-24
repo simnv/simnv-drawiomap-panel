@@ -270,6 +270,23 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   };
   // The active entry: "<block key>\n<entry key>", or "<block key>\n" for a gradient bar.
   const [active, setActive] = useState<string | null>(null);
+  const touch = useRef(false);
+  // A touch outside the entries ends a tapped highlight.
+  useEffect(() => {
+    if (active === null || !el) {
+      return;
+    }
+    const away = (e: PointerEvent) => {
+      if (
+        e.pointerType === 'touch' &&
+        !(e.target instanceof Element && e.target.closest('[data-testid="dmap-legend-entry"]'))
+      ) {
+        setActive(null);
+      }
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  }, [active, el]);
   // The cells of the active entry now: a data refresh changes them, a closed legend has none.
   const activeIds = useMemo(() => {
     if (!open || active === null) {
@@ -285,12 +302,21 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   }
   const shown = blocks.slice(0, Math.max(1, Math.floor(maxBlocks)));
   const hidden = blocks.length - shown.length;
+  // A mouse or a pen: the pointer or the focus shows the entry. A phone has no hover: a tap toggles the entry, and a
+  // tap elsewhere ends it. The kind of the last pointer decides, so the focus that a tap gives does not undo the toggle.
   const activate = (key: string) => ({
     tabIndex: 0,
-    onMouseEnter: () => setActive(key),
-    onMouseLeave: () => setActive(null),
-    onFocus: () => setActive(key),
-    onBlur: () => setActive(null),
+    onPointerDown: (e: React.PointerEvent) => {
+      touch.current = e.pointerType === 'touch';
+    },
+    onKeyDown: () => {
+      touch.current = false;
+    },
+    onPointerEnter: (e: React.PointerEvent) => e.pointerType !== 'touch' && setActive(key),
+    onPointerLeave: (e: React.PointerEvent) => e.pointerType !== 'touch' && setActive(null),
+    onFocus: () => touch.current || setActive(key),
+    onBlur: () => touch.current || setActive(null),
+    onClick: () => touch.current && setActive((a) => (a === key ? null : key)),
   });
   const entry = (blockKey: string, e: LegendEntry) => (
     <li
