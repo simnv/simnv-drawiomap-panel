@@ -176,8 +176,8 @@ test.describe('popup open', () => {
     createDiagram,
     gotoPanelEditPage,
     readProvisionedDataSource,
+    selectors,
   }) => {
-    test.setTimeout(150_000);
     const testdata = await readProvisionedDataSource({ fileName: 'authoring.yaml' });
     const walk = binding('walk');
     const live: DiagramConfigV2 = {
@@ -198,7 +198,6 @@ test.describe('popup open', () => {
       widgets: [],
     };
     const uid = await createDiagram(live, {
-      refresh: '5s',
       targets: [
         {
           refId: 'A',
@@ -224,7 +223,15 @@ test.describe('popup open', () => {
         // a request that the page cancelled has no body
       }
     });
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    // Grafana limits the dashboard timer to 5 s (min_refresh_interval), so three timer ticks cost 15 s. The Refresh
+    // button runs the same refresh at once. The popup covers it, so dispatch the click on the button directly.
+    const refreshButton = panelEditPage.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2);
+    const refresh = async () => {
+      const answered = values.length;
+      await refreshButton.dispatchEvent('click');
+      await expect.poll(() => values.length).toBeGreaterThan(answered);
+    };
     const panel = page.getByTestId('dmap-panel');
     const halves = panel.locator('polyline.dmap-half');
     await expect(halves.first()).toBeAttached();
@@ -245,16 +252,16 @@ test.describe('popup open', () => {
     // Control: without the popup, a refresh changes the panel.
     await page.waitForTimeout(1000);
     const settled = await mutations();
-    const first = requests.length;
-    await expect.poll(() => requests.length, { timeout: 30_000 }).toBeGreaterThan(first);
+    await refresh();
     await expect.poll(mutations, { timeout: 10_000 }).toBeGreaterThan(settled);
 
     await openBindingsPopup(page);
     const before = await snapshot();
     const mutationsBefore = await mutations();
-    const asked = requests.length;
     // Three dashboard refreshes reach the data source while the popup is open.
-    await expect.poll(() => requests.length - asked, { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
+    for (let i = 0; i < 3; i++) {
+      await refresh();
+    }
     expect(await snapshot()).toEqual(before);
     expect(await mutations()).toBe(mutationsBefore);
 

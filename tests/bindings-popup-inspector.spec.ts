@@ -141,85 +141,83 @@ test.describe('bindings popup: undo and redo', () => {
     await closeBindingsPopup(page);
   });
 
-  test('Ctrl+Z in a text field and in the Prometheus code editor leaves the draft alone', async ({
-    page,
-    config,
-    createDiagram,
-    gotoPanelEditPage,
-  }) => {
-    const uid = await createDiagram(config);
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    const dialog = await openBindingsPopup(page);
-    await selectStageCell(dialog, 'device-1');
-    await labelField(dialog).fill('Typed');
-    await expect(group(dialog, 'Overrides', 1)).toBeVisible();
-    // Native undo in the input: the draft keeps its override.
-    await labelField(dialog).focus();
-    await page.keyboard.press('ControlOrMeta+z');
-    await expect(group(dialog, 'Overrides', 1)).toBeVisible();
-    await expect(undoButton(dialog)).toBeEnabled();
-    // The Monaco editor of the query keeps the key too.
-    await dialog.getByRole('button', { name: 'Edit query health' }).click();
-    const editor = popupInspector(dialog).locator('.monaco-editor .view-lines');
-    await expect(editor).toBeVisible();
-    const text = async () => (await editor.innerText()).replace(/\s+/g, ' ').trim();
-    const original = await text();
-    await editor.click();
-    await page.keyboard.press('ControlOrMeta+End');
-    // One insertion is one undo unit for Monaco; typed keys can be several.
-    await page.keyboard.insertText('zzz');
-    await expect(editor).toContainText('zzz');
-    // Monaco takes its own undo: the typed text goes, the draft keeps its step.
-    await page.keyboard.press('ControlOrMeta+z');
-    await expect(editor).not.toContainText('zzz');
-    await expect.poll(text).toBe(original);
-    await expect(group(dialog, 'Overrides', 1)).toBeVisible();
-    await expect(undoButton(dialog)).toBeEnabled();
-    // Outside Monaco the key undoes the last draft step: the label override.
-    // The editor syncs its text into the draft as one step: the draft has the label step and that step. Each press of
-    // the key outside Monaco undoes one draft step and never changes the query text (a restored draft remounts the
-    // editor, which loads its text a moment later).
-    await undoButton(dialog).focus();
-    await page.keyboard.press('ControlOrMeta+z');
-    await expect.poll(text).toBe(original);
-    if (await undoButton(dialog).isEnabled()) {
+  test(
+    'Ctrl+Z in a text field and in the Prometheus code editor leaves the draft alone',
+    { tag: '@matrix' },
+    async ({ page, config, createDiagram, gotoPanelEditPage }) => {
+      const uid = await createDiagram(config);
+      await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+      const dialog = await openBindingsPopup(page);
+      await selectStageCell(dialog, 'device-1');
+      await labelField(dialog).fill('Typed');
       await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+      // Native undo in the input: the draft keeps its override.
+      await labelField(dialog).focus();
       await page.keyboard.press('ControlOrMeta+z');
+      await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+      await expect(undoButton(dialog)).toBeEnabled();
+      // The Monaco editor of the query keeps the key too.
+      await dialog.getByRole('button', { name: 'Edit query health' }).click();
+      const editor = popupInspector(dialog).locator('.monaco-editor .view-lines');
+      await expect(editor).toBeVisible();
+      const text = async () => (await editor.innerText()).replace(/\s+/g, ' ').trim();
+      const original = await text();
+      await editor.click();
+      await page.keyboard.press('ControlOrMeta+End');
+      // One insertion is one undo unit for Monaco; typed keys can be several.
+      await page.keyboard.insertText('zzz');
+      await expect(editor).toContainText('zzz');
+      // Monaco takes its own undo: the typed text goes, the draft keeps its step.
+      await page.keyboard.press('ControlOrMeta+z');
+      await expect(editor).not.toContainText('zzz');
+      await expect.poll(text).toBe(original);
+      await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+      await expect(undoButton(dialog)).toBeEnabled();
+      // Outside Monaco the key undoes the last draft step: the label override.
+      // The editor syncs its text into the draft as one step: the draft has the label step and that step. Each press of
+      // the key outside Monaco undoes one draft step and never changes the query text (a restored draft remounts the
+      // editor, which loads its text a moment later).
+      await undoButton(dialog).focus();
+      await page.keyboard.press('ControlOrMeta+z');
+      await expect.poll(text).toBe(original);
+      if (await undoButton(dialog).isEnabled()) {
+        await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+        await page.keyboard.press('ControlOrMeta+z');
+      }
+      await expect(group(dialog, 'Overrides', 0)).toBeVisible();
+      await expect(undoButton(dialog)).toBeDisabled();
+      await expect.poll(text).toBe(original);
+      await discardDraft(dialog);
+      await closeBindingsPopup(page);
     }
-    await expect(group(dialog, 'Overrides', 0)).toBeVisible();
-    await expect(undoButton(dialog)).toBeDisabled();
-    await expect.poll(text).toBe(original);
-    await discardDraft(dialog);
-    await closeBindingsPopup(page);
-  });
+  );
 
-  test('Ctrl+Z with the metrics explorer dialog open does nothing to the draft', async ({
-    page,
-    config,
-    createDiagram,
-    gotoPanelEditPage,
-  }) => {
-    const uid = await createDiagram(config);
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    const dialog = await openBindingsPopup(page);
-    await selectStageCell(dialog, 'device-1');
-    await labelField(dialog).fill('Typed');
-    await expect(group(dialog, 'Overrides', 1)).toBeVisible();
-    await dialog.getByRole('button', { name: 'Edit query health' }).click();
-    const inspector = popupInspector(dialog);
-    await inspector.getByRole('radio', { name: 'Builder' }).click({ force: true });
-    await inspector.getByRole('button', { name: 'Open metrics explorer' }).click();
-    const explorer = page.getByRole('dialog').filter({ hasNotText: 'Edit bindings' }).first();
-    await expect(explorer).toBeVisible();
-    // The explorer hides the popup from the accessibility tree: read the draft after it closes.
-    await page.keyboard.press('ControlOrMeta+z');
-    await page.keyboard.press('Escape');
-    await expect(explorer).toHaveCount(0);
-    await expect(group(dialog, 'Overrides', 1)).toBeVisible();
-    await expect(undoButton(dialog)).toBeEnabled();
-    await discardDraft(dialog);
-    await closeBindingsPopup(page);
-  });
+  test(
+    'Ctrl+Z with the metrics explorer dialog open does nothing to the draft',
+    { tag: '@matrix' },
+    async ({ page, config, createDiagram, gotoPanelEditPage }) => {
+      const uid = await createDiagram(config);
+      await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+      const dialog = await openBindingsPopup(page);
+      await selectStageCell(dialog, 'device-1');
+      await labelField(dialog).fill('Typed');
+      await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+      await dialog.getByRole('button', { name: 'Edit query health' }).click();
+      const inspector = popupInspector(dialog);
+      await inspector.getByRole('radio', { name: 'Builder' }).click({ force: true });
+      await inspector.getByRole('button', { name: 'Open metrics explorer' }).click();
+      const explorer = page.getByRole('dialog').filter({ hasNotText: 'Edit bindings' }).first();
+      await expect(explorer).toBeVisible();
+      // The explorer hides the popup from the accessibility tree: read the draft after it closes.
+      await page.keyboard.press('ControlOrMeta+z');
+      await page.keyboard.press('Escape');
+      await expect(explorer).toHaveCount(0);
+      await expect(group(dialog, 'Overrides', 1)).toBeVisible();
+      await expect(undoButton(dialog)).toBeEnabled();
+      await discardDraft(dialog);
+      await closeBindingsPopup(page);
+    }
+  );
 });
 
 test.describe('bindings popup: queries', () => {

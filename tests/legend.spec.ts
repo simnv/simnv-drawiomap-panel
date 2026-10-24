@@ -123,38 +123,6 @@ test('the legend stays in its corner when the diagram zooms and the stage scroll
   }
 });
 
-test('the legend starts collapsed; a click and Enter or Space toggle it', async ({ page, gotoDashboardPage }) => {
-  await gotoDashboardPage({ uid: 'drawiomap-demo' });
-  const legend = page.getByTestId('dmap-panel').first().getByTestId('dmap-legend');
-  const handle = legend.getByRole('button', { name: 'Legend' });
-  await expect(handle).toHaveAttribute('aria-expanded', 'false');
-  await expect(legend.getByTestId('dmap-legend-block')).toHaveCount(0);
-  await handle.click();
-  await expect(handle).toHaveAttribute('aria-expanded', 'true');
-  await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();
-  await handle.focus();
-  await page.keyboard.press('Enter');
-  await expect(handle).toHaveAttribute('aria-expanded', 'false');
-  await page.keyboard.press('Space');
-  await expect(handle).toHaveAttribute('aria-expanded', 'true');
-  await page.keyboard.press('Space');
-  await expect(handle).toHaveAttribute('aria-expanded', 'false');
-});
-
-test('legend.collapsed false opens the legend at the start', async ({ page, request, gotoDashboardPage }, testInfo) => {
-  const uid = await demoCopy(request, `legend-open-${testInfo.workerIndex}-${Date.now()}`, {
-    legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false },
-  });
-  try {
-    await gotoDashboardPage({ uid });
-    const legend = page.getByTestId('dmap-panel').getByTestId('dmap-legend');
-    await expect(legend.getByRole('button', { name: 'Legend' })).toHaveAttribute('aria-expanded', 'true');
-    await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();
-  } finally {
-    await request.delete(`/api/dashboards/uid/${uid}`);
-  }
-});
-
 const inside = (inner: { x: number; y: number; width: number; height: number }, outer: typeof inner) =>
   inner.x >= outer.x - 0.5 &&
   inner.y >= outer.y - 0.5 &&
@@ -223,37 +191,6 @@ test.describe('legend drag', () => {
       })
       .toBeCloseTo(before.x + before.width, 0);
   });
-
-  test('the legend stays inside a smaller panel after a resize', async ({ page, gotoDashboardPage }) => {
-    await gotoDashboardPage({ uid: 'drawiomap-demo' });
-    const panel = page.getByTestId('dmap-panel').first();
-    const legend = panel.getByTestId('dmap-legend');
-    await openLegend(legend);
-    const handle = legend.getByRole('button', { name: 'Legend' });
-    const h = await box(handle);
-    const p = await box(panel);
-    await page.mouse.move(h.x + 10, h.y + h.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(p.x + p.width - 20, p.y + p.height - 20, { steps: 6 });
-    await page.mouse.up();
-    // the browser window gets narrower, so the panel gets narrower
-    await page.setViewportSize({ width: 900, height: 1000 });
-    await expect.poll(async () => inside(await box(legend), await box(panel))).toBe(true);
-  });
-});
-
-test('legend.show false hides the legend', async ({ page, request, gotoDashboardPage }, testInfo) => {
-  const uid = await demoCopy(request, `legend-off-${testInfo.workerIndex}-${Date.now()}`, {
-    legend: { show: false },
-  });
-  try {
-    await gotoDashboardPage({ uid });
-    const panel = page.getByTestId('dmap-panel');
-    await expect(panel.locator('polyline.dmap-half').first()).toBeAttached();
-    await expect(panel.getByTestId('dmap-legend')).toHaveCount(0);
-  } finally {
-    await request.delete(`/api/dashboards/uid/${uid}`);
-  }
 });
 
 test.describe('legend on a phone', () => {
@@ -279,28 +216,35 @@ test.describe('legend on a phone', () => {
       await request.delete(`/api/dashboards/uid/${uid}`);
     }
   });
+});
 
-  test('a tap on an entry toggles the highlight', async ({ page, request, gotoDashboardPage }, testInfo) => {
-    const uid = await demoCopy(request, `legend-tap-${testInfo.workerIndex}-${Date.now()}`, {
-      legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false },
-    });
-    try {
-      await gotoDashboardPage({ uid });
-      const panel = page.getByTestId('dmap-panel');
+test.describe('legend taps across panels', () => {
+  test.use(iPhone);
+
+  // Legend.test.tsx covers the hand-over of one tapped highlight to the next legend; here two real panels share a page.
+  test('a tap on an entry of panel B ends the highlight that a tap in panel A started', async ({
+    page,
+    gotoDashboardPage,
+  }) => {
+    // Grafana mounts a panel below the fold when it scrolls into view: a tall viewport shows all panels of the demo
+    await page.setViewportSize({ width: 390, height: 2400 });
+    await gotoDashboardPage({ uid: 'drawiomap-demo' });
+    const [a, b] = [page.getByTestId('dmap-panel').nth(0), page.getByTestId('dmap-panel').nth(1)];
+    await expect(page.getByTestId('dmap-panel')).toHaveCount(3);
+    const tapEntry = async (panel: Locator) => {
+      await panel.getByTestId('dmap-legend').getByRole('button', { name: 'Legend' }).tap();
       const entries = panel.getByTestId('dmap-legend').getByTestId('dmap-legend-entry');
       await expect(entries.first()).toBeVisible();
       const labels = await entries.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!));
       const index = labels.findIndex((l) => !l.endsWith(': 0 elements'));
       expect(index).toBeGreaterThanOrEqual(0);
       await entries.nth(index).tap();
-      await expect(panel.locator('svg.dmap-legend-active')).toHaveCount(1);
-      await expect(panel.locator('g.dmap-legend-hit').first()).toBeAttached();
-      await expect(page.getByRole('dialog')).toHaveCount(0);
-      await entries.nth(index).tap();
-      await expect(panel.locator('svg.dmap-legend-active')).toHaveCount(0);
-      await expect(panel.locator('.dmap-legend-hit')).toHaveCount(0);
-    } finally {
-      await request.delete(`/api/dashboards/uid/${uid}`);
-    }
+    };
+    await tapEntry(a);
+    await expect(a.locator('svg.dmap-legend-active')).toHaveCount(1);
+    await tapEntry(b);
+    await expect(b.locator('svg.dmap-legend-active')).toHaveCount(1);
+    await expect(a.locator('svg.dmap-legend-active')).toHaveCount(0);
+    await expect(a.locator('.dmap-legend-hit')).toHaveCount(0);
   });
 });

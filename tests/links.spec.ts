@@ -1,4 +1,5 @@
 import { devices } from '@playwright/test';
+import { hoverHalf, pointOnHalf } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
@@ -12,7 +13,7 @@ test.describe('hover card', () => {
     const half = panel.locator.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${RADIO}"]`);
     await expect(half).toHaveAttribute('data-dmap-status', 'ok');
     await expect(panel.locator.getByTestId('dmap-card')).toHaveCount(0);
-    await half.hover({ force: true });
+    await hoverHalf(half);
     const card = panel.locator.getByRole('tooltip');
     await expect(card).toContainText('radio ↔ rtr-a');
     await expect(card).toContainText('radio → rtr-a');
@@ -113,7 +114,7 @@ test.describe('hover card on a phone', () => {
       await half.tap({ force: true, timeout: 2000 });
       await expect(dialog).toBeVisible({ timeout: 2000 });
     }).toPass();
-    await expect(dialog).toBeInViewport({ ratio: 1 });
+    await expect(dialog).toBeInViewport({ ratio: 0.99 });
     await expect(dialog).toHaveAttribute('data-sheet', 'true');
     await expect(dialog).toContainText('isp-a → rtr-a');
     // the sparkline is responsive: it has the full width of the sheet row

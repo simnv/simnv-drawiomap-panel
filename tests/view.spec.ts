@@ -94,26 +94,27 @@ for (const [theme, osScheme, dark] of [
   ['dark', 'light', true],
   ['light', 'dark', false],
 ] as const) {
-  test(`diagram background follows the Grafana ${theme} theme, not the OS preference`, async ({
-    gotoDashboardPage,
-    page,
-  }) => {
-    await page.emulateMedia({ colorScheme: osScheme });
-    const dashboardPage = await gotoDashboardPage({
-      uid: 'drawiomap-demo',
-      queryParams: new URLSearchParams({ theme }),
-    });
-    const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
-    const root = panel.locator.locator('[data-testid="dmap-panel"] svg').first();
-    await expect(root).toHaveCSS('color-scheme', theme);
-    const luminance = await root.evaluate((el) => {
-      const [r, g, b] = getComputedStyle(el)
-        .backgroundColor.match(/\d+(\.\d+)?/g)!
-        .map(Number);
-      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    });
-    expect(luminance < 0.5).toBe(dark);
-  });
+  test(
+    `diagram background follows the Grafana ${theme} theme, not the OS preference`,
+    { tag: '@matrix' },
+    async ({ gotoDashboardPage, page }) => {
+      await page.emulateMedia({ colorScheme: osScheme });
+      const dashboardPage = await gotoDashboardPage({
+        uid: 'drawiomap-demo',
+        queryParams: new URLSearchParams({ theme }),
+      });
+      const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
+      const root = panel.locator.locator('[data-testid="dmap-panel"] svg').first();
+      await expect(root).toHaveCSS('color-scheme', theme);
+      const luminance = await root.evaluate((el) => {
+        const [r, g, b] = getComputedStyle(el)
+          .backgroundColor.match(/\d+(\.\d+)?/g)!
+          .map(Number);
+        return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      });
+      expect(luminance < 0.5).toBe(dark);
+    }
+  );
 }
 
 test('link arrows stand away from the bends of the link path', async ({ gotoDashboardPage }) => {
