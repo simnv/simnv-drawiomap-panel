@@ -355,6 +355,8 @@ export function Card({
   const inline = variant === 'inline';
   const sheet = !inline && width < SHEET_BELOW;
 
+  // The place of the last pointer move, with the props it was made under.
+  const moved = useRef<{ x: number; y: number; at: { x: number; y: number } } | null>(null);
   // Place the card after it renders: the height is known only then.
   useLayoutEffect(() => {
     const el = ref.current;
@@ -370,15 +372,17 @@ export function Card({
       }
       return;
     }
-    placeAt(el, x, y, width, height);
+    // After a move inside the cell the latest pointer place wins over the entry position in the props.
+    const at = moved.current && moved.current.x === x && moved.current.y === y ? moved.current.at : { x, y };
+    placeAt(el, at.x, at.y, width, height);
   });
 
   // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes.
   const frame = useRef<number>();
   const pointer = useRef({ x: 0, y: 0 });
-  const latest = useRef({ width, height, anchor, sheet, inline });
+  const latest = useRef({ width, height, anchor, sheet, inline, pinned, x, y });
   useEffect(() => {
-    latest.current = { width, height, anchor, sheet, inline };
+    latest.current = { width, height, anchor, sheet, inline, pinned, x, y };
   });
   const move = useCallback((clientX: number, clientY: number) => {
     pointer.current = { x: clientX, y: clientY };
@@ -390,12 +394,22 @@ export function Card({
       const el = ref.current;
       const now = latest.current;
       const rect = now.anchor?.getBoundingClientRect();
-      if (!el || !rect || now.sheet || now.inline) {
+      if (!el || !rect || now.sheet || now.inline || now.pinned) {
         return;
       }
-      placeAt(el, pointer.current.x - rect.left, pointer.current.y - rect.top, now.width, now.height);
+      const at = { x: pointer.current.x - rect.left, y: pointer.current.y - rect.top };
+      moved.current = { x: now.x, y: now.y, at };
+      placeAt(el, at.x, at.y, now.width, now.height);
     });
   }, []);
+  // A pin, another variant or another cell (a new title) ends the follow: no queued frame may place the card again.
+  useEffect(() => {
+    moved.current = null;
+    if (frame.current !== undefined) {
+      cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+    }
+  }, [pinned, inline, sheet, model.title]);
   useEffect(() => {
     if (moveRef) {
       moveRef.current = move;

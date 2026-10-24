@@ -392,3 +392,63 @@ it('keeps the floating card a sheet below the breakpoint', () => {
   expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
   expect(screen.getByTestId('dmap-card').getAttribute('data-variant')).toBe('floating');
 });
+
+/** A manual frame queue for the card that follows the pointer. */
+const frames = () => {
+  const queue = new Map<number, FrameRequestCallback>();
+  let next = 1;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    queue.set(next, cb);
+    return next++;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => void queue.delete(id));
+  return () => {
+    const run = [...queue.values()];
+    queue.clear();
+    run.forEach((cb) => cb(0));
+  };
+};
+const followModel: CardModel = { title: 'Router', links: [], rows: [] };
+const panelRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }) as DOMRect;
+type FollowProps = Partial<React.ComponentProps<typeof Card>>;
+const follow = (props: FollowProps = {}) => {
+  const moveRef = { current: null } as React.MutableRefObject<((x: number, y: number) => void) | null>;
+  const anchor = document.createElement('div');
+  anchor.getBoundingClientRect = panelRect;
+  const ui = (p: FollowProps) => (
+    <Card
+      model={followModel}
+      pinned={false}
+      x={20}
+      y={20}
+      width={800}
+      height={600}
+      anchor={anchor}
+      moveRef={moveRef}
+      {...p}
+    />
+  );
+  const view = render(ui(props));
+  return { moveRef, rerender: (p: FollowProps) => view.rerender(ui(p)) };
+};
+it('drops a queued pointer move when the card is pinned before the frame runs', () => {
+  const flush = frames();
+  const { moveRef, rerender } = follow();
+  act(() => moveRef.current!(300, 200));
+  rerender({ pinned: true, x: 50, y: 60 });
+  const place = screen.getByTestId('dmap-card').style.left;
+  flush();
+  expect(screen.getByTestId('dmap-card').style.left).toBe(place);
+  vi.unstubAllGlobals();
+});
+it('keeps the moved place when a data update renders the card again with the entry position', () => {
+  const flush = frames();
+  const { moveRef, rerender } = follow();
+  act(() => moveRef.current!(300, 200));
+  flush();
+  const moved = screen.getByTestId('dmap-card').style.left;
+  expect(moved).not.toBe('');
+  rerender({ model: { ...followModel } });
+  expect(screen.getByTestId('dmap-card').style.left).toBe(moved);
+  vi.unstubAllGlobals();
+});
