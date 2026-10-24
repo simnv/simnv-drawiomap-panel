@@ -3,6 +3,13 @@ import type { TemplateScope } from '../types';
 const PLACEHOLDER = /\$\{([a-zA-Z_][\w]*)(?:\.([^}:]+))?\}/g;
 const SCOPE_ROOTS = new Set(['cell', 'from', 'to', 'labels', 'value', 'percent', 'cellTitle']);
 
+/** Stands for "$" in a substituted value, so that a later replaceVariables does not read a "${name}" in it. */
+const DOLLAR = '\uE000';
+/** The `encode` of a text that goes through replaceVariables afterwards (a url title): see unshield. */
+export const shield = (v: string): string => v.replaceAll('$', DOLLAR);
+/** Puts the "$" of the substituted values back, after replaceVariables. */
+export const unshield = (v: string): string => v.replaceAll(DOLLAR, '$');
+
 export interface ResolveResult {
   text: string;
   unresolved: string[];

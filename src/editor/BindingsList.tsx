@@ -3,7 +3,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, ConfirmModal, Icon, IconButton, useStyles2 } from '@grafana/ui';
 import { useOverlay } from './popup/overlayStack';
-import { displayName, idAndName, readableId } from '../adapter/cellTitle';
+import { displayName, idAndName } from '../adapter/cellTitle';
 import type { CellMeta } from '../types';
 import {
   cellRows,
@@ -46,7 +46,9 @@ export const rowName = (row: BindingRow): string =>
   row.kind === 'pattern'
     ? row.name
     : row.kind === 'override'
-      ? idAndName(row.title ? { labelText: row.title } : undefined, row.cellId)
+      ? row.title
+        ? `${row.handle} (${row.title})`
+        : row.handle
       : row.kind === 'widget'
         ? row.label
         : row.name;
@@ -289,12 +291,12 @@ export function BindingsList({
                     <button
                       type="button"
                       className={styles.main}
-                      aria-label={`Select cell ${readableId(cell.id)}`}
+                      aria-label={`Select cell ${cell.handle ?? cell.id}`}
                       aria-current={`cell:${cell.id}` === selectedKey ? 'true' : undefined}
                       onClick={() => onSelectCell(cell.id)}
                     >
-                      <span className={styles.title}>{readableId(cell.id)}</span>
-                      {displayName(cell, cell.id) !== readableId(cell.id) ? (
+                      <span className={styles.title}>{cell.handle ?? cell.id}</span>
+                      {displayName(cell, cell.id) !== (cell.handle ?? cell.id) ? (
                         <span className={styles.summary}>{displayName(cell, cell.id)}</span>
                       ) : null}
                     </button>

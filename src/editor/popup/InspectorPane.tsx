@@ -2,7 +2,6 @@ import React from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Alert, Button, useStyles2 } from '@grafana/ui';
-import { idAndName } from '../../adapter/cellTitle';
 import type { EffectiveCellBinding, BindingPlan } from '../../binding/patterns';
 import type { buildConfiguredCard } from '../../interact/cardModel';
 import type { Diagnostic } from '../../model/config';
@@ -205,7 +204,7 @@ function CellBody({
             <ul aria-label="Affected metric resolution">
               {metric.matches.map((match) => (
                 <li key={match.cellId}>
-                  {idAndName(cells.get(match.cellId)?.meta, match.cellId)}: {match.state}
+                  {cells.get(match.cellId)?.meta.handle ?? match.cellId}: {match.state}
                   {match.failures.length > 0 && `: ${match.failures.join(' ')}`}
                   {match.unvalidated && ' (unvalidated bindings require explicit Preview for this element)'}
                 </li>

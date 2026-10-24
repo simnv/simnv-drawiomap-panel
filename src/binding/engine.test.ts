@@ -1,3 +1,4 @@
+import { primaryOf, resolveLinks } from '../interact/links';
 import { describe, expect, it } from 'vitest';
 import {
   applyFieldOverrides,
@@ -720,6 +721,18 @@ describe('bind review fixes', () => {
         .urls[0];
     expect(titleOf('Host ${cell.host}')).toEqual({ title: 'Host a&b=c d/e', url: '/d/x' });
     expect(titleOf('Host ${cell.nope}')).toEqual({ url: '/d/x' });
+  });
+  it('does not expand a dashboard variable that a metadata value brings into urlTitle', () => {
+    const dollar = cellMetaFromAttrs('d1', { host: 'Switch ${env}', 'pg-kind': 'node', 'pg-id': 'd1' }, false, 'D');
+    const patch = bind(
+      [{ name: 'u', select: { ids: ['d1'] }, url: '/d/x', urlTitle: '${cell.host} in ${env}' }],
+      [dollar],
+      [],
+      ctx
+    ).patches.get('d1')!;
+    const links = resolveLinks(patch, primaryOf(patch), (t) => t.replace(/\$\{env\}/g, 'production'), 'D');
+    // the variable of the author template expands once; the value of the cell stays as it is
+    expect(links[0].title).toBe('Switch ${env} in production');
   });
   it('urlTitle goes with the url of the same rule; a later rule can set only the title', () => {
     const r = (rules: Rule[]) => bind(rules, [hostCell], [], ctx).patches.get('h1')!.urls;

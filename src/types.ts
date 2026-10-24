@@ -33,6 +33,8 @@ export interface CellMeta {
   labelText: string;
   /** Human-readable name for cards and lists (adapter/cellTitle). A cell that was never indexed has none: use labelText. */
   title?: string;
+  /** The cell id for a list or a heading: decoded with pg-schema, raw without it (adapter/cellTitle). */
+  handle?: string;
   isEdge: boolean;
   from?: Endpoint;
   to?: Endpoint;

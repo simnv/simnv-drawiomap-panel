@@ -92,26 +92,35 @@ export function assignTitles(cells: CellMeta[]): CellMeta[] {
   const portograph = cells.some((c) => c.id === ROOT_ID && c.attrs['pg-schema'] !== undefined);
   for (const c of cells) {
     c.title = cellTitle(c, find, portograph);
+    c.handle = portograph ? readableId(c.id) : c.id;
   }
   return cells;
 }
 
-/** What a list or a message calls a cell: its title, else its label, else a readable form of its id. */
-export function displayName(cell: Pick<CellMeta, 'title' | 'labelText'> | undefined, id: string): string {
-  return cell?.title || oneLine(cell?.labelText) || readableId(id);
+/** The cell id as the editor shows it (`CellMeta.handle`); the raw id for a cell that was never indexed. */
+const handleOf = (cell: Pick<CellMeta, 'handle'> | undefined, id: string): string => cell?.handle ?? id;
+
+/** What a list or a message calls a cell: its title, else its label, else its handle. */
+export function displayName(cell: Pick<CellMeta, 'title' | 'labelText' | 'handle'> | undefined, id: string): string {
+  return cell?.title || oneLine(cell?.labelText) || handleOf(cell, id);
 }
 
-/** The title of an indexed cell for a template scope (`${cell.title}`): never empty. */
+/** The title of an indexed cell for a template scope (`${cellTitle}`): never empty. */
 export function scopeTitle(cell: CellMeta): string {
   return cell.title || oneLine(cell.labelText) || cell.key || cell.id;
 }
 
 /**
- * A cell for a list that also shows the id: "<readable id> (<title>)", or the readable id alone when the title adds
- * nothing. The id is the handle of the editor; the title tells what it is.
+ * A cell for a list that also shows the id: "<handle> (<title>)", or the handle alone when the title adds nothing.
+ * The id is the handle of the editor; the title tells what it is.
  */
-export function idAndName(cell: Pick<CellMeta, 'title' | 'labelText'> | undefined, id: string): string {
+export function idAndName(cell: Pick<CellMeta, 'title' | 'labelText' | 'handle'> | undefined, id: string): string {
   const name = displayName(cell, id);
-  const handle = readableId(id);
+  const handle = handleOf(cell, id);
   return name === handle ? handle : `${handle} (${name})`;
+}
+
+/** The identity of a cell: its pg-id as the author wrote it, else its handle. */
+export function identityOf(cell: Pick<CellMeta, 'attrs' | 'handle'> | undefined, id: string): string {
+  return cell?.attrs['pg-id'] ?? handleOf(cell, id);
 }

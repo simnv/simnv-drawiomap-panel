@@ -22,7 +22,7 @@ import { colorFor, noDataColor, widthFor } from './color';
 import { reduceValues } from './reduce';
 import { cellMatches, matcherError } from './select';
 import { findSeries } from './series';
-import { resolveTemplate } from './template';
+import { resolveTemplate, shield } from './template';
 import { toBitsPerSecond } from './units';
 import { isAllowedUrl } from './url';
 import { rowBindings, type Diagnostic, type HoverSpec, type QueryBinding } from '../model/config';
@@ -312,7 +312,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       const scope = { ...cell.scope, labels: primary?.labels ?? {} };
       const url = resolveTemplate(display.url, scope, encodeURIComponent);
       if (!url.unresolved.length && isAllowedUrl(url.text)) {
-        const title = display.urlTitle === undefined ? undefined : resolveTemplate(display.urlTitle, scope);
+        const title = display.urlTitle === undefined ? undefined : resolveTemplate(display.urlTitle, scope, shield);
         patch.urls.push(title && !title.unresolved.length ? { url: url.text, title: title.text } : { url: url.text });
       } else {
         result.diagnostics.push({
@@ -699,7 +699,7 @@ export function bind(rules: Rule[], cells: CellMeta[], series: SeriesInfo[], ctx
       const u = resolveTemplate(eff.url, urlScope, encodeURIComponent);
       unresolved.push(...u.unresolved);
       if (!u.unresolved.length && isAllowedUrl(u.text)) {
-        const t = eff.urlTitle === undefined ? undefined : resolveTemplate(eff.urlTitle, urlScope);
+        const t = eff.urlTitle === undefined ? undefined : resolveTemplate(eff.urlTitle, urlScope, shield);
         // a title that does not resolve gets the default title, not a warning
         patch.urls.push(t && !t.unresolved.length ? { title: t.text, url: u.text } : { url: u.text });
       } else if (!u.unresolved.length) {

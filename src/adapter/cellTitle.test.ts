@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CellMeta } from '../types';
 import { cellMetaFromAttrs, applyContract, attachLinkLabels } from './portograph';
-import { assignTitles, cellFinder, cellTitle, displayName, idAndName, readableId } from './cellTitle';
+import { identityOf, assignTitles, cellFinder, cellTitle, displayName, idAndName, readableId } from './cellTitle';
 
 const cell = (id: string, attrs: Record<string, string>, isEdge = false, label?: string): CellMeta =>
   cellMetaFromAttrs(id, attrs, isEdge, label);
@@ -82,16 +82,19 @@ describe('readableId', () => {
 });
 
 describe('displayName', () => {
-  it('prefers the title, then the label, then the readable id', () => {
+  it('prefers the title, then the label, then the handle', () => {
     expect(displayName({ title: 'T', labelText: 'L' }, 'x')).toBe('T');
     expect(displayName({ labelText: 'L' }, 'x')).toBe('L');
-    expect(displayName(undefined, 'pg-node~sw')).toBe('sw');
+    expect(displayName({ labelText: '', handle: 'sw' }, 'pg-node~sw')).toBe('sw');
+    expect(displayName(undefined, 'pg-node~sw')).toBe('pg-node~sw');
   });
 });
 
 describe('idAndName', () => {
   it('adds the title to the readable id, unless it adds nothing', () => {
-    expect(idAndName({ title: 'Switch-A p9', labelText: 'p9' }, 'pg-port~sw~p9~1')).toBe('sw p9 (Switch-A p9)');
+    expect(idAndName({ title: 'Switch-A p9', labelText: 'p9', handle: 'sw p9' }, 'pg-port~sw~p9~1')).toBe(
+      'sw p9 (Switch-A p9)'
+    );
     expect(idAndName({ title: 'device-1', labelText: '' }, 'device-1')).toBe('device-1');
   });
 });
@@ -116,5 +119,34 @@ describe('encoded ids', () => {
 
   it('keeps the raw id without pg-schema', () => {
     expect(titles([node('pg-node~a%257e', {})], false)).toEqual(['pg-node~a%257e']);
+  });
+});
+
+describe('handle and identity', () => {
+  const run = (cells: CellMeta[], schema: boolean) => {
+    const all = [cell('0', schema ? { 'pg-schema': '1' } : {}), ...cells];
+    applyContract(all);
+    assignTitles(all);
+    return all.slice(1);
+  };
+
+  it('decodes the cell id with pg-schema, also when the cell has a pg-id', () => {
+    const [c] = run([cell('pg-node~a%257e', { 'pg-kind': 'node', 'pg-id': 'pg-node~a%7e' })], true);
+    expect(c.handle).toBe('a%7e');
+  });
+
+  it('keeps the cell id raw without pg-schema', () => {
+    const [c] = run([cell('pg-node~a%257e', { 'pg-kind': 'node' })], false);
+    expect(c.handle).toBe('pg-node~a%257e');
+  });
+
+  it('shows a raw pg-id as the identity, and the decoded cell id when there is no pg-id', () => {
+    const [raw, none] = run(
+      [cell('n1', { 'pg-kind': 'node', 'pg-id': 'pg-node~a%7e' }), cell('pg-node~b%257e', { 'pg-kind': 'node' })],
+      true
+    );
+    expect(identityOf(raw, 'n1')).toBe('pg-node~a%7e');
+    expect(identityOf(none, 'pg-node~b%257e')).toBe('b%7e');
+    expect(identityOf(undefined, 'x')).toBe('x');
   });
 });
