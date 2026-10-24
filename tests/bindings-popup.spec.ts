@@ -335,7 +335,10 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(suggest).toHaveCount(0);
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
     await expect(dialog).toBeVisible();
-    await discardDraft(dialog);
+    // The code editor commits its text when it loses focus: the blur makes the draft dirty, and Discard waits for that.
+    await dialog.getByRole('toolbar', { name: 'Binding draft actions' }).click({ position: { x: 4, y: 4 } });
+    await expect(dialog.getByText('Unsaved changes')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
     // The editor shows the saved text again, and the draft stays clean after the editor loses its focus.
     await expect(popupInspector(dialog).locator('.monaco-editor .view-lines')).toContainText('label_replace');
     await expect(dialog.getByText('Unsaved changes')).toHaveCount(0);
