@@ -1,10 +1,25 @@
 import fs from 'node:fs';
-import { expect, test as base, type PanelEditPage } from '@grafana/plugin-e2e';
+import { expect, PanelEditPage, test as base, type DashboardPage } from '@grafana/plugin-e2e';
 import type { Page, TestInfo } from '@playwright/test';
 import type { DiagramConfigV2 } from '../src/model/config';
 import { authoringConfig } from '../src/fixtures/authoring-config';
 
 export { expect };
+
+const DEMO_UID = 'drawiomap-demo';
+/**
+ * The provisioned demo dashboard refreshes every 10 s, which only re-queries and redraws the panels during a test.
+ * A day never fires within a test. A test that needs a refresh passes its own `refresh` parameter.
+ */
+const QUIET_REFRESH = '1d';
+function quietDemo(uid: string | undefined, queryParams?: URLSearchParams) {
+  const params = new URLSearchParams(queryParams);
+  if (uid === DEMO_UID && !params.has('refresh')) {
+    params.set('refresh', QUIET_REFRESH);
+  }
+  return params;
+}
+
 export const svg = fs.readFileSync('src/fixtures/authoring.svg', 'utf8');
 export const xml = fs.readFileSync('src/fixtures/authoring.drawio', 'utf8');
 export const test = base.extend<{
@@ -25,7 +40,24 @@ export const test = base.extend<{
     }
   ) => Promise<string>;
   sandboxSettings: void;
+  gotoDashboardPage: (args: { uid: string; queryParams?: URLSearchParams }) => Promise<DashboardPage>;
+  /** Like the plugin-e2e fixture, plus `queryParams` for the first load (for example `theme`). */
+  gotoPanelEditPage: (args: {
+    dashboard?: { uid?: string };
+    id: string;
+    queryParams?: URLSearchParams;
+  }) => Promise<PanelEditPage>;
 }>({
+  gotoDashboardPage: async ({ gotoDashboardPage }, use) => {
+    await use((args) => gotoDashboardPage({ ...args, queryParams: quietDemo(args.uid, args.queryParams) }));
+  },
+  gotoPanelEditPage: async ({ page, request, selectors, grafanaVersion }, use, testInfo) => {
+    await use(async ({ queryParams, ...args }) => {
+      const panelEditPage = new PanelEditPage({ page, request, selectors, grafanaVersion, testInfo }, args);
+      await panelEditPage.goto({ queryParams: quietDemo(args.dashboard?.uid, queryParams) });
+      return panelEditPage;
+    });
+  },
   sandboxSettings: [
     async ({ request }, use) => {
       if (process.env.AUTHORING_SANDBOX === '1') {

@@ -1,4 +1,4 @@
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 import type { Page } from '@playwright/test';
 
 const MISSING = 'The draw.io editor is not installed with this plugin build (dist/drawio is missing).';

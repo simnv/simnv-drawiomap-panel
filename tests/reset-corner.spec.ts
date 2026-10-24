@@ -46,7 +46,14 @@ async function cornerDashboard(request: APIRequestContext, uid: string, title: s
     zoom: { mode: 'fit', percent: 100, wheel: false, pan: true, align: 'top' },
     legend: { show: true, corner, maxBlocks: 4 },
   };
-  const dashboard = { ...demo.dashboard, id: null, uid, title: uid, panels: [{ ...panel, title, options }] };
+  const dashboard = {
+    ...demo.dashboard,
+    id: null,
+    uid,
+    title: uid,
+    refresh: '',
+    panels: [{ ...panel, title, options }],
+  };
   const response = await request.post('/api/dashboards/db', { data: { dashboard, overwrite: true } });
   expect(response.ok(), await response.text()).toBe(true);
   return uid;

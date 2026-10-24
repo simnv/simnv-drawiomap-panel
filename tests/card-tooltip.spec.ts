@@ -1,5 +1,5 @@
 import { devices, type Locator, type Page } from '@playwright/test';
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 
 const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
