@@ -144,9 +144,17 @@ describe('saved semantic identity', () => {
     );
     expect(cellScope(cell)).toEqual({
       cell: { ...cell.attrs, id: 'edge-1', key: 'uplink', label: 'Same label' },
+      cellTitle: 'Same label',
       from: { node: 'router-a', port: 'eth1', ordinal: '2', raw: 'router-a:eth1#2' },
       to: { node: 'router-b', port: 'eth2', ordinal: '1', raw: 'router-b:eth2' },
     });
+  });
+  it('never overwrites an author metadata key named title', () => {
+    const c = cellMetaFromAttrs('n1', { 'pg-kind': 'node', 'pg-id': 'n1', title: 'metric-host' }, false, 'Switch A');
+    c.title = 'Switch A';
+    const scope = cellScope(c);
+    expect(scope.cell.title).toBe('metric-host');
+    expect(scope.cellTitle).toBe('Switch A');
   });
 });
 

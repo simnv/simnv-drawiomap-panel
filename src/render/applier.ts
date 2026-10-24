@@ -189,7 +189,7 @@ function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined,
   }
   // Keyboard access: Tab moves to the cell, Enter or Space opens its card. A cell without a card is not a button.
   // tabindex, role and aria-label go into the applier layer: the binding editor writes the same attributes.
-  const label = entry.meta.labelText || entry.meta.key;
+  const label = entry.meta.title || entry.meta.labelText || entry.meta.key;
   const view = patch.statusView;
   setOwnedAttrs(entry.group, 'applier', {
     ...(interactive ? { tabindex: '0', role: 'button' } : {}),

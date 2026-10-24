@@ -1,6 +1,7 @@
 import { displayBindings, type DiagramConfigV2, type Diagnostic, type DisplayConfig } from '../model/config';
 import { cellMatches } from '../binding/select';
 import { displayProvenance, ownersOfPath } from '../binding/patterns';
+import { displayName } from '../adapter/cellTitle';
 import type { CellMeta } from '../types';
 
 /** One problem of a list row. A per-cell diagnostic of a shared pattern keeps its cell id. */
@@ -32,6 +33,10 @@ export interface OverrideRow extends RowBase {
   kind: 'override';
   cellId: string;
   label: string;
+  /** the readable title of the cell, empty when the cell is missing */
+  title: string;
+  /** the cell id as the editor shows it */
+  handle: string;
   /** the display keys that the override sets */
   keys: string[];
   queryIds: string[];
@@ -98,7 +103,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     selector: p.select.kind ?? 'any',
     queryIds: queryIdsOf(p.display),
     matched: patternMatches[i].map((c) => c.id),
-    matchedLabels: patternMatches[i].map((c) => c.labelText).filter(Boolean),
+    matchedLabels: patternMatches[i].flatMap((c) => [c.labelText, c.title ?? '']).filter(Boolean),
     problems: [],
   }));
   const overrides: OverrideRow[] = config.overrides.map((o, i) => ({
@@ -107,6 +112,11 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     index: i,
     cellId: o.cellId,
     label: byId.get(o.cellId)?.labelText ?? '',
+    handle: byId.get(o.cellId)?.handle ?? o.cellId,
+    title:
+      byId.has(o.cellId) && displayName(byId.get(o.cellId), o.cellId) !== (byId.get(o.cellId)?.handle ?? o.cellId)
+        ? displayName(byId.get(o.cellId), o.cellId)
+        : '',
     keys: Object.entries(o.display)
       .filter(([, value]) => value !== undefined)
       .map(([key]) => key),
@@ -266,7 +276,7 @@ export function rowMatches(row: BindingRow, filter: BindingsFilter): boolean {
     row.kind === 'pattern'
       ? [row.name, row.patternId, row.selector, ...row.queryIds, ...row.matched, ...row.matchedLabels]
       : row.kind === 'override'
-        ? [row.cellId, row.label, ...row.keys, ...row.queryIds]
+        ? [row.cellId, row.handle, row.label, row.title, ...row.keys, ...row.queryIds]
         : row.kind === 'widget'
           ? [row.label, row.widgetId, row.anchorCellId, row.queryId]
           : [row.name, row.queryId, row.sourceKind];
@@ -330,7 +340,11 @@ export function cellRows(text: string, cells: CellMeta[]): CellMeta[] {
     if (id.startsWith(needle)) {
       return 1;
     }
-    return id.includes(needle) || (cell.labelText ?? '').toLowerCase().includes(needle) ? 2 : 3;
+    return id.includes(needle) ||
+      (cell.labelText ?? '').toLowerCase().includes(needle) ||
+      (cell.title ?? '').toLowerCase().includes(needle)
+      ? 2
+      : 3;
   };
   return cells
     .map((cell, order) => ({ cell, order, rank: tier(cell) }))

@@ -57,7 +57,7 @@ test('the canvas, a group and the legend open no card; nodes and links do', asyn
   await hoverAt(shape('pg-node~rtr-a'));
   await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'rtr-a');
   await hoverAt(shape('pg-link~a-b'), 0.2, 0.5);
-  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'uplink');
+  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'rtr-a ↔ rtr-b');
   // the empty background (bottom-left corner), the free area of the group, the legend
   await hoverAt(shape('pg-canvas'), 0.02, 0.97);
   await expect(card).toHaveCount(0);
@@ -86,7 +86,7 @@ test('Hover kinds: group added, link removed', async ({ page, request, config, c
   await hoverAt(shape('pg-link~a-b'), 0.2, 0.5);
   await expect(panel.getByTestId('dmap-card')).toHaveCount(0);
   await hoverAt(shape('pg-group~core'), 0.4, 0.9);
-  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'pg-group~core');
+  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'core');
 });
 
 test('the icon of a node and the label of a link open the card of the node and of the link', async ({
@@ -109,4 +109,29 @@ test('the icon of a node and the label of a link open the card of the node and o
   await hoverAt(panel.locator('[data-cell-id="pg-linkLabel~a-b"] > rect'));
   await expect(tooltip).toContainText('pg-link~a-b');
   await expect(tooltip).not.toContainText('pg-linkLabel');
+});
+
+// Two labelled nodes, a port on each and a link between the ports. The link label is empty.
+const titleSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="240" viewBox="0 0 600 240">
+  <g data-cell-id="0" data-meta-pg-schema="1">
+    <g data-cell-id="pg-node~sw" data-meta-pg-kind="node" data-meta-pg-id="sw"><rect x="40" y="80" width="140" height="80" fill="#d5e8d4" stroke="#82b366"/><text x="50" y="100">Switch-A</text></g>
+    <g data-cell-id="pg-node~ap" data-meta-pg-kind="node" data-meta-pg-id="ap"><rect x="400" y="80" width="140" height="80" fill="#d5e8d4" stroke="#82b366"/><text x="410" y="100">AP-1</text></g>
+    <g data-cell-id="pg-port~sw~p9~1" data-meta-pg-kind="port" data-meta-pg-id="sw:p9" data-meta-pg-node="sw" data-meta-pg-port="p9"><rect x="160" y="110" width="30" height="20" fill="#fff" stroke="#333"/><text x="164" y="124">p9</text></g>
+    <g data-cell-id="pg-link~sw-p9-ap" data-meta-pg-kind="link" data-meta-pg-id="sw:p9->ap" data-meta-pg-from="sw:p9" data-meta-pg-to="ap"><path d="M190 120 L400 120" fill="none" stroke="#888" stroke-width="6" pointer-events="stroke"/></g>
+  </g>
+</svg>`;
+
+test('a port card and a link card have a readable title', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}) => {
+  const uid = await createDiagram(cardsForAll(config), { svg: titleSvg });
+  await gotoDashboardPage({ uid });
+  const panel = page.getByTestId('dmap-panel');
+  await hoverAt(panel.locator('[data-cell-id="pg-port~sw~p9~1"] > rect'));
+  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'Switch-A p9');
+  await hoverAt(panel.locator('[data-cell-id="pg-link~sw-p9-ap"] > path').first(), 0.5, 0.5);
+  await expect(panel.getByRole('tooltip')).toHaveAttribute('aria-label', 'Switch-A p9 ↔ AP-1');
 });

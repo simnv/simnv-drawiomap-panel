@@ -6,6 +6,7 @@
     "dev": "./scripts/vendor-drawio.sh --if-missing && webpack -w -c ./webpack.config.ts --env development",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:affected": "vitest run --changed main --maxWorkers=4",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --cache .",
     "lint:fix": "npm run lint -- --fix && prettier --write --list-different .",
