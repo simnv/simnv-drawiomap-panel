@@ -35,6 +35,8 @@ export const test = base.extend<{
       zoom?: Record<string, unknown>;
       /** Grafana panel queries; default: none */
       targets?: unknown[];
+      /** Several panels with their own config, one below the other. Replaces `clones`. */
+      panels?: Array<{ config: DiagramConfigV2; title?: string; svg?: string }>;
       /** Dashboard auto refresh, for example `5s`; default: off */
       refresh?: string;
     }
@@ -102,20 +104,32 @@ export const test = base.extend<{
                 },
               ],
             },
-            panels: Array.from({ length: settings.clones ?? 1 }, (_, i) => ({
-              id: i + 1,
-              title: `Sanitized topology ${i + 1}`,
-              type: 'simnv-drawiomap-panel',
-              gridPos: { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24), h: settings.height ?? 20 },
-              targets: settings.targets ?? [],
-              fieldConfig: { defaults: {}, overrides: [] },
-              options: {
-                config,
-                rules: [],
-                diagram: { svg: settings.svg ?? svg, xml, hash: uid },
-                zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
-              },
-            })),
+            panels: (settings.panels ?? Array.from({ length: settings.clones ?? 1 }, () => ({ config }))).map(
+              (panel, i) => {
+                // `panels` lay out one below the other, as wide as the row; `clones` in one row.
+                const grid = settings.panels
+                  ? { x: 0, y: i * (settings.height ?? 20), w: 24 }
+                  : { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24) };
+                return {
+                  id: i + 1,
+                  title: panel.title ?? `Sanitized topology ${i + 1}`,
+                  type: 'simnv-drawiomap-panel',
+                  gridPos: { ...grid, h: settings.height ?? 20 },
+                  targets: settings.targets ?? [],
+                  fieldConfig: { defaults: {}, overrides: [] },
+                  options: {
+                    config: panel.config,
+                    rules: [],
+                    diagram: {
+                      svg: ('svg' in panel && panel.svg) || (settings.svg ?? svg),
+                      xml,
+                      hash: settings.panels ? `${uid}-${i}` : uid,
+                    },
+                    zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
+                  },
+                };
+              }
+            ),
           },
         },
       });
