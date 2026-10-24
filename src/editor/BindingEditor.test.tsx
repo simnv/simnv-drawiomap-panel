@@ -762,7 +762,7 @@ describe('binding inspector', () => {
     fireEvent.click(buttonNamed('Delete query'));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Query bindings' })).toBeNull());
-    expect(screen.queryByRole('button', { name: 'Edit query CPU' })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Edit query CPU' })).toBeNull());
     expect(buttonNamed('Edit query Memory')).toBeTruthy();
     fireEvent.click(buttonNamed('Undo'));
     expect(buttonNamed('Edit query CPU')).toBeTruthy();

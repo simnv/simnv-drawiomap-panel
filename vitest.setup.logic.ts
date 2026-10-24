@@ -1,10 +1,14 @@
 import { afterEach, vi } from 'vitest';
-import './vitest.setup';
+import { clearQuerySessions } from './src/query/session';
+import { installPolyfills } from './vitest.polyfills';
 
-// The logic project runs with isolate: false, so the files of one worker share one jsdom document.
-// Reset what a test can leave behind, so the next file starts clean.
+installPolyfills();
+
+// The logic project reuses its workers (isolate: false): the files of one worker share their module registry.
+// Each file still gets its own jsdom document. Reset what a test can leave behind.
 afterEach(() => {
   vi.useRealTimers();
+  clearQuerySessions();
   document.body.replaceChildren();
   for (const name of document.body.getAttributeNames()) {
     document.body.removeAttribute(name);
