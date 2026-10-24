@@ -1,10 +1,25 @@
 import fs from 'node:fs';
-import { expect, test as base, type PanelEditPage } from '@grafana/plugin-e2e';
+import { expect, PanelEditPage, test as base, type DashboardPage } from '@grafana/plugin-e2e';
 import type { Page, TestInfo } from '@playwright/test';
 import type { DiagramConfigV2 } from '../src/model/config';
 import { authoringConfig } from '../src/fixtures/authoring-config';
 
 export { expect };
+
+const DEMO_UID = 'drawiomap-demo';
+/**
+ * The provisioned demo dashboard refreshes every 10 s, which only re-queries and redraws the panels during a test.
+ * A day never fires within a test. A test that needs a refresh passes its own `refresh` parameter.
+ */
+const QUIET_REFRESH = '1d';
+function quietDemo(uid: string | undefined, queryParams?: URLSearchParams) {
+  const params = new URLSearchParams(queryParams);
+  if (uid === DEMO_UID && !params.has('refresh')) {
+    params.set('refresh', QUIET_REFRESH);
+  }
+  return params;
+}
+
 export const svg = fs.readFileSync('src/fixtures/authoring.svg', 'utf8');
 export const xml = fs.readFileSync('src/fixtures/authoring.drawio', 'utf8');
 export const test = base.extend<{
@@ -20,12 +35,31 @@ export const test = base.extend<{
       zoom?: Record<string, unknown>;
       /** Grafana panel queries; default: none */
       targets?: unknown[];
+      /** Several panels with their own config, one below the other. Replaces `clones`. */
+      panels?: Array<{ config: DiagramConfigV2; title?: string; svg?: string }>;
       /** Dashboard auto refresh, for example `5s`; default: off */
       refresh?: string;
     }
   ) => Promise<string>;
   sandboxSettings: void;
+  gotoDashboardPage: (args: { uid: string; queryParams?: URLSearchParams }) => Promise<DashboardPage>;
+  /** Like the plugin-e2e fixture, plus `queryParams` for the first load (for example `theme`). */
+  gotoPanelEditPage: (args: {
+    dashboard?: { uid?: string };
+    id: string;
+    queryParams?: URLSearchParams;
+  }) => Promise<PanelEditPage>;
 }>({
+  gotoDashboardPage: async ({ gotoDashboardPage }, use) => {
+    await use((args) => gotoDashboardPage({ ...args, queryParams: quietDemo(args.uid, args.queryParams) }));
+  },
+  gotoPanelEditPage: async ({ page, request, selectors, grafanaVersion }, use, testInfo) => {
+    await use(async ({ queryParams, ...args }) => {
+      const panelEditPage = new PanelEditPage({ page, request, selectors, grafanaVersion, testInfo }, args);
+      await panelEditPage.goto({ queryParams: quietDemo(args.dashboard?.uid, queryParams) });
+      return panelEditPage;
+    });
+  },
   sandboxSettings: [
     async ({ request }, use) => {
       if (process.env.AUTHORING_SANDBOX === '1') {
@@ -70,20 +104,32 @@ export const test = base.extend<{
                 },
               ],
             },
-            panels: Array.from({ length: settings.clones ?? 1 }, (_, i) => ({
-              id: i + 1,
-              title: `Sanitized topology ${i + 1}`,
-              type: 'simnv-drawiomap-panel',
-              gridPos: { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24), h: settings.height ?? 20 },
-              targets: settings.targets ?? [],
-              fieldConfig: { defaults: {}, overrides: [] },
-              options: {
-                config,
-                rules: [],
-                diagram: { svg: settings.svg ?? svg, xml, hash: uid },
-                zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
-              },
-            })),
+            panels: (settings.panels ?? Array.from({ length: settings.clones ?? 1 }, () => ({ config }))).map(
+              (panel, i) => {
+                // `panels` lay out one below the other, as wide as the row; `clones` in one row.
+                const grid = settings.panels
+                  ? { x: 0, y: i * (settings.height ?? 20), w: 24 }
+                  : { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24) };
+                return {
+                  id: i + 1,
+                  title: panel.title ?? `Sanitized topology ${i + 1}`,
+                  type: 'simnv-drawiomap-panel',
+                  gridPos: { ...grid, h: settings.height ?? 20 },
+                  targets: settings.targets ?? [],
+                  fieldConfig: { defaults: {}, overrides: [] },
+                  options: {
+                    config: panel.config,
+                    rules: [],
+                    diagram: {
+                      svg: ('svg' in panel && panel.svg) || (settings.svg ?? svg),
+                      xml,
+                      hash: settings.panels ? `${uid}-${i}` : uid,
+                    },
+                    zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
+                  },
+                };
+              }
+            ),
           },
         },
       });

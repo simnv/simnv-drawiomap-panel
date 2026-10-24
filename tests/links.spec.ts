@@ -1,5 +1,5 @@
 import { devices } from '@playwright/test';
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 
 const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
 const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';

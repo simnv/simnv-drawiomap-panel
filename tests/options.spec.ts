@@ -1,4 +1,4 @@
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 
 const PANE_WIDTH = 300;
 

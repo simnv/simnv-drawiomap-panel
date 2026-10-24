@@ -24,7 +24,9 @@ async function expectInspectorTheme(inspector: Locator, theme: 'dark' | 'light')
   expect(backgroundLuminance < 0.5).toBe(theme === 'dark');
 }
 
+/** A full-page screenshot is slow. Take it only when DMAP_SCREENSHOTS is set, as the other specs do. */
 async function captureLayout(page: Page, testInfo: TestInfo, name: string) {
+  if (!process.env.DMAP_SCREENSHOTS) return;
   const path = testInfo.outputPath(`${name}.png`);
   await page.screenshot({ path, fullPage: true });
   await testInfo.attach(name, { path, contentType: 'image/png' });
@@ -39,14 +41,12 @@ for (const theme of ['dark', 'light'] as const) {
   }, testInfo) => {
     const uid = await createDiagram(config);
     await page.setViewportSize({ width: 1440, height: 900 });
+    // Grafana selects the theme at boot: give it on the first load.
     await gotoPanelEditPage({
       dashboard: { uid },
       id: '1',
+      queryParams: new URLSearchParams({ theme }),
     });
-    // The panel helper omits theme parameters; Grafana selects the theme at boot.
-    const url = new URL(page.url());
-    url.searchParams.set('theme', theme);
-    await page.goto(url.toString());
     await expect(page).toHaveURL(new RegExp(`[?&]theme=${theme}(?:&|$)`));
 
     const dialog = await openBindingsPopup(page);

@@ -6,6 +6,8 @@ process.env.AUTHORING_COMPAT = '1';
 // The package scripts keep their readiness gate; browser requests use this worker's stack.
 export default defineConfig(config, {
   testDir: '.',
+  // Only the compat spec: testDir '.' alone would match the whole suite and run it on one worker.
+  testMatch: 'authoring-compat.spec.ts',
   workers: 1,
   use: {
     ...config.use,
