@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, within } from '@testing-library/react';
-import type { DiagramConfigV2, HoverRow } from '../model/config';
+import React from 'react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import type { DiagramConfigV2, DisplayConfig, HoverRow, QueryBinding } from '../model/config';
 import { renderEditor, svgOf } from './editorHarness';
 import { buttonNamed, chooseOption, editorField, openSection, selectStageCell } from './testUtils';
+import { DisplayFields } from './BindingFields';
 
 vi.hoisted(() => {
   if (!window.localStorage) {
@@ -57,25 +59,23 @@ function setup(initial = config()) {
 }
 
 describe('field sources in the inspector', () => {
-  it('shows "Override" with a reset button for a field that the override sets', () => {
+  it('shows the chip and the reset button of an override, a pattern and a default field', () => {
     setup();
+    // The rules of the source are in fieldSource.test.ts. This test proves that the inspector draws them.
     selectStageCell('device-1');
-    const chip = sourceOfControl(editorField('Label template'));
-    expect(chip.textContent).toContain('Override');
-    expect(within(chip).getByRole('button', { name: 'Reset Label template to pattern' })).toBeTruthy();
-  });
-
-  it('shows the pattern name and no reset button for a field that only the pattern sets', () => {
-    setup();
+    const override = sourceOfControl(editorField('Label template'));
+    expect(override.textContent).toContain('Override');
+    expect(within(override).getByRole('button', { name: 'Reset Label template to pattern' })).toBeTruthy();
     selectStageCell('device-2');
     const chip = sourceOfControl(editorField('Label template'));
     expect(chip.textContent).toBe('Pattern Core routers');
     expect(within(chip).queryByRole('button')).toBeNull();
-    // Nobody sets the drilldown URL.
-    expect(sourceOfControl(editorField('Drilldown URL')).textContent).toBe('Default');
+    selectStageCell('device-3');
+    expect(sourceOfControl(editorField('Label template')).textContent).toBe('Default');
+    expect(screen.queryByRole('button', { name: /^Reset / })).toBeNull();
   });
 
-  it('resets a field to the pattern value and keeps the other override fields', () => {
+  it('resets a field to the pattern value, keeps the other override fields, and removes the override when the last field is reset', () => {
     const { save } = setup();
     selectStageCell('device-1');
     fireEvent.click(buttonNamed('Reset Label template to pattern'));
@@ -85,6 +85,10 @@ describe('field sources in the inspector', () => {
     expect(save.mock.calls[0][0].overrides).toEqual([
       { cellId: 'device-1', display: { hover: { rows: [{ kind: 'metadata', label: 'Own row', path: 'cell.key' }] } } },
     ]);
+    openSection('Hover rows');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reset hover rows to pattern' })[0]);
+    fireEvent.click(buttonNamed('Apply bindings'));
+    expect(save.mock.calls[1][0].overrides).toEqual([]);
   });
 
   it('resets the whole rows array from a field inside a hover row; the pattern rows show again', () => {
@@ -109,16 +113,6 @@ describe('field sources in the inspector', () => {
     expect(save.mock.calls[0][0].overrides).toEqual([{ cellId: 'device-1', display: { label: 'Mine' } }]);
   });
 
-  it('removes the override when the last field is reset', () => {
-    const { save } = setup();
-    selectStageCell('device-1');
-    fireEvent.click(buttonNamed('Reset Label template to pattern'));
-    openSection('Hover rows');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Reset hover rows to pattern' })[0]);
-    fireEvent.click(buttonNamed('Apply bindings'));
-    expect(save.mock.calls[0][0].overrides).toEqual([]);
-  });
-
   it('says "to default" in the pattern scope and resets the pattern value', () => {
     const { save } = setup();
     selectStageCell('device-2');
@@ -134,5 +128,96 @@ describe('field sources in the inspector', () => {
     selectStageCell('device-3');
     expect(sourceOfControl(editorField('Label template')).textContent).toBe('Default');
     expect(screen.queryByRole('button', { name: /^Reset / })).toBeNull();
+  });
+});
+
+describe('DisplayFields component', () => {
+  const binding: QueryBinding = { queryId: 'q', match: {}, reducer: 'last' };
+  const fresh = { expectedIntervalMs: 1000, staleAfterMs: 5000 };
+  const value: DisplayConfig = {
+    label: 'L',
+    url: '/d/x',
+    shape: { binding, text: true },
+    link: { a2bBinding: binding, b2aBinding: binding, capacityBinding: binding, capacity: 10 },
+    status: {
+      kind: 'predicates',
+      binding,
+      default: { state: 'normal', reason: 'ok' },
+      predicates: [{ op: 'gt', value: 1, state: 'warning', reason: 'hot' }],
+      freshness: fresh,
+    },
+    hover: {
+      rows: [
+        { kind: 'metadata', label: 'M', path: 'cell.key' },
+        { kind: 'drilldown', label: 'D', url: '/d/y' },
+        { kind: 'value', label: 'V', binding, unit: 'bps', min: 0, max: 5, url: '/d/v', freshness: fresh },
+        { kind: 'history', label: 'H', binding, height: 40 },
+      ],
+    },
+  };
+
+  describe('DisplayFields sources', () => {
+    it('asks for the source of every value field and shows one chip for each', () => {
+      const sourceOf = vi.fn((path: string) => ({
+        owner: 'default' as const,
+        resettable: false,
+        resetPath: path,
+        scope: 'element' as const,
+      }));
+      render(<DisplayFields value={value} queries={[]} onChange={() => {}} sourceOf={sourceOf} onReset={() => {}} />);
+      // Open every section, including the ones that open later.
+      for (let round = 0; round < 3; round++) {
+        for (const toggle of screen.queryAllByRole('button', { expanded: false })) {
+          fireEvent.click(toggle);
+        }
+      }
+      const paths = new Set(sourceOf.mock.calls.map(([path]) => path));
+      const expected = [
+        'enabled',
+        'label',
+        'shape.text',
+        'url',
+        'shape.enabled',
+        'shape.binding',
+        'shape.target',
+        'link.enabled',
+        'link.a2bBinding',
+        'link.b2aBinding',
+        'link.capacityBinding',
+        'link.capacity',
+        'status.enabled',
+        'status.binding',
+        'status.kind',
+        'status.default.state',
+        'status.default.reason',
+        'status.predicates[0].value',
+        'status.predicates[0].op',
+        'status.predicates[0].state',
+        'status.predicates[0].reason',
+        'status.freshness',
+        'status.freshness.expectedIntervalMs',
+        'status.freshness.staleAfterMs',
+        'hover.enabled',
+        'hover.rows[0]',
+        'hover.rows[0].label',
+        'hover.rows[0].path',
+        'hover.rows[1].label',
+        'hover.rows[1].url',
+        'hover.rows[2].binding',
+        'hover.rows[2].freshness',
+        'hover.rows[2].freshness.expectedIntervalMs',
+        'hover.rows[2].freshness.staleAfterMs',
+        'hover.rows[2].unit',
+        'hover.rows[2].min',
+        'hover.rows[2].max',
+        'hover.rows[2].url',
+        'hover.rows[3].height',
+      ];
+      for (const path of expected) {
+        expect(paths, path).toContain(path);
+      }
+      // Every request became a chip.
+      expect(screen.getAllByTestId('dmap-field-source')).toHaveLength(sourceOf.mock.calls.length);
+    });
   });
 });
