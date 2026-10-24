@@ -530,6 +530,7 @@ describe('DrawioMapPanel hover card', () => {
       ],
     });
     async function hoverSetup() {
+      clearQuerySessions();
       nativeQuery.mockReset().mockImplementation(() => new Observable(() => () => {}));
       const p = props({
         options: {
@@ -549,6 +550,9 @@ describe('DrawioMapPanel hover card', () => {
       fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
       await screen.findByRole('tooltip');
       await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 50));
+      });
       const binds = work.binds;
       const applied = work.applied.length;
       fireEvent.pointerMove(rect('b'), { pointerType: 'mouse', clientX: 60, clientY: 10 });

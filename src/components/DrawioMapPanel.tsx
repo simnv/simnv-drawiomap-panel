@@ -427,7 +427,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
             data,
             undefined,
             { theme, timeZone, generation: queryService?.context.generation },
-            [...activeSnapshots, ...cardSnapshots]
+            [...cardSnapshots, ...activeSnapshots]
           )
         : resolve,
     [
