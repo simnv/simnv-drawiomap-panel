@@ -70,16 +70,16 @@ describe('binding inspector', () => {
       const text = invalid ? '{invalid' : '{"refId":"D","expr":"typed draft"}';
       fireEvent.change(editorField('Native target JSON'), { target: { value: text } });
       if (invalid) {
-        fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+        fireEvent.click(buttonNamed('Import native target'));
         expect(applyButton().disabled).toBe(true);
         expect(screen.getByRole('region', { name: 'Query Native' }).textContent).toContain(
           'Invalid native target JSON'
         );
         fireEvent.change(editorField('Native target JSON'), { target: { value: '{"refId":"D"}' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+        fireEvent.click(buttonNamed('Import native target'));
         expect(applyButton().disabled).toBe(false);
         fireEvent.change(editorField('Native target JSON'), { target: { value: '{invalid' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+        fireEvent.click(buttonNamed('Import native target'));
         expect(applyButton().disabled).toBe(true);
       }
       // Leaving the pane drops the typed text. It never reached the draft, so it does not block Apply.
@@ -99,10 +99,10 @@ describe('binding inspector', () => {
     expect(screen.queryByRole('button', { name: 'Select cell device-1' })).toBeNull();
     filterBindings('device-2');
     expect(screen.queryByRole('button', { name: 'Select cell device-1' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Select cell device-2' }));
+    fireEvent.click(buttonNamed('Select cell device-2'));
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'device-2 bindings' }));
     expect(screen.getByRole('combobox', { name: 'Edit scope' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Select cell device-2' }).getAttribute('aria-current')).toBe('true');
+    expect(buttonNamed('Select cell device-2').getAttribute('aria-current')).toBe('true');
   });
   it('previews portable conflicts and stages an import without query execution, then cancels or applies', () => {
     const execute = vi.fn();
@@ -143,28 +143,28 @@ describe('binding inspector', () => {
     fireEvent.change(editorField('Pattern document'), {
       target: { value: JSON.stringify(exportPatternDocument(source)) },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
+    fireEvent.click(buttonNamed('Preview pattern import'));
     expect(editorField('Pattern import preview').textContent).toContain('source');
     expect(editorField('Pattern import preview').textContent).toContain('region: applies');
-    expect((screen.getByRole('button', { name: 'Import into draft' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((buttonNamed('Import into draft') as HTMLButtonElement).disabled).toBe(true);
     chooseOption('queries q conflict', 'New identity');
     fireEvent.change(editorField('queries q new identity'), { target: { value: 'q-copy' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Portable patterns' }));
+    fireEvent.click(buttonNamed('Portable patterns'));
     openSection('Portable patterns');
     expect((editorField('queries q new identity') as HTMLInputElement).value).toBe('q-copy');
-    fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
+    fireEvent.click(buttonNamed('Import into draft'));
     expect(execute).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(buttonNamed('Discard'));
     fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].widgets).toEqual([]);
-    fireEvent.click(screen.getByRole('button', { name: 'Preview pattern import' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Import into draft' }));
+    fireEvent.click(buttonNamed('Preview pattern import'));
+    fireEvent.click(buttonNamed('Import into draft'));
     fireEvent.click(applyButton());
     expect(save.mock.calls[1][0].widgets[0]).toMatchObject({ anchorCellId: 'region', binding: { queryId: 'q-copy' } });
     expect(save.mock.calls[1][0].queries[1].source.datasource).toEqual({ uid: 'source' });
     expect(execute).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Export patterns' }));
+    fireEvent.click(buttonNamed('Export patterns'));
     const exported = JSON.parse((editorField('Exported pattern document') as HTMLTextAreaElement).value);
     expect(exported.config.widgets[0].anchorCellId).toBe('region');
     controller.dispose();
@@ -175,7 +175,7 @@ describe('binding inspector', () => {
       svg: svgOf('region'),
     });
     selectStageCell('region');
-    fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
+    fireEvent.click(buttonNamed('Assign chart region'));
     expect((editorField('Chart check sample freshness') as HTMLInputElement).checked).toBe(false);
     fireEvent.click(editorField('Chart check sample freshness'));
     fireEvent.change(editorField('Chart expected sample interval ms'), { target: { value: '2000' } });
@@ -184,7 +184,7 @@ describe('binding inspector', () => {
     fireEvent.change(editorField('Chart stale after ms'), { target: { value: '6000' } });
     for (const [index, kind] of ['value', 'history'].entries()) {
       openSection('Hover rows');
-      fireEvent.click(screen.getByRole('button', { name: 'Add hover row' }));
+      fireEvent.click(buttonNamed('Add hover row'));
       chooseOption(`Hover row ${index + 1} kind`, kind);
       fireEvent.click(editorField(`Hover row ${index + 1} check sample freshness`));
       fireEvent.change(editorField(`Hover row ${index + 1} expected sample interval ms`), {
@@ -214,7 +214,7 @@ describe('binding inspector', () => {
     };
     const first = renderEditor({ config: chartConfig, svg: svgOf('plain-rectangle') });
     selectStageCell('plain-rectangle');
-    fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
+    fireEvent.click(buttonNamed('Assign chart region'));
     chooseOption('Chart query', 'Загрузка α');
     chooseOption('Chart kind', 'Bar gauge');
     fireEvent.change(editorField('Chart label'), { target: { value: 'Процессор 🚀' } });
@@ -241,7 +241,7 @@ describe('binding inspector', () => {
     const second = renderEditor({ config: persisted, svg: svgOf() });
     expect(screen.getByRole('alert').textContent).toContain('plain-rectangle');
     expect(applyButton().disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Remove chart Процессор 🚀' }));
+    fireEvent.click(buttonNamed('Remove chart Процессор 🚀'));
     fireEvent.click(applyButton());
     expect(second.save.mock.calls[0][0].widgets).toEqual([]);
   });
@@ -255,17 +255,17 @@ describe('binding inspector', () => {
   });
   it('Cancel asks the owner to close; Discard restores the draft and keeps the editor open', () => {
     const { close, save } = setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(buttonNamed('Cancel'));
     expect(close).toHaveBeenCalledTimes(1);
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(stageCell('device-1').querySelector('rect')!);
     fireEvent.change(editorField('Label template'), { target: { value: 'Draft' } });
     expect(screen.getByText('Unsaved changes')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(buttonNamed('Discard'));
     expect(close).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Unsaved changes')).toBeNull();
     expect(screen.getByTestId('dmap-bindings-editor')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(buttonNamed('Cancel'));
     expect(close).toHaveBeenCalledTimes(2);
   });
 
@@ -313,13 +313,13 @@ describe('binding inspector', () => {
     expect(editorField('Affected binding preview').textContent).toContain('device-2');
     expect(stageCell('device-2').getAttribute('data-dmap-affected')).toBe('true');
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(buttonNamed('Discard'));
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Shared');
     fireEvent.change(editorField('Label template'), { target: { value: 'Applied' } });
     fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].patterns[0].display.label).toBe('Applied');
     fireEvent.change(editorField('Label template'), { target: { value: 'Lost' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(buttonNamed('Discard'));
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied');
   });
   it('selects unbound cells by pointer or keyboard while hover leaves focus alone', () => {
@@ -362,10 +362,10 @@ describe('binding inspector', () => {
     chooseOption('Shape query', 'Health');
     chooseOption('A to B query', 'Health');
     openSection('Hover rows');
-    fireEvent.click(screen.getByRole('button', { name: 'Add hover row' }));
+    fireEvent.click(buttonNamed('Add hover row'));
     chooseOption('Hover row 1 kind', 'history');
     openSection('Explicit health status');
-    fireEvent.click(screen.getByRole('button', { name: 'Add health rule' }));
+    fireEvent.click(buttonNamed('Add health rule'));
     fireEvent.change(editorField('Health condition 1 reason'), { target: { value: 'Health check failed' } });
     fireEvent.click(applyButton());
     const display = save.mock.calls[0][0].overrides[0].display;
@@ -495,7 +495,7 @@ describe('binding inspector', () => {
     };
     const { save } = renderEditor({ config: withQuery, svg: svgOf('plain-rectangle') });
     selectStageCell('plain-rectangle');
-    fireEvent.click(screen.getByRole('button', { name: 'Assign chart region' }));
+    fireEvent.click(buttonNamed('Assign chart region'));
     chooseOption('Chart query', 'CPU');
     fireEvent.change(editorField('Chart minimum'), { target: { value: 'auto' } });
     fireEvent.click(applyButton());
@@ -508,7 +508,7 @@ describe('binding inspector', () => {
     });
     selectStageCell('device-1');
     openSection('Explicit health status');
-    fireEvent.click(screen.getByRole('button', { name: 'Add health rule' }));
+    fireEvent.click(buttonNamed('Add health rule'));
     fireEvent.change(editorField('Health condition 1 reason'), { target: { value: '' } });
     expect(applyButton().disabled).toBe(true);
     fireEvent.change(editorField('Health condition 1 reason'), { target: { value: 'Corrected' } });
@@ -661,14 +661,14 @@ describe('binding inspector', () => {
     openQueryRow('CPU');
     await screen.findByText(/No supported native query editor/);
     expect(execute).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    fireEvent.click(buttonNamed('Preview query'));
     expect(execute).toHaveBeenCalledTimes(1);
     expect(editorField('Query preview result').textContent).toContain('CPU');
     fireEvent.change(editorField('Query name'), { target: { value: 'CPU changed' } });
     expect(editorField('Query preview result').textContent).toBe('idle');
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    fireEvent.click(buttonNamed('Preview query'));
     view.unmount();
     controller.dispose();
   });
@@ -733,14 +733,14 @@ describe('binding inspector', () => {
         .getAllByRole('listitem')
         .map((li) => li.textContent)
     ).toEqual(['Override device-1']);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete query' }));
+    fireEvent.click(buttonNamed('Delete query'));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Query bindings' })).toBeNull());
     expect(screen.queryByRole('button', { name: 'Edit query CPU' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Edit query Memory' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    expect(screen.getByRole('button', { name: 'Edit query CPU' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(buttonNamed('Edit query Memory')).toBeTruthy();
+    fireEvent.click(buttonNamed('Undo'));
+    expect(buttonNamed('Edit query CPU')).toBeTruthy();
+    fireEvent.click(buttonNamed('Redo'));
     expect(screen.queryByRole('button', { name: 'Edit query CPU' })).toBeNull();
     expect(save).not.toHaveBeenCalled();
   });
@@ -786,7 +786,7 @@ describe('binding inspector', () => {
     const json = () => editorField('Native target JSON') as HTMLTextAreaElement;
     const importText = (text: string) => {
       fireEvent.change(json(), { target: { value: text } });
-      fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+      fireEvent.click(buttonNamed('Import native target'));
     };
 
     it('keeps typed JSON that is not imported when there is nothing to undo or redo', async () => {

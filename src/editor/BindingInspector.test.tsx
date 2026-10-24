@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import type { DiagramConfigV2, HoverRow } from '../model/config';
 import { renderEditor, svgOf } from './editorHarness';
-import { chooseOption, editorField, openSection, selectStageCell } from './testUtils';
+import { buttonNamed, chooseOption, editorField, openSection, selectStageCell } from './testUtils';
 
 vi.hoisted(() => {
   if (!window.localStorage) {
@@ -78,10 +78,10 @@ describe('field sources in the inspector', () => {
   it('resets a field to the pattern value and keeps the other override fields', () => {
     const { save } = setup();
     selectStageCell('device-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Label template to pattern' }));
+    fireEvent.click(buttonNamed('Reset Label template to pattern'));
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Shared');
     expect(sourceOfControl(editorField('Label template')).textContent).toBe('Pattern Core routers');
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(save.mock.calls[0][0].overrides).toEqual([
       { cellId: 'device-1', display: { hover: { rows: [{ kind: 'metadata', label: 'Own row', path: 'cell.key' }] } } },
     ]);
@@ -105,17 +105,17 @@ describe('field sources in the inspector', () => {
     expect(preview.textContent).toContain('"label": "Kind"');
     expect(preview.textContent).not.toContain('Own row');
     // The override keeps its other field.
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(save.mock.calls[0][0].overrides).toEqual([{ cellId: 'device-1', display: { label: 'Mine' } }]);
   });
 
   it('removes the override when the last field is reset', () => {
     const { save } = setup();
     selectStageCell('device-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Label template to pattern' }));
+    fireEvent.click(buttonNamed('Reset Label template to pattern'));
     openSection('Hover rows');
     fireEvent.click(screen.getAllByRole('button', { name: 'Reset hover rows to pattern' })[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(save.mock.calls[0][0].overrides).toEqual([]);
   });
 
@@ -125,7 +125,7 @@ describe('field sources in the inspector', () => {
     chooseOption('Edit scope', 'All elements matching this pattern');
     const chip = sourceOfControl(editorField('Label template'));
     fireEvent.click(within(chip).getByRole('button', { name: 'Reset Label template to default' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(save.mock.calls[0][0].patterns[0].display).toEqual({ hover: { rows: patternRows } });
   });
 

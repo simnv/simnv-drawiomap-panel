@@ -1,4 +1,4 @@
-import { filterBindings, openQueryRow, openSection, selectStageCell } from './testUtils';
+import { buttonNamed, filterBindings, openQueryRow, openSection, selectStageCell } from './testUtils';
 import { createQueryController } from '../query/controller';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -73,38 +73,34 @@ describe('bindings list', () => {
       expect(screen.getByRole('button', { name: title })).toBeTruthy();
     }
     expect(screen.queryByRole('button', { name: /^Cells/ })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Edit pattern Devices' }).textContent).toContain(
-      'any · queries q1 · 2 cells · 0 problems'
-    );
-    expect(screen.getByRole('button', { name: 'Edit pattern Ghost' }).textContent).toContain('0 cells · 1 problem');
-    expect(screen.getByRole('button', { name: 'Edit widget Load' }).textContent).toContain('anchor device-1');
-    expect(screen.getByRole('button', { name: 'Edit query One' }).textContent).toContain(
-      'q1 · panel · used by 2 bindings'
-    );
+    expect(buttonNamed('Edit pattern Devices').textContent).toContain('any · queries q1 · 2 cells · 0 problems');
+    expect(buttonNamed('Edit pattern Ghost').textContent).toContain('0 cells · 1 problem');
+    expect(buttonNamed('Edit widget Load').textContent).toContain('anchor device-1');
+    expect(buttonNamed('Edit query One').textContent).toContain('q1 · panel · used by 2 bindings');
   });
 
   it('shows the problems of a row when it is expanded', () => {
     setup();
     expect(screen.queryByRole('list', { name: 'Problems of Ghost' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Show problems of Ghost' }));
+    fireEvent.click(buttonNamed('Show problems of Ghost'));
     expect(
       within(screen.getByRole('list', { name: 'Problems of Ghost' })).getByText(/matches no element/)
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Hide problems of Ghost' }).getAttribute('aria-expanded')).toBe('true');
+    expect(buttonNamed('Hide problems of Ghost').getAttribute('aria-expanded')).toBe('true');
   });
 
   it('filters by text and by problems only', () => {
     setup();
     filterBindings('removed');
-    expect(screen.getByRole('button', { name: 'Overrides (1 of 2)' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Patterns (0 of 2)' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Edit override removed' })).toBeTruthy();
+    expect(buttonNamed('Overrides (1 of 2)')).toBeTruthy();
+    expect(buttonNamed('Patterns (0 of 2)')).toBeTruthy();
+    expect(buttonNamed('Edit override removed')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit override device-2' })).toBeNull();
     filterBindings('');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Problems only' }));
     expect(screen.queryByRole('button', { name: 'Edit pattern Devices' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Edit pattern Ghost' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Edit override removed' })).toBeTruthy();
+    expect(buttonNamed('Edit pattern Ghost')).toBeTruthy();
+    expect(buttonNamed('Edit override removed')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit widget Load' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit query One' })).toBeNull();
   });
@@ -114,36 +110,36 @@ describe('bindings list', () => {
     renderEditor({ config: { ...config, patterns: [], overrides: [], widgets: [] }, svg: svgOf('node', ...ids) });
     expect(screen.queryByRole('button', { name: /^Cells/ })).toBeNull();
     filterBindings('node');
-    expect(screen.getByRole('button', { name: 'Cells (46)' })).toBeTruthy();
+    expect(buttonNamed('Cells (46)')).toBeTruthy();
     const rows = () => within(screen.getByRole('list', { name: 'Cells' })).getAllByRole('button');
     expect(rows()).toHaveLength(20);
     expect(rows()[0].getAttribute('aria-label')).toBe('Select cell node');
-    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    fireEvent.click(buttonNamed('Show more'));
     expect(rows()).toHaveLength(40);
-    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    fireEvent.click(buttonNamed('Show more'));
     expect(rows()).toHaveLength(46);
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
     // A new filter text starts at the first page.
     filterBindings('node-1');
-    expect(screen.getByRole('button', { name: 'Cells (11)' })).toBeTruthy();
+    expect(buttonNamed('Cells (11)')).toBeTruthy();
   });
 
   it('marks the selected row with aria-current', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit override device-2' }));
-    expect(screen.getByRole('button', { name: 'Edit override device-2' }).getAttribute('aria-current')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Edit pattern Devices' }).getAttribute('aria-current')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit pattern Devices' }));
-    expect(screen.getByRole('button', { name: 'Edit pattern Devices' }).getAttribute('aria-current')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Edit override device-2' }).getAttribute('aria-current')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit query One' }));
-    expect(screen.getByRole('button', { name: 'Edit query One' }).getAttribute('aria-current')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Edit pattern Devices' }).getAttribute('aria-current')).toBeNull();
+    fireEvent.click(buttonNamed('Edit override device-2'));
+    expect(buttonNamed('Edit override device-2').getAttribute('aria-current')).toBe('true');
+    expect(buttonNamed('Edit pattern Devices').getAttribute('aria-current')).toBeNull();
+    fireEvent.click(buttonNamed('Edit pattern Devices'));
+    expect(buttonNamed('Edit pattern Devices').getAttribute('aria-current')).toBe('true');
+    expect(buttonNamed('Edit override device-2').getAttribute('aria-current')).toBeNull();
+    fireEvent.click(buttonNamed('Edit query One'));
+    expect(buttonNamed('Edit query One').getAttribute('aria-current')).toBe('true');
+    expect(buttonNamed('Edit pattern Devices').getAttribute('aria-current')).toBeNull();
   });
 
   it('a click on an override row selects its cell', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit override device-2' }));
+    fireEvent.click(buttonNamed('Edit override device-2'));
     expect(screen.getByRole('heading', { name: 'device-2 bindings' })).toBeTruthy();
     expect(screen.getByText('Element override: Yes')).toBeTruthy();
     expect(stageCell('device-2').getAttribute('data-dmap-selected')).toBe('true');
@@ -151,13 +147,13 @@ describe('bindings list', () => {
 
   it('a click on a widget row selects its anchor cell', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit widget Load' }));
+    fireEvent.click(buttonNamed('Edit widget Load'));
     expect(screen.getByRole('heading', { name: 'device-1 bindings' })).toBeTruthy();
   });
 
   it('a click on a pattern row selects its first cell in the pattern scope', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit pattern Devices' }));
+    fireEvent.click(buttonNamed('Edit pattern Devices'));
     expect(screen.getByRole('heading', { name: 'device-1 bindings' })).toBeTruthy();
     expect(screen.getByText('Affected elements: 2')).toBeTruthy();
     openSection('Pattern selector');
@@ -166,14 +162,14 @@ describe('bindings list', () => {
 
   it('a click on a pattern that matches nothing still opens it for correction', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit pattern Ghost' }));
+    fireEvent.click(buttonNamed('Edit pattern Ghost'));
     openSection('Pattern selector');
     expect(screen.getByLabelText('Pattern element IDs')).toHaveProperty('value', 'nothing');
   });
 
   it('a click on a row of a missing cell only shows its problems', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit override removed' }));
+    fireEvent.click(buttonNamed('Edit override removed'));
     expect(screen.getByRole('list', { name: 'Problems of removed' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: /removed bindings/ })).toBeNull();
   });
@@ -195,45 +191,45 @@ describe('bindings list', () => {
 
   it('deletes an override into the draft after a confirmation and applies it through the draft', async () => {
     const { save } = setup({ ...config, patterns: [] });
-    fireEvent.click(screen.getByRole('button', { name: 'Delete override device-2' }));
+    fireEvent.click(buttonNamed('Delete override device-2'));
     expect(screen.getByText(/Delete the override of device-2/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(buttonNamed('Delete'));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Edit override device-2' })).toBeNull());
-    expect(screen.getByRole('button', { name: 'Overrides (1)' })).toBeTruthy();
+    expect(buttonNamed('Overrides (1)')).toBeTruthy();
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete override removed' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(buttonNamed('Delete override removed'));
+    fireEvent.click(buttonNamed('Delete'));
     await screen.findByRole('button', { name: 'Overrides (0)' });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(save.mock.calls[0][0].overrides).toEqual([]);
   });
 
   it('puts the delete question on the overlay stack while it is open, so Esc reaches it first', async () => {
     setup();
     expect(isTop(DELETE_CONFIRM_ID)).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete override device-2' }));
+    fireEvent.click(buttonNamed('Delete override device-2'));
     expect(isTop(DELETE_CONFIRM_ID)).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Keep override' }));
+    fireEvent.click(buttonNamed('Keep override'));
     await waitFor(() => expect(isTop(DELETE_CONFIRM_ID)).toBe(false));
   });
 
   it('keeps an override when the confirmation is dismissed', () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete override device-2' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Keep override' }));
-    expect(screen.getByRole('button', { name: 'Edit override device-2' })).toBeTruthy();
+    fireEvent.click(buttonNamed('Delete override device-2'));
+    fireEvent.click(buttonNamed('Keep override'));
+    expect(buttonNamed('Edit override device-2')).toBeTruthy();
   });
 
   it('deletes a widget', async () => {
     setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete widget Load' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(buttonNamed('Delete widget Load'));
+    fireEvent.click(buttonNamed('Delete'));
     await screen.findByRole('button', { name: 'Widgets (0)' });
   });
 
   it('marks the matched cells on the diagram while a pattern row is hovered', () => {
     setup();
-    const row = screen.getByRole('button', { name: 'Edit pattern Devices' });
+    const row = buttonNamed('Edit pattern Devices');
     fireEvent.mouseEnter(row);
     expect(stageCell('device-1').getAttribute('data-dmap-highlight')).toBe('true');
     expect(stageCell('device-2').getAttribute('data-dmap-highlight')).toBe('true');
@@ -250,7 +246,7 @@ describe('bindings list', () => {
   it('shows the problem of a widget whose query matches no metric', () => {
     const data = { state: LoadingState.Done, series: [], timeRange: getDefaultTimeRange() };
     setup({ ...config, patterns: [], overrides: [], widgets: [config.widgets[0]] }, { data });
-    fireEvent.click(screen.getByRole('button', { name: 'Show problems of Load' }));
+    fireEvent.click(buttonNamed('Show problems of Load'));
     expect(
       within(screen.getByRole('list', { name: 'Problems of Load' })).getByText(/No metric matches query q1/)
     ).toBeTruthy();
@@ -267,11 +263,11 @@ describe('bindings list', () => {
         { id: 'lonely', name: 'Lonely', source: { kind: 'datasource', target: { refId: 'A' }, parameters: {} } },
       ],
     });
-    expect(screen.getByRole('button', { name: 'Problems (1)' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Edit query Lonely' }).textContent).toContain('unused · 1 problem');
+    expect(buttonNamed('Problems (1)')).toBeTruthy();
+    expect(buttonNamed('Edit query Lonely').textContent).toContain('unused · 1 problem');
     expect(screen.getByRole('button', { name: /Show problem of Lonely: Choose a datasource/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Problems only' }));
-    expect(screen.getByRole('button', { name: 'Edit query Lonely' })).toBeTruthy();
+    expect(buttonNamed('Edit query Lonely')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Show problem of Lonely/ }));
     expect(screen.getByRole('heading', { name: 'Lonely query' })).toBeTruthy();
   });
@@ -288,13 +284,13 @@ describe('bindings list', () => {
     };
     setup(dup);
     expect(screen.getAllByText(/Pattern same|duplicate|must be unique/i).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit pattern Second' }));
+    fireEvent.click(buttonNamed('Edit pattern Second'));
     expect(screen.getByRole('heading', { name: 'device-2 bindings' })).toBeTruthy();
     openSection('Pattern selector');
     expect(screen.getByLabelText('Pattern element IDs')).toHaveProperty('value', 'device-2');
     fireEvent.change(screen.getByLabelText('Pattern element IDs'), { target: { value: 'device-1,device-2' } });
-    expect(screen.getByRole('button', { name: 'Edit pattern First' }).textContent).toContain('1 cell ');
-    expect(screen.getByRole('button', { name: 'Edit pattern Second' }).textContent).toContain('2 cells');
+    expect(buttonNamed('Edit pattern First').textContent).toContain('1 cell ');
+    expect(buttonNamed('Edit pattern Second').textContent).toContain('2 cells');
   });
 
   describe('highlight', () => {
@@ -302,7 +298,7 @@ describe('bindings list', () => {
       Array.from(screen.getByTestId('dmap-popup-stage').querySelectorAll('[data-dmap-highlight="true"]')).length;
     it('clears when the row opens', () => {
       setup();
-      const row = screen.getByRole('button', { name: 'Edit pattern Devices' });
+      const row = buttonNamed('Edit pattern Devices');
       fireEvent.mouseEnter(row);
       expect(marked()).toBe(2);
       fireEvent.click(row);
@@ -311,14 +307,14 @@ describe('bindings list', () => {
     });
     it('clears when the highlighted row is filtered out', () => {
       setup();
-      fireEvent.mouseEnter(screen.getByRole('button', { name: 'Edit pattern Devices' }));
+      fireEvent.mouseEnter(buttonNamed('Edit pattern Devices'));
       expect(marked()).toBe(2);
       filterBindings('removed');
       expect(marked()).toBe(0);
     });
     it('clears when Problems only hides the row', () => {
       setup();
-      fireEvent.focus(screen.getByRole('button', { name: 'Edit pattern Devices' }));
+      fireEvent.focus(buttonNamed('Edit pattern Devices'));
       expect(marked()).toBe(2);
       fireEvent.click(screen.getByRole('checkbox', { name: 'Problems only' }));
       expect(marked()).toBe(0);
@@ -331,7 +327,7 @@ describe('bindings list', () => {
     setup(config, { data });
     const before = calls.mock.calls.length;
     expect(before).toBeGreaterThan(0);
-    const row = screen.getByRole('button', { name: 'Edit pattern Devices' });
+    const row = buttonNamed('Edit pattern Devices');
     fireEvent.mouseEnter(row);
     fireEvent.mouseLeave(row);
     fireEvent.focus(row);
@@ -360,11 +356,11 @@ describe('bindings list', () => {
     selectStageCell('device-1');
     openQueryRow('One');
     await screen.findByText(/No supported native query editor/);
-    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    fireEvent.click(buttonNamed('Preview query'));
     // the active preview builds the hover card of the selected cell
     expect(calls.mock.calls.some(([patch]) => patch.cellId === 'device-1')).toBe(true);
     const before = calls.mock.calls.length;
-    const row = screen.getByRole('button', { name: 'Edit pattern Devices' });
+    const row = buttonNamed('Edit pattern Devices');
     fireEvent.mouseEnter(row);
     fireEvent.mouseLeave(row);
     fireEvent.focus(row);

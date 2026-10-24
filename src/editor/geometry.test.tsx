@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { diagramOf, renderEditor, svgOf } from './editorHarness';
-import { selectStageCell } from './testUtils';
+import { buttonNamed, selectStageCell } from './testUtils';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { EMPTY_CONFIG } from './draft';
 import type { Diagram } from '../types';
@@ -66,7 +66,7 @@ describe('draw.io geometry draft', () => {
     const rectWidth = () => stage().querySelector('g[data-cell-id="region"] rect')!.getAttribute('width');
     expect(stage().getAttribute('data-dmap-hash')).toBe('original');
     selectStageCell('region');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit geometry in draw.io' }));
+    fireEvent.click(buttonNamed('Edit geometry in draw.io'));
     const channel = await editorChannel();
     channel.send({ event: 'init' });
     expect(JSON.parse(channel.port.postMessage.mock.calls[0][0]).xml).toBe(original.xml);
@@ -81,15 +81,15 @@ describe('draw.io geometry draft', () => {
     expect(screen.getByRole('heading', { name: 'region bindings' })).toBeTruthy();
     expect(stage().querySelector('g[data-cell-id="region"]')!.getAttribute('data-dmap-selected')).toBe('true');
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(buttonNamed('Discard'));
     expect(stage().getAttribute('data-dmap-hash')).toBe('original');
     expect(rectWidth()).toBe('180');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit geometry in draw.io' }));
+    fireEvent.click(buttonNamed('Edit geometry in draw.io'));
     const second = await editorChannel();
     second.send({ event: 'save', xml: changed.xml, exit: true });
     second.send({ event: 'export', data: `data:image/svg+xml,${encodeURIComponent(changed.svg)}` });
     await waitFor(() => expect(rectWidth()).toBe('260'));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(save.mock.calls[0][1]).toMatchObject(changed);
     expect(buildCellIndex(mountSvg(document.createElement('div'), save.mock.calls[0][1].svg)).has('region')).toBe(true);
   });
@@ -97,13 +97,13 @@ describe('draw.io geometry draft', () => {
   it('rejects a geometry save with a duplicate cell identity and keeps the draft diagram', async () => {
     const original = diagramOf(svgOf('a'), 'original');
     renderEditor({ config: EMPTY_CONFIG, diagram: original });
-    fireEvent.click(screen.getByRole('button', { name: 'Edit geometry in draw.io' }));
+    fireEvent.click(buttonNamed('Edit geometry in draw.io'));
     const channel = await editorChannel();
     const broken = svgOf('a').replace('</svg>', '<g data-cell-id="a"><rect width="10" height="10"/></g></svg>');
     channel.send({ event: 'save', xml: '<mxfile/>', exit: true });
     channel.send({ event: 'export', data: `data:image/svg+xml,${encodeURIComponent(broken)}` });
     expect(await screen.findByText('Geometry could not be saved')).toBeTruthy();
     expect(screen.getByTestId('dmap-popup-stage').getAttribute('data-dmap-hash')).toBe('original');
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((buttonNamed('Apply bindings') as HTMLButtonElement).disabled).toBe(true);
   });
 });

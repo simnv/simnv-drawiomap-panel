@@ -1,6 +1,7 @@
 import React, { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { buttonNamed } from '../testUtils';
 import pluginJson from '../../plugin.json';
 import { PluginDialog } from './PluginDialog';
 import { pop, push } from './overlayStack';
@@ -70,7 +71,7 @@ describe('PluginDialog', () => {
 
   it('wraps Tab and Shift+Tab inside the dialog', () => {
     mount();
-    const close = screen.getByRole('button', { name: 'Close' });
+    const close = buttonNamed('Close');
     const last = screen.getByText('last');
     last.focus();
     const tab = fireEvent.keyDown(last, { key: 'Tab' });
@@ -139,7 +140,7 @@ describe('PluginDialog', () => {
 
   it('closes through the header button', () => {
     const { onDismiss } = mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(buttonNamed('Close'));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 

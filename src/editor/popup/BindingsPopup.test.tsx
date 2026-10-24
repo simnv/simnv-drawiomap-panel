@@ -7,7 +7,7 @@ import { PanelQueryContext, type PanelQueryService } from '../../query/panel';
 import { DEFAULT_OPTIONS, type Options } from '../../types';
 import type { DiagramConfigV2 } from '../../model/config';
 import { diagramOf, svgOf } from '../editorHarness';
-import { selectStageCell } from '../testUtils';
+import { buttonNamed, selectStageCell } from '../testUtils';
 import { BindingsPopup } from './BindingsPopup';
 
 const service = (): PanelQueryService => ({
@@ -112,7 +112,7 @@ describe('BindingsPopup', () => {
   it('keeps the dirty draft when the user chooses Keep editing', async () => {
     const { onClose } = mount();
     makeDirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(buttonNamed('Cancel'));
     fireEvent.click(await screen.findByRole('button', { name: 'Keep editing' }));
     expect(onClose).not.toHaveBeenCalled();
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Changed');
@@ -120,16 +120,16 @@ describe('BindingsPopup', () => {
 
   it('Cancel closes a clean draft at once, asks for a dirty one, and Discard and close closes; the Discard button only restores', async () => {
     const { onClose } = mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(buttonNamed('Cancel'));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Discard changes?')).toBeNull();
     makeDirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(buttonNamed('Discard'));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('');
     makeDirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(buttonNamed('Cancel'));
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.click(await screen.findByRole('button', { name: 'Discard and close' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
@@ -151,7 +151,7 @@ describe('BindingsPopup', () => {
   it('applies and closes in one step', () => {
     const { onClose, onOptionsChange } = mount();
     makeDirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Apply and close' }));
+    fireEvent.click(buttonNamed('Apply and close'));
     expect(onOptionsChange).toHaveBeenCalledTimes(1);
     expect(onOptionsChange.mock.calls[0][0].config.overrides).toContainEqual({
       cellId: 'a',
@@ -166,8 +166,8 @@ describe('BindingsPopup', () => {
     expect(screen.queryByText(CONFLICT)).toBeNull();
     update(optionsOf(config('Elsewhere')));
     expect(screen.getByText(CONFLICT)).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
+    expect((buttonNamed('Apply bindings') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(buttonNamed('Overwrite'));
     expect(onOptionsChange.mock.calls[0][0].config.overrides).toContainEqual({
       cellId: 'a',
       display: { label: 'Changed' },
@@ -179,20 +179,20 @@ describe('BindingsPopup', () => {
     makeDirty();
     update({ ...optionsOf(), diagram: diagramOf(svgOf('a', 'b', 'c'), 'replacement') });
     expect(screen.getByText(CONFLICT)).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((buttonNamed('Apply bindings') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('Keep editing folds the conflict alert, keeps the draft and the Apply block, and Resolve brings the choices back', () => {
     const { update, onOptionsChange } = mount();
     makeDirty();
     update(optionsOf(config('Elsewhere')));
-    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    fireEvent.click(buttonNamed('Keep editing'));
     expect(screen.queryByText(CONFLICT)).toBeNull();
     expect(screen.getByText('The saved bindings changed. Apply is blocked.')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((buttonNamed('Apply bindings') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Changed');
     expect(onOptionsChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    fireEvent.click(buttonNamed('Resolve'));
     expect(screen.getByText(CONFLICT)).toBeTruthy();
   });
 
@@ -200,7 +200,7 @@ describe('BindingsPopup', () => {
     const { update, onOptionsChange } = mount();
     makeDirty();
     update(optionsOf(config('Elsewhere')));
-    fireEvent.click(screen.getByRole('button', { name: 'Reload saved' }));
+    fireEvent.click(buttonNamed('Reload saved'));
     expect(screen.queryByText(CONFLICT)).toBeNull();
     expect(onOptionsChange).not.toHaveBeenCalled();
     selectStageCell('a');
@@ -212,23 +212,23 @@ describe('BindingsPopup', () => {
     const { update } = mount();
     makeDirty();
     update(optionsOf(config('Elsewhere')));
-    screen.getByRole('button', { name: 'Reload saved' }).focus();
-    fireEvent.click(screen.getByRole('button', { name: 'Reload saved' }));
+    buttonNamed('Reload saved').focus();
+    fireEvent.click(buttonNamed('Reload saved'));
     await waitFor(() => expect(document.activeElement?.closest('[role="dialog"]')).toBeTruthy());
   });
 
   it('does not report a conflict after its own Apply', () => {
     const { update, onOptionsChange } = mount();
     makeDirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     update(onOptionsChange.mock.calls[0][0]);
     expect(screen.queryByText(CONFLICT)).toBeNull();
   });
 
   describe('undo and redo', () => {
     const label = () => (screen.getByLabelText('Label template') as HTMLInputElement).value;
-    const undoButton = () => screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement;
-    const redoButton = () => screen.getByRole('button', { name: 'Redo' }) as HTMLButtonElement;
+    const undoButton = () => buttonNamed('Undo') as HTMLButtonElement;
+    const redoButton = () => buttonNamed('Redo') as HTMLButtonElement;
     const ctrl = (target: Element, key: string, extra: Record<string, boolean> = {}) =>
       fireEvent.keyDown(target, { key, ctrlKey: true, ...extra });
 
@@ -252,7 +252,7 @@ describe('BindingsPopup', () => {
     it('undoes and redoes with the keys when the focus is on a button', () => {
       mount();
       makeDirty();
-      const target = screen.getByRole('button', { name: 'Cancel' });
+      const target = buttonNamed('Cancel');
       ctrl(target, 'z');
       expect(label()).toBe('');
       ctrl(target, 'Z', { shiftKey: true });
@@ -306,7 +306,7 @@ describe('BindingsPopup', () => {
     it('clears the history with Apply', () => {
       mount();
       makeDirty();
-      fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+      fireEvent.click(buttonNamed('Apply bindings'));
       expect(undoButton().disabled).toBe(true);
       expect(redoButton().disabled).toBe(true);
       expect(label()).toBe('Changed');
