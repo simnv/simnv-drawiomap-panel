@@ -141,7 +141,7 @@ test.describe('bindings popup: undo and redo', () => {
     await closeBindingsPopup(page);
   });
 
-  test('Ctrl+Z in a text field and in the Prometheus code editor leaves the draft alone', async ({
+  test('Ctrl+Z in a text field and in the Prometheus code editor leaves the draft alone', { tag: '@matrix' }, async ({
     page,
     config,
     createDiagram,
@@ -193,7 +193,7 @@ test.describe('bindings popup: undo and redo', () => {
     await closeBindingsPopup(page);
   });
 
-  test('Ctrl+Z with the metrics explorer dialog open does nothing to the draft', async ({
+  test('Ctrl+Z with the metrics explorer dialog open does nothing to the draft', { tag: '@matrix' }, async ({
     page,
     config,
     createDiagram,

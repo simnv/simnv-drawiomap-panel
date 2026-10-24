@@ -30,7 +30,10 @@ for v in 12:3012 13:3013; do
   step "e2e $service on :$port"
   docker compose up -d --force-recreate --wait victoriametrics metrics-gen "$service"
   ./scripts/wait-stack.sh "$port"
-  GRAFANA_URL="http://localhost:$port" npx playwright test
+  # The version split (docs/research/test-cost-audit.md): 12 runs the project matrix, 13 runs both projects.
+  projects=(--project=matrix)
+  [ "$service" = grafana13 ] && projects+=(--project=plugin)
+  GRAFANA_URL="http://localhost:$port" npx playwright test "${projects[@]}"
   docker compose down -v
 done
 step "ci:local OK"

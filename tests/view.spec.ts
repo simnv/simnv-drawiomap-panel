@@ -94,7 +94,7 @@ for (const [theme, osScheme, dark] of [
   ['dark', 'light', true],
   ['light', 'dark', false],
 ] as const) {
-  test(`diagram background follows the Grafana ${theme} theme, not the OS preference`, async ({
+  test(`diagram background follows the Grafana ${theme} theme, not the OS preference`, { tag: '@matrix' }, async ({
     gotoDashboardPage,
     page,
   }) => {

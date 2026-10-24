@@ -160,7 +160,7 @@ test.describe('live zoom on the desktop', () => {
     expect(Math.abs(g.left - g.right)).toBeLessThanOrEqual(1);
   });
 
-  test('Fit keeps the whole diagram in the panel in view, panel view and panel edit mode, and after a resize', async ({
+  test('Fit keeps the whole diagram in the panel in view, panel view and panel edit mode, and after a resize', { tag: '@matrix' }, async ({
     page,
     gotoDashboardPage,
     gotoPanelEditPage,

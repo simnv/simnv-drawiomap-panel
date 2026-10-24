@@ -37,7 +37,7 @@ test.describe('bindings popup: entry points and layout', () => {
   });
 });
 
-test.describe('bindings popup: persistence and loading', () => {
+test.describe('bindings popup: persistence and loading', { tag: '@matrix' }, () => {
   test('Apply and close persists after the dashboard saves', async ({
     page,
     request,
