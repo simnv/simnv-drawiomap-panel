@@ -6,6 +6,7 @@ import { createQueryController } from '../../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../../query/panel';
 import { DEFAULT_OPTIONS, type Options } from '../../types';
 import type { DiagramConfigV2 } from '../../model/config';
+import { nativeQuery } from '../../fixtures/authoring-config';
 import { diagramOf, svgOf } from '../editorHarness';
 import { buttonNamed, selectStageCell } from '../testUtils';
 import { BindingsPopup } from './BindingsPopup';
@@ -107,6 +108,19 @@ describe('BindingsPopup', () => {
     esc();
     fireEvent.click(await screen.findByRole('button', { name: 'Discard and close' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('commits a field that waits for its blur before Esc decides, so typed text is not lost silently', async () => {
+    const { onClose } = mount(optionsOf({ ...config(), queries: [nativeQuery('q', 'up', { p: 'cell.id' })] }));
+    fireEvent.click(buttonNamed('Edit query q'));
+    const field = screen.getByLabelText('p parameter name') as HTMLInputElement;
+    field.focus();
+    fireEvent.change(field, { target: { value: 'renamed' } });
+    // The parameter name commits on blur, so the draft is still clean here.
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    esc(field);
+    expect(await screen.findByText('Discard changes?')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('keeps the dirty draft when the user chooses Keep editing', async () => {

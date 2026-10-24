@@ -30,6 +30,8 @@ export interface BindingsPopupProps {
 
 const OVERLAY_ID = 'bindings-popup';
 const CONFIRM_ID = 'bindings-popup-confirm';
+/** The focused elements that can hold typed text that is not committed yet (Monaco keeps its text in a textarea). */
+const TEXT_FIELD = 'input:not([type=checkbox]):not([type=radio]), textarea, [contenteditable="true"]';
 
 /** The bindings popup: a modal with the bindings editor, the Esc ownership, the close confirmation and the conflict check. */
 export function BindingsPopup({
@@ -55,11 +57,23 @@ export function BindingsPopup({
     dirty.current = value;
   }, []);
 
+  // Some fields (the datasource code editor, a parameter name) commit their text on blur. A close by key has no blur, so
+  // a focused text field inside the popup loses its focus first; the decision then follows on the next tick, when the
+  // commit has reached `dirty`. Any other close decides at once.
   const requestClose = useCallback(() => {
-    if (dirty.current) {
-      setConfirming(true);
+    const decide = () => {
+      if (dirty.current) {
+        setConfirming(true);
+      } else {
+        onClose();
+      }
+    };
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && bodyRef.current?.contains(active) && active.matches(TEXT_FIELD)) {
+      active.blur();
+      setTimeout(decide, 0);
     } else {
-      onClose();
+      decide();
     }
   }, [onClose]);
 
