@@ -1,4 +1,5 @@
 import type { DisplayValue, LinkModel, ScopedVars } from '@grafana/data';
+import { unshield } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import type { BindStatus, CellPatch, SeriesInfo } from '../types';
 
@@ -75,7 +76,8 @@ export function resolveLinks(
     // a dashboard variable can put a scheme into the url, so check the final text again
     const href = replaceVariables(u.url, vars);
     if (isAllowedUrl(href)) {
-      const title = u.title !== undefined ? replaceVariables(u.title, vars) : defaultUrlTitle(href, cardTitle);
+      const title =
+        u.title !== undefined ? unshield(replaceVariables(u.title, vars)) : defaultUrlTitle(href, cardTitle);
       out.push({ title, href, target: '_blank', origin: patch });
     }
   }

@@ -3,6 +3,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, ConfirmModal, Icon, IconButton, useStyles2 } from '@grafana/ui';
 import { useOverlay } from './popup/overlayStack';
+import { displayName, idAndName } from '../adapter/cellTitle';
 import type { CellMeta } from '../types';
 import {
   cellRows,
@@ -45,14 +46,14 @@ export const rowName = (row: BindingRow): string =>
   row.kind === 'pattern'
     ? row.name
     : row.kind === 'override'
-      ? row.label
-        ? `${row.cellId} (${row.label})`
-        : row.cellId
+      ? row.title
+        ? `${row.handle} (${row.title})`
+        : row.handle
       : row.kind === 'widget'
         ? row.label
         : row.name;
-const problemText = (problem: RowProblem) =>
-  `${problem.cellId ? `${problem.cellId}: ` : ''}${problem.message} (${problem.path})`;
+const problemText = (problem: RowProblem, nameOf: (cellId: string) => string) =>
+  `${problem.cellId ? `${nameOf(problem.cellId)}: ` : ''}${problem.message} (${problem.path})`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function BindingsList({
@@ -85,6 +86,10 @@ export function BindingsList({
         )
     );
   }, [list, text]);
+  const nameOf = useMemo(() => {
+    const byId = new Map(cells.map((c) => [c.id, c]));
+    return (cellId: string) => idAndName(byId.get(cellId), cellId);
+  }, [cells]);
   const [cellLimit, setCellLimit] = useState(CELLS_PAGE);
   const found = useMemo(() => cellRows(text, cells), [text, cells]);
   // A new filter text starts at the first page again (state adjustment during render).
@@ -156,7 +161,7 @@ export function BindingsList({
         {open && problems > 0 && (
           <ul aria-label={`Problems of ${name}`} className={styles.problems}>
             {row.problems.map((problem, i) => (
-              <li key={i}>{problemText(problem)}</li>
+              <li key={i}>{problemText(problem, nameOf)}</li>
             ))}
           </ul>
         )}
@@ -179,7 +184,7 @@ export function BindingsList({
   const overrideRow = (row: OverrideRow) =>
     renderRow(
       row,
-      row.label ? `${row.cellId} (${row.label})` : row.cellId,
+      rowName(row),
       [row.keys.length ? `sets ${row.keys.join(', ')}` : 'sets nothing', plural(row.problems.length, 'problem')].join(
         ' · '
       ),
@@ -192,7 +197,7 @@ export function BindingsList({
       row.label,
       [
         row.widgetKind,
-        `anchor ${row.anchorCellId}`,
+        `anchor ${nameOf(row.anchorCellId)}`,
         `query ${row.queryId}`,
         plural(row.problems.length, 'problem'),
       ].join(' · '),
@@ -231,7 +236,7 @@ export function BindingsList({
                     <Icon name="exclamation-triangle" className={styles.warn} />
                     {entry.row ? rowName(entry.row) : 'General'}
                   </span>
-                  <span className={styles.summary}>{problemText(entry.problem)}</span>
+                  <span className={styles.summary}>{problemText(entry.problem, nameOf)}</span>
                 </button>
               </li>
             ))}
@@ -286,12 +291,14 @@ export function BindingsList({
                     <button
                       type="button"
                       className={styles.main}
-                      aria-label={`Select cell ${cell.id}`}
+                      aria-label={`Select cell ${cell.handle ?? cell.id}`}
                       aria-current={`cell:${cell.id}` === selectedKey ? 'true' : undefined}
                       onClick={() => onSelectCell(cell.id)}
                     >
-                      <span className={styles.title}>{cell.id}</span>
-                      {cell.labelText ? <span className={styles.summary}>{cell.labelText}</span> : null}
+                      <span className={styles.title}>{cell.handle ?? cell.id}</span>
+                      {displayName(cell, cell.id) !== (cell.handle ?? cell.id) ? (
+                        <span className={styles.summary}>{displayName(cell, cell.id)}</span>
+                      ) : null}
                     </button>
                   </li>
                 ))}
@@ -346,7 +353,7 @@ function DeleteConfirm({
         pending.kind === 'widget'
           ? `Delete widget ${pending.label}? You can undo this with Undo or Revert to saved before you apply.`
           : pending.kind === 'override'
-            ? `Delete the override of ${pending.cellId}? You can undo this with Undo or Revert to saved before you apply.`
+            ? `Delete the override of ${rowName(pending)}? You can undo this with Undo or Revert to saved before you apply.`
             : ''
       }
       confirmText="Delete"

@@ -531,14 +531,16 @@ function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined 
   };
 }
 
-function titleOf(patch: CellPatch): string {
+/** The card title: the title template of the pattern (hover.title, link.card.title), else the title of the cell. */
+function titleOf(patch: CellPatch & { hover?: { title?: string } }): string {
   const cell = patch.scope.cell;
-  const fallback = cell.label || cell.key || patch.cellId;
-  if (patch.card?.title === undefined) {
+  const fallback = patch.scope.cellTitle || cell.label || cell.key || patch.cellId;
+  const template = patch.hover?.title ?? patch.card?.title;
+  if (template === undefined) {
     return fallback;
   }
-  const r = resolveTemplate(patch.card.title, patch.scope);
-  return r.unresolved.length ? fallback : r.text;
+  const r = resolveTemplate(template, patch.scope);
+  return r.unresolved.length || !r.text.trim() ? fallback : r.text;
 }
 
 /**

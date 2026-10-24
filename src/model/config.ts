@@ -88,6 +88,8 @@ export type HoverRow =
   | { kind: 'drilldown'; label: string; url: string };
 export interface HoverSpec {
   enabled?: boolean;
+  /** card title (template); the default is the title of the cell, see adapter/cellTitle */
+  title?: string;
   rows: HoverRow[];
 }
 
@@ -207,6 +209,7 @@ const directionSeries = z
 const hoverSchema = z
   .object({
     enabled: z.boolean().optional(),
+    title: z.string().optional(),
     // An override may hold only `enabled`: the rows then come from the patterns (`mergeDisplay` fills in an empty list).
     rows: z
       .array(

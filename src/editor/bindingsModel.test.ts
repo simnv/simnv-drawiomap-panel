@@ -403,3 +403,19 @@ describe('cellRows', () => {
     expect(cellRows('n', lots)).toHaveLength(50);
   });
 });
+
+describe('search keeps the label next to the title', () => {
+  const linked = (): CellMeta => ({ ...cell('l9', 'link', 'WAN 100M'), title: 'Switch-A p9 ↔ AP-1' });
+  const cfg: DiagramConfigV2 = {
+    ...config,
+    patterns: [{ id: 'links', name: 'Links', select: { kind: 'link' }, display: {} }],
+    overrides: [{ cellId: 'l9', display: { label: 'x' } }],
+  };
+  it('finds a pattern and an override by label, title and id', () => {
+    const list = buildBindingsList(cfg, [linked()], []);
+    for (const text of ['WAN 100M', 'AP-1', 'l9']) {
+      expect(filterBindings(list, { text, problemsOnly: false }).patterns).toHaveLength(1);
+      expect(filterBindings(list, { text, problemsOnly: false }).overrides).toHaveLength(1);
+    }
+  });
+});

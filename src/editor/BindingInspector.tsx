@@ -1,6 +1,7 @@
 import { Button, Select } from '@grafana/ui';
 import React, { useLayoutEffect, useMemo, useRef } from 'react';
 import { displayProvenance, type DisplayOwner, type EffectiveCellBinding } from '../binding/patterns';
+import { displayName, identityOf } from '../adapter/cellTitle';
 import type { CellMeta } from '../types';
 import { fieldSourceOf } from './fieldSource';
 import { draftPatternIndex, type BindingDraft, type DraftAction } from './draft';
@@ -42,6 +43,7 @@ export function BindingInspector({
   if (!draft.cellId || !binding) {
     return <p>Select a diagram element to edit its bindings.</p>;
   }
+  const name = displayName(meta, draft.cellId);
   const pattern = draft.scope === 'pattern' ? draft.config.patterns[draftPatternIndex(draft)] : undefined;
   const editDisplay = pattern?.display ?? binding.display;
   const editing: DisplayOwner = pattern
@@ -53,10 +55,11 @@ export function BindingInspector({
   return (
     <section aria-label="Element bindings">
       <h3 ref={heading} tabIndex={-1}>
-        {draft.cellId} bindings
+        {meta?.handle ?? draft.cellId} bindings
       </h3>
       <EditorSection title="Element details">
-        <p>Identity: {String(binding.scope.cell?.key ?? draft.cellId)}</p>
+        <p>Name: {name}</p>
+        <p>Identity: {identityOf(meta, draft.cellId)}</p>
         <p>
           Patterns:{' '}
           {binding.patternIds.map((id) => draft.config.patterns.find((p) => p.id === id)?.name ?? id).join(', ') ||
