@@ -11,7 +11,7 @@ import React, {
 } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2, PanelData } from '@grafana/data';
-import { Alert, Button, useStyles2, useTheme2 } from '@grafana/ui';
+import { Alert, Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { bindPlan, widgetDiagnostics } from '../binding/engine';
 import { resolvePatterns } from '../binding/patterns';
@@ -135,7 +135,7 @@ export function BindingEditor({
   const [geometryError, setGeometryError] = useState('');
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [previewEpoch, setPreviewEpoch] = useState(0);
-  // The datasource query editors keep their own text (Monaco does not follow its value). Revert to saved remounts them.
+  // The datasource query editors keep their own text (Monaco does not follow its value). Discard remounts them.
   const [resetEpoch, setResetEpoch] = useState(0);
   const [queryId, setQueryId] = useState(config.queries[0]?.id);
   const [queryError, setQueryError] = useState('');
@@ -660,7 +660,7 @@ export function BindingEditor({
     onControls?.({ undo, redo });
     return () => onControls?.(null);
   }, [onControls, undo, redo]);
-  // "Revert to saved" restores the saved bindings in the open popup. "Cancel" closes it; the owner asks when the
+  // "Discard" restores the saved bindings in the open popup. "Cancel" closes it; the owner asks when the
   // draft has changes.
   const resetToSaved = () => {
     dispatch({ type: 'reset' });
@@ -700,45 +700,54 @@ export function BindingEditor({
   return (
     <div className={styles.root} data-testid="dmap-bindings-editor">
       <div className={styles.actions} role="toolbar" aria-label="Binding draft actions">
-        <Button variant="primary" size="sm" aria-label="Apply bindings" disabled={blocked} onClick={() => apply(false)}>
-          Apply
-        </Button>
-        <Button variant="primary" size="sm" disabled={blocked} onClick={() => apply(true)}>
-          Apply and close
-        </Button>
-        <Button
-          variant="secondary"
-          fill="text"
-          size="sm"
-          icon="arrow-left"
+        <IconButton
+          name="arrow-left"
+          size="lg"
+          tooltip="Undo"
+          aria-label="Undo"
           aria-keyshortcuts="Control+Z Meta+Z"
           disabled={!canUndo}
           onClick={undo}
-        >
-          Undo
-        </Button>
-        <Button
-          variant="secondary"
-          fill="text"
-          size="sm"
-          icon="arrow-right"
+        />
+        <IconButton
+          name="arrow-right"
+          size="lg"
+          tooltip="Redo"
+          aria-label="Redo"
           aria-keyshortcuts="Control+Shift+Z Control+Y Meta+Shift+Z"
           disabled={!canRedo}
           onClick={redo}
-        >
-          Redo
-        </Button>
-        <Button variant="secondary" size="sm" onClick={resetToSaved}>
-          Revert to saved
-        </Button>
-        <Button variant="secondary" size="sm" onClick={onRequestClose}>
-          Cancel
-        </Button>
+        />
         {dirty && (
           <span className={styles.dirty} role="status">
             Unsaved changes
           </span>
         )}
+        <div className={styles.toolbarEnd}>
+          {draft.diagram && (
+            <Button variant="secondary" size="sm" icon="edit" onClick={() => setGeometryOpen(true)}>
+              Edit geometry in draw.io
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" onClick={onRequestClose}>
+            Cancel
+          </Button>
+          <Button variant="destructive" fill="outline" size="sm" onClick={resetToSaved}>
+            Discard
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            aria-label="Apply bindings"
+            disabled={blocked}
+            onClick={() => apply(false)}
+          >
+            Apply
+          </Button>
+          <Button variant="primary" size="sm" disabled={blocked} onClick={() => apply(true)}>
+            Apply and close
+          </Button>
+        </div>
       </div>
       {conflict && conflictFolded && (
         <div className={styles.actions} role="status">
@@ -840,8 +849,6 @@ export function BindingEditor({
                     }
                   : undefined
               }
-              canEditGeometry={!!draft.diagram}
-              onEditGeometry={() => setGeometryOpen(true)}
               card={{
                 patch: cardPatch,
                 resolve,
@@ -962,6 +969,15 @@ const getStyles = (theme: GrafanaTheme2) => ({
     alignItems: 'center',
     gap: theme.spacing(1),
     padding: theme.spacing(0, 0, 1),
+  }),
+  // The end group sits at the right of the top row; on a narrow screen it wraps below the undo buttons and stays right.
+  toolbarEnd: css({
+    marginLeft: 'auto',
+    display: 'flex',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: theme.spacing(1),
   }),
   dirty: css({ color: theme.colors.warning.text, fontSize: theme.typography.bodySmall.fontSize }),
   conflict: css({ display: 'flex', flexDirection: 'column', gap: theme.spacing(1) }),

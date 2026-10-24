@@ -28,7 +28,7 @@ export interface QueryUser {
 
 export interface QueryPaneProps {
   query: NamedQuery;
-  /** A new value remounts the datasource editor: its text must follow a Revert to saved. */
+  /** A new value remounts the datasource editor: its text must follow a Discard. */
   epoch: number;
   /** The draft query context: the default datasource of the draft applies. */
   context: QueryContext;

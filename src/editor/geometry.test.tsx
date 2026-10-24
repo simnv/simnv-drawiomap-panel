@@ -81,7 +81,7 @@ describe('draw.io geometry draft', () => {
     expect(screen.getByRole('heading', { name: 'region bindings' })).toBeTruthy();
     expect(stage().querySelector('g[data-cell-id="region"]')!.getAttribute('data-dmap-selected')).toBe('true');
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(stage().getAttribute('data-dmap-hash')).toBe('original');
     expect(rectWidth()).toBe('180');
     fireEvent.click(screen.getByRole('button', { name: 'Edit geometry in draw.io' }));

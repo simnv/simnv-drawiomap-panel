@@ -101,7 +101,7 @@ test('a pattern row opens the pattern for editing, a query row opens its editor,
   await list.getByRole('button', { name: 'Delete override device-2' }).click();
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(list.getByRole('button', { name: 'Overrides (0)', exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Revert to saved', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(list.getByRole('button', { name: 'Overrides (1)', exact: true })).toBeVisible();
 });
 

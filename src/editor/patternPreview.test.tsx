@@ -178,7 +178,7 @@ describe('explicit full pattern preview', () => {
         s.rerenderWith({ ...s.context, generation: 2 });
       }
       if (action === 'cancel') {
-        fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
       }
       if (action === 'apply') {
         fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
@@ -571,7 +571,7 @@ it('applies a completed full preview once, discards prepared results, and makes 
   expect(s.save.mock.calls[0][0].patterns.at(-1).display.label).toBe('Applied pattern');
   expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
   fireEvent.change(editorField('Label template'), { target: { value: 'Discard me' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
   expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied pattern');
   expect(s.execute).toHaveBeenCalledTimes(5);
   s.controller.dispose();

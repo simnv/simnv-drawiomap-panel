@@ -15,7 +15,7 @@ for (const entry of ['Diagram option', 'geometry'] as const) {
     const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const popup = entry === 'geometry' ? await openBindingsPopup(page) : undefined;
     if (popup) {
-      await popupInspector(popup).getByRole('button', { name: 'Edit geometry in draw.io' }).click();
+      await popup.getByRole('button', { name: 'Edit geometry in draw.io' }).click();
     } else {
       await panelEditPage.getCustomOptions('Diagram').expand();
       await page.getByTestId('dmap-open-editor').click();

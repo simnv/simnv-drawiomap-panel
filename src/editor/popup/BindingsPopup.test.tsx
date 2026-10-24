@@ -1,6 +1,6 @@
 import React from 'react';
 import { getDefaultTimeRange, LoadingState } from '@grafana/data';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createQueryController } from '../../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../../query/panel';
@@ -105,7 +105,7 @@ describe('BindingsPopup', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
     esc();
-    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard and close' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
@@ -118,21 +118,27 @@ describe('BindingsPopup', () => {
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('Changed');
   });
 
-  it('Cancel closes a clean draft at once, asks for a dirty one, and Discard closes; Revert to saved only restores', async () => {
+  it('Cancel closes a clean draft at once, asks for a dirty one, and Discard and close closes; the Discard button only restores', async () => {
     const { onClose } = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Discard changes?')).toBeNull();
     makeDirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
     expect((screen.getByLabelText('Label template') as HTMLInputElement).value).toBe('');
     makeDirty();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard and close' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
+  });
+
+  it('puts the geometry button in the top toolbar', () => {
+    mount();
+    const toolbar = screen.getByRole('toolbar', { name: 'Binding draft actions' });
+    expect(within(toolbar).getByRole('button', { name: 'Edit geometry in draw.io' })).toBeTruthy();
   });
 
   it('applies and closes in one step', () => {

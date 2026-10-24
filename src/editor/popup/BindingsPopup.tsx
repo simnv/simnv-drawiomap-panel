@@ -139,7 +139,7 @@ function DiscardConfirm({ onDiscard, onKeepEditing }: { onDiscard: () => void; o
       isOpen
       title="Discard changes?"
       body="The draft has changes that you did not apply. Discard them and close the editor?"
-      confirmText="Discard"
+      confirmText="Discard and close"
       dismissText="Keep editing"
       onConfirm={onDiscard}
       onDismiss={onKeepEditing}
