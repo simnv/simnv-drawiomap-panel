@@ -28,14 +28,26 @@ for (const entry of ['Diagram option', 'geometry'] as const) {
     await frameEl.evaluate((el) => el.setAttribute('data-dmap-test-mark', 'before-refresh'));
 
     const queries: string[] = [];
-    page.on('request', (r) => new URL(r.url()).pathname === '/api/ds/query' && queries.push(r.url()));
+    let inflight = 0;
+    const isQuery = (url: string) => new URL(url).pathname === '/api/ds/query';
+    page.on('request', (r) => {
+      if (!isQuery(r.url())) return;
+      queries.push(r.url());
+      inflight++;
+    });
+    const settle = (r: { url(): string }) => {
+      if (isQuery(r.url())) inflight--;
+    };
+    page.on('requestfinished', settle);
+    page.on('requestfailed', settle);
     // The modal covers the time picker, so dispatch the click on the Refresh button directly.
     const refresh = panelEditPage.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2);
     for (let i = 1; i <= 2; i++) {
       const count = queries.length;
       await refresh.dispatchEvent('click');
       await expect.poll(() => queries.length).toBeGreaterThan(count);
-      await page.waitForLoadState('networkidle');
+      // The refresh is over when every query it sent has an answer.
+      await expect.poll(() => inflight).toBe(0);
     }
 
     await expect(frameEl).toHaveAttribute('data-dmap-test-mark', 'before-refresh');

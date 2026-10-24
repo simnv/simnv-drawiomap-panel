@@ -29,45 +29,6 @@ async function readRows(card: Locator): Promise<string[]> {
 }
 
 test.describe('bindings popup: live card and field sources', () => {
-  test('the card preview shows the rows of the panel card for the same element', async ({
-    page,
-    config,
-    createDiagram,
-    gotoPanelEditPage,
-  }) => {
-    const uid = await createDiagram(config);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    const dialog = await openBindingsPopup(page);
-    await selectStageCell(dialog, 'device-1');
-    await expect(preview(dialog)).toBeVisible();
-    // The preview is the first block of the inspector.
-    await expect(popupInspector(dialog).locator('section').first()).toHaveAttribute('aria-label', 'Hover card preview');
-    const previewRows = await readRows(preview(dialog));
-    expect(previewRows).toHaveLength(2);
-    expect(previewRows[0]).toContain('Detail value');
-    fs.mkdirSync(SHOTS, { recursive: true });
-    await page.screenshot({ path: `${SHOTS}/inspector-desktop-${port()}.png` });
-    await closeBindingsPopup(page);
-    await page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"]').first().hover();
-    const card = page.getByTestId('dmap-panel').getByRole('tooltip');
-    await expect(card).toBeVisible();
-    expect(await readRows(card)).toEqual(previewRows);
-  });
-
-  test('a cell without hover rows shows an empty card preview', async ({
-    page,
-    config,
-    createDiagram,
-    gotoPanelEditPage,
-  }) => {
-    const uid = await createDiagram(config);
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    const dialog = await openBindingsPopup(page);
-    await selectStageCell(dialog, 'chart-1');
-    await expect(preview(dialog)).toContainText('No card for this element');
-  });
-
   test('a pattern field shows its chip; a reset inside a hover row resets the whole rows array', async ({
     page,
     config,
@@ -303,22 +264,48 @@ test.describe('bindings popup: queries', () => {
   });
 });
 
-test.describe('bindings popup: narrow screens', () => {
-  async function tabs(page: Page) {
-    return page.getByTestId('dmap-popup-layout');
-  }
+// These checks open the popup and close it again without a change. They share one panel edit page, so the page loads
+// once. A step leaves the popup closed.
+test('bindings popup: card preview and layouts share one page', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  test.setTimeout(150_000);
+  const uid = await createDiagram(config);
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
 
-  test('at 900x700 the panes become tabs and a stage click opens the Inspector tab', async ({
-    page,
-    config,
-    createDiagram,
-    gotoPanelEditPage,
-  }) => {
-    const uid = await createDiagram(config);
-    await page.setViewportSize({ width: 900, height: 700 });
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  await test.step('a cell without hover rows shows an empty card preview', async () => {
     const dialog = await openBindingsPopup(page);
-    const layout = await tabs(page);
+    await selectStageCell(dialog, 'chart-1');
+    await expect(preview(dialog)).toContainText('No card for this element');
+    await closeBindingsPopup(page);
+  });
+
+  await test.step('the card preview shows the rows of the panel card for the same element', async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const dialog = await openBindingsPopup(page);
+    await selectStageCell(dialog, 'device-1');
+    await expect(preview(dialog)).toBeVisible();
+    // The preview is the first block of the inspector.
+    await expect(popupInspector(dialog).locator('section').first()).toHaveAttribute('aria-label', 'Hover card preview');
+    const previewRows = await readRows(preview(dialog));
+    expect(previewRows).toHaveLength(2);
+    expect(previewRows[0]).toContain('Detail value');
+    fs.mkdirSync(SHOTS, { recursive: true });
+    await page.screenshot({ path: `${SHOTS}/inspector-desktop-${port()}.png` });
+    await closeBindingsPopup(page);
+    await page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"]').first().hover();
+    const card = page.getByTestId('dmap-panel').getByRole('tooltip');
+    await expect(card).toBeVisible();
+    expect(await readRows(card)).toEqual(previewRows);
+  });
+
+  await test.step('at 900x700 the panes become tabs and a stage click opens the Inspector tab', async () => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    const dialog = await openBindingsPopup(page);
+    const layout = page.getByTestId('dmap-popup-layout');
     await expect(layout).toHaveAttribute('data-dmap-layout', 'tabs');
     await expect(dialog.getByRole('tab')).toHaveText(['List', 'Diagram', 'Inspector']);
     await expect(dialog.getByRole('tab', { name: 'List' })).toHaveAttribute('aria-selected', 'true');
@@ -365,15 +352,14 @@ test.describe('bindings popup: narrow screens', () => {
     await closeBindingsPopup(page);
   });
 
-  test('at 1280x800 the popup shows three panes', async ({ page, config, createDiagram, gotoPanelEditPage }) => {
-    const uid = await createDiagram(config);
+  await test.step('at 1280x800 the popup shows three panes', async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
     const dialog = await openBindingsPopup(page);
     await expect(page.getByTestId('dmap-popup-layout')).toHaveAttribute('data-dmap-layout', 'panes');
     await expect(dialog.getByRole('tab')).toHaveCount(0);
     await expect(list(dialog)).toBeVisible();
     await expect(dialog.getByTestId('dmap-pane-stage')).toBeVisible();
     await expect(dialog.getByTestId('dmap-pane-inspector')).toBeVisible();
+    await closeBindingsPopup(page);
   });
 });

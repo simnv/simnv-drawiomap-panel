@@ -1,4 +1,4 @@
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 
 test('view mode loads no draw.io code', async ({ gotoDashboardPage, page }) => {
   const urls: string[] = [];

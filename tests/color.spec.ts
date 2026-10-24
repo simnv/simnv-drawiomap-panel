@@ -1,4 +1,4 @@
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 
 // The demo dashboard: WAN query W has the Color scheme "Green-Yellow-Red" and Max 100 Mb/s by an override.
 // LAN links use query A with "From thresholds" and a capacity from the port speed series S.

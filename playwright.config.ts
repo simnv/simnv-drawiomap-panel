@@ -13,7 +13,8 @@ export default defineConfig<PluginOptions>(baseConfig, {
   testDir: './tests',
   timeout: 90_000,
   expect: { timeout: 30_000 },
-  reporter: [['list'], ['html', { open: 'never' }]],
+  // The HTML report costs time on every run. Write it in CI, or locally with PW_HTML=1.
+  reporter: process.env.CI || process.env.PW_HTML ? [['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
     baseURL: process.env.GRAFANA_URL || 'http://localhost:3012',
     actionTimeout: 10_000,
