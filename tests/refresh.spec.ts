@@ -149,8 +149,8 @@ for (const kind of Object.keys(kinds) as Array<keyof typeof kinds>) {
         await expect.poll(() => held.held).toBeGreaterThan(0);
         // Sample the panel while the responses are pending.
         const samples: Array<{ missing: number; rows: number; text: string[]; box: unknown }> = [];
-        const until = Date.now() + 500;
-        while (Date.now() < until) {
+        // A fixed number of samples: a time window gives too few of them on a loaded machine.
+        while (samples.length < 10) {
           samples.push({
             missing: await devices.and(panel.locator('[data-dmap-status="missing"]')).count(),
             rows: await rows.count(),
@@ -159,7 +159,6 @@ for (const kind of Object.keys(kinds) as Array<keyof typeof kinds>) {
           });
           await page.waitForTimeout(50);
         }
-        expect(samples.length).toBeGreaterThan(5);
         expect(samples.filter((s) => s.missing || s.rows)).toEqual([]);
         expect(samples.filter((s) => JSON.stringify(s.box) !== JSON.stringify(before))).toEqual([]);
       } finally {
