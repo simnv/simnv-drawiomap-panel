@@ -140,20 +140,15 @@ describe('buildCard for a link', () => {
   });
   it('uses the readable cell title, and a title template of the pattern over it', () => {
     const titled = linkPatch();
-    titled.scope.cell.title = 'Switch-A p9 ↔ AP-1';
+    titled.scope.cellTitle = 'Switch-A p9 ↔ AP-1';
     expect(buildCard(titled, ctx).title).toBe('Switch-A p9 ↔ AP-1');
-    expect(buildCard({ ...titled, card: { reducer: 'last', title: '${cell.title} (uplink)' } }, ctx).title).toBe(
+    expect(buildCard({ ...titled, card: { reducer: 'last', title: '${cellTitle} (uplink)' } }, ctx).title).toBe(
       'Switch-A p9 ↔ AP-1 (uplink)'
     );
     // an unresolved template falls back to the readable title
     expect(buildCard({ ...titled, card: { reducer: 'last', title: '${cell.nope}' } }, ctx).title).toBe(
       'Switch-A p9 ↔ AP-1'
     );
-  });
-  it('shows a readable form of a cell id when the cell has no label and no title', () => {
-    const bare = linkPatch();
-    bare.scope.cell.key = 'pg-group~core';
-    expect(buildCard(bare, ctx).title).toBe('core');
   });
   it('shows no data rows in grey without a sparkline', () => {
     const p = linkPatch({
@@ -272,12 +267,12 @@ describe('configured cards', () => {
   });
   it('titles the card with the cell title, or with hover.title when the pattern sets it', () => {
     const titled = patch();
-    titled.scope.cell.title = 'Switch-A p9';
+    titled.scope.cellTitle = 'Switch-A p9';
     const read = () => {
       throw new Error('unused');
     };
     expect(buildConfiguredCard(titled, read, ctx, false).title).toBe('Switch-A p9');
-    expect(buildConfiguredCard({ ...titled, hover: { title: 'Port ${cell.title}', rows: [] } }, read, ctx).title).toBe(
+    expect(buildConfiguredCard({ ...titled, hover: { title: 'Port ${cellTitle}', rows: [] } }, read, ctx).title).toBe(
       'Port Switch-A p9'
     );
   });

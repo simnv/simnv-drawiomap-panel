@@ -46,7 +46,7 @@ export const rowName = (row: BindingRow): string =>
   row.kind === 'pattern'
     ? row.name
     : row.kind === 'override'
-      ? idAndName(row.label ? { labelText: row.label } : undefined, row.cellId)
+      ? idAndName(row.title ? { labelText: row.title } : undefined, row.cellId)
       : row.kind === 'widget'
         ? row.label
         : row.name;

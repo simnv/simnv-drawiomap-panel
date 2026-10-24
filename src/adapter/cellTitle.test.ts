@@ -95,3 +95,26 @@ describe('idAndName', () => {
     expect(idAndName({ title: 'device-1', labelText: '' }, 'device-1')).toBe('device-1');
   });
 });
+
+describe('encoded ids', () => {
+  const node = (id: string, attrs: Record<string, string>) => cell(id, { 'pg-kind': 'node', ...attrs });
+  const titles = (cells: CellMeta[], schema: boolean) => {
+    const all = schema ? [cell('0', { 'pg-schema': '1' }), ...cells] : [cell('0', {}), ...cells];
+    applyContract(all);
+    return assignTitles(all)
+      .slice(1)
+      .map((c) => c.title);
+  };
+
+  it('keeps a raw semantic pg-id as it is', () => {
+    expect(titles([node('pg-node~a%7e', { 'pg-id': 'pg-node~a%7e' })], true)).toEqual(['pg-node~a%7e']);
+  });
+
+  it('decodes an encoded cell id when the cell has no pg-id', () => {
+    expect(titles([node('pg-node~a%257e', {})], true)).toEqual(['a%7e']);
+  });
+
+  it('keeps the raw id without pg-schema', () => {
+    expect(titles([node('pg-node~a%257e', {})], false)).toEqual(['pg-node~a%257e']);
+  });
+});

@@ -41,7 +41,8 @@ export function cellFinder(cells: CellMeta[]): FindCell {
   return (key) => byKey.get(key);
 }
 
-const nodeName = (find: FindCell, nodeId: string): string => oneLine(find(nodeId)?.labelText) || readableId(nodeId);
+// a semantic id (pg-id, pg-node, pg-from) is shown as the author wrote it: only an encoded cell id is decoded
+const nodeName = (find: FindCell, nodeId: string): string => oneLine(find(nodeId)?.labelText) || nodeId;
 
 /** "<node label> <port label>"; without a node label, the node id. */
 function portTitle(cell: CellMeta, find: FindCell): string {
@@ -54,10 +55,10 @@ function portTitle(cell: CellMeta, find: FindCell): string {
 function endTitle(end: Endpoint, find: FindCell): string {
   const cell = find(end.raw);
   if (cell?.kind === 'port') {
-    return portTitle(cell, find) || readableId(end.raw);
+    return portTitle(cell, find) || end.raw;
   }
   if (cell) {
-    return oneLine(cell.labelText) || readableId(end.raw);
+    return oneLine(cell.labelText) || end.raw;
   }
   return [nodeName(find, end.node), end.port ?? ''].filter(Boolean).join(' ');
 }
@@ -68,22 +69,29 @@ function endTitle(end: Endpoint, find: FindCell): string {
  * - link: "<from> ↔ <to>", for example "Switch-A p9 ↔ AP-1" (the link label is a detail, often a speed);
  * - anything else: its label, else a readable form of its id.
  * A link without both ends and a port without a node use the label.
+ * The last fallback is the id. With `portograph` (the diagram has pg-schema) a cell without pg-id shows its decoded
+ * cell id; any other id stays raw. Without pg-schema nothing is decoded and no port or link cell exists.
  */
-export function cellTitle(cell: CellMeta, find: FindCell): string {
+export function cellTitle(cell: CellMeta, find: FindCell, portograph = true): string {
   let title = '';
   if (cell.kind === 'port') {
     title = portTitle(cell, find);
   } else if (cell.kind === 'link' && cell.from && cell.to) {
     title = `${endTitle(cell.from, find)}${SEPARATOR}${endTitle(cell.to, find)}`;
   }
-  return title || oneLine(cell.labelText) || readableId(cell.key || cell.id);
+  const decode = portograph && !cell.attrs['pg-id'];
+  return title || oneLine(cell.labelText) || (decode ? readableId(cell.id) : cell.key || cell.id);
 }
+
+/** The root cell of a draw.io file; it carries pg-schema. */
+const ROOT_ID = '0';
 
 /** Sets `title` on every cell. Call it after applyContract and attachLinkLabels. */
 export function assignTitles(cells: CellMeta[]): CellMeta[] {
   const find = cellFinder(cells);
+  const portograph = cells.some((c) => c.id === ROOT_ID && c.attrs['pg-schema'] !== undefined);
   for (const c of cells) {
-    c.title = cellTitle(c, find);
+    c.title = cellTitle(c, find, portograph);
   }
   return cells;
 }
@@ -95,7 +103,7 @@ export function displayName(cell: Pick<CellMeta, 'title' | 'labelText'> | undefi
 
 /** The title of an indexed cell for a template scope (`${cell.title}`): never empty. */
 export function scopeTitle(cell: CellMeta): string {
-  return displayName(cell, cell.key || cell.id);
+  return cell.title || oneLine(cell.labelText) || cell.key || cell.id;
 }
 
 /**

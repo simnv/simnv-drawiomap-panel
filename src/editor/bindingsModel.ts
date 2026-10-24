@@ -33,6 +33,8 @@ export interface OverrideRow extends RowBase {
   kind: 'override';
   cellId: string;
   label: string;
+  /** the readable title of the cell, empty when the cell is missing */
+  title: string;
   /** the display keys that the override sets */
   keys: string[];
   queryIds: string[];
@@ -99,7 +101,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     selector: p.select.kind ?? 'any',
     queryIds: queryIdsOf(p.display),
     matched: patternMatches[i].map((c) => c.id),
-    matchedLabels: patternMatches[i].map((c) => c.title || c.labelText).filter(Boolean),
+    matchedLabels: patternMatches[i].flatMap((c) => [c.labelText, c.title ?? '']).filter(Boolean),
     problems: [],
   }));
   const overrides: OverrideRow[] = config.overrides.map((o, i) => ({
@@ -107,7 +109,8 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     key: `override:${i}:${o.cellId}`,
     index: i,
     cellId: o.cellId,
-    label: byId.has(o.cellId) ? displayName(byId.get(o.cellId), o.cellId) : '',
+    label: byId.get(o.cellId)?.labelText ?? '',
+    title: byId.has(o.cellId) ? displayName(byId.get(o.cellId), o.cellId) : '',
     keys: Object.entries(o.display)
       .filter(([, value]) => value !== undefined)
       .map(([key]) => key),
@@ -267,7 +270,7 @@ export function rowMatches(row: BindingRow, filter: BindingsFilter): boolean {
     row.kind === 'pattern'
       ? [row.name, row.patternId, row.selector, ...row.queryIds, ...row.matched, ...row.matchedLabels]
       : row.kind === 'override'
-        ? [row.cellId, row.label, ...row.keys, ...row.queryIds]
+        ? [row.cellId, row.label, row.title, ...row.keys, ...row.queryIds]
         : row.kind === 'widget'
           ? [row.label, row.widgetId, row.anchorCellId, row.queryId]
           : [row.name, row.queryId, row.sourceKind];

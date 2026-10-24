@@ -73,14 +73,10 @@ describe('bindings list', () => {
       expect(screen.getByRole('button', { name: title })).toBeTruthy();
     }
     expect(screen.queryByRole('button', { name: /^Cells/ })).toBeNull();
-    expect(buttonNamed('Edit pattern Devices').textContent).toContain(
-      'any · queries q1 · 2 cells · 0 problems'
-    );
+    expect(buttonNamed('Edit pattern Devices').textContent).toContain('any · queries q1 · 2 cells · 0 problems');
     expect(buttonNamed('Edit pattern Ghost').textContent).toContain('0 cells · 1 problem');
     expect(buttonNamed('Edit widget Load').textContent).toContain('anchor device-1');
-    expect(buttonNamed('Edit query One').textContent).toContain(
-      'q1 · panel · used by 2 bindings'
-    );
+    expect(buttonNamed('Edit query One').textContent).toContain('q1 · panel · used by 2 bindings');
   });
 
   it('shows the problems of a row when it is expanded', () => {

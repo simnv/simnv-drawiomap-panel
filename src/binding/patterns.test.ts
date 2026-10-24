@@ -265,7 +265,8 @@ describe('resolvePatterns', () => {
         anchorCellId: 'link',
         index: 0,
         scope: {
-          cell: { ...cell.attrs, id: 'link', key: 'link', label: '', title: 'link' },
+          cell: { ...cell.attrs, id: 'link', key: 'link', label: '' },
+          cellTitle: 'link',
           from: { node: 'a', port: 'p1', ordinal: '1', raw: 'a:p1' },
           to: { node: 'b', port: 'p2', ordinal: '1', raw: 'b:p2' },
         },

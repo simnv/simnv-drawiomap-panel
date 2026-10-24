@@ -1,7 +1,7 @@
 import type { TemplateScope } from '../types';
 
 const PLACEHOLDER = /\$\{([a-zA-Z_][\w]*)(?:\.([^}:]+))?\}/g;
-const SCOPE_ROOTS = new Set(['cell', 'from', 'to', 'labels', 'value', 'percent']);
+const SCOPE_ROOTS = new Set(['cell', 'from', 'to', 'labels', 'value', 'percent', 'cellTitle']);
 
 export interface ResolveResult {
   text: string;
@@ -9,7 +9,7 @@ export interface ResolveResult {
 }
 
 /**
- * Replaces ${cell.x}, ${from.x}, ${to.x}, ${labels.x}, ${value}, ${percent}.
+ * Replaces ${cell.x}, ${from.x}, ${to.x}, ${labels.x}, ${value}, ${percent}, ${cellTitle}.
  * Unknown roots (dashboard variables such as ${__url_time_range}) stay as they are and are not reported.
  * `encode` applies to each substituted value only (for example encodeURIComponent in URLs).
  */
@@ -23,7 +23,7 @@ export function resolveTemplate(
     if (!SCOPE_ROOTS.has(root)) {
       return whole;
     }
-    if (root === 'value' || root === 'percent') {
+    if (root === 'value' || root === 'percent' || root === 'cellTitle') {
       const v = scope[root];
       if (v === undefined) {
         unresolved.push(root);

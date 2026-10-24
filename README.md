@@ -432,6 +432,7 @@ A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:
 | `${labels.<name>}`             | A label of the matched series. Use it in `url`.                               |
 | `${value}`                     | The value, formatted with the unit and decimals of the field config.          |
 | `${percent}`                   | The value as a percent of the capacity.                                       |
+| `${cellTitle}`                 | The readable title of the cell (see [Hover card](#hover-card)).               |
 
 `${value}` and `${percent}` are for `label`. Grafana dashboard variables also resolve in all URLs. If a template in a series selector does not resolve, the cell is "unbound". It is grey and the panel shows a warning.
 
@@ -623,7 +624,7 @@ To remove the card of one element, add an element override with `"hover": { "ena
 | Port | The label of the node and the label of the port.                                                                                                | `Switch-A p9`        |
 | Link | The two ends, each as a node label plus a port label (a port end) or a node label (a node end). The label of the link is not part of the title. | `Switch-A p9 ↔ AP-1` |
 
-A missing label falls back to the node id and the port name (`pg-node`, `pg-port`), then to the id of the cell without its `pg-…~` prefix. A cell that is not in a portograph export (no `pg-schema`) has its label, else its id. To change the title of the cards of a pattern, set `hover.title` of its display (or the legacy `link.card.title`). The value is a template, and `${cell.title}` is the default title. A template that does not resolve, or gives an empty text, keeps the default title.
+A missing label falls back to the node id and the port name (`pg-node`, `pg-port`), then to the `pg-id` as written, or the cell id without its `pg-…~` prefix when the cell has no `pg-id`. A cell that is not in a portograph export (no `pg-schema`) has its label, else its id. To change the title of the cards of a pattern, set `hover.title` of its display (or the legacy `link.card.title`). The value is a template, and `${cellTitle}` is the default title. `${cellTitle}` is a root of its own, like `${value}`: a metadata key named `title` stays `${cell.title}`. A template that does not resolve, or gives an empty text, keeps the default title.
 
 A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its Y range starts at 0 for a series without negative values and reaches up to the capacity (see [Sparkline Y range](#sparkline-y-range)). Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
 

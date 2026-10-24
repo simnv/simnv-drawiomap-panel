@@ -7,7 +7,6 @@ import {
   ScopedVars,
   ThresholdsConfig,
 } from '@grafana/data';
-import { readableId } from '../adapter/cellTitle';
 import { reduceValues } from '../binding/reduce';
 import { findSeries } from '../binding/series';
 import { resolveTemplate } from '../binding/template';
@@ -535,7 +534,7 @@ function shapeRow(patch: CellPatch, ctx: CardContext): CardRowModel | undefined 
 /** The card title: the title template of the pattern (hover.title, link.card.title), else the title of the cell. */
 function titleOf(patch: CellPatch & { hover?: { title?: string } }): string {
   const cell = patch.scope.cell;
-  const fallback = cell.title || cell.label || readableId(cell.key || patch.cellId);
+  const fallback = patch.scope.cellTitle || cell.label || cell.key || patch.cellId;
   const template = patch.hover?.title ?? patch.card?.title;
   if (template === undefined) {
     return fallback;

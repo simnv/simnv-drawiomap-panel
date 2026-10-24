@@ -162,7 +162,8 @@ export function endpointScope(e?: Endpoint): Record<string, string> | undefined 
 /** Pure identity/metadata scope shared by the V2 binding plan and query parameters. */
 export function cellScope(cell: CellMeta): TemplateScope {
   return {
-    cell: { ...cell.attrs, id: cell.id, key: cell.key, label: cell.labelText, title: scopeTitle(cell) },
+    cell: { ...cell.attrs, id: cell.id, key: cell.key, label: cell.labelText },
+    cellTitle: scopeTitle(cell),
     from: endpointScope(cell.from),
     to: endpointScope(cell.to),
   };

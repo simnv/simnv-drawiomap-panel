@@ -168,9 +168,7 @@ describe('BulkPane in the editor', () => {
   it('removes the overrides of the selection in one step', () => {
     const view = open();
     fireEvent.click(buttonNamed('Remove overrides of the selection'));
-    expect(
-      (buttonNamed('Remove overrides of the selection') as HTMLButtonElement).disabled
-    ).toBe(true);
+    expect((buttonNamed('Remove overrides of the selection') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(buttonNamed('Undo'));
     expect(apply(view).overrides.map((o) => o.cellId)).toEqual(['a', 'b']);
   });

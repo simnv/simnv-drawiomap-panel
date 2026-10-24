@@ -246,6 +246,8 @@ export interface TemplateScope {
   labels?: Record<string, string>;
   value?: string;
   percent?: string;
+  /** readable title of the cell (adapter/cellTitle); a root of its own, so it never collides with a metadata key */
+  cellTitle?: string;
 }
 
 export interface HalfState {

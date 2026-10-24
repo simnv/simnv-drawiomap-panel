@@ -1,6 +1,5 @@
 import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
-import { readableId } from '../adapter/cellTitle';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 
 /** Labels that a patch wrote text into. Only these need a label reset. */
@@ -190,7 +189,7 @@ function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined,
   }
   // Keyboard access: Tab moves to the cell, Enter or Space opens its card. A cell without a card is not a button.
   // tabindex, role and aria-label go into the applier layer: the binding editor writes the same attributes.
-  const label = entry.meta.title || entry.meta.labelText || readableId(entry.meta.key);
+  const label = entry.meta.title || entry.meta.labelText || entry.meta.key;
   const view = patch.statusView;
   setOwnedAttrs(entry.group, 'applier', {
     ...(interactive ? { tabindex: '0', role: 'button' } : {}),
