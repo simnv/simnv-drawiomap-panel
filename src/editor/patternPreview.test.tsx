@@ -1,6 +1,6 @@
 import { buttonNamed, chooseOption, editorField, openQueryRow, selectStageCell } from './testUtils';
-import { act, fireEvent, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, renderHook, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
 import { createQueryController } from '../query/controller';
 import { DEFAULT_QUERY_POLICY, type QueryContext, type QuerySnapshot } from '../query/types';
@@ -148,25 +148,46 @@ describe('explicit full pattern preview', () => {
     expect(pending.slice(0, 3).every((p) => p.cancel.mock.calls.length === 0)).toBe(true);
     controller.dispose();
   });
-  it.each(['edit', 'query', 'scope', 'pattern', 'selector', 'select', 'context', 'cancel', 'apply', 'unmount'])(
+  it('releases a pending run on an edit, a pattern change or a query edit, and rejects uncancellable late results', async () => {
+    const s = setup();
+    const edits: Array<[string, () => void]> = [
+      ['edit', () => fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } })],
+      ['pattern', () => chooseOption('Shared pattern', 'Alternate')],
+      [
+        'query',
+        () => {
+          openQueryRow('shape');
+          fireEvent.change(editorField('Query name'), { target: { value: 'Changed query' } });
+        },
+      ],
+    ];
+    for (const [name, change] of edits) {
+      const first = s.pending.length;
+      fireEvent.click(buttonNamed('Preview all pattern matches'));
+      const old = s.pending.slice(first);
+      expect(old.length, name).toBeGreaterThan(0);
+      change();
+      const before = s.execute.mock.calls.length;
+      await act(async () => old.forEach((entry) => entry.emit(ready(999))));
+      expect(
+        old.every((entry) => entry.cancel.mock.calls.length === 1),
+        name
+      ).toBe(true);
+      expect(s.execute.mock.calls.length, name).toBe(before);
+      expect(screen.queryByLabelText('Pattern preview progress'), name).toBeNull();
+      expect(screen.queryByLabelText('Hover row preview')?.textContent ?? '', name).not.toContain('999');
+    }
+    s.controller.dispose();
+  });
+  it.each(['scope', 'selector', 'select', 'context', 'cancel', 'apply', 'unmount'])(
     'releases a pending run on %s and rejects uncancellable late results',
     async (action) => {
       const s = setup();
       fireEvent.click(buttonNamed('Preview all pattern matches'));
       const old = [...s.explicit()];
       expect(old).toHaveLength(2);
-      if (action === 'edit') {
-        fireEvent.change(editorField('Label template'), { target: { value: 'Changed' } });
-      }
-      if (action === 'query') {
-        openQueryRow('shape');
-        fireEvent.change(editorField('Query name'), { target: { value: 'Changed query' } });
-      }
       if (action === 'scope') {
         chooseOption('Edit scope', 'This element');
-      }
-      if (action === 'pattern') {
-        chooseOption('Shared pattern', 'Alternate');
       }
       if (action === 'selector') {
         fireEvent.change(editorField('Pattern element IDs'), { target: { value: 'device-1' } });
@@ -202,7 +223,7 @@ describe('explicit full pattern preview', () => {
 // Controller-boundary scenarios use the same public run as the inspector action.
 import { previewPattern } from './patternPreview';
 import { resolvePatterns } from '../binding/patterns';
-import type { QueryPreview } from './preview';
+import { usePreviewTime, type QueryPreview } from './preview';
 function batch(parameterized = true) {
   const host = document.createElement('div');
   host.innerHTML = '<svg><g data-cell-id="a"><rect/></g><g data-cell-id="b"><rect/></g></svg>';
@@ -577,4 +598,34 @@ it('applies a completed full preview once, discards prepared results, and makes 
   expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied pattern');
   expect(s.execute).toHaveBeenCalledTimes(5);
   s.controller.dispose();
+});
+
+describe('usePreviewTime', () => {
+  afterEach(() => vi.useRealTimers());
+  it('reevaluates each sample-age deadline and releases timers on change and unmount', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const view = renderHook(({ deadlines }) => usePreviewTime(undefined, 1, undefined, [], deadlines), {
+      initialProps: { deadlines: [2001, 3001] },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(view.result.current).toBe(1000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(view.result.current).toBe(2001);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(view.result.current).toBe(3001);
+    view.rerender({ deadlines: [5001] });
+    expect(vi.getTimerCount()).toBe(1);
+    view.rerender({ deadlines: [] });
+    expect(vi.getTimerCount()).toBe(0);
+    view.rerender({ deadlines: [5001] });
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

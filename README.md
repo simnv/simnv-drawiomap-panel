@@ -717,6 +717,15 @@ The demo network in `fixtures/demo/` is fictional. Its `.yaml` sources are porto
 
 The acceptance results are in `docs/acceptance.md`. The decision records are in `docs/adr/`.
 
+### Unit test projects
+
+`vitest.config.ts` has two projects. `npm test` and `npm run test:affected` run both. Pick the project by the file name:
+
+- `logic`: a plain `src/**/*.test.ts` file. It has no `render`, no `vi.mock` and no `@grafana/ui`. The project runs on the threads pool with `isolate: false`: the files of one worker share their module registry, so the import of `@grafana/data` is paid once for each worker and not for each file. Each file still gets its own jsdom document. `vitest.setup.logic.ts` resets the body, the root attributes, the storage, the timers and the query sessions after each test. A test in this project must not leave module state behind.
+- `components`: every `src/**/*.test.tsx` file, the `.ts` files that mock modules (`src/module.test.ts`, `src/query/grafana.test.ts`), and the `.ts` files that reach DOMPurify (`portograph`, `applier`, `sanitize`, `svgStage`). DOMPurify binds to the jsdom window of the first file that imports it, so a shared registry breaks it. Each file has its own process, jsdom and module registry, so mocks and mounted trees cannot leak.
+
+A new `.test.ts` file that needs `vi.mock`, `@grafana/ui` or `sanitizeSvg` goes in the `componentTests` list in `vitest.config.ts`. Put polyfills in `vitest.polyfills.ts` (a function that each setup file calls: a setup file runs for every test file, a module that it imports runs once for each worker). Run one project with `npx vitest run --project logic`. After you change the logic setup, run it once with `--sequence.shuffle` to find order dependence.
+
 ### Git hooks
 
 Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.githooks`.

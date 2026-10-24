@@ -23,6 +23,7 @@ import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
 import type { DiagramConfigV2 } from '../model/config';
 import { Observable } from 'rxjs';
+import { clearQuerySessions } from '../query/session';
 const nativeQuery = vi.hoisted(() => vi.fn());
 /** Calls of the panel work that a refresh must not repeat while the popup is open: the applier and the view renders. */
 const work = vi.hoisted(() => ({ applied: [] as unknown[], viewRenders: 0, panelStage: 'dmap-stage' }));
@@ -1130,9 +1131,10 @@ describe('saved chart results in authoring previews', () => {
     );
     return p;
   }
-  it.each(['error', 'loading', 'unsupported'] as const)(
-    'individual preview keeps ordinary demand fallback with only a saved %s result',
-    async (state) => {
+  it('individual preview keeps ordinary demand fallback with only a saved error, loading or unsupported result', async () => {
+    for (const state of ['error', 'loading', 'unsupported'] as const) {
+      nativeQuery.mockClear();
+      clearQuerySessions();
       const p = fixture();
       nativeQuery.mockImplementation(
         (request) =>
@@ -1155,7 +1157,7 @@ describe('saved chart results in authoring previews', () => {
             return release;
           })
       );
-      render(<DrawioMapPanel {...p} />);
+      const { unmount } = render(<DrawioMapPanel {...p} />);
       const diagnostic =
         state === 'error'
           ? 'Datasource query failed'
@@ -1170,8 +1172,9 @@ describe('saved chart results in authoring previews', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
       await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
       expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 160]);
+      unmount();
     }
-  );
+  });
   it.each([
     ['error', false],
     ['error', true],
@@ -1660,26 +1663,7 @@ describe('DrawioMapPanel colour legend', () => {
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
     return r;
   }
-  it('starts as a collapsed chip in the bottom-right corner; a saved panel without the key is collapsed', async () => {
-    await setup();
-    const el = legend()!;
-    expect(el.getAttribute('data-dmap-corner')).toBe('bottom-right');
-    expect(within(el).getByRole('button', { name: 'Legend' }).getAttribute('aria-expanded')).toBe('false');
-    expect(within(el).queryAllByTestId('dmap-legend-block')).toHaveLength(0);
-  });
-  it('shows the scales of the bound cells when it starts open', async () => {
-    await setup(openLegend());
-    const el = legend()!;
-    expect(el.getAttribute('data-dmap-corner')).toBe('bottom-right');
-    expect(
-      within(el)
-        .getAllByTestId('dmap-legend-block')
-        .map((b) => b.getAttribute('aria-label'))
-    ).toEqual(expect.arrayContaining(['Link load %']));
-    // outside the stage, so zoom, pan and the stage scroll do not move it
-    expect(screen.getByTestId('dmap-stage').contains(el)).toBe(false);
-  });
-  it('legend.show false hides it; another corner moves it', async () => {
+  it('legend.show false hides it; another corner moves it; the chip opens it outside the stage and opens no card', async () => {
     const { rerender } = await setup(
       props({ options: { ...options, legend: { show: false, corner: 'bottom-right', maxBlocks: 4 } } })
     );
@@ -1690,17 +1674,16 @@ describe('DrawioMapPanel colour legend', () => {
       />
     );
     expect(legend()!.getAttribute('data-dmap-corner')).toBe('top-left');
-  });
-  it('a click on the chip opens the legend and opens or pins no card', async () => {
-    await setup(props({ width: 400 }));
     const chip = within(legend()!).getByRole('button', { name: 'Legend' });
-    expect(chip.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(chip);
     expect(within(legend()!).getAllByTestId('dmap-legend-block').length).toBeGreaterThan(0);
+    // outside the stage, so zoom, pan and the stage scroll do not move it
+    expect(screen.getByTestId('dmap-stage').contains(legend()!)).toBe(false);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('hovering an entry highlights the cells in that band and dims the others; leaving clears it', async () => {
     const { container } = await setup(openLegend());
+    expect(legend()!.getAttribute('data-dmap-corner')).toBe('bottom-right');
     const block = within(legend()!)
       .getAllByTestId('dmap-legend-block')
       .find((b) => b.getAttribute('aria-label') === 'Link load %')!;

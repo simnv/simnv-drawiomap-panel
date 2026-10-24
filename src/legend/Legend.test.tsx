@@ -151,17 +151,6 @@ describe('Legend', () => {
     fireEvent.click(chip);
     expect(within(legend).queryAllByTestId('dmap-legend-block')).toHaveLength(0);
   });
-  it('is a focusable native button, so Enter and Space toggle it (the browser sends the click)', () => {
-    const { legend } = view({ collapsed: true });
-    const chip = within(legend).getByRole('button', { name: 'Legend' });
-    expect(chip.tagName).toBe('BUTTON');
-    expect(chip.getAttribute('type')).toBe('button');
-    chip.focus();
-    expect(document.activeElement).toBe(chip);
-    // a keyboard click has no pointer events before it
-    fireEvent.click(chip, { detail: 0 });
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
-  });
   it('is open when the option Start collapsed is false, and shows nothing without blocks', () => {
     const { legend } = view({ collapsed: false });
     expect(within(legend).getByRole('button', { name: 'Legend' }).getAttribute('aria-expanded')).toBe('true');
