@@ -335,13 +335,12 @@ test('bindings popup: entry points, layout, Esc, query editors and focus share o
     await expect(suggest).toHaveCount(0);
     await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
     await expect(dialog).toBeVisible();
-    // A second Esc closes the popup. The typed text is not committed yet (no blur), and the close must still ask.
+    // Monaco owns Esc (it prevents the default): Esc in the code editor never closes the popup, and the typed text stays.
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toBeVisible();
-    await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
     await expect(dialog).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Discard changes?' })).toHaveCount(0);
     // The code editor commits its text when it loses focus: the blur makes the draft dirty, and Discard waits for that.
-    await dialog.getByRole('toolbar', { name: 'Binding draft actions' }).click({ position: { x: 4, y: 4 } });
+    await popupInspector(dialog).getByRole('textbox', { name: 'Query name', exact: true }).click();
     await expect(dialog.getByText('Unsaved changes')).toBeVisible();
     await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
     // The editor shows the saved text again, and the draft stays clean after the editor loses its focus.
