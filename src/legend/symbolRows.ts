@@ -49,7 +49,8 @@ export interface RowMarks {
 }
 
 function symbolAt(target: EventTarget | null, root: Element, groups: Map<string, string[]>): string | null {
-  let el = target instanceof Element ? target : null;
+  // Only a row of this diagram: a row of another panel with the same symbol is outside.
+  let el = target instanceof Element && root.contains(target) ? target : null;
   while (el && el !== root) {
     const id = el.getAttribute('data-cell-id');
     const symbol = id ? symbolOfLegendId(id) : null;

@@ -106,6 +106,20 @@ describe('bindSymbolLegend', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ hits: ['pg-node~r1', 'pg-node~r2'] }));
   });
+  it('a tap on the same row of another panel ends the highlight of this panel', () => {
+    const a = setup();
+    const b = setup();
+    const swatchA = a.el('pg-legendSwatch~symbol:router');
+    swatchA.dispatchEvent(pointer('pointerdown', 'touch'));
+    swatchA.dispatchEvent(click());
+    expect(a.onChange).toHaveBeenCalledTimes(1);
+    const swatchB = b.el('pg-legendSwatch~symbol:router');
+    swatchB.dispatchEvent(pointer('pointerdown', 'touch'));
+    swatchB.dispatchEvent(click());
+    expect(a.onChange).toHaveBeenLastCalledWith(null);
+    expect(b.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ hits: ['pg-node~r1', 'pg-node~r2'] }));
+  });
+
   it('the focus works again after a tap and a tap elsewhere in the page', () => {
     const { onChange, el } = setup();
     const row = el('pg-legendRow~symbol:router');
