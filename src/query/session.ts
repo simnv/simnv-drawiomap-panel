@@ -8,16 +8,13 @@ import type { QueryCache } from './controller';
  */
 export interface QuerySession {
   cache: QueryCache;
-  /** The generation of each recent context signature. Repeated panels share a session with different signatures. */
-  generations: Map<string, number>;
-  /** The last generation given. */
+  /** The context signature of the current state. */
+  signature?: string;
+  /** The generation of the current state. */
   generation: number;
-  /** The last change of a mounted provider, so a repeated render of the same change gives the same generation. */
-  change?: { from: string; to: string; generation: number };
+  /** The last generation given. It only grows, so a generation is never reused. */
+  counter: number;
 }
-
-/** How many context signatures a session remembers. */
-const SIGNATURES = 8;
 
 interface Slot {
   session: QuerySession;
@@ -77,33 +74,21 @@ export function retainQuerySession(key: string, graceMs = SESSION_GRACE_MS): () 
 
 /** A session that no key holds: for a provider without a session key. */
 export function newQuerySession(): QuerySession {
-  return { cache: new Map(), generations: new Map(), generation: 0 };
+  return { cache: new Map(), generation: 0, counter: 0 };
 }
 
 /**
- * The generation of a context signature. A mount (no `previous`) continues the generation of a known signature, so a
- * remount runs no query again. A mounted provider whose signature changed (`previous` differs) always gets a new
- * generation that no earlier context had: a return to an earlier value must fetch again, because results are reused
- * at any age within a generation. A repeated call for the same change (a render that runs twice) gives the same
- * generation.
+ * The generation of a context signature. The session holds one current state. The same signature keeps its
+ * generation (a remount, a repeated render). A different one starts a new generation that no earlier state had, so
+ * a return to an earlier value fetches again: results are reused at any age within a generation.
  */
-export function generationOf(session: QuerySession, signature: string, previous?: string): number {
-  const known = session.generations.get(signature);
-  if (known !== undefined && (previous === undefined || previous === signature)) {
-    return known;
+export function generationOf(session: QuerySession, signature: string): number {
+  if (session.signature === signature) {
+    return session.generation;
   }
-  if (previous !== undefined && session.change?.from === previous && session.change.to === signature) {
-    return session.change.generation;
-  }
-  session.generation++;
-  if (previous !== undefined) {
-    session.change = { from: previous, to: signature, generation: session.generation };
-  }
-  session.generations.delete(signature);
-  session.generations.set(signature, session.generation);
-  while (session.generations.size > SIGNATURES) {
-    session.generations.delete(session.generations.keys().next().value!);
-  }
+  session.counter += 1;
+  session.signature = signature;
+  session.generation = session.counter;
   return session.generation;
 }
 

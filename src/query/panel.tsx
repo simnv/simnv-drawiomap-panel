@@ -93,11 +93,7 @@ export function PanelQueryProvider({
     context: { ...nextContext, generation: generationOf(session, signature) },
   }));
   if (resolved.signature !== signature) {
-    // A change on a mounted provider always starts a new generation, even back to an earlier signature.
-    setResolved({
-      signature,
-      context: { ...nextContext, generation: generationOf(session, signature, resolved.signature) },
-    });
+    setResolved({ signature, context: { ...nextContext, generation: generationOf(session, signature) } });
   }
   const context = resolved.context;
   const service = useMemo(() => ({ controller, context }), [controller, context]);

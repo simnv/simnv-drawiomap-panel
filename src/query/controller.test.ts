@@ -183,7 +183,9 @@ it('a shared cache outlives the controller: the next controller of the session s
   const receive = vi.fn();
   second.watch(demand(), receive);
   expect(execute).toHaveBeenCalledTimes(1);
-  expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'ready', fromCache: true, fetchedAt: 100 }));
+  expect(receive).toHaveBeenLastCalledWith(
+    expect.objectContaining({ state: 'ready', fromCache: true, fetchedAt: 100 })
+  );
   second.dispose();
   // A private cache is cleared on dispose.
   const own = createQueryController(execute, DEFAULT_QUERY_POLICY, () => 100);

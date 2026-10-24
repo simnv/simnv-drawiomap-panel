@@ -30,30 +30,23 @@ describe('query sessions', () => {
     expect(querySession('d#1', 1000)).not.toBe(first);
   });
 
-  it('keeps the generation of a known signature and starts the next for a new one', () => {
+  it('keeps the generation of the current signature and starts a never-reused one on every change', () => {
     const session = newQuerySession();
     expect(generationOf(session, 'a')).toBe(1);
     expect(generationOf(session, 'a')).toBe(1);
     expect(generationOf(session, 'b')).toBe(2);
-    // Two repeated panels with different signatures share a session without stepping on each other.
-    expect(generationOf(session, 'a')).toBe(1);
     expect(generationOf(session, 'b')).toBe(2);
-    for (let i = 0; i < 8; i++) {
-      generationOf(session, `fill-${i}`);
-    }
-    // A forgotten signature gets a new generation.
-    expect(generationOf(session, 'a')).toBe(11);
+    // A return to an earlier signature is a new generation, so it fetches again.
+    expect(generationOf(session, 'a')).toBe(3);
   });
 
-  it('starts a never-reused generation when a mounted provider changes its signature, so a return to A fetches again', () => {
+  it('gives 1,2,3,4 for mount A, change to B, remount A, change to B', () => {
     const session = newQuerySession();
-    const a = generationOf(session, 'a');
-    const b = generationOf(session, 'b', 'a');
-    const again = generationOf(session, 'a', 'b');
-    expect([a, b, again]).toEqual([1, 2, 3]);
-    // A render that runs twice for one change gives the same generation.
-    expect(generationOf(session, 'a', 'b')).toBe(3);
-    // A remount with the current signature continues the latest generation of it.
-    expect(generationOf(session, 'a')).toBe(3);
+    expect([
+      generationOf(session, 'a'),
+      generationOf(session, 'b'),
+      generationOf(session, 'a'),
+      generationOf(session, 'b'),
+    ]).toEqual([1, 2, 3, 4]);
   });
 });

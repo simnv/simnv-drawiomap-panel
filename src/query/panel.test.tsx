@@ -181,3 +181,47 @@ it('switching the session together with the range never exposes a disposed contr
   view.unmount();
   clearQuerySessions();
 });
+
+it('in StrictMode a change, a remount and a return to an earlier state each run a new request', async () => {
+  const range = { from: dateTime(1000), to: dateTime(2000), raw: { from: '1000', to: '2000' } };
+  const data: PanelData = {
+    state: LoadingState.Done,
+    series: [],
+    timeRange: range,
+    request: { requestId: 'req-1', targets: [], range, scopedVars: {}, intervalMs: 1000 } as never,
+  };
+  const query = vi.fn(() => of({ data: [probeFrame] }));
+  get.mockResolvedValue({ query });
+  const generations: number[] = [];
+  const Probe = () => {
+    const service = useContext(PanelQueryContext);
+    const generation = service?.context.generation ?? 0;
+    useEffect(() => {
+      if (generation && generations.at(-1) !== generation) {
+        generations.push(generation);
+      }
+    }, [generation]);
+    return null;
+  };
+  const element = (zone: string) => (
+    <StrictMode>
+      <PanelQueryProvider
+        session="dash#strict"
+        data={data}
+        timeRange={range}
+        timeZone={zone}
+        replaceVariables={() => ''}
+      >
+        <Probe />
+      </PanelQueryProvider>
+    </StrictMode>
+  );
+  const first = render(element('a'));
+  first.rerender(element('b'));
+  first.unmount();
+  const second = render(element('a'));
+  second.rerender(element('b'));
+  expect(generations).toEqual([1, 2, 3, 4]);
+  second.unmount();
+  clearQuerySessions();
+});
