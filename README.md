@@ -737,7 +737,7 @@ Authoring evidence: 2026-10-18, in `docs/research/authoring-compatibility.md`. E
 - No multi-page diagrams. The panel renders page 1 and shows a warning.
 - The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes, and rules select its cells by id, label and other attributes.
 - Consult the authoring compatibility matrix for current browser and sandbox evidence.
-- Panel edit can run the panel queries many times. This is not the panel: the VictoriaMetrics datasource plugin (seen with 0.26.1) migrates each target that has no `editorMode` or `format` when its query editor mounts, and each migration runs all the panel queries again. A panel with N such targets runs its queries N+1 times when panel edit opens. For generated dashboards, write each target with `editorMode: "code"` and `format: "time_series"`.
+- Panel edit can run the panel queries many times. This is not the panel: in the VictoriaMetrics datasource plugin (seen with 0.26.1), each query editor calls `onRunQuery` when it mounts and starts a label lookup. A panel with N VictoriaMetrics targets runs all its queries N+1 times when panel edit opens. The target JSON has no workaround.
 
 ## Licence
 
