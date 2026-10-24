@@ -381,11 +381,25 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     plan,
     opts.config ?? EMPTY_CONFIG,
     queryService,
-    card?.cellId,
+    undefined,
     Math.max(1, Math.min(264, width - 16)),
     chartSnapshots,
     `panel:${id}`,
-    paused
+    paused,
+    'visible'
+  );
+  // The rows of the open card have their own snapshots and resolver: a hover over a new cell never changes the
+  // resolver of the diagram, so it never runs the bind or the patches again.
+  const cardSnapshots = useBindingSnapshots(
+    plan,
+    opts.config ?? EMPTY_CONFIG,
+    queryService,
+    card?.cellId,
+    Math.max(1, Math.min(264, width - 16)),
+    chartSnapshots,
+    `panel:${id}:card`,
+    paused,
+    'hover'
   );
   const activeSnapshots = useMemo(() => [...bindingSnapshots, ...chartSnapshots], [bindingSnapshots, chartSnapshots]);
   const resolve = useMemo(
@@ -403,6 +417,30 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         activeSnapshots
       ),
     [plan, opts.config, data, theme, timeZone, queryService?.context.generation, activeSnapshots]
+  );
+  const cardResolve = useMemo(
+    () =>
+      cardSnapshots.length
+        ? createPreviewResolver(
+            plan,
+            opts.config ?? EMPTY_CONFIG,
+            data,
+            undefined,
+            { theme, timeZone, generation: queryService?.context.generation },
+            [...activeSnapshots, ...cardSnapshots]
+          )
+        : resolve,
+    [
+      cardSnapshots,
+      plan,
+      opts.config,
+      data,
+      theme,
+      timeZone,
+      queryService?.context.generation,
+      activeSnapshots,
+      resolve,
+    ]
   );
   const nowMs = usePreviewTime(
     data,
@@ -457,8 +495,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     if (!cardPatch) {
       return undefined;
     }
-    return configured ? buildConfiguredCard(cardPatch, resolve, cardContext) : buildCard(cardPatch, cardContext);
-  }, [cardPatch, configured, resolve, cardContext]);
+    return configured ? buildConfiguredCard(cardPatch, cardResolve, cardContext) : buildCard(cardPatch, cardContext);
+  }, [cardPatch, configured, cardResolve, cardContext]);
   // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default),
   // and only when the card has rows or links. Computed once per data update: these cells get the hand cursor.
   const hoverKinds = opts.hover.kinds;
@@ -685,6 +723,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     opener.current = e.target;
     setCard({ cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top, pinned: true });
   };
+  const moveCard = useRef<((clientX: number, clientY: number) => void) | null>(null);
   const onPointerMove = (e: React.PointerEvent) => {
     // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
     const stageEl = containerRef.current;
@@ -692,6 +731,14 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       return;
     }
     const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
+    if (patch && card?.cellId === patch.cellId) {
+      // the same cell: only the card moves, with no render
+      moveCard.current?.(e.clientX, e.clientY);
+      return;
+    }
+    if (!patch && !card) {
+      return;
+    }
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: false } : null);
   };
 
@@ -860,6 +907,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
                 timeRange={timeRange}
                 timeZone={timeZone}
                 onClose={close}
+                moveRef={moveCard}
               />
             </div>,
             width < SHEET_BELOW

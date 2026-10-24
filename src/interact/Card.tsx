@@ -1,4 +1,4 @@
-import React, { memo, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { css, cx } from '@emotion/css';
 import {
   dateTime,
@@ -20,6 +20,7 @@ import {
 import { SparklineView } from '../visuals/SparklineView';
 import { MirrorSparkline } from '../visuals/MirrorSparkline';
 import { ChartHover, type HoverSeries } from '../visuals/ChartHover';
+import { placeTooltip } from '../visuals/tooltipPlace';
 import type { HistoryModel } from '../query/frames';
 import { useSampleStale } from '../visuals/useSampleStale';
 
@@ -52,6 +53,11 @@ export interface CardProps {
   timeRange?: TimeRange;
   timeZone?: string;
   onClose?: () => void;
+  /**
+   * The card sets this to a function that moves it to a new pointer position (client coordinates) without a render.
+   * The move is throttled to one frame: the panel rect and the card height are read first, then the style is written.
+   */
+  moveRef?: React.MutableRefObject<((clientX: number, clientY: number) => void) | null>;
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -317,6 +323,14 @@ const Row = memo(function Row({
   );
 });
 
+/** Writes the place of the floating card for a pointer at (x, y) in the panel. The height is read before the writes. */
+function placeAt(el: HTMLElement, x: number, y: number, width: number, height: number) {
+  const h = el.offsetHeight;
+  const p = placeTooltip(x, y, W, h, width, height, EDGE, GAP);
+  el.style.left = `${p.x}px`;
+  el.style.top = `${p.y}px`;
+}
+
 /**
  * The hover card. Unpinned it follows the pointer and ignores the pointer. Pinned it is a non-modal
  * dialog with a close button, row links and footer links. Narrow panels show it as a bottom sheet.
@@ -334,6 +348,7 @@ export function Card({
   timeRange,
   timeZone,
   onClose,
+  moveRef,
 }: CardProps) {
   const styles = useStyles2(getStyles);
   const ref = useRef<HTMLDivElement>(null);
@@ -355,18 +370,46 @@ export function Card({
       }
       return;
     }
-    const h = el.offsetHeight;
-    let left = x + GAP;
-    if (left + W > width - EDGE) {
-      left = x - W - GAP;
-    }
-    let top = y + GAP;
-    if (top + h > height - EDGE) {
-      top = y - h - GAP;
-    }
-    el.style.left = `${Math.max(EDGE, Math.min(left, width - W - EDGE))}px`;
-    el.style.top = `${Math.max(EDGE, Math.min(top, height - h - EDGE))}px`;
+    placeAt(el, x, y, width, height);
   });
+
+  // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes.
+  const frame = useRef<number>();
+  const pointer = useRef({ x: 0, y: 0 });
+  const latest = useRef({ width, height, anchor, sheet, inline });
+  useEffect(() => {
+    latest.current = { width, height, anchor, sheet, inline };
+  });
+  const move = useCallback((clientX: number, clientY: number) => {
+    pointer.current = { x: clientX, y: clientY };
+    if (frame.current !== undefined) {
+      return;
+    }
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      const el = ref.current;
+      const now = latest.current;
+      const rect = now.anchor?.getBoundingClientRect();
+      if (!el || !rect || now.sheet || now.inline) {
+        return;
+      }
+      placeAt(el, pointer.current.x - rect.left, pointer.current.y - rect.top, now.width, now.height);
+    });
+  }, []);
+  useEffect(() => {
+    if (moveRef) {
+      moveRef.current = move;
+    }
+    return () => {
+      if (moveRef) {
+        moveRef.current = null;
+      }
+      if (frame.current !== undefined) {
+        cancelAnimationFrame(frame.current);
+        frame.current = undefined;
+      }
+    };
+  }, [moveRef, move]);
 
   useLayoutEffect(() => {
     if (pinned && !inline) {
