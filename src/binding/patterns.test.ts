@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { displayProvenance, mergeCell, mergeDisplay, ownersOfPath, resolvePatterns } from './patterns';
 import type { DiagramConfigV2 } from '../model/config';
+import { demoL3Config } from '../fixtures/demo-config';
 
 const empty = (): DiagramConfigV2 => ({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] });
 
@@ -401,5 +402,58 @@ describe('display provenance of a status and of the fast path', () => {
       entries.mockRestore();
       flat.mockRestore();
     }
+  });
+});
+
+describe('a config saved before the schema dropped the fields of version 1', () => {
+  it('gives the same plan as the clean demo config', () => {
+    const cells = [
+      cellMetaFromAttrs('pg-node~rtr-a', { 'pg-kind': 'node', 'pg-id': 'rtr-a' }, false, 'rtr-a'),
+      cellMetaFromAttrs(
+        'pg-link~isp-a:pppoe->rtr-a:wan1',
+        { 'pg-kind': 'link', 'pg-id': 'isp-a:pppoe->rtr-a:wan1', 'pg-from': 'isp-a:pppoe', 'pg-to': 'rtr-a:wan1' },
+        true
+      ),
+      cellMetaFromAttrs(
+        'pg-link~rtr-a:lan1->sw-a:br-lan',
+        { 'pg-kind': 'link', 'pg-id': 'rtr-a:lan1->sw-a:br-lan', 'pg-from': 'rtr-a:lan1', 'pg-to': 'sw-a:br-lan' },
+        true
+      ),
+    ];
+    const clean = demoL3Config();
+    const saved = demoL3Config() as unknown as { patterns: Array<{ id: string; display: Record<string, unknown> }> };
+    for (const pattern of saved.patterns) {
+      const display = pattern.display;
+      const link = display.link as Record<string, unknown> | undefined;
+      const hover = display.hover as { title?: string } | undefined;
+      if (link?.a2bBinding) {
+        const a2b = link.a2bBinding as { queryId: string; match: Record<string, string> };
+        display.link = {
+          ...link,
+          a2b: { refId: a2b.queryId, match: a2b.match },
+          b2a: { refId: a2b.queryId, match: a2b.match },
+          card: hover?.title ? { title: hover.title, url: '/d/old' } : { url: '/d/old' },
+        };
+      }
+      if (pattern.id === 'lan-speed') {
+        const { capacityBinding, ...rest } = link!;
+        const cap = capacityBinding as { queryId: string; match: Record<string, string>; reducer: string };
+        display.link = { ...rest, capacity: { refId: cap.queryId, match: cap.match, reducer: cap.reducer } };
+      }
+      if (display.shape) {
+        display.shape = {
+          ...(display.shape as object),
+          fill: false,
+          stroke: false,
+          card: [{ title: 'CPU', refId: 'C', unit: 'percent' }],
+          sparkline: { refId: 'C', position: 'bottom' },
+        };
+      }
+    }
+    expect(saved).not.toEqual(clean);
+    const expected = resolvePatterns(cells, clean);
+    expect(Object.keys(expected.cells)).toHaveLength(3);
+    expect(expected.diagnostics).toEqual([]);
+    expect(resolvePatterns(cells, saved as unknown as DiagramConfigV2)).toEqual(expected);
   });
 });

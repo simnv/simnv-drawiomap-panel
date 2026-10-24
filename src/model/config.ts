@@ -100,7 +100,7 @@ export interface LinkDisplay {
   b2aBinding?: QueryBinding;
   /** the capacity of both halves: a series, read through the field unit */
   capacityBinding?: QueryBinding;
-  /** the capacity of both halves: a number, or a template like "${cell.capacity}" */
+  /** the capacity of both halves: a number, a numeric string, or a template like "${cell.capacity}" */
   capacity?: LinkCapacity;
   /** capacity of one half, a number or a template, in bit/s */
   capacityA2b?: LinkCapacity;
@@ -112,7 +112,7 @@ export interface LinkDisplay {
 export interface ShapeDisplay {
   enabled?: boolean;
   binding?: QueryBinding;
-  /** what the colour changes; the default is the icon, or nothing when only `text` is set */
+  /** what the colour changes; without it the colour changes nothing (the value still feeds the card and `text`) */
   target?: ShapeTarget | 'none';
   /** write the value into the node label (the `label` template of the display) */
   text?: boolean;
@@ -300,7 +300,8 @@ const displaySchema = z
         a2bBinding: bindingSchema.optional(),
         b2aBinding: bindingSchema.optional(),
         capacityBinding: bindingSchema.optional(),
-        capacity: linkCapacity.optional(),
+        // any string, as the saved configs have it: a numeric string or a template; the engine reports the rest
+        capacity: z.union([z.number().finite(), z.string()]).optional(),
         capacityA2b: linkCapacity.optional(),
         capacityB2a: linkCapacity.optional(),
         capacityA2bBinding: bindingSchema.optional(),
@@ -379,6 +380,94 @@ const configSchema = z
     ),
   })
   .strict();
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+const SERIES_SELECTOR_KEYS = new Set(['refId', 'name', 'match', 'reducer']);
+const isBoolean = (value: unknown) => typeof value === 'boolean';
+/** The dropped keys with the type the old schema gave them. A value of another type is still an error. */
+const DROPPED_LINK_KEYS = { a2b: isRecord, b2a: isRecord, card: isRecord };
+const DROPPED_SHAPE_KEYS = {
+  series: isRecord,
+  fill: isBoolean,
+  stroke: isBoolean,
+  card: Array.isArray,
+  sparkline: isRecord,
+};
+function dropKeys(source: Record<string, unknown>, keys: Record<string, (value: unknown) => boolean>) {
+  const out = { ...source };
+  for (const [key, accepts] of Object.entries(keys)) {
+    if (key in out && accepts(out[key])) {
+      delete out[key];
+    }
+  }
+  return out;
+}
+
+/**
+ * A capacity series of a config saved before 2026-10-24: `{ refId, match, reducer }` on the panel data.
+ * It becomes a `capacityBinding` on the panel query with that refId. A `name` matcher has no equivalent.
+ */
+function legacyCapacityBinding(selector: Record<string, unknown>, queries: unknown, reducer: unknown) {
+  if (typeof selector.refId !== 'string' || selector.name !== undefined || !Array.isArray(queries)) {
+    return undefined;
+  }
+  const query = queries.find(
+    (q) => isRecord(q) && isRecord(q.source) && q.source.kind === 'panel' && q.source.refId === selector.refId
+  );
+  return isRecord(query)
+    ? { queryId: query.id, match: selector.match ?? {}, reducer: selector.reducer ?? reducer ?? 'last' }
+    : undefined;
+}
+
+/**
+ * Version 2 configs saved before 2026-10-24 can carry the fields of the rules of version 1 in `link` and `shape`
+ * (the schema shared those objects). The schema is strict: one such field would reject the whole config and the
+ * panel would lose every binding. Drop them before the parse. Two of them the panel read: `link.card.title`
+ * becomes the hover title when the hover has none, and a capacity series becomes `capacityBinding`.
+ */
+function upgradeDisplay(display: unknown, queries: unknown): unknown {
+  if (!isRecord(display)) {
+    return display;
+  }
+  let out = display;
+  if (isRecord(display.link)) {
+    const card = display.link.card;
+    const link = dropKeys(display.link, DROPPED_LINK_KEYS);
+    const capacity = link.capacity;
+    if (isRecord(capacity) && Object.keys(capacity).every((key) => SERIES_SELECTOR_KEYS.has(key))) {
+      delete link.capacity;
+      const binding = legacyCapacityBinding(capacity, queries, display.reducer);
+      if (binding && link.capacityBinding === undefined) {
+        link.capacityBinding = binding;
+      }
+    }
+    out = { ...out, link };
+    if (isRecord(card) && typeof card.title === 'string' && isRecord(out.hover) && out.hover.title === undefined) {
+      out = { ...out, hover: { title: card.title, ...out.hover } };
+    }
+  }
+  if (isRecord(display.shape)) {
+    out = { ...out, shape: dropKeys(display.shape, DROPPED_SHAPE_KEYS) };
+  }
+  return out;
+}
+
+function upgradeConfig(input: unknown): unknown {
+  if (!isRecord(input)) {
+    return input;
+  }
+  const out = { ...input };
+  for (const key of ['patterns', 'overrides']) {
+    const list = input[key];
+    if (Array.isArray(list)) {
+      out[key] = list.map((entry: unknown) =>
+        isRecord(entry) ? { ...entry, display: upgradeDisplay(entry.display, input.queries) } : entry
+      );
+    }
+  }
+  return out;
+}
 
 function formatPath(path: Array<string | number>): string {
   return (
@@ -461,7 +550,7 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
       ],
     };
   }
-  const parsed = configSchema.safeParse(input);
+  const parsed = configSchema.safeParse(upgradeConfig(input));
   if (!parsed.success) {
     return {
       diagnostics: parsed.error.issues.map((issue) => ({

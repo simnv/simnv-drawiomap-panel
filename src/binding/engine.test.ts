@@ -201,7 +201,7 @@ describe('bindPlan', () => {
       1000
     );
     expect(result.patches.get(cells[3].id)?.hover?.rows).toHaveLength(4);
-    expect(result.patches.get(cells[3].id)?.shape?.target).toBe('icon');
+    expect(result.patches.get(cells[3].id)?.shape?.target).toBe('none');
   });
   it('demands each binding of a combined up/down row with its series index', () => {
     const tx = { ...queryBinding, queryId: 'tx' };
@@ -650,7 +650,7 @@ const upFrames = [
   frame('C', { job: 'node-rtr-a' }, [1], { thresholds: upThresholds }),
   frame('C', { job: 'node-lte' }, [0], { thresholds: upThresholds }),
 ];
-const upShape: DisplayConfig = { shape: { binding: qb('C', { job: 'node-${cell.pg-id}' }) } };
+const upShape: DisplayConfig = { shape: { binding: qb('C', { job: 'node-${cell.pg-id}' }), target: 'icon' } };
 
 describe('link halves', () => {
   const r = run(linkDisplay, traffic);
@@ -740,9 +740,10 @@ describe('capacity sources', () => {
       expect.objectContaining({ code: 'unresolved-metadata', path: `cells.${linkCell.id}.link.capacity` }),
     ]);
   });
-  it('number: a number, not zero or less', () => {
+  it('number: a number, not zero or less; a numeric string as saved configs have it', () => {
     expect(a2b({ capacity: 1e9 }, [t()]).h).toMatchObject({ capacitySource: 'number', capacity: 1e9 });
     expect(a2b({ capacity: 0 }, [t()]).h.capacitySource).toBe('none');
+    expect(a2b({ capacity: '1000000000' }, [t()]).h).toMatchObject({ capacitySource: 'number', capacity: 1e9 });
   });
   it('fieldMax: the Max of the field config, in the field unit', () => {
     // 12.5 MB/s = 100 Mb/s; the traffic is 5 MB/s = 40 Mb/s
@@ -862,15 +863,16 @@ describe('shape colour and target', () => {
     expect(up.series?.labels).toEqual({ job: 'node-rtr-a' });
     expect(r.patches.get('pg-node~lte')!.shape).toMatchObject({ stepIndex: 0, text: undefined });
   });
-  it('defaults the target to the icon; a text-only binding colours nothing; an explicit target wins', () => {
-    expect(targetOf({})).toBe('icon');
-    expect(targetOf({ text: true })).toBe('none');
-    expect(targetOf({ target: 'stroke', text: true })).toBe('stroke');
-    expect(targetOf({ target: 'none' })).toBe('none');
+  it('colours nothing without an explicit target, so that saved dashboards keep their look', () => {
+    expect(targetOf({})).toBe('none');
+    expect(targetOf({ target: 'stroke' })).toBe('stroke');
+    expect(targetOf({ target: 'icon' })).toBe('icon');
     const shape = (s: DisplayConfig['shape']) =>
-      run({ shape: { ...upShape.shape, ...s } }, upFrames).patches.get('pg-node~rtr-a')!.shape!.target;
-    expect(shape({ target: 'shape' })).toBe('shape');
-    expect(shape({ text: true })).toBe('none');
+      run({ shape: { binding: upShape.shape!.binding, ...s } }, upFrames).patches.get('pg-node~rtr-a')!.shape!;
+    expect(shape({ target: 'shape' }).target).toBe('shape');
+    expect(shape({ text: true }).target).toBe('none');
+    // the value, the status and the series still reach the card and the legend
+    expect(shape({})).toMatchObject({ target: 'none', status: 'ok', value: 1 });
   });
   it('a text-only shape shows "no data" in grey when the series is missing', () => {
     const r = run({ shape: { binding: qb('Z'), text: true } }, upFrames);

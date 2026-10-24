@@ -454,7 +454,7 @@ function capacityOf(c: LinkCapacity | undefined, scope: TemplateScope): Resolved
     : { source: 'none', unresolved: [`capacity "${r.text}" is not a number`] };
 }
 
-/** The explicit target wins. Without it, a text-only binding colours nothing; else the icon takes the colour. */
-export function targetOf(shape: Pick<ShapeDisplay, 'target' | 'text'>): ShapeTarget | 'none' {
-  return shape.target ?? (shape.text ? 'none' : 'icon');
+/** Only an explicit target colours the node. Saved dashboards without one keep their look. */
+export function targetOf(shape: Pick<ShapeDisplay, 'target'>): ShapeTarget | 'none' {
+  return shape.target ?? 'none';
 }

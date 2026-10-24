@@ -524,3 +524,71 @@ describe('capacity of a link direction', () => {
     ]);
   });
 });
+
+describe('fields of saved version 2 configs that the schema dropped on 2026-10-24', () => {
+  const binding = { queryId: 'q', match: { job: 'x' }, reducer: 'last' };
+  const queries = [
+    { id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } },
+    { id: 'speed', name: 'Speed', source: { kind: 'panel', refId: 'S' } },
+  ];
+  const withDisplays = (node: unknown, link: unknown) => ({
+    ...empty(),
+    queries,
+    patterns: [
+      { id: 'n', name: 'N', select: { kind: 'node' }, display: node },
+      { id: 'l', name: 'L', select: { kind: 'link' }, display: link },
+    ],
+  });
+  it('accepts shape.fill, link.card and a numeric string capacity; drops the removed fields, keeps the string', () => {
+    const input = withDisplays(
+      {
+        shape: {
+          binding,
+          fill: false,
+          stroke: true,
+          series: { refId: 'A' },
+          card: [{ title: 'CPU', refId: 'A' }],
+          sparkline: { refId: 'A' },
+        },
+      },
+      {
+        link: { a2bBinding: binding, a2b: { refId: 'A', match: { job: 'x' } }, capacity: '100000000', card: { title: 'Traffic' } },
+        hover: { rows: [] },
+      }
+    );
+    expect(validateConfig(input)).toEqual({
+      diagnostics: [],
+      config: withDisplays(
+        { shape: { binding } },
+        { link: { a2bBinding: binding, capacity: '100000000' }, hover: { title: 'Traffic', rows: [] } }
+      ),
+    });
+  });
+  it('keeps a hover title over link.card.title and drops the card title without a hover', () => {
+    const titled = withDisplays({}, { link: { card: { title: 'Old' } }, hover: { title: 'New', rows: [] } });
+    expect(validateConfig(titled).config?.patterns[1].display.hover?.title).toBe('New');
+    const bare = withDisplays({}, { link: { card: { title: 'Old', url: '/d/x' } } });
+    expect(validateConfig(bare)).toEqual({ diagnostics: [], config: withDisplays({}, { link: {} }) });
+  });
+  it('migrates a capacity series to capacityBinding when a panel query has its refId, else drops it', () => {
+    const series = (capacity: unknown) => withDisplays({}, { link: { capacity }, reducer: 'max' });
+    const match = { job: 'node-${to.node}', device: '${to.port}' };
+    expect(validateConfig(series({ refId: 'S', match })).config?.patterns[1].display.link).toEqual({
+      capacityBinding: { queryId: 'speed', match, reducer: 'max' },
+    });
+    expect(validateConfig(series({ refId: 'S', match, reducer: 'last' })).config?.patterns[1].display.link).toEqual({
+      capacityBinding: { queryId: 'speed', match, reducer: 'last' },
+    });
+    expect(validateConfig(series({ refId: 'Z', match })).config?.patterns[1].display.link).toEqual({});
+    expect(validateConfig(series({ name: 'speed' })).config?.patterns[1].display.link).toEqual({});
+    const explicit = withDisplays({}, { link: { capacity: { refId: 'S', match }, capacityBinding: binding } });
+    expect(validateConfig(explicit).config?.patterns[1].display.link).toEqual({ capacityBinding: binding });
+  });
+  it('still rejects unknown fields and a capacity object that is not a series selector', () => {
+    for (const link of [{ capacity: { max: 1 } }, { typo: 1 }, { card: 'Traffic' }]) {
+      const result = validateConfig(withDisplays({}, { link }));
+      expect(result.config, JSON.stringify(link)).toBeUndefined();
+    }
+    expect(validateConfig(withDisplays({ shape: { binding, colour: 'red' } }, {})).config).toBeUndefined();
+  });
+});

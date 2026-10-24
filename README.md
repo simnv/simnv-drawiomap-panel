@@ -314,6 +314,8 @@ Version 1 of the plugin bound cells with the `rules` option: a YAML list of rule
 
 The table gives the version 2 field of each rule field. `src/fixtures/demo-config.ts` is the version 2 form of the former demo rules.
 
+A version 2 config saved before 2026-10-24 can carry rule fields in `link` and `shape`: `link.a2b`, `link.b2a`, `link.card`, a capacity series object, `shape.series`, `shape.fill`, `shape.stroke`, `shape.card` and `shape.sparkline`. Such a config loads. The panel drops these fields, takes `link.card.title` as the hover title when the hover has none, and turns a capacity series into `capacityBinding` when a panel query has its `refId`. The saved JSON changes on the next Apply in the editor.
+
 | Version 1 rule                                         | Version 2 pattern (`display`)                                                                                                                                        |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `select`                                               | `select`, unchanged (see [Cell selectors](#cell-selectors-select))                                                                                                   |
@@ -392,13 +394,13 @@ The overlay attribute `data-dmap-step` is the index of the active threshold step
 
 ### Shape binding
 
-`display.shape` of a pattern binds a node to one series and colours it by the value, with the field config of that series (value mappings, thresholds, Color scheme):
+`display.shape` of a pattern binds a node to one series. With a `target` it colours the node by the value, with the field config of that series (value mappings, thresholds, Color scheme):
 
 | Key       | Meaning                                                                                                                                                                                     |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `binding` | The series: `{ queryId, match, field, reducer }`.                                                                                                                                           |
-| `target`  | What the colour changes: `icon` (the default), `shape` (the fill of the whole shape), `stroke` (the outline) or `none`. Without an icon, or with a bitmap icon, `icon` colours the outline. |
-| `text`    | `true` writes the value into the node label. The `label` template of the display formats it; the default is `${value}`. With `text` and no `target`, the colour changes nothing.            |
+| `target`  | What the colour changes: `icon`, `shape` (the fill of the whole shape) or `stroke` (the outline). Without `target` (or with `none`) the colour changes nothing: the value then feeds the card, the legend and `text` only. Without an icon, or with a bitmap icon, `icon` colours the outline. |
+| `text`    | `true` writes the value into the node label. The `label` template of the display formats it; the default is `${value}`. |
 
 A missing series gives a grey "no data" state (and the text `no data` with `text`). A `label` template that does not resolve gives `unbound`. The health rule (`display.status`) is separate: it marks abnormal devices with a state and a reason, whatever the shape colour is.
 
