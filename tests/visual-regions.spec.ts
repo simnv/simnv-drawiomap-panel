@@ -81,8 +81,7 @@ for (const theme of ['light', 'dark'] as const) {
           });
         const uid = await createDiagram(config);
         try {
-          const dashboard = await gotoDashboardPage({ uid });
-          await dashboard.goto({ queryParams: new URLSearchParams({ theme }) });
+          await gotoDashboardPage({ uid, queryParams: new URLSearchParams({ theme }) });
           const panel = page.getByTestId('dmap-panel');
           await expect(panel).toHaveCSS('color-scheme', theme);
           const device = panel.locator('[data-cell-id="device-1"]');
@@ -139,14 +138,15 @@ for (const theme of ['light', 'dark'] as const) {
     }, testInfo) => {
       config.queries[0] = nativeQuery('health', 'vector(0)');
       const uid = await createDiagram(config, { svg: svg.replace('translate(35 35)', 'translate(0 0)') });
-      const dashboard = await gotoDashboardPage({ uid });
-      await dashboard.goto({ queryParams: new URLSearchParams({ theme }) });
+      await gotoDashboardPage({ uid, queryParams: new URLSearchParams({ theme }) });
       const panel = page.getByTestId('dmap-panel');
       await expect(panel.locator('.dmap-status-summary[title="down: Health check failed (2 elements)"]')).toBeVisible();
-      const top = (await panel.boundingBox())!.y;
-      for (const marker of await panel.locator('.dmap-status-marker text').all()) {
-        expect((await marker.boundingBox())!.y).toBeGreaterThanOrEqual(top);
-      }
+      // One evaluate reads the panel and every marker from the same DOM state. Locator calls one by one race with a redraw.
+      const { top, markerTops } = await panel.evaluate((el) => ({
+        top: el.getBoundingClientRect().y,
+        markerTops: Array.from(el.querySelectorAll('.dmap-status-marker text'), (m) => m.getBoundingClientRect().y),
+      }));
+      for (const markerTop of markerTops) expect(markerTop).toBeGreaterThanOrEqual(top);
       const screenshot = testInfo.outputPath(`crowded-${theme}.png`);
       await panel.screenshot({ path: screenshot });
       await testInfo.attach(`crowded-${theme}`, { path: screenshot, contentType: 'image/png' });
