@@ -1,0 +1,30 @@
+/** Distance in px between the anchor and the tooltip box, and between the box and the edge of the view. */
+export const TOOLTIP_OFFSET = 10;
+
+/**
+ * One axis: after the anchor; before it when the box would cross the far edge; then held inside the view with
+ * the margin on both sides. A box wider than the view sits at the near margin.
+ */
+function side(pos: number, size: number, view: number, margin: number): number {
+  const after = pos + margin;
+  const before = pos - margin - size;
+  const want = after + size <= view - margin ? after : before >= margin ? before : after;
+  return Math.max(margin, Math.min(want, view - size - margin));
+}
+
+/**
+ * Top-left corner of a tooltip box of w × h px for an anchor at (x, y) in a view of vw × vh px. The box sits
+ * below and to the right of the anchor, flips to the other side of the anchor when it would leave the view, and
+ * always stays inside the view (with the margin), also for an anchor outside the view.
+ */
+export function placeTooltip(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  vw: number,
+  vh: number,
+  margin = TOOLTIP_OFFSET
+): { x: number; y: number } {
+  return { x: side(x, w, vw, margin), y: side(y, h, vh, margin) };
+}

@@ -208,6 +208,8 @@ const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
 
 test.describe('tooltip on a phone', () => {
   test.use({ ...iPhone, viewport: { width: 390, height: 844 } });
+  // the touch events come from CDP: Chromium only (PW_WEBKIT adds a WebKit project)
+  test.skip(({ browserName }) => browserName !== 'chromium', 'CDP touch events need Chromium');
 
   test('a drag along the chart shows values; a vertical swipe still scrolls the sheet', async ({
     gotoDashboardPage,
