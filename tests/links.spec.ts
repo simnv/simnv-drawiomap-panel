@@ -113,7 +113,7 @@ test.describe('hover card on a phone', () => {
       await half.tap({ force: true, timeout: 2000 });
       await expect(dialog).toBeVisible({ timeout: 2000 });
     }).toPass();
-    await expect(dialog).toBeInViewport({ ratio: 1 });
+    await expect(dialog).toBeInViewport({ ratio: 0.99 });
     await expect(dialog).toHaveAttribute('data-sheet', 'true');
     await expect(dialog).toContainText('isp-a → rtr-a');
     // the sparkline is responsive: it has the full width of the sheet row

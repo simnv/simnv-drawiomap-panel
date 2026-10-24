@@ -16,9 +16,10 @@ const box = async (locator: Locator) => (await locator.boundingBox())!;
 
 /**
  * A copy of the demo dashboard (its legend has colour blocks) with a status band (two nodes without data), a warning
- * (an old rule with a sparkline shape) and the given legend corner and panel title. Returns the uid.
+ * (an old rule with a sparkline shape). It has one panel for each legend corner, one below the other, so one page
+ * load checks all corners. A panel title is `<title> <corner>`, or empty when `title` is empty. Returns the uid.
  */
-async function cornerDashboard(request: APIRequestContext, uid: string, title: string, corner: string) {
+async function cornerDashboard(request: APIRequestContext, uid: string, title: string, corners: readonly string[]) {
   const demo = await (await request.get('/api/dashboards/uid/drawiomap-demo')).json();
   const panel = demo.dashboard.panels.find((p: { id: number }) => p.id === 1);
   const config = {
@@ -39,20 +40,26 @@ async function cornerDashboard(request: APIRequestContext, uid: string, title: s
       },
     })),
   };
-  const options = {
+  const options = (corner: string) => ({
     ...panel.options,
     config,
     rules: [...panel.options.rules, { name: 'old', select: { ids: ['pg-node~net-a'] }, shape: { sparkline: {} } }],
     zoom: { mode: 'fit', percent: 100, wheel: false, pan: true, align: 'top' },
     legend: { show: true, corner, maxBlocks: 4 },
-  };
+  });
   const dashboard = {
     ...demo.dashboard,
     id: null,
     uid,
     title: uid,
     refresh: '',
-    panels: [{ ...panel, title, options }],
+    panels: corners.map((corner, i) => ({
+      ...panel,
+      id: i + 1,
+      title: title && `${title} ${corner}`,
+      gridPos: { x: 0, y: i * 14, w: 24, h: 14 },
+      options: options(corner),
+    })),
   };
   const response = await request.post('/api/dashboards/db', { data: { dashboard, overwrite: true } });
   expect(response.ok(), await response.text()).toBe(true);
@@ -69,77 +76,87 @@ async function zoomIn(page: Page, stage: Locator) {
   await page.keyboard.up('Control');
 }
 
-for (const title of ['', 'Reset corner test']) {
-  for (const corner of CORNERS) {
-    test(`the reset button clears the panel menu, the band, the badge and the ${corner} legend (${title ? 'titled panel' : 'panel without title'})`, async ({
-      page,
-      request,
-      gotoDashboardPage,
-    }, testInfo) => {
-      const uid = await cornerDashboard(request, `rc-${testInfo.workerIndex}-${Date.now()}-${corner}`, title, corner);
-      try {
-        await gotoDashboardPage({ uid });
-        const panel = page.getByTestId('dmap-panel');
-        const band = panel.getByTestId('dmap-status-band');
-        const legend = panel.getByTestId('dmap-legend');
-        const badge = panel.getByTestId('dmap-warning-badge');
-        const reset = panel.getByRole('button', { name: 'Reset zoom' });
-        await expect(band).toBeVisible();
-        await expect(legend).toHaveAttribute('data-dmap-corner', corner);
-        // the legend starts as a chip: open it, the largest case for the overlap checks
-        await legend.getByRole('button', { name: 'Legend' }).click();
-        await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();
-        await expect(badge).toBeVisible();
-        const viewBox = () => panel.locator('svg').first().getAttribute('viewBox');
-        const base = await viewBox();
+/** The reset button must not touch the panel menu, the band, the badge or the legend in the given corner. */
+async function checkCorner(page: Page, index: number, corner: string, title: string) {
+  const panel = page.getByTestId('dmap-panel').nth(index);
+  const band = panel.getByTestId('dmap-status-band');
+  const legend = panel.getByTestId('dmap-legend');
+  const badge = panel.getByTestId('dmap-warning-badge');
+  const reset = panel.getByRole('button', { name: 'Reset zoom' });
+  await expect(band).toBeVisible();
+  await expect(legend).toHaveAttribute('data-dmap-corner', corner);
+  // the legend starts as a chip: open it, the largest case for the overlap checks
+  await legend.getByRole('button', { name: 'Legend' }).click();
+  await expect(legend.getByTestId('dmap-legend-block').first()).toBeVisible();
+  await expect(badge).toBeVisible();
+  const viewBox = () => panel.locator('svg').first().getAttribute('viewBox');
+  const base = await viewBox();
 
-        await zoomIn(page, panel.getByTestId('dmap-stage'));
-        await expect(reset).toBeVisible();
-        // the hover shows the panel menu button of Grafana
-        const menu = page.getByRole('button', { name: /^Menu for panel/ });
-        const p = await box(panel);
-        await page.mouse.move(p.x + p.width - 60, p.y + 8);
-        await expect(menu).toBeVisible();
+  await zoomIn(page, panel.getByTestId('dmap-stage'));
+  await expect(reset).toBeVisible();
+  // the hover shows the panel menu button of Grafana; the other panels show theirs only on their own hover
+  const menu = page.getByRole('button', { name: /^Menu for panel/ }).and(page.locator(':visible'));
+  const p = await box(panel);
+  await page.mouse.move(p.x + p.width - 60, p.y + 8);
+  await expect(menu).toBeVisible();
 
-        const r = await box(reset);
-        const m = await box(menu);
-        expect(intersects(r, m), 'reset vs panel menu').toBe(false);
-        expect(intersects(await box(badge), m), 'badge vs panel menu').toBe(false);
-        expect(intersects(await box(legend), m), 'legend vs panel menu').toBe(false);
-        expect(intersects(r, await box(band)), 'reset vs band').toBe(false);
-        expect(intersects(r, await box(badge)), 'reset vs badge').toBe(false);
-        expect(intersects(r, await box(legend)), 'reset vs legend').toBe(false);
-        expect(intersects(await box(badge), await box(legend)), 'badge vs legend').toBe(false);
-        expect(intersects(await box(badge), await box(band)), 'badge vs band').toBe(false);
-        expect(intersects(await box(legend), await box(band)), 'legend vs band').toBe(false);
-        // the top-left corner: inside the panel, below the band, left of the menu
-        expect(r.x).toBeGreaterThanOrEqual(p.x);
-        expect(r.x + r.width).toBeLessThan(m.x);
-        const b = await box(band);
-        expect(r.y).toBeGreaterThanOrEqual(b.y + b.height);
-        // the panel title area is above the panel: the button stays inside the panel
-        expect(r.y).toBeGreaterThanOrEqual(p.y);
-        if (title) {
-          const heading = await box(page.getByRole('heading', { name: title }));
-          expect(r.y).toBeGreaterThanOrEqual(heading.y + heading.height);
-        }
-        // a touch target
-        expect(r.width).toBeGreaterThanOrEqual(32);
-        expect(r.height).toBeGreaterThanOrEqual(32);
-        // the tooltip and the label
-        await expect(reset).toHaveAttribute('aria-label', 'Reset zoom');
-        await reset.hover();
-        await expect(page.getByRole('tooltip').filter({ hasText: 'Reset zoom' })).toBeVisible();
-
-        // it works: a click restores the default view
-        await reset.click();
-        await expect(reset).toHaveCount(0);
-        expect(await viewBox()).toBe(base);
-      } finally {
-        await request.delete(`/api/dashboards/uid/${uid}`);
-      }
-    });
+  const r = await box(reset);
+  const m = await box(menu);
+  const at = `${corner}, ${title ? 'titled panel' : 'panel without title'}`;
+  expect(intersects(r, m), `reset vs panel menu (${at})`).toBe(false);
+  expect(intersects(await box(badge), m), `badge vs panel menu (${at})`).toBe(false);
+  expect(intersects(await box(legend), m), `legend vs panel menu (${at})`).toBe(false);
+  expect(intersects(r, await box(band)), `reset vs band (${at})`).toBe(false);
+  expect(intersects(r, await box(badge)), `reset vs badge (${at})`).toBe(false);
+  expect(intersects(r, await box(legend)), `reset vs legend (${at})`).toBe(false);
+  expect(intersects(await box(badge), await box(legend)), `badge vs legend (${at})`).toBe(false);
+  expect(intersects(await box(badge), await box(band)), `badge vs band (${at})`).toBe(false);
+  expect(intersects(await box(legend), await box(band)), `legend vs band (${at})`).toBe(false);
+  // the top-left corner: inside the panel, below the band, left of the menu
+  expect(r.x, at).toBeGreaterThanOrEqual(p.x);
+  expect(r.x + r.width, at).toBeLessThan(m.x);
+  const b = await box(band);
+  expect(r.y, at).toBeGreaterThanOrEqual(b.y + b.height);
+  // the panel title area is above the panel: the button stays inside the panel
+  expect(r.y, at).toBeGreaterThanOrEqual(p.y);
+  if (title) {
+    const heading = await box(page.getByRole('heading', { name: `${title} ${corner}` }));
+    expect(r.y, at).toBeGreaterThanOrEqual(heading.y + heading.height);
   }
+  // a touch target
+  expect(r.width, at).toBeGreaterThanOrEqual(32);
+  expect(r.height, at).toBeGreaterThanOrEqual(32);
+  // the tooltip and the label
+  await expect(reset).toHaveAttribute('aria-label', 'Reset zoom');
+  await reset.hover();
+  await expect(page.getByRole('tooltip').filter({ hasText: 'Reset zoom' })).toBeVisible();
+
+  // it works: a click restores the default view
+  await reset.click();
+  await expect(reset).toHaveCount(0);
+  expect(await viewBox()).toBe(base);
+}
+
+// One dashboard with a panel for each legend corner (and one dashboard with titled panels): a page load for each
+// corner and title would cost more than the checks.
+for (const title of ['', 'Reset corner test']) {
+  test(`the reset button clears the panel menu, the band, the badge and the legend in every corner (${title ? 'titled panels' : 'panels without title'})`, async ({
+    page,
+    request,
+    gotoDashboardPage,
+  }, testInfo) => {
+    const uid = await cornerDashboard(request, `rc-${testInfo.workerIndex}-${Date.now()}`, title, CORNERS);
+    try {
+      // Grafana mounts a panel below the fold only when it scrolls into view. A tall viewport shows all four at once.
+      await page.setViewportSize({ width: 1280, height: 2400 });
+      await gotoDashboardPage({ uid });
+      for (const [index, corner] of CORNERS.entries()) {
+        await test.step(corner, () => checkCorner(page, index, corner, title));
+      }
+    } finally {
+      await request.delete(`/api/dashboards/uid/${uid}`);
+    }
+  });
 }
 
 test('in panel edit the edit-bindings button joins the reset button and the badge in the corner without overlap', async ({
@@ -147,7 +164,7 @@ test('in panel edit the edit-bindings button joins the reset button and the badg
   request,
   gotoPanelEditPage,
 }, testInfo) => {
-  const uid = await cornerDashboard(request, `rce-${testInfo.workerIndex}-${Date.now()}`, '', 'bottom-right');
+  const uid = await cornerDashboard(request, `rce-${testInfo.workerIndex}-${Date.now()}`, '', ['bottom-right']);
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
