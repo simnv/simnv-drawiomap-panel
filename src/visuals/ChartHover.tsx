@@ -71,14 +71,21 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
 });
 
+/** Frames the box without a ResizeObserver waits for a size before it gives up. */
+const PLACE_RETRIES = 10;
+
 /**
  * The positioned box of the tooltip. The Grafana VizTooltipContainer places itself with a state write in a layout
  * effect and a ResizeObserver (two to four commits for each sample) and moves with a 100 ms transition, so the
- * box trails the pointer. This box writes its place to the DOM in the layout effect of the same commit: one
- * commit for each sample, no transition. Only a keyboard step is a live region: a pointer scrub would flood a
- * screen reader.
+ * box trails the pointer. This box writes its place to the DOM, no state, no transition: one commit for each
+ * sample. Only a keyboard step is a live region: a pointer scrub would flood a screen reader.
+ *
+ * The Grafana Portal attaches its container in a layout effect of a parent, after the layout effect of this box:
+ * the first measurement sees no size. The box stays hidden until it has a size. A ResizeObserver reports the
+ * size when the box is in the document and on each change of its content; without one, frames retry. A change
+ * of the viewport places the box again.
  */
-function TooltipBox({
+export function TooltipBox({
   x,
   y,
   live,
@@ -92,27 +99,79 @@ function TooltipBox({
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
+  // the anchor of the latest commit, for a size report or a viewport change later
+  const anchor = useRef({ x, y });
+  // Places the box from its current size. True when the box is in the document and has a size.
+  const place = useCallback(() => {
     const el = ref.current;
-    if (!el) {
-      return;
+    if (!el || !el.isConnected) {
+      return false;
     }
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
     // the view without the scrollbars; jsdom has no client size
     const root = document.documentElement;
     const p = placeTooltip(
-      x,
-      y,
-      el.offsetWidth,
-      el.offsetHeight,
+      anchor.current.x,
+      anchor.current.y,
+      w,
+      h,
       root.clientWidth || window.innerWidth,
       root.clientHeight || window.innerHeight
     );
     el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    if (w > 0 && h > 0) {
+      el.style.visibility = '';
+      return true;
+    }
+    return false;
+  }, []);
+  const observed = typeof ResizeObserver === 'function';
+  // Each commit: a new anchor or new content. Without a ResizeObserver, frames retry until the box has a size.
+  useLayoutEffect(() => {
+    anchor.current = { x, y };
+    if (place() || observed) {
+      return;
+    }
+    let tries = 0;
+    let frame: number | undefined;
+    const retry = () => {
+      frame = undefined;
+      if (!place() && ++tries < PLACE_RETRIES) {
+        frame = requestAnimationFrame(retry);
+      }
+    };
+    frame = requestAnimationFrame(retry);
+    return () => {
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+    };
   });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const again = () => void place();
+    const observer = observed ? new ResizeObserver(again) : undefined;
+    observer?.observe(el);
+    const viewport = window.visualViewport;
+    window.addEventListener('resize', again);
+    viewport?.addEventListener('resize', again);
+    viewport?.addEventListener('scroll', again);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', again);
+      viewport?.removeEventListener('resize', again);
+      viewport?.removeEventListener('scroll', again);
+    };
+  }, [place, observed]);
   return (
     <div
       ref={ref}
       className={className}
+      style={{ visibility: 'hidden' }}
       data-testid="dmap-chart-tooltip"
       aria-live={live ? 'polite' : undefined}
       aria-atomic="true"

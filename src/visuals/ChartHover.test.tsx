@@ -43,6 +43,16 @@ beforeEach(() => {
     return nextFrame++;
   });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+  // jsdom has no ResizeObserver: with this stub the tooltip box takes the observer path and queues no frames of
+  // its own. The real Portal lifecycle is tested in TooltipBox.test.tsx.
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  );
 });
 afterEach(() => vi.unstubAllGlobals());
 

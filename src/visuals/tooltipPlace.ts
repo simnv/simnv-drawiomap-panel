@@ -1,23 +1,21 @@
-/** Distance in px between the anchor and the tooltip box, as in the Grafana tooltip. */
+/** Distance in px between the anchor and the tooltip box, and between the box and the edge of the view. */
 export const TOOLTIP_OFFSET = 10;
 
-/** One axis: after the anchor; before it when the box would leave the view; held in the view when it fits on no side. */
-function side(pos: number, size: number, view: number, offset: number): number {
-  const after = pos + offset;
-  if (after + size <= view) {
-    return after;
-  }
-  const before = pos - offset - size;
-  if (before >= 0) {
-    return before;
-  }
-  return Math.max(0, Math.min(after, view - size));
+/**
+ * One axis: after the anchor; before it when the box would cross the far edge; then held inside the view with
+ * the margin on both sides. A box wider than the view sits at the near margin.
+ */
+function side(pos: number, size: number, view: number, margin: number): number {
+  const after = pos + margin;
+  const before = pos - margin - size;
+  const want = after + size <= view - margin ? after : before >= margin ? before : after;
+  return Math.max(margin, Math.min(want, view - size - margin));
 }
 
 /**
  * Top-left corner of a tooltip box of w × h px for an anchor at (x, y) in a view of vw × vh px. The box sits
  * below and to the right of the anchor, flips to the other side of the anchor when it would leave the view, and
- * stays inside the view when it fits on neither side.
+ * always stays inside the view (with the margin), also for an anchor outside the view.
  */
 export function placeTooltip(
   x: number,
@@ -26,7 +24,7 @@ export function placeTooltip(
   h: number,
   vw: number,
   vh: number,
-  offset = TOOLTIP_OFFSET
+  margin = TOOLTIP_OFFSET
 ): { x: number; y: number } {
-  return { x: side(x, w, vw, offset), y: side(y, h, vh, offset) };
+  return { x: side(x, w, vw, margin), y: side(y, h, vh, margin) };
 }
