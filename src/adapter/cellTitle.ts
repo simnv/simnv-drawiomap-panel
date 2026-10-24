@@ -24,7 +24,12 @@ export function readableId(id: string): string {
   if (id.startsWith('pg-port~') && parts.length > 2 && /^\d+$/.test(parts[parts.length - 1])) {
     parts.pop();
   }
-  return parts.map((p) => p.replace(/%7e/gi, '~').replace(/%25/g, '%')).join(' ');
+  return parts.map(decodePart).join(' ');
+}
+
+/** The contract's decoder of one id part: `%7e` becomes `~`, then `%25` becomes `%`. */
+function decodePart(part: string): string {
+  return part.replace(/%7e/gi, '~').replace(/%25/g, '%');
 }
 
 /** Finds a cell by its pg-id (`CellMeta.key`). */
@@ -64,9 +69,66 @@ function endTitle(end: Endpoint, find: FindCell): string {
 }
 
 /**
+ * "<from> ↔ <to>". When both ends read the same, the title adds what tells them apart: the label of the link
+ * (its own, else its pg-linkLabel text, which attachLinkLabels copies to labelText), else the id of each end.
+ */
+function linkTitle(from: Endpoint, to: Endpoint, labelText: string, find: FindCell): string {
+  const a = endTitle(from, find);
+  const b = endTitle(to, find);
+  if (a !== b) {
+    return `${a}${SEPARATOR}${b}`;
+  }
+  const label = oneLine(labelText);
+  if (label) {
+    return `${a}${SEPARATOR}${b} (${label})`;
+  }
+  return from.raw === to.raw ? `${a}${SEPARATOR}${b}` : `${a} (${from.raw})${SEPARATOR}${b} (${to.raw})`;
+}
+
+const NODE_PART = /^pg-(?:iconTile|icon|nodeDescription)~(.+)$/;
+const GROUP = /^pg-group(Title)?~(.+)$/;
+const LEGEND_PART = /^pg-legend(?:Body|Tile|Swatch)~(.+)$/;
+
+/** The node that an icon, an icon tile or a description belongs to: by pg-of, else by the id suffix. */
+function ownerNode(cell: CellMeta, find: FindCell): CellMeta | undefined {
+  const of = cell.attrs['pg-of'];
+  const byOf = of === undefined ? undefined : find(of);
+  if (byOf?.kind === 'node') {
+    return byOf;
+  }
+  const suffix = NODE_PART.exec(cell.id)?.[1];
+  // the suffix is encoded; the key of a node is its pg-id, as the author wrote it
+  const bySuffix = suffix === undefined ? undefined : (find(decodePart(suffix)) ?? find(`pg-node~${suffix}`));
+  return bySuffix?.kind === 'node' ? bySuffix : undefined;
+}
+
+/**
+ * The caption that the diagram shows for a portograph structure cell; '' when no rule applies.
+ * - icon, icon tile, node description: the title of their node (pg-of, else the id suffix);
+ * - group (`pg-group~X`): its own label, else the label of `pg-groupTitle~X`; a group title without label: the group's;
+ * - legend body, tile and swatch (`pg-legend...~X`): the label of `pg-legendRow~X`.
+ */
+function captionOf(cell: CellMeta, find: FindCell): string {
+  const owner = NODE_PART.test(cell.id) || cell.attrs['pg-kind'] === 'node-icon' ? ownerNode(cell, find) : undefined;
+  if (owner && owner !== cell) {
+    return cellTitle(owner, find);
+  }
+  const group = GROUP.exec(cell.id);
+  if (group) {
+    const other = group[1] ? `pg-group~${group[2]}` : `pg-groupTitle~${group[2]}`;
+    return oneLine(cell.labelText) || oneLine(find(other)?.labelText);
+  }
+  const legend = LEGEND_PART.exec(cell.id);
+  return legend ? oneLine(find(`pg-legendRow~${legend[1]}`)?.labelText) : '';
+}
+
+/**
  * The title of a cell.
+ * - portograph only: an icon, icon tile or description has the title of its node; a group has its caption (own
+ *   label, else its group title cell); a legend body, tile or swatch has the label of its legend row (see captionOf);
  * - port: "<node label> <port label>", for example "Switch-A p9";
- * - link: "<from> ↔ <to>", for example "Switch-A p9 ↔ AP-1" (the link label is a detail, often a speed);
+ * - link: "<from> ↔ <to>", for example "Switch-A p9 ↔ AP-1" (the link label is a detail, often a speed).
+ *   Equal ends: "A ↔ A (ch1)" with the link label, else "A (e-cam) ↔ A (c-ch)" with the end ids;
  * - anything else: its label, else a readable form of its id.
  * A link without both ends and a port without a node use the label.
  * The last fallback is the id. With `portograph` (the diagram has pg-schema) a cell without pg-id shows its decoded
@@ -77,9 +139,11 @@ export function cellTitle(cell: CellMeta, find: FindCell, portograph = true): st
   if (cell.kind === 'port') {
     title = portTitle(cell, find);
   } else if (cell.kind === 'link' && cell.from && cell.to) {
-    title = `${endTitle(cell.from, find)}${SEPARATOR}${endTitle(cell.to, find)}`;
+    title = linkTitle(cell.from, cell.to, cell.labelText, find);
   }
   const decode = portograph && !cell.attrs['pg-id'];
+  // a node part shows the title of its node even when it has a label of its own (a description)
+  title ||= portograph ? captionOf(cell, find) : '';
   return title || oneLine(cell.labelText) || (decode ? readableId(cell.id) : cell.key || cell.id);
 }
 
