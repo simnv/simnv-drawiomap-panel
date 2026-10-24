@@ -1651,7 +1651,7 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     await hover('lab');
     expect(screen.queryByTestId('dmap-card')).toBeNull();
     await hover('grp');
-    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('core');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('CORE');
     await hover('na');
     expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
   });
