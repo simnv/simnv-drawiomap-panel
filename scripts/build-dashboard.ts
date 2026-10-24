@@ -1,11 +1,12 @@
 /**
- * Builds provisioning/dashboards/demo.json from the template, the demo rules
- * and the demo-l3 fixture. Run: npm run build:dashboard
+ * Builds provisioning/dashboards/demo.json from the template, the demo bindings (src/fixtures/demo-config.ts)
+ * and the demo diagrams. Run: npm run build:dashboard
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { authoringConfig } from '../src/fixtures/authoring-config';
+import { demoL3Config, handDrawnConfig } from '../src/fixtures/demo-config';
 
 const root = process.cwd(); // npm scripts run from the repo root
 const dom = new JSDOM('');
@@ -20,31 +21,27 @@ Object.assign(globalThis, {
 });
 
 const PANELS = [
-  { id: 1, svg: 'fixtures/demo/svg/demo-l3.svg', xml: 'fixtures/demo/demo-l3.drawio', rules: 'demo/rules.yaml' },
-  {
-    id: 2,
-    svg: 'fixtures/demo/svg/hand-drawn.svg',
-    xml: 'fixtures/hand/hand-drawn.drawio',
-    rules: 'demo/rules-hand.yaml',
-  },
+  { id: 1, svg: 'fixtures/demo/svg/demo-l3.svg', xml: 'fixtures/demo/demo-l3.drawio', config: demoL3Config },
+  { id: 2, svg: 'fixtures/demo/svg/hand-drawn.svg', xml: 'fixtures/hand/hand-drawn.drawio', config: handDrawnConfig },
 ];
 
 async function main() {
   const { sanitizeSvg } = await import('../src/render/sanitize');
-  const { parseRulesYaml } = await import('../src/rules/schema');
+  const { validateConfig } = await import('../src/model/config');
   const { fnv1a } = await import('../src/util/hash');
 
   const dashboard = JSON.parse(readFileSync(resolve(root, 'demo/dashboard.template.json'), 'utf8'));
   for (const spec of PANELS) {
     const svgRaw = readFileSync(resolve(root, spec.svg), 'utf8');
     const xml = readFileSync(resolve(root, spec.xml), 'utf8');
-    const rules = parseRulesYaml(readFileSync(resolve(root, spec.rules), 'utf8'));
-    if (!rules.rules) {
-      throw new Error(`${spec.rules}: ${rules.errors.join('; ')}`);
+    const config = spec.config();
+    const { diagnostics } = validateConfig(config);
+    if (diagnostics.length) {
+      throw new Error(`panel ${spec.id}: ${diagnostics.map((d) => `${d.path}: ${d.message}`).join('; ')}`);
     }
     const clean = sanitizeSvg(svgRaw);
     const panel = dashboard.panels.find((p: { id: number }) => p.id === spec.id);
-    panel.options.rules = rules.rules;
+    panel.options.config = config;
     panel.options.diagram = {
       xml,
       svg: clean.svg,
@@ -52,7 +49,7 @@ async function main() {
       updatedAt: '2026-10-17T00:00:00.000Z',
     };
     console.log(
-      `panel ${spec.id}: svg ${Math.round(clean.svg.length / 1024)} KB (from ${Math.round(svgRaw.length / 1024)} KB), ${rules.rules.length} rules`
+      `panel ${spec.id}: svg ${Math.round(clean.svg.length / 1024)} KB (from ${Math.round(svgRaw.length / 1024)} KB), ${config.patterns.length} patterns`
     );
   }
   const authoringSvg = sanitizeSvg(readFileSync(resolve(root, 'src/fixtures/authoring.svg'), 'utf8')).svg;
@@ -75,7 +72,6 @@ async function main() {
     targets: [],
     fieldConfig: { defaults: {}, overrides: [] },
     options: {
-      rules: [],
       config: authoringConfig('victoriametrics', 'authoring-testdata'),
       diagram: {
         svg: authoringSvg,

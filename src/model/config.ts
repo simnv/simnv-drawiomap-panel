@@ -1,7 +1,7 @@
 import type { DataQuery, DataSourceRef } from '@grafana/schema';
-import type { CellSelector, LinkRule, ReducerName, ShapeRule } from '../types';
+import type { CellSelector, ReducerName, ShapeTarget } from '../types';
 import { z } from 'zod';
-import { cellSelector, matcher, reducer, ruleSchema } from '../rules/schema';
+import { matcherError } from '../binding/select';
 
 export interface Diagnostic {
   code: string;
@@ -93,25 +93,43 @@ export interface HoverSpec {
   rows: HoverRow[];
 }
 
+/** The two halves of a link: a binding for each direction, and the capacity in bit/s (see the precedence in README). */
+export interface LinkDisplay {
+  enabled?: boolean;
+  a2bBinding?: QueryBinding;
+  b2aBinding?: QueryBinding;
+  /** the capacity of both halves: a series, read through the field unit */
+  capacityBinding?: QueryBinding;
+  /** the capacity of both halves: a number, or a template like "${cell.capacity}" */
+  capacity?: LinkCapacity;
+  /** capacity of one half, a number or a template, in bit/s */
+  capacityA2b?: LinkCapacity;
+  capacityB2a?: LinkCapacity;
+  capacityA2bBinding?: QueryBinding;
+  capacityB2aBinding?: QueryBinding;
+}
+/** The state colour and the label text of a node. */
+export interface ShapeDisplay {
+  enabled?: boolean;
+  binding?: QueryBinding;
+  /** what the colour changes; the default is the icon, or nothing when only `text` is set */
+  target?: ShapeTarget | 'none';
+  /** write the value into the node label (the `label` template of the display) */
+  text?: boolean;
+}
 export interface DisplayConfig {
   enabled?: boolean;
-  link?: LinkRule & {
-    enabled?: boolean;
-    a2bBinding?: QueryBinding;
-    b2aBinding?: QueryBinding;
-    capacityBinding?: QueryBinding;
-    /** capacity of one half, a number or a template, in bit/s; see the precedence in README */
-    capacityA2b?: LinkCapacity;
-    capacityB2a?: LinkCapacity;
-    capacityA2bBinding?: QueryBinding;
-    capacityB2aBinding?: QueryBinding;
-  };
-  shape?: ShapeRule & { enabled?: boolean; binding?: QueryBinding };
+  link?: LinkDisplay;
+  shape?: ShapeDisplay;
   status?: StatusRule;
   hover?: HoverSpec;
+  /** the default reducer of the capacity series; the bindings have their own */
   reducer?: ReducerName;
+  /** template of the text that `shape.text` writes into the node label; default "${value}" */
   label?: string;
+  /** the footer link of the card (a template); also the default click target of the hover rows */
   url?: string;
+  /** title of the url in the card footer (a template) */
   urlTitle?: string;
 }
 
@@ -147,6 +165,23 @@ export interface DiagramConfigV2 {
 }
 
 const nonempty = z.string().refine((value) => value.trim().length > 0, 'Must not be blank.');
+/** Exact string or "/re/flags". The regex must compile and must not use the stateful g or y flag. */
+export const matcher = z.string().superRefine((m, ctx) => {
+  const err = matcherError(m);
+  if (err) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+  }
+});
+export const cellSelector = z
+  .object({
+    ids: z.array(z.string()).optional(),
+    kind: z.enum(['node', 'port', 'link', 'link-label', 'other', 'any']).optional(),
+    attrs: z.record(matcher).optional(),
+    label: matcher.optional(),
+    between: z.tuple([z.string(), z.string()]).optional(),
+  })
+  .strict();
+export const reducer = z.enum(['last', 'mean', 'max', 'min']);
 const bindingSchema = z
   .object({ queryId: nonempty, match: z.record(matcher), field: nonempty.optional(), reducer })
   .strict();
@@ -259,22 +294,28 @@ const hoverSchema = z
 const displaySchema = z
   .object({
     enabled: z.boolean().optional(),
-    link: ruleSchema.shape.link
-      .unwrap()
-      .extend({
+    link: z
+      .object({
         enabled: z.boolean().optional(),
         a2bBinding: bindingSchema.optional(),
         b2aBinding: bindingSchema.optional(),
         capacityBinding: bindingSchema.optional(),
+        capacity: linkCapacity.optional(),
         capacityA2b: linkCapacity.optional(),
         capacityB2a: linkCapacity.optional(),
         capacityA2bBinding: bindingSchema.optional(),
         capacityB2aBinding: bindingSchema.optional(),
       })
+      .strict()
       .optional(),
-    shape: ruleSchema.shape.shape
-      .unwrap()
-      .extend({ enabled: z.boolean().optional(), binding: bindingSchema.optional() })
+    shape: z
+      .object({
+        enabled: z.boolean().optional(),
+        binding: bindingSchema.optional(),
+        target: z.enum(['icon', 'shape', 'stroke', 'none']).optional(),
+        text: z.boolean().optional(),
+      })
+      .strict()
       .optional(),
     status: statusSchema.optional(),
     hover: hoverSchema.optional(),
@@ -402,6 +443,11 @@ export function rowBindings(row: HoverRow): Array<{ binding: QueryBinding; path:
   return 'binding' in row ? [{ binding: row.binding, path: 'binding' }] : [];
 }
 
+/** The warning of a panel that still has `rules` of version 1. The panel does not read them. */
+export function legacyRulesWarning(count: number): string {
+  return `The panel ignores ${count} rule${count === 1 ? '' : 's'} of version 1. Create the bindings again in Edit bindings.`;
+}
+
 export function validateConfig(input: unknown): { config?: DiagramConfigV2; diagnostics: Diagnostic[] } {
   if (input && typeof input === 'object' && !('version' in input) && ('rules' in input || 'diagram' in input)) {
     return {
@@ -410,7 +456,7 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
           code: 'legacy-config',
           path: '(root)',
           message:
-            'Legacy panel options detected. Explicitly recreate or import V2 configuration; existing options have been preserved.',
+            'This is a panel options document, not a version 2 config. The rules of version 1 are not supported: create the bindings again in the editor, or import a version 2 config.',
         },
       ],
     };
@@ -532,14 +578,7 @@ export function validateConfig(input: unknown): { config?: DiagramConfigV2; diag
           }
         }
       });
-      const freshness = entry.display.status?.freshness;
-      if (freshness && freshness.staleAfterMs < freshness.expectedIntervalMs) {
-        diagnostics.push({
-          code: 'invalid-freshness',
-          path: `${key}[${i}].display.status.freshness.staleAfterMs`,
-          message: 'Stale detection must allow at least one expected sample interval.',
-        });
-      }
+      checkFreshness(entry.display.status?.freshness, `${key}[${i}].display.status.freshness`);
     });
   }
   config.widgets.forEach((widget, i) => {

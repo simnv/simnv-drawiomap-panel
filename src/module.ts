@@ -7,7 +7,6 @@ import {
 } from '@grafana/data';
 import { DrawioMapPanel } from './components/DrawioMapPanel';
 import { DiagramEditor } from './options/DiagramEditor';
-import { RulesEditor } from './options/RulesEditor';
 import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
@@ -45,17 +44,6 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['Diagram'],
         editor: DiagramEditor,
       })
-      .addCustomEditor({
-        id: 'rules',
-        path: 'rules',
-        name: 'Legacy rules',
-        description:
-          'Author V2 bindings and named queries in the bindings popup (Edit bindings). Existing legacy rules remain available here.',
-        category: ['Binding'],
-        editor: RulesEditor,
-        defaultValue: [],
-        showIf: (options) => !options.config,
-      })
       .addRadio({
         path: 'zoom.mode',
         name: 'Zoom',
@@ -74,7 +62,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         path: 'zoom.percent',
         name: 'Zoom %',
         category: ['View'],
-        defaultValue: 100,
+        defaultValue: DEFAULT_OPTIONS.zoom.percent,
         showIf: (o) => o.zoom?.mode === 'custom',
       })
       .addNumberInput({
@@ -100,8 +88,18 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         },
         showIf: (o) => (o.zoom?.mode ?? 'fit') === 'fit',
       })
-      .addBooleanSwitch({ path: 'zoom.wheel', name: 'Wheel zoom', category: ['View'], defaultValue: false })
-      .addBooleanSwitch({ path: 'zoom.pan', name: 'Drag pan', category: ['View'], defaultValue: false })
+      .addBooleanSwitch({
+        path: 'zoom.wheel',
+        name: 'Wheel zoom',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.zoom.wheel,
+      })
+      .addBooleanSwitch({
+        path: 'zoom.pan',
+        name: 'Drag pan',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.zoom.pan,
+      })
       .addNumberInput({
         path: 'linkWidth.min',
         name: 'Link width min',

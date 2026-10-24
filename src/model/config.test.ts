@@ -199,7 +199,7 @@ describe('validateConfig', () => {
     ]);
   });
 
-  it('detects legacy options without replacing rules or diagram content', () => {
+  it('rejects a panel options document (rules of version 1) and leaves it as it is', () => {
     const legacy = {
       rules: [{ name: 'old', select: {} }],
       diagram: { xml: '<mxfile/>', svg: '<svg/>', hash: 'old' },
@@ -209,7 +209,7 @@ describe('validateConfig', () => {
     const result = validateConfig(legacy);
     expect(result.config).toBeUndefined();
     expect(result.diagnostics).toContainEqual(
-      expect.objectContaining({ code: 'legacy-config', message: expect.stringMatching(/explicit/i) })
+      expect.objectContaining({ code: 'legacy-config', message: expect.stringMatching(/version 1/i) })
     );
     expect(JSON.stringify(legacy)).toBe(before);
   });
@@ -231,7 +231,6 @@ describe('validateConfig', () => {
               b2aBinding: binding,
               capacityBinding: binding,
               capacity: 1000,
-              card: { title: 'Traffic' },
             },
             shape: { binding, target: 'icon', text: true },
             status: {

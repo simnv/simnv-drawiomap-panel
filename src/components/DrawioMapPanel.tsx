@@ -13,11 +13,10 @@ import { css, cx } from '@emotion/css';
 import { PanelProps } from '@grafana/data';
 import { IconButton, useTheme2 } from '@grafana/ui';
 import { locationService } from '@grafana/runtime';
-import { bind, bindPlan } from '../binding/engine';
+import { bindPlan } from '../binding/engine';
 import { bindContextFor, cardContextFor } from '../binding/context';
 import { resolvePatterns } from '../binding/patterns';
-import { extractSeries } from '../binding/series';
-import { buildCard, buildConfiguredCard, opensCard } from '../interact/cardModel';
+import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind, interactiveCells, patchAt } from '../interact/hit';
 import { applyPatches, INTERACTIVE_ATTR, markInteractive } from '../render/applier';
@@ -30,13 +29,12 @@ import { useStage } from './useStage';
 import { useHeld } from './useHeld';
 import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
 import { EMPTY_CONFIG } from '../editor/draft';
-import type { Diagnostic } from '../model/config';
+import { legacyRulesWarning } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from '../editor/preview';
 import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { ChartLayer } from '../visuals/ChartLayer';
-import type { StatusSummary } from '../binding/status';
 import { bandLayout, StatusBand } from './StatusBand';
 import { Legend } from '../legend/Legend';
 import { buildLegend } from '../legend/model';
@@ -331,7 +329,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     onOpenBindings(target);
   };
 
-  const series = useMemo(() => extractSeries(data.series), [data.series]);
   const bindingContext = useMemo(
     () =>
       bindContextFor({
@@ -404,30 +401,19 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       ),
     [plan, opts.config, data, theme, timeZone, queryService?.context.generation, activeSnapshots]
   );
-  const nowMs = usePreviewTime(
-    data,
-    queryService?.context.generation,
-    undefined,
-    activeSnapshots.map((value) => value.snapshot),
-    statusDeadlines(plan, resolve)
-  );
+  const activeStates = useMemo(() => activeSnapshots.map((value) => value.snapshot), [activeSnapshots]);
+  const deadlines = useMemo(() => statusDeadlines(plan, resolve), [plan, resolve]);
+  const nowMs = usePreviewTime(data, queryService?.context.generation, undefined, activeStates, deadlines);
+  // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
+  const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
-    if (opts.config) {
-      const bound = bindPlan(plan, resolve, bindingContext, nowMs);
-      return {
-        patches: bound.patches,
-        warnings: bound.diagnostics.map((d) => `${d.path}: ${d.message}`),
-        diagnostics: bound.diagnostics,
-        summaries: bound.summaries,
-      };
+    const bound = bindPlan(plan, resolve, bindingContext, nowMs);
+    const warnings = bound.diagnostics.map((d) => `${d.path}: ${d.message}`);
+    if (legacyRules) {
+      warnings.unshift(legacyRulesWarning(legacyRules));
     }
-    const summaries: StatusSummary[] = [];
-    return {
-      ...bind(opts.rules ?? [], cellMetas(stage.index), series, bindingContext),
-      diagnostics: [] as Diagnostic[],
-      summaries,
-    };
-  }, [opts.config, opts.rules, plan, resolve, bindingContext, nowMs, stage.index, series]);
+    return { patches: bound.patches, warnings, diagnostics: bound.diagnostics, summaries: bound.summaries };
+  }, [plan, resolve, bindingContext, nowMs, legacyRules]);
 
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);
@@ -438,27 +424,17 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   // The card resolves its rows only for the open cell. A data refresh updates it in place.
   const cardPatch = card ? result.patches.get(card.cellId) : undefined;
   if (card && !cardPatch) {
-    // the rules or the diagram changed and the cell has no patch now
+    // the bindings or the diagram changed and the cell has no patch now
     setCard(null);
   }
   const cardContext = useMemo(
-    () =>
-      cardContextFor({
-        series,
-        theme,
-        timeZone,
-        replaceVariables,
-        fieldThresholds: fieldConfig.defaults.thresholds,
-      }),
-    [series, theme, timeZone, replaceVariables, fieldConfig.defaults.thresholds]
+    () => cardContextFor({ theme, replaceVariables, fieldThresholds: fieldConfig.defaults.thresholds }),
+    [theme, replaceVariables, fieldConfig.defaults.thresholds]
   );
-  const configured = !!opts.config;
-  const model = useMemo(() => {
-    if (!cardPatch) {
-      return undefined;
-    }
-    return configured ? buildConfiguredCard(cardPatch, resolve, cardContext) : buildCard(cardPatch, cardContext);
-  }, [cardPatch, configured, resolve, cardContext]);
+  const model = useMemo(
+    () => (cardPatch ? buildConfiguredCard(cardPatch, resolve, cardContext) : undefined),
+    [cardPatch, resolve, cardContext]
+  );
   // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default),
   // and only when the card has rows or links. Computed once per data update: these cells get the hand cursor.
   const hoverKinds = opts.hover.kinds;
@@ -466,9 +442,9 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     () =>
       interactiveCells(result.patches, stage.index, (p) => {
         const entry = stage.index.get(p.cellId);
-        return !!entry && hoverKinds.includes(hoverKind(entry)) && opensCard(p, configured, cardContext);
+        return !!entry && hoverKinds.includes(hoverKind(entry)) && opensCard(p, cardContext);
       }),
-    [result.patches, stage.index, hoverKinds, configured, cardContext]
+    [result.patches, stage.index, hoverKinds, cardContext]
   );
   const cardable = (p: CellPatch) => interactive.has(p.cellId);
 

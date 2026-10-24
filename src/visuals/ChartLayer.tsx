@@ -6,7 +6,7 @@ import { resolveBinding } from '../binding/engine';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import type { NamedQuery } from '../model/config';
-import type { QueryContext, QueryController, QuerySnapshot } from '../query/types';
+import { settled, type QueryContext, type QueryController, type QuerySnapshot } from '../query/types';
 import { readChartAnchor, type ChartAnchor } from '../render/geometry';
 import type { CellIndex } from '../types';
 import { SparklineView } from './SparklineView';
@@ -33,8 +33,6 @@ export interface ChartLayerProps {
    */
   paused?: boolean;
 }
-
-const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
 
 /** Check the painted element against the panel and every clipping ancestor. */
 function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
