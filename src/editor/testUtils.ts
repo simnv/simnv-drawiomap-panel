@@ -45,12 +45,27 @@ function uniqueNamed(candidates: Element[], name: string, byText: boolean): HTML
       ? undefined
       : (el.getAttribute('aria-label') ?? (byText ? el.textContent?.trim() : undefined));
   const found = candidates.filter((el) => named(el) === name && !hidden(el));
+  if (found.length !== 1) {
+    return undefined;
+  }
+  const [match] = found;
+  // A <label> that points at the match itself (the visible label of a field) agrees with the aria-label; only a label
+  // for another element, or one without a known target, makes the answer ambiguous.
+  const labelsOther = (label: Element) => {
+    if (byText) {
+      return label.textContent?.trim() === name && namesButton(label);
+    }
+    if (label.textContent?.trim() !== name) {
+      return false;
+    }
+    const id = label.getAttribute('for');
+    const target = id ? document.getElementById(id) : label.querySelector('input, select, textarea, button');
+    return target !== match;
+  };
   const other =
     Array.from(document.querySelectorAll('[aria-labelledby]')).some((el) => labelledText(el) === name) ||
-    Array.from(document.querySelectorAll('label')).some(
-      (el) => el.textContent?.trim() === name && (!byText || namesButton(el))
-    );
-  return found.length === 1 && !other ? (found[0] as HTMLElement) : undefined;
+    Array.from(document.querySelectorAll('label')).some(labelsOther);
+  return other ? undefined : (match as HTMLElement);
 }
 
 const buttons = () => Array.from(document.querySelectorAll('button, [role="button"]'));
@@ -61,14 +76,47 @@ const buttons = () => Array.from(document.querySelectorAll('button, [role="butto
  * query, which reports the problem as before.
  */
 export function buttonNamed(name: string, queries: Queries = screen): HTMLElement {
-  return (queries === screen ? uniqueNamed(buttons(), name, true) : undefined) ?? queries.getByRole('button', { name });
+  return (
+    (queries === screen ? (uniqueNamed(buttons(), name, true) ?? labelledButton(name)) : undefined) ??
+    queries.getByRole('button', { name })
+  );
+}
+
+/** A section toggle names itself through aria-labelledby; one visible such button of this name, and no other, is certain. */
+function labelledButton(name: string): HTMLElement | undefined {
+  const all = buttons();
+  const referenced = all.filter((el) => el.hasAttribute('aria-labelledby') && labelledText(el) === name);
+  const plain = all.some(
+    (el) => !el.hasAttribute('aria-labelledby') && (el.getAttribute('aria-label') ?? el.textContent?.trim()) === name
+  );
+  return referenced.length === 1 && !plain && !hidden(referenced[0]) ? (referenced[0] as HTMLElement) : undefined;
+}
+
+/** False only when no button can have this name: no button or label carries the text, by content, aria-label, title or aria-labelledby. */
+function noButtonCouldBeNamed(name: string): boolean {
+  const flat = (text: string | null) => (text ?? '').replace(/\s+/g, ' ');
+  return (
+    !buttons().some((el) =>
+      [el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), labelledText(el)].some((t) =>
+        flat(t).includes(name)
+      )
+    ) && !Array.from(document.querySelectorAll('label')).some((el) => flat(el.textContent).includes(name))
+  );
 }
 
 function hasButton(name: string, queries: Queries): boolean {
-  return (
-    (queries === screen && !!uniqueNamed(buttons(), name, true)) ||
-    !!queries.queryByRole('button', { name, hidden: true })
-  );
+  if (queries === screen) {
+    if (uniqueNamed(buttons(), name, true)) {
+      return true;
+    }
+    if (noButtonCouldBeNamed(name)) {
+      return false;
+    }
+    if (labelledButton(name)) {
+      return true;
+    }
+  }
+  return !!queries.queryByRole('button', { name, hidden: true });
 }
 
 export function openSection(title: string, queries: Queries = screen) {
@@ -120,7 +168,10 @@ export function editorField(label: string, queries: Queries = screen) {
 export function chooseOption(label: string, option: string, queries: Queries = screen) {
   const input = editorField(label, queries);
   fireEvent.keyDown(input, { key: 'ArrowDown' });
-  fireEvent.click(screen.getByRole('option', { name: option }));
+  fireEvent.click(
+    uniqueNamed(Array.from(document.querySelectorAll('[role="option"]')), option, true) ??
+      screen.getByRole('option', { name: option })
+  );
 }
 
 /** Click a cell in the stage of the bindings popup, as a user does. */
