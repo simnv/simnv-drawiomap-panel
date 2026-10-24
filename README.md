@@ -618,11 +618,11 @@ To remove the card of one element, add an element override with `"hover": { "ena
 
 **Card title.** The card, the keyboard label of the cell and the lists in the editor use one readable title for each cell. In a portograph export (a diagram with `pg-schema`):
 
-| Cell | Title                                                                                                                                           | Example              |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| Node | The label.                                                                                                                                      | `Switch-A`           |
-| Port | The label of the node and the label of the port.                                                                                                | `Switch-A p9`        |
-| Link | The two ends, each as a node label plus a port label (a port end) or a node label (a node end). The label of the link is not part of the title. | `Switch-A p9 ↔ AP-1` |
+| Cell | Title                                                                                                                                                                                                                                                                                          | Example              |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| Node | The label.                                                                                                                                                                                                                                                                                     | `Switch-A`           |
+| Port | The label of the node and the label of the port.                                                                                                                                                                                                                                               | `Switch-A p9`        |
+| Link | The two ends, each as a node label plus a port label (a port end) or a node label (a node end). The label of the link is not part of the title, unless both ends read the same. Then it follows in parentheses (`A ↔ A (ch1)`), or, without a label, the two end ids (`A (e-cam) ↔ A (c-ch)`). | `Switch-A p9 ↔ AP-1` |
 
 A part or a structure cell of a portograph export uses the caption that the diagram shows:
 

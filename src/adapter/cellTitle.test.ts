@@ -126,6 +126,61 @@ describe('captions of structure cells', () => {
   });
 });
 
+describe('encoded suffixes of node parts', () => {
+  const all = assignTitles([
+    cell('0', { 'pg-schema': '1' }),
+    cell('pg-node~sw%7ewest', { 'pg-kind': 'node', 'pg-id': 'sw~west', label: 'Switch A' }),
+    cell('pg-iconTile~sw%7ewest', {}),
+    cell('pg-nodeDescription~sw%7ewest', {}, false, '24 ports'),
+    cell('pg-node~p%2550', { 'pg-kind': 'node', 'pg-id': 'p%50', label: 'Pct' }),
+    cell('pg-icon~p%2550', {}),
+    cell('pg-node~lit%257e', { 'pg-kind': 'node', 'pg-id': 'lit%7e', label: 'Literal' }),
+    cell('pg-icon~lit%257e', {}),
+  ]);
+  const title = (id: string) => all.find((c) => c.id === id)?.title;
+
+  it('decodes the suffix before the node lookup', () => {
+    expect(title('pg-iconTile~sw%7ewest')).toBe('Switch A');
+    expect(title('pg-nodeDescription~sw%7ewest')).toBe('Switch A');
+    expect(title('pg-icon~p%2550')).toBe('Pct');
+  });
+
+  it('keeps a literal %7e of a semantic id', () => {
+    expect(title('pg-icon~lit%257e')).toBe('Literal');
+  });
+});
+
+describe('links with equal end titles', () => {
+  const run = (link: CellMeta, extra: CellMeta[] = []) =>
+    assignTitles(
+      attachLinkLabels([
+        cell('0', { 'pg-schema': '1' }),
+        cell('pg-node~e-cam-x', { 'pg-kind': 'node', 'pg-id': 'e-cam-x', label: 'A' }),
+        cell('pg-node~c-x', { 'pg-kind': 'node', 'pg-id': 'c-x', label: 'A' }),
+        link,
+        ...extra,
+      ])
+    ).find((c) => c.id === link.id)?.title;
+  const ends = { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'e-cam-x', 'pg-to': 'c-x' };
+
+  it('adds the readable end ids when the link has no label and no link-label cell', () => {
+    expect(run(cell('pg-link~l', ends, true))).toBe('A (e-cam-x) ↔ A (c-x)');
+  });
+
+  it('adds the label of the link', () => {
+    expect(run(cell('pg-link~l', ends, true, 'ch1'))).toBe('A ↔ A (ch1)');
+  });
+
+  it('adds the text of the pg-linkLabel cell', () => {
+    const label = cell('pg-linkLabel~l', { 'pg-kind': 'link-label', 'pg-of': 'l' }, false, 'ch1');
+    expect(run(cell('pg-link~l', ends, true), [label])).toBe('A ↔ A (ch1)');
+  });
+
+  it('does not change different end titles', () => {
+    expect(run(cell('pg-link~l', { ...ends, 'pg-to': 'gone' }, true, 'ch1'))).toBe('A ↔ gone');
+  });
+});
+
 describe('readableId', () => {
   it('turns a cell id into its parts and drops the port ordinal', () => {
     expect(readableId('pg-port~sw~eth2~1')).toBe('sw eth2');
