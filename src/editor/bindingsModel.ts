@@ -1,6 +1,7 @@
 import { displayBindings, type DiagramConfigV2, type Diagnostic, type DisplayConfig } from '../model/config';
 import { cellMatches } from '../binding/select';
 import { displayProvenance, ownersOfPath } from '../binding/patterns';
+import { displayName } from '../adapter/cellTitle';
 import type { CellMeta } from '../types';
 
 /** One problem of a list row. A per-cell diagnostic of a shared pattern keeps its cell id. */
@@ -98,7 +99,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     selector: p.select.kind ?? 'any',
     queryIds: queryIdsOf(p.display),
     matched: patternMatches[i].map((c) => c.id),
-    matchedLabels: patternMatches[i].map((c) => c.labelText).filter(Boolean),
+    matchedLabels: patternMatches[i].map((c) => c.title || c.labelText).filter(Boolean),
     problems: [],
   }));
   const overrides: OverrideRow[] = config.overrides.map((o, i) => ({
@@ -106,7 +107,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
     key: `override:${i}:${o.cellId}`,
     index: i,
     cellId: o.cellId,
-    label: byId.get(o.cellId)?.labelText ?? '',
+    label: byId.has(o.cellId) ? displayName(byId.get(o.cellId), o.cellId) : '',
     keys: Object.entries(o.display)
       .filter(([, value]) => value !== undefined)
       .map(([key]) => key),
@@ -330,7 +331,11 @@ export function cellRows(text: string, cells: CellMeta[]): CellMeta[] {
     if (id.startsWith(needle)) {
       return 1;
     }
-    return id.includes(needle) || (cell.labelText ?? '').toLowerCase().includes(needle) ? 2 : 3;
+    return id.includes(needle) ||
+      (cell.labelText ?? '').toLowerCase().includes(needle) ||
+      (cell.title ?? '').toLowerCase().includes(needle)
+      ? 2
+      : 3;
   };
   return cells
     .map((cell, order) => ({ cell, order, rank: tier(cell) }))

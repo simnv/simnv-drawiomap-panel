@@ -4,6 +4,7 @@
  */
 import type { CellKind, CellMeta, Endpoint, TemplateScope } from '../types';
 import type { Diagnostic } from '../model/config';
+import { scopeTitle } from './cellTitle';
 
 /** Duplicate explicit identities cannot safely select a device, even if labels differ. */
 export function cellIdentityDiagnostics(cells: CellMeta[]): Diagnostic[] {
@@ -161,7 +162,7 @@ export function endpointScope(e?: Endpoint): Record<string, string> | undefined 
 /** Pure identity/metadata scope shared by the V2 binding plan and query parameters. */
 export function cellScope(cell: CellMeta): TemplateScope {
   return {
-    cell: { ...cell.attrs, id: cell.id, key: cell.key, label: cell.labelText },
+    cell: { ...cell.attrs, id: cell.id, key: cell.key, label: cell.labelText, title: scopeTitle(cell) },
     from: endpointScope(cell.from),
     to: endpointScope(cell.to),
   };

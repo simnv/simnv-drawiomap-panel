@@ -1,5 +1,5 @@
 import { formattedValueToString, getValueFormat } from '@grafana/data';
-import { endpointScope } from '../adapter/portograph';
+import { cellScope } from '../adapter/portograph';
 import type {
   BindContext,
   BindResult,
@@ -384,13 +384,7 @@ function merge(rules: Rule[], cell: CellMeta): Effective | undefined {
   return eff.ruleNames.length ? eff : undefined;
 }
 
-export function scopeFor(cell: CellMeta): TemplateScope {
-  return {
-    cell: { ...cell.attrs, id: cell.id, key: cell.key, label: cell.labelText },
-    from: endpointScope(cell.from),
-    to: endpointScope(cell.to),
-  };
-}
+export const scopeFor = cellScope;
 
 interface Resolved {
   status: 'ok' | 'nodata' | 'unbound';

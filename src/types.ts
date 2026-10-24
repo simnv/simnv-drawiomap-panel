@@ -31,6 +31,8 @@ export interface CellMeta {
   attrs: Record<string, string>;
   /** Visible label text. For a link: the text of its link-label cell (pg-of), else its own label. */
   labelText: string;
+  /** Human-readable name for cards and lists (adapter/cellTitle). A cell that was never indexed has none: use labelText. */
+  title?: string;
   isEdge: boolean;
   from?: Endpoint;
   to?: Endpoint;
@@ -186,7 +188,7 @@ export interface LinkRule {
 export interface LinkCardRule {
   /** click target of the a2b and b2a rows (template). Default: the rule url. */
   url?: string;
-  /** card title (template). Default: the link label text, else the pg-id. */
+  /** card title (template). Default: the readable title of the link (adapter/cellTitle). */
   title?: string;
 }
 

@@ -143,7 +143,7 @@ describe('saved semantic identity', () => {
       'Same label'
     );
     expect(cellScope(cell)).toEqual({
-      cell: { ...cell.attrs, id: 'edge-1', key: 'uplink', label: 'Same label' },
+      cell: { ...cell.attrs, id: 'edge-1', key: 'uplink', label: 'Same label', title: 'Same label' },
       from: { node: 'router-a', port: 'eth1', ordinal: '2', raw: 'router-a:eth1#2' },
       to: { node: 'router-b', port: 'eth2', ordinal: '1', raw: 'router-b:eth2' },
     });

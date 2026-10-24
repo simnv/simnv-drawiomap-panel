@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import type { BindingPlan } from '../../binding/patterns';
 import type { DiagramConfigV2 } from '../../model/config';
+import { idAndName } from '../../adapter/cellTitle';
 import type { CellMeta, CellSelector } from '../../types';
 import type { DraftAction } from '../draft';
 import { BulkPane } from './BulkPane';
@@ -48,7 +49,12 @@ export function MultiSelectionPane({
         </h3>
         <ul aria-label="Selected element ids">
           {cellIds.map((id) => (
-            <li key={id}>{id}</li>
+            <li key={id}>
+              {idAndName(
+                cells.find((c) => c.id === id),
+                id
+              )}
+            </li>
           ))}
         </ul>
       </section>

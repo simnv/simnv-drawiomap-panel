@@ -1,3 +1,4 @@
+import { assignTitles } from '../adapter/cellTitle';
 import { applyContract, attachLinkLabels, cellMetaFromAttrs, nodeIcons, nodeParts } from '../adapter/portograph';
 import { markerEnd } from './geometry';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
@@ -127,6 +128,7 @@ export function buildCellIndex(root: SVGSVGElement): CellIndex {
   // pg-schema: no schema makes all cells generic. The Diagram options show the warning for another version.
   applyContract(metas);
   attachLinkLabels(metas);
+  assignTitles(metas);
   const icons = nodeIcons(metas);
   const owners = nodeParts(metas);
   for (const entry of index.values()) {

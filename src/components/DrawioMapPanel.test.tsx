@@ -523,9 +523,9 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 50, clientY: 40 });
     const c = await screen.findByRole('tooltip');
     expect(c.textContent).toContain('isp-a → rtr-a');
-    // the test frames have no unit; the title is the link label text
+    // the test frames have no unit; the title names the two ends
     expect(c.textContent).toContain('41000000 · 41%');
-    expect(c.getAttribute('aria-label')).toBe('metric 10');
+    expect(c.getAttribute('aria-label')).toBe('ISP A pppoe ↔ rtr-a wan1');
     expect(c.textContent).toContain('rtr-a → isp-a');
     expect(c.getAttribute('data-pinned')).toBe('false');
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
@@ -545,7 +545,7 @@ describe('DrawioMapPanel hover card', () => {
   it('click pins the card as a dialog with a close button, row links and footer links', async () => {
     const { half } = await setup();
     fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });
-    const dialog = await screen.findByRole('dialog', { name: 'metric 10' });
+    const dialog = await screen.findByRole('dialog', { name: 'ISP A pppoe ↔ rtr-a wan1' });
     expect(document.activeElement).toBe(dialog);
     const rows = screen.getAllByTestId('dmap-card-row');
     expect(rows).toHaveLength(2);
@@ -569,7 +569,7 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });
     await screen.findByRole('dialog');
     fireEvent.pointerMove(half('pg-link~radio:dhcp->rtr-a:wan2'), { pointerType: 'mouse' });
-    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('metric 10');
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('ISP A pppoe ↔ rtr-a wan1');
     const grafana = vi.fn();
     document.addEventListener('keydown', grafana);
     fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -583,7 +583,7 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.click(half(linkId));
     await screen.findByRole('dialog');
     fireEvent.click(half('pg-link~radio:dhcp->rtr-a:wan2'));
-    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('metric 20');
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Radio bridge dhcp ↔ rtr-a wan2');
     // a click inside the card keeps it
     fireEvent.click(screen.getAllByTestId('dmap-card-row')[0]);
     expect(card()).not.toBeNull();
@@ -1548,8 +1548,8 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     await hover('na');
     expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
     await hover('lab');
-    // the link label cell gives the link its title
-    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('uplink');
+    // the link is named by its two ends, not by its label
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A ↔ B');
     for (const id of ['bg', 'grp', 'grp-title', 'leg']) {
       await hover(id);
       expect(screen.queryByTestId('dmap-card')).toBeNull();
@@ -1575,7 +1575,7 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     expect(icon.getAttribute('aria-label')).toBe('A');
     expect(icon.textContent).toBe(node);
     await hover('lbl-bg');
-    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('uplink');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A ↔ B');
     fireEvent.click(await at('icon-a'));
     expect((await screen.findByRole('dialog')).getAttribute('aria-label')).toBe('A');
   });
@@ -1600,7 +1600,7 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     await hover('lab');
     expect(screen.queryByTestId('dmap-card')).toBeNull();
     await hover('grp');
-    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('pg-group~core');
+    expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('core');
     await hover('na');
     expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
   });
