@@ -378,11 +378,25 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     plan,
     opts.config ?? EMPTY_CONFIG,
     queryService,
-    card?.cellId,
+    undefined,
     Math.max(1, Math.min(264, width - 16)),
     chartSnapshots,
     `panel:${id}`,
-    paused
+    paused,
+    'visible'
+  );
+  // The rows of the open card have their own snapshots and resolver: a hover over a new cell never changes the
+  // resolver of the diagram, so it never runs the bind or the patches again.
+  const cardSnapshots = useBindingSnapshots(
+    plan,
+    opts.config ?? EMPTY_CONFIG,
+    queryService,
+    card?.cellId,
+    Math.max(1, Math.min(264, width - 16)),
+    chartSnapshots,
+    `panel:${id}:card`,
+    paused,
+    'hover'
   );
   const activeSnapshots = useMemo(() => [...bindingSnapshots, ...chartSnapshots], [bindingSnapshots, chartSnapshots]);
   const resolve = useMemo(
@@ -400,6 +414,30 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         activeSnapshots
       ),
     [plan, opts.config, data, theme, timeZone, queryService?.context.generation, activeSnapshots]
+  );
+  const cardResolve = useMemo(
+    () =>
+      cardSnapshots.length
+        ? createPreviewResolver(
+            plan,
+            opts.config ?? EMPTY_CONFIG,
+            data,
+            undefined,
+            { theme, timeZone, generation: queryService?.context.generation },
+            [...cardSnapshots, ...activeSnapshots]
+          )
+        : resolve,
+    [
+      cardSnapshots,
+      plan,
+      opts.config,
+      data,
+      theme,
+      timeZone,
+      queryService?.context.generation,
+      activeSnapshots,
+      resolve,
+    ]
   );
   const activeStates = useMemo(() => activeSnapshots.map((value) => value.snapshot), [activeSnapshots]);
   const deadlines = useMemo(() => statusDeadlines(plan, resolve), [plan, resolve]);
@@ -432,8 +470,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     [theme, replaceVariables, fieldConfig.defaults.thresholds]
   );
   const model = useMemo(
-    () => (cardPatch ? buildConfiguredCard(cardPatch, resolve, cardContext) : undefined),
-    [cardPatch, resolve, cardContext]
+    () => (cardPatch ? buildConfiguredCard(cardPatch, cardResolve, cardContext) : undefined),
+    [cardPatch, cardResolve, cardContext]
   );
   // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default),
   // and only when the card has rows or links. Computed once per data update: these cells get the hand cursor.
@@ -661,13 +699,24 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     opener.current = e.target;
     setCard({ cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top, pinned: true });
   };
+  const moveCard = useRef<(() => void) | null>(null);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const onPointerMove = (e: React.PointerEvent) => {
     // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
     const stageEl = containerRef.current;
     if (e.pointerType === 'touch' || !canHover() || pinned || panZoom.busy() || !stageEl) {
       return;
     }
+    pointerRef.current = { x: e.clientX, y: e.clientY };
     const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
+    if (patch && card?.cellId === patch.cellId) {
+      // the same cell: only the card moves, with no render
+      moveCard.current?.();
+      return;
+    }
+    if (!patch && !card) {
+      return;
+    }
     setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: false } : null);
   };
 
@@ -826,7 +875,9 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         ? portalSheet(
             <div ref={cardRef}>
               <Card
+                key={`${card.cellId}:${pinned}`}
                 model={model}
+                cellId={card.cellId}
                 pinned={pinned}
                 x={card.x}
                 y={card.y}
@@ -836,6 +887,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
                 timeRange={timeRange}
                 timeZone={timeZone}
                 onClose={close}
+                pointerRef={pointerRef}
+                moveRef={moveCard}
               />
             </div>,
             width < SHEET_BELOW

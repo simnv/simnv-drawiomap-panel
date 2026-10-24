@@ -1,4 +1,4 @@
-import React, { memo, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { css, cx } from '@emotion/css';
 import { getDefaultTimeRange, getFieldSeriesColor, type GrafanaTheme2, type TimeRange } from '@grafana/data';
 import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
@@ -6,6 +6,7 @@ import { chartHeight, type ConfiguredCardModel, type ConfiguredCardRow } from '.
 import { SparklineView } from '../visuals/SparklineView';
 import { MirrorSparkline } from '../visuals/MirrorSparkline';
 import { ChartHover, type HoverSeries } from '../visuals/ChartHover';
+import { placeTooltip } from '../visuals/tooltipPlace';
 import { useSampleStale } from '../visuals/useSampleStale';
 
 /** Panels narrower than this show the pinned or hover card as a sheet at the bottom of the viewport. */
@@ -36,6 +37,15 @@ export interface CardProps {
   timeRange?: TimeRange;
   timeZone?: string;
   onClose?: () => void;
+  /** The cell that the card shows, for probes: written as `data-dmap-cell`. */
+  cellId?: string;
+  /** The latest pointer position of the panel, in client coordinates. The hover card places itself from it. */
+  pointerRef?: React.MutableRefObject<{ x: number; y: number } | null>;
+  /**
+   * The card sets this to a function that places it at the latest `pointerRef` in the next frame, with no render.
+   * The panel rect and the card height are read first, then the style is written.
+   */
+  moveRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -246,6 +256,14 @@ const Row = memo(function Row({
   );
 });
 
+/** Writes the place of the floating card for a pointer at (x, y) in the panel. The height is read before the writes. */
+function placeAt(el: HTMLElement, x: number, y: number, width: number, height: number) {
+  const h = el.offsetHeight;
+  const p = placeTooltip(x, y, W, h, width, height, EDGE, GAP);
+  el.style.left = `${p.x}px`;
+  el.style.top = `${p.y}px`;
+}
+
 /**
  * The hover card. Unpinned it follows the pointer and ignores the pointer. Pinned it is a non-modal
  * dialog with a close button, row links and footer links. Narrow panels show it as a bottom sheet.
@@ -262,6 +280,9 @@ export function Card({
   timeRange,
   timeZone,
   onClose,
+  cellId,
+  pointerRef,
+  moveRef,
 }: CardProps) {
   const styles = useStyles2(getStyles);
   const ref = useRef<HTMLDivElement>(null);
@@ -269,6 +290,13 @@ export function Card({
   const sheet = !inline && width < SHEET_BELOW;
   const rowTimeRange = timeRange ?? getDefaultTimeRange();
 
+  // The place in the panel. A hover card follows the latest pointer position of the panel (`pointerRef`, client
+  // coordinates) and nothing else. A pinned card uses only its own x and y.
+  const target = () => {
+    const rect = anchor?.getBoundingClientRect();
+    const at = !pinned ? pointerRef?.current : undefined;
+    return at && rect ? { x: at.x - rect.left, y: at.y - rect.top } : { x, y };
+  };
   // Place the card after it renders: the height is known only then.
   useLayoutEffect(() => {
     const el = ref.current;
@@ -284,18 +312,47 @@ export function Card({
       }
       return;
     }
-    const h = el.offsetHeight;
-    let left = x + GAP;
-    if (left + W > width - EDGE) {
-      left = x - W - GAP;
-    }
-    let top = y + GAP;
-    if (top + h > height - EDGE) {
-      top = y - h - GAP;
-    }
-    el.style.left = `${Math.max(EDGE, Math.min(left, width - W - EDGE))}px`;
-    el.style.top = `${Math.max(EDGE, Math.min(top, height - h - EDGE))}px`;
+    const at = target();
+    placeAt(el, at.x, at.y, width, height);
   });
+
+  // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes. The panel gives a
+  // new cell or a pin another instance (a React key), so no frame outlives the state it was queued for.
+  const frame = useRef<number>();
+  const latest = useRef({ target, width, height, floating: !sheet && !inline });
+  useEffect(() => {
+    latest.current = { target, width, height, floating: !sheet && !inline };
+  });
+  const move = useCallback(() => {
+    if (frame.current !== undefined) {
+      return;
+    }
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      const el = ref.current;
+      const now = latest.current;
+      // a sheet has its place in the viewport, an inline card has none
+      if (!el || !now.floating) {
+        return;
+      }
+      const at = now.target();
+      placeAt(el, at.x, at.y, now.width, now.height);
+    });
+  }, []);
+  useEffect(() => {
+    if (moveRef) {
+      moveRef.current = move;
+    }
+    return () => {
+      if (moveRef) {
+        moveRef.current = null;
+      }
+      if (frame.current !== undefined) {
+        cancelAnimationFrame(frame.current);
+        frame.current = undefined;
+      }
+    };
+  }, [moveRef, move]);
 
   useLayoutEffect(() => {
     if (pinned && !inline) {
@@ -315,6 +372,7 @@ export function Card({
       aria-label={model.title}
       tabIndex={pinned ? -1 : undefined}
       data-testid="dmap-card"
+      data-dmap-cell={cellId}
       data-pinned={pinned}
       data-sheet={sheet}
       data-variant={variant}

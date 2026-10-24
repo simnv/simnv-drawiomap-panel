@@ -8,6 +8,8 @@ import { settled } from '../query/types';
 import { useHeld } from '../components/useHeld';
 
 const NO_PREPARED: QueryPreview[] = [];
+/** One shared empty result: a consumer that depends on the array does not run again when nothing is shown. */
+const NO_SNAPSHOTS: QueryPreview[] = [];
 
 interface Held {
   key: string;
@@ -30,12 +32,17 @@ export function useBindingSnapshots(
    * The popup is open over the panel: keep returning the last live result. The subscriptions stay open; an emission
    * is stored and shows on the first render after the pause.
    */
-  paused = false
+  paused = false,
+  /** Only the demands of this role. The panel takes the visible ones; the card takes the rows of its own cell. */
+  role?: 'visible' | 'hover'
 ): QueryPreview[] {
   const prepared = preparedResults ?? NO_PREPARED;
   const demands = useMemo(
     () =>
       collectBindingDemands(plan, openCellId).flatMap((demand) => {
+        if (role && demand.role !== role) {
+          return [];
+        }
         const query = config.queries.find((q) => q.id === demand.binding.queryId);
         const scope = plan.cells[demand.cellId]?.scope;
         if (!query || query.source.kind === 'panel' || !scope || !service) {
@@ -63,7 +70,7 @@ export function useBindingSnapshots(
         const match = JSON.stringify([query, scope, demand.cellId, service.context.defaultDatasource]);
         return [{ request, cellId: demand.cellId, key: JSON.stringify(request), match, reuse }];
       }),
-    [plan, config, service, openCellId, maxDataPoints, prepared, owner]
+    [plan, config, service, openCellId, maxDataPoints, prepared, owner, role]
   );
   const active = useRef(new Map<string, { key: string; release: () => void }>());
   const [snapshots, setSnapshots] = useState<Record<string, Held>>({});
@@ -207,5 +214,5 @@ export function useBindingSnapshots(
       }),
     [demands, snapshots, prepared, config]
   );
-  return useHeld(shown, paused);
+  return useHeld(shown.length ? shown : NO_SNAPSHOTS, paused);
 }

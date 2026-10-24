@@ -52,6 +52,7 @@ export function CardPreview({ patch, resolve, cardContext, timeRange, timeZone, 
       {model && !empty ? (
         <Card
           model={model}
+          cellId={patch?.cellId}
           pinned={false}
           variant="inline"
           width={width ?? measured}

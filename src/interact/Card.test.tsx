@@ -339,3 +339,117 @@ it('keeps the floating card a sheet below the breakpoint', () => {
   expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
   expect(screen.getByTestId('dmap-card').getAttribute('data-variant')).toBe('floating');
 });
+
+/** A manual frame queue for the card that follows the pointer. */
+const frames = () => {
+  const queue = new Map<number, FrameRequestCallback>();
+  let next = 1;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    queue.set(next, cb);
+    return next++;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => void queue.delete(id));
+  const flush = () => {
+    const run = [...queue.values()];
+    queue.clear();
+    run.forEach((cb) => cb(0));
+  };
+  flush.pending = () => queue.size;
+  return flush;
+};
+const followModel: ConfiguredCardModel = { title: 'Router', links: [], rows: [], demands: [], diagnostics: [] };
+const panelRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }) as DOMRect;
+type FollowProps = Partial<React.ComponentProps<typeof Card>>;
+const follow = (props: FollowProps = {}) => {
+  const moveRef = { current: null } as React.MutableRefObject<(() => void) | null>;
+  const pointerRef = { current: { x: 20, y: 20 } } as React.MutableRefObject<{ x: number; y: number } | null>;
+  const anchor = document.createElement('div');
+  anchor.getBoundingClientRect = panelRect;
+  const ui = (p: FollowProps) => (
+    <Card
+      key={`${p.model?.title ?? 'Router'}:${!!p.pinned}`}
+      model={followModel}
+      pinned={false}
+      x={20}
+      y={20}
+      width={800}
+      height={600}
+      anchor={anchor}
+      pointerRef={pointerRef}
+      moveRef={moveRef}
+      {...p}
+    />
+  );
+  const view = render(ui(props));
+  const pointer = (x: number, y: number) => {
+    pointerRef.current = { x, y };
+    act(() => moveRef.current!());
+  };
+  return { pointer, rerender: (p: FollowProps) => view.rerender(ui(p)) };
+};
+const left = () => screen.getByTestId('dmap-card').style.left;
+it('drops a queued pointer move when the card is pinned before the frame runs', () => {
+  const flush = frames();
+  const { pointer, rerender } = follow();
+  pointer(300, 200);
+  rerender({ pinned: true, x: 50, y: 60 });
+  expect(flush.pending()).toBe(0);
+  const place = left();
+  flush();
+  expect(left()).toBe(place);
+  vi.unstubAllGlobals();
+});
+it('keeps the moved place when a data update renders the card again with the entry position', () => {
+  const flush = frames();
+  const { pointer, rerender } = follow();
+  pointer(300, 200);
+  flush();
+  const moved = left();
+  expect(moved).toBe('314px');
+  rerender({ model: { ...followModel } });
+  expect(left()).toBe(moved);
+  vi.unstubAllGlobals();
+});
+it('drops a queued move when another cell with the same title takes the card', () => {
+  const flush = frames();
+  const { pointer, rerender } = follow();
+  pointer(300, 200);
+  rerender({ key: 'other' } as FollowProps);
+  expect(flush.pending()).toBe(0);
+  const place = left();
+  flush();
+  expect(left()).toBe(place);
+  vi.unstubAllGlobals();
+});
+it('a pin after a move back to the entry point keeps the pin place, not the hover place', () => {
+  const flush = frames();
+  const { pointer, rerender } = follow();
+  pointer(300, 200);
+  flush();
+  pointer(20, 20);
+  rerender({ pinned: true, x: 20, y: 20 });
+  const place = left();
+  flush();
+  rerender({ pinned: true, x: 20, y: 20, model: { ...followModel } });
+  expect(left()).toBe(place);
+  expect(left()).toBe('34px');
+  vi.unstubAllGlobals();
+});
+it('a queued pointer move leaves the viewport place of a sheet alone', () => {
+  const flush = frames();
+  const { pointer } = follow({ width: 400 });
+  const before = [left(), screen.getByTestId('dmap-card').style.top];
+  pointer(300, 200);
+  flush();
+  expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
+  expect([left(), screen.getByTestId('dmap-card').style.top]).toEqual(before);
+  vi.unstubAllGlobals();
+});
+it.each([
+  ['floating', 800, 'floating'],
+  ['sheet', 400, 'floating'],
+  ['inline', 800, 'inline'],
+] as const)('names its cell in data-dmap-cell (%s)', (_name, width, variant) => {
+  render(<Card model={followModel} cellId="rtr-a" pinned={false} variant={variant} width={width} height={600} />);
+  expect(screen.getByTestId('dmap-card').getAttribute('data-dmap-cell')).toBe('rtr-a');
+});

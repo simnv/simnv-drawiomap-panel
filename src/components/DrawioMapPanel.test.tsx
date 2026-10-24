@@ -26,7 +26,7 @@ import { Observable } from 'rxjs';
 import { clearQuerySessions } from '../query/session';
 const nativeQuery = vi.hoisted(() => vi.fn());
 /** Calls of the panel work that a refresh must not repeat while the popup is open: the applier and the view renders. */
-const work = vi.hoisted(() => ({ applied: [] as unknown[], viewRenders: 0, panelStage: 'dmap-stage' }));
+const work = vi.hoisted(() => ({ applied: [] as unknown[], binds: 0, viewRenders: 0, panelStage: 'dmap-stage' }));
 vi.mock('../render/applier', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../render/applier')>();
   return {
@@ -34,6 +34,16 @@ vi.mock('../render/applier', async (importOriginal) => {
     applyPatches: (...args: Parameters<typeof actual.applyPatches>) => {
       work.applied.push(args[0]);
       return actual.applyPatches(...args);
+    },
+  };
+});
+vi.mock('../binding/engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../binding/engine')>();
+  return {
+    ...actual,
+    bindPlan: (...args: Parameters<typeof actual.bindPlan>) => {
+      work.binds++;
+      return actual.bindPlan(...args);
     },
   };
 });
@@ -538,6 +548,88 @@ describe('DrawioMapPanel hover card', () => {
     expect(screen.getByRole('dialog').textContent).toContain('42');
     expect(nativeQuery).toHaveBeenCalledTimes(2);
     unmount();
+  });
+  describe('hover cost', () => {
+    const small =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/></g><g data-cell-id="b"><rect x="50" width="40" height="30"/></g></svg>';
+    const hoverConfig = (): DiagramConfigV2 => ({
+      version: 2,
+      queries: [
+        {
+          id: 'detail',
+          name: 'Details',
+          source: {
+            kind: 'datasource',
+            datasource: { uid: 'native' },
+            target: { refId: 'D' },
+            parameters: { dm_device: 'cell.key' },
+          },
+        },
+      ],
+      overrides: [],
+      widgets: [],
+      patterns: [
+        {
+          id: 'p',
+          name: 'Devices',
+          select: {},
+          display: {
+            hover: {
+              rows: [
+                { kind: 'value', label: 'Temperature', binding: { queryId: 'detail', reducer: 'last', match: {} } },
+              ],
+            },
+          },
+        },
+      ],
+    });
+    async function hoverSetup() {
+      clearQuerySessions();
+      nativeQuery.mockReset().mockImplementation(() => new Observable(() => () => {}));
+      const p = props({
+        options: {
+          ...options,
+          rules: [],
+          config: hoverConfig(),
+          diagram: { xml: '', svg: small, hash: 'hover-cost', updatedAt: '' },
+        },
+      });
+      const r = render(<DrawioMapPanel {...p} />);
+      await waitFor(() => expect(screen.getByTestId('dmap-panel').getAttribute('data-dmap-patched')).toBe('2'));
+      const rect = (id: string) => r.container.querySelector(`[data-cell-id="${id}"] rect`)!;
+      return { ...r, rect };
+    }
+    it('a hover over two cells in turn does not bind or patch the diagram again', async () => {
+      const { rect, unmount } = await hoverSetup();
+      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await screen.findByRole('tooltip');
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 50));
+      });
+      const binds = work.binds;
+      const applied = work.applied.length;
+      fireEvent.pointerMove(rect('b'), { pointerType: 'mouse', clientX: 60, clientY: 10 });
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(3));
+      expect(work.binds).toBe(binds);
+      expect(work.applied.length).toBe(applied);
+      unmount();
+    });
+    it('pointer moves inside one cell render the panel at most once', async () => {
+      const { rect, unmount } = await hoverSetup();
+      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await screen.findByRole('tooltip');
+      const renders = work.viewRenders;
+      const card = screen.getByTestId('dmap-card');
+      for (let i = 0; i < 20; i++) {
+        fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10 + i, clientY: 10 + i });
+      }
+      expect(work.viewRenders - renders).toBeLessThanOrEqual(1);
+      expect(screen.getByTestId('dmap-card')).toBe(card);
+      unmount();
+    });
   });
   const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
   const withCpu = (over: Partial<PanelProps<Options>> = {}) =>
