@@ -191,6 +191,19 @@ test.describe('Minimum scale on a phone', () => {
     const y = box.y + box.height / 2;
     await swipe(page, { x: box.x + box.width - 20, y }, { x: box.x + 20, y });
     await expect.poll(async () => (await scroll(stage)).left).toBeGreaterThan(0);
+    // The swipe ends in a momentum scroll. Read the positions of the switches only after it stopped.
+    let lastLeft = -1;
+    await expect
+      .poll(
+        async () => {
+          const { left } = await scroll(stage);
+          const stopped = left === lastLeft;
+          lastLeft = left;
+          return stopped;
+        },
+        { intervals: [150] }
+      )
+      .toBe(true);
     await expect(panel.getByRole('button', { name: 'Reset zoom' })).toHaveCount(0);
 
     // a switch that is in view after the scroll

@@ -7,7 +7,7 @@ const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
 /** A copy of the demo dashboard with changed options of the portograph panel (id 1). Returns the uid. */
 async function demoCopy(request: APIRequestContext, uid: string, options: Record<string, unknown>) {
   const demo = await (await request.get('/api/dashboards/uid/drawiomap-demo')).json();
-  const dashboard = { ...demo.dashboard, id: null, uid, title: uid, panels: [] as unknown[] };
+  const dashboard = { ...demo.dashboard, id: null, uid, title: uid, refresh: '', panels: [] as unknown[] };
   const panel = demo.dashboard.panels.find((p: { id: number }) => p.id === 1);
   dashboard.panels = [{ ...panel, options: { ...panel.options, ...options } }];
   const response = await request.post('/api/dashboards/db', { data: { dashboard, overwrite: true } });

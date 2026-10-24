@@ -1,4 +1,4 @@
-import { expect, test } from '@grafana/plugin-e2e';
+import { expect, test } from './authoring-fixtures';
 
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 
@@ -65,19 +65,24 @@ test('curved edge halves follow the real path geometry (getPointAtLength + CTM)'
   const panel = await dashboardPage.getPanelByTitle('hand-drawn');
   const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="edge-cd"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
-  const result = await half.evaluate((el) => {
-    const poly = el as SVGPolylineElement;
-    const svg = poly.ownerSVGElement!;
-    const path = svg.querySelector('[data-cell-id="edge-cd"] path[pointer-events="stroke"]') as SVGPathElement;
-    const start = path.getPointAtLength(0).matrixTransform(path.getCTM()!);
-    const [x, y] = (poly.getAttribute('points') || '').split(' ')[0].split(',').map(Number);
-    const first = new DOMPoint(x, y).matrixTransform((poly.parentNode as SVGGElement).getCTM()!);
-    return {
-      delta: Math.hypot(start.x - first.x, start.y - first.y),
-      samples: (poly.getAttribute('points') || '').split(' ').length,
-      curved: /[QC]/.test(path.getAttribute('d') || ''),
-    };
-  });
+  // A data update redraws the halves, and a locator call can meet the old element. One evaluate reads a single DOM
+  // state; toPass() reads again when the redraw has replaced the element during the call.
+  let result!: { delta: number; samples: number; curved: boolean };
+  await expect(async () => {
+    result = await half.evaluate((el) => {
+      const poly = el as SVGPolylineElement;
+      const svg = poly.ownerSVGElement!;
+      const path = svg.querySelector('[data-cell-id="edge-cd"] path[pointer-events="stroke"]') as SVGPathElement;
+      const start = path.getPointAtLength(0).matrixTransform(path.getCTM()!);
+      const [x, y] = (poly.getAttribute('points') || '').split(' ')[0].split(',').map(Number);
+      const first = new DOMPoint(x, y).matrixTransform((poly.parentNode as SVGGElement).getCTM()!);
+      return {
+        delta: Math.hypot(start.x - first.x, start.y - first.y),
+        samples: (poly.getAttribute('points') || '').split(' ').length,
+        curved: /[QC]/.test(path.getAttribute('d') || ''),
+      };
+    });
+  }).toPass();
   expect(result.curved).toBe(true);
   expect(result.delta).toBeLessThan(1);
   expect(result.samples).toBeGreaterThan(4);
