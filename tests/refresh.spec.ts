@@ -56,12 +56,16 @@ const kinds = {
   }),
 };
 
-/** Delay every /api/ds/query response while the gate is closed. */
-async function delayQueries(page: Page, ms: number) {
-  const state = { delayed: 0 };
+/** Hold every /api/ds/query request until release() runs. A fixed delay is slower and can end before the assertions. */
+async function holdQueries(page: Page) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const state = { held: 0, release };
   await page.route('**/api/ds/query*', async (route) => {
-    state.delayed++;
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    state.held++;
+    await gate;
     await route.continue().catch(() => {}); // The page can cancel the request.
   });
   return state;
@@ -110,14 +114,19 @@ for (const kind of Object.keys(kinds) as Array<keyof typeof kinds>) {
     test('first load shows loading, then the data', async ({ page, gotoDashboardPage }) => {
       // Grafana renders a panel with eager targets only after their first result.
       test.skip(kind === 'panel', 'The panel has no first-load state of its own.');
-      const delayed = await delayQueries(page, 1500);
-      await gotoDashboardPage({ uid });
-      const panel = page.getByTestId('dmap-panel');
-      await expect(panel.getByTestId('dmap-status-band')).toContainText('Loading data');
-      await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="missing"]')).toHaveCount(COUNT);
-      await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
-      await expect(panel.getByTestId('dmap-status-band').locator('.dmap-status-summary')).toHaveCount(0);
-      expect(delayed.delayed).toBeGreaterThan(0);
+      const held = await holdQueries(page);
+      try {
+        await gotoDashboardPage({ uid });
+        const panel = page.getByTestId('dmap-panel');
+        await expect(panel.getByTestId('dmap-status-band')).toContainText('Loading data');
+        await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="missing"]')).toHaveCount(COUNT);
+        expect(held.held).toBeGreaterThan(0);
+        held.release();
+        await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
+        await expect(panel.getByTestId('dmap-status-band').locator('.dmap-status-summary')).toHaveCount(0);
+      } finally {
+        held.release();
+      }
     });
 
     test('refresh keeps the last data: no missing marker, no band row, no layout shift', async ({
@@ -134,24 +143,28 @@ for (const kind of Object.keys(kinds) as Array<keyof typeof kinds>) {
       const stage = panel.getByTestId('dmap-stage').locator('svg').first();
       const before = await stage.boundingBox();
 
-      const delayed = await delayQueries(page, 1500);
-      await dashboard.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
-      await expect.poll(() => delayed.delayed).toBeGreaterThan(0);
-      // Sample the panel while the delayed responses are pending.
-      const samples: Array<{ missing: number; rows: number; text: string[]; box: unknown }> = [];
-      const until = Date.now() + 1200;
-      while (Date.now() < until) {
-        samples.push({
-          missing: await devices.and(panel.locator('[data-dmap-status="missing"]')).count(),
-          rows: await rows.count(),
-          text: await panel.getByTestId('dmap-status-band').allTextContents(),
-          box: await stage.boundingBox(),
-        });
-        await page.waitForTimeout(50);
+      const held = await holdQueries(page);
+      try {
+        await dashboard.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
+        await expect.poll(() => held.held).toBeGreaterThan(0);
+        // Sample the panel while the responses are pending.
+        const samples: Array<{ missing: number; rows: number; text: string[]; box: unknown }> = [];
+        const until = Date.now() + 500;
+        while (Date.now() < until) {
+          samples.push({
+            missing: await devices.and(panel.locator('[data-dmap-status="missing"]')).count(),
+            rows: await rows.count(),
+            text: await panel.getByTestId('dmap-status-band').allTextContents(),
+            box: await stage.boundingBox(),
+          });
+          await page.waitForTimeout(50);
+        }
+        expect(samples.length).toBeGreaterThan(5);
+        expect(samples.filter((s) => s.missing || s.rows)).toEqual([]);
+        expect(samples.filter((s) => JSON.stringify(s.box) !== JSON.stringify(before))).toEqual([]);
+      } finally {
+        held.release();
       }
-      expect(samples.length).toBeGreaterThan(5);
-      expect(samples.filter((s) => s.missing || s.rows)).toEqual([]);
-      expect(samples.filter((s) => JSON.stringify(s.box) !== JSON.stringify(before))).toEqual([]);
       await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
     });
   });
