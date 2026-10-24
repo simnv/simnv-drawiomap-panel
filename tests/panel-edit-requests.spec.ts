@@ -65,7 +65,7 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   const toasts = page.getByRole('alert');
   await gotoDashboardPage({ uid });
   const panel = page.getByTestId('dmap-panel');
-  await expect(panel.locator('[data-cell-id="device-1"] text').first()).toHaveText('Saved 1');
+  await expect(panel.locator('[data-dmap-status="normal"]')).toHaveCount(3);
   await expect.poll(() => log.filter((r) => r.kind === 'diagram').length).toBe(3);
   await page.waitForTimeout(2000);
   const before = log.length;
@@ -75,7 +75,7 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   await page.keyboard.press('e');
   await page.waitForURL(/editPanel=1/);
   await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
-  await expect(page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"] text').first()).toHaveText('Saved 1');
+  await expect(page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]')).toHaveCount(3);
   await page.waitForTimeout(5000);
   const afterEdit = log.slice(before);
   expect(afterEdit.filter((r) => r.kind === 'diagram'), JSON.stringify(afterEdit)).toEqual([]);
@@ -84,9 +84,7 @@ test('panel edit and the popup run no diagram query again, call no datasource re
 
   // The popup shares the panel cache: its draft bindings add no request.
   const dialog = await openBindingsPopup(page);
-  await expect(dialog.getByTestId('dmap-popup-stage').locator('[data-cell-id="device-1"] text').first()).toHaveText(
-    'Saved 1'
-  );
+  await expect(dialog.getByTestId('dmap-popup-stage').locator('[data-dmap-status="normal"]')).toHaveCount(3);
   await page.waitForTimeout(3000);
   const afterPopup = log.slice(before);
   expect(afterPopup.filter((r) => r.kind === 'diagram' || r.kind === 'resource'), JSON.stringify(afterPopup)).toEqual(
@@ -113,5 +111,5 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   await again.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"] text').first()).toHaveText('Saved 1');
+  await expect(page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]')).toHaveCount(3);
 });
