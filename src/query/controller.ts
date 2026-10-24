@@ -7,6 +7,7 @@ import {
   type QueryPolicy,
   type QuerySnapshot,
   type ResolvedQueryRequest,
+  settled,
 } from './types';
 import { panelSnapshot } from './panelSnapshot';
 
@@ -145,7 +146,6 @@ export function createQueryController(
       cache.delete(cache.keys().next().value!);
     }
   };
-  const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
   const publish = (entry: Entry, snapshot: QuerySnapshot) => {
     entry.snapshot = snapshot;
     for (const listener of [...entry.listeners.keys()]) {

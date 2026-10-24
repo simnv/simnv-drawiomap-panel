@@ -67,7 +67,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
-    await expect(dialog).toContainText('radio → rtr-a');
+    await expect(dialog).toContainText('radio ↔ rtr-a');
     const chart = dialog.getByTestId('dmap-chart-hover').first();
     const tooltip = page.getByTestId('dmap-chart-tooltip');
     const crosshair = chart.getByTestId('dmap-chart-crosshair');
@@ -76,9 +76,9 @@ test.describe('tooltip on the charts of the pinned card', () => {
     for (const fraction of [0.25, 0.5, 0.9]) {
       const x = await moveOnChart(page, chart, fraction);
       await expect(tooltip).toBeVisible();
-      // time header, series name and the value with its unit: the radio link is a flat 90 Mb/s
+      // time header, the direction and the value with its unit: the radio link sends a flat 90 Mb/s
       await expect(tooltip).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
-      await expect(tooltip).toContainText('radio → rtr-a');
+      await expect(tooltip).toContainText('↑');
       await expect(tooltip).toContainText(/9\d(\.\d+)? Mb\/s|90/);
       await expect(crosshair).toBeVisible();
       const c = (await crosshair.boundingBox())!;

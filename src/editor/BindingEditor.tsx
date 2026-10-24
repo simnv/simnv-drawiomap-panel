@@ -18,7 +18,6 @@ import { resolvePatterns } from '../binding/patterns';
 import { cellMatches } from '../binding/select';
 import { useStage } from '../components/useStage';
 import { cardContextFor } from '../binding/context';
-import { extractSeries } from '../binding/series';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfigV2, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
@@ -63,7 +62,7 @@ export interface BindingEditorProps {
   owner: string;
   /** What to select when the editor opens. */
   initial?: PopupTarget;
-  /** Number of legacy rules of a panel that has no V2 config; the list points to the Rules editor. */
+  /** The number of saved rules of version 1; the empty list tells the author that the panel ignores them. */
   legacyRules?: number;
   onDirtyChange?: (dirty: boolean) => void;
   /** The draft changed (a commit arrived), or it was discarded or applied: text typed before is settled. */
@@ -320,18 +319,14 @@ export function BindingEditor({
   );
   const bound = useMemo(() => bindPlan(plan, resolve, bindContext, nowMs), [plan, resolve, bindContext, nowMs]);
   const cardPatch = draft.cellId ? bound.patches.get(draft.cellId) : undefined;
-  // The context of the hover card, once per data update: the series come from the live panel data.
-  const series = useMemo(() => extractSeries(data.series), [data.series]);
   const cardContext = useMemo(
     () =>
       cardContextFor({
-        series,
         theme,
-        timeZone,
         replaceVariables: bindContext.replaceVariables,
         fieldThresholds: bindContext.fieldThresholds,
       }),
-    [series, theme, timeZone, bindContext.replaceVariables, bindContext.fieldThresholds]
+    [theme, bindContext.replaceVariables, bindContext.fieldThresholds]
   );
   // Built from the preview inputs only: a highlight or a selection change must not rebuild the card.
   const hoverPreview = useMemo(

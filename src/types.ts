@@ -110,9 +110,10 @@ export interface ZoomOptions {
 
 export interface Options {
   diagram?: Diagram;
-  /** Versioned authoring configuration. Legacy rules remain intact until explicit replacement. */
+  /** The authoring configuration: named queries, patterns, overrides and chart regions. */
   config?: DiagramConfigV2;
-  rules: Rule[];
+  /** Removed: the rules of version 1. A saved value loads, the panel ignores it and shows a warning. */
+  rules?: unknown[];
   zoom: ZoomOptions;
   linkWidth: { min: number; max: number };
   /** The status band above the diagram: one row per cause. maxRows 0 hides the band. Default: 3. */
@@ -135,7 +136,6 @@ export interface LegendOptions {
 }
 
 export const DEFAULT_OPTIONS: Options = {
-  rules: [],
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
@@ -143,16 +143,10 @@ export const DEFAULT_OPTIONS: Options = {
   legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: true },
 };
 
-/* ---------- rules ---------- */
+/* ---------- selectors ---------- */
 
 /** Exact string, or /regex/ (JS regex between slashes, optional flags). */
 export type Matcher = string;
-
-export interface SeriesSelector {
-  refId?: string;
-  name?: Matcher;
-  match?: Record<string, Matcher>;
-}
 
 export interface CellSelector {
   /** cell ids or pg-ids */
@@ -166,76 +160,11 @@ export interface CellSelector {
 
 export type ReducerName = 'last' | 'mean' | 'max' | 'min';
 
-/** A series that gives the link capacity, e.g. the port speed. The field unit converts it to bit/s. */
-export interface CapacitySeries extends SeriesSelector {
-  /** Default: the rule reducer. */
-  reducer?: ReducerName;
-}
-
 /** Where the capacity of a link half comes from. The first source that gives a value wins, in this order. */
 export type CapacitySource = 'series' | 'attr' | 'number' | 'fieldMax' | 'none';
 
-export interface LinkRule {
-  a2b?: SeriesSelector;
-  b2a?: SeriesSelector;
-  /**
-   * bit/s: a number, a template like "${cell.capacity}", or a series selector.
-   * Without it, or when it gives no value, the Max of the field config of the half applies.
-   */
-  capacity?: string | number | CapacitySeries;
-  /** The hover card of the link. */
-  card?: LinkCardRule;
-}
-
-export interface LinkCardRule {
-  /** click target of the a2b and b2a rows (template). Default: the rule url. */
-  url?: string;
-  /** card title (template). Default: the readable title of the link (adapter/cellTitle). */
-  title?: string;
-}
-
 /** What the state colour changes: the node icon (default), the whole shape fill, or the shape outline. */
 export type ShapeTarget = 'icon' | 'shape' | 'stroke';
-
-/** One row of the hover card: a title, the current value and a sparkline of one series. */
-export interface CardRow extends SeriesSelector {
-  /** row title (template). Default: the series name. */
-  title?: string;
-  /** Grafana unit id, for example "percent". Default: the field unit. */
-  unit?: string;
-  decimals?: number;
-  /** click target of the row (template). Default: the rule url. */
-  url?: string;
-}
-
-export interface ShapeRule {
-  series?: SeriesSelector;
-  target?: ShapeTarget;
-  /** old form of target: shape */
-  fill?: boolean;
-  /** old form of target: stroke */
-  stroke?: boolean;
-  text?: boolean;
-  /** hover card rows. Default: one row for `series`. */
-  card?: CardRow[];
-  /** removed (no canvas sparklines). The rule parser accepts it, the engine ignores it with a warning. */
-  sparkline?: SeriesSelector & { position?: string };
-}
-
-export interface Rule {
-  name: string;
-  select: CellSelector;
-  link?: LinkRule;
-  shape?: ShapeRule;
-  reducer?: ReducerName;
-  /** template of the text that shape.text writes into the node label; default "${value}". Links ignore it. */
-  label?: string;
-  /** Removed. The parser accepts it so that old dashboards load; the engine ignores it with a warning. */
-  thresholds?: unknown;
-  url?: string;
-  /** title of the url in the card footer (template). Default: "Open dashboard" or "Open <card title>". */
-  urlTitle?: string;
-}
 
 /* ---------- binding output ---------- */
 
@@ -287,25 +216,14 @@ export interface LinkTarget {
   url: string;
 }
 
-/** Card configuration of a cell. The card resolves it only when it opens (see interact/card). */
-export interface CardSpec {
-  /** title template */
-  title?: string;
-  /** link rows: click target template */
-  url?: string;
-  /** shape rows */
-  rows?: CardRow[];
-  reducer: ReducerName;
-}
-
 export interface CellPatch {
   cellId: string;
+  /** the ids of the patterns that match the cell */
   ruleNames: string[];
   scope: TemplateScope;
   link?: { a2b?: HalfState; b2a?: HalfState };
   shape?: ShapeState;
-  card?: CardSpec;
-  /** rule url(s) after template resolution; dashboard variables are resolved later by replaceVariables */
+  /** the display url after template resolution; dashboard variables are resolved later by replaceVariables */
   urls: LinkTarget[];
   warnings: string[];
 }
@@ -321,11 +239,6 @@ export interface BindContext {
   /** formats a raw value with the field's display processor (unit, decimals, mappings) */
   display: (series: SeriesInfo, value: number) => DisplayValue;
   linkWidth: { min: number; max: number };
-}
-
-export interface BindResult {
-  patches: PatchMap;
-  warnings: string[];
 }
 
 /* ---------- editor ---------- */

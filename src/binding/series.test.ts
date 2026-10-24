@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FieldType, toDataFrame } from '@grafana/data';
-import { extractSeries, findSeries } from './series';
+import { extractSeries } from './series';
 
 const frames = [
   toDataFrame({
@@ -40,27 +40,5 @@ describe('extractSeries', () => {
     expect(s[0].values).toEqual([10, 20, 30]);
     expect(s[0].times).toEqual([1, 2, 3]);
     expect(s[0].name).toContain('node-rtr-a');
-  });
-});
-
-describe('findSeries', () => {
-  const s = extractSeries(frames);
-  const scope = { cell: {}, from: { node: 'isp-a', port: 'pppoe' }, to: { node: 'rtr-a', port: 'wan1' } };
-  it('matches refId plus resolved label templates', () => {
-    const r = findSeries({ refId: 'A', match: { job: 'node-${to.node}', device: '${to.port}' } }, s, scope);
-    expect(r.series?.labels.device).toBe('wan1');
-    expect(r.unresolved).toEqual([]);
-  });
-  it('supports regex label matchers and name matcher', () => {
-    expect(findSeries({ match: { job: '/^node-isp/' } }, s, scope).series?.labels.job).toBe('node-isp-a');
-    expect(findSeries({ name: '/node-lte/' }, s, scope).series?.refId).toBe('C');
-  });
-  it('returns unresolved when a template cannot resolve', () => {
-    const r = findSeries({ refId: 'A', match: { job: 'node-${cell.pg-id}' } }, s, scope);
-    expect(r.series).toBeUndefined();
-    expect(r.unresolved).toEqual(['cell.pg-id']);
-  });
-  it('returns no series when nothing matches', () => {
-    expect(findSeries({ refId: 'Z' }, s, scope).series).toBeUndefined();
   });
 });

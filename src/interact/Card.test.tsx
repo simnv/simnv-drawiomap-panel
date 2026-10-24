@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange } from '@grafana/data';
 import { expect, it, vi } from 'vitest';
 import { Card } from './Card';
-import type { CardModel, ConfiguredCardModel } from './cardModel';
+import type { ConfiguredCardModel } from './cardModel';
 
 const { sparkline } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
@@ -120,26 +120,6 @@ it('expires a displayed scalar without data updates and cancels its clock when t
   } finally {
     vi.useRealTimers();
   }
-});
-it('draws a legacy row sparkline in the Y range of the row (zero baseline, capacity)', () => {
-  const model: CardModel = {
-    title: 'isp-a ↔ rtr-a',
-    links: [],
-    rows: [
-      {
-        key: 'a2b',
-        title: 'isp-a → rtr-a',
-        text: '41 Mb/s · 41%',
-        status: 'ok',
-        color: '#0f0',
-        values: [40, 41, 41],
-        times: [1, 2, 3],
-        domain: [0, 100],
-      },
-    ],
-  };
-  render(<Card model={model} pinned={false} x={20} y={20} width={800} height={600} onClose={() => {}} />);
-  expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toEqual({ min: 0, max: 100, delta: 100 });
 });
 it('passes the min and max of a configured row to its sparkline', () => {
   const history = {
@@ -326,39 +306,6 @@ it('shows both directions of a combined row in the pinned card tooltip', () => {
   expect(screen.getByTestId('series-table').textContent).toBe('↑=8;↓=1');
 });
 
-it('uses the row formatter of a legacy row in the tooltip', () => {
-  const model = {
-    title: 'n',
-    links: [],
-    rows: [
-      {
-        key: 'r',
-        title: 'CPU',
-        text: '2 kb/s',
-        status: 'ok',
-        color: 'red',
-        values: [1, 2],
-        times: [0, 10],
-        format: (v: number) => `${v} kb/s`,
-      },
-    ],
-  };
-  renderCard(model as any);
-  hoverChart();
-  expect(screen.getByTestId('series-table').textContent).toBe('CPU=2 kb/s');
-});
-it('sorts a legacy row by time for the sparkline and for the tooltip', () => {
-  const model = {
-    title: 'n',
-    links: [],
-    rows: [{ key: 'r', title: 'CPU', text: '', status: 'ok', color: 'red', values: [3, 2, 1], times: [30, 20, 10] }],
-  };
-  sparkline.mockClear();
-  renderCard(model as any);
-  const props = sparkline.mock.calls.at(-1)![0];
-  expect(Array.from(props.sparkline.x.values)).toEqual([10, 20, 30]);
-  expect(Array.from(props.sparkline.y.values)).toEqual([1, 2, 3]);
-});
 it('sets the hover width of a single chart to the chart width, not the row', () => {
   renderCard(cardOf(chartRow({ history: readyHistory([1, 2]) })));
   expect(screen.getByTestId('dmap-chart-hover').style.width).toBe('264px');
@@ -410,7 +357,7 @@ const frames = () => {
   flush.pending = () => queue.size;
   return flush;
 };
-const followModel: CardModel = { title: 'Router', links: [], rows: [] };
+const followModel: ConfiguredCardModel = { title: 'Router', links: [], rows: [], demands: [], diagnostics: [] };
 const panelRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }) as DOMRect;
 type FollowProps = Partial<React.ComponentProps<typeof Card>>;
 const follow = (props: FollowProps = {}) => {

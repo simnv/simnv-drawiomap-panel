@@ -1,17 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createTheme, DisplayValue, Field, FieldType, LinkModel, ThresholdsMode } from '@grafana/data';
-import type { CellPatch, HalfState, SeriesInfo } from '../types';
-import {
-  buildCard,
-  buildConfiguredCard,
-  CardContext,
-  chartHeight,
-  opensCard,
-  SPARK_HEIGHT,
-  sparkPoints,
-} from './cardModel';
+import { createTheme, Field, FieldType, LinkModel, ThresholdsMode } from '@grafana/data';
+import type { CellPatch, SeriesInfo } from '../types';
+import { buildConfiguredCard, CardContext, chartHeight, opensCard, SPARK_HEIGHT } from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
-import { resolveTemplate, shield } from '../binding/template';
 import type { QueryBinding } from '../model/config';
 import { toHistory } from '../query/frames';
 
@@ -32,47 +23,13 @@ const mk = (refId: string, labels: Record<string, string>, values: number[], uni
   } as unknown as Field,
   frame: { fields: [], length: values.length },
 });
-const tx = mk('A', { job: 'node-isp-a', device: 'pppoe' }, [40e6, 41e6]);
-const rx = mk('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]);
-const cpu = mk('E', { job: 'node-rtr-a' }, [20, 35.25]);
 const up = mk('C', { job: 'node-rtr-a' }, [1, 1]);
 
 const ctx: CardContext = {
-  series: [tx, rx, cpu, up],
   theme,
-  display: (s, v, o): DisplayValue => ({
-    text: o?.decimals !== undefined ? v.toFixed(o.decimals) : String(v),
-    suffix: o?.unit === 'percent' ? '%' : s.field.config?.unit === 'bps' ? ' b/s' : '',
-    numeric: v,
-    color: '#123456',
-  }),
   replaceVariables: (s) => s.replace('${__from}', '111'),
 };
 
-const okHalf = (series: SeriesInfo, label: string, color: string): HalfState => ({
-  status: 'ok',
-  color,
-  width: 3,
-  label,
-  stepIndex: 0,
-  value: series.values[series.values.length - 1],
-  display: { text: label, numeric: 0 },
-  series,
-});
-const linkPatch = (over: Partial<CellPatch> = {}): CellPatch => ({
-  cellId: 'pg-link~isp-a:pppoe->rtr-a:wan1',
-  ruleNames: ['links'],
-  scope: {
-    cell: { 'pg-id': 'isp-a:pppoe->rtr-a:wan1', key: 'isp-a:pppoe->rtr-a:wan1', label: '' },
-    from: { node: 'isp-a', port: 'pppoe' },
-    to: { node: 'rtr-a', port: 'wan1' },
-  },
-  urls: [{ title: 'links', url: '/d/rule?job=node-isp-a&from=${__from}' }],
-  warnings: [],
-  link: { a2b: okHalf(tx, '41 Mb/s · 41%', '#00ff00'), b2a: okHalf(rx, '10 Mb/s · 10%', '#0000ff') },
-  card: { reducer: 'last' },
-  ...over,
-});
 const nodePatch = (over: Partial<CellPatch> = {}): CellPatch => ({
   cellId: 'pg-node~rtr-a',
   ruleNames: ['node up', 'router cpu'],
@@ -88,192 +45,7 @@ const nodePatch = (over: Partial<CellPatch> = {}): CellPatch => ({
     series: up,
     display: { text: '1', numeric: 1 },
   },
-  card: {
-    reducer: 'last',
-    rows: [
-      {
-        title: 'CPU ${cell.pg-id}',
-        refId: 'E',
-        match: { job: 'node-${cell.pg-id}' },
-        unit: 'percent',
-        decimals: 1,
-        url: '/d/cpu?host=${labels.job}&from=${__from}',
-      },
-    ],
-  },
   ...over,
-});
-
-describe('buildCard for a link', () => {
-  it('has the a2b and b2a rows with the half text, colour and series', () => {
-    const c = buildCard(linkPatch(), ctx);
-    expect(c.title).toBe('isp-a:pppoe->rtr-a:wan1');
-    expect(c.rows.map((r) => [r.title, r.text, r.color, r.status])).toEqual([
-      ['isp-a → rtr-a', '41 Mb/s · 41%', '#00ff00', 'ok'],
-      ['rtr-a → isp-a', '10 Mb/s · 10%', '#0000ff', 'ok'],
-    ]);
-    expect(c.rows[0].values).toEqual([40e6, 41e6]);
-    expect(c.rows[0].times).toEqual([1000, 1010]);
-  });
-  it('uses the rule url for both rows when link.card.url is not set', () => {
-    const c = buildCard(linkPatch(), ctx);
-    expect(c.rows.map((r) => r.href)).toEqual(['/d/rule?job=node-isp-a&from=111', '/d/rule?job=node-isp-a&from=111']);
-  });
-  it('resolves link.card.url per row with the labels of the row series, encoded', () => {
-    const c = buildCard(
-      linkPatch({ card: { reducer: 'last', url: '/d/if?job=${labels.job}&dev=${labels.device}&x=${cell.pg-id}' } }),
-      ctx
-    );
-    expect(c.rows[0].href).toBe('/d/if?job=node-isp-a&dev=pppoe&x=isp-a%3Apppoe-%3Ertr-a%3Awan1');
-    expect(c.rows[1].href).toBe('/d/if?job=node-rtr-a&dev=wan1&x=isp-a%3Apppoe-%3Ertr-a%3Awan1');
-  });
-  it('drops a row url with a bad scheme', () => {
-    const c = buildCard(linkPatch({ card: { reducer: 'last', url: 'javascript:alert(1)' } }), ctx);
-    expect(c.rows[0].href).toBeUndefined();
-  });
-  it('uses link.card.title and the link label text as titles', () => {
-    expect(buildCard(linkPatch({ card: { reducer: 'last', title: '${from.node} uplink' } }), ctx).title).toBe(
-      'isp-a uplink'
-    );
-    const labelled = linkPatch();
-    labelled.scope.cell.label = 'pppoe 100M';
-    expect(buildCard(labelled, ctx).title).toBe('pppoe 100M');
-  });
-  it('uses the readable cell title, and a title template of the pattern over it', () => {
-    const titled = linkPatch();
-    titled.scope.cellTitle = 'Switch-A p9 ↔ AP-1';
-    expect(buildCard(titled, ctx).title).toBe('Switch-A p9 ↔ AP-1');
-    expect(buildCard({ ...titled, card: { reducer: 'last', title: '${cellTitle} (uplink)' } }, ctx).title).toBe(
-      'Switch-A p9 ↔ AP-1 (uplink)'
-    );
-    // an unresolved template falls back to the readable title
-    expect(buildCard({ ...titled, card: { reducer: 'last', title: '${cell.nope}' } }, ctx).title).toBe(
-      'Switch-A p9 ↔ AP-1'
-    );
-  });
-  it('shows no data rows in grey without a sparkline', () => {
-    const p = linkPatch({
-      link: { a2b: { status: 'nodata', color: '#999', width: 2, label: 'no data', stepIndex: -1 } },
-    });
-    const c = buildCard(p, ctx);
-    expect(c.rows).toHaveLength(1);
-    expect(c.rows[0]).toMatchObject({ text: 'no data', status: 'nodata', values: [] });
-    expect(c.rows[0].min).toBeUndefined();
-  });
-  it('has the footer links: the rule url and the field data links', () => {
-    const c = buildCard(linkPatch(), ctx);
-    expect(c.links.map((l) => [l.title, l.href])).toEqual([
-      ['links', '/d/rule?job=node-isp-a&from=111'],
-      ['Field link', '/d/field'],
-    ]);
-  });
-  it('gives a rule url without a title a default title: "Open dashboard" or "Open <card title>"', () => {
-    const dash = buildCard(linkPatch({ urls: [{ url: '/d/rule?job=x' }] }), ctx);
-    expect(dash.links[0].title).toBe('Open dashboard');
-    const other = buildCard(linkPatch({ urls: [{ url: '/explore?x=1' }] }), ctx);
-    expect(other.links[0].title).toBe('Open isp-a:pppoe->rtr-a:wan1');
-  });
-  it('gives each row with a sparkline the min and max of its series', () => {
-    const c = buildCard(linkPatch(), ctx);
-    expect(c.rows.map((r) => [r.min, r.max])).toEqual([
-      ['40000000', '41000000'],
-      ['10000000', '10000000'],
-    ]);
-  });
-});
-
-describe('buildCard for a node', () => {
-  it('resolves card rows lazily: series, reducer, unit, decimals, title template and url', () => {
-    const c = buildCard(nodePatch(), ctx);
-    expect(c.title).toBe('rtr-a multi-WAN + PBR');
-    expect(c.rows).toHaveLength(1);
-    expect(c.rows[0]).toMatchObject({
-      title: 'CPU rtr-a',
-      text: '35.3%',
-      status: 'ok',
-      color: '#123456',
-      values: [20, 35.25],
-      href: '/d/cpu?host=node-rtr-a&from=111',
-      min: '20.0%',
-      max: '35.3%',
-    });
-  });
-  it('uses the rule url when the row has no url, and the mean reducer when the rule says so', () => {
-    const p = nodePatch();
-    p.card = { reducer: 'mean', rows: [{ refId: 'E', match: { job: 'node-rtr-a' } }] };
-    const c = buildCard(p, ctx);
-    expect(c.rows[0].text).toBe('27.625');
-    expect(c.rows[0].title).toBe('node-rtr-a');
-    expect(c.rows[0].href).toBe('/d/node?job=node-rtr-a');
-  });
-  it('shows no data and unbound rows', () => {
-    const p = nodePatch();
-    p.card = {
-      reducer: 'last',
-      rows: [
-        { title: 'gone', refId: 'Z' },
-        { title: 'bad', match: { job: '${cell.nope}' } },
-      ],
-    };
-    const c = buildCard(p, ctx);
-    expect(c.rows.map((r) => [r.title, r.text, r.status, r.href])).toEqual([
-      ['gone', 'no data', 'nodata', '/d/node?job=node-rtr-a'],
-      ['bad', 'unbound', 'unbound', '/d/node?job=node-rtr-a'],
-    ]);
-  });
-  it('without card rows, shows one row for the shape series', () => {
-    const c = buildCard(nodePatch({ card: { reducer: 'last' } }), ctx);
-    expect(c.rows.map((r) => [r.title, r.text, r.color])).toEqual([['node-rtr-a', '1', '#00ff00']]);
-  });
-  it('falls back to the key, then the cell id, for the title', () => {
-    const p = nodePatch();
-    p.scope.cell.label = '';
-    expect(buildCard(p, ctx).title).toBe('rtr-a');
-  });
-});
-
-describe('buildCard no double expansion', () => {
-  // The label of a cell can hold text like ${var}. The template pass has resolved it; the pass of Grafana
-  // (replaceVariables) must not expand it again.
-  const evil = (s: string) => s.replaceAll('${evil}', 'EXPANDED');
-  it('keeps ${var} text of a cell label literal in the card title, a row title and a row url', () => {
-    const replaceVariables = vi.fn(evil);
-    const p = nodePatch({
-      scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: '${evil}' } },
-      card: {
-        reducer: 'last',
-        title: 'Router ${cell.label}',
-        rows: [{ title: 'CPU ${cell.label}', refId: 'E', match: { job: 'node-rtr-a' }, url: '/d/x?l=${cell.label}' }],
-      },
-    });
-    const c = buildCard(p, { ...ctx, replaceVariables });
-    expect(c.title).toBe('Router ${evil}');
-    expect(c.rows[0].title).toBe('CPU ${evil}');
-    expect(c.rows[0].href).toBe('/d/x?l=%24%7Bevil%7D');
-    expect(JSON.stringify(c)).not.toContain('EXPANDED');
-  });
-  it('keeps ${var} text of a cell label literal in the title of a rule url', () => {
-    const scope = { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: '${evil}' } };
-    // the engine resolves urlTitle with shield
-    const title = resolveTemplate('Open ${cell.label}', scope, shield).text;
-    const p = nodePatch({ scope, urls: [{ title, url: '/d/x' }] });
-    expect(buildCard(p, { ...ctx, replaceVariables: evil }).links[0].title).toBe('Open ${evil}');
-  });
-});
-
-describe('buildCard url checks', () => {
-  it('drops a row url and a footer url that a dashboard variable turns into another scheme', () => {
-    const c = buildCard(nodePatch({ urls: [{ title: 'r', url: '${v:raw}' }] }), {
-      ...ctx,
-      replaceVariables: (s) => (s === '${v:raw}' ? 'javascript:alert(1)' : s),
-    });
-    expect(c.rows[0].href).toBe('/d/cpu?host=node-rtr-a&from=${__from}');
-    const p = nodePatch({ urls: [{ title: 'r', url: '${v:raw}' }] });
-    p.card = { reducer: 'last', rows: [{ refId: 'E' }] };
-    const c2 = buildCard(p, { ...ctx, replaceVariables: () => 'javascript:alert(1)' });
-    expect(c2.rows[0].href).toBeUndefined();
-    expect(c2.links.map((l) => l.title)).toEqual(['Field link']);
-  });
 });
 
 describe('configured cards', () => {
@@ -776,9 +548,9 @@ describe('opensCard', () => {
   // a series without data links
   const state = { ...nodePatch().shape!, series: { ...up, field: { ...up.field, getLinks: undefined } } };
   it('is true for a configured cell with hover rows, a status or a cell url', () => {
-    expect(
-      opensCard(bare({ hover: { rows: [{ kind: 'metadata', label: 'Device', path: 'cell.key' }] } }), true, ctx)
-    ).toBe(true);
+    expect(opensCard(bare({ hover: { rows: [{ kind: 'metadata', label: 'Device', path: 'cell.key' }] } }), ctx)).toBe(
+      true
+    );
     expect(
       opensCard(
         bare({
@@ -790,108 +562,38 @@ describe('opensCard', () => {
             coverage: { available: 1, expected: 1 },
           },
         }),
-        true,
         ctx
       )
     ).toBe(true);
-    expect(opensCard(bare({ urls: [{ url: '/d/x' }] }), true, ctx)).toBe(true);
+    expect(opensCard(bare({ urls: [{ url: '/d/x' }] }), ctx)).toBe(true);
   });
   it('is false for a configured cell that only colours, has no rows or turns the card off', () => {
-    expect(opensCard(bare({ shape: state }), true, ctx)).toBe(false);
-    expect(opensCard(bare({ hover: { rows: [] } }), true, ctx)).toBe(false);
+    expect(opensCard(bare({ shape: state }), ctx)).toBe(false);
+    expect(opensCard(bare({ hover: { rows: [] } }), ctx)).toBe(false);
     expect(
       opensCard(
         bare({
           urls: [{ url: '/d/x' }],
           hover: { enabled: false, rows: [{ kind: 'metadata', label: 'D', path: 'cell.key' }] },
         }),
-        true,
         ctx
       )
     ).toBe(false);
   });
   it('ignores a drilldown row whose url is not allowed', () => {
     expect(
-      opensCard(bare({ hover: { rows: [{ kind: 'drilldown', label: 'Go', url: 'javascript:alert(1)' }] } }), true, ctx)
+      opensCard(bare({ hover: { rows: [{ kind: 'drilldown', label: 'Go', url: 'javascript:alert(1)' }] } }), ctx)
     ).toBe(false);
-    expect(
-      opensCard(bare({ hover: { rows: [{ kind: 'drilldown', label: 'Go', url: '/d/${cell.key}' }] } }), true, ctx)
-    ).toBe(true);
+    expect(opensCard(bare({ hover: { rows: [{ kind: 'drilldown', label: 'Go', url: '/d/${cell.key}' }] } }), ctx)).toBe(
+      true
+    );
   });
   it('resolves a drilldown url with the labels of the series that the cell shows', () => {
     const labelled = { ...up, labels: { host: 'router' }, field: { ...up.field, getLinks: undefined } };
     const row = { kind: 'drilldown' as const, label: 'Go', url: '/d/x?host=${labels.host}' };
-    expect(opensCard(bare({ hover: { rows: [row] }, shape: { ...state, series: labelled } }), true, ctx)).toBe(true);
+    expect(opensCard(bare({ hover: { rows: [row] }, shape: { ...state, series: labelled } }), ctx)).toBe(true);
   });
   it('is true for a cell whose series has data links', () => {
-    expect(opensCard(bare({ shape: { ...state, series: up } }), true, ctx)).toBe(true);
-  });
-  it('legacy rules: a shape, a link half or card rows open a card, a bare patch does not', () => {
-    expect(opensCard(nodePatch(), false, ctx)).toBe(true);
-    expect(opensCard(linkPatch({ urls: [] }), false, ctx)).toBe(true);
-    expect(opensCard(bare({ shape: state }), false, ctx)).toBe(true);
-    expect(opensCard(bare(), false, ctx)).toBe(false);
-  });
-});
-
-describe('sparkPoints', () => {
-  it('handles a long series without a stack overflow and keeps the last point', () => {
-    const values = Array.from({ length: 300_000 }, (_, i) => i);
-    const pts = sparkPoints(values, undefined, undefined, 200, 36).split(' ');
-    expect(pts.length).toBeLessThanOrEqual(402);
-    expect(pts[pts.length - 1]).toBe('200,1');
-  });
-  it('maps times over the dashboard range and values over min..max', () => {
-    expect(sparkPoints([0, 10, 5], [0, 50, 100], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
-  });
-  it('fills the width: the x axis is the part of the range that has data', () => {
-    // data only in the last half of the range: the line still goes from edge to edge
-    expect(sparkPoints([0, 10, 5], [50, 75, 100], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
-    expect(sparkPoints([0, 10, 5], [0, 25, 50], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
-    // samples outside the range stay on the edge
-    expect(sparkPoints([0, 10, 5], [-50, 50, 150], { from: 0, to: 100 }, 200, 36)).toBe('0,35 100,1 200,18');
-  });
-  it('uses the index without times and skips values that are not finite', () => {
-    expect(sparkPoints([1, NaN, 3], undefined, undefined, 100, 10)).toBe('0,6.3 100,1');
-  });
-  it('draws a constant series as a flat line and nothing for one point', () => {
-    // the domain starts at 0, so a constant value is on the top and zeros are on the bottom
-    expect(sparkPoints([2, 2], [0, 1], { from: 0, to: 1 }, 10, 10)).toBe('0,1 10,1');
-    expect(sparkPoints([0, 0], [0, 1], { from: 0, to: 1 }, 10, 10)).toBe('0,9 10,9');
-    expect(sparkPoints([2], [0], { from: 0, to: 1 }, 10, 10)).toBe('');
-  });
-});
-
-describe('sparkPoints domain', () => {
-  it('draws a nearly flat series as a flat line near the top', () => {
-    expect(sparkPoints([41, 41.2, 41], undefined, undefined, 100, 10)).toBe('0,1 50,1 100,1');
-  });
-  it('uses the given domain', () => {
-    expect(sparkPoints([10, 20], undefined, undefined, 100, 10, [0, 100])).toBe('0,8.2 100,7.4');
-  });
-});
-
-describe('card row domain', () => {
-  it('gives a link half the capacity in the unit of the series', () => {
-    // 40 Mb/s is 40% of the link, so the capacity is 100 Mb/s
-    const s = mk('A', { job: 'x' }, [10, 40], 'Mbits');
-    const half: HalfState = { ...okHalf(s, '40 Mb/s · 40%', '#0f0'), value: 40, percent: 40 };
-    const c = buildCard(linkPatch({ link: { a2b: half } }), ctx);
-    expect(c.rows[0].domain).toEqual([0, 100]);
-  });
-  it('keeps the capacity of a link half in the range when the current value is 0', () => {
-    const s = mk('A', { job: 'x' }, [10, 0], 'Mbits');
-    const half: HalfState = { ...okHalf(s, '0 b/s · 0%', '#0f0'), value: 0, percent: 0, capacity: 100e6 };
-    expect(buildCard(linkPatch({ link: { a2b: half } }), ctx).rows[0].domain).toEqual([0, 100]);
-  });
-  it('gives a link half without capacity the range 0 to max', () => {
-    expect(buildCard(linkPatch(), ctx).rows.map((r) => r.domain)).toEqual([
-      [0, 41e6],
-      [0, 10e6],
-    ]);
-  });
-  it('uses 0 to 100 for a row with the percent unit', () => {
-    const c = buildCard(nodePatch(), ctx);
-    expect(c.rows[0].domain).toEqual([0, 100]);
+    expect(opensCard(bare({ shape: { ...state, series: up } }), ctx)).toBe(true);
   });
 });

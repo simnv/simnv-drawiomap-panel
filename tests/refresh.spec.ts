@@ -96,7 +96,6 @@ for (const kind of Object.keys(kinds) as Array<keyof typeof kinds>) {
                 fieldConfig: { defaults: {}, overrides: [] },
                 options: {
                   config: statusConfig(config, queries),
-                  rules: [],
                   diagram: { svg, hash: uid },
                   zoom: { mode: 'fit', wheel: true, pan: true },
                 },

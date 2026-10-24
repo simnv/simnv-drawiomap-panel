@@ -7,7 +7,7 @@ A Grafana panel plugin (`simnv-drawiomap-panel`). It shows a draw.io diagram as 
 ## What it does
 
 - It colours each link by traffic, for each direction. Each half of the link has its colour and an arrow. The canvas shows no value labels.
-- Explicit health rules mark abnormal devices with a state and a reason. Normal V2 devices keep their diagram colours. Legacy rules can colour icons, shapes or outlines.
+- Explicit health rules mark abnormal devices with a state and a reason. A shape binding colours the node icon, the whole shape or its outline by the value, with the colours of the field config.
 - Configured hover values and histories load when the card opens. A click or tap pins the card. Explicit chart rectangles show selected trends or bounded bar gauges.
 - The real draw.io editor opens in a modal.
 
@@ -55,7 +55,7 @@ Open the panel editor and go to **Diagram**. There are three ways to add a diagr
 The panel uses these cell attributes to find cells:
 
 - Portograph diagrams use the `pg-*` attributes (`pg-id`, `pg-kind`, `pg-from`, `pg-to`). The contract is in `docs/research/portograph-contract.md`.
-- For a hand-drawn diagram, a cell has its draw.io `id` and its label text. See `demo/rules-hand.yaml`.
+- For a hand-drawn diagram, a cell has its draw.io `id` and its label text. See `handDrawnConfig` in `src/fixtures/demo-config.ts`.
 
 Only page 1 of a multi-page diagram is shown. The panel shows a warning.
 
@@ -82,7 +82,7 @@ Work in this order:
 
 The popup edits a draft. The panel behind it keeps the saved bindings and shows the draft only after Apply or, with Apply while the popup is open, only after the popup closes (see [The panel while the popup is open](#the-panel-while-the-popup-is-open)). Close the popup with **Cancel**, the close button or **Esc**. When the draft has changes, the popup asks **Discard changes?** first; choose **Discard and close** to drop the draft or **Keep editing**. **Esc** closes only the innermost layer: an open menu, a datasource dialog, the draw.io editor or the question. If another editor saves the panel while the popup is open, a warning appears and Apply stops. Choose **Overwrite** to save your draft, or **Reload saved** to start again from the saved bindings. Leaving the panel editor closes the popup and drops its draft.
 
-A warning icon marks a row with problems: an invalid config, an unknown query, an unresolved metadata template, no metric for a query, a pattern that matches no cell, and an override or chart whose cell no longer exists in the diagram. Each message shows the config path. A message for one cell is shown under the pattern or override whose value is the effective one after the merge. A problem of a named query is shown under every row that uses it. A problem with no owner row is shown in **General**; **Problems only** keeps it. A pattern ID that is used twice is flagged on every pattern with it. Select a row to open it. An override or widget selects its cell. A pattern selects its first matched cell with the scope **All elements matching this pattern**, so you can fix its selector. A row whose cell no longer exists only shows its problems; delete it or restore the cell. A panel that has only legacy rules shows a note that points to the Rules editor.
+A warning icon marks a row with problems: an invalid config, an unknown query, an unresolved metadata template, no metric for a query, a pattern that matches no cell, and an override or chart whose cell no longer exists in the diagram. Each message shows the config path. A message for one cell is shown under the pattern or override whose value is the effective one after the merge. A problem of a named query is shown under every row that uses it. A problem with no owner row is shown in **General**; **Problems only** keeps it. A pattern ID that is used twice is flagged on every pattern with it. Select a row to open it. An override or widget selects its cell. A pattern selects its first matched cell with the scope **All elements matching this pattern**, so you can fix its selector. A row whose cell no longer exists only shows its problems; delete it or restore the cell. A panel with saved rules of version 1 shows a note above an empty list: the panel ignores them (see [Rules of version 1](#rules-of-version-1)).
 
 Draw.io owns geometry and stable cell IDs. The inspector owns queries, formatting, rules and chart behavior. **Edit geometry in draw.io** opens the editor on top of the popup; a save changes the diagram of the popup, and Apply commits it with the bindings. Deleted chart anchors remain diagnostic until repaired or explicitly removed. Duplicate physical IDs are rejected; copied semantic `pg-id` values must be repaired.
 
@@ -146,7 +146,7 @@ Sample freshness is independent of cache age. Enable it with an expected cadence
 
 ### Sparkline Y range
 
-All sparklines use the same Y range: card rows, link halves (legacy rules too) and chart regions. A series without negative values starts at 0, so a small change on a flat series (for example PoE power) does not look like a big climb. The top is the largest value, the capacity, or 100 for the `percent` unit (1 for `percentunit`), whichever is largest. A series with negative values uses its own min and max. A combined up/down row has its own range rule, see [Combined up/down row](#combined-updown-row).
+All sparklines use the same Y range: card rows and chart regions. A series without negative values starts at 0, so a small change on a flat series (for example PoE power) does not look like a big climb. The top is the largest value, the capacity, or 100 for the `percent` unit (1 for `percentunit`), whichever is largest. A series with negative values uses its own min and max. A combined up/down row has its own range rule, see [Combined up/down row](#combined-updown-row).
 
 Each bound uses the first source that has a value:
 
@@ -281,7 +281,7 @@ For one direction, the order is: the `capacity` of the `series` entry, the row `
 
 A chart with both directions is 80 px tall by default. Each half is 40 px tall, the same height as a single sparkline. A row with one direction is 40 px tall. With both directions, the zero line stays in the middle of the chart.
 
-Set `height` on a V2 `display.hover.rows` history row to change the chart height. Use a number from 16 to 400, in pixels. This option applies to single and combined history rows. Legacy `shape.card` rows do not accept this option.
+Set `height` on a V2 `display.hover.rows` history row to change the chart height. Use a number from 16 to 400, in pixels. This option applies to single and combined history rows.
 
 Click or tap to pin the card before you scroll. The desktop card scrolls when its content exceeds the available panel height. In panels narrower than 480 px, the card becomes a bottom sheet. The sheet scrolls when its content exceeds 60% of the viewport height.
 
@@ -306,109 +306,29 @@ Finite Grafana data frames with one selected numeric series and one time field s
 
 Only the installed Prometheus and TestData plugins in the [tested matrix](docs/research/authoring-compatibility.md) have browser evidence. Other datasource editors can require capabilities this panel does not supply. Without a supported editor, use validated native-target JSON import. This is not universal datasource compatibility.
 
-The plugin is unshipped. Recreate authoring configuration if a saved format cannot be migrated. Existing V1 rules remain available until a V2 config is applied; a V2 config takes precedence without deleting the saved legacy options or dashboard. Back up dashboard JSON before conversion. Revert the implementation commits and restore that JSON for rollback; draw.io XML/SVG alone does not contain plugin behavior.
+The plugin is unshipped. Recreate authoring configuration if a saved format cannot be migrated. The rules of version 1 are not read any more, see [Rules of version 1](#rules-of-version-1). Back up dashboard JSON before conversion. Revert the implementation commits and restore that JSON for rollback; draw.io XML/SVG alone does not contain plugin behavior.
 
-## Legacy rules
+## Rules of version 1
 
-Existing V1 panels use the **Legacy rules** option. Use the form or the YAML tab. Copy `demo/rules.yaml` as a start:
+Version 1 of the plugin bound cells with the `rules` option: a YAML list of rules with `select`, `link`, `shape`, `card` and `url`. This option is removed. A dashboard that still has it loads: the panel ignores the rules, binds the version 2 config and shows one warning, `The panel ignores N rules of version 1`. The bindings popup shows the same note above an empty list. Create the bindings again in **Edit bindings**, then save the dashboard. The saved `rules` value stays in the dashboard JSON until you remove it. There is no migration on load.
 
-```yaml
-- name: links
-  select: { kind: link }
-  link:
-    a2b: { refId: A, match: { job: 'node-${from.node}', device: '${from.port}' } }
-    b2a: { refId: A, match: { job: 'node-${to.node}', device: '${to.port}' } }
-    card: { title: '${from.node} ↔ ${to.node}' }
-  reducer: last
-  url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}'
-  urlTitle: 'Traffic of ${from.node}:${from.port}'
-- name: lan by port speed
-  select: { kind: link, attrs: { pg-to: '/:br-lan$/' } }
-  link:
-    capacity: { refId: S, match: { job: 'node-${to.node}', device: '${to.port}' } }
-- name: wan uplinks
-  select: { kind: link, attrs: { pg-to: '/^rtr-(a|b):(wan1|wan2|wan3|pppoe)$/' } }
-  link:
-    a2b: { refId: W, match: { job: 'node-${from.node}', device: '${from.port}' } }
-    b2a: { refId: W, match: { job: 'node-${to.node}', device: '${to.port}' } }
-- name: tunnels 100M
-  select: { kind: link, attrs: { pg-to: '/:(ts0|tun-in|relay-in)$/' } }
-  link: { capacity: 100000000 }
-- name: node up
-  select: { kind: node }
-  shape:
-    series: { refId: C, match: { job: 'node-${cell.pg-id}' } }
-    target: icon
-    card:
-      - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
-      - { title: load 1m, refId: D, match: { job: 'node-${cell.pg-id}' } }
-  url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}'
-  urlTitle: 'Host ${cell.pg-id}'
-- name: router cpu
-  select: { ids: [rtr-a, rtr-b] }
-  shape:
-    card:
-      - title: CPU
-        refId: E
-        match: { job: 'node-${cell.pg-id}' }
-        unit: percent
-        decimals: 0
-        url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}&var-metric=cpu'
-      - { title: state, refId: C, match: { job: 'node-${cell.pg-id}' } }
-```
+The table gives the version 2 field of each rule field. `src/fixtures/demo-config.ts` is the version 2 form of the former demo rules.
 
-Rules are an ordered list. A later rule overrides an earlier rule for the same property of the same cell. In the example, the `lan by port speed` rule adds a capacity to the LAN links. The `wan uplinks` rule changes the series of the WAN links to query `W`. The last rule replaces the card rows of the two routers. The `series` and the `target` of the `node up` rule stay.
+A version 2 config saved before 2026-10-24 can carry rule fields in `link` and `shape`: `link.a2b`, `link.b2a`, `link.card`, a capacity series object, `shape.series`, `shape.fill`, `shape.stroke`, `shape.card` and `shape.sparkline`. Such a config loads. The panel drops these fields, takes `link.card.title` as the hover title when the hover has none, and turns a capacity series into `capacityBinding` when a panel query has its `refId`. The saved JSON changes on the next Apply in the editor.
 
-The rules do not set colours. The colours come from the field config of the panel. See [How colours and thresholds work](#how-colours-and-thresholds-work).
-
-### Rule fields
-
-| Field        | Meaning                                                                                                                                             |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`       | Name of the rule. The rule editor and the warnings show it.                                                                                         |
-| `select`     | Which cells the rule applies to. See below.                                                                                                         |
-| `link`       | For links. `a2b` and `b2a` select one series for each direction. `capacity` is in bit/s (see [Capacity](#capacity)). `card` sets the card of links. |
-| `shape`      | For shapes. See below.                                                                                                                              |
-| `reducer`    | `last` (default), `mean`, `max` or `min`. Reduces the series to one value. The card rows use it too.                                                |
-| `label`      | Template of the text that `shape.text` writes into the node label. The default is `${value}`. Links ignore it (the panel shows a warning).          |
-| `thresholds` | Removed. A rule with it still loads, but the panel ignores it and shows a warning. Set **Thresholds** in the field config.                          |
-| `url`        | Link in the card footer, and the click target of card rows without their own URL. It can use templates and dashboard variables.                     |
-| `urlTitle`   | Title of the `url` link in the card footer (a template). The default is `Open dashboard` for a `/d/<uid>` URL, else `Open <card title>`.            |
-
-A series selector has `refId` (the query), `name` and `match` (a map of label name to matcher).
-
-#### `shape`
-
-| Field    | Meaning                                                                                                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `series` | The series that sets the state colour.                                                                                                                                          |
-| `target` | What the colour changes: `icon` (default), `shape` (the fill of the whole shape) or `stroke` (the outline). Without an icon, or with a bitmap icon, `icon` colours the outline. |
-| `text`   | `true` writes the value into the node label (see `label`).                                                                                                                      |
-| `card`   | A list of card rows. Without it, the card has one row for `series`.                                                                                                             |
-
-The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-icon~<pg-id>`. Some icons are a white glyph on a tile (`pg-iconTile~<pg-id>`). Then the tile takes the colour. A hover or a click on the icon or on the node description opens the card of the node. A hover on a link label (`pg-kind="link-label"` with `pg-of`, or `pg-linkLabel~<link pg-id>`) opens the card of the link. Each other cell with `pg-of` belongs to the node or link with that `pg-id`. Such sub-cells never open a card of their own.
-
-The old keys `fill: true` and `stroke: true` still work: they are the same as `target: shape` and `target: stroke`. The panel ignores the removed key `shape.sparkline` and shows a warning.
-
-#### Card rows (`shape.card`)
-
-Each row is a series selector with these extra fields:
-
-| Field      | Meaning                                                                                                                    |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `title`    | Row title (a template). The default is the series name.                                                                    |
-| `unit`     | A Grafana unit id, for example `percent`. The default is the unit of the field config.                                     |
-| `decimals` | Number of decimals. The default comes from the field config.                                                               |
-| `url`      | Click target of the row (a template). `${labels.<name>}` uses the labels of the row series. The default is the rule `url`. |
-
-#### Link card (`link.card`)
-
-| Field   | Meaning                                                                                                                                   |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `title` | Card title (a template). The default is the readable title of the link, for example `Switch-A p9 ↔ AP-1` (see [Hover card](#hover-card)). |
-| `url`   | Click target of the `a2b` and `b2a` rows (a template). The default is the rule `url`.                                                     |
-
-The card of a link always has one row for each bound direction: the current value, the percent of capacity and a sparkline.
+| Version 1 rule                                         | Version 2 pattern (`display`)                                                                                                                                        |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `select`                                               | `select`, unchanged (see [Cell selectors](#cell-selectors-select))                                                                                                   |
+| `link.a2b`, `link.b2a` (`refId`, `match`)              | `link.a2bBinding`, `link.b2aBinding`: `{ queryId, match, reducer }`. The `queryId` names a query of the config; a panel query is `source: { kind: 'panel', refId }`. |
+| `link.capacity` as a series selector                   | `link.capacityBinding`                                                                                                                                               |
+| `link.capacity` as a number or a template              | `link.capacity`, unchanged                                                                                                                                           |
+| `link.card.title`                                      | `hover.title`                                                                                                                                                        |
+| `link.card.url` and the two direction rows             | one `hover.rows` history row with `series: [{ binding, direction: 'up' }, { binding, direction: 'down' }]`, its `capacity` and its `url`                             |
+| `shape.series`, `shape.target`, `shape.text`, `label`  | `shape.binding`, `shape.target`, `shape.text`, `label`. `fill: true` is `target: shape`; `stroke: true` is `target: stroke`.                                         |
+| `shape.card` rows (`title`, `unit`, `decimals`, `url`) | `hover.rows` value or history rows (`label`, `unit`, `url`). `decimals` has no equivalent.                                                                           |
+| `reducer`                                              | the `reducer` of each binding                                                                                                                                        |
+| `url`, `urlTitle`                                      | `url`, `urlTitle`, unchanged                                                                                                                                         |
+| `thresholds`, `shape.sparkline`                        | removed before version 2: the field config gives the colours, the hover card shows the histories                                                                     |
 
 ### Cell selectors (`select`)
 
@@ -431,10 +351,9 @@ A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:
 | `${to.node}`, `${to.port}`     | The second end of a link (from `pg-to`).                                      |
 | `${labels.<name>}`             | A label of the matched series. Use it in `url`.                               |
 | `${value}`                     | The value, formatted with the unit and decimals of the field config.          |
-| `${percent}`                   | The value as a percent of the capacity.                                       |
 | `${cellTitle}`                 | The readable title of the cell (see [Hover card](#hover-card)).               |
 
-`${value}` and `${percent}` are for `label`. Grafana dashboard variables also resolve in all URLs. If a template in a series selector does not resolve, the cell is "unbound". It is grey and the panel shows a warning.
+`${value}` is for `label`. Grafana dashboard variables also resolve in all URLs. If a template in a binding does not resolve, the cell has no data: it is grey and the panel shows a warning with the config path.
 
 A missing series gives a grey "no data" state. It is never green.
 
@@ -472,6 +391,20 @@ matched series ─▶ field config (defaults + overrides)
 - No data: always grey, never green.
 
 The overlay attribute `data-dmap-step` is the index of the active threshold step.
+
+### Shape binding
+
+`display.shape` of a pattern binds a node to one series. With a `target` it colours the node by the value, with the field config of that series (value mappings, thresholds, Color scheme):
+
+| Key       | Meaning                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `binding` | The series: `{ queryId, match, field, reducer }`.                                                                                                                                           |
+| `target`  | What the colour changes: `icon`, `shape` (the fill of the whole shape) or `stroke` (the outline). Without `target` (or with `none`) the colour changes nothing: the value then feeds the card, the legend and `text` only. Without an icon, or with a bitmap icon, `icon` colours the outline. |
+| `text`    | `true` writes the value into the node label. The `label` template of the display formats it; the default is `${value}`. |
+
+A missing series gives a grey "no data" state (and the text `no data` with `text`). A `label` template that does not resolve gives `unbound`. The health rule (`display.status`) is separate: it marks abnormal devices with a state and a reason, whatever the shape colour is.
+
+The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-icon~<pg-id>`. Some icons are a white glyph on a tile (`pg-iconTile~<pg-id>`). Then the tile takes the colour. A hover or a click on the icon or on the node description opens the card of the node. A hover on a link label (`pg-kind="link-label"` with `pg-of`, or `pg-linkLabel~<link pg-id>`) opens the card of the link. Each other cell with `pg-of` belongs to the node or link with that `pg-id`. Such sub-cells never open a card of their own.
 
 ### Colour legend
 
@@ -528,22 +461,22 @@ In the panel JSON:
 
 The panel gives each link half a capacity in bit/s. It uses the first source that gives a value:
 
-| Order | Source            | Example                                                                                         | Notes                                                                                                                              |
-| ----- | ----------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | A series          | `capacity: { refId: S, match: { job: 'node-${to.node}', device: '${to.port}' }, reducer: max }` | For example `node_network_speed_bytes`. The unit of the field converts the value to bit/s (`Bps` multiplies by 8). Templates work. |
-| 2     | A cell attribute  | `capacity: '${cell.capacity}'`                                                                  | The `capacity` attribute of the cell, for example `meta: { capacity: 1e9 }` in a portograph YAML file.                             |
-| 3     | A number          | `capacity: 1000000000`                                                                          | bit/s.                                                                                                                             |
-| 4     | The field **Max** | **Standard options → Max** of the traffic series, or an override for one query                  | In the unit of the field, for example Max `100000000` with the unit `bits/sec(SI)`.                                                |
+| Order | Source            | Example                                                                                                      | Notes                                                                                                                              |
+| ----- | ----------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | A series          | `capacityBinding: { queryId: 'S', match: { job: 'node-${to.node}', device: '${to.port}' }, reducer: 'max' }` | For example `node_network_speed_bytes`. The unit of the field converts the value to bit/s (`Bps` multiplies by 8). Templates work. |
+| 2     | A cell attribute  | `capacity: '${cell.capacity}'`                                                                               | The `capacity` attribute of the cell, for example `meta: { capacity: 1e9 }` in a portograph YAML file.                             |
+| 3     | A number          | `capacity: 1000000000`                                                                                       | bit/s.                                                                                                                             |
+| 4     | The field **Max** | **Standard options → Max** of the traffic series, or an override for one query                               | In the unit of the field, for example Max `100000000` with the unit `bits/sec(SI)`.                                                |
 
-The series source uses the rule `reducer` when the selector has no `reducer`. If the capacity series is missing, the field **Max** applies and the panel shows a warning in edit mode. A template that does not resolve makes the link unbound (grey, with a warning).
+The `reducer` of the capacity binding reduces its series. If the capacity series is missing, the field **Max** applies and the panel reports the missing metric. A capacity template that does not resolve gives the diagnostic `unresolved-metadata`, and the half falls to the field **Max**. A field unit that is not a data rate gives the diagnostic `unit-not-rate`; the panel uses the raw value as bit/s.
 
 The hover card shows the capacity of each half, for example `41 Mb/s · 41% of 100 Mb/s`. Without a capacity, it shows only the value.
 
 The units are the data-rate units of Grafana: `bps`, `Kbits` … `Pbits`, `Bps`, `KBs` … `PBs`, and the binary (IEC) forms. A field without a unit is in bit/s. A unit that is not a data rate gives a warning, and the panel uses the raw value as bit/s.
 
-#### Capacity of each link direction (V2 configuration)
+#### Capacity of each link direction
 
-In `display.link` of a V2 pattern, each half can have its own capacity. All values are in bit/s.
+In `display.link` of a pattern, each half can have its own capacity. All values are in bit/s.
 
 ```json
 {
@@ -578,7 +511,7 @@ The canvas shows only colours. The values show in a card:
 | Click another cell                 | The pinned card moves to that cell.                                                                  |
 | Esc, ✕, or a click outside         | The pinned card closes.                                                                              |
 | Tap a cell (phone, tablet)         | The card opens pinned. Devices without hover (`(hover: none)`) do not open a card on a pointer move. |
-| Click or tap a row or a sparkline  | Opens the URL of the row in a new tab (see `shape.card[].url` and `link.card.url`).                  |
+| Click or tap a row or a sparkline  | Opens the URL of the row in a new tab (the `url` of the hover row, else the `url` of the display).   |
 | Tab to a cell, then Enter or Space | The card opens pinned. Esc closes it and the focus goes back to the cell.                            |
 | Move over a chart in a pinned card | A crosshair and the Grafana tooltip show the time and the value of each series (see below).          |
 
@@ -634,11 +567,11 @@ A part or a structure cell of a portograph export uses the caption that the diag
 | Legend body, tile, swatch (`pg-legend…~X`) | The label of `pg-legendRow~X`, else the readable id. A legend row uses its own label.                   |
 | Layer, legend frame                        | Its label (layers draw none), else the readable id.                                                     |
 
-A missing label falls back to the node id and the port name (`pg-node`, `pg-port`), then to the `pg-id` as written, or the cell id without its `pg-…~` prefix when the cell has no `pg-id`. A cell that is not in a portograph export (no `pg-schema`) has its label, else its id. To change the title of the cards of a pattern, set `hover.title` of its display (or the legacy `link.card.title`). The value is a template, and `${cellTitle}` is the default title. `${cellTitle}` is a root of its own, like `${value}`: a metadata key named `title` stays `${cell.title}`. A template that does not resolve, or gives an empty text, keeps the default title.
+A missing label falls back to the node id and the port name (`pg-node`, `pg-port`), then to the `pg-id` as written, or the cell id without its `pg-…~` prefix when the cell has no `pg-id`. A cell that is not in a portograph export (no `pg-schema`) has its label, else its id. To change the title of the cards of a pattern, set `hover.title` of its display. The value is a template, and `${cellTitle}` is the default title. `${cellTitle}` is a root of its own, like `${value}`: a metadata key named `title` stays `${cell.title}`. A template that does not resolve, or gives an empty text, keeps the default title.
 
 A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its Y range starts at 0 for a series without negative values and reaches up to the capacity (see [Sparkline Y range](#sparkline-y-range)). Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
 
-The footer has the rule URL (title: `urlTitle`) and the data links of the field config (title: the data link title). A link that opens in a new tab has an external-link icon.
+The footer has the `url` of the display (title: `urlTitle`) and the data links of the field config (title: the data link title). A link that opens in a new tab has an external-link icon.
 
 The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button is a normal button. Each bound cell is a button for the keyboard (`tabindex="0"`). The panel builds the card only when it opens, and only for one cell.
 
@@ -780,7 +713,7 @@ Authoring evidence: 2026-10-18, in `docs/research/authoring-compatibility.md`. E
 - No animated flow.
 - No diagrams loaded from a URL.
 - No multi-page diagrams. The panel renders page 1 and shows a warning.
-- The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes, and rules select its cells by id, label and other attributes.
+- The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes, and patterns select its cells by id, label and other attributes.
 - Consult the authoring compatibility matrix for current browser and sandbox evidence.
 - Panel edit can run the panel queries many times. This is not the panel: in the VictoriaMetrics datasource plugin (seen with 0.26.1), each query editor calls `onRunQuery` when it mounts and starts a label lookup. A panel with N VictoriaMetrics targets runs all its queries N+1 times when panel edit opens. The target JSON has no workaround.
 

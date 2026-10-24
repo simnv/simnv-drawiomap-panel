@@ -4,13 +4,12 @@ import type { BindingPlan } from '../binding/patterns';
 import type { DiagramConfigV2 } from '../model/config';
 import type { PanelQueryService } from '../query/panel';
 import { preparedSnapshot, type QueryPreview } from '../editor/preview';
-import type { QuerySnapshot } from '../query/types';
+import { settled } from '../query/types';
 import { useHeld } from '../components/useHeld';
 
 const NO_PREPARED: QueryPreview[] = [];
 /** One shared empty result: a consumer that depends on the array does not run again when nothing is shown. */
 const NO_SNAPSHOTS: QueryPreview[] = [];
-const settled = (snapshot: QuerySnapshot) => snapshot.state !== 'loading' && snapshot.state !== 'idle';
 
 interface Held {
   key: string;

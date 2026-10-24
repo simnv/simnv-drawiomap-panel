@@ -371,12 +371,7 @@ describe('CardPreview component', () => {
       { kind: 'value', label: 'CPU', binding },
     ],
   });
-  const cardContext: CardContext = {
-    series: [],
-    theme: createTheme(),
-    display: (_s, v) => ({ text: String(v), numeric: v }),
-    replaceVariables: (text) => text,
-  };
+  const cardContext: CardContext = { theme: createTheme(), replaceVariables: (text) => text };
   const resolverFor =
     (value: number): BindingResolver =>
     () =>

@@ -10,6 +10,7 @@ import type {
   StatusRule,
 } from '../model/config';
 import type { ReducerName } from '../types';
+import { targetOf } from '../binding/engine';
 import { EditorField, EditorSection, sourceFor, SourceRow, type SourceProps } from './EditorLayout';
 
 export function TextField({
@@ -385,11 +386,13 @@ export function DisplayFields({
         <EditorField label="Shape colour target" source={sourceFor(src, 'shape.target')}>
           <Select
             aria-label="Shape colour target"
-            value={value.shape?.target ?? 'icon'}
+            value={targetOf(value.shape ?? {})}
             onChange={(selection) =>
-              onChange({ shape: { ...value.shape, target: (selection.value ?? '') as 'icon' | 'shape' | 'stroke' } })
+              onChange({
+                shape: { ...value.shape, target: (selection.value ?? 'icon') as 'icon' | 'shape' | 'stroke' | 'none' },
+              })
             }
-            options={['icon', 'shape', 'stroke'].map((v) => ({ value: v, label: v }))}
+            options={['icon', 'shape', 'stroke', 'none'].map((v) => ({ value: v, label: v }))}
             menuShouldPortal
             maxMenuHeight={240}
           />
