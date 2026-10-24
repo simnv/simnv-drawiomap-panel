@@ -78,8 +78,14 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   await expect(page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]')).toHaveCount(3);
   await page.waitForTimeout(5000);
   const afterEdit = log.slice(before);
-  expect(afterEdit.filter((r) => r.kind === 'diagram'), JSON.stringify(afterEdit)).toEqual([]);
-  expect(afterEdit.filter((r) => r.kind === 'resource'), JSON.stringify(afterEdit)).toEqual([]);
+  expect(
+    afterEdit.filter((r) => r.kind === 'diagram'),
+    JSON.stringify(afterEdit)
+  ).toEqual([]);
+  expect(
+    afterEdit.filter((r) => r.kind === 'resource'),
+    JSON.stringify(afterEdit)
+  ).toEqual([]);
   await expect(toasts).toHaveCount(0);
 
   // The popup shares the panel cache: its draft bindings add no request.
@@ -87,9 +93,10 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   await expect(dialog.getByTestId('dmap-popup-stage').locator('[data-dmap-status="normal"]')).toHaveCount(3);
   await page.waitForTimeout(3000);
   const afterPopup = log.slice(before);
-  expect(afterPopup.filter((r) => r.kind === 'diagram' || r.kind === 'resource'), JSON.stringify(afterPopup)).toEqual(
-    []
-  );
+  expect(
+    afterPopup.filter((r) => r.kind === 'diagram' || r.kind === 'resource'),
+    JSON.stringify(afterPopup)
+  ).toEqual([]);
   await expect(toasts).toHaveCount(0);
 
   // Cancel closes a clean draft at once.
