@@ -1,4 +1,4 @@
-import { editorField, chooseOption, openQueryRow, selectStageCell } from './testUtils';
+import { buttonNamed, chooseOption, editorField, openQueryRow, selectStageCell } from './testUtils';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
@@ -128,7 +128,7 @@ describe('explicit full pattern preview', () => {
     ]);
     fireEvent.change(editorField('Label template'), { target: { value: 'Draft ${cell.key}' } });
     expect(execute).toHaveBeenCalledTimes(3);
-    fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
+    fireEvent.click(buttonNamed('Preview all pattern matches'));
     // The run reuses the three results that the popup has, and asks for the two scopes that it does not have.
     expect(editorField('Pattern preview progress').textContent).toContain('3 / 5');
     expect(execute).toHaveBeenCalledTimes(5);
@@ -152,7 +152,7 @@ describe('explicit full pattern preview', () => {
     'releases a pending run on %s and rejects uncancellable late results',
     async (action) => {
       const s = setup();
-      fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
+      fireEvent.click(buttonNamed('Preview all pattern matches'));
       const old = [...s.explicit()];
       expect(old).toHaveLength(2);
       if (action === 'edit') {
@@ -178,10 +178,10 @@ describe('explicit full pattern preview', () => {
         s.rerenderWith({ ...s.context, generation: 2 });
       }
       if (action === 'cancel') {
-        fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+        fireEvent.click(buttonNamed('Revert to saved'));
       }
       if (action === 'apply') {
-        fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+        fireEvent.click(buttonNamed('Apply bindings'));
       }
       if (action === 'unmount') {
         s.view.unmount();
@@ -538,7 +538,7 @@ it.each(['missing', 'ambiguous'])(
   'shows a nonrepresentative %s hover metric as failed after full preview',
   async (failure) => {
     const s = setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
+    fireEvent.click(buttonNamed('Preview all pattern matches'));
     await act(async () => {
       const snapshot = ready(22);
       if (failure === 'ambiguous' && snapshot.state === 'ready') {
@@ -559,19 +559,19 @@ it.each(['missing', 'ambiguous'])(
 it('applies a completed full preview once, discards prepared results, and makes Cancel restore that applied draft', async () => {
   const s = setup();
   fireEvent.change(editorField('Label template'), { target: { value: 'Applied pattern' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
+  fireEvent.click(buttonNamed('Preview all pattern matches'));
   await act(async () => {
     s.explicit()[0].emit(ready(22));
     s.explicit()[1].emit(ready(23));
   });
   expect(editorField('Affected metric resolution').textContent).toContain('device-2: resolved');
   expect(s.save).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+  fireEvent.click(buttonNamed('Apply bindings'));
   expect(s.save).toHaveBeenCalledTimes(1);
   expect(s.save.mock.calls[0][0].patterns.at(-1).display.label).toBe('Applied pattern');
   expect(screen.queryByLabelText('Pattern preview progress')).toBeNull();
   fireEvent.change(editorField('Label template'), { target: { value: 'Discard me' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Revert to saved' }));
+  fireEvent.click(buttonNamed('Revert to saved'));
   expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied pattern');
   expect(s.execute).toHaveBeenCalledTimes(5);
   s.controller.dispose();

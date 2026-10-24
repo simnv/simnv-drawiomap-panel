@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { Select } from '@grafana/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { buttonNamed } from '../testUtils';
 import { pop, push } from './overlayStack';
 import { usePopupKeys } from './usePopupKeys';
 
@@ -95,7 +96,7 @@ describe('usePopupKeys', () => {
     push('test');
     const onEscape = vi.fn();
     render(<Harness onEscape={onEscape} />);
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Header' }), { key: 'Escape' });
+    fireEvent.keyDown(buttonNamed('Header'), { key: 'Escape' });
     expect(onEscape).toHaveBeenCalledTimes(1);
   });
 
@@ -146,7 +147,7 @@ describe('usePopupKeys', () => {
       const onUndo = vi.fn();
       const onRedo = vi.fn();
       render(<Harness onEscape={vi.fn()} onUndo={onUndo} onRedo={onRedo} />);
-      const header = screen.getByRole('button', { name: 'Header' });
+      const header = buttonNamed('Header');
       fireEvent.keyDown(header, { key: 'z', ctrlKey: true });
       fireEvent.keyDown(header, { key: 'z', metaKey: true, shiftKey: true });
       fireEvent.keyDown(header, { key: 'y', ctrlKey: true });
@@ -169,7 +170,7 @@ describe('usePopupKeys', () => {
       document.body.appendChild(other);
       // jsdom has no layout: the dialog counts as shown when it has client rects.
       vi.spyOn(other, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
-      const header = screen.getByRole('button', { name: 'Header' });
+      const header = buttonNamed('Header');
       fireEvent.keyDown(header, { key: 'z', ctrlKey: true });
       expect(onUndo).not.toHaveBeenCalled();
       other.remove();
@@ -198,7 +199,7 @@ describe('usePopupKeys', () => {
       if (other.style.display === 'none') {
         vi.spyOn(other, 'getClientRects').mockReturnValue([] as unknown as DOMRectList);
       }
-      fireEvent.keyDown(screen.getByRole('button', { name: 'Header' }), { key: 'z', ctrlKey: true });
+      fireEvent.keyDown(buttonNamed('Header'), { key: 'z', ctrlKey: true });
       expect(onUndo).toHaveBeenCalledTimes(1);
       wrapper.remove();
     });
@@ -207,7 +208,7 @@ describe('usePopupKeys', () => {
       push('test');
       const onUndo = vi.fn();
       render(<Harness onEscape={vi.fn()} onUndo={onUndo} />);
-      const header = screen.getByRole('button', { name: 'Header' });
+      const header = buttonNamed('Header');
       fireEvent.keyDown(header, { key: 'z' });
       fireEvent.keyDown(header, { key: 'z', ctrlKey: true, altKey: true });
       push('upper');
