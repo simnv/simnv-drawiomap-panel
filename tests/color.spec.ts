@@ -41,7 +41,10 @@ test('a WAN link has a colour from the continuous scheme of its field, a LAN lin
   await expect(half(LAN)).toHaveAttribute('data-dmap-step', '0');
 });
 
-test('the hover card shows the capacity of each source', async ({ gotoDashboardPage, page }) => {
+test('the hover card shows the percent of the field Max; the port speed series colours the canvas', async ({
+  gotoDashboardPage,
+  page,
+}) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
   const card = panel.locator.getByRole('tooltip');
@@ -50,14 +53,14 @@ test('the hover card shows the capacity of each source', async ({ gotoDashboardP
     await expect(half).toHaveAttribute('data-dmap-status', 'ok');
     await hoverHalf(half);
   };
-  // field Max of the WAN query
+  // field Max of the WAN query: 41 Mb/s of 100 Mb/s
   await hover(ISP_A);
-  await expect(card).toContainText('41% of 100 Mb/s');
+  await expect(card).toContainText(/↑ 41(\.\d)? Mb\/s · 41%/);
   await page.mouse.move(1, 1);
   await expect(card).toHaveCount(0);
-  // the port speed series: 125 MB/s = 1 Gb/s
+  // the port speed series (125 MB/s = 1 Gb/s) gives the canvas colour (the test above); the row shows the value
   await hover(LAN);
-  await expect(card).toContainText('48% of 1 Gb/s');
+  await expect(card).toContainText(/↑ 480(\.\d)? Mb\/s/);
 });
 
 test('the hand-drawn panel reads the capacity from a cell attribute', async ({ gotoDashboardPage }) => {
@@ -70,5 +73,5 @@ test('the hand-drawn panel reads the capacity from a cell attribute', async ({ g
   const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="edge-ab"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
   await hoverHalf(half);
-  await expect(panel.locator.getByRole('tooltip')).toContainText('41% of 100 Mb/s');
+  await expect(panel.locator.getByRole('tooltip')).toContainText(/↑ 41(\.\d)? Mb\/s · 41%/);
 });

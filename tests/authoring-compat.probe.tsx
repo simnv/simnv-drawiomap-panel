@@ -10,7 +10,6 @@ import {
   DataSourcePluginContextProvider,
   FieldType,
   PanelProps,
-  StandardEditorContext,
 } from '@grafana/data';
 import { getDataSourceSrv } from '@grafana/runtime';
 import { Sparkline, useTheme2 } from '@grafana/ui';
@@ -20,21 +19,6 @@ class SelectionProbe extends BusEventWithPayload<{ panel: number; cell: string }
   static type = 'drawiomap-compat-selection';
 }
 type ProbeOptions = Options & { __compat?: { label?: string; targets?: Record<string, DataQuery> } };
-
-export function OptionsProbe({ context }: { context: StandardEditorContext<Options> }) {
-  const [event, setEvent] = useState('none');
-  useEffect(() => {
-    const sub = context.eventBus
-      ?.getStream(SelectionProbe)
-      .subscribe((e) => setEvent(`${e.payload.panel}:${e.payload.cell}`));
-    return () => sub?.unsubscribe();
-  }, [context.eventBus]);
-  return (
-    <output data-testid="compat-editor-bus" data-context-keys={Object.keys(context).sort().join(',')}>
-      {event}
-    </output>
-  );
-}
 
 export function PanelProbe(
   props: PanelProps<ProbeOptions> & { renderPanel: React.ComponentType<PanelProps<Options>> }

@@ -119,7 +119,6 @@ export const test = base.extend<{
                   fieldConfig: { defaults: {}, overrides: [] },
                   options: {
                     config: panel.config,
-                    rules: [],
                     diagram: {
                       svg: ('svg' in panel && panel.svg) || (settings.svg ?? svg),
                       xml,
