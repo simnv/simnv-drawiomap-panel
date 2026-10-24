@@ -2,7 +2,7 @@ import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_CONFIG } from './draft';
 import { renderEditor, svgOf } from './editorHarness';
-import { editorField } from './testUtils';
+import { buttonNamed, editorField } from './testUtils';
 
 const click = (id: string, shiftKey = false) =>
   fireEvent.click(screen.getByTestId('dmap-popup-stage').querySelector(`[data-cell-id="${id}"] rect`) as Element, {
@@ -112,18 +112,18 @@ describe('pattern from the selection', () => {
     expect(screen.getByTestId('dmap-proposal-counts').textContent).toBe('matches 2, extra 0, missed 0');
     fireEvent.change(editorField('Proposed label regex'), { target: { value: '/(/' } });
     expect(screen.getByRole('alert').textContent).toContain('invalid regex');
-    expect((screen.getByRole('button', { name: 'Create pattern' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((buttonNamed('Create pattern') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('creates the pattern as one step, opens it in the pattern scope and clears the marks', () => {
     const view = open();
     fireEvent.click(screen.getByRole('radio', { name: /Attributes/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Create pattern' }));
+    fireEvent.click(buttonNamed('Create pattern'));
     expect(marks('data-dmap-extra')).toEqual([]);
     expect(screen.getByRole('heading', { name: 'r1 bindings' })).toBeTruthy();
     // the pattern scope shows the selector of the new pattern
     expect(editorField('Pattern element IDs')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(view.save.mock.calls[0][0].patterns).toEqual([
       expect.objectContaining({
         id: 'pattern-1',
@@ -135,18 +135,18 @@ describe('pattern from the selection', () => {
 
   it('one undo removes the created pattern, one redo brings it back', () => {
     const view = open();
-    fireEvent.click(screen.getByRole('button', { name: 'Create pattern' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Create pattern'));
+    fireEvent.click(buttonNamed('Undo'));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(view.save.mock.calls[0][0].patterns).toEqual([]);
   });
 
   it('redo restores the created pattern', () => {
     const view = open();
-    fireEvent.click(screen.getByRole('button', { name: 'Create pattern' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Create pattern'));
+    fireEvent.click(buttonNamed('Undo'));
+    fireEvent.click(buttonNamed('Redo'));
+    fireEvent.click(buttonNamed('Apply bindings'));
     expect(view.save.mock.calls[0][0].patterns).toHaveLength(1);
   });
 

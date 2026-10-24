@@ -488,7 +488,9 @@ A small legend in a corner of the panel shows each colour that the bound cells c
 - **No data**: the grey of links and shapes without data.
 - Identical scales merge into one block, also when they come from different queries. An override that changes the thresholds or the scheme of one query gives that query its own block.
 
-Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elements in that band stay visible and the other elements of the legend dim. Move the pointer away, or move the focus, to show all elements again.
+Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elements in that band stay visible and the other elements of the legend dim. Move the pointer away, or move the focus, to show all elements again. On a phone, which has no hover, tap an entry to show its elements. Tap the same entry again, or tap anywhere else, to show all elements again. The dim uses one CSS class on the diagram, so it is cheap on a large diagram. It does not change a pinned card or the link colour overlays.
+
+**Legend rows inside the diagram.** A portograph diagram draws its own legend with one row for each node symbol (for example `router`). The panel links such a row to its nodes when the node cells carry the attribute `data-meta-pg-symbol` with the same symbol name as the row (`pg-legendRow~symbol:router` matches `data-meta-pg-symbol="router"`). Then the pointer, the keyboard focus (Tab) or a tap on the row, its swatch or its tile shows the nodes of that symbol, with their icons and descriptions, and dims the other nodes that have a symbol. A diagram without the attribute does not change: its rows do nothing. In the demo network, the provider and proxy nodes of the L3 diagram carry it.
 
 ![Elements below 60 % load highlighted](docs/images/legend-highlight.png)
 
@@ -747,7 +749,7 @@ Authoring evidence: 2026-10-18, in `docs/research/authoring-compatibility.md`. E
 - No multi-page diagrams. The panel renders page 1 and shows a warning.
 - The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes, and rules select its cells by id, label and other attributes.
 - Consult the authoring compatibility matrix for current browser and sandbox evidence.
-- Panel edit can run the panel queries many times. This is not the panel: the VictoriaMetrics datasource plugin (seen with 0.26.1) migrates each target that has no `editorMode` or `format` when its query editor mounts, and each migration runs all the panel queries again. A panel with N such targets runs its queries N+1 times when panel edit opens. For generated dashboards, write each target with `editorMode: "code"` and `format: "time_series"`.
+- Panel edit can run the panel queries many times. This is not the panel: in the VictoriaMetrics datasource plugin (seen with 0.26.1), each query editor calls `onRunQuery` when it mounts and starts a label lookup. A panel with N VictoriaMetrics targets runs all its queries N+1 times when panel edit opens. The target JSON has no workaround.
 
 ## Licence
 

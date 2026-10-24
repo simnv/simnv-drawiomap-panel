@@ -1606,6 +1606,51 @@ describe('DrawioMapPanel cards only for cells with content', () => {
   });
 });
 
+describe('DrawioMapPanel legend rows of the diagram', () => {
+  const svgWith = (
+    symbol: boolean
+  ) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><g data-cell-id="0" data-meta-pg-schema="1">
+    <g data-cell-id="pg-node~a" data-meta-pg-kind="node" data-meta-pg-id="a"${symbol ? ' data-meta-pg-symbol="router"' : ''}><rect id="na" width="40" height="30"/></g>
+    <g data-cell-id="pg-node~b" data-meta-pg-kind="node" data-meta-pg-id="b"${symbol ? ' data-meta-pg-symbol="modem"' : ''}><rect id="nb" x="100" width="40" height="30"/></g>
+    <g data-cell-id="pg-legendRow~symbol:router"><rect id="row" x="10" y="150" width="60" height="30"/></g>
+  </g></svg>`;
+  const panel = (symbol: boolean) =>
+    props({
+      options: {
+        ...options,
+        rules: [],
+        diagram: { xml: '', svg: svgWith(symbol), hash: `rows-${symbol}`, updatedAt: '' },
+      },
+    });
+  const row = async () =>
+    waitFor(() => {
+      const el = document.getElementById('row');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+  it('a row with a symbol marks the nodes of that symbol and dims the others; leaving restores', async () => {
+    const { container } = render(<DrawioMapPanel {...panel(true)} />);
+    const el = await row();
+    const root = container.querySelector('[data-testid="dmap-stage"] > svg')!;
+    fireEvent(el, Object.assign(new Event('pointerover', { bubbles: true }), { pointerType: 'mouse' }));
+    await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+    expect(Array.from(container.querySelectorAll('.dmap-legend-hit'), (e) => e.getAttribute('data-cell-id'))).toEqual([
+      'pg-node~a',
+    ]);
+    expect(container.querySelector('[data-cell-id="pg-node~b"]')!.classList.contains('dmap-legend-member')).toBe(true);
+    fireEvent(root, Object.assign(new Event('pointerleave'), { pointerType: 'mouse' }));
+    await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+    expect(container.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
+  });
+  it('a diagram without pg-symbol does nothing', async () => {
+    const { container } = render(<DrawioMapPanel {...panel(false)} />);
+    const el = await row();
+    fireEvent(el, Object.assign(new Event('pointerover', { bubbles: true }), { pointerType: 'mouse' }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(container.querySelector('svg.dmap-legend-active')).toBeNull();
+  });
+});
+
 describe('DrawioMapPanel colour legend', () => {
   const legend = () => screen.queryByTestId('dmap-legend');
   const openLegend = () =>
@@ -1662,13 +1707,13 @@ describe('DrawioMapPanel colour legend', () => {
     const entry = within(block)
       .getAllByTestId('dmap-legend-entry')
       .find((e) => !e.getAttribute('aria-label')!.endsWith(': 0 elements'))!;
-    fireEvent.mouseEnter(entry);
+    fireEvent.pointerEnter(entry);
     const root = container.querySelector('[data-testid="dmap-stage"] > svg')!;
     await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
     const hits = Array.from(container.querySelectorAll('.dmap-legend-hit'), (el) => el.getAttribute('data-cell-id'));
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.every((id) => id!.startsWith('pg-link'))).toBe(true);
-    fireEvent.mouseLeave(entry);
+    fireEvent.pointerLeave(entry);
     await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
     expect(container.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
   });

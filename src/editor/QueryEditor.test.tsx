@@ -1,4 +1,4 @@
-import { editorField } from './testUtils';
+import { buttonNamed, editorField } from './testUtils';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -65,9 +65,9 @@ describe('named query editor', () => {
       expr: 'changed',
       opaque: { nested: [7, 'retain'] },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Native run' }));
+    fireEvent.click(buttonNamed('Native run'));
     expect(preview).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
+    fireEvent.click(buttonNamed('Preview query'));
     expect(preview).toHaveBeenCalledTimes(1);
   });
   it('accepts complete native replacements without restoring deleted fields', async () => {
@@ -84,7 +84,7 @@ describe('named query editor', () => {
       validateConfig({ version: 2, queries: [change.mock.calls[0][0]], patterns: [], overrides: [], widgets: [] })
         .diagnostics
     ).toEqual([]);
-    fireEvent.click(screen.getByRole('button', { name: 'Native edit without identity' }));
+    fireEvent.click(buttonNamed('Native edit without identity'));
     expect(change.mock.calls[1][0].source.target).toEqual({ refId: 'D', expr: 'without identity' });
   });
   it('converts the complete eager target and keeps its warning until removal is verified', () => {
@@ -95,7 +95,7 @@ describe('named query editor', () => {
     const query: NamedQuery = { id: 'hover', name: 'Hover', source: { kind: 'panel', refId: 'A' } };
     const view = render(<QueryEditor {...props} query={query} />);
     expect(screen.getByText(/Eager panel reference/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Convert to hover-only query' }));
+    fireEvent.click(buttonNamed('Convert to hover-only query'));
     const converted = change.mock.calls[0][0];
     expect(converted.source.target).toEqual(target);
     view.rerender(<QueryEditor {...props} query={converted} />);
@@ -126,13 +126,13 @@ describe('named query editor', () => {
     );
     fireEvent.click(screen.getByText('Import native target JSON'));
     fireEvent.change(editorField('Native target JSON'), { target: { value: '{"expr":"missing-refId"}' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+    fireEvent.click(buttonNamed('Import native target'));
     expect(change).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toContain('refId');
     fireEvent.change(editorField('Native target JSON'), {
       target: { value: '{"refId":"X","opaque":{"keep":[1,2]}}' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+    fireEvent.click(buttonNamed('Import native target'));
     expect(change.mock.calls[0][0].source.target).toEqual({ refId: 'X', opaque: { keep: [1, 2] } });
     expect(validity).toHaveBeenLastCalledWith('');
   });
@@ -154,7 +154,7 @@ describe('named query editor', () => {
     fireEvent.change(editorField('Native target JSON'), {
       target: { value: '{"refId":"X","custom":{"query":["native",1]}}' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
+    fireEvent.click(buttonNamed('Import native target'));
     expect(change.mock.calls[0][0].source.target.custom).toEqual({ query: ['native', 1] });
   });
 });

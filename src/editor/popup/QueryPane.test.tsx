@@ -3,6 +3,7 @@ import React from 'react';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame, type PanelData } from '@grafana/data';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { buttonNamed } from '../testUtils';
 import type { NamedQuery } from '../../model/config';
 import type { QuerySnapshot } from '../../query/types';
 import { QueryPane, PREVIEW_ROWS, type QueryPaneProps } from './QueryPane';
@@ -146,7 +147,7 @@ describe('QueryPane', () => {
     const onDelete = vi.fn();
     render(<QueryPane {...props({ onDelete })} />);
     expect(screen.queryByRole('list', { name: 'Used by' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete query' }));
+    fireEvent.click(buttonNamed('Delete query'));
     expect(onDelete).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Delete query?')).toBeNull();
   });
@@ -154,17 +155,17 @@ describe('QueryPane', () => {
   it('asks before it deletes a query that bindings use; Keep query leaves it', async () => {
     const onDelete = vi.fn();
     render(<QueryPane {...props({ uses: 1, onDelete })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete query' }));
+    fireEvent.click(buttonNamed('Delete query'));
     expect(await screen.findByText('Delete query?')).toBeTruthy();
     expect(onDelete).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Keep query' }));
+    fireEvent.click(buttonNamed('Keep query'));
     expect(onDelete).not.toHaveBeenCalled();
   });
 
   it('deletes a used query after the confirmation', async () => {
     const onDelete = vi.fn();
     render(<QueryPane {...props({ uses: 1, onDelete })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete query' }));
+    fireEvent.click(buttonNamed('Delete query'));
     const button = await screen.findByRole('button', { name: 'Delete' });
     fireEvent.click(button);
     await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1));

@@ -4,7 +4,7 @@ import { resolvePatterns } from '../../binding/patterns';
 import { validateConfig, type DiagramConfigV2, type DisplayConfig, type HoverRow } from '../../model/config';
 import type { CellMeta } from '../../types';
 import { renderEditor, svgOf } from '../editorHarness';
-import { chooseOption, editorField, openSection } from '../testUtils';
+import { buttonNamed, chooseOption, editorField, openSection } from '../testUtils';
 import { commonLeaves } from './BulkPane';
 
 const row = (label: string): HoverRow => ({ kind: 'metadata', label, path: 'cell.key' });
@@ -98,7 +98,7 @@ describe('BulkPane in the editor', () => {
     return view;
   };
   const apply = (view: ReturnType<typeof open>) => {
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
+    fireEvent.click(buttonNamed('Apply bindings'));
     return view.save.mock.calls.at(-1)![0] as DiagramConfigV2;
   };
 
@@ -119,7 +119,7 @@ describe('BulkPane in the editor', () => {
   it('one undo removes the three label leaves, one redo brings them back', () => {
     const view = open();
     fireEvent.change(editorField('Label template'), { target: { value: 'New' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(buttonNamed('Undo'));
     const restored = apply(view);
     expect(restored.overrides.map((o) => o.cellId)).toEqual(['a', 'b']);
     expect(restored.overrides.every((o) => o.display.label === undefined)).toBe(true);
@@ -167,11 +167,11 @@ describe('BulkPane in the editor', () => {
 
   it('removes the overrides of the selection in one step', () => {
     const view = open();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove overrides of the selection' }));
+    fireEvent.click(buttonNamed('Remove overrides of the selection'));
     expect(
-      (screen.getByRole('button', { name: 'Remove overrides of the selection' }) as HTMLButtonElement).disabled
+      (buttonNamed('Remove overrides of the selection') as HTMLButtonElement).disabled
     ).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(buttonNamed('Undo'));
     expect(apply(view).overrides.map((o) => o.cellId)).toEqual(['a', 'b']);
   });
 
@@ -187,7 +187,7 @@ describe('BulkPane in the editor', () => {
       });
       const view = open(cfg);
       chooseOption('Shape reducer', 'mean');
-      const apply = screen.getByRole('button', { name: 'Apply bindings' }) as HTMLButtonElement;
+      const apply = buttonNamed('Apply bindings') as HTMLButtonElement;
       expect(apply.disabled).toBe(false);
       fireEvent.click(apply);
       const written = view.save.mock.calls.at(-1)![0] as DiagramConfigV2;
@@ -241,7 +241,7 @@ describe('BulkPane in the editor', () => {
       const view = open(cfg, ['a', 'b']);
       openSection('Link');
       expect((editorField('Link capacity') as HTMLInputElement).value).toBe('');
-      fireEvent.click(screen.getByRole('button', { name: 'Clear Link capacity in the selection' }));
+      fireEvent.click(buttonNamed('Clear Link capacity in the selection'));
       const saved = apply(view);
       expect(saved.overrides.map((o) => [o.cellId, o.display])).toEqual([['a', { label: 'A' }]]);
     });

@@ -41,6 +41,7 @@ import { bandLayout, StatusBand } from './StatusBand';
 import { Legend } from '../legend/Legend';
 import { buildLegend } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
+import { bindSymbolLegend, LEGEND_ROW_ATTR, type RowMarks } from '../legend/symbolRows';
 
 /**
  * Height in px that the top-right corner keeps free for the Grafana panel menu button. A panel without a title
@@ -491,6 +492,11 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   if (paused && legendHits) {
     setLegendHits(null);
   }
+  // The marks of a legend row inside the diagram (portograph rows with a symbol). They come before the panel legend.
+  const [rowMarks, setRowMarks] = useState<RowMarks | null>(null);
+  if (paused && rowMarks) {
+    setRowMarks(null);
+  }
   const legendRef = useRef<HTMLElement>(null);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
@@ -582,9 +588,19 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       return;
     }
     const root = stage.root;
-    const id = requestAnimationFrame(() => highlightCells(root, stage.index, legendMembers, hits));
+    const id = requestAnimationFrame(() =>
+      rowMarks
+        ? highlightCells(root, stage.index, rowMarks.members, rowMarks.hits)
+        : highlightCells(root, stage.index, legendMembers, hits)
+    );
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, legendMembers, hits, result]);
+  }, [stage.root, stage.index, legendMembers, hits, rowMarks, result]);
+
+  // The legend rows of the diagram: a row with a symbol marks the nodes of that symbol.
+  useEffect(
+    () => (stage.root ? bindSymbolLegend(stage.root, stage.index, setRowMarks) : undefined),
+    [stage.root, stage.index]
+  );
 
   // Zoom layout.
   useEffect(() => {
@@ -644,6 +660,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       corner.current?.contains(e.target as Node) ||
       bandRef.current?.contains(e.target as Node) ||
       legendRef.current?.contains(e.target as Node) ||
+      // a tap on a linked legend row of the diagram toggles its highlight and leaves the card alone
+      (e.target instanceof Element && e.target.closest(`[${LEGEND_ROW_ATTR}]`)) ||
       !stageEl
     ) {
       return;
