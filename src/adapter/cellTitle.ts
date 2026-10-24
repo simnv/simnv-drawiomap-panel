@@ -63,8 +63,46 @@ function endTitle(end: Endpoint, find: FindCell): string {
   return [nodeName(find, end.node), end.port ?? ''].filter(Boolean).join(' ');
 }
 
+const NODE_PART = /^pg-(?:iconTile|icon|nodeDescription)~(.+)$/;
+const GROUP = /^pg-group(Title)?~(.+)$/;
+const LEGEND_PART = /^pg-legend(?:Body|Tile|Swatch)~(.+)$/;
+
+/** The node that an icon, an icon tile or a description belongs to: by pg-of, else by the id suffix. */
+function ownerNode(cell: CellMeta, find: FindCell): CellMeta | undefined {
+  const of = cell.attrs['pg-of'];
+  const byOf = of === undefined ? undefined : find(of);
+  if (byOf?.kind === 'node') {
+    return byOf;
+  }
+  const suffix = NODE_PART.exec(cell.id)?.[1];
+  const bySuffix = suffix === undefined ? undefined : find(suffix);
+  return bySuffix?.kind === 'node' ? bySuffix : undefined;
+}
+
+/**
+ * The caption that the diagram shows for a portograph structure cell; '' when no rule applies.
+ * - icon, icon tile, node description: the title of their node (pg-of, else the id suffix);
+ * - group (`pg-group~X`): its own label, else the label of `pg-groupTitle~X`; a group title without label: the group's;
+ * - legend body, tile and swatch (`pg-legend...~X`): the label of `pg-legendRow~X`.
+ */
+function captionOf(cell: CellMeta, find: FindCell): string {
+  const owner = NODE_PART.test(cell.id) || cell.attrs['pg-kind'] === 'node-icon' ? ownerNode(cell, find) : undefined;
+  if (owner && owner !== cell) {
+    return cellTitle(owner, find);
+  }
+  const group = GROUP.exec(cell.id);
+  if (group) {
+    const other = group[1] ? `pg-group~${group[2]}` : `pg-groupTitle~${group[2]}`;
+    return oneLine(cell.labelText) || oneLine(find(other)?.labelText);
+  }
+  const legend = LEGEND_PART.exec(cell.id);
+  return legend ? oneLine(find(`pg-legendRow~${legend[1]}`)?.labelText) : '';
+}
+
 /**
  * The title of a cell.
+ * - portograph only: an icon, icon tile or description has the title of its node; a group has its caption (own
+ *   label, else its group title cell); a legend body, tile or swatch has the label of its legend row (see captionOf);
  * - port: "<node label> <port label>", for example "Switch-A p9";
  * - link: "<from> ↔ <to>", for example "Switch-A p9 ↔ AP-1" (the link label is a detail, often a speed);
  * - anything else: its label, else a readable form of its id.
@@ -80,6 +118,8 @@ export function cellTitle(cell: CellMeta, find: FindCell, portograph = true): st
     title = `${endTitle(cell.from, find)}${SEPARATOR}${endTitle(cell.to, find)}`;
   }
   const decode = portograph && !cell.attrs['pg-id'];
+  // a node part shows the title of its node even when it has a label of its own (a description)
+  title ||= portograph ? captionOf(cell, find) : '';
   return title || oneLine(cell.labelText) || (decode ? readableId(cell.id) : cell.key || cell.id);
 }
 

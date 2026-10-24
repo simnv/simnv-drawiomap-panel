@@ -69,6 +69,63 @@ describe('cellTitle', () => {
   });
 });
 
+describe('captions of structure cells', () => {
+  const all = assignTitles([
+    cell('0', { 'pg-schema': '1' }),
+    cell('pg-node~sw', { 'pg-kind': 'node', 'pg-id': 'sw', label: 'Switch-A' }),
+    cell('pg-icon~sw', { 'pg-kind': 'node-icon', 'pg-of': 'sw' }),
+    cell('pg-iconTile~sw', {}),
+    cell('pg-nodeDescription~sw', {}, false, 'PoE · 24 ports'),
+    cell('pg-group~mp-eval', {}),
+    cell('pg-groupTitle~mp-eval', {}, false, 'Eval site'),
+    cell('pg-group~core', {}, false, 'Core'),
+    cell('pg-group~bare', {}),
+    cell('pg-layer~labels', {}),
+    cell('pg-legendRow~symbol:ap', {}, false, 'Access point'),
+    cell('pg-legendBody~symbol:ap', {}),
+    cell('pg-legendSwatch~symbol:ap', {}),
+    cell('pg-legendTile~symbol:none', {}),
+    cell('pg-legend', {}),
+  ]);
+  const title = (id: string) => all.find((c) => c.id === id)?.title;
+
+  it('gives an icon, a tile and a description the title of their node', () => {
+    expect(title('pg-icon~sw')).toBe('Switch-A');
+    expect(title('pg-iconTile~sw')).toBe('Switch-A');
+    expect(title('pg-nodeDescription~sw')).toBe('Switch-A');
+  });
+
+  it('gives a group its own label, else its group title', () => {
+    expect(title('pg-group~core')).toBe('Core');
+    expect(title('pg-group~mp-eval')).toBe('Eval site');
+    expect(title('pg-groupTitle~mp-eval')).toBe('Eval site');
+  });
+
+  it('gives a legend part the label of its row', () => {
+    expect(title('pg-legendRow~symbol:ap')).toBe('Access point');
+    expect(title('pg-legendBody~symbol:ap')).toBe('Access point');
+    expect(title('pg-legendSwatch~symbol:ap')).toBe('Access point');
+  });
+
+  it('falls back to the readable id when no text exists', () => {
+    expect(title('pg-group~bare')).toBe('bare');
+    expect(title('pg-layer~labels')).toBe('labels');
+    expect(title('pg-legendTile~symbol:none')).toBe('symbol:none');
+    expect(title('pg-legend')).toBe('pg-legend');
+  });
+
+  it('keeps the raw ids without pg-schema', () => {
+    const plain = assignTitles([
+      cell('0', {}),
+      cell('pg-node~sw', { 'pg-kind': 'node', 'pg-id': 'sw', label: 'Switch-A' }),
+      cell('pg-iconTile~sw', {}),
+      cell('pg-group~g', {}),
+      cell('pg-groupTitle~g', {}, false, 'Cap'),
+    ]);
+    expect(plain.slice(2).map((c) => c.title)).toEqual(['pg-iconTile~sw', 'pg-group~g', 'Cap']);
+  });
+});
+
 describe('readableId', () => {
   it('turns a cell id into its parts and drops the port ordinal', () => {
     expect(readableId('pg-port~sw~eth2~1')).toBe('sw eth2');

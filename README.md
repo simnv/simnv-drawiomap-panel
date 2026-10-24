@@ -624,6 +624,16 @@ To remove the card of one element, add an element override with `"hover": { "ena
 | Port | The label of the node and the label of the port.                                                                                                | `Switch-A p9`        |
 | Link | The two ends, each as a node label plus a port label (a port end) or a node label (a node end). The label of the link is not part of the title. | `Switch-A p9 ↔ AP-1` |
 
+A part or a structure cell of a portograph export uses the caption that the diagram shows:
+
+| Cell                                       | Title, first match wins                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Icon, icon tile, node description          | The title of their node (`pg-of`, else the id after `pg-icon~`, `pg-iconTile~`, `pg-nodeDescription~`). |
+| Group (`pg-group~X`)                       | Its own label, else the label of `pg-groupTitle~X`, else the readable id.                               |
+| Group title (`pg-groupTitle~X`)            | Its label, else the label of `pg-group~X`, else the readable id.                                        |
+| Legend body, tile, swatch (`pg-legend…~X`) | The label of `pg-legendRow~X`, else the readable id. A legend row uses its own label.                   |
+| Layer, legend frame                        | Its label (layers draw none), else the readable id.                                                     |
+
 A missing label falls back to the node id and the port name (`pg-node`, `pg-port`), then to the `pg-id` as written, or the cell id without its `pg-…~` prefix when the cell has no `pg-id`. A cell that is not in a portograph export (no `pg-schema`) has its label, else its id. To change the title of the cards of a pattern, set `hover.title` of its display (or the legacy `link.card.title`). The value is a template, and `${cellTitle}` is the default title. `${cellTitle}` is a root of its own, like `${value}`: a metadata key named `title` stays `${cell.title}`. A template that does not resolve, or gives an empty text, keeps the default title.
 
 A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its Y range starts at 0 for a series without negative values and reaches up to the capacity (see [Sparkline Y range](#sparkline-y-range)). Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
