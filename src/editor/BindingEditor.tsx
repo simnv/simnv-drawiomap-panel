@@ -247,46 +247,7 @@ export function BindingEditor({
     };
   }, [patternKey]);
 
-  // The chart results of the popup: the binding snapshots reuse them (one request for equal demands).
-  const chartOwner = useMemo(
-    () => ({ plan, root: stage.root, context, controller: service?.controller }),
-    [plan, stage.root, context, service?.controller]
-  );
-  const [chartResults, setChartResults] = useState<{ owner: object; values: Record<string, QueryPreview> }>();
-  if (chartResults && chartResults.owner !== chartOwner) {
-    setChartResults(undefined);
-  }
-  const onChartPrepared = useCallback(
-    (id: string, preview?: QueryPreview) => {
-      setChartResults((previous) => {
-        const values = previous?.owner === chartOwner ? { ...previous.values } : {};
-        if (preview) {
-          values[id] = preview;
-        } else {
-          if (previous?.owner !== chartOwner || !values[id]) {
-            return previous;
-          }
-          delete values[id];
-        }
-        return { owner: chartOwner, values };
-      });
-    },
-    [chartOwner]
-  );
-  const chartSnapshots = useMemo(
-    () => Object.values(chartResults?.owner === chartOwner ? chartResults.values : {}),
-    [chartResults, chartOwner]
-  );
-  const bindingSnapshots = useBindingSnapshots(
-    plan,
-    plan.config,
-    service,
-    draft.cellId,
-    MAX_DATA_POINTS,
-    chartSnapshots,
-    owner
-  );
-  const prepared = useMemo(() => [...bindingSnapshots, ...chartSnapshots], [bindingSnapshots, chartSnapshots]);
+  const prepared = useBindingSnapshots(plan, plan.config, service, draft.cellId, MAX_DATA_POINTS, undefined, owner);
 
   const localPreview: QueryPreview | undefined = useMemo(
     () =>
@@ -330,7 +291,9 @@ export function BindingEditor({
     data,
     generation,
     previewState?.snapshot,
-    [...patternResults, ...prepared].map((result) => result.snapshot),
+    [...patternResults, ...prepared]
+      .map(({ snapshot: s }) => `${s.state}:${'fetchedAt' in s ? s.fetchedAt : ''}`)
+      .join('|'),
     statusDeadlines(plan, resolve)
   );
   const bound = useMemo(() => bindPlan(plan, resolve, bindContext, nowMs), [plan, resolve, bindContext, nowMs]);
@@ -712,16 +675,7 @@ export function BindingEditor({
   }
   const blocked = !!diagnostics.length || !!queryError || !!geometryError || hasMetricErrors || conflict;
 
-  const chartLayer = context
-    ? {
-        plan,
-        queries: plan.config.queries,
-        controller: service?.controller,
-        context,
-        replaceVariables: bindContext.replaceVariables,
-        onPrepared: onChartPrepared,
-      }
-    : undefined;
+  const chartLayer = service ? { plan, service, replaceVariables: bindContext.replaceVariables } : undefined;
 
   return (
     <div className={styles.root} data-testid="dmap-bindings-editor">

@@ -7,18 +7,18 @@ import type { QueryContext, QuerySnapshot } from '../query/types';
 import { useEffect, useState } from 'react';
 import { panelSnapshot } from '../query/panelSnapshot';
 
-/** Refresh sample-age evaluation when displayed data or dashboard context changes. */
+/**
+ * Refresh sample-age evaluation when displayed data or dashboard context changes.
+ * @param activeVersion the version of the shown results: a frame version of the store
+ */
 export function usePreviewTime(
   data: unknown,
   generation?: number,
   snapshot?: QuerySnapshot,
-  active: QuerySnapshot[] = [],
+  activeVersion: number | string = 0,
   deadlines: number[] = []
 ): number {
   const [nowMs, setNowMs] = useState(Date.now);
-  const activeVersion = active
-    .map((value) => `${value.state}:${'fetchedAt' in value ? value.fetchedAt : ''}`)
-    .join('|');
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {

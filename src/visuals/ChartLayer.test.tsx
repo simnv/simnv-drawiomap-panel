@@ -6,12 +6,46 @@ import { ChartLayer as OwnedChartLayer, type ChartLayerProps } from './ChartLaye
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { readChartAnchor } from '../render/geometry';
 import { createQueryController } from '../query/controller';
+import { createSnapshotStore, type SnapshotStore } from '../query/store';
+import type { PanelQueryService } from '../query/panel';
 import type { BindingPlan } from '../binding/patterns';
 import type { QueryController, QueryContext, QueryExecutor } from '../query/types';
 import type { NamedQuery, Widget } from '../model/config';
 
-const ChartLayer = (props: Omit<ChartLayerProps, 'owner'> & { owner?: string }) => (
-  <OwnedChartLayer owner="test" {...props} />
+// One store per controller and one service per (controller, context), as the provider gives them: stable objects.
+const stores = new WeakMap<QueryController, SnapshotStore>();
+const services = new WeakMap<QueryController, Map<QueryContext, PanelQueryService>>();
+const serviceOf = (controller: QueryController, context: QueryContext): PanelQueryService => {
+  let store = stores.get(controller);
+  if (!store) {
+    store = createSnapshotStore(controller);
+    stores.set(controller, store);
+  }
+  let byContext = services.get(controller);
+  if (!byContext) {
+    byContext = new Map();
+    services.set(controller, byContext);
+  }
+  let service = byContext.get(context);
+  if (!service) {
+    service = { controller, store, context };
+    byContext.set(context, service);
+  }
+  return service;
+};
+type TestProps = Omit<ChartLayerProps, 'owner' | 'service'> & {
+  owner?: string;
+  queries: NamedQuery[];
+  controller: QueryController;
+  context: QueryContext;
+};
+const ChartLayer = ({ queries, controller, context, plan, ...props }: TestProps) => (
+  <OwnedChartLayer
+    owner="test"
+    {...props}
+    plan={{ ...plan, config: { ...plan.config, queries } }}
+    service={serviceOf(controller, context)}
+  />
 );
 
 const { sparkline } = vi.hoisted(() => ({ sparkline: vi.fn((_props: any) => <canvas />) }));
@@ -191,7 +225,7 @@ describe('ChartLayer', () => {
         owner="popup:7"
       />
     );
-    expect(s.watch.mock.calls.map(([demand]) => demand.consumerId)).toEqual(['popup:7:widget:w']);
+    expect(s.watch.mock.calls.map(([demand]) => demand.consumerId)).toEqual(['popup:7:widget:w:chart:q']);
     unmount();
     s.host.remove();
   });
@@ -298,7 +332,7 @@ describe('ChartLayer', () => {
     unmount();
     s.host.remove();
   });
-  it('keeps displayed values on context changes until the new result and rejects late old results', () => {
+  it('keeps displayed values on context changes until the new result and rejects late old results', async () => {
     const s = setup();
     const listeners: Array<Parameters<QueryController['watch']>[1]> = [];
     s.watch.mockImplementation((_demand, listener) => {
@@ -329,7 +363,7 @@ describe('ChartLayer', () => {
         },
       ],
     } as const;
-    act(() => listeners[0](result as any));
+    await act(async () => listeners[0](result as any));
     expect(s.host.textContent).toContain('20');
     rerender(<ChartLayer {...props} context={{ ...context, generation: 2 }} />);
     expect(s.release).toHaveBeenCalledTimes(1);
@@ -343,9 +377,9 @@ describe('ChartLayer', () => {
         },
       ],
     };
-    act(() => listeners[0](late as any));
+    await act(async () => listeners[0](late as any));
     expect(s.host.textContent).not.toContain('99');
-    act(() => listeners[1]({ state: 'error', message: 'This widget query failed' }));
+    await act(async () => listeners[1]({ state: 'error', message: 'This widget query failed' }));
     expect(s.host.textContent).toContain('This widget query failed');
     unmount();
     s.host.remove();
@@ -438,7 +472,7 @@ describe('ChartLayer', () => {
     expect(s.release).toHaveBeenCalledTimes(2);
     s.host.remove();
   });
-  it('keeps the last result while a refresh in the next generation loads', () => {
+  it('keeps the last result while a refresh in the next generation loads', async () => {
     const s = setup();
     const native: NamedQuery = {
       id: 'q',
@@ -471,7 +505,6 @@ describe('ChartLayer', () => {
       queries: [native],
       controller: s.controller,
       viewport: s.host,
-      onPrepared: vi.fn(),
     };
     const view = render(<ChartLayer {...props} context={context} />);
     expect(s.host.textContent).toContain('42');
@@ -479,27 +512,18 @@ describe('ChartLayer', () => {
     expect(s.watch).toHaveBeenCalledTimes(2);
     expect(s.host.textContent).toContain('42');
     expect(s.host.textContent).not.toContain('Loading');
-    // The kept result keeps its context: it is not a result for the new context.
-    expect(props.onPrepared).toHaveBeenLastCalledWith(
-      'w',
-      expect.objectContaining({
-        context: expect.objectContaining({ generation: 1 }),
-        snapshot: expect.objectContaining({ state: 'ready', fromCache: true }),
-      })
-    );
-    act(() => emits[1](ready(50)));
+    await act(async () => emits[1](ready(50)));
     expect(s.host.textContent).toContain('50');
     view.unmount();
     s.host.remove();
   });
-  it('shows the held result and publishes nothing while paused, then shows and publishes the latest result', () => {
+  it('shows the held result while paused, then shows the latest result', async () => {
     const s = setup();
     const listeners: Array<Parameters<QueryController['watch']>[1]> = [];
     s.watch.mockImplementation((_demand, listener) => {
       listeners.push(listener);
       return s.release;
     });
-    const onPrepared = vi.fn();
     const props = {
       root: s.root,
       cells: s.cells,
@@ -508,7 +532,6 @@ describe('ChartLayer', () => {
       controller: s.controller,
       context,
       viewport: s.host,
-      onPrepared,
     };
     const ready = (last: number) =>
       ({
@@ -526,26 +549,19 @@ describe('ChartLayer', () => {
         ],
       }) as any;
     const view = render(<ChartLayer {...props} />);
-    act(() => listeners[0](ready(20)));
+    await act(async () => listeners[0](ready(20)));
     expect(s.host.textContent).toContain('20');
     view.rerender(<ChartLayer {...props} paused />);
-    onPrepared.mockClear();
     const drawn = sparkline.mock.calls.length;
-    act(() => listeners[0](ready(77)));
+    await act(async () => listeners[0](ready(77)));
     // No state update while paused: the widget does not render for the emission.
     expect(sparkline.mock.calls.length).toBe(drawn);
     expect(s.host.textContent).toContain('20');
     expect(s.host.textContent).not.toContain('77');
-    expect(onPrepared).not.toHaveBeenCalled();
     // The watch stays open through the pause.
     expect(s.release).not.toHaveBeenCalled();
     view.rerender(<ChartLayer {...props} paused={false} />);
     expect(s.host.textContent).toContain('77');
-    expect(onPrepared).toHaveBeenCalledTimes(1);
-    expect(onPrepared).toHaveBeenLastCalledWith(
-      'w',
-      expect.objectContaining({ snapshot: expect.objectContaining({ state: 'ready' }) })
-    );
     view.unmount();
     s.host.remove();
   });

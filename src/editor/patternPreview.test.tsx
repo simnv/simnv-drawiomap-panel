@@ -605,7 +605,7 @@ describe('usePreviewTime', () => {
   it('reevaluates each sample-age deadline and releases timers on change and unmount', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1000);
-    const view = renderHook(({ deadlines }) => usePreviewTime(undefined, 1, undefined, [], deadlines), {
+    const view = renderHook(({ deadlines }) => usePreviewTime(undefined, 1, undefined, 0, deadlines), {
       initialProps: { deadlines: [2001, 3001] },
     });
     await act(async () => {

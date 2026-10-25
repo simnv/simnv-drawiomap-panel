@@ -28,13 +28,11 @@ export function useBindings(
   const subscribe = useCallback((listener: () => void) => store?.subscribe(listener) ?? (() => {}), [store]);
   const held = useRef<Frame>(EMPTY_FRAME);
   // The ref write in `getSnapshot` is the design (spec 4.4, `useHeld`): it is idempotent and starts no render.
-  /* eslint-disable react-hooks/refs */
   const getSnapshot = () => {
     if (!paused) {
       held.current = store ? store.frame(owner, scope === 'owner' ? undefined : group) : EMPTY_FRAME;
     }
     return held.current;
   };
-  /* eslint-enable react-hooks/refs */
   return useSyncExternalStore(subscribe, getSnapshot);
 }
