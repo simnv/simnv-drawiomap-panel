@@ -474,7 +474,7 @@ The panel gives each link half a capacity. It uses the first source that gives a
 
 The `reducer` of the capacity binding reduces its series. If the capacity series is missing, the field **Max** applies and the panel reports the missing metric. A capacity template that does not resolve gives the diagnostic `unresolved-metadata`, and the half falls to the field **Max**. A field unit that is not a data rate gives the diagnostic `unit-not-rate`; the panel uses the raw value as bit/s.
 
-The hover card shows the capacity of each half in the unit of the value field, for example `41 Mb/s · 41% of 100 Mb/s`; a field in `Bps` with a capacity of 1 Gb/s shows `… of 125 MB/s`, a field in m³ shows `… of 4.1 m³`. The percent and the colour do not depend on the unit. Without a capacity, the card shows only the value. A direction without a value is grey "no data", also with a capacity: a capacity never produces a value or a percent on its own.
+The hover card shows the capacity of each half in the unit of the value field, for example `41 Mb/s · 41% of 100 Mb/s`; a field in `Bps` with a capacity of 1 Gb/s shows `… of 125 MB/s`, a field in m³ shows `… of 4.1 m³`. The percent is a whole number: a load above 0 and under 0.5 % reads `<1%` (never `0%`), a real 0 reads `0%`, a load above 999 % reads `>999%`. The percent and the colour do not depend on the unit. Without a capacity, the card shows only the value. A direction without a value is grey "no data", also with a capacity: a capacity never produces a value or a percent on its own.
 
 The units are the data-rate units of Grafana: `bps`, `Kbits` … `Pbits`, `Bps`, `KBs` … `PBs`, and the binary (IEC) forms. A field without a unit is in bit/s. A unit that is not a data rate gives a warning, and the panel uses the raw value as bit/s.
 
@@ -510,6 +510,26 @@ The order for each direction is: its `capacityBinding`, its `capacity`, the link
 A direction whose binding cannot run for the cell (its query is unknown, skipped or cannot run, or a parameter path is missing) is drawn as its own grey half, "unavailable", so the other half never covers it. The status band counts it as incomplete coverage.
 
 The demo dashboard uses all four sources: LAN links get the port speed series `S`, WAN links the **Max** of an override of query `W`, tunnels a number, and the hand-drawn panel the `capacity` attribute of its cells.
+
+### Link value labels
+
+Each link half can show its load as a small text beside the stroke, in the middle of its own half, turned to follow the edge. The text is the one the hover card shows for that direction. The labels are off by default; `display.link.label.mode` of a pattern or an override turns them on:
+
+```json
+{ "select": { "kind": "link" }, "display": { "link": { "label": { "mode": "percent" } } } }
+```
+
+| Mode      | Half with a capacity                   | Half without a capacity | No data, or an unavailable direction |
+| --------- | -------------------------------------- | ----------------------- | ------------------------------------ |
+| `percent` | the percent of its capacity, `41%`     | the value, `3.1 Mb/s`   | no label                             |
+| `value`   | the value in the unit of its field     | the value               | no label                             |
+| `none`    | no label (the default when absent)     | no label                | no label                             |
+
+`label` merges as one leaf, like `capacity`: a later pattern or an override replaces the mode, and an override with `{ "mode": "none" }` switches one link off. There is no panel option: a pattern that selects `{ "kind": "link" }` is the sheet-wide default, in the same document as the bindings. The bindings popup has the field **Link label** in the Link section.
+
+Placement: the label stands 4 units outside the stroke edge at its widest (`linkWidth.max`), above a horizontal edge and to the right of a vertical one, reading bottom to top; a diagonal edge turns the text with it, never upside down. A label moves along its half, away from the arrow heads first, when a node, a port pill, a portograph label chip, an end dot, an arrow head, another edge, the room of a status marker or another label is in its way; it is dropped when its half is too short or every spot is taken. The placement runs once per diagram: a data refresh changes the text only. A percent label keeps one slot from `<1%` to `>999%`; a value label can move when its text grows past a 4-unit step, and only that label moves.
+
+On a phone or a small panel the labels hide when a glyph would be smaller than 7 CSS px (a 1900 px sheet fitted into a 390 px screen), and show again after a pinch. A **Minimum scale** of 1.3 or more shows them at load. A tap on a label opens the card of its link.
 
 ## Hover card
 
