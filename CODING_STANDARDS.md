@@ -10,14 +10,14 @@ Read this file when you review a diff. Each rule needs judgement. Mechanical rul
 
 ## One concept, one function
 
-- Each concept has one shared function. All callers use it. Examples: `yDomain` and `combinedTop` (`src/visuals/domain.ts`) for chart ranges; the capacity resolution in `src/binding/engine.ts` and `src/interact/cardModel.ts`. A diff that computes the same thing a second time inline is a finding.
+- Each concept has one shared function. All callers use it. Examples: `yDomain` and `combinedTop` (`src/visuals/domain.ts`) for chart ranges; `resolveCapacity` and `inFieldUnit` (`src/binding/capacity.ts`) for every capacity, and `halfState` (`src/binding/engine.ts`) for the state of a link half and of a card direction. A diff that computes the same thing a second time inline is a finding.
 - Binding, template, reduction and range logic is pure and has unit tests next to it. Components only show the result.
 
 ## State and data
 
 - A value that is missing shows as "no data" in grey. It must never show as a good state (green, 0 %).
 - On refresh, keep the last good render until the new data arrives. A refresh must not reset zoom, a pinned card or the open editor.
-- Old saved panel options must still load. Ignore or migrate a removed option (for example `editorUrl`); do not fail on it.
+- Old saved panel options must still load. Ignore or migrate a removed option (for example `editorUrl`); do not fail on it. For the bindings config (`options.config`) the "migrate" clause is suspended until 1.0: a config of an older version loads without a failure, binds nothing and shows one note (`outdated-config`); there is no migration code.
 - Graphs start at zero by default. A change to the Y range goes through `yDomain`.
 
 ## View mode and the editor
