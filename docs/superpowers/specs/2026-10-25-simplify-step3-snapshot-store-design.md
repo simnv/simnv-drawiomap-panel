@@ -101,6 +101,7 @@ export interface Shown {
   kept: boolean;                 // true when `snapshot` is `last`, a result of an earlier generation or resolution
   generation: number;            // the generation of `snapshot`
   matchKey: string;              // of the request that produced `snapshot`
+  maxDataPoints: number;         // the resolution of the request that produced `snapshot`
   demand: StoreDemand;
 }
 /** The results of one group (or of one owner), for React: a new object only when a `Shown` or the membership changed. */
@@ -122,11 +123,12 @@ export interface SnapshotStore {
 }
 ```
 
-Entries. The key of an entry is `${owner}:${group}:${cellId}:${queryId}`; it is also the `consumerId` given to
-`controller.watch`, so the controller's "one consumer id, one watch" rule still protects two owners from each other
-(test "does not let a second owner with the same ids take the watch of the first"). The resolution is not in the key:
+Entries. The key of an entry is `entryKey(owner, group, cellId, queryId)`: the four parts, each encoded with
+`encodeURIComponent`, joined with `:` (R3-2: a portograph link id holds `:`, so a raw join could collide); it is also
+the `consumerId` given to `controller.watch`, so the controller's "one consumer id, one watch" rule still protects
+two owners from each other (test "does not let a second owner with the same ids take the watch of the first"). The resolution is not in the key:
 a zoom changes the request of the entry, not the entry (R1-7). An entry holds `demand`, `current: QuerySnapshot`,
-`last?: { snapshot, generation, matchKey }`, `release` and `shown` (built lazily, cached until `current` or `last`
+`last?: { snapshot, generation, matchKey, maxDataPoints }`, `release` and `shown` (built lazily, cached until `current` or `last`
 changes). One entry per `(cellId, queryId)` in a group, not per binding place: the link value, its capacity series
 and a hover row that read the same query at the same cell share one watch. A chart widget is the group
 `widget:<id>` with `cellId = anchorCellId` (R1-5). Today these are separate consumers of one controller entry; the
@@ -210,8 +212,10 @@ returns the memoised `panelSnapshot(data, refId)` through the history cache, as 
 looks `(cellId, binding.queryId)` up in the frames in order and checks the entry against the demand of this render
 (R1-2), as `useBindingSnapshots.ts:179-211` does today, because `want()` runs in an effect after the render:
 
-- `shown.matchKey === demand.matchKey` and `shown.generation === demand.context.generation`: the result, as is.
-- the same `matchKey`, another generation (a refresh before the effect): the result as `kept`, `fromCache: true`.
+- `shown.matchKey === demand.matchKey`, `shown.generation === demand.context.generation` and
+  `shown.maxDataPoints === demand.maxDataPoints`: the result, as is.
+- the same `matchKey`, another generation (a refresh before the effect) or another resolution (a zoom before the
+  effect; the settled entry of another group of the owner on the pair, R3-1): the result as `kept`, `fromCache: true`.
 - another `matchKey` (the query target, the scope or the default datasource changed under the same id): `{ state:
   'loading' }`, never the old data as a fresh success. The effect then re-watches and drops `last`.
 - no entry: `{ state: 'idle' }`, the value today for a demand that is not watched yet.
@@ -438,4 +442,6 @@ Open:
 | R2-1 (P1). The copy ran once per consumer: 300 listeners of one entry each copied the result (27 million slots per emission) | The copy moves into the controller's executor callback, once per `ready` emission, before `publish`; the listeners, the cache and the budgets see the one copy (section 3, "The boundary copy"; migration table, `controller.ts`; test in section 8). |
 | R2-2 (P2). `maxDataPoints >=` did not make two requests equivalent (`$__interval` changes the values) | Sharing only between identical request identities, which is the controller's `cacheKey` and its existing merge; the explicit reuse, `byQuery`, `source`, `borrowers` and the promotion are removed. The request cost is stated: one more request per widget whose query is also bound at another width, none with equal widths; the popup's explicit and pattern previews use the store's resolution so they merge too (section 3, "Sharing"; section 9, open question 1). |
 | R2-3 (P2). Promotion after a generation change started an obsolete request | Moot: no promotion (R2-2). |
+| R3-1 (P2). The owner frame prefers the settled entry of a pair (R1-5); with a binding at 264 points and a widget at its own width on one pair, the binding rows showed the widget's result as fresh while their entry loaded, against R2-2 | R2-2 wins: `Shown` carries `maxDataPoints`, and the render check gives `kept` for a result of another resolution, as for another generation; a binding row never shows a result of another resolution as its own fresh result, and a zoomed widget shows its old result as kept until the new one answers (section 3, "Resolver"; tests "a settled entry of another resolution in the owner frame shows as kept" and "a zoomed widget shows its result of the old resolution as kept"). |
+| R3-2 (P2). The entry key `${owner}:${group}:${cellId}:${queryId}` could collide: portograph cell ids hold `:` (`pg-link~radio:dhcp->rtr-a:wan2`), and the controller would release the other tuple's watch | `entryKey` encodes each part with `encodeURIComponent` before the join (section 3, "Entries"; test "two tuples whose raw join is equal get two watches"). |
 | R2-4 (P2). Widget-only diagnostics had no identity in the resolver's demand map | `collectBindingDemands` lists the widgets at their anchor cells with `role: 'widget'`; the popup's map holds all roles, the hooks filter by role, a `Region` takes its own widget demand with its resolution (section 3, "Resolver"; section 6). |

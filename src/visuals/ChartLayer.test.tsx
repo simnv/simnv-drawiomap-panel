@@ -203,7 +203,7 @@ describe('ChartLayer', () => {
         owner="popup:7"
       />
     );
-    expect(s.watch.mock.calls.map(([demand]) => demand.consumerId)).toEqual(['popup:7:widget:w:chart:q']);
+    expect(s.watch.mock.calls.map(([demand]) => demand.consumerId)).toEqual(['popup%3A7:widget%3Aw:chart:q']);
     unmount();
     s.host.remove();
   });

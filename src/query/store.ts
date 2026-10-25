@@ -29,6 +29,8 @@ export interface Shown {
   generation: number;
   /** of the request that produced `snapshot` */
   matchKey: string;
+  /** the resolution of the request that produced `snapshot` */
+  maxDataPoints: number;
   demand: StoreDemand;
 }
 /** The results of one group (or of one owner), for React: a new object only when a `Shown` or the membership changed. */
@@ -58,6 +60,12 @@ export const matchKeyOf = (query: NamedQuery, scope: TemplateScope, context: Que
   stable([query, scope, context.defaultDatasource]);
 /** The key of a `(cellId, queryId)` pair. The separator cannot occur in an id. */
 export const pairKey = (cellId: string, queryId: string): string => `${cellId}\u0000${queryId}`;
+/**
+ * The key of an entry, also the consumer id of its controller watch. Each part is encoded: an id with ':' (a
+ * portograph link id, for example) cannot collide with another tuple.
+ */
+export const entryKey = (owner: string, group: string, cellId: string, queryId: string): string =>
+  [owner, group, cellId, queryId].map(encodeURIComponent).join(':');
 
 /**
  * The demands of one role of a plan: one per `(cellId, queryId)` pair, with the match key. A panel-source query is
@@ -132,15 +140,18 @@ export function asKept(snapshot: QuerySnapshot): QuerySnapshot {
 
 /**
  * The render check: the entry against the demand of this render, because `want()` runs in an effect after it.
- * The same request identity and generation: the result as is. The same identity, another generation (a refresh
- * before the effect): the result as kept. Another identity (the query, the scope or the default datasource changed
- * under the same id): loading, never the old data as a fresh success.
+ * The same request identity, generation and resolution: the result as is. The same identity, another generation (a
+ * refresh before the effect) or another resolution (a zoom, or the settled entry of another group of the owner on
+ * the pair): the result as kept, never as a fresh success of this request (R2-2). Another identity (the query, the
+ * scope or the default datasource changed under the same id): loading, never the old data at all.
  */
 export function shownSnapshot(shown: Shown, demand: StoreDemand): QuerySnapshot {
   if (shown.matchKey !== demand.matchKey) {
     return LOADING;
   }
-  return shown.generation === demand.context.generation ? shown.snapshot : asKept(shown.snapshot);
+  return shown.generation === demand.context.generation && shown.maxDataPoints === demand.maxDataPoints
+    ? shown.snapshot
+    : asKept(shown.snapshot);
 }
 
 /**
@@ -177,13 +188,13 @@ export function resolverFrom(
 }
 
 interface Entry {
-  /** `${owner}:${group}:${cellId}:${queryId}`, also the consumer id of the controller watch */
+  /** `entryKey(owner, group, cellId, queryId)`, also the consumer id of the controller watch */
   key: string;
   pair: string;
   demand: StoreDemand;
   current: QuerySnapshot;
-  /** the last settled result, already as kept */
-  last?: { snapshot: QuerySnapshot; generation: number; matchKey: string };
+  /** the last settled result, already as kept, with the generation and the resolution of its request */
+  last?: { snapshot: QuerySnapshot; generation: number; matchKey: string; maxDataPoints: number };
   release: () => void;
   /** a watch whose token is not the entry's is over: its emissions are dropped */
   token: number;
@@ -230,6 +241,7 @@ export function createSnapshotStore(controller: QueryController): SnapshotStore 
               kept: false,
               generation: demand.context.generation,
               matchKey: demand.matchKey,
+              maxDataPoints: demand.maxDataPoints,
               demand,
             }
           : {
@@ -237,6 +249,7 @@ export function createSnapshotStore(controller: QueryController): SnapshotStore 
               kept: true,
               generation: entry.last.generation,
               matchKey: entry.last.matchKey,
+              maxDataPoints: entry.last.maxDataPoints,
               demand,
             };
     }
@@ -259,7 +272,12 @@ export function createSnapshotStore(controller: QueryController): SnapshotStore 
         }
         entry.current = snapshot;
         if (settled(snapshot)) {
-          entry.last = { snapshot: asKept(snapshot), generation: demand.context.generation, matchKey: demand.matchKey };
+          entry.last = {
+            snapshot: asKept(snapshot),
+            generation: demand.context.generation,
+            matchKey: demand.matchKey,
+            maxDataPoints: demand.maxDataPoints,
+          };
         }
         entry.shown = undefined;
         notify();
@@ -318,6 +336,7 @@ export function createSnapshotStore(controller: QueryController): SnapshotStore 
               snapshot: asKept(existing.current),
               generation: old.context.generation,
               matchKey: old.matchKey,
+              maxDataPoints: old.maxDataPoints,
             };
           }
           existing.demand = demand;
@@ -332,7 +351,7 @@ export function createSnapshotStore(controller: QueryController): SnapshotStore 
           groups.set(groupKey, members);
         }
         const entry: Entry = {
-          key: `${owner}:${group}:${demand.cellId}:${demand.query.id}`,
+          key: entryKey(owner, group, demand.cellId, demand.query.id),
           pair,
           demand,
           current: LOADING,

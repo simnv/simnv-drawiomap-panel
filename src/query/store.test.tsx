@@ -248,8 +248,8 @@ describe('sharing between consumers', () => {
     store.want('popup:1', 'visible', demands('visible'));
     expect(new Set(watch.mock.calls.map(([demand]) => demand.consumerId)).size).toBe(2);
     expect(watch.mock.calls.map(([demand]) => demand.consumerId)).toEqual([
-      'panel:1:visible:router:health',
-      'popup:1:visible:router:health',
+      'panel%3A1:visible:router:health',
+      'popup%3A1:visible:router:health',
     ]);
     expect(release).not.toHaveBeenCalled();
     store.want('popup:1', 'visible', []);
@@ -368,6 +368,56 @@ describe('frames', () => {
     expect(resolve('router', widget.binding)).toMatchObject({ state: 'ready', latestValue: 7 });
     expect(resolve('other', widget.binding)).toMatchObject({ state: 'idle' });
   });
+
+  it('a settled entry of another resolution in the owner frame shows as kept for the binding, never as fresh', () => {
+    const { store, emit, execute } = setup();
+    const bindingDemands = demands('visible', { width: 264 });
+    const widgetDemands = demands('widget', { width: 400 });
+    store.want('popup:1', 'bindings', bindingDemands);
+    store.want('popup:1', 'widget:w', widgetDemands);
+    // two requests, the widths differ; the widget answers first
+    expect(execute).toHaveBeenCalledTimes(2);
+    emit(1, ready(7));
+    const owner = store.frame('popup:1');
+    const shown = owner.get('router', 'health')!;
+    expect(shown.maxDataPoints).toBe(400);
+    expect(shownSnapshot(shown, widgetDemands[0])).toBe(shown.snapshot);
+    expect(shownSnapshot(shown, bindingDemands[0])).toMatchObject({ state: 'ready', fromCache: true });
+    const resolve = resolverFrom([owner], demandMap(bindingDemands, widgetDemands), planOf(config()), data, {});
+    expect(resolve('router', binding)).toMatchObject({ state: 'ready', fromCache: true, latestValue: 7 });
+    // the binding's own entry settles: the owner frame takes the first settled entry of the pair, its own
+    emit(0, ready(8));
+    const own = store.frame('popup:1').get('router', 'health')!;
+    expect(own.maxDataPoints).toBe(264);
+    expect(shownSnapshot(own, bindingDemands[0])).toBe(own.snapshot);
+    expect(own.snapshot).toMatchObject({ fromCache: false, frames: [frame(8)] });
+  });
+
+  it('two tuples whose raw join is equal get two watches: the key encodes each part', () => {
+    const release = vi.fn();
+    const watch = vi.fn<QueryController['watch']>(() => release);
+    const controller: QueryController = { watch, setPanelData: vi.fn(), dispose: vi.fn() };
+    const store = createSnapshotStore(controller);
+    const ctx = context(1);
+    const demand = (cellId: string, q: NamedQuery): StoreDemand => ({
+      cellId,
+      query: q,
+      scope,
+      context: ctx,
+      maxDataPoints: 100,
+      matchKey: matchKeyOf(q, scope, ctx),
+    });
+    // a portograph link id holds ':' (for example `pg-link~radio:dhcp->rtr-a:wan2`)
+    store.want('panel:1', 'visible', [demand('a:b', query('up', 'c')), demand('a', query('up', 'b:c'))]);
+    const ids = watch.mock.calls.map(([d]) => d.consumerId);
+    expect(ids).toEqual(['panel%3A1:visible:a%3Ab:c', 'panel%3A1:visible:a:b%3Ac']);
+    expect(release).not.toHaveBeenCalled();
+    watch.mock.calls[0][1](ready(1));
+    watch.mock.calls[1][1](ready(2));
+    const live = store.frame('panel:1', 'visible');
+    expect(live.get('a:b', 'c')!.snapshot).toMatchObject({ frames: [frame(1)] });
+    expect(live.get('a', 'b:c')!.snapshot).toMatchObject({ frames: [frame(2)] });
+  });
 });
 
 describe('the render check', () => {
@@ -394,6 +444,29 @@ describe('the render check', () => {
     const same = resolverFrom([live], demandMap(current), plan, data, {});
     expect(same('router', binding)).toMatchObject({ state: 'ready', fromCache: false, latestValue: 1 });
     expect(same('router', binding)).toBe(same('router', binding));
+  });
+
+  it('a zoomed widget shows its result of the old resolution as kept before and after want(), never as fresh', () => {
+    const { store, emit, execute } = setup();
+    const before = demands('widget', { width: 200 });
+    const after = demands('widget', { width: 400 });
+    store.want('popup:1', 'widget:w', before);
+    emit(0, ready(5));
+    const shown = store.frame('popup:1', 'widget:w').get('router', 'health')!;
+    expect(shownSnapshot(shown, before[0])).toMatchObject({ fromCache: false, frames: [frame(5)] });
+    // the render with the new resolution comes before its effect
+    const kept = shownSnapshot(shown, after[0]);
+    expect(kept).toMatchObject({ state: 'ready', fromCache: true, frames: [frame(5)] });
+    // the effect re-watches: the same entry, a new request, the last result as kept until it answers
+    store.want('popup:1', 'widget:w', after);
+    expect(execute).toHaveBeenCalledTimes(2);
+    const live = store.frame('popup:1', 'widget:w').get('router', 'health')!;
+    expect(live).toMatchObject({ kept: true, maxDataPoints: 200 });
+    expect(shownSnapshot(live, after[0])).toBe(kept);
+    emit(1, ready(6));
+    const settled = store.frame('popup:1', 'widget:w').get('router', 'health')!;
+    expect(settled.maxDataPoints).toBe(400);
+    expect(shownSnapshot(settled, after[0])).toMatchObject({ fromCache: false, frames: [frame(6)] });
   });
 
   it('is idle for a pair that no frame holds, and reads a panel-source query from the panel data', () => {

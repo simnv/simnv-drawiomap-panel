@@ -269,7 +269,7 @@ it('joins a running request of the popup with the same identity instead of start
   // the popup's own entry of the query at the cell, at the same resolution
   const release = controller.watch(
     {
-      consumerId: 'popup:1:bindings:a:q',
+      consumerId: 'popup%3A1:bindings:a:q',
       query: s.config.queries[0],
       scope: s.plan.cells.a.scope,
       context: s.context,
