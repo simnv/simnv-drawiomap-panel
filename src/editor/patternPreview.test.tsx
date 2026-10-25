@@ -7,7 +7,7 @@ import { DEFAULT_QUERY_POLICY, type QueryContext, type QuerySnapshot } from '../
 import { buildCellIndex, cellMetas } from '../render/svgStage';
 import { renderEditor, svgOf } from './editorHarness';
 import { binding, nativeQuery } from '../fixtures/authoring-config';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 vi.hoisted(() => {
   if (!window.localStorage) {
     Object.defineProperty(window, 'localStorage', { value: { getItem: () => null, setItem() {}, removeItem() {} } });
@@ -20,8 +20,8 @@ vi.mock('@grafana/runtime', async (original) => ({
   getDataSourceSrv: () => ({ get: async () => ({ components: {} }), getInstanceSettings: () => undefined }),
 }));
 function setup() {
-  const config: DiagramConfigV2 = {
-    version: 2,
+  const config: DiagramConfig = {
+    version: 3,
     defaultDatasource: { uid: 'ds' },
     overrides: [],
     queries: ['shape', 'hover', 'widget'].map((id) => nativeQuery(id, '$dm_key', { dm_key: 'cell.key' })),
@@ -38,7 +38,7 @@ function setup() {
             default: { state: 'normal', reason: 'Healthy' },
             mappings: [{ value: 0, state: 'down', reason: 'Down' }],
           },
-          link: { a2bBinding: binding('shape'), b2aBinding: binding('shape'), capacity: 100 },
+          link: { a2b: { binding: binding('shape') }, b2a: { binding: binding('shape') }, capacity: 100 },
           hover: {
             rows: [
               { kind: 'value', label: 'Detail', binding: binding('hover') },
@@ -228,8 +228,8 @@ function batch(parameterized = true) {
   const host = document.createElement('div');
   host.innerHTML = '<svg><g data-cell-id="a"><rect/></g><g data-cell-id="b"><rect/></g></svg>';
   const q = nativeQuery('q', 'metric', parameterized ? { dm_key: 'cell.key' } : {});
-  const config: DiagramConfigV2 = {
-    version: 2,
+  const config: DiagramConfig = {
+    version: 3,
     defaultDatasource: { uid: 'ds' },
     overrides: [],
     widgets: [],

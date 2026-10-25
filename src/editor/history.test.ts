@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 import type { Diagram } from '../types';
 import { createDraft, type DraftAction } from './draft';
 import {
@@ -11,8 +11,8 @@ import {
   type HistoryState,
 } from './history';
 
-const config: DiagramConfigV2 = {
-  version: 2,
+const config: DiagramConfig = {
+  version: 3,
   queries: [],
   overrides: [],
   widgets: [],
@@ -219,7 +219,7 @@ describe('history', () => {
     expect(fresh.past).toHaveLength(1);
     expect(fresh.present.config.overrides[0].display.shape?.binding?.field).toBe('abc');
     // An existing binding: one leaf per keystroke from the start.
-    const withBinding: DiagramConfigV2 = {
+    const withBinding: DiagramConfig = {
       ...config,
       overrides: [{ cellId: 'a', display: { shape: { binding: binding('') } } }],
     };

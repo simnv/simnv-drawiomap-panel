@@ -2,7 +2,7 @@ import React from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, Checkbox, Input, useStyles2 } from '@grafana/ui';
-import type { DiagramConfigV2 } from '../../model/config';
+import type { DiagramConfig } from '../../model/config';
 import type { CellMeta } from '../../types';
 import { BindingsList, type BindingsListProps } from '../BindingsList';
 import { TextField } from '../BindingFields';
@@ -23,7 +23,7 @@ export interface ListPaneProps extends Pick<
 > {
   list: BindingsListModel;
   cells: CellMeta[];
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   filter: BindingsFilter;
   onFilterChange: (filter: BindingsFilter) => void;
   /** The panel has saved rules of version 1. The panel ignores them. */
@@ -77,6 +77,13 @@ export function ListPane({
             here. Pattern, override and chart bindings appear in this list after you create them.
           </p>
         )}
+        {list.general
+          .filter((problem) => problem.code === 'outdated-config')
+          .map((problem) => (
+            <p key={problem.code} role="status">
+              {problem.message}
+            </p>
+          ))}
         <BindingsList list={list} cells={cells} filter={filter} {...rows} />
       </div>
       <footer className={styles.footer} aria-label="Query library">

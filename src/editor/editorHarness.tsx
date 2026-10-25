@@ -3,7 +3,7 @@ import { createTheme, getDefaultTimeRange, LoadingState } from '@grafana/data';
 import { render } from '@testing-library/react';
 import { vi, type Mock } from 'vitest';
 import { bindContextFor } from '../binding/context';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 import { createQueryController } from '../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../query/panel';
 import type { Diagram } from '../types';
@@ -49,7 +49,7 @@ export const idleService = (): PanelQueryService => ({
 });
 
 export interface EditorHarnessProps extends Partial<Omit<BindingEditorProps, 'config' | 'diagram'>> {
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   /** The svg of the diagram; default: no cells. */
   svg?: string;
   diagram?: Diagram;

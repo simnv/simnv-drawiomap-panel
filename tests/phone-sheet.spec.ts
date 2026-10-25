@@ -1,5 +1,5 @@
 import { devices } from '@playwright/test';
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 import { expect, test } from './authoring-fixtures';
 
 // Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
@@ -15,7 +15,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="390" height="2000" v
   </g>
 </svg>`;
 
-function linkCard(config: DiagramConfigV2): DiagramConfigV2 {
+function linkCard(config: DiagramConfig): DiagramConfig {
   return {
     ...config,
     queries: [],

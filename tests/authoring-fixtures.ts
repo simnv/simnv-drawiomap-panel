@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { expect, PanelEditPage, test as base, type DashboardPage } from '@grafana/plugin-e2e';
 import type { Page, TestInfo } from '@playwright/test';
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 import { authoringConfig } from '../src/fixtures/authoring-config';
 
 export { expect };
@@ -23,9 +23,9 @@ function quietDemo(uid: string | undefined, queryParams?: URLSearchParams) {
 export const svg = fs.readFileSync('src/fixtures/authoring.svg', 'utf8');
 export const xml = fs.readFileSync('src/fixtures/authoring.drawio', 'utf8');
 export const test = base.extend<{
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   createDiagram: (
-    config: DiagramConfigV2,
+    config: DiagramConfig,
     settings?: {
       clones?: number;
       svg?: string;
@@ -36,7 +36,7 @@ export const test = base.extend<{
       /** Grafana panel queries; default: none */
       targets?: unknown[];
       /** Several panels with their own config, one below the other. Replaces `clones`. */
-      panels?: Array<{ config: DiagramConfigV2; title?: string; svg?: string }>;
+      panels?: Array<{ config: DiagramConfig; title?: string; svg?: string }>;
       /** Dashboard auto refresh, for example `5s`; default: off */
       refresh?: string;
     }

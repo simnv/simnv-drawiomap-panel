@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergeCell } from '../binding/patterns';
-import { validateConfig, type DiagramConfigV2 } from '../model/config';
+import { validateConfig, type DiagramConfig } from '../model/config';
 import {
   commitDraft,
   createDraft,
@@ -12,8 +12,8 @@ import {
   previewPatternImport,
 } from './draft';
 
-export const saved: DiagramConfigV2 = {
-  version: 2,
+export const saved: DiagramConfig = {
+  version: 3,
   queries: [],
   overrides: [],
   widgets: [],
@@ -79,7 +79,7 @@ describe('binding draft', () => {
   });
   it('previews conflicts and applicability, then remaps every query reference atomically by ID', () => {
     const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
-    const source: DiagramConfigV2 = {
+    const source: DiagramConfig = {
       ...saved,
       queries: [{ id: 'q', name: 'Repeated name', source: { kind: 'panel', refId: 'A' } }],
       patterns: [
@@ -89,7 +89,7 @@ describe('binding draft', () => {
           select: { ids: ['region'] },
           display: {
             shape: { binding },
-            link: { a2bBinding: binding, b2aBinding: binding, capacityBinding: binding },
+            link: { a2b: { binding: binding }, b2a: { binding: binding }, capacityBinding: binding },
             status: {
               kind: 'mapping',
               binding,
@@ -120,7 +120,7 @@ describe('binding draft', () => {
         },
       ],
     };
-    const destination: DiagramConfigV2 = {
+    const destination: DiagramConfig = {
       ...source,
       overrides: [{ cellId: 'region', display: { label: 'Original' } }],
       queries: [{ id: 'q', name: 'Repeated name', source: { kind: 'panel', refId: 'Z' } }],
@@ -155,11 +155,11 @@ describe('binding draft', () => {
     expect(
       [
         p.shape?.binding,
-        p.link?.a2bBinding,
-        p.link?.b2aBinding,
+        p.link?.a2b?.binding,
+        p.link?.b2a?.binding,
         p.link?.capacityBinding,
         p.status?.binding,
-        ...(p.hover?.rows.map((row: any) => row.binding) ?? []),
+        ...(p.hover?.rows?.map((row: any) => row.binding) ?? []),
         imported.overrides[1].display.shape?.binding,
         imported.widgets[1].binding,
       ].map((b) => b?.queryId)
@@ -179,7 +179,7 @@ describe('binding draft', () => {
     expect(previewPatternImport(destination, { ...document, version: 99 }, []).config).toBeUndefined();
   });
   it('exports referenced queries with their inherited datasource and imports across different panel defaults', () => {
-    const source: DiagramConfigV2 = {
+    const source: DiagramConfig = {
       ...saved,
       defaultDatasource: { uid: 'source-prom', type: 'prometheus' },
       queries: [
@@ -218,7 +218,7 @@ describe('binding draft', () => {
     expect(document).toMatchObject({ kind: 'drawiomap-patterns', version: 1 });
     expect(document.config.queries).toHaveLength(1);
     expect(document.config.queries[0].source).toMatchObject({ datasource: { uid: 'source-prom', type: 'prometheus' } });
-    const destination: DiagramConfigV2 = {
+    const destination: DiagramConfig = {
       ...saved,
       patterns: [],
       defaultDatasource: { uid: 'destination-testdata' },
@@ -228,7 +228,7 @@ describe('binding draft', () => {
     expect(preview.diagnostics).toEqual([]);
     expect(preview.config?.defaultDatasource).toEqual({ uid: 'destination-testdata' });
     expect(preview.config?.queries.find((q) => q.id === 'q-source')?.source).toEqual(document.config.queries[0].source);
-    expect(preview.config?.patterns[0].display.hover?.rows[0]).toMatchObject({
+    expect(preview.config?.patterns[0].display.hover?.rows?.[0]).toMatchObject({
       label: 'История 🚀',
       binding: { queryId: 'q-source' },
       freshness: { expectedIntervalMs: 1000, staleAfterMs: 4000 },
@@ -292,7 +292,7 @@ describe('binding draft', () => {
 });
 
 describe('duplicate pattern IDs', () => {
-  const dup: DiagramConfigV2 = {
+  const dup: DiagramConfig = {
     ...saved,
     patterns: [
       { id: 'same', name: 'First', select: { kind: 'node' }, display: {} },
@@ -387,7 +387,7 @@ describe('isDirty', () => {
 describe('unset', () => {
   const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
   const rows = [{ kind: 'metadata' as const, label: 'Device', path: 'cell.key' }];
-  const withOverride = (display: DiagramConfigV2['overrides'][number]['display']) =>
+  const withOverride = (display: DiagramConfig['overrides'][number]['display']) =>
     reduceDraft(
       createDraft({
         ...saved,
@@ -409,14 +409,14 @@ describe('unset', () => {
   });
 
   it('removes a nested leaf and the objects that become empty', () => {
-    const next = reduceDraft(withOverride({ link: { a2bBinding: binding }, label: 'Mine' }), {
+    const next = reduceDraft(withOverride({ link: { a2b: { binding: binding } }, label: 'Mine' }), {
       type: 'unset',
-      path: 'link.a2bBinding',
+      path: 'link.a2b.binding',
     });
     expect(next.config.overrides[0].display).toEqual({ label: 'Mine' });
-    const kept = reduceDraft(withOverride({ link: { a2bBinding: binding, enabled: false } }), {
+    const kept = reduceDraft(withOverride({ link: { a2b: { binding: binding }, enabled: false } }), {
       type: 'unset',
-      path: 'link.a2bBinding',
+      path: 'link.a2b.binding',
     });
     expect(kept.config.overrides[0].display).toEqual({ link: { enabled: false } });
   });
@@ -459,7 +459,7 @@ describe('unset', () => {
   it('does nothing for a path that the owner does not set', () => {
     const draft = withOverride({ label: 'Mine' });
     expect(reduceDraft(draft, { type: 'unset', path: 'url' })).toBe(draft);
-    expect(reduceDraft(draft, { type: 'unset', path: 'link.a2bBinding' })).toBe(draft);
+    expect(reduceDraft(draft, { type: 'unset', path: 'link.a2b.binding' })).toBe(draft);
     const noOverride = reduceDraft(createDraft(saved), { type: 'select', cellId: 'zzz' });
     expect(reduceDraft(noOverride, { type: 'unset', path: 'label' })).toBe(noOverride);
   });
@@ -533,7 +533,7 @@ describe('display-many', () => {
           id: 'devices',
           name: 'Devices',
           select: { kind: 'node' },
-          display: { label: 'Shared', hover: { rows }, link: { a2bBinding: linkBinding } },
+          display: { label: 'Shared', hover: { rows }, link: { a2b: { binding: linkBinding } } },
         },
       ],
       overrides: [
@@ -579,7 +579,7 @@ describe('display-many', () => {
     const effective = mergeCell(next.config, cell).display;
     expect(effective.label).toBe('New');
     expect(effective.hover?.rows).toEqual(rows);
-    expect(effective.link?.a2bBinding).toEqual(linkBinding);
+    expect(effective.link?.a2b?.binding).toEqual(linkBinding);
   });
 
   it('writes a leaf inside a binding without replacing the binding', () => {
@@ -628,5 +628,40 @@ describe('display-many', () => {
       ],
     });
     expect(next.config.overrides.map((o) => o.cellId)).toEqual(['b', 'c']);
+  });
+});
+
+describe('items stay byte for byte', () => {
+  const widget = {
+    id: 'w',
+    anchorCellId: 'a',
+    kind: 'bar' as const,
+    binding: { queryId: 'q', match: {}, reducer: 'last' as const },
+    label: 'Load',
+    url: '/d/x',
+    unit: 'percent',
+    min: 0,
+    max: 100,
+  };
+  it('an edit of a widget label keeps its other fields, in their saved order', () => {
+    const base = createDraft({ ...saved, queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }], widgets: [widget] });
+    const next = reduceDraft(base, { type: 'widget', widget: { ...widget, label: 'CPU' } });
+    expect(JSON.stringify(next.config.widgets[0])).toBe(JSON.stringify({ ...widget, label: 'CPU' }));
+  });
+  it('remove-pattern drops the pattern at the saved index and returns the scope to the element', () => {
+    const base = {
+      ...createDraft({
+        ...saved,
+        patterns: [saved.patterns[0], { id: 'bad', name: 'Bad', select: null, display: {} } as never],
+      }),
+      scope: 'pattern' as const,
+      patternId: 'bad',
+      patternIndex: 1,
+    };
+    const next = reduceDraft(base, { type: 'remove-pattern', index: 1 });
+    expect(next.config.patterns.map((p) => p.id)).toEqual(['devices']);
+    expect(next.scope).toBe('element');
+    expect(next.patternId).toBeUndefined();
+    expect(reduceDraft(base, { type: 'remove-pattern', index: 5 })).toBe(base);
   });
 });

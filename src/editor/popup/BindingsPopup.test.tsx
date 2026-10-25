@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createQueryController } from '../../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../../query/panel';
 import { DEFAULT_OPTIONS, type Options } from '../../types';
-import type { DiagramConfigV2, QueryBinding } from '../../model/config';
+import type { DiagramConfig, QueryBinding } from '../../model/config';
 import { nativeQuery } from '../../fixtures/authoring-config';
 import { diagramOf, svgOf } from '../editorHarness';
 import { buttonNamed, selectStageCell } from '../testUtils';
@@ -27,15 +27,15 @@ const service = (): PanelQueryService => ({
   },
 });
 
-const config = (label = ''): DiagramConfigV2 => ({
-  version: 2,
+const config = (label = ''): DiagramConfig => ({
+  version: 3,
   queries: [],
   widgets: [],
   patterns: [],
   overrides: label ? [{ cellId: 'a', display: { label } }] : [],
 });
 
-const optionsOf = (c: DiagramConfigV2 = config()): Options => ({
+const optionsOf = (c: DiagramConfig = config()): Options => ({
   ...DEFAULT_OPTIONS,
   rules: [],
   config: c,

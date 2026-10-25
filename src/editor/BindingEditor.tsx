@@ -14,12 +14,12 @@ import type { GrafanaTheme2, PanelData } from '@grafana/data';
 import { Alert, Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { bindPlan, widgetDiagnostics } from '../binding/engine';
-import { resolvePatterns } from '../binding/patterns';
+import { mergeDisplay, resolvePatterns, type MergedDisplay } from '../binding/patterns';
 import { cellMatches } from '../binding/select';
 import { useStage } from '../components/useStage';
 import { cardContextFor } from '../binding/context';
 import { buildConfiguredCard } from '../interact/cardModel';
-import { validateConfig, type DiagramConfigV2, type NamedQuery } from '../model/config';
+import { validateConfig, type DiagramConfig, type DisplayConfig, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
 import type { QuerySnapshot } from '../query/types';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
@@ -44,11 +44,21 @@ import type { BaseRevision } from './revision';
 
 /** The panel data points that a binding preview asks for; the panel card asks for the same number. */
 const MAX_DATA_POINTS = 264;
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+/** The merge of a raw override display over the plan of its cell; the raw display alone when the merge cannot read it. */
+function rawMerge(base: DisplayConfig, raw: Record<string, unknown>): MergedDisplay {
+  try {
+    return mergeDisplay(base, raw as DisplayConfig);
+  } catch {
+    return raw as MergedDisplay;
+  }
+}
 const NO_RESULTS: QueryPreview[] = [];
 
 export interface BindingEditorProps {
   /** The saved config that the draft starts from. */
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   /** The saved diagram that the draft starts from. */
   diagram?: Diagram;
   /** The pinned revision of the saved options when the draft started (or after the last Apply). */
@@ -68,7 +78,7 @@ export interface BindingEditorProps {
   /** The draft changed (a commit arrived), or it was discarded or applied: text typed before is settled. */
   onDraftSettled?: () => void;
   /** Write the draft to the panel options. */
-  onApply: (config: DiagramConfigV2, diagram?: Diagram) => void;
+  onApply: (config: DiagramConfig, diagram?: Diagram) => void;
   /** Close the popup. The popup asks first when the draft has changes. */
   onRequestClose: () => void;
   /** Drop the draft and start again from the saved options. */
@@ -194,8 +204,14 @@ export function BindingEditor({
   );
 
   const plan = useMemo(() => resolvePatterns(metas, draft.config), [metas, draft.config]);
+  // The saved document, item by item: the list and the inspector read the items that parse and the skipped ones.
+  const validated = useMemo(() => validateConfig(draft.config), [draft.config]);
   // The exact pattern of the draft, by index: duplicate pattern IDs must not widen the scope to another pattern.
-  const editedPattern = draft.config.patterns[draftPatternIndex(draft)];
+  // A skipped pattern (it does not parse) has no selector to match with.
+  const editedIndex = draftPatternIndex(draft);
+  const editedPattern = validated.indices.patterns.includes(editedIndex)
+    ? draft.config.patterns[editedIndex]
+    : undefined;
   const affected =
     draft.scope === 'pattern'
       ? editedPattern
@@ -263,7 +279,7 @@ export function BindingEditor({
   );
   const bindingSnapshots = useBindingSnapshots(
     plan,
-    draft.config,
+    plan.config,
     service,
     draft.cellId,
     MAX_DATA_POINTS,
@@ -286,15 +302,15 @@ export function BindingEditor({
     return previewAction === 'query' ? [...explicit, ...patternResults] : [...patternResults, ...explicit];
   }, [localPreview, previewAction, patternResults]);
   const savedResolve = useMemo(
-    () => createPreviewResolver(plan, draft.config, data, undefined, format, prepared),
-    [data, plan, draft.config, format, prepared]
+    () => createPreviewResolver(plan, plan.config, data, undefined, format, prepared),
+    [data, plan, format, prepared]
   );
   // The inspector reports the requested outcome, including pending and failed requests.
   // Resolve each candidate separately so display's terminal-result ranking cannot skip it.
   const resolve: typeof savedResolve = useMemo(() => {
     const reportResolvers = reportResults.map((result) => ({
       result,
-      resolve: createPreviewResolver(plan, draft.config, data, undefined, format, [result]),
+      resolve: createPreviewResolver(plan, plan.config, data, undefined, format, [result]),
     }));
     return (cellId, binding) => {
       for (const entry of reportResolvers) {
@@ -309,7 +325,7 @@ export function BindingEditor({
       }
       return savedResolve(cellId, binding);
     };
-  }, [savedResolve, data, reportResults, plan, draft.config, format, patternResults]);
+  }, [savedResolve, data, reportResults, plan, format, patternResults]);
   const nowMs = usePreviewTime(
     data,
     generation,
@@ -337,7 +353,7 @@ export function BindingEditor({
     [localPreview, patternResults, cardPatch, resolve, cardContext]
   );
   const metricDiagnostics = [...bound.diagnostics, ...(hoverPreview?.diagnostics ?? [])];
-  const diagnostics = [...draft.diagnostics, ...validateConfig(draft.config).diagnostics, ...plan.diagnostics];
+  const diagnostics = [...draft.diagnostics, ...validated.diagnostics, ...plan.diagnostics];
   const matchPreviews = affected.map((cellId) => {
     const bindings = [
       ...(plan.cells[cellId]?.bindings ?? []),
@@ -367,8 +383,8 @@ export function BindingEditor({
   // The list shows every diagnostic that the editor knows, plus the hover card ones of all cells.
   // The deferred value keeps typing in a field responsive while the list catches up.
   const listInput = useMemo(
-    () => ({ config: draft.config, draftDiagnostics: draft.diagnostics, plan, bound, resolve }),
-    [draft.config, draft.diagnostics, plan, bound, resolve]
+    () => ({ validated, draftDiagnostics: draft.diagnostics, plan, bound, resolve }),
+    [validated, draft.diagnostics, plan, bound, resolve]
   );
   const deferred = useDeferredValue(listInput);
   const listDiagnostics = useMemo(() => {
@@ -377,15 +393,15 @@ export function BindingEditor({
     );
     return [
       ...deferred.draftDiagnostics,
-      ...validateConfig(deferred.config).diagnostics,
+      ...deferred.validated.diagnostics,
       ...deferred.bound.diagnostics,
       ...widgetDiagnostics(deferred.plan, deferred.resolve),
       ...cards,
     ];
   }, [deferred, cardContext]);
   const bindingsList = useMemo(
-    () => buildBindingsList(deferred.config, metas, listDiagnostics),
-    [deferred.config, metas, listDiagnostics]
+    () => buildBindingsList(deferred.validated, metas, listDiagnostics),
+    [deferred.validated, metas, listDiagnostics]
   );
 
   // ---- selection ----
@@ -529,20 +545,27 @@ export function BindingEditor({
   }, [selection, draft, bindingsList]);
 
   const selected = draft.cellId ? cells.get(draft.cellId) : undefined;
-  const override = draft.config.overrides.find((o) => o.cellId === draft.cellId);
-  // Invalid drafts still expose their raw fields for correction. Validation blocks Apply.
+  const overrideIndex = draft.config.overrides.findIndex((o) => o?.cellId === draft.cellId);
+  const override = overrideIndex < 0 ? undefined : draft.config.overrides[overrideIndex];
+  // An override that does not parse any more (a field blanked in the form) is skipped by the plan. Its raw fields
+  // stay in the form for correction, over the merge of the patterns. Validation blocks Apply.
+  const skippedOverride = validated.skipped.overrides.includes(overrideIndex) ? override : undefined;
+  const planned = draft.cellId ? plan.cells[draft.cellId] : undefined;
   const inspected = draft.cellId
-    ? (plan.cells[draft.cellId] ??
-      (selected
+    ? planned
+      ? skippedOverride && isRecord(skippedOverride.display)
+        ? { ...planned, display: rawMerge(planned.display, skippedOverride.display), overridden: true }
+        : planned
+      : selected
         ? {
             cellId: selected.meta.id,
             scope: cellScope(selected.meta),
-            display: override?.display ?? {},
-            patternIds: draft.config.patterns.filter((p) => cellMatches(p.select, selected.meta)).map((p) => p.id),
+            display: isRecord(override?.display) ? (override.display as MergedDisplay) : {},
+            patternIds: plan.config.patterns.filter((p) => cellMatches(p.select, selected.meta)).map((p) => p.id),
             overridden: !!override,
             bindings: [],
           }
-        : undefined))
+        : undefined
     : undefined;
   const fields = Array.from(
     new Set(
@@ -596,7 +619,7 @@ export function BindingEditor({
     }
     const existing = previewSnapshot(
       selectedQuery,
-      draft.config,
+      plan.config,
       data,
       draft.cellId ?? '',
       undefined,
@@ -628,7 +651,7 @@ export function BindingEditor({
     patternRelease.current = previewPattern(
       service.controller,
       plan,
-      draft.config,
+      plan.config,
       affected,
       context,
       (value) => setPatternState({ key: patternKey, value }),
@@ -690,7 +713,7 @@ export function BindingEditor({
   const chartLayer = context
     ? {
         plan,
-        queries: draft.config.queries,
+        queries: plan.config.queries,
         controller: service?.controller,
         context,
         replaceVariables: bindContext.replaceVariables,

@@ -1,4 +1,4 @@
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 import { expect, test } from './authoring-fixtures';
 
 // A fictional portograph sheet: canvas, a group, two nodes with an icon, a link with a label and a legend.
@@ -24,7 +24,7 @@ test('the hand cursor shows only on cells that open a card', async ({
   gotoDashboardPage,
 }) => {
   // Every cell has a card row; rtr-b turns its card off.
-  const cards: DiagramConfigV2 = {
+  const cards: DiagramConfig = {
     ...config,
     queries: [],
     widgets: [],
@@ -62,7 +62,7 @@ test('in panel edit mode only the cells that open a card show the hand cursor; T
   gotoPanelEditPage,
   selectors,
 }) => {
-  const cards: DiagramConfigV2 = {
+  const cards: DiagramConfig = {
     ...config,
     queries: [],
     widgets: [],

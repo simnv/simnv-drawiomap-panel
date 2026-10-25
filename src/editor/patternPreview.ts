@@ -1,5 +1,5 @@
 import type { BindingPlan } from '../binding/patterns';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 import { measureFrames } from '../query/controller';
 import {
   DEFAULT_QUERY_POLICY,
@@ -11,7 +11,7 @@ import {
 import { preparedSnapshot, type QueryPreview } from './preview';
 
 export interface PatternPreview {
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   context: QueryContext;
   previews: QueryPreview[];
 }
@@ -20,7 +20,7 @@ export interface PatternPreview {
 export function previewPattern(
   controller: QueryController,
   plan: BindingPlan,
-  config: DiagramConfigV2,
+  config: DiagramConfig,
   affected: string[],
   context: QueryContext,
   publish: (value: PatternPreview) => void,

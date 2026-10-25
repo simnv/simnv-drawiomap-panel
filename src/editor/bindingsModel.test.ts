@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateConfig, type DiagramConfigV2 } from '../model/config';
+import { validateConfig, type DiagramConfig } from '../model/config';
 import type { CellMeta } from '../types';
 import { buildBindingsList, cellRows, filterBindings, problemsOf, rowMatches } from './bindingsModel';
 
@@ -12,8 +12,8 @@ const cell = (id: string, kind: CellMeta['kind'] = 'node', labelText = ''): Cell
   isEdge: kind === 'link',
 });
 const binding = (queryId: string) => ({ queryId, match: {}, reducer: 'last' as const });
-const config: DiagramConfigV2 = {
-  version: 2,
+const config: DiagramConfig = {
+  version: 3,
   queries: [
     { id: 'q1', name: 'One', source: { kind: 'panel', refId: 'A' } },
     { id: 'q2', name: 'Two', source: { kind: 'panel', refId: 'B' } },
@@ -175,12 +175,12 @@ describe('query-level diagnostics', () => {
 });
 
 describe('owner of a merged setting', () => {
-  const a2b = (queryId: string) => ({ a2bBinding: binding(queryId) });
-  const merged: DiagramConfigV2 = {
+  const a2b = (queryId: string) => ({ a2b: { binding: binding(queryId) } });
+  const merged: DiagramConfig = {
     ...config,
     patterns: [
       { id: 'p1', name: 'P1', select: { ids: ['core'] }, display: { label: 'one', link: a2b('q1') } },
-      { id: 'p2', name: 'P2', select: { ids: ['core'] }, display: { link: { b2aBinding: binding('q2') } } },
+      { id: 'p2', name: 'P2', select: { ids: ['core'] }, display: { link: { b2a: { binding: binding('q2') } } } },
     ],
     overrides: [{ cellId: 'core', display: { label: 'over' } }],
     widgets: [],
@@ -193,12 +193,12 @@ describe('owner of a merged setting', () => {
     expect(owners('cells.core.label')).toEqual(['override:0:core']);
   });
   it('tracks nested fields separately', () => {
-    expect(owners('cells.core.link.a2bBinding')).toEqual(['pattern:0:p1']);
-    expect(owners('cells.core.link.b2aBinding')).toEqual(['pattern:1:p2']);
+    expect(owners('cells.core.link.a2b.binding')).toEqual(['pattern:0:p1']);
+    expect(owners('cells.core.link.b2a.binding')).toEqual(['pattern:1:p2']);
   });
   it('replaces an array as a whole', () => {
     const rows = (queryId: string) => [{ kind: 'value' as const, label: 'V', binding: binding(queryId) }];
-    const cfg: DiagramConfigV2 = {
+    const cfg: DiagramConfig = {
       ...merged,
       patterns: [
         { id: 'p1', name: 'P1', select: { ids: ['core'] }, display: { hover: { rows: rows('q1') } } },
@@ -221,7 +221,7 @@ describe('owner of a merged setting', () => {
           ? { mappings: [{ value: 1, state: 'down', reason: 'x' }] }
           : { predicates: [{ op: 'gt', value: 1, state: 'down', reason: 'x' }] }),
       }) as never;
-    const cfg: DiagramConfigV2 = {
+    const cfg: DiagramConfig = {
       ...merged,
       patterns: [
         { id: 'p1', name: 'P1', select: { ids: ['core'] }, display: { status: status('mapping') } },
@@ -236,7 +236,7 @@ describe('owner of a merged setting', () => {
   });
   it('blames every pattern that contributed a matcher key of the same binding', () => {
     const shape = (match: Record<string, string>) => ({ binding: { queryId: 'q1', match, reducer: 'last' as const } });
-    const cfg: DiagramConfigV2 = {
+    const cfg: DiagramConfig = {
       ...merged,
       patterns: [
         { id: 'p1', name: 'P1', select: { ids: ['core'] }, display: { shape: shape({ job: 'absent' }) } },
@@ -254,7 +254,7 @@ describe('owner of a merged setting', () => {
     expect(at('cells.core.shape.binding.match.device')).toEqual([0, 1]);
   });
   it('sends a parameter diagnostic below a binding to the pattern that has the binding only', () => {
-    const cfg: DiagramConfigV2 = {
+    const cfg: DiagramConfig = {
       ...merged,
       patterns: [
         { id: 'labels', name: 'Labels', select: { ids: ['core'] }, display: { label: 'x' } },
@@ -278,7 +278,7 @@ describe('owner of a merged setting', () => {
 });
 
 describe('duplicate pattern IDs', () => {
-  const dup: DiagramConfigV2 = {
+  const dup: DiagramConfig = {
     ...config,
     patterns: [
       { id: 'same', name: 'First', select: { ids: ['core'] }, display: {} },
@@ -406,7 +406,7 @@ describe('cellRows', () => {
 
 describe('search keeps the label next to the title', () => {
   const linked = (): CellMeta => ({ ...cell('l9', 'link', 'WAN 100M'), title: 'Switch-A p9 ↔ AP-1' });
-  const cfg: DiagramConfigV2 = {
+  const cfg: DiagramConfig = {
     ...config,
     patterns: [{ id: 'links', name: 'Links', select: { kind: 'link' }, display: {} }],
     overrides: [{ cellId: 'l9', display: { label: 'x' } }],
@@ -417,5 +417,59 @@ describe('search keeps the label next to the title', () => {
       expect(filterBindings(list, { text, problemsOnly: false }).patterns).toHaveLength(1);
       expect(filterBindings(list, { text, problemsOnly: false }).overrides).toHaveLength(1);
     }
+  });
+});
+
+describe('skipped items', () => {
+  it('gives a skipped pattern a problem row at its saved index, with zero matches and no selector crash', () => {
+    const saved = {
+      ...config,
+      patterns: [
+        config.patterns[0],
+        { id: 'broken', name: 'Broken', select: null, display: {} },
+        { select: { kind: 'host' }, display: { link: { capacity: 0 } } },
+        config.patterns[1],
+      ],
+    };
+    const validated = validateConfig(saved);
+    const list = buildBindingsList(validated, cells, validated.diagnostics);
+    expect(list.patterns.map((r) => [r.index, r.name, r.matched.length, !!r.skipped])).toEqual([
+      [0, 'Nodes', 2, false],
+      [1, 'Broken', 0, true],
+      [2, 'patterns[2]', 0, true],
+      [3, 'Ghost', 0, false],
+    ]);
+    const broken = list.patterns[1];
+    expect(broken.problems.map((p) => p.code)).toEqual(['invalid-config', 'skipped-item']);
+    expect(broken.problems.some((p) => p.code === 'no-match')).toBe(false);
+    // a per-cell problem of a later pattern still finds its row by the saved index
+    const marked = buildBindingsList(validated, cells, [
+      ...validated.diagnostics,
+      { code: 'skipped-cells', path: 'patterns[2].select', message: 'x' },
+      { code: 'unresolved-metadata', path: 'cells.core.status.binding', message: 'y' },
+    ]);
+    expect(marked.patterns[2].problems.map((p) => p.code)).toContain('skipped-cells');
+    expect(marked.patterns[0].problems.map((p) => p.code)).toContain('unresolved-metadata');
+  });
+  it('gives a skipped override and widget a problem row and keeps the saved indices of the others', () => {
+    const saved = {
+      ...config,
+      overrides: [{ cellId: 'core', display: { unknown: 1 } }, ...config.overrides],
+      widgets: [{ id: 'w0', anchorCellId: '', kind: 'bar', label: 'Zero', binding: binding('q1') }, ...config.widgets],
+    };
+    const validated = validateConfig(saved);
+    const list = buildBindingsList(validated, cells, validated.diagnostics);
+    expect(list.overrides.map((r) => [r.index, r.handle, !!r.skipped])).toEqual([
+      [0, 'core', true],
+      [1, 'core', false],
+      [2, 'gone', false],
+    ]);
+    expect(list.widgets.map((r) => [r.index, r.widgetId, !!r.skipped])).toEqual([
+      [0, 'w0', true],
+      [1, 'w1', false],
+      [2, 'w2', false],
+    ]);
+    expect(list.overrides[0].problems.map((p) => p.code)).toEqual(['invalid-config', 'skipped-item']);
+    expect(list.widgets[2].problems.map((p) => p.code)).toEqual(['missing-anchor']);
   });
 });

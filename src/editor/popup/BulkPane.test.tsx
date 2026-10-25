@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { resolvePatterns } from '../../binding/patterns';
-import { validateConfig, type DiagramConfigV2, type DisplayConfig, type HoverRow } from '../../model/config';
+import { validateConfig, type DiagramConfig, type DisplayConfig, type HoverRow } from '../../model/config';
 import type { CellMeta } from '../../types';
 import { renderEditor, svgOf } from '../editorHarness';
 import { buttonNamed, chooseOption, editorField, openSection } from '../testUtils';
@@ -10,8 +10,8 @@ import { commonLeaves } from './BulkPane';
 const row = (label: string): HoverRow => ({ kind: 'metadata', label, path: 'cell.key' });
 const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
 const meta = (id: string): CellMeta => ({ id, key: id, kind: 'node', attrs: {}, labelText: '', isEdge: false });
-const config = (over: Partial<DiagramConfigV2> = {}): DiagramConfigV2 => ({
-  version: 2,
+const config = (over: Partial<DiagramConfig> = {}): DiagramConfig => ({
+  version: 3,
   queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
   widgets: [],
   patterns: [
@@ -19,7 +19,7 @@ const config = (over: Partial<DiagramConfigV2> = {}): DiagramConfigV2 => ({
       id: 'p',
       name: 'Devices',
       select: { ids: ['a', 'b', 'c'] },
-      display: { label: 'Shared', hover: { rows: [row('Identity')] }, link: { a2bBinding: binding } },
+      display: { label: 'Shared', hover: { rows: [row('Identity')] }, link: { a2b: { binding: binding } } },
     },
   ],
   overrides: [
@@ -30,12 +30,12 @@ const config = (over: Partial<DiagramConfigV2> = {}): DiagramConfigV2 => ({
 });
 
 describe('commonLeaves', () => {
-  const plan = (cfg: DiagramConfigV2) => resolvePatterns(['a', 'b', 'c'].map(meta), cfg);
+  const plan = (cfg: DiagramConfig) => resolvePatterns(['a', 'b', 'c'].map(meta), cfg);
 
   it('lists the leaves that every cell has with one value, and the leaves where the cells differ', () => {
     const { common, mixedPaths } = commonLeaves(['a', 'b', 'c'], plan(config()));
     expect(common.label).toBe('Shared');
-    expect(common.link?.a2bBinding).toEqual(binding);
+    expect(common.link?.a2b?.binding).toEqual(binding);
     // a has a url, the others do not; b has other rows.
     expect(mixedPaths.sort()).toEqual(['hover.rows', 'url']);
     expect(common.hover?.rows).toBeUndefined();
@@ -99,7 +99,7 @@ describe('BulkPane in the editor', () => {
   };
   const apply = (view: ReturnType<typeof open>) => {
     fireEvent.click(buttonNamed('Apply bindings'));
-    return view.save.mock.calls.at(-1)![0] as DiagramConfigV2;
+    return view.save.mock.calls.at(-1)![0] as DiagramConfig;
   };
 
   it('shows the common value and writes one label leaf to three overrides, keeping the other fields', () => {
@@ -188,7 +188,7 @@ describe('BulkPane in the editor', () => {
       const apply = buttonNamed('Apply bindings') as HTMLButtonElement;
       expect(apply.disabled).toBe(false);
       fireEvent.click(apply);
-      const written = view.save.mock.calls.at(-1)![0] as DiagramConfigV2;
+      const written = view.save.mock.calls.at(-1)![0] as DiagramConfig;
       expect(written.overrides.map((o) => o.display)).toEqual([
         shape({ job: 'x' }, 'mean'),
         shape({ job: 'x' }, 'mean'),

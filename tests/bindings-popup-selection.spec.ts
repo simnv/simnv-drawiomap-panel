@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 import {
   chooseEditorOption,
   closeBindingsPopup,
@@ -29,8 +29,8 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="440" height="200" vi
   ).join('')}</g>
 </svg>`;
 const identity = { kind: 'metadata' as const, label: 'Identity', path: 'cell.key' };
-const baseConfig = (over: Partial<DiagramConfigV2> = {}): DiagramConfigV2 => ({
-  version: 2,
+const baseConfig = (over: Partial<DiagramConfig> = {}): DiagramConfig => ({
+  version: 3,
   queries: [],
   widgets: [],
   overrides: [],

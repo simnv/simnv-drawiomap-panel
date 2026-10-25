@@ -7,7 +7,7 @@ import { DELETE_CONFIRM_ID } from './BindingsList';
 import { isTop } from './popup/overlayStack';
 import * as cardModel from '../interact/cardModel';
 import { FieldType, LoadingState, getDefaultTimeRange, toDataFrame } from '@grafana/data';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 
 vi.hoisted(() => {
   if (!window.localStorage) {
@@ -27,8 +27,8 @@ vi.mock('../interact/cardModel', async (importOriginal) => {
 });
 
 const binding = (queryId: string) => ({ queryId, match: {}, reducer: 'last' as const });
-const config: DiagramConfigV2 = {
-  version: 2,
+const config: DiagramConfig = {
+  version: 3,
   queries: [{ id: 'q1', name: 'One', source: { kind: 'panel', refId: 'A' } }],
   patterns: [
     {
@@ -59,7 +59,7 @@ const resolvedData = {
     }),
   ],
 };
-function setup(input: DiagramConfigV2 = config, extra: Partial<EditorHarnessProps> = {}) {
+function setup(input: DiagramConfig = config, extra: Partial<EditorHarnessProps> = {}) {
   return renderEditor({ config: input, svg: svgOf('device-1', 'device-2'), data: resolvedData, ...extra });
 }
 const stageCell = (id: string) => screen.getByTestId('dmap-popup-stage').querySelector(`g[data-cell-id="${id}"]`)!;
@@ -238,7 +238,7 @@ describe('bindings list', () => {
   });
 
   it('tells the author that the panel ignores its saved rules of version 1', () => {
-    setup({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] }, { legacyRules: 3 });
+    setup({ version: 3, queries: [], patterns: [], overrides: [], widgets: [] }, { legacyRules: 3 });
     expect(screen.getByText(/3 rules of version 1/)).toBeTruthy();
     expect(screen.getByText(/ignores them/)).toBeTruthy();
   });
@@ -273,7 +273,7 @@ describe('bindings list', () => {
   });
 
   it('opens the exact pattern when pattern IDs collide', () => {
-    const dup: DiagramConfigV2 = {
+    const dup: DiagramConfig = {
       ...config,
       overrides: [],
       widgets: [],
@@ -340,7 +340,7 @@ describe('bindings list', () => {
     const timeRange = getDefaultTimeRange();
     const context = { timeRange, timeZone: 'utc', scopedVars: {}, refreshMs: 0, intervalMs: 1000, generation: 1 };
     const data = { state: LoadingState.Done, series: [], timeRange };
-    const native: DiagramConfigV2 = {
+    const native: DiagramConfig = {
       ...config,
       overrides: [],
       widgets: [],

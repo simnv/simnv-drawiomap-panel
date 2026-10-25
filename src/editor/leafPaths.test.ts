@@ -3,16 +3,16 @@ import { diffLeaves, getLeaf, leafPaths, setLeaf, unsetPath } from './leafPaths'
 
 describe('leafPaths', () => {
   it('lists scalar leaves with dotted paths', () => {
-    expect(leafPaths({ label: 'a', link: { enabled: true, a2bBinding: undefined } })).toEqual([
+    expect(leafPaths({ label: 'a', link: { enabled: true, a2b: { binding: undefined } } })).toEqual([
       'label',
       'link.enabled',
-      'link.a2bBinding',
+      'link.a2b.binding',
     ]);
   });
   it('recurses into nested objects', () => {
-    expect(leafPaths({ link: { a2bBinding: { queryId: 'q', match: { id: 'x' } } } as never })).toEqual([
-      'link.a2bBinding.queryId',
-      'link.a2bBinding.match.id',
+    expect(leafPaths({ link: { a2b: { binding: { queryId: 'q', match: { id: 'x' } } } } as never })).toEqual([
+      'link.a2b.binding.queryId',
+      'link.a2b.binding.match.id',
     ]);
   });
   it('treats an array as one leaf at the array path', () => {

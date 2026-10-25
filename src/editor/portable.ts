@@ -1,9 +1,15 @@
-import { displayBindings, validateConfig, type Diagnostic, type DiagramConfigV2 } from '../model/config';
+import {
+  displayBindings,
+  validateConfig,
+  type Diagnostic,
+  type DiagramConfig,
+  type NamedQuery,
+} from '../model/config';
 
 export interface PatternDocument {
   kind: 'drawiomap-patterns';
   version: 1;
-  config: DiagramConfigV2;
+  config: DiagramConfig;
 }
 type Section = 'queries' | 'patterns' | 'widgets';
 export type ImportDecision = { action: 'replace' } | { action: 'new'; id: string };
@@ -15,23 +21,30 @@ export interface ImportResolution {
   anchors?: Record<string, string>;
 }
 export interface PatternImportPreview {
-  config?: DiagramConfigV2;
+  config?: DiagramConfig;
   diagnostics: Diagnostic[];
   conflicts: Array<{ section: Section; id: string }>;
   overrides: Array<{ cellId: string; applies: boolean; conflict: boolean }>;
   anchors: Array<{ cellId: string; applies: boolean }>;
 }
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
-function checked(input: unknown): DiagramConfigV2 {
+/** The datasource of a query from a reference: a reference without a uid names none. */
+const refOf = (ref: DiagramConfig['defaultDatasource']): NamedQuery['source'] extends infer S
+  ? S extends { kind: 'datasource'; datasource?: infer D }
+    ? D | undefined
+    : never
+  : never => (ref?.uid ? { uid: ref.uid, ...(ref.type ? { type: ref.type } : {}) } : undefined);
+/** A clean config: it parses and has no diagnostic. A portable document carries nothing else. */
+function checked(input: unknown): DiagramConfig {
   const result = validateConfig(input);
-  if (!result.config) {
+  if (!result.config || result.diagnostics.length) {
     throw new Error(result.diagnostics.map((d) => `${d.path}: ${d.message}`).join('\n'));
   }
   return result.config;
 }
 
 /** A portable document carries the datasource context of every referenced native definition. */
-export function exportPatternDocument(config: DiagramConfigV2): PatternDocument {
+export function exportPatternDocument(config: DiagramConfig): PatternDocument {
   const value = checked(config);
   const referenced = new Set([
     ...[...value.patterns, ...value.overrides].flatMap((p) => displayBindings(p.display).map((b) => b.binding.queryId)),
@@ -41,7 +54,7 @@ export function exportPatternDocument(config: DiagramConfigV2): PatternDocument 
     .filter((q) => referenced.has(q.id))
     .map((query) =>
       query.source.kind === 'datasource'
-        ? { ...query, source: { ...query.source, datasource: query.source.datasource ?? value.defaultDatasource } }
+        ? { ...query, source: { ...query.source, datasource: query.source.datasource ?? refOf(value.defaultDatasource) } }
         : query
     );
   return { kind: 'drawiomap-patterns', version: 1, config: checked(value) };
@@ -49,7 +62,7 @@ export function exportPatternDocument(config: DiagramConfigV2): PatternDocument 
 
 /** Preparing an import performs no I/O and never mutates the destination. */
 export function previewPatternImport(
-  destination: DiagramConfigV2,
+  destination: DiagramConfig,
   input: unknown,
   cellIds: string[],
   resolution: ImportResolution = {}
@@ -70,14 +83,14 @@ export function previewPatternImport(
     return preview;
   }
   const result = validateConfig(input.config);
-  if (!result.config) {
+  if (!result.config || result.diagnostics.length) {
     return { ...preview, diagnostics: result.diagnostics };
   }
   const incoming = result.config;
   const config = copy(destination);
   incoming.queries = incoming.queries.map((q) =>
     q.source.kind === 'datasource'
-      ? { ...q, source: { ...q.source, datasource: q.source.datasource ?? incoming.defaultDatasource } }
+      ? { ...q, source: { ...q.source, datasource: q.source.datasource ?? refOf(incoming.defaultDatasource) } }
       : q
   );
   const queryIds = new Map<string, string>();
@@ -161,5 +174,6 @@ export function previewPatternImport(
     Object.assign(config, { [section]: merged });
   }
   config.overrides = config.overrides.filter((old) => !overrideIds.has(old.cellId)).concat(incoming.overrides);
-  return { ...preview, ...validateConfig(config) };
+  const merged = validateConfig(config);
+  return { ...preview, config: merged.diagnostics.length ? undefined : merged.config, diagnostics: merged.diagnostics };
 }

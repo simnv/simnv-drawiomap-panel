@@ -126,7 +126,7 @@ test('portable patterns keep their datasource across panels; Cancel drops an imp
   const trend = config.queries.find((q) => q.id === 'trend')!;
   const defaultDatasource = trend.source.kind === 'datasource' ? trend.source.datasource : undefined;
   const destination = await createDiagram({
-    version: 2,
+    version: 3,
     defaultDatasource,
     queries: [],
     patterns: [],

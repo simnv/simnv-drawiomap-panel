@@ -1,5 +1,5 @@
 import { ownersOfPath, pathRelated, type DisplayOwner, type DisplayProvenance } from '../binding/patterns';
-import type { DiagramConfigV2, DisplayConfig } from '../model/config';
+import type { DiagramConfig, DisplayConfig } from '../model/config';
 import { valueAtPath } from './leafPaths';
 
 export { valueAtPath };
@@ -33,7 +33,7 @@ export function resetPathOf(path: string): string {
 }
 
 /** The own display of the edited owner. */
-export function ownDisplay(config: DiagramConfigV2, editing: DisplayOwner): Partial<DisplayConfig> | undefined {
+export function ownDisplay(config: DiagramConfig, editing: DisplayOwner): Partial<DisplayConfig> | undefined {
   return editing.kind === 'pattern'
     ? config.patterns[editing.index]?.display
     : config.overrides.find((o) => o.cellId === editing.cellId)?.display;
@@ -57,7 +57,7 @@ export function fieldSourceOf(
   provenance: DisplayProvenance,
   path: string,
   editing: DisplayOwner,
-  config: DiagramConfigV2
+  config: DiagramConfig
 ): FieldSource {
   const owners = ownersAt(provenance, path);
   const override = owners.find((owner) => owner.kind === 'override');

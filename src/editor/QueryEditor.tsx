@@ -60,11 +60,13 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
       setNotice('The eager target is unavailable. Open the Grafana Queries tab and copy its native JSON definition.');
       return;
     }
+    // a reference without a uid names no datasource: the query then takes the default of the config
+    const ref = target.datasource ?? context.defaultDatasource;
     onChange({
       ...query,
       source: {
         kind: 'datasource',
-        datasource: target.datasource ?? context.defaultDatasource,
+        datasource: ref?.uid ? { uid: ref.uid, ...(ref.type ? { type: ref.type } : {}) } : undefined,
         target: JSON.parse(JSON.stringify(target)),
         parameters: {},
       },
@@ -161,7 +163,7 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
                     defaultDatasource: context.defaultDatasource,
                     queries: [candidate],
                   });
-                  if (!checked.config) {
+                  if (!checked.config || checked.diagnostics.length) {
                     message = checked.diagnostics.map((d) => d.message).join(' ');
                   } else {
                     onChange(checked.config.queries[0]);

@@ -1,4 +1,4 @@
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 import { binding, nativeQuery } from '../src/fixtures/authoring-config';
 import { expect, test } from './authoring-fixtures';
 
@@ -12,7 +12,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="660" height="330" vi
   ).join('')}</g>
 </svg>`;
 
-function emptyConfig(config: DiagramConfigV2): DiagramConfigV2 {
+function emptyConfig(config: DiagramConfig): DiagramConfig {
   return {
     ...config,
     queries: Array.from({ length: COUNT }, (_, i) => nativeQuery(`health-${i}`, 'absent(vector(1))')),

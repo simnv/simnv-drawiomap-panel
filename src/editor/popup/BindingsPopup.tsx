@@ -4,7 +4,7 @@ import type { FieldConfigSource, PanelData, PanelProps } from '@grafana/data';
 import { ConfirmModal, useTheme2 } from '@grafana/ui';
 import { bindContextFor } from '../../binding/context';
 import { DEFAULT_OPTIONS, type Diagram, type Options } from '../../types';
-import type { DiagramConfigV2 } from '../../model/config';
+import type { DiagramConfig } from '../../model/config';
 import { BindingEditor, type HistoryControls } from '../BindingEditor';
 import { EMPTY_CONFIG } from '../draft';
 import { baseRevision, hasConflict } from '../revision';
@@ -118,7 +118,7 @@ export function BindingsPopup({
   );
 
   const apply = useCallback(
-    (config: DiagramConfigV2, diagram?: Diagram) => {
+    (config: DiagramConfig, diagram?: Diagram) => {
       const next = { ...options, config, diagram: diagram ?? options.diagram };
       onOptionsChange(next);
       setBase(baseRevision(next));

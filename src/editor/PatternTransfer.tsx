@@ -1,6 +1,6 @@
 import { Alert, Button, Select, TextArea } from '@grafana/ui';
 import React, { useState } from 'react';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 import { exportPatternDocument, previewPatternImport, type ImportDecision, type ImportResolution } from './portable';
 import { TextField } from './BindingFields';
 import { EditorField, EditorSection } from './EditorLayout';
@@ -10,7 +10,7 @@ export function PatternTransfer({
   cellIds,
   onImport,
 }: {
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   cellIds: string[];
   onImport: (document: unknown, resolution: ImportResolution) => void;
 }) {
@@ -24,7 +24,7 @@ export function PatternTransfer({
     document && typeof document === 'object' && 'config' in document
       ? (() => {
           try {
-            return exportPatternDocument((document as { config: DiagramConfigV2 }).config).config.queries;
+            return exportPatternDocument((document as { config: DiagramConfig }).config).config.queries;
           } catch {
             return [];
           }

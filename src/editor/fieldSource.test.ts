@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { displayProvenance } from '../binding/patterns';
-import type { DiagramConfigV2, HoverRow, QueryBinding } from '../model/config';
+import type { DiagramConfig, HoverRow, QueryBinding } from '../model/config';
 import type { CellMeta } from '../types';
 import { fieldSourceOf, resetLabel, resetPathOf, sourceText, valueAtPath } from './fieldSource';
 
@@ -11,8 +11,8 @@ const rows: HoverRow[] = [
   { kind: 'value', label: 'CPU', binding },
 ];
 
-const config = (over: Partial<DiagramConfigV2['overrides'][number]['display']> = {}): DiagramConfigV2 => ({
-  version: 2,
+const config = (over: Partial<DiagramConfig['overrides'][number]['display']> = {}): DiagramConfig => ({
+  version: 3,
   queries: [],
   widgets: [],
   patterns: [
@@ -24,7 +24,7 @@ const config = (over: Partial<DiagramConfigV2['overrides'][number]['display']> =
         label: 'From pattern',
         url: '/d/pattern',
         shape: { binding, target: 'shape' },
-        link: { a2bBinding: binding },
+        link: { a2b: { binding: binding } },
         hover: { rows },
       },
     },
@@ -34,7 +34,7 @@ const config = (over: Partial<DiagramConfigV2['overrides'][number]['display']> =
 
 const element = { kind: 'override', cellId: 'device-1' } as const;
 const pattern = { kind: 'pattern', index: 0 } as const;
-const source = (c: DiagramConfigV2, path: string, editing: typeof element | typeof pattern = element) =>
+const source = (c: DiagramConfig, path: string, editing: typeof element | typeof pattern = element) =>
   fieldSourceOf(displayProvenance(c, cell), path, editing, c);
 
 describe('fieldSourceOf', () => {
@@ -52,7 +52,7 @@ describe('fieldSourceOf', () => {
     const c = config({
       enabled: false,
       shape: { text: true },
-      link: { enabled: false, capacity: 100, a2bBinding: { ...binding, queryId: 'other' } },
+      link: { enabled: false, capacity: 100, a2b: { binding: { ...binding, queryId: 'other' } } },
     });
     const owners = (path: string) => source(c, path).owner;
     expect(owners('enabled')).toBe('override');
@@ -63,8 +63,8 @@ describe('fieldSourceOf', () => {
     expect(owners('shape.binding')).toBe('pattern');
     expect(owners('shape.target')).toBe('pattern');
     expect(owners('link.enabled')).toBe('override');
-    expect(owners('link.a2bBinding')).toBe('override');
-    expect(owners('link.b2aBinding')).toBe('default');
+    expect(owners('link.a2b.binding')).toBe('override');
+    expect(owners('link.b2a.binding')).toBe('default');
     expect(owners('link.capacityBinding')).toBe('default');
     expect(owners('link.capacity')).toBe('override');
     expect(owners('status.enabled')).toBe('default');
@@ -115,7 +115,7 @@ describe('fieldSourceOf', () => {
     expect(resetPathOf('status')).toBe('status');
     expect(resetPathOf('status.binding')).toBe('status');
     expect(resetPathOf('status.mappings[1].value')).toBe('status.mappings');
-    expect(resetPathOf('link.a2bBinding')).toBe('link.a2bBinding');
+    expect(resetPathOf('link.a2b.binding')).toBe('link.a2b.binding');
     const c = config({
       status: {
         kind: 'mapping',

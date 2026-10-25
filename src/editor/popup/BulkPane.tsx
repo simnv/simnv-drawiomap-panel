@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Button } from '@grafana/ui';
 import { pathRelated, type BindingPlan } from '../../binding/patterns';
-import type { DiagramConfigV2, DisplayConfig } from '../../model/config';
+import type { DiagramConfig, DisplayConfig } from '../../model/config';
 import { DisplayFields } from '../BindingFields';
 import type { DraftAction } from '../draft';
 import { EditorSection, type FieldSourceView } from '../EditorLayout';
@@ -53,7 +53,7 @@ export interface BulkPaneProps {
   /** The selected cells; at least two. */
   cellIds: string[];
   plan: BindingPlan;
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   /** Field names of the panel data, for the binding fields. */
   fields: string[];
   dispatch: (action: DraftAction) => void;
