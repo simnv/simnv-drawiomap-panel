@@ -93,7 +93,7 @@ Angle and side: the rules of portograph's `candidateBox` (`run-label-box.ts:306-
 ```ts
 export function runHeading(dx: number, dy: number): { degrees: number; first: Point } {
   if (Math.abs(dx) <= VERTICAL_EPS) {                 // an exactly vertical run, whichever way it runs
-    return { degrees: -90, first: { x: 1, y: 0 } };   // reads bottom to top; the first side is the right
+    return { degrees: -90, first: { x: -1, y: 0 } };  // reads bottom to top; the first (top) side is the left
   }
   let degrees = (Math.atan2(dy, dx) * 180) / Math.PI;
   if (degrees > 90) degrees -= 180;
@@ -106,13 +106,12 @@ export function runHeading(dx: number, dy: number): { degrees: number; first: Po
 `VERTICAL_EPS = 0.01` user units (draw.io writes two decimals; portograph's `EPS` is 1e-7 on exact numbers). A
 horizontal run gives 0; 89° stays 89° (the text runs down the screen, letters' bottom to the left); 91° becomes
 −89°; −89° stays; −91° becomes 89°; the glyphs' down vector `(−sin θ, cos θ)` has `cos θ ≥ 0` on every heading,
-so the letters' bottom never faces up the screen. The second side is `−first`. Both halves of a link take the first
-side when it is free, so the two labels of a horizontal link read in one line. The text is rotated about the box
+so the letters' bottom never faces up the screen. The second side is `−first`. A vertical run (−90°) has `first = left`, the side the tops of the letters face. Both halves of a link take one place (section 9). The text is rotated about the box
 centre, `transform="rotate(θ cx cy)"` with `text-anchor="middle"` and `dominant-baseline="central"`, the
 construction the port pills use (`rotate(-90,213.05,107.5)` in `fixtures/demo/svg/demo-l3.svg`).
 
 Box. Size `w × h`: `w` is the slot width (section 7), `h = fontSize × 1.25`, both plus `2 × halo` (portograph
-`haloSize`, `halo = 2`). Clearance to the stroke: `gap = normalGap + strokeRoot / 2`, `normalGap = 4` root units
+`haloSize`, `halo = 1` after the live run: a 2-unit stroke is 1 unit outside the glyphs). Clearance to the stroke: `gap = normalGap + strokeRoot / 2`, `normalGap = 2` root units (4 as `wideGap`, see section 9)
 (`LINK_LABEL_GEOMETRY`). The centre is `anchor + side × (gap + h / 2)`, the turned branch of `candidateBox`, so the
 near edge of the box is `normalGap` outside the stroke edge on every heading. The local stroke width is
 `linkWidth.max` of the panel options (decided), not the half's current width: the width grows with the load on each
@@ -139,7 +138,7 @@ export interface ObstacleIndex { add(o: Obstacle): void; near(box: Rect): Iterab
 export function obstacleIndex(items: readonly Obstacle[], cell?: number): ObstacleIndex;
 export interface Placed { centre: Point; degrees: number; box: OrientedBox; along: number }
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
-export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 4, halo: 2, alongStep: 4, endMargin: 4 } as const;
+export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 2, wideGap: 4, halo: 1, alongStep: 4, endMargin: 4 } as const;
 export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex): Placement;
 export function runHeading(dx: number, dy: number): { degrees: number; first: Point };
 export function labelsVisible(viewScale: number): boolean;   // section 6
@@ -147,7 +146,8 @@ export function labelsVisible(viewScale: number): boolean;   // section 6
 
 Candidates, in this order (the first free one wins):
 
-1. Side: the first side over the whole leg, then the second side (the portograph ladder).
+1. Place (owner rules after the live run, superseding the portograph side ladder): on the stroke first (the box centre on the half's own stroke; the own stroke is no obstacle there, everything else is), then the top side, then the bottom side, each over the whole leg. The top side is the side the tops of the letters face: `runHeading().first` (above a horizontal run, left of a vertical run at −90°, the text-top side of a diagonal). Beside the stroke the near edge of the box stands `normalGap = 2` beyond the stroke edge (centre offset `strokeRoot / 2 + 2 + h / 2`, `h` with the halo); the portograph 4 units gave 15.2 px live. When a chip or a pill wider than the stroke blocks the whole half at gap 2, the same two sides are tried with `wideGap = 4`. The place is chosen per link: `placeLinkLabels` tries on the stroke for both halves, then the top side for both, then the bottom side for both (then the wide gap). Each half takes its own place only when no single place holds both. An isolated re-placement of one half tries the place of the other half first; a dropped half keeps its last place. The text stands at the drawn width of its half (`drawnCentre`); the reservation is the union of every box the label can take for a drawn width between `linkWidth.min` and `linkWidth.max` (beside the stroke: the band from the near edge at the thinnest stroke to the far edge at the widest; on the stroke: as high as the largest gap rect, `max + 2`), so a load change never needs a new collision check. The wide gap counts from the edge of the widest stroke for every drawn width, because a chip or a pill is wider than a thin stroke.
+   A label on its stroke draws a rect in the canvas colour behind the text (`rect.dmap-link-label-bg`, the slot size, corner radius 2); a label beside the stroke has the halo only. The text carries `data-dmap-side` (`line`, `top`, `bottom`, `top-wide`, `bottom-wide`).
 2. Distance from `d0`: `0, s, 2s, …` with `s = alongStep = 4` user units, up to the leg's ends.
 3. At one distance: towards the end of the link first (away from the arrowheads at the split), then towards it.
 
@@ -253,7 +253,7 @@ export function setLinkLabelScale(root: SVGSVGElement): void;
   or the node under it gets the tap. `font-size: 8` (the port pill size of the export),
   `font-family` of the first `pg-linkLabel` text in the stage when there is one, else `sans-serif` (the status
   markers' choice), `fill: theme.colors.text.primary` (decided), halo `stroke: theme.colors.background.primary;
-  stroke-width: 2 × halo; paint-order: stroke; stroke-linejoin: round`. The diagram background follows the Grafana
+  stroke-width: 2 × halo; paint-order: stroke; stroke-linejoin: round; stroke-linecap: round; text-rendering: geometricPrecision`. The diagram background follows the Grafana
   theme already, so the halo matches the canvas in both themes. A theme change rewrites these attributes only.
 - `labelMode` travels on the patch: `bindPlan` sets `CellPatch.link.labelMode` from the merged
   `display.link.label?.mode ?? 'none'`; no half carries it, because the mode is per cell.
@@ -297,7 +297,7 @@ check and the screenshots.
 Unit (`npm run test:affected` in the worktree):
 
 - `src/render/labelPlacement.test.ts`, heading (`runHeading`): horizontal both ways → 0, first side up; vertical up
-  and down → −90, first side right (portograph `candidateBox`); upper-left to lower-right → 45 and its reverse → 45;
+  and down → −90, first side left (the side the tops of the letters face; the owner rule replaced portograph's right); upper-left to lower-right → 45 and its reverse → 45;
   lower-left to upper-right → −45 and its reverse → −45; steep: `(1, 57.29)` → 89 stays, `(−1, 57.29)` → 91 becomes
   −89, `(1, −57.29)` → −89 stays, `(−1, −57.29)` → −91 becomes 89; `(0.005, 100)` is vertical, `(0.02, 100)` is not.
   Position: a horizontal link of length 400 split at 200 gives centres at `x = 100` and `x = 300`,
@@ -380,7 +380,7 @@ spec, the bench figure and the three screenshots.
 | R1-1. Path-local lengths against root units; `scale(2)` put the split at 184, not 168 | One space, root user units, for every distance. The root polyline is built from the path stops through `geoRoot.pointAt`, the split is the overlay's own `mid` as a vertex, and nothing scales a length by `geo.unit` (section 4). A jsdom test with stubbed matrices pins the reviewer's case (section 8). |
 | R1-2. Plain draw.io nodes missing; a tap on a label | Every non-edge cell body is an obstacle, whatever its kind (section 5). The label carries `data-dmap-cell` with `pointer-events="all"`, so `hit.ts` resolves it to its link; an e2e taps one (sections 7, 8). |
 | R1-3. Stale cache: `linkWidth.max`; status markers drawn on refresh | `linkWidth.max` and the font family are in the full-placement key. Markers are not read as obstacles; their room is reserved once per stage for every patched cell through `statusMarkerBox`, which `drawStatusMarker` shares, so a marker that appears later is never covered (sections 5, 7). |
-| R1-4. `lineAngle` gives +90 for both verticals | `runHeading` tests `|dx| ≤ VERTICAL_EPS` first and returns −90 with the right side first, as the axis-aligned branch of `candidateBox` does; the gravity formula serves non-vertical runs only. The tests say −90 and "first side right" for both vertical directions (sections 4, 8). |
+| R1-4. `lineAngle` gives +90 for both verticals | `runHeading` tests `|dx| ≤ VERTICAL_EPS` first and returns −90 with the left side first (the side the tops of the letters face; superseded by the owner rule, see section 9); the gravity formula serves non-vertical runs only. The tests say −90 and "first side left" for both vertical directions (sections 4, 8). |
 | R1-5. Zoom scale from the panel size; no initial sync | `viewScaleOf(root)` reads the rendered SVG rect and the viewBox; it runs when the layer is created or re-enabled and after every `applyLayout` (section 6); a `minScale` case is in the unit and e2e tests. |
 | R1-6. Percent slot ignored the fallback text and large percents | `percentText` bounds at `>999%`; the slot rule of round 1 is replaced by R2-6 (sections 3, 7). |
 | R1-7. Segment clearance inconsistent | Half the stroke width everywhere: `linkWidth.max / 2` for a patched edge, half the drawn width otherwise; the shared-trunk argument uses the same figures (section 5). |
@@ -393,3 +393,4 @@ spec, the bench figure and the three screenshots.
 | R2-4. Stroke clearance in the wrong units inside a transformed group | Every stroke width converts once to root units, `strokeLocal × geo.unit` of its own edge; `LegInput.strokeRoot` and the obstacle table use root figures only (sections 4, 5). |
 | R2-5. The marker reservation mixed the rectangle origin with the text baseline | `statusMarkerBox` returns `anchor` (the baseline start `drawStatusMarker` writes) and `bounds` (the painted box of the widest text on that baseline, grown by 1.5 units for the 3-unit halo) separately, in the marker's own space, mapped to root for the reservation (section 5). |
 | R2-6. Percent slots changed size with the fallback text | One fixed percent slot, `g(width(">999%"))`, for every percent text; a capacity-less reading follows the value rule and the isolated path (section 7). |
+| R3-1. Live run: the halo was a lumpy blob; the two halves stood on opposite sides; the label stood 15.2 px from the stroke | `halo = 1` with round joins and caps. One place per link (`placeLinkLabels`). The owner rules of section 9: on the stroke first with a canvas-coloured gap rect, then beside it with the near edge 2 units beyond the stroke edge (4 for a chip wider than the stroke), the top side being the side of the tops of the letters (left of a vertical run). The 15.2 came from `normalGap = 4` plus the label line box (the box is 12 high for glyphs about 6 high) at the widest stroke `linkWidth.max`. |
