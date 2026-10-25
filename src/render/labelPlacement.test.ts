@@ -107,18 +107,6 @@ describe('runHeading', () => {
 });
 
 describe('placeHalfLabel: position', () => {
-  it('the mask test gates the on-stroke step only: a box that may not be masked goes beside the stroke or along it', () => {
-    const points = horizontal(0, 200, 50);
-    const free = placed(placeHalfLabel(leg(points), 'e', obstacleIndex([]), [0, 1]));
-    expect(free.side).toBe(0);
-    const never = placed(placeHalfLabel(leg(points, { mask: () => false }), 'e', obstacleIndex([]), [0, 1]));
-    expect(never.side).toBe(1);
-    const left = placed(
-      placeHalfLabel(leg(points, { mask: (box) => box.centre.x < 90 }), 'e', obstacleIndex([]), [0, 1])
-    );
-    expect(left.side).toBe(0);
-    expect(left.centre.x).toBeLessThan(90);
-  });
   it('a horizontal link of 400 split at 200 puts the labels at 100 and 300, both above, angle 0', () => {
     const y0 = 50;
     const a2b = placed(placeHalfLabel(leg(horizontal(0, 200, y0)), 'e', obstacleIndex([])));

@@ -21,7 +21,7 @@ import {
  * from x = 40 to 200 (its anchor at 120), the b2a leg from 360 to 200 (its anchor at 280). The percent slot is
  * 24 (0.6 × 8 × 5 glyphs in jsdom), the box 26 × 12. A label stands on its stroke (centre on the line); beside it with `linkWidth.max` 10 the centre stands 13 off the line.
  */
-const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
+const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
   <g data-cell-id="n1"><g><rect x="0" y="80" width="40" height="40" stroke-width="2"/></g></g>
   <g data-cell-id="e1"><g><path d="M 40 100 L 360 100" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
   <g data-cell-id="n2"><g><rect x="360" y="80" width="40" height="40"/></g></g>${extra}
@@ -55,18 +55,30 @@ const linkPatch = (cellId: string, link: CellPatch['link']): CellPatch => ({
   link,
 });
 const theme = createTheme();
-/** the resolved colour of the background of the test svg */
-const DARK = 'rgb(29, 45, 61)';
 const opts = { theme, linkWidth: { min: 2, max: 10 } };
 const labels = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGTextElement>(`text.${LINK_LABEL_CLASS}`));
 const byHalf = (root: SVGSVGElement, which: string, cell = 'e1') =>
   root.querySelector<SVGTextElement>(`text.${LINK_LABEL_CLASS}[data-dmap-cell="${cell}"][data-dmap-half="${which}"]`);
+/** the mask of a link of the stage */
+const maskOf = (root: SVGSVGElement, cell = 'e1') =>
+  root.querySelector<SVGMaskElement>(`defs.dmap-link-label-defs mask[data-dmap-cell="${cell}"]`);
+const blacks = (m: Element) => Array.from(m.querySelectorAll('rect')).filter((r) => r.getAttribute('fill') === 'black');
+const whites = (m: Element) => Array.from(m.querySelectorAll('rect')).filter((r) => r.getAttribute('fill') === 'white');
+/** the elements that draw the stroke of a link: the halves and the arrow heads of the overlay */
+const strokesOf = (root: SVGSVGElement, cell = 'e1') =>
+  Array.from(
+    root.querySelectorAll<SVGElement>(`.dmap-half[data-dmap-cell="${cell}"], .dmap-arrow[data-dmap-cell="${cell}"]`)
+  );
 const layerOf = (root: SVGSVGElement) => root.querySelector<SVGGElement>(`g.${LINK_LABEL_LAYER_CLASS}`);
 /** A render at the given pixel size of the svg (jsdom has no layout): `k` = pixels per user unit. */
 const sized = (root: SVGSVGElement, k: number) => {
   root.getBoundingClientRect = () => ({ width: 400 * k, height: 200 * k }) as DOMRect;
 };
 function render(root: SVGSVGElement, index: CellIndex, patches: PatchMap, o = opts) {
+  // jsdom has no layout: a root of no size would hide the layer, so a plain test gets the scale 1
+  if (!root.getBoundingClientRect().width) {
+    sized(root, 1);
+  }
   renderOverlay(root, index, patches, { theme: o.theme });
   return renderLinkLabels(root, index, patches, o);
 }
@@ -103,8 +115,9 @@ describe('renderLinkLabels: the layer and its elements', () => {
     expect(b2a.getAttribute('x')).toBe('284');
     expect(b2a.getAttribute('y')).toBe('100');
     expect(a2b.getAttribute('fill')).toBe(theme.colors.text.primary);
-    expect(a2b.getAttribute('stroke')).toBe(DARK);
-    expect(a2b.getAttribute('paint-order')).toBe('stroke');
+    // no halo: the text has no stroke
+    expect(a2b.hasAttribute('stroke')).toBe(false);
+    expect(a2b.hasAttribute('paint-order')).toBe(false);
     expect(a2b.getAttribute('font-size')).toBe('8');
     expect(a2b.getAttribute('font-family')).toBe('sans-serif');
     expect(a2b.getAttribute('data-dmap-placed-at')).toMatch(/^\d+$/);
@@ -292,108 +305,48 @@ describe('renderLinkLabels: the place of a label', () => {
   const strip = '<g data-cell-id="strip"><g><rect x="40" y="98" width="320" height="4"/></g></g>';
   const above = '<g data-cell-id="above"><g><rect x="40" y="60" width="320" height="26"/></g></g>';
   const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
-  const bgs = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGRectElement>('rect.dmap-link-label-bg'));
-
-  it('on its stroke a label has a gap behind it: a canvas-coloured rect of the slot size, a small radius', () => {
+  it('on its stroke the stroke is cut under the text: one mask for the link, a black rect per label slot', () => {
     const { root, index } = build();
     render(root, index, both());
     const a = byHalf(root, 'a2b')!;
     expect(a.getAttribute('data-dmap-side')).toBe('line');
-    const rects = bgs(root);
-    expect(rects).toHaveLength(2);
-    const bg = rects[0];
-    expect(bg.getAttribute('fill')).toBe(DARK);
-    expect(Number(bg.getAttribute('width'))).toBe(24);
-    expect(Number(bg.getAttribute('height'))).toBe(10);
-    expect(Number(bg.getAttribute('rx'))).toBeLessThanOrEqual(2);
-    expect(bg.getAttribute('x')).toBe('108');
-    expect(bg.getAttribute('y')).toBe('95');
-    expect(bg.getAttribute('transform')).toBe(a.getAttribute('transform'));
-    expect(bg.getAttribute('pointer-events')).toBe('none');
-    // behind its text
-    expect(bg.nextElementSibling).toBe(a);
+    const m = maskOf(root)!;
+    expect(m).toBeTruthy();
+    expect(m.getAttribute('maskUnits')).toBe('userSpaceOnUse');
+    expect(m.getAttribute('maskContentUnits')).toBe('userSpaceOnUse');
+    expect(whites(m)).toHaveLength(1);
+    const slots = blacks(m);
+    expect(slots).toHaveLength(2);
+    const k = slots[0];
+    expect(Number(k.getAttribute('width'))).toBe(24);
+    expect(Number(k.getAttribute('height'))).toBe(10);
+    expect(k.getAttribute('x')).toBe('108');
+    expect(k.getAttribute('y')).toBe('95');
+    expect(k.getAttribute('transform')).toBe('matrix(1 0 0 1 0 0) rotate(0 120 100)');
+    // every element that draws the stroke of the link wears it; no rect is drawn in the diagram
+    const drawn = strokesOf(root);
+    expect(drawn.length).toBe(4);
+    drawn.forEach((el) => expect(el.getAttribute('mask')).toBe(`url(#${m.id})`));
+    expect(root.querySelector('rect.dmap-link-label-bg')).toBeNull();
+    expect(layerOf(root)!.querySelector('rect')).toBeNull();
   });
-  it('the mask is the background of the diagram, not the colour of the theme: a light panel with a dark diagram has no white box', () => {
-    const light = createTheme({ colors: { mode: 'light' } });
-    const { root, index } = build();
-    render(root, index, both(), { ...opts, theme: light });
-    const a = byHalf(root, 'a2b')!;
-    expect(a.getAttribute('data-dmap-side')).toBe('line');
-    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
-    expect(bgs(root)[0].getAttribute('fill')).not.toBe(light.colors.background.primary);
-    expect(a.getAttribute('stroke')).toBe(DARK);
-  });
-  it('a diagram without a background, or a transparent one, has no mask: the labels go beside the stroke, with no halo colour', () => {
-    for (const style of ['', 'background-color: rgba(0, 0, 0, 0)', 'background-color: transparent']) {
-      const { root, index } = build(SVG().replace(' style="background-color: #1d2d3d"', style ? ` style="${style}"` : ''));
-      render(root, index, both());
-      const a = byHalf(root, 'a2b')!;
-      expect(a.getAttribute('data-dmap-side')).toBe('top');
-      expect(byHalf(root, 'b2a')!.getAttribute('data-dmap-side')).toBe('top');
-      expect(bgs(root)).toHaveLength(0);
-      expect(a.hasAttribute('stroke')).toBe(false);
-    }
-  });
-  it('a pattern fill, or a box that crosses the edge of a container, is no mask: the label steps off the stroke', () => {
-    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
-    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
-    const box = (attrs: string, x = 100) =>
-      `<g data-cell-id="box"><g><rect x="${x}" y="40" width="100" height="120" ${attrs}/></g></g>`;
-    // a label may slide along the stroke to a spot with the plain page colour; it never stands over the container
-    const outside = (r: ReturnType<typeof build>, left: number, right: number) => {
-      render(r.root, r.index, both());
-      const x = Number(byHalf(r.root, 'a2b')!.getAttribute('x'));
-      const side = byHalf(r.root, 'a2b')!.getAttribute('data-dmap-side');
-      return side !== 'line' || x + 12 <= left || x - 12 >= right;
-    };
-    expect(outside(build(SVG(box('fill="url(#hatch)"') + inner + inner2)), 100, 200)).toBe(true);
-    // the box 108..132 would cross the left edge of a container that starts at 125
-    expect(outside(build(SVG(box('fill="#223344"', 125) + inner.replace('110', '130') + inner2)), 125, 225)).toBe(true);
-  });
-  it('a translucent container fill is blended over the colour below it: the mask is the colour that shows', () => {
-    const container = `<g data-cell-id="box"><g><rect x="100" y="40" width="100" height="120" fill="#223344" fill-opacity="0.5"/></g></g>`;
-    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
-    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
-    const { root, index } = build(SVG(container + inner + inner2));
-    render(root, index, both());
-    // 50% of rgb(34, 51, 68) over rgb(29, 45, 61)
-    expect(bgs(root)[0].getAttribute('fill')).toBe('rgb(32, 48, 65)');
-    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe('rgb(32, 48, 65)');
-  });
-  it('a label that stands on a background shape (a container, a canvas, a group) takes its fill; the others take the root colour', () => {
-    const container = `<g data-cell-id="box"><g><rect x="100" y="40" width="100" height="120" fill="#223344"/></g></g>`;
-    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
-    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
-    const { root, index } = build(SVG(container + inner + inner2));
-    render(root, index, both());
-    const [a, b] = bgs(root);
-    expect(a.getAttribute('fill')).toBe('rgb(34, 51, 68)');
-    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe('rgb(34, 51, 68)');
-    expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(200);
-    expect(b.getAttribute('fill')).toBe(DARK);
-  });
-  it('a background shape without a fill is skipped', () => {
-    const container = `<g data-cell-id="box"><g><rect x="100" y="40" width="100" height="120" fill="none"/></g></g>`;
-    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
-    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
-    const { root, index } = build(SVG(container + inner + inner2));
-    render(root, index, both());
-    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
-  });
-  it('a new theme reads the background of the diagram again', () => {
-    const { root, index } = build();
-    root.style.backgroundColor = '#f2f2f3';
-    render(root, index, both());
-    root.style.backgroundColor = '#1d2d3d';
-    render(root, index, both(), { ...opts, theme: createTheme({ colors: { mode: 'light' } }) });
-    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
-    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe(DARK);
-  });
-  it('a label beside its stroke has the halo only: no rect', () => {
+  it('a label beside its stroke has no mask and the stroke is whole', () => {
     const { root, index } = build(SVG(strip));
     render(root, index, both());
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('top');
-    expect(bgs(root)).toHaveLength(0);
+    expect(maskOf(root)).toBeNull();
+    strokesOf(root).forEach((el) => expect(el.hasAttribute('mask')).toBe(false));
+  });
+  it('a light theme with a dark diagram draws no rect and no theme colour behind the text', () => {
+    const light = createTheme({ colors: { mode: 'light' } });
+    const { root, index } = build();
+    render(root, index, both(), { ...opts, theme: light });
+    expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('line');
+    expect(layerOf(root)!.querySelectorAll('rect')).toHaveLength(0);
+    expect(byHalf(root, 'a2b')!.hasAttribute('stroke')).toBe(false);
+    const fills = Array.from(maskOf(root)!.querySelectorAll('rect')).map((r) => r.getAttribute('fill'));
+    expect(new Set(fills)).toEqual(new Set(['white', 'black']));
+    expect(byHalf(root, 'a2b')!.getAttribute('fill')).toBe(light.colors.text.primary);
   });
   it('the top of a horizontal link is above; the near edge of the box is 2 beyond the drawn stroke edge', () => {
     const { root, index } = build(SVG(strip));
@@ -424,19 +377,21 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(a.getAttribute('data-dmap-placed-at')).toBe(stamp);
     expect(a.getAttribute('data-dmap-side')).toBe('top');
   });
-  it('the gap rect covers the drawn stroke plus 1 on each side', () => {
+  it('the cut covers the drawn stroke plus 1 on each side and follows the width on a refresh', () => {
     const { root, index } = build();
     const widths = (w: number) =>
       new Map([['e1', linkPatch('e1', { a2b: half({ width: w }), b2a: half({ width: w }), labelMode: 'percent' })]]);
     render(root, index, widths(4));
-    const bg = bgs(root)[0];
-    expect(Number(bg.getAttribute('height'))).toBe(10);
-    // the widest stroke, linkWidth.max 10: the rect is 12 high; a wider width is clamped to the range
+    expect(Number(blacks(maskOf(root)!)[0].getAttribute('height'))).toBe(10);
+    // the widest stroke, linkWidth.max 10: the cut is 12 high; a wider width is clamped to the range
     render(root, index, widths(10));
-    expect(Number(bg.getAttribute('height'))).toBe(12);
-    expect(Number(bg.getAttribute('y'))).toBe(94);
+    const k = blacks(maskOf(root)!)[0];
+    expect(Number(k.getAttribute('height'))).toBe(12);
+    expect(Number(k.getAttribute('y'))).toBe(94);
     render(root, index, widths(14));
-    expect(Number(bg.getAttribute('height'))).toBe(12);
+    expect(Number(blacks(maskOf(root)!)[0].getAttribute('height'))).toBe(12);
+    // the overlay is drawn again on each frame: the new strokes wear the mask too
+    strokesOf(root).forEach((el) => expect(el.getAttribute('mask')).toBe(`url(#${maskOf(root)!.id})`));
   });
   it('both halves go to the bottom side when the top side is blocked along the whole half of one', () => {
     const { root, index } = build(SVG(strip + above));
@@ -446,28 +401,35 @@ describe('renderLinkLabels: the place of a label', () => {
     // the drawn width 4: the centre at 100 + 2 + 2 + 6
     expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('110');
   });
-  it('the gap rect hides with its text, repaints with the theme and leaves when the label moves off the stroke', () => {
+  it('the cut leaves with a label that has no text and with the labels that are switched off', () => {
     const { root, index } = build();
     const two = (a: HalfState) => new Map([['e1', linkPatch('e1', { a2b: a, b2a: half(), labelMode: 'percent' })]]);
     render(root, index, two(half()));
-    const bg = bgs(root)[0];
+    expect(blacks(maskOf(root)!)).toHaveLength(2);
     render(root, index, two(nodata()));
-    expect(bg.getAttribute('visibility')).toBe('hidden');
+    expect(blacks(maskOf(root)!)).toHaveLength(1);
     render(root, index, two(half()));
-    expect(bg.getAttribute('visibility')).toBeNull();
-    // the labels switched off: the layer and its rects are gone
+    expect(blacks(maskOf(root)!)).toHaveLength(2);
     render(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'none' })]]));
-    expect(bgs(root)).toHaveLength(0);
-    expect(bg.isConnected).toBe(false);
-    render(root, index, two(half()));
-    const light = createTheme({ colors: { mode: 'light' } });
-    render(root, index, two(half()), { theme: light, linkWidth: { min: 2, max: 10 } });
-    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
-    expect(byHalf(root, 'a2b')!.getAttribute('fill')).toBe(light.colors.text.primary);
+    expect(maskOf(root)).toBeNull();
+    expect(root.querySelector('defs.dmap-link-label-defs')).toBeNull();
+    strokesOf(root).forEach((el) => expect(el.hasAttribute('mask')).toBe(false));
+  });
+  it('a hidden layer (too small a scale) takes the mask off the strokes, and a shown layer puts it back', () => {
+    const { root, index } = build();
+    sized(root, 0.2);
+    render(root, index, both());
+    strokesOf(root).forEach((el) => expect(el.hasAttribute('mask')).toBe(false));
+    sized(root, 1);
+    setLinkLabelScale(root);
+    strokesOf(root).forEach((el) => expect(el.getAttribute('mask')).toBe(`url(#${maskOf(root)!.id})`));
+    sized(root, 0.2);
+    setLinkLabelScale(root);
+    strokesOf(root).forEach((el) => expect(el.hasAttribute('mask')).toBe(false));
   });
 });
 
-describe('renderLinkLabels: the gap rect follows its label', () => {
+describe('renderLinkLabels: the cut follows its label', () => {
   // thin strips on the stroke leave a gap of 60 around the anchor of a2b: a short text fits on the stroke, a long one
   // stands beside it (above is free)
   const strips = ['40', '150']
@@ -477,23 +439,25 @@ describe('renderLinkLabels: the gap rect follows its label', () => {
     new Map([
       ['e1', linkPatch('e1', { a2b: half({ display: { text, numeric: 0 } }), b2a: half(), labelMode: 'value' })],
     ]);
-  const bgs = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGRectElement>('rect.dmap-link-label-bg'));
-  it('the rect leaves when its label moves from the stroke to a side, and comes back with it', () => {
+  const count = (root: SVGSVGElement) => {
+    const m = maskOf(root);
+    return m ? blacks(m).length : 0;
+  };
+  it('the slot leaves the mask when its label moves from the stroke to a side, and comes back with it', () => {
     const { root, index } = build(SVG(strips));
     render(root, index, value('41'));
     const a = byHalf(root, 'a2b')!;
     expect(a.getAttribute('data-dmap-side')).toBe('line');
-    const bg = bgs(root).find((r) => r.nextElementSibling === a)!;
-    expect(bg).toBeTruthy();
+    const before = count(root);
+    expect(before).toBeGreaterThan(0);
     render(root, index, value('abcdefghijklmn Mb/s'));
     expect(a.getAttribute('data-dmap-side')).toBe('top');
-    expect(bg.isConnected).toBe(false);
-    expect(bgs(root).find((r) => r.nextElementSibling === a)).toBeUndefined();
+    expect(count(root)).toBe(before - 1);
     render(root, index, value('41'));
     expect(a.getAttribute('data-dmap-side')).toBe('line');
-    expect(bgs(root).find((r) => r.nextElementSibling === a)).toBeTruthy();
+    expect(count(root)).toBe(before);
   });
-  it('the rect hides with a dropped label and shows again when the label recovers', () => {
+  it('a dropped label leaves the mask and a recovered label comes back', () => {
     // blocks across the stroke and beside it leave a gap of 60 only
     const blocks = ['40', '150']
       .map((x) => `<g data-cell-id="b${x}"><g><rect x="${x}" y="70" width="50" height="60"/></g></g>`)
@@ -501,13 +465,48 @@ describe('renderLinkLabels: the gap rect follows its label', () => {
     const { root, index } = build(SVG(blocks));
     render(root, index, value('41'));
     const a = byHalf(root, 'a2b')!;
-    const bg = bgs(root).find((r) => r.nextElementSibling === a)!;
+    const before = count(root);
+    expect(before).toBeGreaterThan(0);
     render(root, index, value('abcdefghijklmn Mb/s'));
     expect(a.getAttribute('visibility')).toBe('hidden');
-    expect(bg.getAttribute('visibility')).toBe('hidden');
+    expect(count(root)).toBe(before - 1);
     render(root, index, value('42'));
     expect(a.getAttribute('visibility')).toBeNull();
-    expect(bg.getAttribute('visibility')).toBeNull();
+    expect(count(root)).toBe(before);
+  });
+  it('the box is mapped into the local space of a scaled, translated group', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
+      <g transform="translate(10 20) scale(2)">
+        <g data-cell-id="e1"><g><path d="M 0 0 L 160 0" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
+      </g></svg>`;
+    const { root, index } = build(svg);
+    render(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]));
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    const k = blacks(maskOf(root)!)[0];
+    // the inverse of translate(10 20) scale(2): scale 0.5, shift -5 -10
+    expect(k.getAttribute('transform')).toMatch(/^matrix\(0\.5 0 0 0\.5 -5 -10\) rotate\(0 /);
+    expect(Number(k.getAttribute('width'))).toBe(24);
+    expect(strokesOf(root)[0].getAttribute('mask')).toBe(`url(#${maskOf(root)!.id})`);
+  });
+  it('a vertical link has a rotated slot', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
+      <g data-cell-id="e1"><g><path d="M 100 10 L 100 190" fill="none" stroke="#333" pointer-events="stroke"/></g></g></svg>`;
+    const { root, index } = build(svg);
+    render(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]));
+    const k = blacks(maskOf(root)!)[0];
+    expect(k.getAttribute('transform')).toMatch(/rotate\(-90 /);
+  });
+  it('two panels get two different mask ids', () => {
+    const one = build();
+    const two = build();
+    const patches = () =>
+      new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    render(one.root, one.index, patches());
+    render(two.root, two.index, patches());
+    const ids = [maskOf(one.root)!.id, maskOf(two.root)!.id];
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(document.querySelectorAll(`[id="${ids[0]}"]`)).toHaveLength(1);
   });
 });
 
@@ -597,8 +596,7 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
     // the vertical WAN link: the labels read bottom to top, on the stroke
     expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
-    // jsdom cannot resolve the light-dark() fills of the sheet, so the label stands beside its stroke (10 left of it)
-    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(178.37, 0);
+    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
@@ -737,7 +735,7 @@ describe('renderLinkLabels: coordinates', () => {
   const scale2 = { a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 };
   const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
   it("an edge inside scale(2) places the split and the labels at the overlay's own points, with a root gap", () => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" style="background-color: #1d2d3d"><g transform="scale(2)">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><g transform="scale(2)">
       <g data-cell-id="e1"><g><path d="M 0 0 L 100 0 L 100 100" fill="none" pointer-events="stroke"/></g></g>
       <g data-cell-id="e2"><g><path d="M 0 40 L 100 40" fill="none" pointer-events="stroke" stroke-width="3"/></g></g>
     </g></svg>`;
@@ -787,7 +785,7 @@ describe('renderLinkLabels: coordinates', () => {
     });
   });
   it('a path with a 3° turn keeps that vertex in the root polyline', () => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
       <g data-cell-id="e1"><g><path d="M 0 50 L 100 50 L 200 55.2" fill="none" pointer-events="stroke"/></g></g></svg>`;
     const { root, index } = build(svg);
     renderLinkLabels(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]), opts);

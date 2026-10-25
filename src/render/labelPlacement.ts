@@ -38,11 +38,6 @@ export interface LegInput {
   strokeRoot: number;
   /** the thinnest stroke in root units (`linkWidth.min × geo.unit`); the width of a half is drawn between the two */
   minRoot?: number;
-  /**
-   * Whether the gap rect may stand on `box` (the on-stroke step only): false when the colour under the box cannot be
-   * resolved, so a rect would be a visible patch. Absent: always.
-   */
-  mask?: (box: OrientedBox) => boolean;
 }
 
 export type Obstacle =
@@ -431,9 +426,6 @@ export function placeHalfLabel(
       const shift = offsetOf(side);
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
       const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
-      if (side === 0 && leg.mask && !leg.mask(box)) {
-        continue;
-      }
       if (!collides(box, ownPiece, index)) {
         return {
           centre,

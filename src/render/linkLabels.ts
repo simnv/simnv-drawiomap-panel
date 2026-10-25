@@ -29,9 +29,7 @@ import {
   placeHalfLabel,
   placeLinkLabels,
   pointToSegment,
-  cornersOf,
   type LegInput,
-  type OrientedBox,
   type Obstacle,
   type ObstacleIndex,
   type Placed,
@@ -48,8 +46,8 @@ import { viewScaleOf } from './zoom';
  */
 
 export const LINK_LABEL_CLASS = 'dmap-link-label';
-/** The class of the rect, in the colour under the label, behind the text of a label that stands on its stroke. */
-export const LINK_LABEL_BG_CLASS = 'dmap-link-label-bg';
+/** The class of the defs that hold the masks which cut the stroke of a link under its on-stroke labels. */
+export const LINK_LABEL_DEFS_CLASS = 'dmap-link-label-defs';
 export const LINK_LABEL_LAYER_CLASS = 'dmap-link-labels';
 const NS = 'http://www.w3.org/2000/svg';
 /** a slot width rounds up to a multiple of this, so that a small change of a value keeps its slot */
@@ -95,12 +93,6 @@ interface LabelRecord {
   side?: LabelSide;
   /** the drawn stroke width of the half in root units (`HalfState.width` as the overlay draws it) */
   drawn: number;
-  /** the rect, in the colour under the label, behind the text of a label that stands on its stroke */
-  bg?: SVGRectElement;
-  /** the drawn centre of the text and the colour under it (the halo and the gap rect) */
-  centre?: Point;
-  /** the colour under the text; undefined when it cannot be resolved (the halo is then off) */
-  canvas?: string;
   /** the box the label holds in the grid */
   obstacle?: Obstacle;
   /** an isolated re-placement found no spot: the label is hidden and tries again on the next call */
@@ -113,26 +105,20 @@ interface LabelLayout {
   probe: SVGTextElement;
   fontFamily: string;
   theme: GrafanaTheme2;
-  /** the background colour of the diagram, resolved for the current colour scheme; undefined when it has none */
-  page: string | undefined;
-  /** the background shapes (canvas, groups, containers) in paint order, with their boxes in root units */
-  backdrops: Backdrop[];
-  /** the fill of a backdrop, read once per theme */
-  fills: Map<Element, Rgba | null | undefined>;
   grid: ObstacleIndex;
   widths: Map<string, number>;
   records: Map<string, LabelRecord>;
+  /** the number of this panel instance; the mask ids carry it, so that two panels on one page never share one */
+  uid: number;
+  /** the mask id of each link that has one */
+  maskIds: Map<string, string>;
   /** `linkWidth.max` of the placement: the widest stroke, in the units of the edge */
   max: number;
   min: number;
 }
 
-interface Backdrop {
-  box: Rect;
-  el: Element;
-}
-
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
+let instances = 0;
 let stamp = 0;
 
 /** The text of a half label (spec section 3): nothing for no data, an unbound half or an empty display. */
@@ -165,6 +151,7 @@ export function renderLinkLabels(
       layout.layer.remove();
       layouts.delete(root);
     }
+    dropMasks(root);
     return { placed: 0, dropped: 0, moved: 0 };
   }
   const fontFamily = stageFont(root);
@@ -189,7 +176,7 @@ export function renderLinkLabels(
     layouts.set(root, layout);
     setLinkLabelScale(root);
   } else {
-    moved = refresh(layout, slots, opts.theme, root);
+    moved = refresh(layout, slots, opts.theme);
   }
   if (root.lastElementChild !== layout.layer) {
     root.appendChild(layout.layer);
@@ -203,6 +190,7 @@ export function renderLinkLabels(
       dropped++;
     }
   }
+  syncMasks(root, layout);
   layout.layer.setAttribute('data-dmap-labels-placed', String(placed));
   layout.layer.setAttribute('data-dmap-labels-dropped', String(dropped));
   if (debugEnabled()) {
@@ -226,6 +214,10 @@ export function setLinkLabelScale(root: SVGSVGElement): void {
     layer.removeAttribute('visibility');
   } else {
     layer.setAttribute('visibility', 'hidden');
+  }
+  const layout = layouts.get(root);
+  if (layout) {
+    syncMasks(root, layout);
   }
 }
 
@@ -465,25 +457,6 @@ function backgroundIds(index: CellIndex, boxes: Map<string, Rect>): Set<string> 
   return out;
 }
 
-export interface StageGeometry {
-  /** the box of every non-edge shape in root units */
-  bodies: Map<string, Rect>;
-  /** the ids of the backgrounds among them */
-  backgrounds: Set<string>;
-}
-
-/** The boxes of the shapes of the stage and which of them are backgrounds; built once per full placement. */
-export function stageGeometry(index: CellIndex, root: SVGSVGElement): StageGeometry {
-  const bodies = new Map<string, Rect>();
-  for (const [cellId, entry] of index) {
-    const box = !entry.line && entry.shape ? rootBox(entry.shape, root) : undefined;
-    if (box) {
-      bodies.set(cellId, box);
-    }
-  }
-  return { bodies, backgrounds: backgroundIds(index, bodies) };
-}
-
 /**
  * Every obstacle of the stage in root units (spec section 5), built once per full placement. `legs` are the root
  * polylines of the labelled edges (with the split as a vertex): their pieces are the stroke obstacles of those edges,
@@ -495,8 +468,7 @@ export function stageObstacles(
   patches: PatchMap,
   max: number,
   probe: TextProbe,
-  legs: Map<string, EdgeLegs> = new Map(),
-  geometry: StageGeometry = stageGeometry(index, root)
+  legs: Map<string, EdgeLegs> = new Map()
 ): Obstacle[] {
   const out: Obstacle[] = [];
   const rect = (el: Element | undefined, clearance = 0) => {
@@ -505,7 +477,14 @@ export function stageObstacles(
       out.push({ kind: 'rect', rect: box, clearance });
     }
   };
-  const { bodies, backgrounds } = geometry;
+  const bodies = new Map<string, Rect>();
+  for (const [cellId, entry] of index) {
+    const box = !entry.line && entry.shape ? rootBox(entry.shape, root) : undefined;
+    if (box) {
+      bodies.set(cellId, box);
+    }
+  }
+  const backgrounds = backgroundIds(index, bodies);
   const strokes = (cellId: string, points: Point[], clearance: number, leg?: string) => {
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1];
@@ -660,117 +639,8 @@ function createProbe(layer: SVGGElement): SVGTextElement {
   return probe;
 }
 
-/**
- * The background colour of the diagram: the computed `background-color` of the root svg. The browser has resolved
- * `light-dark()` with the colour scheme of the panel. Undefined when it is transparent: the page behind the svg is
- * then not the diagram's and no colour can be named.
- */
-export function pageColour(root: SVGSVGElement): string | undefined {
-  if (typeof getComputedStyle !== 'function') {
-    return undefined;
-  }
-  const rgba = parseColour(getComputedStyle(root).backgroundColor);
-  return rgba && rgba.a === 1 ? css(rgba) : undefined;
-}
-
-interface Rgba {
-  r: number;
-  g: number;
-  b: number;
-  a: number;
-}
-
-const css = ({ r, g, b }: Rgba) => `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
-
-/** A resolved colour (`rgb()`, `rgba()`, `#rgb`, `#rrggbb`); undefined for anything else. The browser gives `rgb()`. */
-function parseColour(value: string): Rgba | undefined {
-  const text = value.trim().toLowerCase();
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(text);
-  if (hex) {
-    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join('') : hex[1];
-    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: 1 };
-  }
-  const fn = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/.exec(text);
-  if (!fn) {
-    return undefined;
-  }
-  const alpha = fn[4] === undefined ? 1 : fn[5] ? Number(fn[4]) / 100 : Number(fn[4]);
-  return { r: Number(fn[1]), g: Number(fn[2]), b: Number(fn[3]), a: alpha };
-}
-
-/**
- * The fill of a shape with its opacity (fill-opacity times the alpha of the colour): undefined when it paints
- * nothing, null when it is not a plain colour that can be named (a pattern, a gradient, a named colour, a keyword).
- */
-function fillOf(el: Element): Rgba | undefined | null {
-  const computed = typeof getComputedStyle === 'function' ? getComputedStyle(el) : undefined;
-  const value = (computed?.fill || el.getAttribute('fill') || '').trim();
-  if (value === '' || value === 'none' || value === 'transparent') {
-    return undefined;
-  }
-  const colour = parseColour(value);
-  const opacity = Number.parseFloat(computed?.fillOpacity || el.getAttribute('fill-opacity') || '1');
-  if (!colour || !Number.isFinite(opacity)) {
-    return null;
-  }
-  const a = colour.a * opacity;
-  return a <= 0 ? undefined : { ...colour, a };
-}
-
-/**
- * The colour under a point: the fill of the topmost background shape that holds it, blended over what lies below when
- * the fill is translucent, down to the background of the diagram. Undefined when none can be named (no background,
- * or a pattern somewhere in the stack).
- */
-function colourAt(layout: LabelLayout, at: Point, from = layout.backdrops.length): string | undefined {
-  for (let i = from - 1; i >= 0; i--) {
-    const { box, el } = layout.backdrops[i];
-    if (at.x < box.x || at.x > box.x + box.width || at.y < box.y || at.y > box.y + box.height) {
-      continue;
-    }
-    if (!layout.fills.has(el)) {
-      layout.fills.set(el, fillOf(el));
-    }
-    const fill = layout.fills.get(el);
-    if (fill === undefined) {
-      continue;
-    }
-    if (fill === null) {
-      return undefined;
-    }
-    if (fill.a >= 1) {
-      return css(fill);
-    }
-    const under = colourAt(layout, at, i);
-    const base = under === undefined ? undefined : parseColour(under);
-    return base
-      ? css({
-          r: fill.r * fill.a + base.r * (1 - fill.a),
-          g: fill.g * fill.a + base.g * (1 - fill.a),
-          b: fill.b * fill.a + base.b * (1 - fill.a),
-          a: 1,
-        })
-      : undefined;
-  }
-  return layout.page;
-}
-
-/** The one colour under the whole gap rect of a box on the stroke (its centre and four corners); undefined when they differ. */
-function maskColour(layout: LabelLayout, box: OrientedBox): string | undefined {
-  const colour = colourAt(layout, box.centre);
-  return colour !== undefined && cornersOf(box).every((c) => colourAt(layout, c) === colour) ? colour : undefined;
-}
-
 function paint(rec: LabelRecord, theme: GrafanaTheme2): void {
   rec.el?.setAttribute('fill', theme.colors.text.primary);
-  if (rec.canvas) {
-    rec.el?.setAttribute('stroke', rec.canvas);
-  } else {
-    rec.el?.removeAttribute('stroke');
-  }
-  if (rec.canvas) {
-    rec.bg?.setAttribute('fill', rec.canvas);
-  }
 }
 
 function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
@@ -787,10 +657,6 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   el.setAttribute('dominant-baseline', 'central');
   el.setAttribute('font-size', String(LINK_LABEL_GEOMETRY.fontSize));
   el.setAttribute('font-family', layout.fontFamily);
-  el.setAttribute('stroke-width', String(2 * LINK_LABEL_GEOMETRY.halo));
-  el.setAttribute('paint-order', 'stroke');
-  el.setAttribute('stroke-linejoin', 'round');
-  el.setAttribute('stroke-linecap', 'round');
   el.setAttribute('text-rendering', 'geometricPrecision');
   layout.layer.appendChild(el);
   rec.el = el;
@@ -798,57 +664,151 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   return el;
 }
 
-const SIDE_NAMES = { '0': 'line', '1': 'top', '-1': 'bottom', '2': 'top-wide', '-2': 'bottom-wide' } as const;
-/** The corner radius of the gap a label on its stroke cuts into the line. */
+/** The corner radius of the cut a label on its stroke makes in the line. */
 const GAP_RADIUS = 2;
-
+const SIDE_NAMES = { '0': 'line', '1': 'top', '-1': 'bottom', '2': 'top-wide', '-2': 'bottom-wide' } as const;
 function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   const el = ensureElement(layout, rec);
   el.setAttribute('data-dmap-side', SIDE_NAMES[placed.side]);
   el.setAttribute('data-dmap-placed-at', String(++stamp));
-  draw(layout, rec, placed);
+  draw(rec, placed);
 }
 
-/** Writes the geometry of a placed label: the text at the drawn stroke, the gap rect behind it on the stroke. */
-function draw(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
+/** Writes the geometry of a placed label: the text at the drawn stroke. The cut in the stroke is `syncMasks`. */
+function draw(rec: LabelRecord, placed: Placed): void {
   const el = rec.el;
   if (!el) {
     return;
   }
   const at = drawnCentre(placed, rec.drawn);
-  rec.centre = at;
-  rec.canvas = colourAt(layout, at);
   const x = fmt(at.x);
   const y = fmt(at.y);
-  const turn = `rotate(${fmt(placed.degrees)} ${x} ${y})`;
   el.setAttribute('x', x);
   el.setAttribute('y', y);
-  el.setAttribute('transform', turn);
-  // a label on its stroke gets a gap in the line: a rect in the colour under the label behind the text, as wide as the slot
-  // and covering the drawn stroke with 1 unit more on each side
-  if (placed.side !== 0 || rec.slot === undefined) {
-    rec.bg?.remove();
-    rec.bg = undefined;
-    paint(rec, layout.theme);
-    return;
-  }
-  if (!rec.bg) {
-    rec.bg = document.createElementNS(NS, 'rect');
-    rec.bg.setAttribute('class', LINK_LABEL_BG_CLASS);
-    rec.bg.setAttribute('pointer-events', 'none');
-    rec.bg.setAttribute('rx', String(GAP_RADIUS));
-    layout.layer.insertBefore(rec.bg, el);
-    if (el.getAttribute('visibility') === 'hidden') {
-      rec.bg.setAttribute('visibility', 'hidden');
+  el.setAttribute('transform', turnOf(placed.degrees, at));
+}
+
+const turnOf = (degrees: number, at: Point) => `rotate(${fmt(degrees)} ${fmt(at.x)} ${fmt(at.y)})`;
+
+/* ---------- the cut in the stroke ---------- */
+
+/** a matrix number for an attribute: six decimals, so that a rotated group keeps its angle */
+const mnum = (n: number) => String(Math.round(n * 1e6) / 1e6);
+const matrixAttr = (m: Matrix) => `matrix(${[m.a, m.b, m.c, m.d, m.e, m.f].map(mnum).join(' ')})`;
+const MASK_PREFIX = 'dmap-lm-';
+
+/** Takes every mask off the strokes and removes the defs of the stage. */
+function dropMasks(root: SVGSVGElement): void {
+  root.querySelectorAll(`defs.${LINK_LABEL_DEFS_CLASS}`).forEach((d) => d.remove());
+  root.querySelectorAll('[mask^="url(#' + MASK_PREFIX + '"]').forEach((el) => el.removeAttribute('mask'));
+}
+
+/**
+ * The stroke of a link stops under the text of its on-stroke labels, whatever lies behind it (no colour is read): one
+ * `<mask>` per link, a white rect over the strokes of the link and a black rect per label slot, as the gap had been
+ * (the slot wide, the drawn stroke plus 1 on each side high). The mask content is in the user space of the element
+ * that wears the mask, the overlay group of the link, so each slot is the root box mapped through the inverse of
+ * the matrix of that group, with the rotation of the label after it. The elements that draw the stroke are the halves
+ * and the arrow heads of the overlay (the edge itself is invisible under a patch). Called on every pass, because the
+ * overlay is drawn again on each frame.
+ */
+function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
+  const shown = layout.layer.getAttribute('visibility') !== 'hidden';
+  const wanted = new Map<string, LabelRecord[]>();
+  for (const rec of layout.records.values()) {
+    const placed = rec.placement;
+    if (
+      shown &&
+      placed &&
+      'centre' in placed &&
+      placed.side === 0 &&
+      rec.slot !== undefined &&
+      rec.el &&
+      rec.el.getAttribute('visibility') !== 'hidden'
+    ) {
+      wanted.set(rec.cellId, [...(wanted.get(rec.cellId) ?? []), rec]);
     }
   }
-  const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
-  rec.bg.setAttribute('x', fmt(at.x - rec.slot / 2));
-  rec.bg.setAttribute('y', fmt(at.y - height / 2));
-  rec.bg.setAttribute('width', fmt(rec.slot));
-  rec.bg.setAttribute('height', fmt(height));
-  rec.bg.setAttribute('transform', turn);
-  paint(rec, layout.theme);
+  const strokes = new Map<string, SVGElement[]>();
+  root.querySelectorAll<SVGElement>(`g.${OVERLAY_CLASS} .dmap-half, g.${OVERLAY_CLASS} .dmap-arrow`).forEach((el) => {
+    const cell = el.getAttribute('data-dmap-cell') ?? '';
+    strokes.set(cell, [...(strokes.get(cell) ?? []), el]);
+  });
+  let defs = root.querySelector<SVGDefsElement>(`defs.${LINK_LABEL_DEFS_CLASS}`);
+  const live = new Set<string>();
+  for (const [cell, recs] of wanted) {
+    const els = strokes.get(cell);
+    const space = els?.[0].parentElement;
+    const m = space && toRoot(space, root);
+    if (!els || !space || !m) {
+      continue;
+    }
+    if (!defs) {
+      defs = document.createElementNS(NS, 'defs') as SVGDefsElement;
+      defs.setAttribute('class', LINK_LABEL_DEFS_CLASS);
+      root.insertBefore(defs, layout.layer);
+    }
+    let id = layout.maskIds.get(cell);
+    if (!id) {
+      id = `${MASK_PREFIX}${layout.uid}-${layout.maskIds.size}`;
+      layout.maskIds.set(cell, id);
+    }
+    let mask = Array.from(defs.children).find((c) => c.id === id) as SVGMaskElement | undefined;
+    if (!mask) {
+      mask = document.createElementNS(NS, 'mask') as SVGMaskElement;
+      mask.setAttribute('id', id);
+      mask.setAttribute('data-dmap-cell', cell);
+      mask.setAttribute('maskUnits', 'userSpaceOnUse');
+      mask.setAttribute('maskContentUnits', 'userSpaceOnUse');
+      defs.appendChild(mask);
+    }
+    const back = invert(m);
+    // the white rect covers the strokes of the link with a margin; everything it covers is kept except the slots
+    const margin = 3 * layout.max * scaleOf(m) + 20;
+    const box = rootBox(space, root);
+    const area = box
+      ? mapRect({ x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin }, back)
+      : { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
+    for (const [k, v] of Object.entries({ x: area.x, y: area.y, width: area.width, height: area.height })) {
+      mask.setAttribute(k, fmt(v));
+    }
+    const white = document.createElementNS(NS, 'rect');
+    for (const [k, v] of Object.entries({ x: area.x, y: area.y, width: area.width, height: area.height })) {
+      white.setAttribute(k, fmt(v));
+    }
+    white.setAttribute('fill', 'white');
+    const slots = recs.map((rec) => {
+      const placed = rec.placement as Placed;
+      const at = drawnCentre(placed, rec.drawn);
+      const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
+      const k = document.createElementNS(NS, 'rect');
+      k.setAttribute('x', fmt(at.x - rec.slot! / 2));
+      k.setAttribute('y', fmt(at.y - height / 2));
+      k.setAttribute('width', fmt(rec.slot!));
+      k.setAttribute('height', fmt(height));
+      k.setAttribute('rx', String(GAP_RADIUS));
+      k.setAttribute('fill', 'black');
+      k.setAttribute('transform', `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`);
+      return k;
+    });
+    mask.replaceChildren(white, ...slots);
+    live.add(id);
+    els.forEach((el) => el.setAttribute('mask', `url(#${id})`));
+  }
+  Array.from(defs?.children ?? []).forEach((c) => {
+    if (!live.has(c.id)) {
+      c.remove();
+    }
+  });
+  if (defs && !defs.firstElementChild) {
+    defs.remove();
+  }
+  for (const [cell, els] of strokes) {
+    const id = layout.maskIds.get(cell);
+    if (!id || !live.has(id)) {
+      els.forEach((el) => el.getAttribute('mask')?.startsWith(`url(#${MASK_PREFIX}`) && el.removeAttribute('mask'));
+    }
+  }
 }
 
 /** Shows `text` in the element, or hides the element (its slot stays reserved) when there is none. */
@@ -859,19 +819,17 @@ function showText(rec: LabelRecord, text: string | undefined): void {
   }
   if (text === undefined || rec.retry) {
     el.setAttribute('visibility', 'hidden');
-    rec.bg?.setAttribute('visibility', 'hidden');
     return;
   }
   if (el.textContent !== text) {
     el.textContent = text;
   }
   el.removeAttribute('visibility');
-  rec.bg?.removeAttribute('visibility');
 }
 
 /** Places one label with its current slot; a placed label takes its box in the grid. */
 function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
-  const leg = inputOf(layout, rec);
+  const leg = inputOf(rec);
   if (!leg) {
     rec.placement = undefined;
     rec.obstacle = undefined;
@@ -885,15 +843,11 @@ function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
 }
 
 /** The leg of a record with its slot size; undefined when the edge has no geometry or the half has no slot yet. */
-function inputOf(layout: LabelLayout, rec: LabelRecord): LegInput | undefined {
+function inputOf(rec: LabelRecord): LegInput | undefined {
   if (!rec.leg || rec.slot === undefined) {
     return undefined;
   }
-  return {
-    ...rec.leg,
-    size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 },
-    mask: (box) => maskColour(layout, box) !== undefined,
-  };
+  return { ...rec.leg, size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 } };
 }
 
 /** Stores the placement of a record; a placed label takes its box in the grid. */
@@ -928,12 +882,11 @@ function fullPlacement(
     probe: createProbe(layer),
     fontFamily,
     theme: opts.theme,
-    page: pageColour(root),
-    backdrops: [],
-    fills: new Map(),
     grid: obstacleIndex([]),
     widths: new Map(),
     records: new Map(),
+    uid: previous?.uid ?? ++instances,
+    maskIds: previous?.maskIds ?? new Map(),
     max: opts.linkWidth.max,
     min: opts.linkWidth.min,
   };
@@ -948,17 +901,7 @@ function fullPlacement(
       );
     }
   }
-  const geometry = stageGeometry(index, root);
-  for (const id of geometry.backgrounds) {
-    const entry = index.get(id);
-    const box = geometry.bodies.get(id);
-    const whole = entry?.shape && rootBox(entry.group, root);
-    if (entry?.shape && box && whole) {
-      // the box of the whole cell: the first shape of a group is only its title tab
-      layout.backdrops.push({ box: whole, el: entry.shape });
-    }
-  }
-  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe, legs, geometry));
+  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe, legs));
   const texts: Array<string | undefined> = [];
   for (const slot of slots) {
     const text = linkLabelText(slot.state, slot.mode);
@@ -981,8 +924,8 @@ function fullPlacement(
     if (!done.has(rec)) {
       const mate = layout.records.get(`${slot.cellId}:${slot.which === 'a2b' ? 'b2a' : 'a2b'}`);
       const [a, b] = slot.which === 'a2b' ? [rec, mate] : [mate, rec];
-      const legA = a && inputOf(layout, a);
-      const legB = b && inputOf(layout, b);
+      const legA = a && inputOf(a);
+      const legB = b && inputOf(b);
       if (a && b && legA && legB && !done.has(mate!)) {
         const [pa, pb] = placeLinkLabels(legA, legB, rec.cellId, layout.grid);
         hold(layout, a, pa);
@@ -1009,14 +952,11 @@ function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): n
 }
 
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
-function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root: SVGSVGElement): number {
+function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): number {
   let moved = 0;
   if (layout.theme !== theme) {
     layout.theme = theme;
-    layout.page = pageColour(root);
-    layout.fills.clear();
     for (const rec of layout.records.values()) {
-      rec.canvas = rec.centre && colourAt(layout, rec.centre);
       paint(rec, theme);
     }
   }
@@ -1028,7 +968,7 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
     if (drawn !== rec.drawn) {
       rec.drawn = drawn;
       if (rec.placement && 'centre' in rec.placement) {
-        draw(layout, rec, rec.placement);
+        draw(rec, rec.placement);
       }
     }
     const width = slotOf(layout, slot, text);
