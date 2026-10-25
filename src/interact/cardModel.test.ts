@@ -275,9 +275,9 @@ describe('combined up/down row', () => {
       ['down', '↓', true, '1.10 Mb/s'],
     ]);
     expect(row.history).toBeUndefined();
-    expect(c.demands.map((d) => [d.binding.queryId, d.rowIndex, d.seriesIndex])).toEqual([
-      ['tx', 0, 0],
-      ['rx', 0, 1],
+    expect(c.demands.map((d) => [d.binding.queryId, d.rowIndex, d.path])).toEqual([
+      ['tx', 0, 'series[0].binding'],
+      ['rx', 0, 'series[1].binding'],
     ]);
   });
   it('is twice as tall as a single sparkline by default, so each half is as tall as one', () => {
@@ -548,12 +548,15 @@ describe('combined up/down row', () => {
     const m = { ...models(), cap: history('cap', [50e6]) };
     const c = card({ capacity: 100e6, capacityBinding: capB }, m);
     expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 16% of 50 Mb/s  ↓ 1.10 Mb/s · 2% of 50 Mb/s');
-    expect(c.demands.filter((d) => d.binding.queryId === 'cap')).toHaveLength(1);
+    // its own consumer: the place in the row tells the value and the capacity of one row apart
+    expect(c.demands.filter((d) => d.binding.queryId === 'cap').map((d) => [d.rowIndex, d.path])).toEqual([
+      [0, 'capacityBinding'],
+    ]);
     expect(c.diagnostics).toEqual([]);
     const own = card({ capacity: 100e6, series: [{ ...both[0], capacityBinding: capB }, both[1]] }, m);
     expect(own.rows[0].text).toBe('↑ 8.20 Mb/s · 16% of 50 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
   });
-  it('a capacity series that is not usable for the cell reports it and falls to the row number', () => {
+  it('a capacity series that is not usable for the cell falls to the row number without a second report', () => {
     const capB = { queryId: 'cap', match: {}, reducer: 'last' as const };
     const c = buildConfiguredCard(
       {
@@ -565,9 +568,8 @@ describe('combined up/down row', () => {
       ctx
     );
     expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8% of 100 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
-    expect(c.diagnostics.map((d) => [d.code, d.path])).toEqual([
-      ['unbound-capacity', `cells.${nodePatch().cellId}.hover.rows[0].capacityBinding`],
-    ]);
+    // the plan reported the unusable query at hover.rows[0].capacityBinding.queryId when it left it out of the bindings
+    expect(c.diagnostics).toEqual([]);
     expect(c.demands.map((d) => d.binding.queryId)).toEqual(['tx', 'rx']);
   });
   it('a row with an invalid range or freshness is unsupported with the text and demands nothing', () => {

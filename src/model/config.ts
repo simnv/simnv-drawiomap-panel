@@ -29,9 +29,7 @@ export const cellSelector = z
   })
   .strict();
 export const reducer = z.enum(['last', 'mean', 'max', 'min']);
-const binding = z
-  .object({ queryId: nonempty, match: z.record(matcher), field: nonempty.optional(), reducer })
-  .strict();
+const binding = z.object({ queryId: nonempty, match: z.record(matcher), field: nonempty.optional(), reducer }).strict();
 export type QueryBinding = z.infer<typeof binding>;
 
 const condition = z.object({ state: z.enum(['normal', 'warning', 'critical', 'down']), reason: nonempty }).strict();
@@ -90,7 +88,7 @@ export type RangeMax = z.infer<typeof rangeMax>;
 const capacityTemplate = z.string().regex(/\$\{[^\s{}]+\}/, 'Use a number or a template like ${cell.capacity_bps}.');
 /** A capacity value: a positive number or a template. The unit of a number: see README "Capacity". */
 const capacityValue = z.union([z.number().positive().finite(), capacityTemplate]);
-export type CapacityValue = z.infer<typeof capacityValue>;
+type CapacityValue = z.infer<typeof capacityValue>;
 /** The two sources of one level. The same pair at the link, a direction, a combined row and a series entry. */
 const capacitySources = { capacity: capacityValue.optional(), capacityBinding: binding.optional() };
 export interface CapacitySources {
@@ -114,7 +112,6 @@ const link = z
     ...capacitySources,
   })
   .strict();
-export type LinkDisplay = z.infer<typeof link>;
 
 // ---- shape ----
 
@@ -136,7 +133,12 @@ export type ShapeDisplay = z.infer<typeof shape>;
 /** Allowed chart height of a history row, in px. Tall cards scroll. */
 export const ROW_HEIGHT_MIN = 16;
 export const ROW_HEIGHT_MAX = 400;
-const rowBase = { label: nonempty, unit: z.string().optional(), url: z.string().optional(), freshness: freshness.optional() };
+const rowBase = {
+  label: nonempty,
+  unit: z.string().optional(),
+  url: z.string().optional(),
+  freshness: freshness.optional(),
+};
 const bounded = { min: lowerBound.optional(), max: z.number().finite().optional() };
 const rowHeight = z.number().finite().min(ROW_HEIGHT_MIN).max(ROW_HEIGHT_MAX).optional();
 /** One direction of a combined row: up leaves the subject (tx), down enters it (rx). */
@@ -149,7 +151,6 @@ const directionSeries = z
     ...capacitySources,
   })
   .strict();
-export type DirectionSeries = z.infer<typeof directionSeries>;
 const hoverRow = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('value'), ...rowBase, ...bounded, binding }).strict(),
   z.object({ kind: z.literal('history'), ...rowBase, ...bounded, binding, height: rowHeight }).strict(),
@@ -217,6 +218,8 @@ const display = z
   .strict();
 export type DisplayConfig = z.infer<typeof display>;
 const datasource = z.object({ uid: nonempty, type: nonempty.optional() }).strict();
+/** The datasource reference of a native query. */
+export type QueryDatasourceRef = z.infer<typeof datasource>;
 const query = z
   .object({
     id: nonempty,
@@ -281,7 +284,6 @@ export interface DiagramConfig extends Omit<z.infer<typeof envelope>, Section | 
   widgets: Widget[];
 }
 /** The version of the config shape that this panel reads and writes. */
-export const CONFIG_VERSION = 3;
 export const EMPTY_CONFIG: DiagramConfig = { version: 3, queries: [], patterns: [], overrides: [], widgets: [] };
 
 // ---- validation ----
@@ -305,14 +307,21 @@ export interface SkippedItem {
   cellId?: string;
 }
 
+/** The one wording for a binding whose query is not in the config: it does not exist, or it is a skipped item. */
+export function unknownQueryMessage(queryId: string, skippedAt: number | undefined): string {
+  return skippedAt === undefined
+    ? `Query ${queryId} does not exist. Choose a named query or restore its definition.`
+    : `Query ${queryId} has errors (see queries[${skippedAt}]).`;
+}
+
 export interface ValidatedConfig {
   /** undefined only when the envelope failed or the version is not 3 */
   config?: DiagramConfig;
   /** saved index of each item of the dense lists: indices.patterns[j] is the saved index of config.patterns[j] */
   indices: Record<Section, number[]>;
-  /** the saved indices of the items that do not parse */
-  skipped: Record<Section, number[]>;
   skippedItems: SkippedItem[];
+  /** the saved index of each skipped query whose id is readable: a reference to it names the item to fix */
+  skippedQueries: Map<string, number>;
   /** queries that parse but cannot run (missing datasource, bad parameter name, non-persistable target), by id */
   unusableQueries: Map<string, string>;
   diagnostics: Diagnostic[];
@@ -434,7 +443,7 @@ export function legacyRulesWarning(count: number): string {
 }
 
 /** The note of a config of version 2, the shape before 1.0.0. The panel binds nothing from it. */
-export const OUTDATED_CONFIG_MESSAGE =
+const OUTDATED_CONFIG_MESSAGE =
   'This configuration has version 2, the shape before 1.0.0 (2026-10-25). Create the bindings again in Edit bindings, or regenerate the config with version 3.';
 
 const emptySections = <T>(make: () => T): Record<Section, T> =>
@@ -466,8 +475,8 @@ function itemTitle(section: Section, raw: unknown, index: number): string {
 export function validateConfig(input: unknown): ValidatedConfig {
   const result: ValidatedConfig = {
     indices: emptySections(() => []),
-    skipped: emptySections(() => []),
     skippedItems: [],
+    skippedQueries: new Map(),
     unusableQueries: new Map(),
     diagnostics: [],
   };
@@ -500,8 +509,6 @@ export function validateConfig(input: unknown): ValidatedConfig {
   }
   const config: DiagramConfig = { ...parsed.data, queries: [], patterns: [], overrides: [], widgets: [] };
   const { diagnostics } = result;
-  /** the ids of the skipped queries that are readable, with their saved index */
-  const skippedQueryIds = new Map<string, number>();
   for (const section of SECTIONS) {
     parsed.data[section].forEach((raw, index) => {
       const item = ITEM_SCHEMAS[section].safeParse(raw);
@@ -519,8 +526,11 @@ export function validateConfig(input: unknown): ValidatedConfig {
         }))
       );
       const title = itemTitle(section, raw, index);
-      diagnostics.push({ code: 'skipped-item', path: prefix, message: `${title} is not applied until its errors are fixed.` });
-      result.skipped[section].push(index);
+      diagnostics.push({
+        code: 'skipped-item',
+        path: prefix,
+        message: `${title} is not applied until its errors are fixed.`,
+      });
       const skipped: SkippedItem = { section, index, title };
       if (isRecord(raw) && text(raw.id)) {
         skipped.id = raw.id as string;
@@ -532,8 +542,13 @@ export function validateConfig(input: unknown): ValidatedConfig {
         }
       } else if (section === 'overrides' && isRecord(raw) && text(raw.cellId)) {
         skipped.cellId = raw.cellId as string;
-      } else if (section === 'queries' && isRecord(raw) && text(raw.id) && !skippedQueryIds.has(raw.id as string)) {
-        skippedQueryIds.set(raw.id as string, index);
+      } else if (
+        section === 'queries' &&
+        isRecord(raw) &&
+        text(raw.id) &&
+        !result.skippedQueries.has(raw.id as string)
+      ) {
+        result.skippedQueries.set(raw.id as string, index);
       }
       result.skippedItems.push(skipped);
     });
@@ -623,14 +638,10 @@ export function validateConfig(input: unknown): ValidatedConfig {
     if (queryIds.has(binding.queryId)) {
       return;
     }
-    const skippedAt = skippedQueryIds.get(binding.queryId);
     diagnostics.push({
       code: 'unknown-query',
       path: `${path}.queryId`,
-      message:
-        skippedAt === undefined
-          ? `Query ${binding.queryId} does not exist. Choose a named query or restore its definition.`
-          : `Query ${binding.queryId} has errors (see queries[${skippedAt}]).`,
+      message: unknownQueryMessage(binding.queryId, result.skippedQueries.get(binding.queryId)),
     });
   };
   const checkFreshness = (policy: FreshnessPolicy | undefined, path: string) => {

@@ -3,7 +3,7 @@ import {
   validateConfig,
   type Diagnostic,
   type DiagramConfig,
-  type NamedQuery,
+  type QueryDatasourceRef,
 } from '../model/config';
 
 export interface PatternDocument {
@@ -29,11 +29,8 @@ export interface PatternImportPreview {
 }
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 /** The datasource of a query from a reference: a reference without a uid names none. */
-const refOf = (ref: DiagramConfig['defaultDatasource']): NamedQuery['source'] extends infer S
-  ? S extends { kind: 'datasource'; datasource?: infer D }
-    ? D | undefined
-    : never
-  : never => (ref?.uid ? { uid: ref.uid, ...(ref.type ? { type: ref.type } : {}) } : undefined);
+const refOf = (ref: DiagramConfig['defaultDatasource']): QueryDatasourceRef | undefined =>
+  ref?.uid ? { uid: ref.uid, ...(ref.type ? { type: ref.type } : {}) } : undefined;
 /** A clean config: it parses and has no diagnostic. A portable document carries nothing else. */
 function checked(input: unknown): DiagramConfig {
   const result = validateConfig(input);
@@ -54,7 +51,10 @@ export function exportPatternDocument(config: DiagramConfig): PatternDocument {
     .filter((q) => referenced.has(q.id))
     .map((query) =>
       query.source.kind === 'datasource'
-        ? { ...query, source: { ...query.source, datasource: query.source.datasource ?? refOf(value.defaultDatasource) } }
+        ? {
+            ...query,
+            source: { ...query.source, datasource: query.source.datasource ?? refOf(value.defaultDatasource) },
+          }
         : query
     );
   return { kind: 'drawiomap-patterns', version: 1, config: checked(value) };

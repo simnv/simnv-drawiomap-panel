@@ -5,12 +5,14 @@ import {
   EMPTY_CONFIG,
   invalidBounds,
   invalidFreshness,
+  unknownQueryMessage,
   validateConfig,
   type DiagramConfig,
   type Diagnostic,
   type DisplayConfig,
   type HoverSpec,
   type LinkDirection,
+  type NamedQuery,
   type QueryBinding,
   type Widget,
 } from '../model/config';
@@ -372,7 +374,13 @@ export function resolvePatterns(cells: CellMeta[], input: unknown): BindingPlan 
     }
   }
 
-  const queries = new Map(config.queries.map((query) => [query.id, query]));
+  // the first query of an id is the one that runs (validateConfig reports the later duplicates)
+  const queries = new Map<string, NamedQuery>();
+  for (const query of config.queries) {
+    if (!queries.has(query.id)) {
+      queries.set(query.id, query);
+    }
+  }
   /** why a binding cannot run for any cell: no such query, a skipped query, an unusable query */
   const queryProblem = (binding: QueryBinding): string | undefined => {
     const reason = validated.unusableQueries.get(binding.queryId);
@@ -380,10 +388,7 @@ export function resolvePatterns(cells: CellMeta[], input: unknown): BindingPlan 
       return `Query ${binding.queryId} cannot run: ${reason}.`;
     }
     if (!queries.has(binding.queryId)) {
-      const diagnostic = validated.diagnostics.find(
-        (d) => d.code === 'unknown-query' && d.message.startsWith(`Query ${binding.queryId} `)
-      );
-      return diagnostic?.message ?? `Query ${binding.queryId} does not exist.`;
+      return unknownQueryMessage(binding.queryId, validated.skippedQueries.get(binding.queryId));
     }
     return undefined;
   };
@@ -458,7 +463,11 @@ export function resolvePatterns(cells: CellMeta[], input: unknown): BindingPlan 
     const problem = queryProblem(widget.binding);
     const admitted: PlanWidget = { widget, anchorCellId: anchor.cellId, scope: anchor.scope, index };
     if (problem !== undefined) {
-      plan.diagnostics.push({ code: 'unknown-query', path: `widgets[${index}].binding.queryId`, message: problem });
+      // validateConfig reported an unknown query at this path already; an unusable query is reported here
+      const path = `widgets[${index}].binding.queryId`;
+      if (!plan.diagnostics.some((d) => d.code === 'unknown-query' && d.path === path)) {
+        plan.diagnostics.push({ code: 'unknown-query', path, message: problem });
+      }
       admitted.unavailable = problem;
     } else if (!parameters(widget.binding, anchor.scope, `widgets[${index}].binding`)) {
       admitted.unavailable = 'Binding metadata is unavailable';

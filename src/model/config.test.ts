@@ -18,6 +18,10 @@ const expectItemsEqual = (
   }
 };
 
+/** the saved indices of the skipped items of one section */
+const skippedOf = (result: ReturnType<typeof validateConfig>, section: string) =>
+  result.skippedItems.filter((i) => i.section === section).map((i) => i.index);
+
 describe('validateConfig: round trip of the version 3 shape', () => {
   it('returns every item deep-equal to its saved JSON, with every hover kind, both link directions and a native target', () => {
     const tpl = { ...binding, match: { device: '${cell.device}' }, field: 'Value' };
@@ -92,7 +96,7 @@ describe('validateConfig: round trip of the version 3 shape', () => {
     const result = clean(config);
     expect(result.diagnostics).toEqual([]);
     expect(result.config).toEqual(config);
-    expect(result.skipped).toEqual({ queries: [], patterns: [], overrides: [], widgets: [] });
+    expect(result.skippedItems).toEqual([]);
     expectItemsEqual(result, config);
   });
 
@@ -100,7 +104,9 @@ describe('validateConfig: round trip of the version 3 shape', () => {
     const target = { refId: 'A', custom: () => 1 };
     const input = {
       ...empty(),
-      queries: [{ id: 'q', name: 'Q', source: { kind: 'datasource', datasource: { uid: 'ds' }, target, parameters: {} } }],
+      queries: [
+        { id: 'q', name: 'Q', source: { kind: 'datasource', datasource: { uid: 'ds' }, target, parameters: {} } },
+      ],
     };
     const result = validateConfig(input);
     expect(result.config!.queries[0].source).toMatchObject({ target });
@@ -220,7 +226,10 @@ describe('validateConfig: versions', () => {
   it.each([
     ['a2bBinding', { link: { a2bBinding: binding } }],
     ['capacityA2b', { link: { capacityA2b: 1 } }],
-    ['a history row with series', { hover: { rows: [{ kind: 'history', label: 'T', series: [{ binding, direction: 'up' }] }] } }],
+    [
+      'a history row with series',
+      { hover: { rows: [{ kind: 'history', label: 'T', series: [{ binding, direction: 'up' }] }] } },
+    ],
     ['capacity 0', { link: { capacity: 0 } }],
     ['a numeric string capacity', { link: { capacity: '100' } }],
     ['capacity "auto"', { link: { capacity: 'auto' } }],
@@ -236,9 +245,12 @@ describe('validateConfig: versions', () => {
     });
     expect(result.config!.patterns.map((p) => p.id)).toEqual(['ok']);
     expect(result.indices.patterns).toEqual([0]);
-    expect(result.skipped.patterns).toEqual([1]);
+    expect(skippedOf(result, 'patterns')).toEqual([1]);
     expect(result.diagnostics).toContainEqual(
-      expect.objectContaining({ code: 'invalid-config', path: expect.stringMatching(/^patterns\[1\]\.display\.(link|hover)/) })
+      expect.objectContaining({
+        code: 'invalid-config',
+        path: expect.stringMatching(/^patterns\[1\]\.display\.(link|hover)/),
+      })
     );
     expect(result.diagnostics).toContainEqual({
       code: 'skipped-item',
@@ -255,7 +267,10 @@ describe('validateConfig: per-item', () => {
       ...empty(),
       queries: [panelQuery('q')],
       patterns: [good('a'), { id: 'b', name: 'B', select: { kind: 'host' }, display: {} }, good('c')],
-      overrides: [{ cellId: 'x', display: { unknown: true } }, { cellId: 'y', display: {} }],
+      overrides: [
+        { cellId: 'x', display: { unknown: true } },
+        { cellId: 'y', display: {} },
+      ],
       widgets: [{ id: 'w', anchorCellId: '', kind: 'round', label: 'W' }],
     });
     expect(result.config).toMatchObject({
@@ -264,7 +279,6 @@ describe('validateConfig: per-item', () => {
       widgets: [],
     });
     expect(result.indices).toEqual({ queries: [0], patterns: [0, 2], overrides: [1], widgets: [] });
-    expect(result.skipped).toEqual({ queries: [], patterns: [1], overrides: [0], widgets: [0] });
     expect(result.skippedItems).toEqual([
       { section: 'patterns', index: 1, title: 'Pattern B', id: 'b' },
       { section: 'overrides', index: 0, title: 'Override of x', cellId: 'x' },
@@ -309,7 +323,11 @@ describe('validateConfig: per-item', () => {
   it('an unknown query keeps the pattern and lists unknown-query at every reference', () => {
     const missing = { ...binding, queryId: 'removed' };
     const display = {
-      link: { a2b: { binding: missing, capacityBinding: missing }, b2a: { binding: missing }, capacityBinding: missing },
+      link: {
+        a2b: { binding: missing, capacityBinding: missing },
+        b2a: { binding: missing },
+        capacityBinding: missing,
+      },
       shape: { binding: missing },
       status: {
         kind: 'mapping',
@@ -350,7 +368,7 @@ describe('validateConfig: per-item', () => {
       queries: [{ id: 'q', name: '', source: { kind: 'panel', refId: 'A' } }],
       widgets: [{ id: 'w', anchorCellId: 'a', kind: 'sparkline', label: 'W', binding }],
     });
-    expect(result.skipped.queries).toEqual([0]);
+    expect(skippedOf(result, 'queries')).toEqual([0]);
     expect(result.diagnostics).toContainEqual({
       code: 'unknown-query',
       path: 'widgets[0].binding.queryId',
@@ -384,10 +402,14 @@ describe('validateConfig: per-item', () => {
         ...empty(),
         defaultDatasource: { uid: 'ds' },
         queries: [
-          { id: 'q', name: 'Q', source: { kind: 'datasource', target: { refId: 'A' }, parameters: { dm_device: path } } },
+          {
+            id: 'q',
+            name: 'Q',
+            source: { kind: 'datasource', target: { refId: 'A' }, parameters: { dm_device: path } },
+          },
         ],
       });
-      expect(result.skipped.queries).toEqual([0]);
+      expect(skippedOf(result, 'queries')).toEqual([0]);
       expect(result.diagnostics).toContainEqual(
         expect.objectContaining({ code: 'invalid-config', path: 'queries[0].source.parameters.dm_device' })
       );
@@ -477,7 +499,7 @@ describe('combined up/down row', () => {
   const accepts = (row: unknown) => expect(validateConfig(withRow(row)).diagnostics).toEqual([]);
   const skips = (row: unknown) => {
     const result = validateConfig(withRow(row));
-    expect(result.skipped.overrides).toEqual([0]);
+    expect(skippedOf(result, 'overrides')).toEqual([0]);
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
   };
   it('accepts two bindings with a direction each, or one', () => {
@@ -536,7 +558,10 @@ describe('combined up/down row', () => {
     ['a history row with series', { ...combined, kind: 'history' }],
     ['no series', { ...combined, series: [] }],
     ['three series', { ...combined, series: [...combined.series, combined.series[0]] }],
-    ['the same direction twice', { ...combined, series: [combined.series[0], { ...combined.series[1], direction: 'up' }] }],
+    [
+      'the same direction twice',
+      { ...combined, series: [combined.series[0], { ...combined.series[1], direction: 'up' }] },
+    ],
     ['an unknown direction', { ...combined, series: [{ binding: up, direction: 'left' }] }],
     ['a capacity on a single history row', { kind: 'history', label: 'T', binding: up, capacity: 5 }],
   ])('skips %s', (_name, row) => skips(row));
@@ -567,7 +592,7 @@ describe('link directions', () => {
     ['an old key', { a2bBinding: binding }],
   ])('skips an override with %s', (_name, link) => {
     const result = validateConfig(withLink(link));
-    expect(result.skipped.overrides).toEqual([0]);
+    expect(skippedOf(result, 'overrides')).toEqual([0]);
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
   });
 });

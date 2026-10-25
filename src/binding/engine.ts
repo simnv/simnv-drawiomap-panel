@@ -1,12 +1,5 @@
 import { type Field, formattedValueToString } from '@grafana/data';
-import type {
-  BindContext,
-  CellPatch,
-  HalfState,
-  SeriesInfo,
-  ShapeTarget,
-  TemplateScope,
-} from '../types';
+import type { BindContext, CellPatch, HalfState, SeriesInfo, ShapeTarget, TemplateScope } from '../types';
 import { colorFor, noDataColor, widthFor } from './color';
 import { resolveTemplate, shield } from './template';
 import { toBitsPerSecond } from './units';
@@ -61,8 +54,8 @@ export interface BindingDemand {
   binding: QueryBinding;
   role: 'visible' | 'hover';
   rowIndex?: number;
-  /** the index in the series list of a combined row */
-  seriesIndex?: number;
+  /** the path of the binding in its row: `binding`, `capacityBinding`, `series[j].binding`, `series[j].capacityBinding` */
+  path?: string;
 }
 /** Describes visible data plus the open card's rows; does not register or execute queries. */
 export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
@@ -92,17 +85,9 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
     }
     if (cell.cellId === openCellId && d.hover?.enabled !== false) {
       d.hover?.rows.forEach((row, rowIndex) => {
-        const combined = row.kind === 'combined';
         [...rowBindings(row), ...rowCapacityBindings(row)].forEach(({ binding, path }) => {
           if (cell.bindings.includes(binding)) {
-            const series = /^series\[(\d+)\]/.exec(path);
-            demands.push({
-              cellId: cell.cellId,
-              binding,
-              role: 'hover',
-              rowIndex,
-              ...(combined && series ? { seriesIndex: Number(series[1]) } : {}),
-            });
+            demands.push({ cellId: cell.cellId, binding, role: 'hover', rowIndex, path });
           }
         });
       });
@@ -253,7 +238,11 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
         }
         const h = halfState(model, binding, cap, ctx);
         for (const note of new Set(h.notes)) {
-          result.diagnostics.push({ code: 'unit-not-rate', path: `cells.${cell.cellId}.${path}.binding`, message: note });
+          result.diagnostics.push({
+            code: 'unit-not-rate',
+            path: `cells.${cell.cellId}.${path}.binding`,
+            message: note,
+          });
         }
         patch.link[direction] = h.state;
         primary ??= h.state.series;
@@ -419,8 +408,7 @@ export function halfState(
   const percent = capacity === undefined ? undefined : (bitsOf(value, series, notes) / capacity) * 100;
   const display = model.latestDisplayValue ?? ctx.display(series, value);
   // the capacity, once, in the unit of the field: the card and the labels show this text
-  const capacityDisplay =
-    capacity === undefined ? undefined : ctx.display(series, inFieldUnit(capacity, series.field));
+  const capacityDisplay = capacity === undefined ? undefined : ctx.display(series, inFieldUnit(capacity, series.field));
   const { color, stepIndex } = colorFor(value, percent, series.field, display, ctx.fieldThresholds, ctx.theme);
   const text = formattedValueToString(display);
   const label =

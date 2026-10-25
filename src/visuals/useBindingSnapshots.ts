@@ -48,10 +48,8 @@ export function useBindingSnapshots(
         if (!query || query.source.kind === 'panel' || !scope || !service) {
           return [];
         }
-        const row =
-          demand.rowIndex === undefined
-            ? undefined
-            : `${demand.rowIndex}${demand.seriesIndex === undefined ? '' : `.${demand.seriesIndex}`}`;
+        // one consumer per binding place: the value and the capacity of one series entry are two watches
+        const row = demand.rowIndex === undefined ? undefined : `${demand.rowIndex}.${demand.path}`;
         const consumerId = `${owner}:binding:${demand.role}:${demand.cellId}:${row ?? JSON.stringify(demand.binding)}`;
         const request = { consumerId, query, scope, context: service.context, maxDataPoints };
         const snapshot = preparedSnapshot(

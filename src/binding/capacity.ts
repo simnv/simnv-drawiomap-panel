@@ -55,11 +55,9 @@ export function resolveCapacity(req: CapacityRequest): ResolvedCapacity {
       return undefined;
     }
     const model = req.read(binding, path);
-    if (model === undefined) {
-      return fail('unbound-capacity', path, `The capacity series of query ${binding.queryId} is not available for this cell.`);
-    }
-    if (model.state !== 'ready' || model.latestValue === undefined) {
-      // not ready: no amount yet; a metric problem is the reader's report
+    if (model === undefined || model.state !== 'ready' || model.latestValue === undefined) {
+      // not usable for the cell (the plan reported why at `<path>.queryId`) or not ready: no amount; a metric
+      // problem is the reader's report
       return undefined;
     }
     if (!(model.latestValue > 0)) {
@@ -75,7 +73,10 @@ export function resolveCapacity(req: CapacityRequest): ResolvedCapacity {
     }
     return rate.bits;
   };
-  const fromValue = (value: CapacitySources['capacity'], path: string): { amount: number; source: CapacitySource } | undefined => {
+  const fromValue = (
+    value: CapacitySources['capacity'],
+    path: string
+  ): { amount: number; source: CapacitySource } | undefined => {
     if (value === undefined) {
       return undefined;
     }

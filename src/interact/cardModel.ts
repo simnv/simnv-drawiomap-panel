@@ -125,16 +125,9 @@ export function buildConfiguredCard(
     } else {
       // a row that cannot show data: its binding is not usable for the cell, or its own options cannot be met
       const blocked = patch.unavailableHoverRows?.includes(i) ? UNAVAILABLE_TEXT : rowProblem(row);
-      const combined = row.kind === 'combined';
       const parts = rowBindings(row).map(({ binding, path }, j) => {
         if (blocked === undefined) {
-          card.demands.push({
-            cellId: patch.cellId,
-            binding,
-            role: 'hover',
-            rowIndex: i,
-            ...(combined ? { seriesIndex: j } : {}),
-          });
+          card.demands.push({ cellId: patch.cellId, binding, role: 'hover', rowIndex: i, path });
         }
         const model: HistoryModel =
           blocked !== undefined
@@ -278,7 +271,14 @@ function combinedRow(
     if (seen) {
       return seen;
     }
-    card.demands.push({ cellId: patch.cellId, binding, role: 'hover', rowIndex: at.rowIndex });
+    // the demand names the place in the row, as collectBindingDemands does: `series[j].capacityBinding`
+    card.demands.push({
+      cellId: patch.cellId,
+      binding,
+      role: 'hover',
+      rowIndex: at.rowIndex,
+      path: path.slice(rowPath.length + 1),
+    });
     const model = readBinding(patch, binding, path, undefined, at.resolve, ctx, card.diagnostics);
     reads.set(path, model);
     return model;

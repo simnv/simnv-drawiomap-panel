@@ -1,7 +1,6 @@
 import {
   displayBindings,
   EMPTY_CONFIG,
-  type DiagramConfig,
   type Diagnostic,
   type DisplayConfig,
   type Section,
@@ -116,21 +115,6 @@ function skippedRows<R extends BindingRow>(
 }
 
 /** The list reads a validated config. A plain config is a clean one: every item parses, dense equals saved. */
-function asValidated(input: DiagramConfig | ValidatedConfig): ValidatedConfig {
-  if ('diagnostics' in input) {
-    return input;
-  }
-  const dense = (section: Section) => input[section].map((_, i) => i);
-  return {
-    config: input,
-    indices: { queries: dense('queries'), patterns: dense('patterns'), overrides: dense('overrides'), widgets: dense('widgets') },
-    skipped: { queries: [], patterns: [], overrides: [], widgets: [] },
-    skippedItems: [],
-    unusableQueries: new Map(),
-    diagnostics: [],
-  };
-}
-
 /**
  * Build the rows of the "All bindings" list from the config, the cells of the diagram and the diagnostics that the
  * editor and the engine already produce (config validation, pattern resolution, metric resolution, hover cards).
@@ -139,11 +123,10 @@ function asValidated(input: DiagramConfig | ValidatedConfig): ValidatedConfig {
  * neither `cellMatches` nor the merge ever sees it.
  */
 export function buildBindingsList(
-  input: DiagramConfig | ValidatedConfig,
+  validated: ValidatedConfig,
   cells: CellMeta[],
   diagnostics: Diagnostic[]
 ): BindingsList {
-  const validated = asValidated(input);
   const config = validated.config ?? EMPTY_CONFIG;
   const ids = cells.map((c) => c.id);
   const byId = new Map(cells.map((c) => [c.id, c]));
@@ -350,7 +333,7 @@ export function buildBindingsList(
       // a provenance owner holds the dense index of the pattern: the row has the saved one
       const owners: BindingRow[] = contributed.flatMap((owner) =>
         owner.kind === 'pattern'
-          ? (rowAt(patterns, savedIndex('patterns', owner.index)) as BindingRow | undefined) ?? []
+          ? ((rowAt(patterns, savedIndex('patterns', owner.index)) as BindingRow | undefined) ?? [])
           : overrides.filter((row) => row.cellId === owner.cellId)
       );
       for (const row of owners.length ? owners : chain) {

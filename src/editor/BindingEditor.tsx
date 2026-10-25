@@ -549,7 +549,9 @@ export function BindingEditor({
   const override = overrideIndex < 0 ? undefined : draft.config.overrides[overrideIndex];
   // An override that does not parse any more (a field blanked in the form) is skipped by the plan. Its raw fields
   // stay in the form for correction, over the merge of the patterns. Validation blocks Apply.
-  const skippedOverride = validated.skipped.overrides.includes(overrideIndex) ? override : undefined;
+  const skippedOverride = validated.skippedItems.some((i) => i.section === 'overrides' && i.index === overrideIndex)
+    ? override
+    : undefined;
   const planned = draft.cellId ? plan.cells[draft.cellId] : undefined;
   const inspected = draft.cellId
     ? planned

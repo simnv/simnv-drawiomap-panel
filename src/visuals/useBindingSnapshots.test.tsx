@@ -192,6 +192,35 @@ describe('useBindingSnapshots consumer owners', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it('watches the value and the capacity series of one direction as two consumers', () => {
+    const capacity: QueryBinding = { queryId: 'speed', match: {}, reducer: 'last' };
+    const card = {
+      ...plan,
+      cells: {
+        router: {
+          ...plan.cells.router,
+          bindings: [binding, capacity],
+          display: {
+            hover: {
+              rows: [
+                {
+                  kind: 'combined',
+                  label: 'Traffic',
+                  series: [{ binding, direction: 'up', capacityBinding: capacity }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    } as unknown as BindingPlan;
+    const queries = { ...config(), queries: [query(), { ...query(), id: 'speed', name: 'Speed' }] };
+    const watch = vi.fn(() => () => {});
+    const service = { controller: { watch, setPanelData: vi.fn() }, context: context(1) };
+    renderHook(() => useBindingSnapshots(card, queries, service as never, 'router', 100, undefined, 'panel:1'));
+    expect(new Set(consumerIds(watch)).size).toBe(2);
+  });
+
   it('does not let a second owner with the same ids take the watch of the first', () => {
     const release = vi.fn();
     const watch = vi.fn(() => release);

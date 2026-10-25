@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { validateConfig, type DiagramConfig } from '../model/config';
 import type { CellMeta } from '../types';
-import { buildBindingsList, cellRows, filterBindings, problemsOf, rowMatches } from './bindingsModel';
+import { buildBindingsList as buildList, cellRows, filterBindings, problemsOf, rowMatches } from './bindingsModel';
+
+/** the list of a config as the editor builds it, from the validated config */
+const buildBindingsList = (
+  input: DiagramConfig | ReturnType<typeof validateConfig>,
+  cells: Parameters<typeof buildList>[1],
+  diagnostics: Parameters<typeof buildList>[2]
+) => buildList('diagnostics' in input ? input : validateConfig(input), cells, diagnostics);
 
 const cell = (id: string, kind: CellMeta['kind'] = 'node', labelText = ''): CellMeta => ({
   id,

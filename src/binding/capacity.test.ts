@@ -7,7 +7,12 @@ import { inFieldUnit, resolveCapacity, type CapacityRequest } from './capacity';
 
 const binding = (queryId: string): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
 const field = (unit?: string, max?: number): Field =>
-  ({ name: 'Value', type: FieldType.number, config: { ...(unit ? { unit } : {}), ...(max ? { max } : {}) }, values: [] }) as Field;
+  ({
+    name: 'Value',
+    type: FieldType.number,
+    config: { ...(unit ? { unit } : {}), ...(max ? { max } : {}) },
+    values: [],
+  }) as Field;
 const series = (latestValue: number | undefined, unit?: string): HistoryModel => ({
   state: 'ready',
   field: field(unit) as Field<number | null>,
@@ -101,12 +106,9 @@ describe('resolveCapacity: series', () => {
       { code: 'unresolved-metadata', path: 'link.a2b.capacityBinding', message: expect.stringContaining('positive') },
     ]);
   });
-  it('a series that is not usable for the cell reports it and the chain continues', () => {
+  it('a series that is not usable for the cell gives nothing and no diagnostic (the plan reported why); the chain continues', () => {
     const result = resolveCapacity(base({ own: { capacityBinding: binding('s') }, shared: { capacity: 5 } }));
-    expect(result).toMatchObject({ amount: 5, source: 'number' });
-    expect(result.diagnostics).toEqual([
-      { code: 'unbound-capacity', path: 'link.a2b.capacityBinding', message: expect.stringContaining('s') },
-    ]);
+    expect(result).toEqual({ amount: 5, source: 'number', diagnostics: [] });
   });
   it('a series that is loading or has no value gives nothing and no diagnostic; the caller reports the metric', () => {
     const loading = readers({ s: { state: 'loading' } });

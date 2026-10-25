@@ -204,7 +204,7 @@ describe('bindPlan', () => {
     expect(result.patches.get(cells[3].id)?.hover?.rows).toHaveLength(4);
     expect(result.patches.get(cells[3].id)?.shape?.target).toBe('none');
   });
-  it('demands each binding of a combined up/down row with its series index', () => {
+  it('demands each binding of a combined up/down row with its path in the row', () => {
     const tx = { ...queryBinding, queryId: 'tx' };
     const rx = { ...queryBinding, queryId: 'rx' };
     const config = v2Config({
@@ -214,14 +214,14 @@ describe('bindPlan', () => {
             kind: 'combined',
             label: 'Traffic',
             series: [
-              { binding: tx, direction: 'up' },
+              { binding: tx, direction: 'up', capacityBinding: { ...queryBinding, queryId: 'speed' } },
               { binding: rx, direction: 'down' },
             ],
           },
         ],
       },
     });
-    for (const id of ['tx', 'rx']) {
+    for (const id of ['tx', 'rx', 'speed']) {
       config.queries.push({
         id,
         name: id,
@@ -233,10 +233,11 @@ describe('bindPlan', () => {
     expect(
       collectBindingDemands(plan, cells[3].id)
         .filter((d) => d.role === 'hover')
-        .map((d) => [d.binding.queryId, d.rowIndex, d.seriesIndex])
+        .map((d) => [d.binding.queryId, d.rowIndex, d.path])
     ).toEqual([
-      ['tx', 0, 0],
-      ['rx', 0, 1],
+      ['tx', 0, 'series[0].binding'],
+      ['rx', 0, 'series[1].binding'],
+      ['speed', 0, 'series[0].capacityBinding'],
     ]);
     const result = bindPlan(plan, () => historyValue(1), ctx, 1000);
     expect(result.patches.get(cells[3].id)?.unavailableHoverRows).toEqual([]);
