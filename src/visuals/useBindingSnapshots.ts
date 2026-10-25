@@ -40,7 +40,7 @@ export function useBindingSnapshots(
   const demands = useMemo(
     () =>
       collectBindingDemands(plan, openCellId).flatMap((demand) => {
-        if (role && demand.role !== role) {
+        if ((role && demand.role !== role) || demand.role === 'widget') {
           return [];
         }
         const query = config.queries.find((q) => q.id === demand.binding.queryId);

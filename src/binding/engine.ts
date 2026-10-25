@@ -67,14 +67,18 @@ export function resolveBinding(
     : toHistory(snapshot, resolved, format);
 }
 export interface BindingDemand {
+  /** the cell, or the anchor cell of a chart widget */
   cellId: string;
   binding: QueryBinding;
-  role: 'visible' | 'hover';
+  role: 'visible' | 'hover' | 'widget';
   rowIndex?: number;
   /** the path of the binding in its row: `binding`, `capacityBinding`, `series[j].binding`, `series[j].capacityBinding` */
   path?: string;
 }
-/** Describes visible data plus the open card's rows; does not register or execute queries. */
+/**
+ * Describes visible data, the open card's rows and the chart widgets at their anchor cells; does not register or
+ * execute queries.
+ */
 export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
   const demands: BindingDemand[] = [];
   for (const cell of Object.values(plan.cells)) {
@@ -109,6 +113,9 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
         });
       });
     }
+  }
+  for (const entry of plan.widgets) {
+    demands.push({ cellId: entry.anchorCellId, binding: entry.widget.binding, role: 'widget' });
   }
   return demands;
 }

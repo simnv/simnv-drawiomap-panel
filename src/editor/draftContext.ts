@@ -26,7 +26,11 @@ export function draftQueryService(
   if (cached?.key === key) {
     return cached.value;
   }
-  const value = { controller: service.controller, context: { ...service.context, defaultDatasource } };
+  const value = {
+    controller: service.controller,
+    store: service.store,
+    context: { ...service.context, defaultDatasource },
+  };
   cache.set(service, { key, value });
   return value;
 }
