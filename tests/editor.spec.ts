@@ -30,6 +30,10 @@ test('edit mode opens the bundled draw.io editor, saves, and the panel updates',
   expect(hashBefore).toBeTruthy();
 
   await page.getByTestId('dmap-open-editor').click();
+  const help = page.getByTestId('dmap-editor-help');
+  await help.click();
+  await expect(page.getByTestId('dmap-editor-help-text')).toContainText('Keep cell IDs unchanged to retain bindings');
+  await expect(page.getByTestId('dmap-editor-modal')).not.toContainText('Move or resize');
   const frameEl = page.getByTestId('dmap-editor-frame');
   await expect(frameEl).toBeAttached();
   await expect(frameEl).toHaveAttribute('srcdoc', /public\/plugins\/simnv-drawiomap-panel\/drawio\//);
