@@ -1109,6 +1109,13 @@ describe('the capacity text in the unit of the field', () => {
     expect(h.label).toMatch(/^41(\.0)? Mb\/s · 41% of 100 Mb\/s$/);
     expect(formattedValueToString(h.capacityDisplay!)).toBe('100 Mb/s');
   });
+  it('the capacity takes automatic decimals, not the decimals of the value field', () => {
+    const h = one({ unit: 'bps', decimals: 1 }, 41e6, 1e8);
+    expect(h.label).toBe('41.0 Mb/s · 41% of 100 Mb/s');
+    expect(formattedValueToString(h.capacityDisplay!)).toBe('100 Mb/s');
+    const cubic = one({ unit: 'm3', decimals: 3 }, 2.05, 4.1);
+    expect(cubic.label).toBe('2.050 m³ · 50% of 4.1 m³');
+  });
   it('Bps: a capacity of 1 Gb/s shows as 125 MB/s; the percent does not change', () => {
     const h = one({ unit: 'Bps' }, 12.5e6, 1e9);
     expect(h.percent).toBeCloseTo(10);

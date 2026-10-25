@@ -1,4 +1,4 @@
-import { type Field, formattedValueToString } from '@grafana/data';
+import { type DisplayValue, type Field, formattedValueToString } from '@grafana/data';
 import type { BindContext, CellPatch, HalfState, SeriesInfo, ShapeTarget, TemplateScope } from '../types';
 import { colorFor, noDataColor, widthFor } from './color';
 import { resolveTemplate, shield } from './template';
@@ -396,6 +396,16 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
 
 const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound', unavailable: 'unavailable' } as const;
 
+/** "4.10" reads "4.1", "100.00" reads "100": a capacity is a round figure, its text carries no filler zeros. */
+const withoutTrailingZeros = (shown: DisplayValue): DisplayValue =>
+  /^-?\d+\.\d*0$/.test(shown.text) ? { ...shown, text: shown.text.replace(/\.?0+$/, '') } : shown;
+/** The field a capacity is formatted with: the unit of the values, automatic decimals, no cached processor. */
+const capacityField = (field: Field): Field => ({
+  ...field,
+  display: undefined,
+  config: { ...field.config, decimals: undefined },
+});
+
 const unitNote = (unit: string) => `unit "${unit}" is not a data rate, the raw value is used as bit/s`;
 
 /** A value in the unit of its field, in bit/s. */
@@ -442,8 +452,13 @@ export function halfState(
   // the capacity is in the canonical unit; the field unit tells how to read the value
   const percent = capacity === undefined ? undefined : (bitsOf(value, series, notes) / capacity) * 100;
   const display = model.latestDisplayValue ?? ctx.display(series, value);
-  // the capacity, once, in the unit of the field: the card and the labels show this text
-  const capacityDisplay = capacity === undefined ? undefined : ctx.display(series, inFieldUnit(capacity, series.field));
+  // the capacity, once, in the unit of the field with automatic decimals: the card and the labels show this text
+  const capacityDisplay =
+    capacity === undefined
+      ? undefined
+      : withoutTrailingZeros(
+          ctx.display({ ...series, field: capacityField(series.field) }, inFieldUnit(capacity, series.field))
+        );
   const { color, stepIndex } = colorFor(value, percent, series.field, display, ctx.fieldThresholds, ctx.theme);
   const text = formattedValueToString(display);
   const label =
