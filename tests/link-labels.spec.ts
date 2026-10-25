@@ -3,7 +3,7 @@ import type { DashboardPage } from '@grafana/plugin-e2e';
 import { devices, type Locator } from '@playwright/test';
 import type { DiagramConfig, LinkLabelMode } from '../src/model/config';
 import { demoL3Config, handDrawnConfig } from '../src/fixtures/demo-config';
-import { touch } from './authoring-controls';
+import { pointOnHalf, touch } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 /*
@@ -13,6 +13,9 @@ import { expect, test } from './authoring-fixtures';
  */
 
 const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+// A desktop viewport in which the fitted L3 sheet (1113 × 638 units) renders at about 1 px per unit: at 1280 × 720 the
+// panel height gives 0.78 px per unit, under the 7 px rule, and the layer hides (as it should).
+test.use({ viewport: { width: 1600, height: 1000 } });
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 const demoSvg = fs.readFileSync('fixtures/demo/svg/demo-l3.svg', 'utf8');
 const handSvg = fs.readFileSync('fixtures/demo/svg/hand-drawn.svg', 'utf8');
@@ -125,17 +128,26 @@ async function openLabelled(
   const panel = (await dashboardPage.getPanelByTitle('labels L3')).locator;
   const hand = (await dashboardPage.getPanelByTitle('labels hand-drawn')).locator;
   await expect(label(panel, ISP_A, 'a2b')).toHaveAttribute('data-dmap-placed-at', /\d+/);
-  return { uid, dashboardPage, panel, hand };
+  /** Grafana renders a panel below the fold when it scrolls into view: bring the hand-drawn panel up and wait. */
+  const showHand = async () => {
+    await hand.scrollIntoViewIfNeeded();
+    await expect(label(hand, 'edge-ab', 'a2b')).toHaveAttribute('data-dmap-placed-at', /\d+/);
+  };
+  return { uid, dashboardPage, panel, hand, showHand };
 }
 
-test('percent: each WAN half reads its percent, both labels on one side of the edge', async (fixtures) => {
-  const { panel } = await openLabelled('percent', fixtures);
+test('percent: each WAN half reads its percent, both labels on one side of the edge', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
   await expect(label(panel, ISP_A, 'a2b')).toHaveText('41%');
   await expect(label(panel, ISP_A, 'b2a')).toHaveText(/^\d+%$/);
   await expect(label(panel, ISP_A, 'a2b')).toHaveAttribute('data-dmap-mode', 'percent');
   expect(await sideOf(panel, ISP_A, 'a2b')).toBe(await sideOf(panel, ISP_A, 'b2a'));
-  // no LAN label: the pattern of the LAN links has no label key
-  await expect(labelsOf(panel).filter({ hasNot: panel.locator('[data-dmap-mode="percent"]') })).toHaveCount(0);
+  // no LAN label: the pattern of the LAN links has no label key; the four WAN links have two halves each
+  await expect(labelsOf(panel)).toHaveCount(8);
   for (const el of await labelsOf(panel).all()) {
     expect(await el.getAttribute('data-dmap-cell')).toMatch(/rtr-(a|b):(wan1|wan2|wan3|pppoe)$/);
   }
@@ -144,18 +156,35 @@ test('percent: each WAN half reads its percent, both labels on one side of the e
   }
 });
 
-test('value: the a2b text of the WAN link is the reading in the unit of the field', async (fixtures) => {
-  const { panel, hand } = await openLabelled('value', fixtures);
+test('value: the a2b text of the WAN link is the reading in the unit of the field', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const { panel, hand, showHand } = await openLabelled('value', {
+    createDiagram,
+    gotoDashboardPage,
+    readProvisionedDataSource,
+  });
   await expect(label(panel, ISP_A, 'a2b')).toHaveText(/^41(\.\d)? Mb\/s$/);
   await expect(label(panel, ISP_A, 'a2b')).toHaveAttribute('data-dmap-mode', 'value');
-  await expect(label(hand, 'edge-ab', 'a2b')).toHaveText(/^41(\.\d)? Mb\/s$/);
   if (SHOTS) {
     await panel.screenshot({ path: `${SHOTS}/link-labels-value.png` });
   }
+  await showHand();
+  await expect(label(hand, 'edge-ab', 'a2b')).toHaveText(/^41(\.\d)? Mb\/s$/);
 });
 
-test('no label overlaps a port pill, a label chip, a status marker or a plain node body', async (fixtures) => {
-  const { panel, hand } = await openLabelled('percent', fixtures);
+test('no label overlaps a port pill, a label chip, a status marker or a plain node body', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const { panel, hand, showHand } = await openLabelled('percent', {
+    createDiagram,
+    gotoDashboardPage,
+    readProvisionedDataSource,
+  });
   const placed = await boxes(labelsOf(panel).locator('visible=true'));
   expect(placed.length).toBeGreaterThan(4);
   const pills = await boxes(panel.locator('g[data-cell-id^="pg-port"] rect'));
@@ -173,6 +202,7 @@ test('no label overlaps a port pill, a label chip, a status marker or a plain no
     }
   }
   // the hand-drawn sheet: no label on a node body
+  await showHand();
   const handLabels = await boxes(labelsOf(hand).locator('visible=true'));
   expect(handLabels.length).toBeGreaterThan(0);
   const bodies = await boxes(hand.locator('g[data-cell-id^="node-"] :is(rect, ellipse)'));
@@ -183,8 +213,12 @@ test('no label overlaps a port pill, a label chip, a status marker or a plain no
   }
 });
 
-test('a tap on a label opens the card of its link, not of the group under it', async (fixtures) => {
-  const { panel } = await openLabelled('percent', fixtures);
+test('a tap on a label opens the card of its link, not of the group under it', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
   const target = label(panel, ISP_A, 'a2b');
   await target.click({ force: true });
   const dialog = panel.getByRole('dialog');
@@ -192,9 +226,18 @@ test('a tap on a label opens the card of its link, not of the group under it', a
   await expect(dialog).toContainText(/41(\.\d)? Mb\/s · 41%/);
 });
 
-test('a dashboard refresh keeps every label element and its transform', async (fixtures) => {
-  const { panel, dashboardPage } = await openLabelled('percent', fixtures);
-  const { page, selectors } = fixtures;
+test('a dashboard refresh keeps every label element and its transform', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+  page,
+  selectors,
+}) => {
+  const { panel, dashboardPage } = await openLabelled('percent', {
+    createDiagram,
+    gotoDashboardPage,
+    readProvisionedDataSource,
+  });
   const read = () =>
     labelsOf(panel).evaluateAll((els) =>
       els.map((el) => [
@@ -227,14 +270,23 @@ test.describe('phone', () => {
   const { defaultBrowserType: _chromium, ...pixel } = devices['Pixel 5'];
   test.use(pixel);
 
-  test('in Fit the layer is hidden on the first frame; a pinch to 5× shows it', async ({ page, ...fixtures }) => {
-    const { panel } = await openLabelled('percent', fixtures, { height: 14 });
+  test('in Fit the layer is hidden on the first frame; a pinch to 5× shows it', async ({
+    page,
+    createDiagram,
+    gotoDashboardPage,
+    readProvisionedDataSource,
+  }) => {
+    const { panel } = await openLabelled(
+      'percent',
+      { createDiagram, gotoDashboardPage, readProvisionedDataSource },
+      { height: 14 }
+    );
     const layer = layerOf(panel);
     await expect(layer).toHaveAttribute('visibility', 'hidden');
-    const stage = panel.getByTestId('dmap-stage');
-    const box = (await stage.boundingBox())!;
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
+    // a pinch on the WAN link, so the zoomed view holds its labels
+    const { x: cx, y: cy } = await pointOnHalf(
+      panel.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${ISP_A}"]`)
+    );
     await touch(
       page,
       [
@@ -247,16 +299,25 @@ test.describe('phone', () => {
       ]
     );
     await expect(layer).not.toHaveAttribute('visibility', 'hidden');
+    await expect(label(panel, ISP_A, 'a2b')).toBeVisible();
     if (SHOTS) {
       await panel.screenshot({ path: `${SHOTS}/link-labels-phone-zoomed.png` });
     }
   });
 
-  test('a minimum scale of 1.3 shows the labels at load', async (fixtures) => {
-    const { panel } = await openLabelled('percent', fixtures, {
-      height: 14,
-      zoom: { mode: 'fit', wheel: true, pan: true, minScale: 1.3 },
-    });
+  test('a minimum scale of 1.3 shows the labels at load', async ({
+    createDiagram,
+    gotoDashboardPage,
+    readProvisionedDataSource,
+  }) => {
+    const { panel } = await openLabelled(
+      'percent',
+      { createDiagram, gotoDashboardPage, readProvisionedDataSource },
+      {
+        height: 14,
+        zoom: { mode: 'fit', wheel: true, pan: true, minScale: 1.3 },
+      }
+    );
     await expect(layerOf(panel)).not.toHaveAttribute('visibility', 'hidden');
     await expect(label(panel, ISP_A, 'a2b')).toBeVisible();
   });
