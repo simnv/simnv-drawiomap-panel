@@ -24,6 +24,7 @@ import {
   LINK_LABEL_GEOMETRY,
   obstacleIndex,
   placeHalfLabel,
+  placeLinkLabels,
   pointToSegment,
   type LegInput,
   type Obstacle,
@@ -631,6 +632,8 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   el.setAttribute('stroke-width', String(2 * LINK_LABEL_GEOMETRY.halo));
   el.setAttribute('paint-order', 'stroke');
   el.setAttribute('stroke-linejoin', 'round');
+  el.setAttribute('stroke-linecap', 'round');
+  el.setAttribute('text-rendering', 'geometricPrecision');
   paint(el, layout.theme);
   layout.layer.appendChild(el);
   rec.el = el;
@@ -664,13 +667,28 @@ function showText(rec: LabelRecord, text: string | undefined): void {
 
 /** Places one label with its current slot; a placed label takes its box in the grid. */
 function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
-  if (!rec.leg || rec.slot === undefined) {
+  const leg = inputOf(rec);
+  if (!leg) {
     rec.placement = undefined;
     rec.obstacle = undefined;
     return false;
   }
-  const leg: LegInput = { ...rec.leg, size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 } };
-  const placement = placeHalfLabel(leg, rec.cellId, layout.grid);
+  // an isolated re-placement keeps the side of the other half of the link when that half is placed
+  const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.placement;
+  const sides: ReadonlyArray<1 | -1> = mate && 'centre' in mate ? [mate.side, mate.side === 1 ? -1 : 1] : [1, -1];
+  return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides));
+}
+
+/** The leg of a record with its slot size; undefined when the edge has no geometry or the half has no slot yet. */
+function inputOf(rec: LabelRecord): LegInput | undefined {
+  if (!rec.leg || rec.slot === undefined) {
+    return undefined;
+  }
+  return { ...rec.leg, size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 } };
+}
+
+/** Stores the placement of a record; a placed label takes its box in the grid. */
+function hold(layout: LabelLayout, rec: LabelRecord, placement: Placement): boolean {
   rec.placement = placement;
   if ('centre' in placement) {
     rec.obstacle = { kind: 'rect', rect: boundsOf(placement.box), clearance: 0 };
@@ -716,8 +734,10 @@ function fullPlacement(
     }
   }
   layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe, legs));
+  const texts: Array<string | undefined> = [];
   for (const slot of slots) {
     const text = linkLabelText(slot.state, slot.mode);
+    texts.push(text);
     const rec: LabelRecord = {
       cellId: slot.cellId,
       which: slot.which,
@@ -727,11 +747,31 @@ function fullPlacement(
       retry: false,
     };
     layout.records.set(`${slot.cellId}:${slot.which}`, rec);
-    if (tryPlace(layout, rec)) {
-      position(ensureElement(layout, rec), rec.placement as Placed);
-    }
-    showText(rec, text);
   }
+  // the two halves of a link are placed together: both on one side when a side holds both
+  const done = new Set<LabelRecord>();
+  slots.forEach((slot, i) => {
+    const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
+    if (!done.has(rec)) {
+      const mate = layout.records.get(`${slot.cellId}:${slot.which === 'a2b' ? 'b2a' : 'a2b'}`);
+      const [a, b] = slot.which === 'a2b' ? [rec, mate] : [mate, rec];
+      const legA = a && inputOf(a);
+      const legB = b && inputOf(b);
+      if (a && b && legA && legB && !done.has(mate!)) {
+        const [pa, pb] = placeLinkLabels(legA, legB, rec.cellId, layout.grid);
+        hold(layout, a, pa);
+        hold(layout, b, pb);
+        done.add(a).add(b);
+      } else {
+        tryPlace(layout, rec);
+        done.add(rec);
+      }
+    }
+    if (rec.placement && 'centre' in rec.placement) {
+      position(ensureElement(layout, rec), rec.placement);
+    }
+    showText(rec, texts[i]);
+  });
   return layout;
 }
 

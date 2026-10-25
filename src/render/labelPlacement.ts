@@ -58,10 +58,12 @@ export interface Placed {
   box: OrientedBox;
   /** the arc length of the anchor along the leg */
   along: number;
+  /** the side of the run: 1 is the first side (`runHeading().first`), −1 the second */
+  side: 1 | -1;
 }
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
 
-export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 4, halo: 2, alongStep: 4, endMargin: 4 } as const;
+export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 4, halo: 1, alongStep: 4, endMargin: 4 } as const;
 /** The smallest glyph that reads on a screen: below it the label layer hides (decision 7). */
 export const MIN_GLYPH_PX = 7;
 /** A run whose horizontal extent is at most this is vertical. draw.io writes two decimals. */
@@ -335,7 +337,12 @@ const arcLengths = (pts: readonly Point[]): number[] => {
  * edge. `own` is the cell id of the edge: the pieces of its own run (`leg.id`, `Obstacle.piece`) are no obstacle,
  * its other runs are.
  */
-export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex): Placement {
+export function placeHalfLabel(
+  leg: LegInput,
+  own: string,
+  index: ObstacleIndex,
+  sides: ReadonlyArray<1 | -1> = [1, -1]
+): Placement {
   const { halo, normalGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
   const w = leg.size.width + 2 * halo;
   const h = leg.size.height + 2 * halo;
@@ -381,16 +388,48 @@ export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex)
       arcs[o.piece.index + 1] <= run.to + EPS;
     return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece }];
   });
-  for (const side of [1, -1]) {
+  for (const side of sides) {
     for (const { d, anchor, heading, ownPiece } of candidates) {
       const centre = { x: anchor.x + side * heading.first.x * offset, y: anchor.y + side * heading.first.y * offset };
       const box: OrientedBox = { centre, width: w, height: h, degrees: heading.degrees };
       if (!collides(box, ownPiece, index)) {
-        return { centre, degrees: heading.degrees, box, along: d };
+        return { centre, degrees: heading.degrees, box, along: d, side };
       }
     }
   }
   return { dropped: 'no-free-spot' };
+}
+
+/**
+ * Places the labels of the two halves of one link so that both stand on one side of the link, as portograph does.
+ * The first side is tried for both halves; when one half has no free spot there, the second side is tried for both.
+ * Only when no single side holds both, each half takes its own first free spot. The first label of a pair is an
+ * obstacle for the second while the pair is placed; the index holds no label of the pair when this returns.
+ */
+export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: ObstacleIndex): [Placement, Placement] {
+  const hold = (p: Placement): Obstacle | undefined => {
+    if (!('centre' in p)) {
+      return undefined;
+    }
+    const o: Obstacle = { kind: 'rect', rect: boundsOf(p.box), clearance: 0 };
+    index.add(o);
+    return o;
+  };
+  const drop = (o: Obstacle | undefined) => o && index.remove(o);
+  const pair = (sides: ReadonlyArray<1 | -1>): [Placement, Placement] => {
+    const first = placeHalfLabel(a, own, index, sides);
+    const held = hold(first);
+    const second = placeHalfLabel(b, own, index, sides);
+    drop(held);
+    return [first, second];
+  };
+  for (const side of [1, -1] as const) {
+    const result = pair([side]);
+    if ('centre' in result[0] && 'centre' in result[1]) {
+      return result;
+    }
+  }
+  return pair([1, -1]);
 }
 
 /** The box against the obstacles near it; the pieces of the own run (`ownPiece`) do not count. */

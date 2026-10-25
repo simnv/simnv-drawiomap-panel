@@ -112,7 +112,7 @@ centre, `transform="rotate(θ cx cy)"` with `text-anchor="middle"` and `dominant
 construction the port pills use (`rotate(-90,213.05,107.5)` in `fixtures/demo/svg/demo-l3.svg`).
 
 Box. Size `w × h`: `w` is the slot width (section 7), `h = fontSize × 1.25`, both plus `2 × halo` (portograph
-`haloSize`, `halo = 2`). Clearance to the stroke: `gap = normalGap + strokeRoot / 2`, `normalGap = 4` root units
+`haloSize`, `halo = 1` after the live run: a 2-unit stroke is 1 unit outside the glyphs). Clearance to the stroke: `gap = normalGap + strokeRoot / 2`, `normalGap = 4` root units
 (`LINK_LABEL_GEOMETRY`). The centre is `anchor + side × (gap + h / 2)`, the turned branch of `candidateBox`, so the
 near edge of the box is `normalGap` outside the stroke edge on every heading. The local stroke width is
 `linkWidth.max` of the panel options (decided), not the half's current width: the width grows with the load on each
@@ -139,7 +139,7 @@ export interface ObstacleIndex { add(o: Obstacle): void; near(box: Rect): Iterab
 export function obstacleIndex(items: readonly Obstacle[], cell?: number): ObstacleIndex;
 export interface Placed { centre: Point; degrees: number; box: OrientedBox; along: number }
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
-export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 4, halo: 2, alongStep: 4, endMargin: 4 } as const;
+export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 4, halo: 1, alongStep: 4, endMargin: 4 } as const;
 export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex): Placement;
 export function runHeading(dx: number, dy: number): { degrees: number; first: Point };
 export function labelsVisible(viewScale: number): boolean;   // section 6
@@ -147,7 +147,7 @@ export function labelsVisible(viewScale: number): boolean;   // section 6
 
 Candidates, in this order (the first free one wins):
 
-1. Side: the first side over the whole leg, then the second side (the portograph ladder).
+1. Side: the first side over the whole leg, then the second side (the portograph ladder). The side is chosen per link: `placeLinkLabels` tries the first side for both halves, then the second side for both. Each half takes its own side only when no single side holds both. An isolated re-placement of one half tries the side of the other half first.
 2. Distance from `d0`: `0, s, 2s, …` with `s = alongStep = 4` user units, up to the leg's ends.
 3. At one distance: towards the end of the link first (away from the arrowheads at the split), then towards it.
 
@@ -253,7 +253,7 @@ export function setLinkLabelScale(root: SVGSVGElement): void;
   or the node under it gets the tap. `font-size: 8` (the port pill size of the export),
   `font-family` of the first `pg-linkLabel` text in the stage when there is one, else `sans-serif` (the status
   markers' choice), `fill: theme.colors.text.primary` (decided), halo `stroke: theme.colors.background.primary;
-  stroke-width: 2 × halo; paint-order: stroke; stroke-linejoin: round`. The diagram background follows the Grafana
+  stroke-width: 2 × halo; paint-order: stroke; stroke-linejoin: round; stroke-linecap: round; text-rendering: geometricPrecision`. The diagram background follows the Grafana
   theme already, so the halo matches the canvas in both themes. A theme change rewrites these attributes only.
 - `labelMode` travels on the patch: `bindPlan` sets `CellPatch.link.labelMode` from the merged
   `display.link.label?.mode ?? 'none'`; no half carries it, because the mode is per cell.
