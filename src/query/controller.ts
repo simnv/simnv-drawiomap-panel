@@ -12,7 +12,7 @@ import {
 import { panelSnapshot } from './panelSnapshot';
 
 /** Canonical JSON for persisted query objects and resolved context, never datasource instances. */
-function stable(value: unknown): string {
+export function stable(value: unknown): string {
   return JSON.stringify(value, (_, item) =>
     item && typeof item === 'object' && !Array.isArray(item)
       ? Object.fromEntries(
@@ -82,6 +82,16 @@ function resolve(demand: QueryDemand, now: number): ResolvedQueryRequest {
     generation: demand.context.generation,
   });
   return { datasource: { ...datasource }, request, cacheKey };
+}
+/**
+ * The boundary copy. Grafana keeps the value arrays of a field by reference, and a streaming datasource appends to
+ * them in place. One copy per result, before the listeners: every consumer, model and series shares it read-only.
+ */
+export function copyFrames(frames: DataFrame[]): DataFrame[] {
+  return frames.map((frame) => ({
+    ...frame,
+    fields: frame.fields.map((field) => ({ ...field, values: Array.from(field.values) })),
+  }));
 }
 /** Include vector slots and serialized field configuration in both memory budgets. */
 export function measureFrames(frames: DataFrame[]): { values: number; bytes: number } {
@@ -216,7 +226,7 @@ export function createQueryController(
                 message: 'Diagram query result exceeds the active result budget. Reduce the range or resolution.',
               };
             } else {
-              snapshot = { ...snapshot, fetchedAt: now(), fromCache: false };
+              snapshot = { ...snapshot, frames: copyFrames(snapshot.frames), fetchedAt: now(), fromCache: false };
             }
           } else if (snapshot.state === 'empty') {
             snapshot = { ...snapshot, fetchedAt: now(), fromCache: false };
