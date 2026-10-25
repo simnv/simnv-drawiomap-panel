@@ -17,14 +17,7 @@ import {
 } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, CellMeta } from '../types';
-import {
-  bindPlan,
-  collectBindingDemands,
-  historySeries,
-  resolveBinding,
-  targetOf,
-  widgetDiagnostics,
-} from './engine';
+import { bindPlan, collectBindingDemands, historySeries, resolveBinding, targetOf, widgetDiagnostics } from './engine';
 import { resolvePatterns } from './patterns';
 import { displayBindings, type DiagramConfig, type DisplayConfig, type QueryBinding } from '../model/config';
 import { fieldDisplay, toHistory } from '../query/frames';

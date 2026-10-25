@@ -21,19 +21,20 @@ import { cardContextFor } from '../binding/context';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfig, type DisplayConfig, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
+import { demandMap, demandsOf, resolverFrom } from '../query/store';
 import type { QuerySnapshot } from '../query/types';
+import { useBindings } from '../query/useBindings';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import { sanitizeSvg } from '../render/sanitize';
 import type { BindContext, CellSelector, Diagram } from '../types';
 import { fnv1a } from '../util/hash';
-import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
 import { buildBindingsList, problemsOf, type BindingsList, type PatternRow, type ProblemEntry } from './bindingsModel';
 import { commitDraft, createDraft, draftPatternIndex, isDirty } from './draft';
 import { draftQueryService } from './draftContext';
 import { DrawioModal } from './DrawioModal';
 import { createHistory, reduceHistory } from './history';
 import { previewPattern, type PatternPreview } from './patternPreview';
-import { createPreviewResolver, previewSnapshot, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
+import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
 import { DiagramStage } from './popup/DiagramStage';
 import { InspectorPane, type InspectorSelection } from './popup/InspectorPane';
 import type { QueryUser } from './popup/QueryPane';
@@ -247,7 +248,23 @@ export function BindingEditor({
     };
   }, [patternKey]);
 
-  const prepared = useBindingSnapshots(plan, plan.config, service, draft.cellId, MAX_DATA_POINTS, undefined, owner);
+  // The saved bindings of every cell and the hover rows of the open cell are one group of the popup's owner. The
+  // owner frame holds the widget groups of the popup stage too, subscribed: a widget entry resolves at its anchor cell.
+  const visibleDemands = useMemo(
+    () => demandsOf(plan, plan.config, context, MAX_DATA_POINTS, 'visible'),
+    [plan, context]
+  );
+  const hoverDemands = useMemo(
+    () => demandsOf(plan, plan.config, context, MAX_DATA_POINTS, 'hover', draft.cellId),
+    [plan, context, draft.cellId]
+  );
+  const widgetDemands = useMemo(
+    () => demandsOf(plan, plan.config, context, MAX_DATA_POINTS, 'widget'),
+    [plan, context]
+  );
+  const bindingDemands = useMemo(() => [...visibleDemands, ...hoverDemands], [visibleDemands, hoverDemands]);
+  const ownerFrame = useBindings(service, owner, 'bindings', bindingDemands, false, 'owner');
+  const identities = useMemo(() => demandMap(bindingDemands, widgetDemands), [bindingDemands, widgetDemands]);
 
   const localPreview: QueryPreview | undefined = useMemo(
     () =>
@@ -263,15 +280,15 @@ export function BindingEditor({
     return previewAction === 'query' ? [...explicit, ...patternResults] : [...patternResults, ...explicit];
   }, [localPreview, previewAction, patternResults]);
   const savedResolve = useMemo(
-    () => createPreviewResolver(plan, plan.config, data, undefined, format, prepared),
-    [data, plan, format, prepared]
+    () => resolverFrom([ownerFrame], identities, plan, data, format),
+    [ownerFrame, identities, plan, data, format]
   );
   // The inspector reports the requested outcome, including pending and failed requests.
   // Resolve each candidate separately so display's terminal-result ranking cannot skip it.
   const resolve: typeof savedResolve = useMemo(() => {
     const reportResolvers = reportResults.map((result) => ({
       result,
-      resolve: createPreviewResolver(plan, plan.config, data, undefined, format, [result]),
+      resolve: createPreviewResolver(plan, plan.config, data, result, format),
     }));
     return (cellId, binding) => {
       for (const entry of reportResolvers) {
@@ -291,9 +308,7 @@ export function BindingEditor({
     data,
     generation,
     previewState?.snapshot,
-    [...patternResults, ...prepared]
-      .map(({ snapshot: s }) => `${s.state}:${'fetchedAt' in s ? s.fetchedAt : ''}`)
-      .join('|'),
+    ownerFrame.version,
     statusDeadlines(plan, resolve)
   );
   const bound = useMemo(() => bindPlan(plan, resolve, bindContext, nowMs), [plan, resolve, bindContext, nowMs]);
@@ -582,27 +597,14 @@ export function BindingEditor({
       setSnapshot({ state: 'error', message: 'Fix binding diagnostics before preview.' });
       return;
     }
-    const existing = previewSnapshot(
-      selectedQuery,
-      plan.config,
-      data,
-      draft.cellId ?? '',
-      undefined,
-      prepared,
-      context.generation,
-      'reuse'
-    );
-    if (existing.state === 'ready' || existing.state === 'empty') {
-      setSnapshot(existing);
-      return;
-    }
+    // The resolution of the popup's own entries: the controller merges the preview with a running or retained request.
     release.current = controller.watch(
       {
         consumerId: `${owner}:binding-editor-preview`,
         query: selectedQuery,
         scope: draft.cellId ? (plan.cells[draft.cellId]?.scope ?? { cell: {} }) : { cell: {} },
         context,
-        maxDataPoints: 160,
+        maxDataPoints: MAX_DATA_POINTS,
       },
       setSnapshot
     );
@@ -620,8 +622,7 @@ export function BindingEditor({
       affected,
       context,
       (value) => setPatternState({ key: patternKey, value }),
-      undefined,
-      [...prepared, ...(localPreview ? [localPreview] : [])]
+      { owner, maxDataPoints: MAX_DATA_POINTS }
     );
   };
 

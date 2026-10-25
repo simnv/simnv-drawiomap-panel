@@ -6,33 +6,11 @@ import { ChartLayer as OwnedChartLayer, type ChartLayerProps } from './ChartLaye
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { readChartAnchor } from '../render/geometry';
 import { createQueryController } from '../query/controller';
-import { createSnapshotStore, type SnapshotStore } from '../query/store';
-import type { PanelQueryService } from '../query/panel';
+import { testQueryService } from '../query/testService';
 import type { BindingPlan } from '../binding/patterns';
 import type { QueryController, QueryContext, QueryExecutor } from '../query/types';
 import type { NamedQuery, Widget } from '../model/config';
 
-// One store per controller and one service per (controller, context), as the provider gives them: stable objects.
-const stores = new WeakMap<QueryController, SnapshotStore>();
-const services = new WeakMap<QueryController, Map<QueryContext, PanelQueryService>>();
-const serviceOf = (controller: QueryController, context: QueryContext): PanelQueryService => {
-  let store = stores.get(controller);
-  if (!store) {
-    store = createSnapshotStore(controller);
-    stores.set(controller, store);
-  }
-  let byContext = services.get(controller);
-  if (!byContext) {
-    byContext = new Map();
-    services.set(controller, byContext);
-  }
-  let service = byContext.get(context);
-  if (!service) {
-    service = { controller, store, context };
-    byContext.set(context, service);
-  }
-  return service;
-};
 type TestProps = Omit<ChartLayerProps, 'owner' | 'service'> & {
   owner?: string;
   queries: NamedQuery[];
@@ -44,7 +22,7 @@ const ChartLayer = ({ queries, controller, context, plan, ...props }: TestProps)
     owner="test"
     {...props}
     plan={{ ...plan, config: { ...plan.config, queries } }}
-    service={serviceOf(controller, context)}
+    service={testQueryService(controller, context)}
   />
 );
 

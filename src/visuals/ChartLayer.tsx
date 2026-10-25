@@ -88,7 +88,16 @@ function Region({
   const demands = useMemo(
     () =>
       query && resolution !== undefined && geometry?.visible && !entry.unavailable
-        ? [{ cellId: entry.anchorCellId, query, scope, context, maxDataPoints: resolution, matchKey: matchKeyOf(query, scope, context) }]
+        ? [
+            {
+              cellId: entry.anchorCellId,
+              query,
+              scope,
+              context,
+              maxDataPoints: resolution,
+              matchKey: matchKeyOf(query, scope, context),
+            },
+          ]
         : NO_DEMANDS,
     [query, resolution, geometry?.visible, entry.unavailable, entry.anchorCellId, scope, context]
   );

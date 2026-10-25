@@ -13,6 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { DiagramConfig, NamedQuery } from '../model/config';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame, type PanelData } from '@grafana/data';
 import { createQueryController } from '../query/controller';
+import { testQueryService } from '../query/testService';
 import { exportPatternDocument } from './draft';
 import { renderEditor, svgOf } from './editorHarness';
 import 'intersection-observer';
@@ -91,7 +92,7 @@ describe('binding inspector', () => {
           ],
         },
         svg: svgOf('device-1', 'device-2'),
-        service: { controller, context: queryContext },
+        service: testQueryService(controller, queryContext),
       });
       expect(screen.queryByRole('textbox', { name: 'Query name' })).toBeNull();
       openQueryRow('Native');
@@ -167,7 +168,7 @@ describe('binding inspector', () => {
     const { save } = renderEditor({
       config: destination,
       svg: svgOf('region'),
-      service: { controller, context: queryContext },
+      service: testQueryService(controller, queryContext),
     });
     fireEvent.change(editorField('Pattern document'), {
       target: { value: JSON.stringify(exportPatternDocument(source)) },
@@ -610,7 +611,7 @@ describe('binding inspector', () => {
       config: nativeConfig,
       svg: svgOf('device-1', 'device-2'),
       data: { state: LoadingState.Done, series: [], timeRange: queryContext.timeRange },
-      service: { controller, context: queryContext },
+      service: testQueryService(controller, queryContext),
     });
     // Nothing runs before an element opens: a hover row asks for data only for the open element.
     expect(execute).not.toHaveBeenCalled();
@@ -707,7 +708,7 @@ describe('binding inspector', () => {
       config: queryConfig,
       svg: svgOf(),
       data: { state: LoadingState.Done, series: [], timeRange: queryContext.timeRange },
-      service: { controller, context: queryContext },
+      service: testQueryService(controller, queryContext),
     });
     openQueryRow('CPU');
     await screen.findByText(/No supported native query editor/);
@@ -827,7 +828,7 @@ describe('binding inspector', () => {
       renderEditor({
         config: nativeConfig,
         svg: svgOf('device-1'),
-        service: { controller, context: queryContext },
+        service: testQueryService(controller, queryContext),
         onControls: (value) => {
           controls = value;
         },

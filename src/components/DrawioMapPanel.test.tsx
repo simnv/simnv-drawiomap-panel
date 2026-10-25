@@ -1258,7 +1258,7 @@ describe('saved chart results in authoring previews', () => {
         (request) =>
           new Observable((observer) => {
             observer.next(
-              request.maxDataPoints === 160
+              request.maxDataPoints === 264
                 ? { data: [frame('D', {}, [84])] }
                 : {
                     state:
@@ -1289,7 +1289,8 @@ describe('saved chart results in authoring previews', () => {
       openQueryRow('Chart data');
       fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
       await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
-      expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 160]);
+      // the explicit preview asks at the resolution of the popup's own entries (264), not the widget's
+      expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 264]);
       unmount();
     }
   });
@@ -1298,24 +1299,27 @@ describe('saved chart results in authoring previews', () => {
   it.each([
     [264, [264]],
     [400, [400, 264]],
-  ])('hover rows and a widget of one query at one cell: a widget of %i px gives the requests %j', async (width, asked) => {
-    withWidgetWidth(width);
-    const p = hoverFixture();
-    render(<DrawioMapPanel {...p} />);
-    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    clickChart();
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
-    expect(screen.getByRole('dialog').textContent).toContain('Same chart value');
-    expect(screen.getByRole('dialog').textContent).toContain('Same chart history');
-    expect(screen.getByRole('dialog').querySelector('canvas')).not.toBeNull();
-    expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual(asked);
-    // a later value reaches the widget and the open card
-    act(() => receivers.forEach((receive) => receive(99)));
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
-    expect(screen.getByTestId('dmap-widget').textContent).toContain('99');
-    expect(nativeQuery).toHaveBeenCalledTimes(asked.length);
-  });
+  ])(
+    'hover rows and a widget of one query at one cell: a widget of %i px gives the requests %j',
+    async (width, asked) => {
+      withWidgetWidth(width);
+      const p = hoverFixture();
+      render(<DrawioMapPanel {...p} />);
+      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+      expect(nativeQuery).toHaveBeenCalledTimes(1);
+      clickChart();
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
+      expect(screen.getByRole('dialog').textContent).toContain('Same chart value');
+      expect(screen.getByRole('dialog').textContent).toContain('Same chart history');
+      expect(screen.getByRole('dialog').querySelector('canvas')).not.toBeNull();
+      expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual(asked);
+      // a later value reaches the widget and the open card
+      act(() => receivers.forEach((receive) => receive(99)));
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
+      expect(screen.getByTestId('dmap-widget').textContent).toContain('99');
+      expect(nativeQuery).toHaveBeenCalledTimes(asked.length);
+    }
+  );
   it('keeps the shared request alive across close, fresh props and reopen', async () => {
     withWidgetWidth(264);
     const p = hoverFixture();
@@ -1337,34 +1341,39 @@ describe('saved chart results in authoring previews', () => {
     view.unmount();
     expect(release).toHaveBeenCalledTimes(1);
   });
-  it.each(['hidden', 'removed'] as const)('keeps the open card on the shared request when its chart is %s', async (change) => {
-    withWidgetWidth(264);
-    const p = hoverFixture();
-    const view = render(<DrawioMapPanel {...p} />);
-    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
-    clickChart();
-    await screen.findByRole('dialog');
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    if (change === 'hidden') {
-      act(() => {
-        document.querySelector<SVGElement>('[data-cell-id="chart"] rect')!.style.display = 'none';
-      });
-    } else {
-      view.rerender(<DrawioMapPanel {...p} options={{ ...p.options, config: { ...p.options.config, widgets: [] } }} />);
+  it.each(['hidden', 'removed'] as const)(
+    'keeps the open card on the shared request when its chart is %s',
+    async (change) => {
+      withWidgetWidth(264);
+      const p = hoverFixture();
+      const view = render(<DrawioMapPanel {...p} />);
+      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
+      clickChart();
+      await screen.findByRole('dialog');
+      expect(nativeQuery).toHaveBeenCalledTimes(1);
+      if (change === 'hidden') {
+        act(() => {
+          document.querySelector<SVGElement>('[data-cell-id="chart"] rect')!.style.display = 'none';
+        });
+      } else {
+        view.rerender(
+          <DrawioMapPanel {...p} options={{ ...p.options, config: { ...p.options.config, widgets: [] } }} />
+        );
+      }
+      await waitFor(() => expect(screen.queryByTestId('dmap-widget')).toBeNull());
+      // the card keeps the entry: the request runs on and no new one starts
+      expect(release).not.toHaveBeenCalled();
+      expect(nativeQuery).toHaveBeenCalledTimes(1);
+      act(() => receivers[0](84));
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      expect(release).toHaveBeenCalledTimes(1);
+      clickChart();
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
+      expect(nativeQuery).toHaveBeenCalledTimes(1);
+      view.unmount();
     }
-    await waitFor(() => expect(screen.queryByTestId('dmap-widget')).toBeNull());
-    // the card keeps the entry: the request runs on and no new one starts
-    expect(release).not.toHaveBeenCalled();
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    act(() => receivers[0](84));
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(release).toHaveBeenCalledTimes(1);
-    clickChart();
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    view.unmount();
-  });
+  );
   it('rejects old results when the open card context changes and follows the new request', async () => {
     withWidgetWidth(264);
     const p = hoverFixture();
@@ -2037,7 +2046,7 @@ describe('DrawioMapPanel bindings popup', () => {
     await waitFor(() => expect(editorField('Pattern preview progress').textContent).toContain('1 / 1'));
     // the preview asks for its own result at its own resolution; nothing of the removed chart answers it
     const asked = nativeQuery.mock.calls.slice(before).map(([request]) => request.maxDataPoints);
-    expect(asked).toContain(160);
+    expect(asked).toContain(264);
     expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
   });
 

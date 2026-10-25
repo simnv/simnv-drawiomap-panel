@@ -14,10 +14,6 @@ export interface PanelQueryService {
   store?: SnapshotStore;
   context: QueryContext;
 }
-/** The service of a controller: the store is made with it. The provider and the tests build it here. */
-export function createPanelQueryService(controller: QueryController, context: QueryContext): PanelQueryService {
-  return { controller, store: createSnapshotStore(controller), context };
-}
 export const PanelQueryContext = createContext<PanelQueryService | undefined>(undefined);
 type Props = Pick<PanelProps, 'data' | 'timeRange' | 'timeZone' | 'replaceVariables'> & {
   defaultDatasource?: DataSourceRef;
@@ -46,7 +42,11 @@ export function PanelQueryProvider({
   const session = sessionKey === undefined ? privateSession : querySession(sessionKey);
   // The controller belongs to the session it was made for. After a session change the old controller is not exposed
   // at once, so a consumer never watches a disposed one; the replacement is attached by the effect below.
-  const [attached, setAttached] = useState<{ session: QuerySession; controller: QueryController; store: SnapshotStore }>();
+  const [attached, setAttached] = useState<{
+    session: QuerySession;
+    controller: QueryController;
+    store: SnapshotStore;
+  }>();
   const controller = attached?.session === session ? attached.controller : undefined;
   const store = attached?.session === session ? attached.store : undefined;
   useEffect(() => {

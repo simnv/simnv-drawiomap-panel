@@ -197,7 +197,10 @@ describe('the history cache', () => {
   });
   it('keeps the ambiguous and the no-match cases per match key', () => {
     const s = snapshot([frame(), frame()]);
-    expect(historyOf(s, binding)).toMatchObject({ state: 'unsupported', message: expect.stringContaining('ambiguous') });
+    expect(historyOf(s, binding)).toMatchObject({
+      state: 'unsupported',
+      message: expect.stringContaining('ambiguous'),
+    });
     expect(historyOf(s, { ...binding, match: { instance: 'missing' } })).toMatchObject({ state: 'empty' });
     expect(historyOf(s, { ...binding, field: 'Other' })).toMatchObject({ state: 'empty' });
   });

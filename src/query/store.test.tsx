@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { FieldType, getDefaultTimeRange, LoadingState, type DataFrame, type PanelData } from '@grafana/data';
 import { describe, expect, it, vi } from 'vitest';
 import { createQueryController } from './controller';
-import { createPanelQueryService } from './panel';
+import { testQueryService } from './testService';
 import {
   asKept,
   createSnapshotStore,
@@ -96,13 +96,23 @@ const frame = (value: number): DataFrame => ({
     { name: 'Value', type: FieldType.number, config: {}, values: [value] },
   ],
 });
-const ready = (value: number): QuerySnapshot => ({ state: 'ready', frames: [frame(value)], fetchedAt: 0, fromCache: false });
+const ready = (value: number): QuerySnapshot => ({
+  state: 'ready',
+  frames: [frame(value)],
+  fetchedAt: 0,
+  fromCache: false,
+});
 const data: PanelData = { state: LoadingState.Done, series: [], timeRange: range };
 
 /** The demands of a role for a generation and a query text; `width` is the resolution. */
 const demands = (
   role: 'visible' | 'hover' | 'widget',
-  { generation = 1, expr, width = 100, open }: { generation?: number; expr?: string; width?: number; open?: string } = {}
+  {
+    generation = 1,
+    expr,
+    width = 100,
+    open,
+  }: { generation?: number; expr?: string; width?: number; open?: string } = {}
 ) => {
   const cfg = config(expr);
   return demandsOf(planOf(cfg), cfg, context(generation), width, role, open);
@@ -140,7 +150,10 @@ describe('demandsOf', () => {
     expect(demandsOf(planOf(config()), config(), undefined, 100, 'visible')).toEqual([]);
   });
   it('skips a panel-source query: the resolver reads it from the panel data', () => {
-    const cfg: DiagramConfig = { ...config(), queries: [{ id: 'health', name: 'H', source: { kind: 'panel', refId: 'A' } }] };
+    const cfg: DiagramConfig = {
+      ...config(),
+      queries: [{ id: 'health', name: 'H', source: { kind: 'panel', refId: 'A' } }],
+    };
     expect(demandsOf(planOf(cfg), cfg, context(1), 100, 'visible')).toEqual([]);
   });
 });
@@ -246,7 +259,7 @@ describe('sharing between consumers', () => {
   it('the hook of a second owner joins the entry of the first and releases only its own watch', async () => {
     const execute = vi.fn<QueryExecutor>(() => () => {});
     const controller = createQueryController(execute);
-    const service = createPanelQueryService(controller, context(1));
+    const service = testQueryService(controller, context(1));
     const visibleDemands = demands('visible');
     const own = (owner: string) => renderHook(() => useBindings(service, owner, 'visible', visibleDemands, false));
     const panel = own('panel:1');
@@ -426,7 +439,7 @@ describe('useBindings', () => {
   function hookSetup() {
     const execute = vi.fn<QueryExecutor>(() => () => {});
     const controller = createQueryController(execute);
-    const service = createPanelQueryService(controller, context(1));
+    const service = testQueryService(controller, context(1));
     let renders = 0;
     const hook = renderHook(
       ({ paused, list }: { paused: boolean; list: StoreDemand[] }) => {
