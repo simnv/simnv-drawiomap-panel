@@ -2208,6 +2208,79 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
     });
 
+    /** One status element bound to the panel query Q, with a freshness policy of 400 ms. */
+    const freshnessConfig: DiagramConfig = {
+      version: 3,
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
+      patterns: [],
+      widgets: [],
+      overrides: [
+        {
+          cellId: 'a',
+          display: {
+            status: {
+              kind: 'mapping',
+              binding: { queryId: 'q', match: {}, reducer: 'last' },
+              default: { state: 'normal', reason: 'Healthy' },
+              mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+              freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
+            },
+          },
+        },
+      ],
+    };
+    const sampleAt = (at: number, value = 1) =>
+      toDataFrame({
+        refId: 'Q',
+        fields: [
+          { name: 'Time', type: FieldType.time, values: [at] },
+          { name: 'Value', type: FieldType.number, values: [value] },
+        ],
+      });
+    const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+    it('a panel-source data update with a fresh status sample binds once: the clock causes no bind', async () => {
+      const base = props({ id: 62 });
+      const saved = { ...options, config: freshnessConfig, diagram };
+      const view = render(
+        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now())] }} />
+      );
+      await waitFor(() => expect(view.container.querySelector('[data-cell-id="a"]')).toBeTruthy());
+      await nextFrame();
+      const binds = work.binds;
+      view.rerender(
+        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now(), 2)] }} />
+      );
+      await nextFrame();
+      await new Promise((r) => setTimeout(r, 30));
+      expect(work.binds - binds).toBe(1);
+    });
+
+    it('a status sample that is already stale on arrival shows stale in the first applier call', async () => {
+      const base = props({ id: 63 });
+      const saved = { ...options, config: freshnessConfig, diagram };
+      // the first sample is far in the future: the clock of the panel is read at mount and no deadline moves it
+      const view = render(
+        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() + 1e6)] }} />
+      );
+      const status = () => screen.queryByTestId('dmap-status-band')?.textContent ?? '';
+      const cell = () => view.container.querySelector('[data-cell-id="a"]');
+      await waitFor(() => expect(cell()).toBeTruthy());
+      await nextFrame();
+      expect(status()).not.toContain('stale');
+      const applies = panelApplies();
+      // 450 ms later a sample arrives whose deadline lies between the clock read at mount and now: the pass with
+      // the stored clock would call it fresh, the correction runs before the applier's animation frame
+      await new Promise((r) => setTimeout(r, 450));
+      view.rerender(
+        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 401)] }} />
+      );
+      await nextFrame();
+      expect(status()).toContain('stale');
+      expect(cell()?.getAttribute('data-dmap-status')).toBe('stale');
+      expect(panelApplies()).toBe(applies + 1);
+    });
+
     it('Apply while open changes the panel on close only', async () => {
       const view = renderSaved(labelled());
       const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;

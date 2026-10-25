@@ -27,7 +27,21 @@ export interface StatusSummary extends StatusView {
 /** The text of a row, a widget or a status whose freshness policy is shorter than one sample interval. */
 export const INVALID_FRESHNESS_TEXT = 'Invalid freshness policy';
 
-export function evaluateStatus(rule: StatusRule, values: ResolvedValue[], nowMs: number): StatusView {
+/** The one test of a deadline against the clock: a sample is stale after `sampleAt + staleAfterMs`, not at it. */
+export const isPast = (deadline: number, now: number): boolean => now > deadline;
+
+export interface EvaluatedStatus {
+  /** the status as if every sample were fresh */
+  view: StatusView;
+  /** set when a valid policy covers timed samples: the view that applies when the clock is after `after` */
+  stale?: { after: number; view: StatusView };
+}
+
+/**
+ * The status of a rule from its values, without the clock: the stale view and the moment it applies come apart, so
+ * the bind is a function of the data and `staleStatuses` (engine.ts) applies the clock.
+ */
+export function evaluateStatus(rule: StatusRule, values: ResolvedValue[]): EvaluatedStatus {
   const selected = values.filter((v) => v.queryId === rule.binding.queryId);
   const available = selected.filter((v) => v.availability === 'ready' && Number.isFinite(v.value));
   const coverage = { available: available.length, expected: Math.max(1, selected.length) };
@@ -48,22 +62,25 @@ export function evaluateStatus(rule: StatusRule, values: ResolvedValue[], nowMs:
           : selected.some((v) => v.availability === 'loading')
             ? 'Loading data'
             : 'No data';
-    return view('missing', reason, 'availability');
+    return { view: view('missing', reason, 'availability') };
   }
+  let stale: EvaluatedStatus['stale'];
   if (rule.freshness) {
     // a policy that can never be met makes the element unavailable: stale data must never show as healthy
     if (invalidFreshness(rule.freshness)) {
-      return view('missing', INVALID_FRESHNESS_TEXT, 'freshness');
+      return { view: view('missing', INVALID_FRESHNESS_TEXT, 'freshness') };
     }
     if (available.some((v) => !Number.isFinite(v.sampleAt))) {
-      return view('missing', 'Sample timestamp is missing', 'timestamp');
+      return { view: view('missing', 'Sample timestamp is missing', 'timestamp') };
     }
-    if (available.some((v) => nowMs - v.sampleAt! > rule.freshness!.staleAfterMs)) {
-      return view('stale', `Sample is stale (expected every ${rule.freshness.expectedIntervalMs} ms)`, [
+    // the oldest sample decides: the status is stale once the clock is after its sample time plus the policy
+    stale = {
+      after: Math.min(...available.map((v) => v.sampleAt!)) + rule.freshness.staleAfterMs,
+      view: view('stale', `Sample is stale (expected every ${rule.freshness.expectedIntervalMs} ms)`, [
         rule.freshness.expectedIntervalMs,
         rule.freshness.staleAfterMs,
-      ]);
-    }
+      ]),
+    };
   }
   const value = available[0]?.value;
   let condition: StatusCondition = rule.default;
@@ -92,7 +109,7 @@ export function evaluateStatus(rule: StatusRule, values: ResolvedValue[], nowMs:
       conditionKey = ['predicate', match.op, match.value];
     }
   }
-  return view(condition.state, condition.reason, conditionKey);
+  return { view: view(condition.state, condition.reason, conditionKey), stale };
 }
 
 /** Most severe first. The summary band and its row order use it. */

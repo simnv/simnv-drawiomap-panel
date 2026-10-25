@@ -21,6 +21,7 @@ import {
   bindPlan,
   collectBindingDemands,
   historySeries,
+  staleStatuses,
   percentText,
   resolveBinding,
   targetOf,
@@ -124,7 +125,7 @@ describe('bindPlan', () => {
       })
     );
     expect(plan.diagnostics).toEqual([]);
-    const result = bindPlan(plan, () => historyValue(99), ctx, 100000);
+    const result = bindPlan(plan, () => historyValue(99), ctx);
     expect(result.patches.get(cells[3].id)).toMatchObject({
       shape: { target: 'shape', text: 'rtr-a 99%', value: 99, color: '#ff0000', status: 'ok' },
       statusView: { state: 'normal', reason: 'Healthy' },
@@ -151,8 +152,7 @@ describe('bindPlan', () => {
         b.queryId === 'rx'
           ? { state: 'empty', fetchedAt: 100000, fromCache: false }
           : historyValue(b.queryId === 'up' ? 1 : 0),
-      ctx,
-      100000
+      ctx
     );
     const patch = result.patches.get(cells[0].id)!;
     expect(patch.link?.a2b).toMatchObject({ status: 'ok', value: 0, percent: 0 });
@@ -206,8 +206,7 @@ describe('bindPlan', () => {
         }
         return historyValue(1);
       },
-      ctx,
-      1000
+      ctx
     );
     expect(result.patches.get(cells[3].id)?.hover?.rows).toHaveLength(4);
     expect(result.patches.get(cells[3].id)?.shape?.target).toBe('none');
@@ -247,7 +246,7 @@ describe('bindPlan', () => {
       ['rx', 0, 'series[1].binding'],
       ['speed', 0, 'series[0].capacityBinding'],
     ]);
-    const result = bindPlan(plan, () => historyValue(1), ctx, 1000);
+    const result = bindPlan(plan, () => historyValue(1), ctx);
     expect(result.patches.get(cells[3].id)?.unavailableHoverRows).toEqual([]);
   });
   it('resolves metadata matchers and reports ambiguous or unmatched metrics for editor previews', () => {
@@ -269,7 +268,7 @@ describe('bindPlan', () => {
         },
       ],
     };
-    const result = bindPlan(plan, (_, b) => resolveBinding(snapshot, b, plan.cells[cells[3].id].scope), ctx, 9000);
+    const result = bindPlan(plan, (_, b) => resolveBinding(snapshot, b, plan.cells[cells[3].id].scope), ctx);
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ code: 'ambiguous-metric', path: `cells.${cells[3].id}.shape.binding` })
     );
@@ -302,8 +301,7 @@ describe('bindPlan', () => {
     const result = bindPlan(
       plan,
       (_, b) => historyValue(b.queryId === 'health' ? 40 : b.queryId === 'capacity' ? 100 : 0),
-      ctx,
-      1000
+      ctx
     );
     expect(result.patches.get(cells[0].id)?.link?.a2b).toMatchObject({
       value: 40,
@@ -313,28 +311,76 @@ describe('bindPlan', () => {
     });
     expect(result.patches.get(cells[0].id)?.statusView).toMatchObject({ state: 'down', reason: 'Device down' });
   });
-  it('compares sample age to configured cadence regardless of chart resolution and fresh cache retrieval', () => {
-    const plan = resolvePatterns(
-      [cells[3]],
-      v2Config({
-        status: {
-          kind: 'mapping',
-          binding: queryBinding,
-          default: { state: 'normal', reason: 'Healthy' },
-          mappings: [{ value: 0, state: 'down', reason: 'Down' }],
-          freshness: { expectedIntervalMs: 15000, staleAfterMs: 45000 },
-        },
-      })
+  const timedStatus = (freshness?: { expectedIntervalMs: number; staleAfterMs: number }) =>
+    v2Config({
+      status: {
+        kind: 'mapping',
+        binding: queryBinding,
+        default: { state: 'normal', reason: 'Healthy' },
+        mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+        freshness,
+      },
+    });
+  it('binds without time: the view is the fresh one, the stale view waits in the patch with its moment', () => {
+    const plan = resolvePatterns([cells[3]], timedStatus({ expectedIntervalMs: 15000, staleAfterMs: 45000 }));
+    // the cache age plays no part (historyValue is a cached result fetched at 100000); only the sample time does
+    const result = bindPlan(plan, () => historyValue(1, 1000), ctx);
+    const patch = result.patches.get(cells[3].id)!;
+    expect(patch.statusView).toMatchObject({ state: 'normal', reason: 'Healthy' });
+    expect(patch.staleStatus).toMatchObject({
+      after: 46000,
+      view: { state: 'stale', reason: 'Sample is stale (expected every 15000 ms)' },
+    });
+    expect(result.deadlines).toEqual([46000]);
+    const bare = bindPlan(resolvePatterns([cells[3]], timedStatus()), () => historyValue(1, 1000), ctx);
+    expect(bare.patches.get(cells[3].id)?.staleStatus).toBeUndefined();
+    expect(bare.deadlines).toEqual([]);
+  });
+  it('staleStatuses shows the stale view after its moment, keeps the other patches, and memoises per stale set', () => {
+    const plan = resolvePatterns([cells[3], cells[4]], timedStatus({ expectedIntervalMs: 15000, staleAfterMs: 45000 }));
+    const resolve = (cellId: string) => historyValue(1, cellId === cells[3].id ? 1000 : 20000);
+    const bound = bindPlan(plan, resolve, ctx);
+    expect(bound.deadlines).toEqual([46000, 65000]);
+    // at the moment itself nothing is stale yet (the test is `now > after`), and the result is the same object
+    expect(staleStatuses(bound, 46000)).toBe(bound);
+    const first = staleStatuses(bound, 46001);
+    expect(first).not.toBe(bound);
+    expect(first.patches.get(cells[3].id)).not.toBe(bound.patches.get(cells[3].id));
+    expect(first.patches.get(cells[3].id)?.statusView).toMatchObject({
+      state: 'stale',
+      reason: 'Sample is stale (expected every 15000 ms)',
+    });
+    expect(first.patches.get(cells[4].id)).toBe(bound.patches.get(cells[4].id));
+    expect(first.patches.get(cells[4].id)?.statusView?.state).toBe('normal');
+    expect(first.summaries.map((s) => [s.state, s.cellIds])).toEqual([['stale', [cells[3].id]]]);
+    expect(first.diagnostics).toBe(bound.diagnostics);
+    expect(first.deadlines).toBe(bound.deadlines);
+    // a later clock with the same stale set gives the same object
+    expect(staleStatuses(bound, 60000)).toBe(first);
+    const both = staleStatuses(bound, 65001);
+    expect(both.summaries.map((s) => [s.state, s.cellIds])).toEqual([['stale', [cells[3].id, cells[4].id]]]);
+    // the bind itself does not depend on the moment it runs
+    expect(bindPlan(plan, resolve, ctx).patches.get(cells[3].id)?.statusView?.state).toBe('normal');
+  });
+  it('a stale view replaces an earlier missing view of the cell, as the bind did with the clock inside', () => {
+    const config = timedStatus({ expectedIntervalMs: 15000, staleAfterMs: 45000 });
+    config.patterns[0].display.link = {
+      a2b: { binding: queryBinding },
+      b2a: { binding: { ...queryBinding, queryId: 'rx' } },
+    };
+    config.queries.push({ id: 'rx', name: 'rx', source: { kind: 'panel', refId: 'rx' } });
+    const plan = resolvePatterns([cells[0]], config);
+    expect(plan.diagnostics).toEqual([]);
+    const bound = bindPlan(
+      plan,
+      (_, b) => (b.queryId === 'rx' ? { state: 'empty', fetchedAt: 100000, fromCache: false } : historyValue(1, 1000)),
+      ctx
     );
-    for (const intervalMs of [1, 3600000]) {
-      const context = { ...ctx, intervalMs };
-      expect(
-        bindPlan(plan, () => historyValue(1, 1000), context, 100000).patches.get(cells[3].id)?.statusView?.state
-      ).toBe('stale');
-      expect(
-        bindPlan(plan, () => historyValue(1, 60000), context, 100000).patches.get(cells[3].id)?.statusView?.state
-      ).toBe('normal');
-    }
+    expect(bound.patches.get(cells[0].id)?.statusView).toMatchObject({
+      state: 'missing',
+      reason: 'Incomplete coverage (1/2 directions available)',
+    });
+    expect(staleStatuses(bound, 46001).patches.get(cells[0].id)?.statusView?.state).toBe('stale');
   });
   it('preserves validated rule URLs, field links and unresolved label diagnostics', () => {
     const plan = resolvePatterns(
@@ -351,7 +397,7 @@ describe('bindPlan', () => {
       throw new Error('Expected fixture to be ready');
     }
     model.field.labels = { host: 'a&b' };
-    const result = bindPlan(plan, () => model, ctx, 1000);
+    const result = bindPlan(plan, () => model, ctx);
     expect(result.patches.get(cells[3].id)?.urls).toEqual([{ title: 'Open rtr-a', url: '/d/device?host=a%26b' }]);
     expect(result.patches.get(cells[3].id)?.shape).toMatchObject({
       status: 'unbound',
@@ -362,7 +408,7 @@ describe('bindPlan', () => {
       expect.objectContaining({ code: 'unresolved-metadata', path: `cells.${cells[3].id}.label` })
     );
     plan.cells[cells[3].id].display.url = 'javascript:alert(1)';
-    expect(bindPlan(plan, () => model, ctx, 1000).patches.get(cells[3].id)?.urls).toEqual([]);
+    expect(bindPlan(plan, () => model, ctx).patches.get(cells[3].id)?.urls).toEqual([]);
   });
   it('does not demand or resolve disabled sections or bindings whose metadata parameters are missing', () => {
     const config = v2Config({
@@ -383,8 +429,7 @@ describe('bindPlan', () => {
       () => {
         throw new Error('Suppressed binding was resolved');
       },
-      ctx,
-      1000
+      ctx
     );
     expect(result.patches.get(cells[3].id)?.unavailableHoverRows).toEqual([0]);
     expect(result.patches.get(cells[3].id)?.shape).toBeUndefined();
@@ -440,8 +485,7 @@ describe('one capacity per direction', () => {
         }
         return model;
       },
-      ctx,
-      1000
+      ctx
     );
   };
   const halves = (r: ReturnType<typeof bindPlan>) => {
@@ -554,8 +598,7 @@ describe('one capacity per direction', () => {
           seen.push(b.queryId);
           return b.queryId === 'cap' ? { state: 'empty', fetchedAt: 1, fromCache: false } : historyValue(40);
         },
-        ctx,
-        1000
+        ctx
       );
       expect(seen.filter((id) => id === 'cap')).toHaveLength(1);
       expect(r.diagnostics.filter((d) => d.code === 'unmatched-metric')).toHaveLength(1);
@@ -604,8 +647,7 @@ describe('one capacity per direction', () => {
                 ? { state: 'loading' }
                 : historyValue(cap)
               : historyValue(b.queryId === 'ua' ? 40 : 10),
-          ctx,
-          1000
+          ctx
         )
       )[0];
     expect(bind(500)).toEqual([500, 'series', 8]);
@@ -631,7 +673,7 @@ describe('an unavailable cell and an unavailable direction', () => {
       ['unknown-query', 'patterns[0].display.link.b2a.binding.queryId'],
       ['unknown-query', `cells.${link.id}.link.b2a.binding.queryId`],
     ]);
-    const result = bindPlan(plan, () => historyValue(40), ctx, 1000);
+    const result = bindPlan(plan, () => historyValue(40), ctx);
     const patch = result.patches.get(link.id)!;
     expect(patch.link?.a2b?.status).toBe('ok');
     expect(patch.link?.b2a).toEqual({
@@ -653,7 +695,7 @@ describe('an unavailable cell and an unavailable direction', () => {
     const plan = resolvePatterns([link], config);
     expect(plan.cells[link.id]).toMatchObject({ unavailable: 'Pattern Broken is not applied', bindings: [] });
     const resolve = vi.fn(() => historyValue(40));
-    const result = bindPlan(plan, resolve, ctx, 1000);
+    const result = bindPlan(plan, resolve, ctx);
     expect(resolve).not.toHaveBeenCalled();
     const patch = result.patches.get(link.id)!;
     expect(patch.unavailable).toEqual({ reason: 'Pattern Broken is not applied', color: theme.colors.text.disabled });
@@ -668,7 +710,7 @@ describe('an unavailable cell and an unavailable direction', () => {
     config.patterns.push({ id: 'broken', name: 'Broken', select: {}, display: { link: { capacity: 0 } } });
     config.overrides.push({ cellId: link.id, display: { enabled: false } });
     const plan = resolvePatterns([link], config);
-    const patch = bindPlan(plan, () => historyValue(40), ctx, 1000).patches.get(link.id)!;
+    const patch = bindPlan(plan, () => historyValue(40), ctx).patches.get(link.id)!;
     expect(patch.unavailable).toEqual({ reason: 'Pattern Broken is not applied', color: theme.colors.text.disabled });
     expect(patch.statusView).toMatchObject({ state: 'missing', reason: 'Pattern Broken is not applied' });
   });
@@ -678,7 +720,7 @@ describe('an unavailable cell and an unavailable direction', () => {
     const plan = resolvePatterns([node], config);
     expect(plan.cells[node.id].bindings).toEqual([]);
     const resolve = vi.fn(() => historyValue(40));
-    const result = bindPlan(plan, resolve, ctx, 1000);
+    const result = bindPlan(plan, resolve, ctx);
     expect(resolve).not.toHaveBeenCalled();
     const patch = result.patches.get(node.id)!;
     expect(patch.shape).toEqual({
@@ -706,7 +748,7 @@ describe('an unavailable cell and an unavailable direction', () => {
       },
     });
     const plan = resolvePatterns([node], config);
-    const result = bindPlan(plan, () => historyValue(1), ctx, 1000);
+    const result = bindPlan(plan, () => historyValue(1), ctx);
     expect(result.patches.get(node.id)!.statusView).toMatchObject({
       state: 'missing',
       reason: 'Query ua does not exist. Choose a named query or restore its definition.',
@@ -780,8 +822,7 @@ function run(display: DisplayConfig, frames: DataFrame[], cellList: CellMeta[] =
         b,
         plan.cells[cellId].scope
       ),
-    context,
-    1000
+    context
   );
 }
 const linkDisplay: DisplayConfig = {
@@ -1186,8 +1227,7 @@ describe('link label mode on the patch', () => {
           b,
           plan.cells[cellId].scope
         ),
-      ctx,
-      1000
+      ctx
     ).patches;
   };
   const base: DiagramConfig = {

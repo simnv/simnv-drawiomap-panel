@@ -34,7 +34,8 @@ import { draftQueryService } from './draftContext';
 import { DrawioModal } from './DrawioModal';
 import { createHistory, reduceHistory } from './history';
 import { previewPattern, type PatternPreview } from './patternPreview';
-import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from './preview';
+import { createPreviewResolver, type QueryPreview } from './preview';
+import { useStaleStatus } from '../visuals/useSampleStale';
 import { DiagramStage } from './popup/DiagramStage';
 import { InspectorPane, type InspectorSelection } from './popup/InspectorPane';
 import type { QueryUser } from './popup/QueryPane';
@@ -298,15 +299,11 @@ export function BindingEditor({
       return savedResolve(cellId, binding);
     };
   }, [savedResolve, data, reportResults, plan, format, patternResults]);
-  const nowMs = usePreviewTime(
-    data,
-    generation,
-    previewState?.snapshot,
-    ownerFrame.version,
-    statusDeadlines(plan, resolve)
-  );
-  const bound = useMemo(() => bindPlan(plan, resolve, bindContext, nowMs), [plan, resolve, bindContext, nowMs]);
-  const cardPatch = draft.cellId ? bound.patches.get(draft.cellId) : undefined;
+  // The bind takes no clock. The stage and the preview card show the patches at the current clock; the diagnostics
+  // list reads the bind itself, because no diagnostic holds a stale state.
+  const bound = useMemo(() => bindPlan(plan, resolve, bindContext), [plan, resolve, bindContext]);
+  const shown = useStaleStatus(bound);
+  const cardPatch = draft.cellId ? shown.patches.get(draft.cellId) : undefined;
   const cardContext = useMemo(
     () =>
       cardContextFor({
@@ -796,7 +793,7 @@ export function BindingEditor({
             <DiagramStage
               stage={stage}
               stageRef={stageRef}
-              patches={bound.patches}
+              patches={shown.patches}
               selection={{
                 selected: selectedIds,
                 primary: selectedIds.length ? selectedIds[selectedIds.length - 1] : undefined,

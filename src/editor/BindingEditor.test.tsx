@@ -1037,3 +1037,50 @@ describe('QueryPane component', () => {
     });
   });
 });
+
+describe('sample freshness in the popup stage', () => {
+  it('a status with a policy turns stale at its deadline on the stage, with no new data', async () => {
+    const timed: DiagramConfig = {
+      version: 3,
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
+      patterns: [],
+      widgets: [],
+      overrides: [
+        {
+          cellId: 'device-1',
+          display: {
+            status: {
+              kind: 'mapping',
+              binding: { queryId: 'q', match: {}, reducer: 'last' },
+              default: { state: 'normal', reason: 'Healthy' },
+              mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+              // 1500 ms: the first render of the popup must land before the deadline on a loaded machine
+              freshness: { expectedIntervalMs: 100, staleAfterMs: 1500 },
+            },
+          },
+        },
+      ],
+    };
+    const dataAt = (sampleAt: number): PanelData => ({
+      state: LoadingState.Done,
+      timeRange: getDefaultTimeRange(),
+      series: [
+        toDataFrame({
+          refId: 'Q',
+          fields: [
+            { name: 'Time', type: FieldType.time, values: [sampleAt] },
+            { name: 'Value', type: FieldType.number, values: [1] },
+          ],
+        }),
+      ],
+    });
+    // the first sample is far in the future, so a slow first render cannot miss the fresh state
+    const view = renderEditor({ config: timed, svg: svgOf('device-1'), data: dataAt(Date.now() + 1e6) });
+    await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('normal'));
+    view.rerenderWith({ data: dataAt(Date.now()) });
+    await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('stale'), {
+      timeout: 4000,
+    });
+    expect(stageCell('device-1').getAttribute('data-dmap-reason')).toBe('Sample is stale (expected every 100 ms)');
+  });
+});
