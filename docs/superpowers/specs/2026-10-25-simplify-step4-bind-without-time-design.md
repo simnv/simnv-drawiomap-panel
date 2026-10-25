@@ -19,8 +19,10 @@
    `useSampleStale` becomes a one-line use of it. `usePreviewTime` and `statusDeadlines` are deleted.
 4. The user-visible behaviour does not change: the same cells turn stale at the same moments, in the band, the
    markers, the cell attributes, the legend, the card and the popup stage.
-5. A data change binds once. Today every data change renders twice and binds twice, because `usePreviewTime` reads
-   the clock again in a microtask after each change. The pass needs no second read on the data path (section 3).
+5. The clock causes no bind. Today every data change, generation and frame version renders and binds a second time,
+   because `usePreviewTime` reads the clock again in a microtask after each change. After this step the clock reads
+   again only when a deadline passes, and a tick runs the pass, never the bind (section 3). The store's own frames (a
+   generation change, the result that follows it) still render and bind as they do today (R1-3).
 
 ## 2. Today: the flow
 
@@ -80,8 +82,9 @@ export function staleStatuses(result: PlanBindResult, nowMs: number): PlanBindRe
 `staleStatuses` is pure. It finds the cells with `staleStatus && nowMs > after`. With none, it returns `result`
 itself. Else it returns a new result with a new `patches` map in which only those cells have a new patch object
 (`{ ...patch, statusView: staleStatus.view }`), the same `diagnostics` and `deadlines`, and `summaries` built again
-with `summarizeStatuses`. It memoises per `result` object and per set of stale cells (a `WeakMap<PlanBindResult,
-Map<string, PlanBindResult>>` keyed by the joined cell ids): two calls with the same stale set give the same object.
+with `summarizeStatuses`. It keeps the latest pair per `result` object (a `WeakMap<PlanBindResult, { key: string;
+result: PlanBindResult }>`, the key is the joined ids of the stale cells): two consecutive calls with the same stale
+set give the same object, and a held `bound` retains one derived result, not one per set it passed through (R1-4).
 The precedence of today holds: a stale view replaces whatever view the bind left on the cell, as `status.state !==
 'normal'` did; a cell that is not stale keeps the bind's view.
 
@@ -94,12 +97,21 @@ export function useSampleStale(sampleAt?: number, freshness?: FreshnessPolicy): 
 export function useStaleStatus(result: PlanBindResult): PlanBindResult  // = staleStatuses(result, useClock(result.deadlines))
 ```
 
-`useClock` keeps `now` in state (`Date.now()` at mount). Its one effect takes the smallest deadline that is not yet
-passed by `now` and sets one timer for `max(1, deadline - Date.now() + 1)` ms; the timer sets `now = Date.now()`, and
-the effect runs again for the next deadline. No deadline left: no timer. A deadline that passed in real time while
-`now` was not read (a result arrives with a sample that is already old) gets a 1 ms timer, so the correction is one
-render, as the microtask of `usePreviewTime` was; a result whose deadlines are all in the future costs no render.
-This is the timer of `useSampleStale` today, for a list. At most one timer per hook instance.
+`useClock` keeps `now` in state (`Date.now()` at mount). Its one effect, with the dependencies `(next, now)`, takes
+`next`, the smallest deadline that `now` has not passed, and reads the real clock:
+
+- `Date.now() > next` (the deadline passed in real time while nobody read the clock: a result arrives with a sample
+  that is already old): the effect sets `now = Date.now()` at once, with no timer. React renders the correction
+  before the next animation frame, so the applier and the band get the stale state before the paint that today's
+  microtask (`preview.ts:22-32`) raced with (R1-1). The set happens at most once per `next`: after it, `now` is past
+  the deadline, so the effect runs once more with the following deadline.
+- else: one timer for `min(2147483647, next - Date.now() + 1)` ms (the cap of today's two clocks, R1-2); the timer
+  sets `now = Date.now()`, and the effect runs again: the deadline passed, so `next` moves on; a capped wake-up
+  before a far deadline finds the same `next` and sets the timer again.
+- no deadline left: no timer.
+
+A result whose deadlines are all in the future costs no render. This is the timer of `useSampleStale` today, for a
+list. At most one timer per hook instance.
 
 `useStaleStatus` is a `useMemo` over `(result, now)`. Because `staleStatuses` memoises per stale set, a tick that
 crosses no deadline gives the same object; the effects that depend on the result do not run.
@@ -164,13 +176,16 @@ Unit, `npm run test:affected` in the worktree; the full suite once on main befor
   regardless of chart resolution" moves to `staleStatuses`.
 - `src/visuals/useSampleStale.test.tsx` (new): the `usePreviewTime` deadline test moves here against `useClock`:
   the clock reads again after each deadline, holds at most one timer, releases it when the deadlines change or on
-  unmount; a deadline that is already passed when it arrives gives one correction; `useSampleStale` through the clock
-  keeps its cases in `Card.test.tsx`, `SparklineView.test.tsx` and `BarGaugeView` (unchanged).
+  unmount; a deadline that is already passed when it arrives is corrected in the same effect flush, with no timer
+  (`vi.getTimerCount()` is 0 right after the render, and the value is already past the deadline); a deadline more
+  than 2147483647 ms away sets a capped timer and the capped wake-up sets it again (R1-2); `useSampleStale` through
+  the clock keeps its cases in `Card.test.tsx`, `SparklineView.test.tsx` and `BarGaugeView` (unchanged).
 - `src/editor/patternPreview.test.tsx`: the `usePreviewTime` block goes.
 - `src/components/DrawioMapPanel.test.tsx`: the existing "lets a freshness deadline mark the status stale while
-  paused, with one applier call" stays green; add "a data refresh with a fresh status sample binds once and renders
-  once" (the `binds` counter of the test harness and `work.viewRenders`); the render-count bounds of the pause tests
-  stay or go down.
+  paused, with one applier call" stays green; add "a panel-source data update with a fresh status sample binds once"
+  (a stable context, no store frame: the `binds` counter of the harness grows by one, where today it grows by two,
+  R1-3); add "a status sample that is already stale on arrival shows stale in the first applier call" (the band and
+  `data-dmap-status` after one animation frame, R1-1); the render-count bounds of the pause tests stay or go down.
 - `src/editor/BindingEditor.test.tsx`: a status with a policy in the popup stage turns stale at its deadline
   (`data-dmap-status="stale"` on the popup cell) and the preview card's status row shows `stale`.
 
@@ -184,9 +199,8 @@ section "Demand, cache and sample freshness" describes behaviour that does not c
 
 ## 8. Open questions, with a recommendation each
 
-1. The one render with the fresh view before the 1 ms correction, for a sample that arrives already stale.
-   Recommendation: accept; it exists today through the microtask, and the applier works in the next animation frame,
-   so the DOM gets the stale state only.
+1. (closed by R1-1) A sample that arrives already stale is corrected in the effect flush of the render that shows
+   it, before the next animation frame; no timer and no microtask.
 2. `staleStatuses` could sit in `status.ts` next to `evaluateStatus`. It reads `PlanBindResult`, a type of
    `engine.ts`, which imports `status.ts`. Recommendation: keep it in `engine.ts`, next to `bindPlan`, with no import
    cycle.
@@ -195,4 +209,12 @@ section "Demand, cache and sample freshness" describes behaviour that does not c
 
 ## 9. Review resolutions
 
-(filled after the Codex review)
+Review 1 (Codex, 2026-10-25). No finding on the stale-over-missing precedence, the strict `>` boundary, the `+1`,
+the pause, the mount-time clock, the migration table or the coding standards.
+
+| Concern | Resolution |
+| --- | --- |
+| R1-1 (P1). A sample already stale on arrival got a 1 ms timer; the applier's animation frame and the band could paint the fresh view first, where today's microtask had corrected it | The effect sets `now` at once, with no timer, when `Date.now()` is past the next deadline; React renders the correction before the next animation frame (section 3; test "already passed when it arrives"; the panel test "already stale on arrival"). |
+| R1-2 (P2). The clock dropped the `2147483647` cap of both clocks of today; a policy has no upper bound | The cap is in the formula; a capped wake-up finds the same `next` and sets the timer again (section 3; test "a deadline more than 2147483647 ms away"). |
+| R1-3 (P2). "One bind per data change" is not a general guarantee: a generation change and its result are frames of the store | Restated as "the clock causes no bind"; the exact-count test is scoped to a panel-source update with a stable context (sections 1 and 7). |
+| R1-4 (P2). The memo kept one derived result per stale set a held `bound` passed through, quadratic in the cells | The memo keeps the latest pair per `bound`; identity is for consecutive calls with the same set (section 3). |
