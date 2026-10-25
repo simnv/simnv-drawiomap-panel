@@ -1,5 +1,5 @@
 import type { DataFrame, DisplayValue, Field, GrafanaTheme2, ScopedVars, ThresholdsConfig } from '@grafana/data';
-import type { DiagramConfigV2 } from './model/config';
+import type { DiagramConfig } from './model/config';
 
 /* ---------- cells (from the SVG) ---------- */
 
@@ -111,7 +111,7 @@ export interface ZoomOptions {
 export interface Options {
   diagram?: Diagram;
   /** The authoring configuration: named queries, patterns, overrides and chart regions. */
-  config?: DiagramConfigV2;
+  config?: DiagramConfig;
   /** Removed: the rules of version 1. A saved value loads, the panel ignores it and shows a warning. */
   rules?: unknown[];
   zoom: ZoomOptions;
@@ -168,6 +168,7 @@ export type ShapeTarget = 'icon' | 'shape' | 'stroke';
 
 /* ---------- binding output ---------- */
 
+/** unbound: the direction is configured but cannot bind for this cell (its query is unknown, skipped or unusable) */
 export type BindStatus = 'ok' | 'nodata' | 'unbound';
 
 export interface TemplateScope {
@@ -191,9 +192,11 @@ export interface HalfState {
   stepIndex: number;
   value?: number;
   percent?: number;
-  /** bit/s, when the half has a capacity */
+  /** the capacity in the canonical unit of the field (bit/s for a data rate), when the half has one */
   capacity?: number;
   capacitySource?: CapacitySource;
+  /** the capacity in the unit of the field, formatted once; the card and the labels show it */
+  capacityDisplay?: DisplayValue;
   display?: DisplayValue;
   series?: SeriesInfo;
 }
@@ -223,6 +226,11 @@ export interface CellPatch {
   scope: TemplateScope;
   link?: { a2b?: HalfState; b2a?: HalfState };
   shape?: ShapeState;
+  /**
+   * The cell is configured but nothing binds: an item that touched it was skipped, or its id is ambiguous. The
+   * applier paints it in the no-data colour and never restores the drawn fill.
+   */
+  unavailable?: { reason: string; color: string };
   /** the display url after template resolution; dashboard variables are resolved later by replaceVariables */
   urls: LinkTarget[];
   warnings: string[];
