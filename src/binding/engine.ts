@@ -218,7 +218,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
     if (display.link?.enabled !== false && display.link) {
       const link = display.link;
       const states: HalfState[] = [];
-      patch.link = {};
+      patch.link = { labelMode: link.label?.mode ?? 'none' };
       for (const direction of ['a2b', 'b2a'] as const) {
         const own = link[direction];
         const binding = own?.binding;
@@ -461,10 +461,11 @@ export function halfState(
         );
   const { color, stepIndex } = colorFor(value, percent, series.field, display, ctx.fieldThresholds, ctx.theme);
   const text = formattedValueToString(display);
+  const percentDisplay = percent === undefined ? undefined : percentText(percent);
   const label =
-    percent === undefined || capacityDisplay === undefined
+    percentDisplay === undefined || capacityDisplay === undefined
       ? text
-      : `${text} · ${Math.round(percent)}% of ${formattedValueToString(capacityDisplay)}`;
+      : `${text} · ${percentDisplay} of ${formattedValueToString(capacityDisplay)}`;
   return {
     state: {
       status: 'ok',
@@ -474,6 +475,7 @@ export function halfState(
       stepIndex,
       value,
       percent,
+      percentDisplay,
       capacity,
       capacitySource: capacity === undefined ? 'none' : cap.source,
       capacityDisplay,
@@ -482,6 +484,20 @@ export function halfState(
     },
     notes,
   };
+}
+
+/**
+ * The text of a load percent, the one for the card and the link labels: a real 0 is "0%", a load above 0 and under
+ * 0.5 is "<1%" (never a good-looking "0%"), above 999 is ">999%", else the rounded whole percent.
+ */
+export function percentText(percent: number): string {
+  if (percent > 0 && percent < 0.5) {
+    return '<1%';
+  }
+  if (percent > 999) {
+    return '>999%';
+  }
+  return `${Math.round(percent)}%`;
 }
 
 /** Only an explicit target colours the node. Saved dashboards without one keep their look. */

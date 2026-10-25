@@ -17,7 +17,7 @@ import {
 } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, CellMeta } from '../types';
-import { bindPlan, collectBindingDemands, resolveBinding, targetOf, widgetDiagnostics } from './engine';
+import { bindPlan, collectBindingDemands, percentText, resolveBinding, targetOf, widgetDiagnostics } from './engine';
 import { resolvePatterns } from './patterns';
 import { displayBindings, type DiagramConfig, type DisplayConfig, type QueryBinding } from '../model/config';
 import { fieldDisplay, toHistory } from '../query/frames';
@@ -1140,5 +1140,73 @@ describe('the capacity text in the unit of the field', () => {
     expect(free.percent).toBeUndefined();
     expect(free.capacityDisplay).toBeUndefined();
     expect(free.label).toMatch(/^41(\.0)? Mb\/s$/);
+  });
+});
+
+describe('percentText', () => {
+  it('a real 0 is 0%, under 0.5 is <1%, above 999 is >999%, else the rounded percent', () => {
+    expect(percentText(0)).toBe('0%');
+    expect(percentText(0.4)).toBe('<1%');
+    expect(percentText(0.5)).toBe('1%');
+    expect(percentText(41.4)).toBe('41%');
+    expect(percentText(999)).toBe('999%');
+    expect(percentText(1200)).toBe('>999%');
+  });
+  it('percentDisplay is the percent part of the card label, and absent without a capacity', () => {
+    const frames = [frame('T', { job: 'node-a', device: 'eth0' }, [0.4e6], { unit: 'bps' })];
+    const linkCell = cellMetaFromAttrs('l', { 'pg-kind': 'link', 'pg-from': 'a:eth0', 'pg-to': 'b:eth0' }, true);
+    const at = (capacity?: number) =>
+      run({ link: { a2b: { binding: qb('T') }, ...(capacity ? { capacity } : {}) } }, frames, [linkCell]).patches.get(
+        'l'
+      )!.link!.a2b!;
+    const small = at(1e8);
+    expect(small.percentDisplay).toBe('<1%');
+    expect(small.label).toMatch(/ · <1% of 100 Mb\/s$/);
+    expect(at(1e6).percentDisplay).toBe('40%');
+    expect(at().percentDisplay).toBeUndefined();
+  });
+});
+
+describe('link label mode on the patch', () => {
+  const bindAll = (config: DiagramConfig) => {
+    const plan = resolvePatterns(cells, config);
+    return bindPlan(
+      plan,
+      (cellId, b) =>
+        resolveBinding(
+          { state: 'ready', fetchedAt: 1000, fromCache: false, frames: traffic.filter((f) => f.refId === b.queryId) },
+          b,
+          plan.cells[cellId].scope
+        ),
+      ctx,
+      1000
+    ).patches;
+  };
+  const base: DiagramConfig = {
+    version: 3,
+    queries: [{ id: 'A', name: 'A', source: { kind: 'panel', refId: 'A' } }],
+    patterns: [{ id: 'p', name: 'P', select: { kind: 'link' }, display: linkDisplay }],
+    overrides: [],
+    widgets: [],
+  };
+  const ISP = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+  const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';
+  it('is none when the config has no label key', () => {
+    expect(bindAll(base).get(ISP)!.link!.labelMode).toBe('none');
+  });
+  it('comes from the pattern; an override that sets none switches one link off', () => {
+    const patches = bindAll({
+      ...base,
+      patterns: [
+        {
+          ...base.patterns[0],
+          display: { ...linkDisplay, link: { ...linkDisplay.link, label: { mode: 'percent' } } },
+        },
+      ],
+      overrides: [{ cellId: RADIO, display: { link: { label: { mode: 'none' } } } }],
+    });
+    expect(patches.get(ISP)!.link!.labelMode).toBe('percent');
+    expect(patches.get(RADIO)!.link!.labelMode).toBe('none');
+    expect(patches.get(RADIO)!.link!.a2b?.status).toBe('ok');
   });
 });

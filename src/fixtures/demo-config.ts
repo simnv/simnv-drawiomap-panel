@@ -1,4 +1,4 @@
-import type { DiagramConfig, HoverRow, NamedQuery, Pattern, QueryBinding } from '../model/config';
+import type { DiagramConfig, HoverRow, LinkLabelMode, NamedQuery, Pattern, QueryBinding } from '../model/config';
 
 /**
  * The bindings of the two demo panels (provisioning/dashboards/demo.json). The series come from the synthetic
@@ -34,8 +34,10 @@ const nodeRows = (): HoverRow[] => [
 /**
  * demo-l3: LAN links take their capacity from the port speed series S, WAN links from the field Max (an override
  * of query W), tunnels from a number. Later patterns override earlier ones for the same property of the same cell.
+ * `wanLabel` turns the value labels of the WAN pattern on; the demo dashboard stays at the default (off) and the
+ * e2e spec `tests/link-labels.spec.ts` uses the labelled variants.
  */
-export function demoL3Config(): DiagramConfig {
+export function demoL3Config(wanLabel?: LinkLabelMode): DiagramConfig {
   const patterns: Pattern[] = [
     {
       id: 'links',
@@ -59,7 +61,11 @@ export function demoL3Config(): DiagramConfig {
       name: 'WAN uplinks',
       select: { kind: 'link', attrs: { 'pg-to': '/^rtr-(a|b):(wan1|wan2|wan3|pppoe)$/' } },
       display: {
-        link: { a2b: { binding: bind('W', FROM) }, b2a: { binding: bind('W', TO) } },
+        link: {
+          a2b: { binding: bind('W', FROM) },
+          b2a: { binding: bind('W', TO) },
+          ...(wanLabel ? { label: { mode: wanLabel } } : {}),
+        },
         hover: { rows: [trafficRow('W')] },
       },
     },
@@ -109,20 +115,29 @@ export function demoL3Config(): DiagramConfig {
   };
 }
 
-/** hand-drawn: a plain draw.io diagram. The capacity comes from the `capacity` attribute of each edge. */
-export function handDrawnConfig(): DiagramConfig {
-  const a2b = bind('A', { job: 'node-isp-a', device: 'pppoe' });
-  const b2a = bind('A', { job: 'node-rtr-a', device: 'wan1' });
+/**
+ * hand-drawn: a plain draw.io diagram. The capacity comes from the `capacity` attribute of each edge. `queryId` is
+ * the panel query that holds the WAN series (`A` in the demo dashboard, `W` next to the L3 panel in the e2e spec);
+ * `label` turns the value labels on.
+ */
+export function handDrawnConfig(queryId = 'A', label?: LinkLabelMode): DiagramConfig {
+  const a2b = bind(queryId, { job: 'node-isp-a', device: 'pppoe' });
+  const b2a = bind(queryId, { job: 'node-rtr-a', device: 'wan1' });
   return {
     version: 3,
-    queries: [panelQuery('A')],
+    queries: [panelQuery(queryId)],
     patterns: [
       {
         id: 'hand-links',
         name: 'Hand links',
         select: { ids: ['edge-ab', 'edge-cd'] },
         display: {
-          link: { a2b: { binding: a2b }, b2a: { binding: b2a }, capacity: '${cell.capacity}' },
+          link: {
+            a2b: { binding: a2b },
+            b2a: { binding: b2a },
+            capacity: '${cell.capacity}',
+            ...(label ? { label: { mode: label } } : {}),
+          },
           hover: {
             rows: [
               {

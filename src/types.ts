@@ -1,5 +1,5 @@
 import type { DataFrame, DisplayValue, Field, GrafanaTheme2, ScopedVars, ThresholdsConfig } from '@grafana/data';
-import type { DiagramConfig } from './model/config';
+import type { DiagramConfig, LinkLabelMode } from './model/config';
 
 /* ---------- cells (from the SVG) ---------- */
 
@@ -192,6 +192,8 @@ export interface HalfState {
   stepIndex: number;
   value?: number;
   percent?: number;
+  /** `percent` as text (`percentText`: "41%", "<1%", ">999%"); the card and the link labels show it */
+  percentDisplay?: string;
   /** the capacity in the canonical unit of the field (bit/s for a data rate), when the half has one */
   capacity?: number;
   capacitySource?: CapacitySource;
@@ -224,7 +226,8 @@ export interface CellPatch {
   /** the ids of the patterns that match the cell */
   ruleNames: string[];
   scope: TemplateScope;
-  link?: { a2b?: HalfState; b2a?: HalfState };
+  /** `labelMode`: what the value label of each half shows (`display.link.label.mode`, `none` when absent) */
+  link?: { a2b?: HalfState; b2a?: HalfState; labelMode?: LinkLabelMode };
   shape?: ShapeState;
   /**
    * The cell is configured but nothing binds: an item that touched it was skipped, or its id is ambiguous. The

@@ -91,6 +91,33 @@ describe('DiagramStage', () => {
     expect(shape.style.fill).toBe('');
   });
 
+  it('draws the value labels of a link patch above everything, and takes them away with the patch', async () => {
+    const half = {
+      status: 'ok' as const,
+      color: '#0f0',
+      width: 4,
+      label: '41 Mb/s · 41% of 100 Mb/s',
+      stepIndex: 0,
+      percent: 41,
+      percentDisplay: '41%',
+    };
+    const link: CellPatch = {
+      ...patch('link-1', '#0f0'),
+      shape: undefined,
+      link: { a2b: half, b2a: half, labelMode: 'percent' },
+    };
+    const view = render(<Harness patches={patches(link)} />);
+    await frame();
+    const root = screen.getByTestId('dmap-popup-stage').querySelector(':scope > svg')!;
+    const labels = root.querySelectorAll('text.dmap-link-label');
+    expect(labels).toHaveLength(2);
+    expect(labels[0].textContent).toBe('41%');
+    expect(root.lastElementChild?.classList.contains('dmap-link-labels')).toBe(true);
+    view.rerender(<Harness patches={new Map()} />);
+    await frame();
+    expect(root.querySelectorAll('text.dmap-link-label')).toHaveLength(0);
+  });
+
   it('marks the selected, affected and highlighted cells and makes every cell a button', () => {
     render(
       <Harness selection={{ selected: ['device-1'], affected: ['device-1', 'device-2'], highlight: ['link-1'] }} />

@@ -567,3 +567,33 @@ describe('resolvePatterns with items that do not parse or cannot run', () => {
     expect(plan.diagnostics.map((d) => d.code)).toEqual(['outdated-config']);
   });
 });
+
+describe('mergeDisplay: link label', () => {
+  const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
+  it('merges label as a leaf and tracks it as link.label', () => {
+    const base = { link: { a2b: { binding }, label: { mode: 'percent' as const } } };
+    expect(mergeDisplay(base, { link: { capacity: 5 } }).link).toEqual({
+      a2b: { binding },
+      capacity: 5,
+      label: { mode: 'percent' },
+    });
+    const track = vi.fn();
+    const merged = mergeDisplay(base, { link: { label: { mode: 'none' } } }, track);
+    expect(merged.link?.label).toEqual({ mode: 'none' });
+    expect(track).toHaveBeenCalledWith('link.label');
+    expect(track).not.toHaveBeenCalledWith('link.label.mode');
+  });
+  it('an override that sets none owns the leaf', () => {
+    const cell = cellMetaFromAttrs('a', {}, false);
+    const config: DiagramConfig = {
+      ...empty(),
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+      patterns: [
+        { id: 'p', name: 'P', select: {}, display: { link: { a2b: { binding }, label: { mode: 'percent' } } } },
+      ],
+      overrides: [{ cellId: 'a', display: { link: { label: { mode: 'none' } } } }],
+    };
+    expect(resolvePatterns([cell], config).cells.a.display.link?.label).toEqual({ mode: 'none' });
+    expect(ownersOfPath(displayProvenance(config, cell), 'link.label')).toEqual([{ kind: 'override', cellId: 'a' }]);
+  });
+});

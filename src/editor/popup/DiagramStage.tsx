@@ -5,6 +5,7 @@ import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellAt } from '../../interact/hit';
 import { applyPatches } from '../../render/applier';
 import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
+import { renderLinkLabels, setLinkLabelScale } from '../../render/linkLabels';
 import { renderOverlay } from '../../render/overlay';
 import { applyLayout, viewBoxFor, type ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
@@ -45,6 +46,8 @@ export interface DiagramStageProps {
   owner: string;
   /** The hash of the shown diagram. The stage writes it as `data-dmap-hash`, as the panel does. */
   hash?: string;
+  /** The link width range of the panel: the value labels keep `linkWidth.max / 2` clear of the strokes. */
+  linkWidth?: { min: number; max: number };
 }
 
 const FIT: ZoomOptions = { ...DEFAULT_OPTIONS.zoom, mode: 'fit', percent: 100, align: 'center', minScale: 0 };
@@ -63,6 +66,7 @@ export function DiagramStage({
   chartLayer,
   owner,
   hash,
+  linkWidth,
 }: DiagramStageProps) {
   const theme = useTheme2();
   const styles = useStyles2(getStyles);
@@ -126,9 +130,11 @@ export function DiagramStage({
     const id = requestAnimationFrame(() => {
       patched.current = applyPatches(stage.index, patches, patched.current);
       renderOverlay(root, stage.index, patches, { theme });
+      // after the overlay, as in the panel: the preview shows the label mode while the user edits it
+      renderLinkLabels(root, stage.index, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, patches, theme]);
+  }, [stage.root, stage.index, patches, theme, linkWidth]);
 
   // Fit the diagram into the pane. A live view (pan or zoom) changes the viewBox only.
   useEffect(() => {
@@ -137,6 +143,7 @@ export function DiagramStage({
     }
     const layout = viewBoxFor(FIT, stage.base, size, view ?? stage.base);
     applyLayout(stage.root, layout);
+    setLinkLabelScale(stage.root);
     if (stageRef.current) {
       stageRef.current.style.overflow = layout.overflow;
     }

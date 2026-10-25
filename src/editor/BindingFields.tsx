@@ -4,6 +4,7 @@ import type {
   DisplayConfig,
   FreshnessPolicy,
   HoverRow,
+  LinkLabelMode,
   NamedQuery,
   QueryBinding,
   StatusCondition,
@@ -12,6 +13,13 @@ import type {
 import type { ReducerName } from '../types';
 import { targetOf } from '../binding/engine';
 import { EditorField, EditorSection, sourceFor, SourceRow, type SourceProps } from './EditorLayout';
+
+/** The value label beside each link half (README "Link value labels"). */
+const LINK_LABEL_OPTIONS: Array<{ value: LinkLabelMode; label: string }> = [
+  { value: 'none', label: 'None' },
+  { value: 'percent', label: 'Percent of capacity' },
+  { value: 'value', label: 'Value' },
+];
 
 export function TextField({
   label,
@@ -439,6 +447,18 @@ export function DisplayFields({
           value={typeof value.link?.capacity === 'number' ? value.link.capacity : ''}
           onChange={(v) => onChange({ link: { ...value.link, capacity: v ? Number(v) : undefined } })}
         />
+        <EditorField label="Link label" source={sourceFor(src, 'link.label')}>
+          <Select
+            aria-label="Link label"
+            value={value.link?.label?.mode ?? 'none'}
+            onChange={(selection) =>
+              onChange({ link: { ...value.link, label: { mode: (selection.value ?? 'none') as LinkLabelMode } } })
+            }
+            options={LINK_LABEL_OPTIONS}
+            menuShouldPortal
+            maxMenuHeight={240}
+          />
+        </EditorField>
       </EditorSection>
       <EditorSection title="Explicit health status">
         {locked?.status ? (

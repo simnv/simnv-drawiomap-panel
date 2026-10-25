@@ -103,13 +103,17 @@ export interface CapacitySources {
 /** `binding` is optional in a saved patch (an override may set only a capacity); a merged direction without one is inert. */
 const linkDirection = z.object({ binding: binding.optional(), ...capacitySources }).strict();
 export type LinkDirection = z.infer<typeof linkDirection>;
-/** The two halves of a link: a direction each, and the capacity shared by both (see the precedence in README). */
+/** The value label beside each link half: the percent of its capacity, the reading, or nothing (the default). */
+const linkLabel = z.object({ mode: z.enum(['percent', 'value', 'none']) }).strict();
+export type LinkLabelMode = z.infer<typeof linkLabel>['mode'];
+/** The two halves of a link: a direction each, the capacity shared by both (see the precedence in README) and the label. */
 const link = z
   .object({
     enabled: z.boolean().optional(),
     a2b: linkDirection.optional(),
     b2a: linkDirection.optional(),
     ...capacitySources,
+    label: linkLabel.optional(),
   })
   .strict();
 

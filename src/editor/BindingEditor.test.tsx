@@ -334,6 +334,13 @@ describe('binding inspector', () => {
     fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].overrides[0].display).toEqual({ shape: { target: 'stroke' } });
   });
+  it('writes the link label mode as the leaf link.label.mode of an override', () => {
+    const { save } = setup();
+    selectStageCell('device-1');
+    chooseOption('Link label', 'Percent of capacity');
+    fireEvent.click(applyButton());
+    expect(save.mock.calls[0][0].overrides[0].display).toEqual({ link: { label: { mode: 'percent' } } });
+  });
   it('previews every pattern match, saves only on Apply, and cancels back to saved', () => {
     const { save } = setup();
     selectStageCell('device-1');

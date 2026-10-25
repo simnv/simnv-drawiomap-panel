@@ -1,15 +1,26 @@
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
 import { arrowAnchor, PathGeom, pathGeometry, Point } from './geometry';
+import type { Rect } from './labelPlacement';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
+/** the length of an arrow head of a half, in the units of the edge */
+export const ARROW_SIZE = 8;
 const NS = 'http://www.w3.org/2000/svg';
 
 export interface OverlayOptions {
   theme: GrafanaTheme2;
   arrowSize?: number;
+}
+
+/**
+ * The arc length (in the units of `geo.length`) where the two halves of a link meet: the middle of the path, moved
+ * onto one straight run so that both arrow heads stand clear of the bends. The label layer reads the same split.
+ */
+export function linkSplit(geo: PathGeom, arrowSize = ARROW_SIZE): number {
+  return arrowAnchor(geo.bends, geo.length, geo.length / 2, (2 * arrowSize) / geo.unit);
 }
 
 /**
@@ -49,7 +60,8 @@ function el<K extends keyof SVGElementTagNameMap>(
   return e;
 }
 
-const fmt = (n: number) => String(Math.round(n * 100) / 100);
+/** A coordinate for an attribute: two decimals, as draw.io writes them. */
+export const fmt = (n: number) => String(Math.round(n * 100) / 100);
 const pointsAttr = (pts: Point[]) => pts.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(' ');
 
 function drawHalf(
@@ -115,7 +127,7 @@ function drawLink(entry: CellEntry, link: { a2b?: HalfState; b2a?: HalfState }, 
   // An arrow stands on one straight run, away from the bends: the triangle must not stick out past a corner.
   const clear = (2 * o.arrowSize) / geo.unit;
   if (link.a2b && link.b2a) {
-    const mid = arrowAnchor(geo.bends, L, L / 2, clear);
+    const mid = linkSplit(geo, o.arrowSize);
     drawHalf(layer, id, 'a2b', geo, geo.polyline(0, mid), link.a2b, mid, true, o);
     drawHalf(layer, id, 'b2a', geo, geo.polyline(mid, L), link.b2a, mid, false, o);
     return;
@@ -128,7 +140,7 @@ function drawLink(entry: CellEntry, link: { a2b?: HalfState; b2a?: HalfState }, 
 }
 
 export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: PatchMap, opts: OverlayOptions): void {
-  const o: Required<OverlayOptions> = { arrowSize: 8, ...opts };
+  const o: Required<OverlayOptions> = { arrowSize: ARROW_SIZE, ...opts };
   root.querySelectorAll(`g.${OVERLAY_CLASS}`).forEach((g) => g.remove());
   root.querySelectorAll('.dmap-status-marker').forEach((g) => g.remove());
   for (const [id, patch] of patches) {
@@ -159,27 +171,46 @@ export function statusColor(status: StatusView, theme: GrafanaTheme2): string {
       : theme.colors.text.secondary;
 }
 
-function drawStatusMarker(entry: CellEntry, status: StatusView, theme: GrafanaTheme2): void {
+/** The font of a status marker; the label layer measures the widest marker text with it. */
+export const STATUS_MARKER_FONT = { family: 'sans-serif', size: 12, weight: 'bold' } as const;
+/** the widest text a marker shows */
+const WIDEST_MARKER = '? missing';
+/** the halo stroke of a marker text */
+const MARKER_HALO = 3;
+/** the width of `text` in `font`, in user units */
+export type TextProbe = (text: string, font: { family: string; size: number; weight?: string }) => number;
+
+export interface StatusMarkerBox {
+  /** the element whose user space `anchor` and `bounds` are in: the marker layer draws in it */
+  space: SVGGraphicsElement;
+  /** the baseline start of the marker text */
+  anchor: Point;
+  /** the painted box of the widest marker text on that baseline, the halo included */
+  bounds: Rect;
+}
+
+/**
+ * Where the status marker of a cell goes, from the geometry alone: the midpoint of an edge, the bottom-left corner
+ * of a shape. `drawStatusMarker` draws at `anchor`; the label layer reserves `bounds` for every patched cell, so a
+ * marker that appears on a later refresh never meets a label. Without a probe the width is an estimate.
+ */
+export function statusMarkerBox(entry: CellEntry, probe?: TextProbe): StatusMarkerBox | undefined {
   const primitive = entry.shape ?? entry.line;
   if (!primitive?.parentNode) {
-    return;
+    return undefined;
   }
-  const layer = el('g', { class: 'dmap-status-marker', 'data-dmap-cell': entry.meta.id, 'pointer-events': 'none' });
-  primitive.after(layer);
   let x = Number(primitive.getAttribute('x') ?? primitive.getAttribute('cx') ?? 0);
   let y = Number(primitive.getAttribute('y') ?? primitive.getAttribute('cy') ?? 0);
   if (entry.line) {
-    const geometry = pathGeometry(entry.line, layer);
+    // the marker layer is a sibling of the edge path: the parent's space
+    const space = entry.line.parentNode as SVGGraphicsElement;
+    const geometry = pathGeometry(entry.line, space);
     const point = geometry.pointAt(geometry.length / 2);
     x = point.x;
     y = point.y;
   } else {
     // Keep device markers inside the shape, including cells at the SVG's top edge.
     y += Number(primitive.getAttribute('height') ?? 0);
-    const transform = primitive.getAttribute('transform');
-    if (transform) {
-      layer.setAttribute('transform', transform);
-    }
     try {
       const box = primitive.getBBox();
       x = box.x;
@@ -188,15 +219,43 @@ function drawStatusMarker(entry: CellEntry, status: StatusView, theme: GrafanaTh
       // Some SVG hosts do not expose getBBox; rectangle/ellipse attributes still locate the marker.
     }
   }
+  const { family, size, weight } = STATUS_MARKER_FONT;
+  const width = probe ? probe(WIDEST_MARKER, { family, size, weight }) : 0.6 * size * WIDEST_MARKER.length;
+  const anchor = { x: x + 4, y: y - 4 };
+  const grow = MARKER_HALO / 2;
+  return {
+    space: entry.line ? (entry.line.parentNode as SVGGraphicsElement) : primitive,
+    anchor,
+    bounds: {
+      x: anchor.x - grow,
+      y: anchor.y - size - grow,
+      width: width + 2 * grow,
+      height: size * 1.25 + 2 * grow,
+    },
+  };
+}
+
+function drawStatusMarker(entry: CellEntry, status: StatusView, theme: GrafanaTheme2): void {
+  const box = statusMarkerBox(entry);
+  const primitive = entry.shape ?? entry.line;
+  if (!box || !primitive) {
+    return;
+  }
+  const layer = el('g', { class: 'dmap-status-marker', 'data-dmap-cell': entry.meta.id, 'pointer-events': 'none' });
+  primitive.after(layer);
+  const transform = entry.line ? null : primitive.getAttribute('transform');
+  if (transform) {
+    layer.setAttribute('transform', transform);
+  }
   const text = el('text', {
-    x: x + 4,
-    y: y - 4,
-    'font-family': 'sans-serif',
-    'font-size': 12,
-    'font-weight': 'bold',
+    x: box.anchor.x,
+    y: box.anchor.y,
+    'font-family': STATUS_MARKER_FONT.family,
+    'font-size': STATUS_MARKER_FONT.size,
+    'font-weight': STATUS_MARKER_FONT.weight,
     fill: statusColor(status, theme),
     stroke: theme.colors.background.primary,
-    'stroke-width': 3,
+    'stroke-width': MARKER_HALO,
     'paint-order': 'stroke',
   });
   text.textContent = `${status.state === 'missing' || status.state === 'stale' ? '?' : '!'} ${status.state}`;
