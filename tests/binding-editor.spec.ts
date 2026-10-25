@@ -15,7 +15,7 @@ const openQuery = (dialog: Locator, name: string) => dialog.getByRole('button', 
 const stageText = (dialog: Locator, cell: string) =>
   dialog.getByTestId('dmap-popup-stage').locator(`[data-cell-id="${cell}"] text`).last();
 
-test('the popup keeps one watch for its own chart size and reuses it for selection and previews', async ({
+test('the popup keeps one watch for its own chart size; the previews share one request at the card resolution', async ({
   page,
   config,
   createDiagram,
@@ -51,7 +51,9 @@ test('the popup keeps one watch for its own chart size and reuses it for selecti
   await inspector.getByRole('button', { name: 'Preview all pattern matches', exact: true }).click();
   await expect(inspector.getByLabel('Pattern preview progress')).toContainText('1 / 1');
   await expect(inspector.getByLabel('Affected metric resolution')).toContainText('chart-1: resolved');
-  expect(count()).toBe(base);
+  // The pattern preview asks at the card resolution of the popup (264 points). The stage chart has its own width,
+  // so the preview is at most one request more; the query preview below shares that one.
+  expect(count()).toBeLessThanOrEqual(base + 1);
   await openQuery(dialog, 'saved');
   await inspector.getByRole('button', { name: 'Preview query', exact: true }).click();
   await expect(inspector.getByLabel('Query preview result')).toContainText('ready');
