@@ -37,7 +37,7 @@ const rect = (x: number, y: number, width: number, height: number, clearance = 0
   rect: { x, y, width, height },
   clearance,
 });
-const segment = (a: Point, b: Point, owner: string, clearance = 5): Obstacle => ({
+const segment = (a: Point, b: Point, owner: string, clearance = 5): Extract<Obstacle, { kind: 'segment' }> => ({
   kind: 'segment',
   a,
   b,
@@ -244,6 +244,25 @@ describe('placeHalfLabel: collisions', () => {
     // a piece of another edge beside the run, within its clearance, is an obstacle
     const other = obstacleIndex([segment({ x: 100, y: -6 }, { x: 200, y: -14.57 }, 'f')]);
     expect(placed(placeHalfLabel(leg(points), 'e', other)).along).not.toBeCloseTo(polylineLength(points) / 2);
+  });
+  it('a piece of the own edge is known by its leg and index, not by where it lies: a crossing piece collides', () => {
+    // the a2b leg of `M 0 100 L 443.05 100 L 221.53 0 L 221.53 200`, split at 427; the b2a leg crosses it at 221.53
+    const a2b = leg(horizontal(0, 427, 100), { id: 'e:a2b' });
+    const b2a = [
+      { x: 221.53, y: 200 },
+      { x: 221.53, y: 0 },
+      { x: 443.05, y: 100 },
+      { x: 427, y: 100 },
+    ];
+    const pieces: Obstacle[] = [
+      { ...segment(a2b.points[0], a2b.points[1], 'e'), piece: { leg: 'e:a2b', index: 0 } },
+      ...b2a.slice(1).map((b, i) => ({ ...segment(b2a[i], b, 'e'), piece: { leg: 'e:b2a', index: i } })),
+    ];
+    const p = placed(placeHalfLabel(a2b, 'e', obstacleIndex(pieces)));
+    // the anchor at 213.5 would put the box over the crossing stroke at 221.53
+    expect(Math.abs(p.centre.x - 221.53)).toBeGreaterThan(14 + 5);
+    // the own piece under the run is still no obstacle
+    expect(p.centre.y).toBe(100 - OFFSET);
   });
   it('a segment that crosses the box collides even with a clearance of 0', () => {
     const index = obstacleIndex([segment({ x: 100, y: -40 }, { x: 100, y: -12 }, 'other', 0)]);

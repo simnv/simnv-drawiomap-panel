@@ -303,6 +303,7 @@ describe('renderLinkLabels: obstacles', () => {
       b: { x: 360, y: 100 },
       clearance: 5,
       owner: 'e1',
+      piece: { leg: 'e1:a2b', index: 0 },
     });
     const two = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     const both = stageObstacles(root, index, two, 10, () => 60);
@@ -312,6 +313,7 @@ describe('renderLinkLabels: obstacles', () => {
       b: { x: 200, y: 100 },
       clearance: 5,
       owner: 'e1',
+      piece: { leg: 'e1:a2b', index: 0 },
     });
     expect(both).toContainEqual({
       kind: 'segment',
@@ -319,6 +321,7 @@ describe('renderLinkLabels: obstacles', () => {
       b: { x: 200, y: 100 },
       clearance: 5,
       owner: 'e1',
+      piece: { leg: 'e1:b2a', index: 0 },
     });
     expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 0, y: 80, width: 40, height: 40 }, clearance: 1 });
     expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 360, y: 80, width: 40, height: 40 }, clearance: 0.5 });
@@ -355,7 +358,8 @@ describe('renderLinkLabels: backgrounds', () => {
   it('a plain draw.io container that holds other vertices is a background; the vertices inside stay obstacles', () => {
     const container = `<g data-cell-id="box"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
     const inner = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="20"/></g></g>`;
-    const { root, index } = build(SVG(container + inner));
+    const inner2 = `<g data-cell-id="n4"><g><rect x="260" y="130" width="40" height="20"/></g></g>`;
+    const { root, index } = build(SVG(container + inner + inner2));
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(100 - 14);
@@ -364,6 +368,68 @@ describe('renderLinkLabels: backgrounds', () => {
     );
     expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
     expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 20 });
+  });
+});
+
+describe('renderLinkLabels: review cases', () => {
+  const two = (a: HalfState, b: HalfState = half()): PatchMap =>
+    new Map([['e1', linkPatch('e1', { a2b: a, b2a: b, labelMode: 'percent' })]]);
+  it('a slot that changes while the label is hidden is placed again: no small reservation survives', () => {
+    // an obstacle right of the anchor: a 1-glyph reading fits beside it, the percent slot does not
+    const block = `<g data-cell-id="n3"><g><rect x="128" y="70" width="40" height="25"/></g></g>`;
+    const { root, index } = build(SVG(block));
+    const reading = half({ percent: undefined, percentDisplay: undefined, display: { text: '1', numeric: 1 } });
+    render(root, index, two(reading));
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('x')).toBe('120');
+    render(root, index, two(nodata()));
+    expect(a.getAttribute('visibility')).toBe('hidden');
+    render(root, index, two(half({ percentDisplay: '41%' })));
+    expect(a.getAttribute('visibility')).toBeNull();
+    expect(a.textContent).toBe('41%');
+    // the percent box (28 wide) at the anchor would meet the block at 128: the label stands away from it
+    expect(Number(a.getAttribute('x'))).toBeLessThanOrEqual(128 - 14);
+  });
+  it('a device body with one badge inside stays an obstacle; a vertex that holds two vertices is a background', () => {
+    const device = `<g data-cell-id="dev"><g><rect x="90" y="56" width="60" height="28"/></g></g>`;
+    const badge = `<g data-cell-id="badge"><g><rect x="94" y="60" width="10" height="10"/></g></g>`;
+    const { root, index } = build(SVG(device + badge));
+    const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    render(root, index, patches);
+    expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(90 - 14);
+    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
+      o.kind === 'rect' ? [o.rect] : []
+    );
+    expect(rects).toContainEqual({ x: 90, y: 56, width: 60, height: 28 });
+    const second = `<g data-cell-id="badge2"><g><rect x="130" y="60" width="10" height="10"/></g></g>`;
+    const container = build(SVG(device + badge + second));
+    const more = stageObstacles(container.root, container.index, patches, 10, () => 60).flatMap((o) =>
+      o.kind === 'rect' ? [o.rect] : []
+    );
+    expect(more).not.toContainEqual({ x: 90, y: 56, width: 60, height: 28 });
+  });
+  it('adding the reverse half of an unlabelled edge moves its arrow heads: the placement runs again', () => {
+    const other = `<g data-cell-id="e2"><g><path d="M 40 150 L 360 150" fill="none" stroke="#333" pointer-events="stroke"/></g></g>`;
+    const { root, index } = build(SVG(other));
+    const labelled = linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' });
+    const one = new Map([['e1', labelled], ['e2', linkPatch('e2', { a2b: half(), labelMode: 'none' })]]);
+    render(root, index, one);
+    const stamp = byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at');
+    const both = new Map([['e1', labelled], ['e2', linkPatch('e2', { a2b: half(), b2a: half(), labelMode: 'none' })]]);
+    render(root, index, both);
+    expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
+  });
+  it('a plain text cell is an obstacle', () => {
+    const text = `<g data-cell-id="t1"><g><text x="100" y="80" font-size="10">a caption</text></g></g>`;
+    const { root, index } = build(SVG(text));
+    const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    expect(index.get('t1')?.label).toBeTruthy();
+    render(root, index, patches);
+    expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).not.toBe(120);
+    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
+      o.kind === 'rect' ? [o.rect] : []
+    );
+    expect(rects.some((r) => r.x === 100 && r.y < 80 && r.width > 40)).toBe(true);
   });
 });
 
@@ -409,6 +475,7 @@ describe('renderLinkLabels: coordinates', () => {
       b: { x: 168, y: 0 },
       clearance: 10,
       owner: 'e1',
+      piece: { leg: 'e1:a2b', index: 0 },
     });
     expect(obstacles).toContainEqual({
       kind: 'segment',
@@ -416,6 +483,7 @@ describe('renderLinkLabels: coordinates', () => {
       b: { x: 200, y: 0 },
       clearance: 10,
       owner: 'e1',
+      piece: { leg: 'e1:b2a', index: 0 },
     });
   });
   it('a path with a 3° turn keeps that vertex in the root polyline', () => {

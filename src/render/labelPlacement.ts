@@ -1,4 +1,4 @@
-import { pointAt, slicePolyline, type Point } from './geometry';
+import { pointAt, type Point } from './geometry';
 
 /*
  * The placement of the value labels of the link halves: pure numbers, no DOM. Every distance is in root user
@@ -22,6 +22,8 @@ export interface OrientedBox {
 }
 
 export interface LegInput {
+  /** the identity of the leg: the stroke pieces of its own edge carry it with their index (`Obstacle.piece`) */
+  id?: string;
   /**
    * The leg in root user units: its vertices, the arc lengths of its bends and its length. The leg runs from the
    * end of the link towards the arrowhead (the split of a two-leg link, or the arrowed end of a one-leg link): the
@@ -39,8 +41,8 @@ export interface LegInput {
 export type Obstacle =
   /** a cell body, a pill, a chip, a dot, an arrowhead, the room of a status marker or a placed label */
   | { kind: 'rect'; rect: Rect; clearance: number }
-  /** a straight run of a drawn edge; `owner` is the cell id of the edge */
-  | { kind: 'segment'; a: Point; b: Point; clearance: number; owner: string };
+  /** a piece of a drawn edge; `owner` is the cell id of the edge, `piece` its place in a leg polyline, when known */
+  | { kind: 'segment'; a: Point; b: Point; clearance: number; owner: string; piece?: { leg: string; index: number } };
 
 export interface ObstacleIndex {
   add(o: Obstacle): void;
@@ -324,9 +326,14 @@ export function pointToPolyline(p: Point, pts: readonly Point[]): number {
   return pts.length === 1 ? Math.hypot(p.x - pts[0].x, p.y - pts[0].y) : best;
 }
 
-/** True when the segment a→b is a piece of the run (its midpoint lies on the run's polyline). */
-const partOfRun = (a: Point, b: Point, run: readonly Point[]) =>
-  pointToPolyline({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, run) <= 1e-3;
+/** The arc length at every vertex of a polyline. */
+const arcLengths = (pts: readonly Point[]): number[] => {
+  const out = [0];
+  for (let i = 1; i < pts.length; i++) {
+    out.push(out[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+  }
+  return out;
+};
 
 /* ---------- candidates ---------- */
 
@@ -334,7 +341,8 @@ const partOfRun = (a: Point, b: Point, run: readonly Point[]) =>
  * Places the label of one half: the first free candidate in the portograph order (the first side over the whole
  * leg, then the second; from the middle of the leg outwards in steps of `alongStep`, the lower arc length first).
  * A candidate stands on one straight run with `endMargin` to the bends; its box is `normalGap` outside the stroke
- * edge. `own` is the cell id of the edge: its own run is no obstacle, its other runs are.
+ * edge. `own` is the cell id of the edge: the pieces of its own run (`leg.id`, `Obstacle.piece`) are no obstacle,
+ * its other runs are.
  */
 export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex): Placement {
   const { halo, normalGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
@@ -363,24 +371,30 @@ export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex)
       distances.push(hi);
     }
   }
-  // the vertices of each run: the pieces of the own edge on it are no obstacle
-  const runPoints = runs.map((r) => slicePolyline(leg.points, r.from, r.to));
+  // the pieces of the own edge that lie on the candidate's run (by their index in this leg) are no obstacle
+  const arcs = arcLengths(leg.points);
   const candidates = distances.flatMap((d) => {
-    const i = runs.findIndex((r) => d <= r.to + EPS && d >= r.from - EPS);
-    const run = runs[i];
+    const run = runs.find((r) => d <= r.to + EPS && d >= r.from - EPS);
     if (!run || d < run.from + endMargin + w / 2 - EPS || d > run.to - endMargin - w / 2 + EPS) {
       return [];
     }
     const a = pointAt(leg.points, run.from);
     const b = pointAt(leg.points, run.to);
     const anchor = pointAt(leg.points, d);
-    return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), run: runPoints[i] }];
+    const ownPiece = (o: Obstacle) =>
+      o.kind === 'segment' &&
+      o.owner === own &&
+      o.piece !== undefined &&
+      o.piece.leg === leg.id &&
+      arcs[o.piece.index] >= run.from - EPS &&
+      arcs[o.piece.index + 1] <= run.to + EPS;
+    return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece }];
   });
   for (const side of [1, -1]) {
-    for (const { d, anchor, heading, run } of candidates) {
+    for (const { d, anchor, heading, ownPiece } of candidates) {
       const centre = { x: anchor.x + side * heading.first.x * offset, y: anchor.y + side * heading.first.y * offset };
       const box: OrientedBox = { centre, width: w, height: h, degrees: heading.degrees };
-      if (!collides(box, run, own, index)) {
+      if (!collides(box, ownPiece, index)) {
         return { centre, degrees: heading.degrees, box, along: d };
       }
     }
@@ -388,15 +402,15 @@ export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex)
   return { dropped: 'no-free-spot' };
 }
 
-/** The box against the obstacles near it; the pieces of the own edge that lie on `run` do not count. */
-function collides(box: OrientedBox, run: readonly Point[], own: string, index: ObstacleIndex): boolean {
+/** The box against the obstacles near it; the pieces of the own run (`ownPiece`) do not count. */
+function collides(box: OrientedBox, ownPiece: (o: Obstacle) => boolean, index: ObstacleIndex): boolean {
   const corners = cornersOf(box);
   for (const o of index.near(boundsOf(box))) {
     if (o.kind === 'rect') {
       if (overlapsRect(corners, box, grow(o.rect, o.clearance))) {
         return true;
       }
-    } else if (!(o.owner === own && partOfRun(o.a, o.b, run)) && segmentHits(box, o.a, o.b, o.clearance)) {
+    } else if (!ownPiece(o) && segmentHits(box, o.a, o.b, o.clearance)) {
       return true;
     }
   }

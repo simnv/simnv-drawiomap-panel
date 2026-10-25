@@ -65,7 +65,7 @@ export interface LinkLabelCounts {
 
 type Half = 'a2b' | 'b2a';
 type LabelMode = Exclude<LinkLabelMode, 'none'>;
-type Leg = Omit<LegInput, 'size'>;
+type Leg = Omit<LegInput, 'size'> & { id: string };
 type EdgeLegs = { a2b?: Leg; b2a?: Leg };
 interface Slot {
   cellId: string;
@@ -136,10 +136,13 @@ export function renderLinkLabels(
     return { placed: 0, dropped: 0, moved: 0 };
   }
   const fontFamily = stageFont(root);
-  // the obstacles depend on every patched cell (its marker room, its arrows, its stroke), not only the labelled ones
+  // the obstacles depend on every patched cell (its marker room, its arrows, its stroke, the split of its halves)
   const patched = Array.from(patches.keys())
     .sort()
-    .map((id) => `${id}:${hasHalves(patches, id) ? 'h' : '-'}`);
+    .map((id) => {
+      const { a2b, b2a } = halvesOf(patches, id);
+      return `${id}:${a2b ? 'a' : ''}${b2a ? 'b' : ''}`;
+    });
   const key = [
     slots.map((s) => `${s.cellId}:${s.which}:${s.mode}`).join('\n'),
     patched.join('\n'),
@@ -315,6 +318,14 @@ function attributeBox(el: Element): Rect | undefined {
     }
     case 'path':
       return aabbOf(parsePathPoints(el.getAttribute('d') ?? ''));
+    case 'text': {
+      // no layout in jsdom: 0.6 em per glyph on the baseline, the anchor from the text or an ancestor
+      const size = parseFloat(el.getAttribute('font-size') ?? el.closest('[font-size]')?.getAttribute('font-size') ?? '') || 12;
+      const width = 0.6 * size * (el.textContent ?? '').length;
+      const anchor = el.getAttribute('text-anchor') ?? el.closest('[text-anchor]')?.getAttribute('text-anchor');
+      const x = num(el, 'x') - (anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0);
+      return { x, y: num(el, 'y') - size, width, height: size * 1.25 };
+    }
     case 'polygon':
     case 'polyline': {
       const nums = (el.getAttribute('points') ?? '')
@@ -391,8 +402,8 @@ const contains = (outer: Rect, inner: Rect) =>
 
 /**
  * The non-edge cell bodies that are backgrounds, not obstacles (spec section 5, decision 8): the portograph canvas,
- * layers and groups by their kind, and in a plain draw.io diagram a vertex whose body holds another vertex's body
- * (a container or a swimlane: the export carries no other sign of it).
+ * layers and groups by their kind, and in a plain draw.io diagram a vertex whose body holds two or more other
+ * vertices (a container or a swimlane: the export carries no other sign of it; one badge inside a device is not one).
  */
 function backgroundIds(index: CellIndex, boxes: Map<string, Rect>): Set<string> {
   const out = new Set<string>();
@@ -413,7 +424,8 @@ function backgroundIds(index: CellIndex, boxes: Map<string, Rect>): Set<string> 
     }
   }
   for (const [outerId, outer] of plain) {
-    if (plain.some(([innerId, inner]) => innerId !== outerId && contains(outer, inner))) {
+    // two or more: a device with one badge inside stays an obstacle
+    if (plain.filter(([innerId, inner]) => innerId !== outerId && contains(outer, inner)).length >= 2) {
       out.add(outerId);
     }
   }
@@ -448,12 +460,12 @@ export function stageObstacles(
     }
   }
   const backgrounds = backgroundIds(index, bodies);
-  const strokes = (cellId: string, points: Point[], clearance: number) => {
+  const strokes = (cellId: string, points: Point[], clearance: number, leg?: string) => {
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1];
       const b = points[i];
       if (a.x !== b.x || a.y !== b.y) {
-        out.push({ kind: 'segment', a, b, clearance, owner: cellId });
+        out.push({ kind: 'segment', a, b, clearance, owner: cellId, ...(leg ? { piece: { leg, index: i - 1 } } : {}) });
       }
     }
   };
@@ -466,7 +478,7 @@ export function stageObstacles(
           legs.get(cellId) ??
           (hasHalves(patches, cellId) ? edgeLegs(entry, root, max, halvesOf(patches, cellId)) : undefined);
         if (own) {
-          [own.a2b, own.b2a].forEach((leg) => leg && strokes(cellId, leg.points, leg.strokeRoot / 2));
+          [own.a2b, own.b2a].forEach((leg) => leg && strokes(cellId, leg.points, leg.strokeRoot / 2, leg.id));
         } else {
           const width = hasHalves(patches, cellId) ? max : strokeWidthOf(entry.line, entry.original.strokeWidth);
           const pts = parsePathPoints(entry.line.getAttribute('d') ?? '').map((p) => applyMatrix(m, p));
@@ -479,6 +491,9 @@ export function stageObstacles(
       if (!hasHalves(patches, cellId)) {
         entry.arrows.forEach((a) => rect(a));
       }
+    } else if (!entry.shape && entry.label) {
+      // a plain text cell: its text is as much in the way as a body
+      rect(entry.label);
     } else if (entry.shape && !backgrounds.has(cellId)) {
       const m = toRoot(entry.shape, root);
       const body = bodies.get(cellId);
@@ -530,7 +545,8 @@ function nearestOnPolyline(pts: Point[], p: Point): { at: number; point: Point }
   return { at: best.at, point: best.point };
 }
 
-const legOf = (points: Point[], strokeRoot: number): Leg => ({
+const legOf = (id: string, points: Point[], strokeRoot: number): Leg => ({
+  id,
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
@@ -548,6 +564,7 @@ function edgeLegs(
   halves: { a2b: boolean; b2a: boolean }
 ): EdgeLegs {
   const line = entry.line!;
+  const id = entry.meta.id;
   const m = toRoot(line, root);
   if (!m) {
     return {};
@@ -564,11 +581,13 @@ function edgeLegs(
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
-      a2b: legOf([...pts.slice(0, at + 1), point], strokeRoot),
-      b2a: legOf([...pts.slice(at + 1).reverse(), point], strokeRoot),
+      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot),
+      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot),
     };
   }
-  return halves.a2b ? { a2b: legOf(pts, strokeRoot) } : { b2a: legOf([...pts].reverse(), strokeRoot) };
+  return halves.a2b
+    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot) }
+    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot) };
 }
 
 /* ---------- the layer and its elements ---------- */
@@ -735,7 +754,8 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
     if (slotChanged) {
       rec.slot = width;
     }
-    if ((slotChanged || rec.retry) && text !== undefined) {
+    // a changed slot is placed again also while the label is hidden: a stale reservation must never survive
+    if (slotChanged || (rec.retry && text !== undefined)) {
       // the label held a box (placed, or hidden with its reserved box): a new spot is a move
       const old = rec.obstacle;
       if (old) {
