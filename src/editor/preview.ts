@@ -92,7 +92,7 @@ export function previewSnapshot(
   purpose: 'display' | 'reuse' = 'display'
 ): QuerySnapshot {
   if (query.source.kind === 'panel') {
-    return panelSnapshot(data, query.source.refId, 0);
+    return panelSnapshot(data, query.source.refId);
   }
   return preparedSnapshot(query, config, cellId, preview, active, generation, purpose);
 }

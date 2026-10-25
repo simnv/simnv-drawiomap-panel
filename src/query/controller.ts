@@ -10,19 +10,8 @@ import {
   settled,
 } from './types';
 import { panelSnapshot } from './panelSnapshot';
+import { copyFrames, stable } from './boundary';
 
-/** Canonical JSON for persisted query objects and resolved context, never datasource instances. */
-export function stable(value: unknown): string {
-  return JSON.stringify(value, (_, item) =>
-    item && typeof item === 'object' && !Array.isArray(item)
-      ? Object.fromEntries(
-          Object.keys(item)
-            .sort()
-            .map((k) => [k, item[k]])
-        )
-      : item
-  );
-}
 function resolve(demand: QueryDemand, now: number): ResolvedQueryRequest {
   const { source } = demand.query;
   if (source.kind !== 'datasource') {
@@ -82,16 +71,6 @@ function resolve(demand: QueryDemand, now: number): ResolvedQueryRequest {
     generation: demand.context.generation,
   });
   return { datasource: { ...datasource }, request, cacheKey };
-}
-/**
- * The boundary copy. Grafana keeps the value arrays of a field by reference, and a streaming datasource appends to
- * them in place. One copy per result, before the listeners: every consumer, model and series shares it read-only.
- */
-export function copyFrames(frames: DataFrame[]): DataFrame[] {
-  return frames.map((frame) => ({
-    ...frame,
-    fields: frame.fields.map((field) => ({ ...field, values: Array.from(field.values) })),
-  }));
 }
 /** Include vector slots and serialized field configuration in both memory budgets. */
 export function measureFrames(frames: DataFrame[]): { values: number; bytes: number } {
@@ -285,7 +264,7 @@ export function createQueryController(
       panelData = data;
       for (const entry of entries.values()) {
         if (entry.panelRef) {
-          publish(entry, panelSnapshot(panelData, entry.panelRef, now()));
+          publish(entry, panelSnapshot(panelData, entry.panelRef, now));
         }
       }
     },
@@ -302,7 +281,7 @@ export function createQueryController(
           entry = {
             panelRef: refId,
             listeners: new Map(),
-            snapshot: panelSnapshot(panelData, refId, now()),
+            snapshot: panelSnapshot(panelData, refId, now),
             token: 0,
           };
           entries.set(key, entry);

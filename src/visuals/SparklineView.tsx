@@ -65,9 +65,10 @@ export function SparklineView({
     unit: config.unit,
     capacity,
   });
+  // The field type wants a mutable array. The sparkline reads the shared values of the model and writes nothing.
   const field = {
     ...model.field,
-    values: model.values,
+    values: model.values as Array<number | null>,
     state: { ...model.field.state, range: { min, max, delta: max - min } },
   };
   return (

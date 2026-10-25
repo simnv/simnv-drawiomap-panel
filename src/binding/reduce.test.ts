@@ -13,4 +13,12 @@ describe('reduceValues', () => {
     expect(reduceValues([], 'last')).toBeUndefined();
     expect(reduceValues([NaN], 'mean')).toBeUndefined();
   });
+  it('reads a history with gaps in place: [null, 1, 2] with each reducer', () => {
+    const history: ReadonlyArray<number | null> = [null, 1, 2];
+    expect(reduceValues(history, 'last')).toBe(2);
+    expect(reduceValues(history, 'mean')).toBe(1.5);
+    expect(reduceValues(history, 'max')).toBe(2);
+    expect(reduceValues(history, 'min')).toBe(1);
+    expect(history).toEqual([null, 1, 2]);
+  });
 });

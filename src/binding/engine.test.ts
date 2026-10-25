@@ -17,7 +17,14 @@ import {
 } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, CellMeta } from '../types';
-import { bindPlan, collectBindingDemands, resolveBinding, targetOf, widgetDiagnostics } from './engine';
+import {
+  bindPlan,
+  collectBindingDemands,
+  historySeries,
+  resolveBinding,
+  targetOf,
+  widgetDiagnostics,
+} from './engine';
 import { resolvePatterns } from './patterns';
 import { displayBindings, type DiagramConfig, type DisplayConfig, type QueryBinding } from '../model/config';
 import { fieldDisplay, toHistory } from '../query/frames';
@@ -1140,5 +1147,45 @@ describe('the capacity text in the unit of the field', () => {
     expect(free.percent).toBeUndefined();
     expect(free.capacityDisplay).toBeUndefined();
     expect(free.label).toMatch(/^41(\.0)? Mb\/s$/);
+  });
+});
+
+describe('historySeries', () => {
+  const model = () => {
+    const value = toHistory(
+      {
+        state: 'ready',
+        fetchedAt: 0,
+        fromCache: false,
+        frames: [
+          {
+            length: 4,
+            fields: [
+              { name: 'Time', type: FieldType.time, config: {}, values: [1000, 2000, 3000, 4000] },
+              { name: 'Value', type: FieldType.number, config: {}, labels: { job: 'a' }, values: [1, null, 3, 4] },
+            ],
+          },
+        ],
+      },
+      queryBinding
+    );
+    if (value.state !== 'ready') {
+      throw new Error('expected ready');
+    }
+    return value;
+  };
+  it('gives the same SeriesInfo object twice for one model and one query', () => {
+    const m = model();
+    const first = historySeries(m, queryBinding);
+    expect(historySeries(m, queryBinding)).toBe(first);
+    expect(historySeries(m, { ...queryBinding, queryId: 'other' })).not.toBe(first);
+    expect(historySeries(model(), queryBinding)).not.toBe(first);
+  });
+  it('leaves a null gap out of the values and the times', () => {
+    const series = historySeries(model(), queryBinding);
+    expect(series.values).toEqual([1, 3, 4]);
+    expect(series.times).toEqual([1000, 3000, 4000]);
+    expect(series).toMatchObject({ refId: 'health', name: 'Value', labels: { job: 'a' } });
+    expect(series.frame.length).toBe(4);
   });
 });

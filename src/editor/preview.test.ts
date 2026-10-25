@@ -162,8 +162,10 @@ describe('eager query results in the preview and controller', () => {
     expect(preview.state).toBe(state);
     expect(receive.mock.lastCall?.[0].state).toBe(state);
     if (preview.state === 'ready') {
-      expect(preview.frames[0]).toBe(frame);
-      expect(preview.frames[0].fields[0].config.unit).toBe('percent');
+      // the boundary copy: the same data, the same field config, not the panel's array
+      expect(preview.frames[0]).not.toBe(frame);
+      expect(preview.frames[0].fields[0].values).toEqual([7]);
+      expect(preview.frames[0].fields[0].config).toBe(frame.fields[0].config);
     }
     expect(execute).not.toHaveBeenCalled();
     controller.dispose();
