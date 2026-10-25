@@ -60,6 +60,9 @@ export interface Placed {
   along: number;
   /** where the box stands: see `LabelSide` */
   side: LabelSide;
+  /** the point of the leg the box stands at, and the unit vector of the top side: `drawnCentre` needs them */
+  anchor: Point;
+  normal: Point;
 }
 /**
  * Where a label stands: 0 on the own stroke; 1 beside it on the top side (the side the tops of the letters face,
@@ -409,11 +412,25 @@ export function placeHalfLabel(
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
       const box: OrientedBox = { centre, width: w, height: h, degrees: heading.degrees };
       if (!collides(box, ownPiece, index)) {
-        return { centre, degrees: heading.degrees, box, along: d, side };
+        return { centre, degrees: heading.degrees, box, along: d, side, anchor, normal: heading.first };
       }
     }
   }
   return { dropped: 'no-free-spot' };
+}
+
+/**
+ * The centre of the text for a stroke drawn `drawnRoot` wide (root units). The reservation of a label (`centre`,
+ * `box`) always uses the widest stroke, so that a change of the load never makes a label collide; the text stands
+ * `normalGap` (or `wideGap`) beyond the edge of the stroke as it is drawn.
+ */
+export function drawnCentre(p: Placed, drawnRoot: number): Point {
+  if (p.side === 0) {
+    return p.anchor;
+  }
+  const { normalGap, wideGap } = LINK_LABEL_GEOMETRY;
+  const shift = Math.sign(p.side) * ((Math.abs(p.side) === 2 ? wideGap : normalGap) + drawnRoot / 2 + p.box.height / 2);
+  return { x: p.anchor.x + p.normal.x * shift, y: p.anchor.y + p.normal.y * shift };
 }
 
 /**

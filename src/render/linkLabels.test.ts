@@ -317,19 +317,53 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('top');
     expect(bgs(root)).toHaveLength(0);
   });
-  it('the top of a horizontal link is above; the near edge of the box is 2 beyond the stroke edge', () => {
+  it('the top of a horizontal link is above; the near edge of the box is 2 beyond the drawn stroke edge', () => {
     const { root, index } = build(SVG(strip));
     render(root, index, both());
-    // linkWidth.max 10: the stroke edge at 95, the box (12 high) from 81 to 93 is 2 beyond it, the centre at 87
-    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('87');
-    expect(byHalf(root, 'b2a')!.getAttribute('y')).toBe('87');
+    // the drawn width is 4 (HalfState.width): the stroke edge at 98, the box (12 high) from 84 to 96, the centre at 90
+    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('90');
+    expect(byHalf(root, 'b2a')!.getAttribute('y')).toBe('90');
+    // the same half drawn at the widest stroke (linkWidth.max 10): the centre at 87
+    const wide = new Map([
+      ['e1', linkPatch('e1', { a2b: half({ width: 10 }), b2a: half({ width: 10 }), labelMode: 'percent' })],
+    ]);
+    const again = build(SVG(strip));
+    render(again.root, again.index, wide);
+    expect(byHalf(again.root, 'a2b')!.getAttribute('y')).toBe('87');
+  });
+  it('a width change on refresh moves the label across the link, not along it, and is no move', () => {
+    const { root, index } = build(SVG(strip));
+    const widths = (w: number) =>
+      new Map([['e1', linkPatch('e1', { a2b: half({ width: w }), b2a: half({ width: w }), labelMode: 'percent' })]]);
+    render(root, index, widths(4));
+    const a = byHalf(root, 'a2b')!;
+    const stamp = a.getAttribute('data-dmap-placed-at');
+    const x = a.getAttribute('x');
+    expect(a.getAttribute('y')).toBe('90');
+    expect(render(root, index, widths(10))).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    expect(a.getAttribute('y')).toBe('87');
+    expect(a.getAttribute('x')).toBe(x);
+    expect(a.getAttribute('data-dmap-placed-at')).toBe(stamp);
+    expect(a.getAttribute('data-dmap-side')).toBe('top');
+  });
+  it('the gap rect covers the drawn stroke plus 1 on each side', () => {
+    const { root, index } = build();
+    const widths = (w: number) =>
+      new Map([['e1', linkPatch('e1', { a2b: half({ width: w }), b2a: half({ width: w }), labelMode: 'percent' })]]);
+    render(root, index, widths(4));
+    const bg = bgs(root)[0];
+    expect(Number(bg.getAttribute('height'))).toBe(10);
+    render(root, index, widths(14));
+    expect(Number(bg.getAttribute('height'))).toBe(16);
+    expect(Number(bg.getAttribute('y'))).toBe(92);
   });
   it('both halves go to the bottom side when the top side is blocked along the whole half of one', () => {
     const { root, index } = build(SVG(strip + above));
     render(root, index, both());
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('bottom');
     expect(byHalf(root, 'b2a')!.getAttribute('data-dmap-side')).toBe('bottom');
-    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('113');
+    // the drawn width 4: the centre at 100 + 2 + 2 + 6
+    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('110');
   });
   it('the gap rect hides with its text, repaints with the theme and leaves when the label moves off the stroke', () => {
     const { root, index } = build();
@@ -340,9 +374,58 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(bg.getAttribute('visibility')).toBe('hidden');
     render(root, index, two(half()));
     expect(bg.getAttribute('visibility')).toBeNull();
+    // the labels switched off: the layer and its rects are gone
+    render(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'none' })]]));
+    expect(bgs(root)).toHaveLength(0);
+    expect(bg.isConnected).toBe(false);
+    render(root, index, two(half()));
     const dark = createTheme({ colors: { mode: 'dark' } });
     render(root, index, two(half()), { theme: dark, linkWidth: { min: 2, max: 10 } });
     expect(bg.getAttribute('fill')).toBe(dark.colors.background.primary);
+  });
+});
+
+describe('renderLinkLabels: the gap rect follows its label', () => {
+  // thin strips on the stroke leave a gap of 60 around the anchor of a2b: a short text fits on the stroke, a long one
+  // stands beside it (above is free)
+  const strips = ['40', '150']
+    .map((x) => `<g data-cell-id="s${x}"><g><rect x="${x}" y="95" width="50" height="10"/></g></g>`)
+    .join('');
+  const value = (text: string): PatchMap =>
+    new Map([
+      ['e1', linkPatch('e1', { a2b: half({ display: { text, numeric: 0 } }), b2a: half(), labelMode: 'value' })],
+    ]);
+  const bgs = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGRectElement>('rect.dmap-link-label-bg'));
+  it('the rect leaves when its label moves from the stroke to a side, and comes back with it', () => {
+    const { root, index } = build(SVG(strips));
+    render(root, index, value('41'));
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    const bg = bgs(root).find((r) => r.nextElementSibling === a)!;
+    expect(bg).toBeTruthy();
+    render(root, index, value('abcdefghijklmn Mb/s'));
+    expect(a.getAttribute('data-dmap-side')).toBe('top');
+    expect(bg.isConnected).toBe(false);
+    expect(bgs(root).find((r) => r.nextElementSibling === a)).toBeUndefined();
+    render(root, index, value('41'));
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    expect(bgs(root).find((r) => r.nextElementSibling === a)).toBeTruthy();
+  });
+  it('the rect hides with a dropped label and shows again when the label recovers', () => {
+    // blocks across the stroke and beside it leave a gap of 60 only
+    const blocks = ['40', '150']
+      .map((x) => `<g data-cell-id="b${x}"><g><rect x="${x}" y="70" width="50" height="60"/></g></g>`)
+      .join('');
+    const { root, index } = build(SVG(blocks));
+    render(root, index, value('41'));
+    const a = byHalf(root, 'a2b')!;
+    const bg = bgs(root).find((r) => r.nextElementSibling === a)!;
+    render(root, index, value('abcdefghijklmn Mb/s'));
+    expect(a.getAttribute('visibility')).toBe('hidden');
+    expect(bg.getAttribute('visibility')).toBe('hidden');
+    render(root, index, value('42'));
+    expect(a.getAttribute('visibility')).toBeNull();
+    expect(bg.getAttribute('visibility')).toBeNull();
   });
 });
 

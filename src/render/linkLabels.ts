@@ -24,6 +24,7 @@ import {
   LABEL_SIDES,
   LINK_LABEL_GEOMETRY,
   type LabelSide,
+  drawnCentre,
   obstacleIndex,
   placeHalfLabel,
   placeLinkLabels,
@@ -90,6 +91,8 @@ interface LabelRecord {
   placement?: Placement;
   /** the side of the last spot the label held; a dropped half keeps it with its reserved box */
   side?: LabelSide;
+  /** the drawn stroke width of the half in root units (`HalfState.width` as the overlay draws it) */
+  drawn: number;
   /** the canvas-coloured rect behind the text of a label that stands on its stroke */
   bg?: SVGRectElement;
   /** the box the label holds in the grid */
@@ -107,6 +110,8 @@ interface LabelLayout {
   grid: ObstacleIndex;
   widths: Map<string, number>;
   records: Map<string, LabelRecord>;
+  /** `linkWidth.max` of the placement: the widest stroke, in the units of the edge */
+  max: number;
 }
 
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
@@ -655,15 +660,26 @@ const GAP_RADIUS = 2;
 
 function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   const el = ensureElement(layout, rec);
-  const x = fmt(placed.centre.x);
-  const y = fmt(placed.centre.y);
+  el.setAttribute('data-dmap-side', SIDE_NAMES[placed.side]);
+  el.setAttribute('data-dmap-placed-at', String(++stamp));
+  draw(layout, rec, placed);
+}
+
+/** Writes the geometry of a placed label: the text at the drawn stroke, the gap rect behind it on the stroke. */
+function draw(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
+  const el = rec.el;
+  if (!el) {
+    return;
+  }
+  const at = drawnCentre(placed, rec.drawn);
+  const x = fmt(at.x);
+  const y = fmt(at.y);
   const turn = `rotate(${fmt(placed.degrees)} ${x} ${y})`;
   el.setAttribute('x', x);
   el.setAttribute('y', y);
   el.setAttribute('transform', turn);
-  el.setAttribute('data-dmap-side', SIDE_NAMES[placed.side]);
-  el.setAttribute('data-dmap-placed-at', String(++stamp));
-  // a label on its stroke gets a gap in the line: a rect in the canvas colour, the size of the slot, behind the text
+  // a label on its stroke gets a gap in the line: a rect in the canvas colour behind the text, as wide as the slot
+  // and covering the drawn stroke with 1 unit more on each side
   if (placed.side !== 0 || rec.slot === undefined) {
     rec.bg?.remove();
     rec.bg = undefined;
@@ -676,10 +692,13 @@ function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
     rec.bg.setAttribute('rx', String(GAP_RADIUS));
     layout.layer.insertBefore(rec.bg, el);
     paint(rec, layout.theme);
+    if (el.getAttribute('visibility') === 'hidden') {
+      rec.bg.setAttribute('visibility', 'hidden');
+    }
   }
-  const height = LINK_LABEL_GEOMETRY.fontSize * 1.25;
-  rec.bg.setAttribute('x', fmt(placed.centre.x - rec.slot / 2));
-  rec.bg.setAttribute('y', fmt(placed.centre.y - height / 2));
+  const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
+  rec.bg.setAttribute('x', fmt(at.x - rec.slot / 2));
+  rec.bg.setAttribute('y', fmt(at.y - height / 2));
   rec.bg.setAttribute('width', fmt(rec.slot));
   rec.bg.setAttribute('height', fmt(height));
   rec.bg.setAttribute('transform', turn);
@@ -761,6 +780,7 @@ function fullPlacement(
     grid: obstacleIndex([]),
     widths: new Map(),
     records: new Map(),
+    max: opts.linkWidth.max,
   };
   const probe: TextProbe = (text, font) => measure(layout, text, font);
   // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
@@ -784,6 +804,7 @@ function fullPlacement(
       mode: slot.mode,
       leg: legs.get(slot.cellId)?.[slot.which],
       slot: slotOf(layout, slot, text),
+      drawn: drawnOf(layout, legs.get(slot.cellId)?.[slot.which], slot.state),
       retry: false,
     };
     layout.records.set(`${slot.cellId}:${slot.which}`, rec);
@@ -815,6 +836,12 @@ function fullPlacement(
   return layout;
 }
 
+/** The drawn stroke width of a half in root units: its width in the units of the edge, converted as the widest one is. */
+function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): number {
+  const width = Math.max(state.width, 0);
+  return leg && layout.max > 0 ? (width * leg.strokeRoot) / layout.max : width;
+}
+
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
 function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): number {
   let moved = 0;
@@ -827,6 +854,14 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
   for (const slot of slots) {
     const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
     const text = linkLabelText(slot.state, slot.mode);
+    // a changed load changes the drawn width: the text moves across the link, on the same side and place along it
+    const drawn = drawnOf(layout, rec.leg, slot.state);
+    if (drawn !== rec.drawn) {
+      rec.drawn = drawn;
+      if (rec.placement && 'centre' in rec.placement) {
+        draw(layout, rec, rec.placement);
+      }
+    }
     const width = slotOf(layout, slot, text);
     const slotChanged = width !== undefined && width !== rec.slot;
     if (slotChanged) {

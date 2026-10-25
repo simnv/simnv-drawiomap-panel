@@ -3,6 +3,7 @@ import { bendLengths, polylineLength, type Point } from './geometry';
 import {
   boundsOf,
   labelsVisible,
+  drawnCentre,
   LINK_LABEL_GEOMETRY,
   obstacleIndex,
   placeHalfLabel as placeOnLadder,
@@ -513,6 +514,24 @@ describe('the wide gap: a chip wider than the stroke', () => {
     const [a, b] = placeLinkLabels(short, other, 'e', obstacleIndex([chip, rect(75, -8, 30, 16)]));
     expect(placed(a).side).toBe(2);
     expect(placed(b).side).toBe(2);
+  });
+});
+
+describe('drawnCentre: the text stands at the drawn stroke, the reservation at the widest', () => {
+  const l = leg(horizontal(0, 200));
+  it('beside the stroke the centre follows the drawn width; the reserved centre stays', () => {
+    const p = placed(placeOnLadder(l, 'e', obstacleIndex([]), [1]));
+    expect(p.centre.y).toBe(-13);
+    expect(drawnCentre(p, 10)).toEqual({ x: 100, y: -13 });
+    expect(drawnCentre(p, 2)).toEqual({ x: 100, y: -9 });
+    const low = placed(placeOnLadder(l, 'e', obstacleIndex([]), [-1]));
+    expect(drawnCentre(low, 2)).toEqual({ x: 100, y: 9 });
+  });
+  it('the wide gap and the stroke place', () => {
+    const wide = placed(placeOnLadder(l, 'e', obstacleIndex([]), [2]));
+    expect(drawnCentre(wide, 2)).toEqual({ x: 100, y: -11 });
+    const on = placed(placeOnLadder(l, 'e', obstacleIndex([]), [0]));
+    expect(drawnCentre(on, 2)).toEqual({ x: 100, y: 0 });
   });
 });
 
