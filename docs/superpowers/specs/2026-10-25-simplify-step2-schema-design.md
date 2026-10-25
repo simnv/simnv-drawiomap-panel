@@ -281,7 +281,8 @@ export function validateConfig(input: unknown): ValidatedConfig;
      the chart. The form stays, so the user can fix the number.
    - `missing-datasource`, `invalid-parameter-name`, `invalid-native-target` on a query: the query is in
      `unusableQueries` with the reason; its editor stays open to fix it.
-   - Duplicates: `duplicate-query-id`: the first stays, each later one is unusable ("Duplicate query id");
+   - Duplicates: `duplicate-query-id`: the first stays usable, each later one is reported only (`unusableQueries`
+     is keyed by id, and the first has the same id); every reader takes the first query of an id;
      `duplicate-pattern-id`, `duplicate-widget-id`, `duplicate-override`: reported only; `mergeCell` takes the first
      override as today.
 4. References. A binding whose query is unknown, skipped or unusable is left out of `cell.bindings` by
@@ -353,8 +354,8 @@ Unit, one file per concept, `--maxWorkers=2` while a worker runs them:
   when its items are valid version 3 items; a `rules` document gives `legacy-config`; version 4 gives
   `invalid-config`; a version 3 document with an old key (`a2bBinding`, a `history` row with `series`, `capacity: 0`,
   `capacity: { refId }`) skips that item only. Per-item: one
-  invalid pattern keeps the others, `indices` and `skipped` hold saved indices, `skipped-item` present; a duplicate query
-  id keeps the first and marks the later unusable; an unknown query keeps the pattern and lists `unknown-query`; a bad
+  invalid pattern keeps the others, `indices` and `skippedItems` hold saved indices, `skipped-item` present; a duplicate
+  query id keeps the first usable and reports the later one; an unknown query keeps the pattern and lists `unknown-query`; a bad
   envelope gives no config; freshness and bounds keep the item unchanged and report; a bad parameter name puts the
   query in `unusableQueries`. The step 1 tests of the dropped fields are deleted.
 - `src/binding/patterns.test.ts`: `mergeDisplay` merges `a2b` as an object (binding from the pattern, capacity from the
