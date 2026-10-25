@@ -147,7 +147,7 @@ export function labelsVisible(viewScale: number): boolean;   // section 6
 Candidates, in this order (the first free one wins):
 
 1. Place (owner rules after the live run, superseding the portograph side ladder): on the stroke first (the box centre on the half's own stroke; the own stroke is no obstacle there, everything else is), then the top side, then the bottom side, each over the whole leg. The top side is the side the tops of the letters face: `runHeading().first` (above a horizontal run, left of a vertical run at −90°, the text-top side of a diagonal). Beside the stroke the near edge of the box stands `normalGap = 2` beyond the stroke edge (centre offset `strokeRoot / 2 + 2 + h / 2`, `h` with the halo); the portograph 4 units gave 15.2 px live. When a chip or a pill wider than the stroke blocks the whole half at gap 2, the same two sides are tried with `wideGap = 4`. The place is chosen per link: `placeLinkLabels` tries on the stroke for both halves, then the top side for both, then the bottom side for both (then the wide gap). Each half takes its own place only when no single place holds both. An isolated re-placement of one half tries the place of the other half first; a dropped half keeps its last place. The text stands at the drawn width of its half (`drawnCentre`); the reservation is the union of every box the label can take for a drawn width between `linkWidth.min` and `linkWidth.max` (beside the stroke: the band from the near edge at the thinnest stroke to the far edge at the widest; on the stroke: as high as the largest gap rect, `max + 2`), so a load change never needs a new collision check. The wide gap counts from the edge of the widest stroke for every drawn width, because a chip or a pill is wider than a thin stroke.
-   A label on its stroke draws a rect in the canvas colour behind the text (`rect.dmap-link-label-bg`, the slot size, corner radius 2); a label beside the stroke has the halo only. The text carries `data-dmap-side` (`line`, `top`, `bottom`, `top-wide`, `bottom-wide`).
+   A label on its stroke draws a rect behind the text (`rect.dmap-link-label-bg`, in the colour under the label, see section 7, the slot size, corner radius 2); a label beside the stroke has the halo only. The text carries `data-dmap-side` (`line`, `top`, `bottom`, `top-wide`, `bottom-wide`).
 2. Distance from `d0`: `0, s, 2s, …` with `s = alongStep = 4` user units, up to the leg's ends.
 3. At one distance: towards the end of the link first (away from the arrowheads at the split), then towards it.
 
@@ -178,6 +178,7 @@ through the `localMatrix` of `geometry.ts`, which becomes exported; a cell whose
 | --- | --- | --- |
 | every non-edge cell body | `entry.shape` of every cell without `line`, whatever its kind: portograph nodes and pills, plain draw.io nodes (`kind: 'other'`), icon tiles, text cells | its stroke width / 2, in root units |
 | portograph label chips | `entry.group` of every `kind: 'link-label'` cell (the text and its background) | 0 |
+| edge text | `entry.label` of every edge (its own value text; also an obstacle for the labels of that edge, only its stroke is exempt), and the label child cells (`edgeLabel`), which are text cells | 0 |
 | end dots | `entry.ends[].el` of every edge | 0 |
 | arrowheads | `polygon.dmap-arrow` of the overlay, and `entry.arrows` of every edge that has no patch (its arrows stay visible) | 0 |
 | status marker room | `statusMarkerBox(entry).bounds` of every cell in `patches` (below), mapped to root units | 0 |
@@ -253,8 +254,15 @@ export function setLinkLabelScale(root: SVGSVGElement): void;
   or the node under it gets the tap. `font-size: 8` (the port pill size of the export),
   `font-family` of the first `pg-linkLabel` text in the stage when there is one, else `sans-serif` (the status
   markers' choice), `fill: theme.colors.text.primary` (decided), halo `stroke: theme.colors.background.primary;
-  stroke-width: 2 × halo; paint-order: stroke; stroke-linejoin: round; stroke-linecap: round; text-rendering: geometricPrecision`. The diagram background follows the Grafana
-  theme already, so the halo matches the canvas in both themes. A theme change rewrites these attributes only.
+  stroke-width: 2 × halo; paint-order: stroke; stroke-linejoin: round; stroke-linecap: round; text-rendering: geometricPrecision`. The colour of the halo and of the gap rect is the colour under the label, never a Grafana theme colour:
+  the computed `fill` of the topmost background shape (`backgroundIds`: canvas, groups, containers; the computed value, so
+  `light-dark()` resolves with the colour scheme of the panel) that holds the point, else `pageColour(root)`, the computed
+  `background-color` of the root svg. A fill of `none` is transparent (the next shape below counts); a translucent or
+  patterned fill, and a transparent page, cannot be named (`undefined`). The gap rect needs one colour under its whole
+  box (`maskColour`: the centre and the four corners agree). `LegInput.mask` carries that test into the placement: the
+  on-stroke step skips a candidate whose box has no such colour, so the ladder slides along the stroke or goes to the
+  beside-stroke steps. A label beside the stroke takes the colour at its centre for the halo, and has no halo when there is none.
+  The colours are read at a full placement and at a theme change, which rewrites these attributes only.
 - `labelMode` travels on the patch: `bindPlan` sets `CellPatch.link.labelMode` from the merged
   `display.link.label?.mode ?? 'none'`; no half carries it, because the mode is per cell.
 - Slots. Every width comes from one hidden probe `<text>` with the label font (`getComputedTextLength()`; in jsdom
@@ -394,3 +402,4 @@ spec, the bench figure and the three screenshots.
 | R2-5. The marker reservation mixed the rectangle origin with the text baseline | `statusMarkerBox` returns `anchor` (the baseline start `drawStatusMarker` writes) and `bounds` (the painted box of the widest text on that baseline, grown by 1.5 units for the 3-unit halo) separately, in the marker's own space, mapped to root for the reservation (section 5). |
 | R2-6. Percent slots changed size with the fallback text | One fixed percent slot, `g(width(">999%"))`, for every percent text; a capacity-less reading follows the value rule and the isolated path (section 7). |
 | R3-1. Live run: the halo was a lumpy blob; the two halves stood on opposite sides; the label stood 15.2 px from the stroke | `halo = 1` with round joins and caps. One place per link (`placeLinkLabels`). The owner rules of section 9: on the stroke first with a canvas-coloured gap rect, then beside it with the near edge 2 units beyond the stroke edge (4 for a chip wider than the stroke), the top side being the side of the tops of the letters (left of a vertical run). The 15.2 came from `normalGap = 4` plus the label line box (the box is 12 high for glyphs about 6 high) at the widest stroke `linkWidth.max`. |
+| R4-1. Live run: a label on its stroke covered the value text of its own edge; the gap rect was near-black | The text of an edge (`entry.label`) is an obstacle for every label, also for the labels of that edge; only the stroke of the own half is exempt. The rect and the halo take the colour under the label (the fill of the shape under it, else the page background of the diagram), never the theme colour (a light panel with a dark diagram drew white blocks); when no colour can be named, the label does not stand on its stroke there. The live sheets have a dark page background but a lighter canvas shape (`#1d2d3d`) over it, so the page background alone gave the near-black rect. |

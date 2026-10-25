@@ -21,7 +21,7 @@ import {
  * from x = 40 to 200 (its anchor at 120), the b2a leg from 360 to 200 (its anchor at 280). The percent slot is
  * 24 (0.6 × 8 × 5 glyphs in jsdom), the box 26 × 12. A label stands on its stroke (centre on the line); beside it with `linkWidth.max` 10 the centre stands 13 off the line.
  */
-const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
   <g data-cell-id="n1"><g><rect x="0" y="80" width="40" height="40" stroke-width="2"/></g></g>
   <g data-cell-id="e1"><g><path d="M 40 100 L 360 100" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
   <g data-cell-id="n2"><g><rect x="360" y="80" width="40" height="40"/></g></g>${extra}
@@ -55,6 +55,8 @@ const linkPatch = (cellId: string, link: CellPatch['link']): CellPatch => ({
   link,
 });
 const theme = createTheme();
+/** the resolved colour of the background of the test svg */
+const DARK = 'rgb(29, 45, 61)';
 const opts = { theme, linkWidth: { min: 2, max: 10 } };
 const labels = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGTextElement>(`text.${LINK_LABEL_CLASS}`));
 const byHalf = (root: SVGSVGElement, which: string, cell = 'e1') =>
@@ -101,7 +103,7 @@ describe('renderLinkLabels: the layer and its elements', () => {
     expect(b2a.getAttribute('x')).toBe('284');
     expect(b2a.getAttribute('y')).toBe('100');
     expect(a2b.getAttribute('fill')).toBe(theme.colors.text.primary);
-    expect(a2b.getAttribute('stroke')).toBe(theme.colors.background.primary);
+    expect(a2b.getAttribute('stroke')).toBe(DARK);
     expect(a2b.getAttribute('paint-order')).toBe('stroke');
     expect(a2b.getAttribute('font-size')).toBe('8');
     expect(a2b.getAttribute('font-family')).toBe('sans-serif');
@@ -300,7 +302,7 @@ describe('renderLinkLabels: the place of a label', () => {
     const rects = bgs(root);
     expect(rects).toHaveLength(2);
     const bg = rects[0];
-    expect(bg.getAttribute('fill')).toBe(theme.colors.background.primary);
+    expect(bg.getAttribute('fill')).toBe(DARK);
     expect(Number(bg.getAttribute('width'))).toBe(24);
     expect(Number(bg.getAttribute('height'))).toBe(10);
     expect(Number(bg.getAttribute('rx'))).toBeLessThanOrEqual(2);
@@ -310,6 +312,82 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(bg.getAttribute('pointer-events')).toBe('none');
     // behind its text
     expect(bg.nextElementSibling).toBe(a);
+  });
+  it('the mask is the background of the diagram, not the colour of the theme: a light panel with a dark diagram has no white box', () => {
+    const light = createTheme({ colors: { mode: 'light' } });
+    const { root, index } = build();
+    render(root, index, both(), { ...opts, theme: light });
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
+    expect(bgs(root)[0].getAttribute('fill')).not.toBe(light.colors.background.primary);
+    expect(a.getAttribute('stroke')).toBe(DARK);
+  });
+  it('a diagram without a background, or a transparent one, has no mask: the labels go beside the stroke, with no halo colour', () => {
+    for (const style of ['', 'background-color: rgba(0, 0, 0, 0)', 'background-color: transparent']) {
+      const { root, index } = build(SVG().replace(' style="background-color: #1d2d3d"', style ? ` style="${style}"` : ''));
+      render(root, index, both());
+      const a = byHalf(root, 'a2b')!;
+      expect(a.getAttribute('data-dmap-side')).toBe('top');
+      expect(byHalf(root, 'b2a')!.getAttribute('data-dmap-side')).toBe('top');
+      expect(bgs(root)).toHaveLength(0);
+      expect(a.hasAttribute('stroke')).toBe(false);
+    }
+  });
+  it('a pattern fill, or a box that crosses the edge of a container, is no mask: the label steps off the stroke', () => {
+    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
+    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
+    const box = (attrs: string, x = 100) =>
+      `<g data-cell-id="box"><g><rect x="${x}" y="40" width="100" height="120" ${attrs}/></g></g>`;
+    // a label may slide along the stroke to a spot with the plain page colour; it never stands over the container
+    const outside = (r: ReturnType<typeof build>, left: number, right: number) => {
+      render(r.root, r.index, both());
+      const x = Number(byHalf(r.root, 'a2b')!.getAttribute('x'));
+      const side = byHalf(r.root, 'a2b')!.getAttribute('data-dmap-side');
+      return side !== 'line' || x + 12 <= left || x - 12 >= right;
+    };
+    expect(outside(build(SVG(box('fill="url(#hatch)"') + inner + inner2)), 100, 200)).toBe(true);
+    // the box 108..132 would cross the left edge of a container that starts at 125
+    expect(outside(build(SVG(box('fill="#223344"', 125) + inner.replace('110', '130') + inner2)), 125, 225)).toBe(true);
+  });
+  it('a translucent container fill is blended over the colour below it: the mask is the colour that shows', () => {
+    const container = `<g data-cell-id="box"><g><rect x="100" y="40" width="100" height="120" fill="#223344" fill-opacity="0.5"/></g></g>`;
+    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
+    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
+    const { root, index } = build(SVG(container + inner + inner2));
+    render(root, index, both());
+    // 50% of rgb(34, 51, 68) over rgb(29, 45, 61)
+    expect(bgs(root)[0].getAttribute('fill')).toBe('rgb(32, 48, 65)');
+    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe('rgb(32, 48, 65)');
+  });
+  it('a label that stands on a background shape (a container, a canvas, a group) takes its fill; the others take the root colour', () => {
+    const container = `<g data-cell-id="box"><g><rect x="100" y="40" width="100" height="120" fill="#223344"/></g></g>`;
+    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
+    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
+    const { root, index } = build(SVG(container + inner + inner2));
+    render(root, index, both());
+    const [a, b] = bgs(root);
+    expect(a.getAttribute('fill')).toBe('rgb(34, 51, 68)');
+    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe('rgb(34, 51, 68)');
+    expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(200);
+    expect(b.getAttribute('fill')).toBe(DARK);
+  });
+  it('a background shape without a fill is skipped', () => {
+    const container = `<g data-cell-id="box"><g><rect x="100" y="40" width="100" height="120" fill="none"/></g></g>`;
+    const inner = `<g data-cell-id="n3"><g><rect x="110" y="50" width="20" height="20"/></g></g>`;
+    const inner2 = `<g data-cell-id="n4"><g><rect x="150" y="50" width="20" height="20"/></g></g>`;
+    const { root, index } = build(SVG(container + inner + inner2));
+    render(root, index, both());
+    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
+  });
+  it('a new theme reads the background of the diagram again', () => {
+    const { root, index } = build();
+    root.style.backgroundColor = '#f2f2f3';
+    render(root, index, both());
+    root.style.backgroundColor = '#1d2d3d';
+    render(root, index, both(), { ...opts, theme: createTheme({ colors: { mode: 'light' } }) });
+    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
+    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe(DARK);
   });
   it('a label beside its stroke has the halo only: no rect', () => {
     const { root, index } = build(SVG(strip));
@@ -382,9 +460,10 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(bgs(root)).toHaveLength(0);
     expect(bg.isConnected).toBe(false);
     render(root, index, two(half()));
-    const dark = createTheme({ colors: { mode: 'dark' } });
-    render(root, index, two(half()), { theme: dark, linkWidth: { min: 2, max: 10 } });
-    expect(bg.getAttribute('fill')).toBe(dark.colors.background.primary);
+    const light = createTheme({ colors: { mode: 'light' } });
+    render(root, index, two(half()), { theme: light, linkWidth: { min: 2, max: 10 } });
+    expect(bgs(root)[0].getAttribute('fill')).toBe(DARK);
+    expect(byHalf(root, 'a2b')!.getAttribute('fill')).toBe(light.colors.text.primary);
   });
 });
 
@@ -518,7 +597,8 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
     // the vertical WAN link: the labels read bottom to top, on the stroke
     expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
-    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
+    // jsdom cannot resolve the light-dark() fills of the sheet, so the label stands beside its stroke (10 left of it)
+    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(178.37, 0);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
@@ -615,13 +695,49 @@ describe('renderLinkLabels: review cases', () => {
     );
     expect(rects.some((r) => r.x === 100 && r.y < 102 && r.width > 40)).toBe(true);
   });
+  describe('edge text', () => {
+    // the label spot of the a2b half is x 120 (anchor), y 100: a text box of "tunnel link" stands on it
+    const rectsOf = (root: SVGSVGElement, index: CellIndex, patches: PatchMap) =>
+      stageObstacles(root, index, patches, 10, () => 60).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
+    const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    /** the label box of the half as the DOM says it: centre x/y and the 24 x 10 slot */
+    const clear = (root: SVGSVGElement, text: { x: number; w: number }) => {
+      const a = byHalf(root, 'a2b')!;
+      const x = Number(a.getAttribute('x'));
+      const y = Number(a.getAttribute('y'));
+      const overlapX = x + 12 > text.x && x - 12 < text.x + text.w;
+      const overlapY = y + 5 > 95 && y - 5 < 105;
+      return !(overlapX && overlapY);
+    };
+    it('the value text of the edge itself is an obstacle for the labels of that edge', () => {
+      const own = `<text x="100" y="102" font-size="8">tunnel link</text>`;
+      const svg = SVG().replace('pointer-events="stroke"/>', `pointer-events="stroke"/>${own}`);
+      const { root, index } = build(svg);
+      expect(index.get('e1')?.label).toBeTruthy();
+      render(root, index, both());
+      expect(rectsOf(root, index, both()).some((r) => r.x === 100 && r.width > 40)).toBe(true);
+      expect(clear(root, { x: 100, w: 0.6 * 8 * 11 })).toBe(true);
+    });
+    it('a draw.io edge label child cell is an obstacle', () => {
+      const child = `<g data-cell-id="el1"><g><rect x="100" y="94" width="50" height="12" fill="none" stroke="none"/><text x="100" y="102" font-size="8">tunnel link</text></g></g>`;
+      const { root, index } = build(SVG(child));
+      render(root, index, both());
+      expect(clear(root, { x: 100, w: 50 })).toBe(true);
+    });
+    it('a portograph link label cell is an obstacle', () => {
+      const chip = `<g data-cell-id="pg-linkLabel~e1" data-pg-kind="link-label"><g><rect x="100" y="94" width="50" height="12"/><text x="102" y="102" font-size="8">metric 10</text></g></g>`;
+      const { root, index } = build(SVG(chip));
+      render(root, index, both());
+      expect(clear(root, { x: 100, w: 50 })).toBe(true);
+    });
+  });
 });
 
 describe('renderLinkLabels: coordinates', () => {
   const scale2 = { a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 };
   const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
   it("an edge inside scale(2) places the split and the labels at the overlay's own points, with a root gap", () => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><g transform="scale(2)">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" style="background-color: #1d2d3d"><g transform="scale(2)">
       <g data-cell-id="e1"><g><path d="M 0 0 L 100 0 L 100 100" fill="none" pointer-events="stroke"/></g></g>
       <g data-cell-id="e2"><g><path d="M 0 40 L 100 40" fill="none" pointer-events="stroke" stroke-width="3"/></g></g>
     </g></svg>`;
@@ -671,7 +787,7 @@ describe('renderLinkLabels: coordinates', () => {
     });
   });
   it('a path with a 3° turn keeps that vertex in the root polyline', () => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
       <g data-cell-id="e1"><g><path d="M 0 50 L 100 50 L 200 55.2" fill="none" pointer-events="stroke"/></g></g></svg>`;
     const { root, index } = build(svg);
     renderLinkLabels(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]), opts);
