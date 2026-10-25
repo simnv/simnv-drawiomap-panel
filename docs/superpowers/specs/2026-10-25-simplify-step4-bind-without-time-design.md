@@ -92,9 +92,9 @@ The precedence of today holds: a stale view replaces whatever view the bind left
 
 ```ts
 /** The clock, read again after each deadline passes. `now > deadline` is the test every caller makes. */
-export function useClock(deadlines: readonly number[]): number
-export function useSampleStale(sampleAt?: number, freshness?: FreshnessPolicy): boolean  // = now > sampleAt + staleAfterMs
-export function useStaleStatus(result: PlanBindResult): PlanBindResult  // = staleStatuses(result, useClock(result.deadlines))
+export function useClock(deadlines: readonly number[]): number;
+export function useSampleStale(sampleAt?: number, freshness?: FreshnessPolicy): boolean; // = now > sampleAt + staleAfterMs
+export function useStaleStatus(result: PlanBindResult): PlanBindResult; // = staleStatuses(result, useClock(result.deadlines))
 ```
 
 `useClock` keeps `now` in state (`Date.now()` at mount). Its one effect, with the dependencies `(next, now)`, takes
@@ -119,15 +119,15 @@ crosses no deadline gives the same object; the effects that depend on the result
 
 ## 4. What changes on a time tick
 
-| Output | On a tick that crosses a deadline | On a tick that crosses nothing | On a data change |
-| --- | --- | --- | --- |
-| `bound` (the bind) | same object | same object | new |
-| `result` (after the pass) | new object; new patch objects for the stale cells only | same object | new (one bind, one pass) |
-| `result.summaries` | new | same | new |
-| `interactive`, `legendBlocks`, the applier, the overlay, the link labels | run once (their dependency is `result`) | do not run | run once |
-| the link halves and the shape of a stale cell | the same `HalfState` and `ShapeState` objects | same | new |
-| the popup list (`listInput.bound`) | does not change: it reads `bound`, the diagnostics hold no stale state | does not change | new |
-| the card rows | their own `useSampleStale`, as today | | new |
+| Output                                                                   | On a tick that crosses a deadline                                      | On a tick that crosses nothing | On a data change         |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------ | ------------------------ |
+| `bound` (the bind)                                                       | same object                                                            | same object                    | new                      |
+| `result` (after the pass)                                                | new object; new patch objects for the stale cells only                 | same object                    | new (one bind, one pass) |
+| `result.summaries`                                                       | new                                                                    | same                           | new                      |
+| `interactive`, `legendBlocks`, the applier, the overlay, the link labels | run once (their dependency is `result`)                                | do not run                     | run once                 |
+| the link halves and the shape of a stale cell                            | the same `HalfState` and `ShapeState` objects                          | same                           | new                      |
+| the popup list (`listInput.bound`)                                       | does not change: it reads `bound`, the diagnostics hold no stale state | does not change                | new                      |
+| the card rows                                                            | their own `useSampleStale`, as today                                   |                                | new                      |
 
 The identity rule gives the label placement and step 5 (patch diffing) a stable base: a stale tick changes the
 status of a cell and nothing of its geometry.
@@ -151,15 +151,15 @@ marks the status stale", unchanged).
 
 ## 6. Migration of each caller
 
-| Caller | Today | After |
-| --- | --- | --- |
-| `status.ts` `evaluateStatus(rule, values, nowMs): StatusView` | the stale check inside | `evaluateStatus(rule, values): EvaluatedStatus`; the stale view and `after` in `stale` |
-| `engine.ts` `bindPlan(plan, resolve, ctx, nowMs)` | `evaluateStatus(..., nowMs)` | `bindPlan(plan, resolve, ctx)`; `patch.staleStatus`; `result.deadlines`; new `staleStatuses(result, nowMs)` |
-| `preview.ts` | `usePreviewTime`, `statusDeadlines` | deleted; the file keeps `QueryPreview`, `reportedSnapshot`, `createPreviewResolver` |
-| `useSampleStale.ts` | one timer per sample | `useClock(deadlines)`, `useSampleStale` over it, `useStaleStatus(result)` |
-| `DrawioMapPanel.tsx` | `deadlines`, `nowMs`, `bindPlan(..., nowMs)` in the `result` memo | `bound = useMemo(bindPlan(plan, resolve, bindingContext))`; `result = useStaleStatus(bound)`; the warnings memo over `bound.diagnostics`; everything else reads `result` as today |
-| `BindingEditor.tsx` | `nowMs = usePreviewTime(data, generation, previewState?.snapshot, ownerFrame.version, statusDeadlines(plan, resolve))`; `bound` with `nowMs` | `bound` without time; `shown = useStaleStatus(bound)`; `cardPatch` and `DiagramStage` read `shown`; `listInput` and `metricDiagnostics` keep `bound` |
-| `Card.tsx`, `BarGaugeView.tsx`, `SparklineView.tsx` | `useSampleStale` | unchanged call sites |
+| Caller                                                        | Today                                                                                                                                        | After                                                                                                                                                                             |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status.ts` `evaluateStatus(rule, values, nowMs): StatusView` | the stale check inside                                                                                                                       | `evaluateStatus(rule, values): EvaluatedStatus`; the stale view and `after` in `stale`                                                                                            |
+| `engine.ts` `bindPlan(plan, resolve, ctx, nowMs)`             | `evaluateStatus(..., nowMs)`                                                                                                                 | `bindPlan(plan, resolve, ctx)`; `patch.staleStatus`; `result.deadlines`; new `staleStatuses(result, nowMs)`                                                                       |
+| `preview.ts`                                                  | `usePreviewTime`, `statusDeadlines`                                                                                                          | deleted; the file keeps `QueryPreview`, `reportedSnapshot`, `createPreviewResolver`                                                                                               |
+| `useSampleStale.ts`                                           | one timer per sample                                                                                                                         | `useClock(deadlines)`, `useSampleStale` over it, `useStaleStatus(result)`                                                                                                         |
+| `DrawioMapPanel.tsx`                                          | `deadlines`, `nowMs`, `bindPlan(..., nowMs)` in the `result` memo                                                                            | `bound = useMemo(bindPlan(plan, resolve, bindingContext))`; `result = useStaleStatus(bound)`; the warnings memo over `bound.diagnostics`; everything else reads `result` as today |
+| `BindingEditor.tsx`                                           | `nowMs = usePreviewTime(data, generation, previewState?.snapshot, ownerFrame.version, statusDeadlines(plan, resolve))`; `bound` with `nowMs` | `bound` without time; `shown = useStaleStatus(bound)`; `cardPatch` and `DiagramStage` read `shown`; `listInput` and `metricDiagnostics` keep `bound`                              |
+| `Card.tsx`, `BarGaugeView.tsx`, `SparklineView.tsx`           | `useSampleStale`                                                                                                                             | unchanged call sites                                                                                                                                                              |
 
 ## 7. Test plan
 
@@ -214,9 +214,9 @@ section "Demand, cache and sample freshness" describes behaviour that does not c
 Review 1 (Codex, 2026-10-25). No finding on the stale-over-missing precedence, the strict `>` boundary, the `+1`,
 the pause, the mount-time clock, the migration table or the coding standards.
 
-| Concern | Resolution |
-| --- | --- |
+| Concern                                                                                                                                                                              | Resolution                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1-1 (P1). A sample already stale on arrival got a 1 ms timer; the applier's animation frame and the band could paint the fresh view first, where today's microtask had corrected it | The effect sets `now` in a microtask, with no timer, when `Date.now()` is past the next deadline (a synchronous set is a lint error); the microtask runs before the next animation frame (section 3; test "already passed when it arrives"; the panel test "already stale on arrival"). |
-| R1-2 (P2). The clock dropped the `2147483647` cap of both clocks of today; a policy has no upper bound | The cap is in the formula; a capped wake-up finds the same `next` and sets the timer again (section 3; test "a deadline more than 2147483647 ms away"). |
-| R1-3 (P2). "One bind per data change" is not a general guarantee: a generation change and its result are frames of the store | Restated as "the clock causes no bind"; the exact-count test is scoped to a panel-source update with a stable context (sections 1 and 7). |
-| R1-4 (P2). The memo kept one derived result per stale set a held `bound` passed through, quadratic in the cells | The memo keeps the latest pair per `bound`; identity is for consecutive calls with the same set (section 3). |
+| R1-2 (P2). The clock dropped the `2147483647` cap of both clocks of today; a policy has no upper bound                                                                               | The cap is in the formula; a capped wake-up finds the same `next` and sets the timer again (section 3; test "a deadline more than 2147483647 ms away").                                                                                                                                 |
+| R1-3 (P2). "One bind per data change" is not a general guarantee: a generation change and its result are frames of the store                                                         | Restated as "the clock causes no bind"; the exact-count test is scoped to a panel-source update with a stable context (sections 1 and 7).                                                                                                                                               |
+| R1-4 (P2). The memo kept one derived result per stale set a held `bound` passed through, quadratic in the cells                                                                      | The memo keeps the latest pair per `bound`; identity is for consecutive calls with the same set (section 3).                                                                                                                                                                            |
