@@ -257,6 +257,62 @@ describe('placeHalfLabel: collisions', () => {
   });
 });
 
+describe('obstacleIndex', () => {
+  const items: Obstacle[] = [
+    rect(10, 10, 20, 20),
+    rect(60, 60, 10, 10, 6), // its grown box reaches cell (0, 0) at 54
+    rect(500, 500, 10, 10),
+    segment({ x: 0, y: 200 }, { x: 300, y: 200 }, 'e'), // crosses five cells of the row y = 3
+  ];
+  it('near returns every obstacle a box touches and none from far cells', () => {
+    const index = obstacleIndex(items);
+    expect([...index.near({ x: 0, y: 0, width: 50, height: 50 })]).toEqual([items[0], items[1]]);
+    expect([...index.near({ x: 100, y: 190, width: 10, height: 10 })]).toEqual([items[3]]);
+    expect([...index.near({ x: 300, y: 300, width: 10, height: 10 })]).toEqual([]);
+    expect([...index.near({ x: 495, y: 495, width: 1, height: 1 })]).toEqual([items[2]]);
+  });
+  it('an obstacle filed in several cells comes back once; add files a later obstacle', () => {
+    const index = obstacleIndex(items);
+    expect([...index.near({ x: 0, y: 150, width: 300, height: 100 })]).toEqual([items[3]]);
+    const late = rect(300, 300, 5, 5);
+    index.add(late);
+    expect([...index.near({ x: 300, y: 300, width: 10, height: 10 })]).toEqual([late]);
+  });
+  it('a placement with the grid equals a placement with a flat list', () => {
+    const obstacles: Obstacle[] = [];
+    for (let i = 0; i < 40; i++) {
+      obstacles.push(rect((i * 37) % 300, ((i * 53) % 120) - 60, 20, 12));
+      obstacles.push(
+        segment(
+          { x: (i * 29) % 300, y: -30 + (i % 5) * 15 },
+          { x: ((i * 29) % 300) + 40, y: -30 + (i % 5) * 15 },
+          `o${i}`
+        )
+      );
+    }
+    const flat: ObstacleIndex = { add: (o) => obstacles.push(o), near: () => obstacles };
+    const legs = [horizontal(0, 300), horizontal(300, 0, 20), horizontal(0, 300, -45)].map((p) => leg(p));
+    const withFlat = legs.map((l) => placeHalfLabel(l, 'e', flat));
+    const withGrid = legs.map((l) => placeHalfLabel(l, 'e', obstacleIndex(obstacles)));
+    expect(withGrid).toEqual(withFlat);
+    expect(withGrid.some((p) => 'centre' in p && p.along !== 150)).toBe(true);
+  });
+  it('two runs give deep-equal output, and so does a shuffled obstacle list', () => {
+    const obstacles: Obstacle[] = Array.from({ length: 30 }, (_, i) =>
+      rect((i * 41) % 280, -40 + (i % 3) * 30, 24, 14)
+    );
+    const legs = [horizontal(0, 300), horizontal(0, 300, 30)].map((p) => leg(p));
+    const run = (list: Obstacle[]) => legs.map((l) => placeHalfLabel(l, 'e', obstacleIndex(list)));
+    const first = run(obstacles);
+    expect(run(obstacles)).toEqual(first);
+    const shuffled = [...obstacles].sort(
+      (a, b) => ((a.kind === 'rect' ? a.rect.x : 0) % 7) - ((b.kind === 'rect' ? b.rect.x : 0) % 7)
+    );
+    expect(shuffled).not.toEqual(obstacles);
+    expect(run(shuffled)).toEqual(first);
+  });
+});
+
 describe('labelsVisible', () => {
   it('shows at 7 CSS px per glyph and above', () => {
     expect(labelsVisible(7 / 8)).toBe(true);
