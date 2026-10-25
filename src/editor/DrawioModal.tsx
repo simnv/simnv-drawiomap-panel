@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { Alert, Button, Modal, Spinner } from '@grafana/ui';
+import { Alert, Button, Icon, Modal, Spinner, Tooltip } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
 import {
   acceptChannelHello,
@@ -20,16 +20,42 @@ import { EditorLoad, HELLO_TIMEOUT_MS, nextLoad, probeEditor } from './availabil
 
 const styles = {
   modal: css`
-    width: 95vw;
-    max-width: 95vw;
-    height: 90vh;
+    width: 96vw;
+    max-width: 96vw;
+    height: 94vh;
+    height: 94dvh;
+    max-height: 94vh;
+    max-height: 94dvh;
     display: flex;
     flex-direction: column;
+    @media (max-width: 600px) {
+      width: 100vw;
+      max-width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      max-height: 100vh;
+      max-height: 100dvh;
+      border-radius: 0;
+    }
   `,
   content: css`
     flex: 1;
     min-height: 0;
     display: flex;
+    padding: 0;
+  `,
+  titleRow: css`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `,
+  help: css`
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: help;
   `,
   body: css`
     flex: 1;
@@ -65,6 +91,9 @@ const FAILURES: Partial<Record<EditorLoad, { title: string; hint: string }>> = {
     hint: 'Look for blocked files in the browser console, then open the editor again.',
   },
 };
+
+const HELP =
+  'Move or resize chart rectangles here. Keep cell IDs unchanged to retain bindings. Assign queries and chart settings in the panel inspector.';
 
 /** Shows the bundled draw.io editor in embed mode inside a sandboxed iframe. Only this component loads draw.io code. */
 export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: DrawioModalProps) {
@@ -165,10 +194,23 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     return () => ref.current?.close();
   }, []);
 
+  const heading = mode === 'edit' ? 'draw.io editor' : 'Exporting diagram';
   return (
     <Modal
       isOpen={true}
-      title={mode === 'edit' ? 'draw.io editor' : 'Exporting diagram'}
+      title={
+        <div className={styles.titleRow}>
+          <h2>{heading}</h2>
+          {mode === 'edit' && (
+            <Tooltip content={HELP} placement="bottom">
+              <button type="button" className={styles.help} aria-label={HELP} data-testid="dmap-editor-help">
+                <Icon name="info-circle" />
+              </button>
+            </Tooltip>
+          )}
+        </div>
+      }
+      ariaLabel={heading}
       onDismiss={onClose}
       className={styles.modal}
       contentClassName={styles.content}
@@ -192,12 +234,6 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
           <div role="status" className={styles.status}>
             <Spinner inline /> Loading the draw.io editor…
           </div>
-        )}
-        {mode === 'edit' && !failure && (
-          <p>
-            Move or resize chart rectangles here. Keep cell IDs unchanged to retain bindings. Assign queries and chart
-            settings in the panel inspector.
-          </p>
         )}
         {target && !failure && (
           <iframe
