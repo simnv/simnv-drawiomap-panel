@@ -192,6 +192,8 @@ export interface HalfState {
   stepIndex: number;
   value?: number;
   percent?: number;
+  /** `percent` as text (`percentText`: "41%", "<1%", ">999%"); the card and the link labels show it */
+  percentDisplay?: string;
   /** the capacity in the canonical unit of the field (bit/s for a data rate), when the half has one */
   capacity?: number;
   capacitySource?: CapacitySource;
