@@ -1,5 +1,5 @@
 import { primaryOf, resolveLinks } from '../interact/links';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   applyFieldOverrides,
   createTheme,
@@ -10,6 +10,7 @@ import {
   FieldConfigOptionsRegistry,
   FieldMatcherID,
   FieldType,
+  formattedValueToString,
   getFieldColorMode,
   ThresholdsMode,
   toDataFrame,
@@ -18,12 +19,12 @@ import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, CellMeta } from '../types';
 import { bindPlan, collectBindingDemands, resolveBinding, targetOf, widgetDiagnostics } from './engine';
 import { resolvePatterns } from './patterns';
-import { displayBindings, type DiagramConfigV2, type DisplayConfig, type QueryBinding } from '../model/config';
-import { toHistory } from '../query/frames';
+import { displayBindings, type DiagramConfig, type DisplayConfig, type QueryBinding } from '../model/config';
+import { fieldDisplay, toHistory } from '../query/frames';
 
 const queryBinding: QueryBinding = { queryId: 'health', match: {}, reducer: 'last' };
-const v2Config = (display: DiagramConfigV2['patterns'][number]['display']): DiagramConfigV2 => ({
-  version: 2,
+const v2Config = (display: DiagramConfig['patterns'][number]['display']): DiagramConfig => ({
+  version: 3,
   queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }],
   patterns: [{ id: 'p', name: 'Devices', select: {}, display }],
   overrides: [],
@@ -125,7 +126,7 @@ describe('bindPlan', () => {
   });
   it('keeps traffic magnitude colors independent of explicit device health and diagnoses incomplete link coverage', () => {
     const config = v2Config({
-      link: { a2bBinding: queryBinding, b2aBinding: { ...queryBinding, queryId: 'rx' }, capacity: 100 },
+      link: { a2b: { binding: queryBinding }, b2a: { binding: { ...queryBinding, queryId: 'rx' } }, capacity: 100 },
       status: {
         kind: 'mapping',
         binding: { ...queryBinding, queryId: 'up' },
@@ -154,7 +155,7 @@ describe('bindPlan', () => {
       reason: 'Incomplete coverage (1/2 directions available)',
     });
     expect(result.diagnostics).toContainEqual(
-      expect.objectContaining({ code: 'unmatched-metric', path: `cells.${cells[0].id}.link.b2aBinding` })
+      expect.objectContaining({ code: 'unmatched-metric', path: `cells.${cells[0].id}.link.b2a.binding` })
     );
   });
   it('demands only visible bindings until the configured card opens, including hover-only scalar values', () => {
@@ -210,7 +211,7 @@ describe('bindPlan', () => {
       hover: {
         rows: [
           {
-            kind: 'history',
+            kind: 'combined',
             label: 'Traffic',
             series: [
               { binding: tx, direction: 'up' },
@@ -277,7 +278,7 @@ describe('bindPlan', () => {
   it('uses configured capacity bindings and explicit down health without changing the traffic colors', () => {
     const capacity = { ...queryBinding, queryId: 'capacity' };
     const config = v2Config({
-      link: { a2bBinding: queryBinding, capacityBinding: capacity },
+      link: { a2b: { binding: queryBinding }, capacityBinding: capacity },
       status: {
         kind: 'mapping',
         binding: { ...queryBinding, queryId: 'up' },
@@ -397,17 +398,20 @@ describe('one capacity per direction', () => {
   );
   const ids = ['ua', 'ub', 'ca', 'cb', 'cap'];
   const bind$ = (id: string): QueryBinding => ({ ...queryBinding, queryId: id });
-  const base: NonNullable<DiagramConfigV2['patterns'][number]['display']['link']> = {
-    a2bBinding: bind$('ua'),
-    b2aBinding: bind$('ub'),
-  };
+  type Link = NonNullable<DisplayConfig['link']>;
+  /** the link with its two value bindings; `extra` adds the capacity sources of a direction or of the link */
+  const withBindings = (extra: Link): Link => ({
+    ...extra,
+    a2b: { binding: bind$('ua'), ...extra.a2b },
+    b2a: { binding: bind$('ub'), ...extra.b2a },
+  });
   const run = (
-    extra: typeof base,
+    extra: Link,
     values: Record<string, number> = {},
     fieldMax: Record<string, number> = {},
     units: Record<string, string> = {}
   ): ReturnType<typeof bindPlan> => {
-    const config = v2Config({ link: { ...base, ...extra } });
+    const config = v2Config({ link: withBindings(extra) });
     config.queries.push(...ids.map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } })));
     const plan = resolvePatterns([link], config);
     expect(plan.diagnostics).toEqual([]);
@@ -438,27 +442,26 @@ describe('one capacity per direction', () => {
 
   it('lists the directional capacity bindings as visible demands', () => {
     const config = v2Config({
-      link: {
-        ...base,
-        capacityA2bBinding: bind$('ca'),
-        capacityB2aBinding: bind$('cb'),
+      link: withBindings({
+        a2b: { capacityBinding: bind$('ca') },
+        b2a: { capacityBinding: bind$('cb') },
         capacityBinding: bind$('cap'),
-      },
+      }),
     });
     config.queries.push(...ids.map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } })));
     const plan = resolvePatterns([link], config);
     expect(plan.diagnostics).toEqual([]);
     expect(collectBindingDemands(plan).map((d) => [d.binding.queryId, d.role])).toEqual([
       ['ua', 'visible'],
-      ['ub', 'visible'],
-      ['cap', 'visible'],
       ['ca', 'visible'],
+      ['ub', 'visible'],
       ['cb', 'visible'],
+      ['cap', 'visible'],
     ]);
   });
 
   it('gives each direction its own capacity from a number or a template', () => {
-    const r = run({ capacityA2b: '${cell.capacity_a2b_bps}', capacityB2a: 200 });
+    const r = run({ a2b: { capacity: '${cell.capacity_a2b_bps}' }, b2a: { capacity: 200 } });
     expect(halves(r)).toEqual([
       [800, 'attr', 5],
       [200, 'number', 5],
@@ -466,7 +469,10 @@ describe('one capacity per direction', () => {
   });
 
   it('reads a directional binding like capacityBinding, through the field unit', () => {
-    const r = run({ capacityA2bBinding: bind$('ca'), capacityB2aBinding: bind$('cb') }, { ca: 1000, cb: 500 });
+    const r = run(
+      { a2b: { capacityBinding: bind$('ca') }, b2a: { capacityBinding: bind$('cb') } },
+      { ca: 1000, cb: 500 }
+    );
     expect(halves(r)).toEqual([
       [1000, 'series', 4],
       [500, 'series', 2],
@@ -476,7 +482,7 @@ describe('one capacity per direction', () => {
   it('converts the value of a directional binding by the unit of its field', () => {
     // 100 Mbit/s and 10 MB/s (80 Mbit/s)
     const r = run(
-      { capacityA2bBinding: bind$('ca'), capacityB2aBinding: bind$('cb') },
+      { a2b: { capacityBinding: bind$('ca') }, b2a: { capacityBinding: bind$('cb') } },
       { ca: 100, cb: 10 },
       {},
       { ca: 'Mbits', cb: 'MBs' }
@@ -489,58 +495,76 @@ describe('one capacity per direction', () => {
 
   describe('precedence of one half', () => {
     // a2b is 40; every source has its own capacity
-    const all = {
-      capacityA2bBinding: bind$('ca'),
-      capacityA2b: '${cell.capacity_a2b_bps}',
+    const all: Link = {
+      a2b: { capacityBinding: bind$('ca'), capacity: '${cell.capacity_a2b_bps}' },
       capacityBinding: bind$('cap'),
       capacity: 200,
     };
     const values = { ca: 1000, cap: 500 };
     const a2b = (r: ReturnType<typeof bindPlan>) => halves(r)[0];
+    const own = (direction: Link['a2b']): Link => ({ ...all, a2b: direction });
     it('directional binding first', () => {
       expect(a2b(run(all, values))).toEqual([1000, 'series', 4]);
     });
     it('then the directional number or template', () => {
       expect(a2b(run(all, { ...values, ca: 0 }))).toEqual([800, 'attr', 5]);
-      expect(a2b(run({ ...all, capacityA2b: 700 }, { ...values, ca: 0 }))).toEqual([700, 'number', (40 / 700) * 100]);
+      expect(a2b(run(own({ capacityBinding: bind$('ca'), capacity: 700 }), { ...values, ca: 0 }))).toEqual([
+        700,
+        'number',
+        (40 / 700) * 100,
+      ]);
       // the binding has no data
       expect(a2b(run(all, { cap: 500 }))).toEqual([800, 'attr', 5]);
     });
     it('then capacityBinding', () => {
-      expect(a2b(run({ ...all, capacityA2b: -5 }, { ...values, ca: 0 }))).toEqual([500, 'series', 8]);
-      expect(a2b(run({ ...all, capacityA2b: '${cell.capacity_bad}' }, { ...values, ca: -1 }))).toEqual([
-        500,
-        'series',
-        8,
-      ]);
-      expect(a2b(run({ ...all, capacityA2b: '${cell.missing}' }, { ...values, ca: 0 }))).toEqual([500, 'series', 8]);
+      const bad = own({ capacityBinding: bind$('ca'), capacity: '${cell.capacity_bad}' });
+      expect(a2b(run(bad, { ...values, ca: -1 }))).toEqual([500, 'series', 8]);
+      const missing = own({ capacityBinding: bind$('ca'), capacity: '${cell.missing}' });
+      expect(a2b(run(missing, { ...values, ca: 0 }))).toEqual([500, 'series', 8]);
     });
     it('then capacity', () => {
-      expect(a2b(run({ ...all, capacityA2b: 0 }, { ca: 0, cap: 0 }))).toEqual([200, 'number', 20]);
+      expect(a2b(run(own({ capacityBinding: bind$('ca') }), { ca: 0, cap: 0 }))).toEqual([200, 'number', 20]);
     });
     it('then the field Max, then none', () => {
-      const only = { ...all, capacity: undefined };
-      expect(a2b(run({ ...only, capacityA2b: 0 }, { ca: 0, cap: 0 }, { ua: 100 }))).toEqual([100, 'fieldMax', 40]);
-      expect(a2b(run({ ...only, capacityA2b: 0 }, { ca: 0, cap: 0 }))).toEqual([undefined, 'none', undefined]);
+      const only: Link = { a2b: { capacityBinding: bind$('ca') }, capacityBinding: bind$('cap') };
+      expect(a2b(run(only, { ca: 0, cap: 0 }, { ua: 100 }))).toEqual([100, 'fieldMax', 40]);
+      expect(a2b(run(only, { ca: 0, cap: 0 }))).toEqual([undefined, 'none', undefined]);
     });
     it('leaves the other direction on the shared sources', () => {
       expect(halves(run(all, values))[1]).toEqual([500, 'series', 2]);
-      expect(halves(run({ ...all, capacityB2a: 100 }, values))[1]).toEqual([100, 'number', 10]);
+      expect(halves(run({ ...all, b2a: { capacity: 100 } }, values))[1]).toEqual([100, 'number', 10]);
+    });
+    it('reads a shared capacity series once for both directions and reports its problem once', () => {
+      const seen: string[] = [];
+      const config = v2Config({ link: withBindings({ capacityBinding: bind$('cap') }) });
+      config.queries.push(...ids.map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } })));
+      const plan = resolvePatterns([link], config);
+      const r = bindPlan(
+        plan,
+        (_, b) => {
+          seen.push(b.queryId);
+          return b.queryId === 'cap' ? { state: 'empty', fetchedAt: 1, fromCache: false } : historyValue(40);
+        },
+        ctx,
+        1000
+      );
+      expect(seen.filter((id) => id === 'cap')).toHaveLength(1);
+      expect(r.diagnostics.filter((d) => d.code === 'unmatched-metric')).toHaveLength(1);
     });
   });
 
   it('adds a diagnostic for a directional template that gives no number, and falls through', () => {
-    const r = run({ capacityA2b: '${cell.missing}', capacityB2a: '${cell.capacity_bad}', capacity: 200 });
+    const r = run({ a2b: { capacity: '${cell.missing}' }, b2a: { capacity: '${cell.capacity_bad}' }, capacity: 200 });
     expect(halves(r)).toEqual([
       [200, 'number', 20],
       [200, 'number', 5],
     ]);
     // the fixture field has the unit percent: each half also reports that it is not a data rate
     expect(r.diagnostics.map((d) => [d.code, d.path])).toEqual([
-      ['unresolved-metadata', `cells.${link.id}.link.capacityA2b`],
-      ['unit-not-rate', `cells.${link.id}.link.a2bBinding`],
-      ['unresolved-metadata', `cells.${link.id}.link.capacityB2a`],
-      ['unit-not-rate', `cells.${link.id}.link.b2aBinding`],
+      ['unresolved-metadata', `cells.${link.id}.link.a2b.capacity`],
+      ['unit-not-rate', `cells.${link.id}.link.a2b.binding`],
+      ['unresolved-metadata', `cells.${link.id}.link.b2a.capacity`],
+      ['unit-not-rate', `cells.${link.id}.link.b2a.binding`],
     ]);
   });
 
@@ -554,12 +578,88 @@ describe('one capacity per direction', () => {
       [500, 'series', 2],
     ]);
   });
+
+  it('a pattern series wins over an override number when it is ready, the number when it is not', () => {
+    const config = v2Config({ link: withBindings({ capacityBinding: bind$('cap') }) });
+    config.queries.push(...ids.map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } })));
+    config.overrides.push({ cellId: link.id, display: { link: { capacity: 200 } } });
+    const plan = resolvePatterns([link], config);
+    expect(plan.diagnostics).toEqual([]);
+    const bind = (cap: number | undefined) =>
+      halves(
+        bindPlan(
+          plan,
+          (_, b) =>
+            b.queryId === 'cap'
+              ? cap === undefined
+                ? { state: 'loading' }
+                : historyValue(cap)
+              : historyValue(b.queryId === 'ua' ? 40 : 10),
+          ctx,
+          1000
+        )
+      )[0];
+    expect(bind(500)).toEqual([500, 'series', 8]);
+    expect(bind(undefined)).toEqual([200, 'number', 20]);
+  });
+});
+
+describe('an unavailable cell and an unavailable direction', () => {
+  const link = cells[0];
+  const ids = ['ua', 'ub'];
+  const bind$ = (id: string): QueryBinding => ({ ...queryBinding, queryId: id });
+  const two = () => {
+    const config = v2Config({ link: { a2b: { binding: bind$('ua') }, b2a: { binding: bind$('ub') } } });
+    config.queries.push(...ids.map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } })));
+    return config;
+  };
+  it('a valid a2b plus a b2a with an unknown query gives two halves, the b2a one unbound and grey, coverage 1/2', () => {
+    const config = two();
+    config.queries = config.queries.filter((q) => q.id !== 'ub');
+    const plan = resolvePatterns([link], config);
+    expect(plan.cells[link.id].bindings).toEqual([bind$('ua')]);
+    expect(plan.diagnostics.map((d) => [d.code, d.path])).toEqual([
+      ['unknown-query', 'patterns[0].display.link.b2a.binding.queryId'],
+      ['unknown-query', `cells.${link.id}.link.b2a.binding.queryId`],
+    ]);
+    const result = bindPlan(plan, () => historyValue(40), ctx, 1000);
+    const patch = result.patches.get(link.id)!;
+    expect(patch.link?.a2b?.status).toBe('ok');
+    expect(patch.link?.b2a).toEqual({
+      status: 'unbound',
+      color: theme.colors.text.disabled,
+      width: ctx.linkWidth.min,
+      label: 'unavailable',
+      stepIndex: -1,
+    });
+    expect(patch.statusView).toMatchObject({
+      state: 'missing',
+      reason: 'Incomplete coverage (1/2 directions available)',
+      coverage: { available: 1, expected: 2 },
+    });
+  });
+  it('an unavailable cell gives a patch with the reason, the no-data colour and a missing status view, and binds nothing', () => {
+    const config = two();
+    config.patterns.push({ id: 'broken', name: 'Broken', select: {}, display: { link: { capacity: 0 } } });
+    const plan = resolvePatterns([link], config);
+    expect(plan.cells[link.id]).toMatchObject({ unavailable: 'Pattern Broken is not applied', bindings: [] });
+    const resolve = vi.fn(() => historyValue(40));
+    const result = bindPlan(plan, resolve, ctx, 1000);
+    expect(resolve).not.toHaveBeenCalled();
+    const patch = result.patches.get(link.id)!;
+    expect(patch.unavailable).toEqual({ reason: 'Pattern Broken is not applied', color: theme.colors.text.disabled });
+    expect(patch.link).toBeUndefined();
+    expect(patch.statusView).toMatchObject({ state: 'missing', reason: 'Pattern Broken is not applied' });
+    expect(result.summaries.map((s) => [s.state, s.reason, s.cellIds])).toEqual([
+      ['missing', 'Pattern Broken is not applied', [link.id]],
+    ]);
+  });
 });
 
 describe('widgetDiagnostics', () => {
   const binding: QueryBinding = { queryId: 'q', match: {}, reducer: 'last' };
-  const config: DiagramConfigV2 = {
-    version: 2,
+  const config: DiagramConfig = {
+    version: 3,
     queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
     patterns: [],
     overrides: [],
@@ -604,8 +704,8 @@ const frame = (refId: string, labels: Record<string, string>, values: number[], 
 /** Binds one pattern over the cells, with the frames as the panel data of their refId queries. */
 function run(display: DisplayConfig, frames: DataFrame[], cellList: CellMeta[] = cells, context: BindContext = ctx) {
   const ids = [...new Set(displayBindings(display).map(({ binding }) => binding.queryId))];
-  const config: DiagramConfigV2 = {
-    version: 2,
+  const config: DiagramConfig = {
+    version: 3,
     queries: ids.map((id) => ({ id, name: id, source: { kind: 'panel', refId: id } })),
     patterns: [{ id: 'p', name: 'P', select: {}, display }],
     overrides: [],
@@ -627,8 +727,8 @@ function run(display: DisplayConfig, frames: DataFrame[], cellList: CellMeta[] =
 }
 const linkDisplay: DisplayConfig = {
   link: {
-    a2bBinding: qb('A', { job: 'node-${from.node}', device: '${from.port}' }),
-    b2aBinding: qb('A', { job: 'node-${to.node}', device: '${to.port}' }),
+    a2b: { binding: qb('A', { job: 'node-${from.node}', device: '${from.port}' }) },
+    b2a: { binding: qb('A', { job: 'node-${to.node}', device: '${to.port}' }) },
     capacity: 1e8,
   },
   url: '/d/iface?var-job=node-${from.node}&var-device=${from.port}',
@@ -673,7 +773,7 @@ describe('link halves', () => {
     expect(r.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'unmatched-metric',
-        path: 'cells.pg-link~lte:static->rtr-a:wan3.link.a2bBinding',
+        path: 'cells.pg-link~lte:static->rtr-a:wan3.link.a2b.binding',
       })
     );
   });
@@ -683,7 +783,7 @@ describe('link halves', () => {
     ]);
   });
   it('a link with one binding keeps the other half undefined and shows the value without a percent', () => {
-    const one = run({ link: { a2bBinding: qb('A', { device: 'pppoe' }) } }, traffic);
+    const one = run({ link: { a2b: { binding: qb('A', { device: 'pppoe' }) } } }, traffic);
     const p = one.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
     expect(p.link?.a2b?.status).toBe('ok');
     expect(p.link?.b2a).toBeUndefined();
@@ -703,7 +803,7 @@ describe('capacity sources', () => {
   // node_network_speed_bytes: 12.5 MB/s = 100 Mb/s
   const speed = (v = 12.5e6, unit = 'Bps') => frame('S', { job: 'node-a', device: 'eth0' }, [v / 2, v], { unit });
   const a2b = (link: NonNullable<DisplayConfig['link']>, frames: DataFrame[]) => {
-    const res = run({ link: { a2bBinding: qb('T'), ...link } }, frames, [linkCell]);
+    const res = run({ link: { a2b: { binding: qb('T') }, ...link } }, frames, [linkCell]);
     return { h: res.patches.get(linkCell.id)!.link!.a2b!, diagnostics: res.diagnostics };
   };
   const seriesCap = qb('S', { job: 'node-${from.node}', device: '${from.port}' });
@@ -740,10 +840,8 @@ describe('capacity sources', () => {
       expect.objectContaining({ code: 'unresolved-metadata', path: `cells.${linkCell.id}.link.capacity` }),
     ]);
   });
-  it('number: a number, not zero or less; a numeric string as saved configs have it', () => {
+  it('number: a positive number, in bit/s', () => {
     expect(a2b({ capacity: 1e9 }, [t()]).h).toMatchObject({ capacitySource: 'number', capacity: 1e9 });
-    expect(a2b({ capacity: 0 }, [t()]).h.capacitySource).toBe('none');
-    expect(a2b({ capacity: '1000000000' }, [t()]).h).toMatchObject({ capacitySource: 'number', capacity: 1e9 });
   });
   it('fieldMax: the Max of the field config, in the field unit', () => {
     // 12.5 MB/s = 100 Mb/s; the traffic is 5 MB/s = 40 Mb/s
@@ -834,20 +932,20 @@ describe('colours from the Grafana field config', () => {
     run({ link }, frames, [linkCell], gctx).patches.get(linkCell.id)!.link!.a2b!;
 
   it('colours a WAN half by the continuous scheme of its override at the percent of the field Max', () => {
-    const h = half({ a2bBinding: qb('A') });
+    const h = half({ a2b: { binding: qb('A') } });
     expect(h.capacitySource).toBe('fieldMax');
     expect(h.percent).toBeCloseTo(50);
     const calc = getFieldColorMode(FieldColorModeId.ContinuousGrYlRd).getCalculator(frames[0].fields[1], theme);
     expect(h.color).toBe(calc(0, 0.5));
   });
   it('colours a LAN half by the thresholds in percent of the display capacity', () => {
-    const h = half({ a2bBinding: qb('B'), capacity: 1e9 });
+    const h = half({ a2b: { binding: qb('B') }, capacity: 1e9 });
     expect(h.percent).toBeCloseTo(70);
     expect(h.color).toBe(theme.visualization.getColorByName('yellow'));
     expect(h.stepIndex).toBe(1);
   });
   it('colours a half without capacity by the display colour of the raw value', () => {
-    const h = half({ a2bBinding: qb('B') });
+    const h = half({ a2b: { binding: qb('B') } });
     expect(h.capacitySource).toBe('none');
     // 7e8 against the absolute steps: red
     expect(h.color).toBe(theme.visualization.getColorByName('red'));
@@ -939,5 +1037,50 @@ describe('display url', () => {
     const links = resolveLinks(patch, primaryOf(patch), (t) => t.replace(/\$\{env\}/g, 'production'), 'D');
     // the variable of the author template expands once; the value of the cell stays as it is
     expect(links[0].title).toBe('Switch ${env} in production');
+  });
+});
+
+describe('the capacity text in the unit of the field', () => {
+  // the display processor of the field, as the panel has it
+  const real: BindContext = { ...ctx, display: (series, value) => fieldDisplay(series.field, theme)(value) };
+  const linkCell = cellMetaFromAttrs(
+    'pg-link~a:eth0->b:eth1',
+    { 'pg-kind': 'link', 'pg-id': 'a:eth0->b:eth1', 'pg-from': 'a:eth0', 'pg-to': 'b:eth1' },
+    true
+  );
+  const one = (config: Field['config'], value: number, capacity: number) => {
+    const frames = [frame('T', { job: 'node-a', device: 'eth0' }, [value], config)];
+    return run({ link: { a2b: { binding: qb('T') }, capacity } }, frames, [linkCell], real).patches.get(linkCell.id)!
+      .link!.a2b!;
+  };
+  it('bps: "41 Mb/s · 41% of 100 Mb/s", the capacity formatted once', () => {
+    const h = one({ unit: 'bps' }, 41e6, 1e8);
+    expect(h.label).toMatch(/^41(\.0)? Mb\/s · 41% of 100 Mb\/s$/);
+    expect(formattedValueToString(h.capacityDisplay!)).toBe('100 Mb/s');
+  });
+  it('Bps: a capacity of 1 Gb/s shows as 125 MB/s; the percent does not change', () => {
+    const h = one({ unit: 'Bps' }, 12.5e6, 1e9);
+    expect(h.percent).toBeCloseTo(10);
+    expect(h.label).toMatch(/of 125 MB\/s$/);
+  });
+  it('a unit that is not a data rate: the raw value against the raw capacity, shown in that unit', () => {
+    const h = one({ unit: 'm3' }, 2.05, 4.1);
+    expect(h.percent).toBeCloseTo(50);
+    expect(h.label).toMatch(/of 4\.1\d* m³$/);
+  });
+  it('no data stays grey without a percent; no capacity gives no percent and no capacity text', () => {
+    const nodata = run({ link: { a2b: { binding: qb('T') }, capacity: 1e8 } }, [], [linkCell], real).patches.get(
+      linkCell.id
+    )!.link!.a2b!;
+    expect(nodata).toMatchObject({ status: 'nodata', label: 'no data', capacity: 1e8 });
+    expect(nodata.percent).toBeUndefined();
+    expect(nodata.capacityDisplay).toBeUndefined();
+    const frames = [frame('T', { job: 'node-a', device: 'eth0' }, [41e6], { unit: 'bps' })];
+    const free = run({ link: { a2b: { binding: qb('T') } } }, frames, [linkCell], real).patches.get(linkCell.id)!.link!
+      .a2b!;
+    expect(free).toMatchObject({ status: 'ok', capacitySource: 'none' });
+    expect(free.percent).toBeUndefined();
+    expect(free.capacityDisplay).toBeUndefined();
+    expect(free.label).toMatch(/^41(\.0)? Mb\/s$/);
   });
 });

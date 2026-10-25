@@ -10,6 +10,13 @@ const health: StatusRule = {
 };
 
 describe('evaluateStatus', () => {
+  it('an invalid freshness policy gives missing "Invalid freshness policy", also for fresh data', () => {
+    const rule = { ...health, freshness: { expectedIntervalMs: 15000, staleAfterMs: 1000 } };
+    const fresh = { queryId: 'health', availability: 'ready' as const, value: 1, sampleAt: 999 };
+    expect(evaluateStatus(rule, [fresh], 1000)).toMatchObject({ state: 'missing', reason: 'Invalid freshness policy' });
+    const stale = { ...fresh, sampleAt: 0 };
+    expect(evaluateStatus(rule, [stale], 100000)).toMatchObject({ state: 'missing', reason: 'Invalid freshness policy' });
+  });
   it('treats zero as down only through the explicit health mapping', () => {
     expect(evaluateStatus(health, [{ queryId: 'health', availability: 'ready', value: 0 }], 1000)).toMatchObject({
       state: 'down',

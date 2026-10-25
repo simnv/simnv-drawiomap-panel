@@ -255,7 +255,7 @@ describe('combined up/down row', () => {
   ];
   const card = (row: Record<string, unknown>, models: Record<string, ReturnType<typeof history>>) =>
     buildConfiguredCard(
-      { ...nodePatch(), hover: { rows: [{ kind: 'history', label: 'Traffic', series: both, ...row } as any] } },
+      { ...nodePatch(), hover: { rows: [{ kind: 'combined', label: 'Traffic', series: both, ...row } as any] } },
       (_, b) => models[b.queryId] ?? { state: 'loading' },
       ctx
     );
@@ -265,7 +265,7 @@ describe('combined up/down row', () => {
     const c = card({}, models());
     expect(c.rows).toHaveLength(1);
     const row = c.rows[0];
-    expect(row).toMatchObject({ kind: 'history', title: 'Traffic', state: 'ready' });
+    expect(row).toMatchObject({ kind: 'combined', title: 'Traffic', state: 'ready' });
     // the largest value of both directions with 10% headroom
     expect(row.domain![0]).toBeCloseTo(-9.02e6);
     expect(row.domain![1]).toBeCloseTo(9.02e6);
@@ -296,7 +296,7 @@ describe('combined up/down row', () => {
   });
   it('appends the capacity percent and keeps the capacity out of the domain', () => {
     const row = card({ capacity: 100e6 }, models()).rows[0];
-    expect(row.text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+    expect(row.text).toBe('↑ 8.20 Mb/s · 8% of 100 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
     expect(row.domain![1]).toBeCloseTo(9.02e6);
   });
   it('fills about 90% of the half height with 12 Mb/s on a 1 Gb/s link', () => {
@@ -317,13 +317,13 @@ describe('combined up/down row', () => {
   it('uses the field config Max as the capacity when the row has none', () => {
     const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 10e6 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
     const row = card({ max: 'capacity' }, m).rows[0];
-    expect(row.text).toBe('↑ 8.20 Mb/s · 82%  ↓ 1.10 Mb/s');
+    expect(row.text).toBe('↑ 8.20 Mb/s · 82% of 10 Mb/s  ↓ 1.10 Mb/s');
     expect(row.domain).toEqual([-10e6, 10e6]);
   });
   it('uses the row capacity, not the field config Max, when the row has one', () => {
     const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 1e9 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
     const row = card({ capacity: 100e6, max: 'capacity' }, m).rows[0];
-    expect(row.text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+    expect(row.text).toBe('↑ 8.20 Mb/s · 8% of 100 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
     expect(row.domain).toEqual([-100e6, 100e6]);
   });
   describe('template capacity (FR-1)', () => {
@@ -331,34 +331,34 @@ describe('combined up/down row', () => {
       buildConfiguredCard(
         {
           ...nodePatch({ scope: { cell: { key: 'rtr-a', ...attrs } } }),
-          hover: { rows: [{ kind: 'history', label: 'Traffic', series: both, ...row } as any] },
+          hover: { rows: [{ kind: 'combined', label: 'Traffic', series: both, ...row } as any] },
         },
         (_, b) => m[b.queryId as 'tx' | 'rx'],
         ctx
       );
     it('resolves a template against the cell scope, in bit/s', () => {
       const c = tpl({ capacity_bps: '100000000' }, { capacity: '${cell.capacity_bps}' }, models());
-      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8% of 100 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
       expect(c.diagnostics).toEqual([]);
     });
     it('converts the bit/s of a template to the unit of the values', () => {
       // 100 Mb/s are 12.5 MB/s; 1.25 MB/s is 10%
       const m = { tx: history('tx', [1.25e6], { unit: 'Bps' }), rx: history('rx', [0.125e6], { unit: 'Bps' }) };
       const c = tpl({ capacity_bps: '100000000' }, { capacity: '${cell.capacity_bps}', max: 'capacity' }, m);
-      expect(c.rows[0].directions!.map((d) => d.text.split(' · ')[1])).toEqual(['10%', '1%']);
+      expect(c.rows[0].directions!.map((d) => d.text.split(' · ')[1])).toEqual(['10% of 12.5 MB/s', '1% of 12.5 MB/s']);
       expect(c.rows[0].domain).toEqual([-12.5e6, 12.5e6]);
     });
     it('prefers the resolved template to the field config Max', () => {
       const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 10e6 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
       const c = tpl({ capacity_bps: '100000000' }, { capacity: '${cell.capacity_bps}', max: 'capacity' }, m);
-      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8%  ↓ 1.10 Mb/s · 1%');
+      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8% of 100 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
       expect(c.rows[0].domain).toEqual([-100e6, 100e6]);
     });
-    it('shows no percent and adds a diagnostic when the template does not resolve', () => {
-      // the field Max does not rescue a capacity that the author set
+    it('falls to the field Max and adds a diagnostic when the template does not resolve', () => {
+      // the chain of a link half: a failed source reports and the next source applies
       const m = { tx: history('tx', [8.2e6], { unit: 'bps', max: 10e6 }), rx: history('rx', [1.1e6], { unit: 'bps' }) };
       const c = tpl({}, { capacity: '${cell.capacity_bps}' }, m);
-      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s  ↓ 1.10 Mb/s');
+      expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 82% of 10 Mb/s  ↓ 1.10 Mb/s');
       expect(c.diagnostics).toEqual([
         expect.objectContaining({
           code: 'unresolved-metadata',
@@ -398,7 +398,7 @@ describe('combined up/down row', () => {
           hover: {
             rows: [
               {
-                kind: 'history',
+                kind: 'combined',
                 label: 'Traffic',
                 series: both.map((s, j) => ({ ...s, ...(caps[j] === undefined ? {} : { capacity: caps[j] }) })),
                 ...row,
@@ -416,7 +416,7 @@ describe('combined up/down row', () => {
     it('gives each direction the percent and the colour of its own capacity', () => {
       // the same 8 Mb/s: 8% of 100 Mb/s is green, 80% of 10 Mb/s is red
       const c = perDirection(['${cell.cap_a2b}', '${cell.cap_b2a}']);
-      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s · 80%');
+      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8% of 100 Mb/s  ↓ 8 Mb/s · 80% of 10 Mb/s');
       expect(c.rows[0].directions!.map((d) => d.color)).toEqual([
         theme.visualization.getColorByName('green'),
         theme.visualization.getColorByName('red'),
@@ -424,11 +424,11 @@ describe('combined up/down row', () => {
       expect(c.diagnostics).toEqual([]);
     });
     it('takes a number in the unit of the values', () => {
-      expect(perDirection([100e6, 10e6]).rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s · 80%');
+      expect(perDirection([100e6, 10e6]).rows[0].text).toBe('↑ 8 Mb/s · 8% of 100 Mb/s  ↓ 8 Mb/s · 80% of 10 Mb/s');
     });
     it('prefers the capacity of the direction to the capacity of the row', () => {
       expect(perDirection([undefined, '${cell.cap_b2a}'], { capacity: 100e6 }).rows[0].text).toBe(
-        '↑ 8 Mb/s · 8%  ↓ 8 Mb/s · 80%'
+        '↑ 8 Mb/s · 8% of 100 Mb/s  ↓ 8 Mb/s · 80% of 10 Mb/s'
       );
     });
     it('uses the larger capacity for max "capacity"', () => {
@@ -439,14 +439,17 @@ describe('combined up/down row', () => {
     });
     it('shows no percent for a direction whose template does not resolve, and reports its path', () => {
       const c = perDirection(['${cell.cap_a2b}', '${cell.nothing}']);
-      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s');
+      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8% of 100 Mb/s  ↓ 8 Mb/s');
       expect(c.diagnostics.map((d) => [d.code, d.path])).toEqual([
         ['unresolved-metadata', `cells.${nodePatch().cellId}.hover.rows[0].series[1].capacity`],
       ]);
     });
-    it('does not use the row capacity or the field Max for a direction whose capacity fails', () => {
+    it('falls to the row capacity for a direction whose own capacity fails, and reports the failed source', () => {
       const c = perDirection([undefined, '${cell.nothing}'], { capacity: 100e6 });
-      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8%  ↓ 8 Mb/s');
+      expect(c.rows[0].text).toBe('↑ 8 Mb/s · 8% of 100 Mb/s  ↓ 8 Mb/s · 8% of 100 Mb/s');
+      expect(c.diagnostics.map((d) => [d.code, d.path])).toEqual([
+        ['unresolved-metadata', `cells.${nodePatch().cellId}.hover.rows[0].series[1].capacity`],
+      ]);
     });
     it('uses the capacity of the one direction for max "capacity" when the other fails', () => {
       expect(perDirection(['${cell.cap_a2b}', '${cell.nothing}'], { max: 'capacity' }).rows[0].domain).toEqual([
@@ -495,7 +498,7 @@ describe('combined up/down row', () => {
     const c = buildConfiguredCard(
       {
         ...nodePatch(),
-        hover: { rows: [{ kind: 'history', label: 'Traffic', series: both, capacity: 100e6 }] },
+        hover: { rows: [{ kind: 'combined', label: 'Traffic', series: both, capacity: 100e6 }] },
       },
       (_, b) => models()[b.queryId as 'tx' | 'rx'],
       { ...ctx, fieldThresholds }
@@ -523,7 +526,7 @@ describe('combined up/down row', () => {
     const c = buildConfiguredCard(
       {
         ...nodePatch(),
-        hover: { rows: [{ kind: 'history', label: 'Traffic', series: both }] },
+        hover: { rows: [{ kind: 'combined', label: 'Traffic', series: both }] },
         unavailableHoverRows: [0],
       },
       () => {
@@ -533,6 +536,47 @@ describe('combined up/down row', () => {
     );
     expect(c.rows[0]).toMatchObject({ state: 'unsupported', text: 'Binding metadata is unavailable' });
     expect(c.demands).toEqual([]);
+  });
+  it('a numeric row capacity keeps the unit of the values: 12.5 MB/s of Bps values', () => {
+    const m = { tx: history('tx', [1.25e6], { unit: 'Bps' }), rx: history('rx', [0.125e6], { unit: 'Bps' }) };
+    const row = card({ capacity: 12.5e6, max: 'capacity' }, m).rows[0];
+    expect(row.directions!.map((d) => d.text.split(' · ')[1])).toEqual(['10% of 12.5 MB/s', '1% of 12.5 MB/s']);
+    expect(row.domain).toEqual([-12.5e6, 12.5e6]);
+  });
+  it('a capacity series on the row or on a direction wins over the row number; it is read once and demanded', () => {
+    const capB = { queryId: 'cap', match: {}, reducer: 'last' as const };
+    const m = { ...models(), cap: history('cap', [50e6]) };
+    const c = card({ capacity: 100e6, capacityBinding: capB }, m);
+    expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 16% of 50 Mb/s  ↓ 1.10 Mb/s · 2% of 50 Mb/s');
+    expect(c.demands.filter((d) => d.binding.queryId === 'cap')).toHaveLength(1);
+    expect(c.diagnostics).toEqual([]);
+    const own = card({ capacity: 100e6, series: [{ ...both[0], capacityBinding: capB }, both[1]] }, m);
+    expect(own.rows[0].text).toBe('↑ 8.20 Mb/s · 16% of 50 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
+  });
+  it('a capacity series that is not usable for the cell reports it and falls to the row number', () => {
+    const capB = { queryId: 'cap', match: {}, reducer: 'last' as const };
+    const c = buildConfiguredCard(
+      {
+        ...nodePatch(),
+        bindings: [txB, rxB],
+        hover: { rows: [{ kind: 'combined', label: 'Traffic', series: both, capacity: 100e6, capacityBinding: capB }] },
+      },
+      (_, b) => models()[b.queryId as 'tx' | 'rx'],
+      ctx
+    );
+    expect(c.rows[0].text).toBe('↑ 8.20 Mb/s · 8% of 100 Mb/s  ↓ 1.10 Mb/s · 1% of 100 Mb/s');
+    expect(c.diagnostics.map((d) => [d.code, d.path])).toEqual([
+      ['unbound-capacity', `cells.${nodePatch().cellId}.hover.rows[0].capacityBinding`],
+    ]);
+    expect(c.demands.map((d) => d.binding.queryId)).toEqual(['tx', 'rx']);
+  });
+  it('a row with an invalid range or freshness is unsupported with the text and demands nothing', () => {
+    const bounds = card({ min: 10, max: 1 }, models());
+    expect(bounds.rows[0]).toMatchObject({ state: 'unsupported', text: 'Invalid range' });
+    expect(bounds.demands).toEqual([]);
+    const fresh = card({ freshness: { expectedIntervalMs: 1000, staleAfterMs: 10 } }, models());
+    expect(fresh.rows[0]).toMatchObject({ state: 'unsupported', text: 'Invalid freshness policy' });
+    expect(fresh.demands).toEqual([]);
   });
 });
 
