@@ -3,9 +3,12 @@ import { bendLengths, polylineLength, type Point } from './geometry';
 import {
   boundsOf,
   labelsVisible,
+  drawnCentre,
   LINK_LABEL_GEOMETRY,
   obstacleIndex,
-  placeHalfLabel,
+  placeHalfLabel as placeOnLadder,
+  type LabelSide,
+  placeLinkLabels,
   runHeading,
   type LegInput,
   type Obstacle,
@@ -24,8 +27,15 @@ const leg = (points: Point[], over: Partial<LegInput> = {}): LegInput => ({
   strokeRoot: 10,
   ...over,
 });
-/** The box is 28 × 14 with the halo; the centre stands gap (4 + 5) + 7 = 16 from the centreline. */
-const OFFSET = 16;
+/** The box is 26 × 12 with the halo; the centre stands gap (2 + 5) + 6 = 13 from the centreline. */
+const OFFSET = 13;
+/** The tests of the beside places leave the stroke place out: they ask for the top and bottom sides only. */
+const placeHalfLabel = (
+  l: LegInput,
+  own: string,
+  index: ObstacleIndex,
+  sides: readonly LabelSide[] = [1, -1]
+): Placement => placeOnLadder(l, own, index, sides);
 const placed = (p: Placement): Placed => {
   if (!('centre' in p)) {
     throw new Error(`dropped: ${p.dropped}`);
@@ -55,9 +65,9 @@ describe('runHeading', () => {
     expect(runHeading(-100, 0).degrees).toBe(0);
     expect(runHeading(-100, 0).first).toEqual({ x: 0, y: -1 });
   });
-  it('a vertical run reads bottom to top either way, the first side is the right', () => {
-    expect(runHeading(0, 100)).toEqual({ degrees: -90, first: { x: 1, y: 0 } });
-    expect(runHeading(0, -100)).toEqual({ degrees: -90, first: { x: 1, y: 0 } });
+  it('a vertical run reads bottom to top either way, the first side is the left, where the tops of the letters face', () => {
+    expect(runHeading(0, 100)).toEqual({ degrees: -90, first: { x: -1, y: 0 } });
+    expect(runHeading(0, -100)).toEqual({ degrees: -90, first: { x: -1, y: 0 } });
   });
   it('a diagonal keeps its text upright: 45 down-right and its reverse, −45 up-right and its reverse', () => {
     expect(runHeading(100, 100).degrees).toBeCloseTo(45);
@@ -102,14 +112,14 @@ describe('placeHalfLabel: position', () => {
     const a2b = placed(placeHalfLabel(leg(horizontal(0, 200, y0)), 'e', obstacleIndex([])));
     // b2a runs from the end of the link to the split
     const b2a = placed(placeHalfLabel(leg(horizontal(400, 200, y0)), 'e', obstacleIndex([])));
-    expect(a2b.centre).toEqual({ x: 100, y: y0 - (4 + 5 + 14 / 2) });
+    expect(a2b.centre).toEqual({ x: 100, y: y0 - OFFSET });
     expect(b2a.centre).toEqual({ x: 300, y: y0 - OFFSET });
     expect(a2b.degrees).toBe(0);
     expect(b2a.degrees).toBe(0);
-    expect(a2b.box).toEqual({ centre: a2b.centre, width: 28, height: 14, degrees: 0 });
+    expect(a2b.box).toEqual({ centre: a2b.centre, width: 26, height: 12, degrees: 0 });
     expect(a2b.along).toBe(100);
   });
-  it('a vertical link puts the label to the right, reading bottom to top', () => {
+  it('a vertical link puts the label to the left of the stroke, reading bottom to top', () => {
     const p = placed(
       placeHalfLabel(
         leg([
@@ -120,7 +130,7 @@ describe('placeHalfLabel: position', () => {
         obstacleIndex([])
       )
     );
-    expect(p.centre).toEqual({ x: 30 + OFFSET, y: 100 });
+    expect(p.centre).toEqual({ x: 30 - OFFSET, y: 100 });
     expect(p.degrees).toBe(-90);
   });
   it('an L-shaped edge: a2b on the vertical run reads −90, b2a on the horizontal run reads 0', () => {
@@ -143,7 +153,7 @@ describe('placeHalfLabel: position', () => {
     );
     const b2a = placed(placeHalfLabel(leg([points[2], { x: 50, y: 150 }]), 'e', obstacleIndex([])));
     expect(a2b.degrees).toBe(-90);
-    expect(a2b.centre).toEqual({ x: OFFSET, y: 100 });
+    expect(a2b.centre).toEqual({ x: -OFFSET, y: 100 });
     expect(b2a.degrees).toBe(0);
     expect(b2a.centre).toEqual({ x: 150, y: 150 - OFFSET });
   });
@@ -161,12 +171,12 @@ describe('placeHalfLabel: position', () => {
     expect(p.degrees).toBeCloseTo(45);
     // the distance of the centre from the line y = x, less half the box height, less half the stroke
     const distance = Math.abs(p.centre.x - p.centre.y) / Math.SQRT2;
-    expect(distance - 14 / 2 - 10 / 2).toBeCloseTo(LINK_LABEL_GEOMETRY.normalGap);
+    expect(distance - 12 / 2 - 10 / 2).toBeCloseTo(LINK_LABEL_GEOMETRY.normalGap);
     expect(p.centre.y).toBeLessThan(p.centre.x);
   });
   it('the stroke width sets the gap: a thin edge brings the label nearer', () => {
     const p = placed(placeHalfLabel(leg(horizontal(0, 200), { strokeRoot: 2 }), 'e', obstacleIndex([])));
-    expect(p.centre.y).toBe(-(4 + 1 + 7));
+    expect(p.centre.y).toBe(-(2 + 1 + 6));
   });
 });
 
@@ -178,10 +188,10 @@ describe('placeHalfLabel: collisions', () => {
     expect(p.degrees).toBe(0);
   });
   it('a rect grown by its clearance counts', () => {
-    const index = obstacleIndex([rect(86, -40, 28, 10, 8)]);
+    const index = obstacleIndex([rect(86, -34, 28, 10, 8)]);
     const p = placed(placeHalfLabel(leg(horizontal(0, 200)), 'e', index));
     expect(p.centre.x).toBeLessThan(100);
-    const far = obstacleIndex([rect(86, -40, 28, 10, 2)]);
+    const far = obstacleIndex([rect(86, -34, 28, 10, 2)]);
     expect(placed(placeHalfLabel(leg(horizontal(0, 200)), 'e', far)).centre.x).toBe(100);
   });
   it('a label touching an obstacle is free', () => {
@@ -351,5 +361,238 @@ describe('labelsVisible', () => {
     expect(labelsVisible(7 / 8)).toBe(true);
     expect(labelsVisible(1)).toBe(true);
     expect(labelsVisible(0.2)).toBe(false);
+  });
+});
+
+describe('placeLinkLabels: one place for both halves', () => {
+  // a vertical link at x = 0 from y = 0 to 400, split at 200: a2b runs 0 → 200, b2a runs 400 → 200
+  const up = leg([
+    { x: 0, y: 0 },
+    { x: 0, y: 200 },
+  ]);
+  const down = leg([
+    { x: 0, y: 400 },
+    { x: 0, y: 200 },
+  ]);
+  const pair = (obstacles: Obstacle[]) => {
+    const index = obstacleIndex(obstacles);
+    const [a, b] = placeLinkLabels(up, down, 'e', index);
+    return { a, b, index };
+  };
+  // walls that block the stroke place of one half: a plain node on the stroke
+  const onStroke = (y: number) => rect(-6, y, 12, 200);
+
+  it('puts both halves on their strokes when they are free', () => {
+    const { a, b } = pair([]);
+    expect(placed(a).side).toBe(0);
+    expect(placed(b).side).toBe(0);
+    expect(placed(a).centre).toEqual({ x: 0, y: 100 });
+    expect(placed(b).centre).toEqual({ x: 0, y: 300 });
+  });
+  it('puts both halves on the top side (left of a vertical link) when one half has no free spot on its stroke', () => {
+    const { a, b } = pair([onStroke(200)]);
+    expect(placed(a).side).toBe(1);
+    expect(placed(b).side).toBe(1);
+    expect(placed(a).centre.x).toBe(-OFFSET);
+    expect(placed(b).centre.x).toBe(-OFFSET);
+  });
+  it('puts both halves on the bottom side when the top side is blocked along the whole half of one of them', () => {
+    const { a, b } = pair([onStroke(200), rect(-40, 200, 35, 200)]);
+    expect(placed(a).side).toBe(-1);
+    expect(placed(b).side).toBe(-1);
+    expect(placed(a).centre.x).toBe(OFFSET);
+    expect(placed(b).centre.x).toBe(OFFSET);
+  });
+  it('keeps the top side when it is blocked only on a part of the half', () => {
+    const { a, b } = pair([onStroke(200), rect(-60, 260, 40, 30)]);
+    expect(placed(a).side).toBe(1);
+    expect(placed(b).side).toBe(1);
+  });
+  it('lets each half take its own place only when no single place holds both', () => {
+    // b2a: its stroke and its top side are blocked; a2b: its stroke and its bottom side are blocked
+    const { a, b } = pair([onStroke(200), rect(-40, 200, 35, 200), onStroke(0), rect(5, 0, 40, 200)]);
+    expect(placed(a).side).toBe(1);
+    expect(placed(b).side).toBe(-1);
+  });
+  it('a half that fits nowhere drops; the other half takes its own first place', () => {
+    const { a, b } = pair([rect(-80, 200, 160, 200)]);
+    expect(placed(a).side).toBe(0);
+    expect(b).toEqual({ dropped: 'no-free-spot' });
+  });
+  it('leaves no label of the pair in the index', () => {
+    const { index } = pair([]);
+    expect([...index.near({ x: -100, y: -100, width: 300, height: 600 })]).toEqual([]);
+  });
+  it('the first label of the pair is an obstacle for the second', () => {
+    // both legs share the run: the two labels on the same spot cannot overlap
+    const index = obstacleIndex([]);
+    const [a, b] = placeLinkLabels(
+      up,
+      leg([
+        { x: 0, y: 200 },
+        { x: 0, y: 0 },
+      ]),
+      'e',
+      index
+    );
+    expect(Math.abs(placed(a).centre.y - placed(b).centre.y)).toBeGreaterThanOrEqual(26);
+  });
+});
+
+describe('the sides: on the stroke, then beside it with the tops of the letters away from it', () => {
+  const near = (l: LegInput, side: LabelSide) => placed(placeOnLadder(l, 'e', obstacleIndex([]), [side]));
+  it('on the stroke the centre is on the leg at the middle of the half and no own stroke is in the way', () => {
+    // the own stroke runs under the box: a stroke obstacle of the own run (piece known) does not block
+    const l = { ...leg(horizontal(0, 200)), id: 'e:a2b' };
+    const own: Obstacle = { ...segment({ x: 0, y: 0 }, { x: 200, y: 0 }, 'e'), piece: { leg: 'e:a2b', index: 0 } };
+    const p = placed(placeOnLadder(l, 'e', obstacleIndex([own]), [0]));
+    expect(p.centre).toEqual({ x: 100, y: 0 });
+    expect(p.side).toBe(0);
+  });
+  it('another edge across the stroke place still blocks it', () => {
+    const cross = segment({ x: 100, y: -30 }, { x: 100, y: 30 }, 'other');
+    const p = placed(placeOnLadder(leg(horizontal(0, 200)), 'e', obstacleIndex([cross]), [0]));
+    expect(p.centre.x).not.toBe(100);
+  });
+  it('a horizontal link: the top side is above', () => {
+    expect(near(leg(horizontal(0, 200)), 1).centre.y).toBeLessThan(0);
+    expect(near(leg(horizontal(0, 200)), -1).centre.y).toBeGreaterThan(0);
+    expect(near(leg(horizontal(200, 0)), 1).centre.y).toBeLessThan(0);
+  });
+  it('a vertical link at −90°: the top side is left of the stroke', () => {
+    const l = leg([
+      { x: 0, y: 200 },
+      { x: 0, y: 0 },
+    ]);
+    const p = near(l, 1);
+    expect(p.degrees).toBe(-90);
+    expect(p.centre.x).toBeLessThan(0);
+    expect(near(l, -1).centre.x).toBeGreaterThan(0);
+  });
+  it('both diagonals: the top side is the side the tops of the letters face', () => {
+    // down-right (45°): the tops face up-right; up-right drawn (−45°): the tops face up-left
+    const down = near(
+      leg([
+        { x: 0, y: 0 },
+        { x: 200, y: 200 },
+      ]),
+      1
+    );
+    expect(down.degrees).toBeCloseTo(45);
+    expect(down.centre.x - 100).toBeGreaterThan(0);
+    expect(down.centre.y - 100).toBeLessThan(0);
+    const rise = near(
+      leg([
+        { x: 0, y: 200 },
+        { x: 200, y: 0 },
+      ]),
+      1
+    );
+    expect(rise.degrees).toBeCloseTo(-45);
+    expect(rise.centre.x - 100).toBeLessThan(0);
+    expect(rise.centre.y - 100).toBeLessThan(0);
+  });
+  it('the gap: the near edge of the box stands 2 beyond the stroke edge', () => {
+    const p = near(leg(horizontal(0, 200)), 1);
+    // box height 12 (10 + halo), stroke 10: the near edge is at −(5 + 2)
+    expect(Math.abs(p.centre.y) - 12 / 2 - 10 / 2).toBeCloseTo(2);
+    expect(LINK_LABEL_GEOMETRY.normalGap).toBe(2);
+  });
+});
+
+describe('the wide gap: a chip wider than the stroke', () => {
+  // a short leg with a chip on its stroke: the chip is 16 high, the stroke 10, so the near gap of 2 touches the chip
+  const short = leg(horizontal(0, 60));
+  const chip = rect(15, -8, 30, 16);
+  it('a single half falls back to the wide gap (4) when no spot beside the stroke holds the near gap', () => {
+    const p = placed(placeOnLadder(short, 'e', obstacleIndex([chip])));
+    expect(p.side).toBe(2);
+    expect(p.centre.y).toBe(-(4 + 5 + 6));
+  });
+  it('a pair takes the wide gap on one side for both halves before it mixes the sides', () => {
+    const other = leg(horizontal(120, 60));
+    const [a, b] = placeLinkLabels(short, other, 'e', obstacleIndex([chip, rect(75, -8, 30, 16)]));
+    expect(placed(a).side).toBe(2);
+    expect(placed(b).side).toBe(2);
+  });
+});
+
+describe('drawnCentre: the text stands at the drawn stroke, the reservation at the widest', () => {
+  const l = leg(horizontal(0, 200));
+  it('beside the stroke the centre follows the drawn width; the reserved centre stays', () => {
+    const p = placed(placeOnLadder(l, 'e', obstacleIndex([]), [1]));
+    expect(p.centre.y).toBe(-13);
+    expect(drawnCentre(p, 10)).toEqual({ x: 100, y: -13 });
+    expect(drawnCentre(p, 2)).toEqual({ x: 100, y: -9 });
+    const low = placed(placeOnLadder(l, 'e', obstacleIndex([]), [-1]));
+    expect(drawnCentre(low, 2)).toEqual({ x: 100, y: 9 });
+  });
+  it('the wide gap and the stroke place', () => {
+    const wide = placed(placeOnLadder(l, 'e', obstacleIndex([]), [2]));
+    // the wide gap counts from the widest stroke edge, whatever the drawn width
+    expect(drawnCentre(wide, 2)).toEqual({ x: 100, y: -15 });
+    expect(drawnCentre(wide, 10)).toEqual({ x: 100, y: -15 });
+    const on = placed(placeOnLadder(l, 'e', obstacleIndex([]), [0]));
+    expect(drawnCentre(on, 2)).toEqual({ x: 100, y: 0 });
+  });
+});
+
+describe('the reservation sweeps the drawn width range', () => {
+  // a stroke drawn between 2 and 30 wide; the slot is 24 × 10
+  const wide = leg(horizontal(0, 200, 100), { strokeRoot: 30, minRoot: 2 });
+  const inside = (outer: Rect, inner: Rect) =>
+    inner.x >= outer.x - 1e-9 &&
+    inner.y >= outer.y - 1e-9 &&
+    inner.x + inner.width <= outer.x + outer.width + 1e-9 &&
+    inner.y + inner.height <= outer.y + outer.height + 1e-9;
+  /** the text box (with the halo) of a placed label for a stroke drawn `w` wide; the link is horizontal */
+  const textBox = (p: Placed, w: number): Rect => {
+    const c = drawnCentre(p, w);
+    return { x: c.x - p.box.width / 2, y: c.y - p.height / 2, width: p.box.width, height: p.height };
+  };
+  /** the gap rect of a label on its stroke for a stroke drawn `w` wide */
+  const gapRect = (p: Placed, w: number): Rect => {
+    const height = Math.max(10, w + 2);
+    return { x: p.anchor.x - 12, y: p.anchor.y - height / 2, width: 24, height };
+  };
+  const meets = (a: Rect, b: Rect) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  it('beside the stroke the reservation holds the text for every drawn width', () => {
+    for (const side of [1, -1, 2, -2] as const) {
+      const p = placed(placeOnLadder(wide, 'e', obstacleIndex([]), [side]));
+      for (const w of [2, 10, 30]) {
+        expect(inside(boundsOf(p.box), textBox(p, w))).toBe(true);
+      }
+    }
+  });
+  it('on the stroke the reservation holds the largest gap rect', () => {
+    const p = placed(placeOnLadder(wide, 'e', obstacleIndex([]), [0]));
+    for (const w of [2, 10, 30]) {
+      expect(inside(boundsOf(p.box), gapRect(p, w))).toBe(true);
+    }
+  });
+  it('a node that the text would meet at a thin stroke blocks the spot beside the stroke', () => {
+    // the top box at the widest stroke is y 71..83; at the width 2 the text stands at y 85..97
+    const node = rect(90, 86, 20, 28);
+    const p = placed(placeOnLadder(wide, 'e', obstacleIndex([node]), [1]));
+    for (const w of [2, 30]) {
+      expect(meets(textBox(p, w), node.kind === 'rect' ? node.rect : (undefined as never))).toBe(false);
+    }
+    expect(p.centre.x).not.toBe(100);
+  });
+  it('a node that the gap rect would cover blocks the spot on the stroke', () => {
+    const node = rect(90, 108, 20, 5);
+    const p = placed(placeOnLadder(wide, 'e', obstacleIndex([node]), [0]));
+    expect(meets(gapRect(p, 30), node.kind === 'rect' ? node.rect : (undefined as never))).toBe(false);
+    expect(p.anchor.x).not.toBe(100);
+  });
+});
+
+describe('placeHalfLabel: sides', () => {
+  it('tries only the given sides, in the given order', () => {
+    const l = leg(horizontal(0, 200));
+    expect(placed(placeHalfLabel(l, 'e', obstacleIndex([]), [-1])).centre).toEqual({ x: 100, y: OFFSET });
+    expect(placeHalfLabel(l, 'e', obstacleIndex([rect(-10, 5, 220, 40)]), [-1])).toEqual({ dropped: 'no-free-spot' });
   });
 });

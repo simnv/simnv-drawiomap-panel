@@ -21,9 +21,13 @@ import {
   aabbOf,
   boundsOf,
   labelsVisible,
+  LABEL_SIDES,
   LINK_LABEL_GEOMETRY,
+  type LabelSide,
+  drawnCentre,
   obstacleIndex,
   placeHalfLabel,
+  placeLinkLabels,
   pointToSegment,
   type LegInput,
   type Obstacle,
@@ -42,6 +46,8 @@ import { viewScaleOf } from './zoom';
  */
 
 export const LINK_LABEL_CLASS = 'dmap-link-label';
+/** The class of the canvas-coloured rect behind the text of a label that stands on its stroke. */
+export const LINK_LABEL_BG_CLASS = 'dmap-link-label-bg';
 export const LINK_LABEL_LAYER_CLASS = 'dmap-link-labels';
 const NS = 'http://www.w3.org/2000/svg';
 /** a slot width rounds up to a multiple of this, so that a small change of a value keeps its slot */
@@ -83,6 +89,12 @@ interface LabelRecord {
   slot?: number;
   el?: SVGTextElement;
   placement?: Placement;
+  /** the side of the last spot the label held; a dropped half keeps it with its reserved box */
+  side?: LabelSide;
+  /** the drawn stroke width of the half in root units (`HalfState.width` as the overlay draws it) */
+  drawn: number;
+  /** the canvas-coloured rect behind the text of a label that stands on its stroke */
+  bg?: SVGRectElement;
   /** the box the label holds in the grid */
   obstacle?: Obstacle;
   /** an isolated re-placement found no spot: the label is hidden and tries again on the next call */
@@ -98,6 +110,9 @@ interface LabelLayout {
   grid: ObstacleIndex;
   widths: Map<string, number>;
   records: Map<string, LabelRecord>;
+  /** `linkWidth.max` of the placement: the widest stroke, in the units of the edge */
+  max: number;
+  min: number;
 }
 
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
@@ -147,6 +162,7 @@ export function renderLinkLabels(
     slots.map((s) => `${s.cellId}:${s.which}:${s.mode}`).join('\n'),
     patched.join('\n'),
     opts.linkWidth.max,
+    opts.linkWidth.min,
     fontFamily,
   ].join('|');
   const started = typeof performance === 'undefined' ? 0 : performance.now();
@@ -545,12 +561,13 @@ function nearestOnPolyline(pts: Point[], p: Point): { at: number; point: Point }
   return { at: best.at, point: best.point };
 }
 
-const legOf = (id: string, points: Point[], strokeRoot: number): Leg => ({
+const legOf = (id: string, points: Point[], strokeRoot: number, minRoot = strokeRoot): Leg => ({
   id,
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
   strokeRoot,
+  minRoot,
 });
 
 /**
@@ -561,7 +578,8 @@ function edgeLegs(
   entry: CellEntry,
   root: SVGSVGElement,
   max: number,
-  halves: { a2b: boolean; b2a: boolean }
+  halves: { a2b: boolean; b2a: boolean },
+  min = max
 ): EdgeLegs {
   const line = entry.line!;
   const id = entry.meta.id;
@@ -574,6 +592,7 @@ function edgeLegs(
     return {};
   }
   const strokeRoot = max * scaleOf(m);
+  const minRoot = Math.min(min, max) * scaleOf(m);
   if (halves.a2b && halves.b2a) {
     // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
     // then the point in the path's own space, into root units through the same matrix as the vertices
@@ -581,13 +600,13 @@ function edgeLegs(
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
-      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot),
-      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot),
+      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot),
+      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot),
     };
   }
   return halves.a2b
-    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot) }
-    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot) };
+    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot) }
+    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot) };
 }
 
 /* ---------- the layer and its elements ---------- */
@@ -609,9 +628,10 @@ function createProbe(layer: SVGGElement): SVGTextElement {
   return probe;
 }
 
-function paint(el: SVGTextElement, theme: GrafanaTheme2): void {
-  el.setAttribute('fill', theme.colors.text.primary);
-  el.setAttribute('stroke', theme.colors.background.primary);
+function paint(rec: LabelRecord, theme: GrafanaTheme2): void {
+  rec.el?.setAttribute('fill', theme.colors.text.primary);
+  rec.el?.setAttribute('stroke', theme.colors.background.primary);
+  rec.bg?.setAttribute('fill', theme.colors.background.primary);
 }
 
 function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
@@ -631,19 +651,62 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   el.setAttribute('stroke-width', String(2 * LINK_LABEL_GEOMETRY.halo));
   el.setAttribute('paint-order', 'stroke');
   el.setAttribute('stroke-linejoin', 'round');
-  paint(el, layout.theme);
+  el.setAttribute('stroke-linecap', 'round');
+  el.setAttribute('text-rendering', 'geometricPrecision');
   layout.layer.appendChild(el);
   rec.el = el;
+  paint(rec, layout.theme);
   return el;
 }
 
-function position(el: SVGTextElement, placed: Placed): void {
-  const x = fmt(placed.centre.x);
-  const y = fmt(placed.centre.y);
+const SIDE_NAMES = { '0': 'line', '1': 'top', '-1': 'bottom', '2': 'top-wide', '-2': 'bottom-wide' } as const;
+/** The corner radius of the gap a label on its stroke cuts into the line. */
+const GAP_RADIUS = 2;
+
+function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
+  const el = ensureElement(layout, rec);
+  el.setAttribute('data-dmap-side', SIDE_NAMES[placed.side]);
+  el.setAttribute('data-dmap-placed-at', String(++stamp));
+  draw(layout, rec, placed);
+}
+
+/** Writes the geometry of a placed label: the text at the drawn stroke, the gap rect behind it on the stroke. */
+function draw(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
+  const el = rec.el;
+  if (!el) {
+    return;
+  }
+  const at = drawnCentre(placed, rec.drawn);
+  const x = fmt(at.x);
+  const y = fmt(at.y);
+  const turn = `rotate(${fmt(placed.degrees)} ${x} ${y})`;
   el.setAttribute('x', x);
   el.setAttribute('y', y);
-  el.setAttribute('transform', `rotate(${fmt(placed.degrees)} ${x} ${y})`);
-  el.setAttribute('data-dmap-placed-at', String(++stamp));
+  el.setAttribute('transform', turn);
+  // a label on its stroke gets a gap in the line: a rect in the canvas colour behind the text, as wide as the slot
+  // and covering the drawn stroke with 1 unit more on each side
+  if (placed.side !== 0 || rec.slot === undefined) {
+    rec.bg?.remove();
+    rec.bg = undefined;
+    return;
+  }
+  if (!rec.bg) {
+    rec.bg = document.createElementNS(NS, 'rect');
+    rec.bg.setAttribute('class', LINK_LABEL_BG_CLASS);
+    rec.bg.setAttribute('pointer-events', 'none');
+    rec.bg.setAttribute('rx', String(GAP_RADIUS));
+    layout.layer.insertBefore(rec.bg, el);
+    paint(rec, layout.theme);
+    if (el.getAttribute('visibility') === 'hidden') {
+      rec.bg.setAttribute('visibility', 'hidden');
+    }
+  }
+  const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
+  rec.bg.setAttribute('x', fmt(at.x - rec.slot / 2));
+  rec.bg.setAttribute('y', fmt(at.y - height / 2));
+  rec.bg.setAttribute('width', fmt(rec.slot));
+  rec.bg.setAttribute('height', fmt(height));
+  rec.bg.setAttribute('transform', turn);
 }
 
 /** Shows `text` in the element, or hides the element (its slot stays reserved) when there is none. */
@@ -654,25 +717,44 @@ function showText(rec: LabelRecord, text: string | undefined): void {
   }
   if (text === undefined || rec.retry) {
     el.setAttribute('visibility', 'hidden');
+    rec.bg?.setAttribute('visibility', 'hidden');
     return;
   }
   if (el.textContent !== text) {
     el.textContent = text;
   }
   el.removeAttribute('visibility');
+  rec.bg?.removeAttribute('visibility');
 }
 
 /** Places one label with its current slot; a placed label takes its box in the grid. */
 function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
-  if (!rec.leg || rec.slot === undefined) {
+  const leg = inputOf(rec);
+  if (!leg) {
     rec.placement = undefined;
     rec.obstacle = undefined;
     return false;
   }
-  const leg: LegInput = { ...rec.leg, size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 } };
-  const placement = placeHalfLabel(leg, rec.cellId, layout.grid);
+  // an isolated re-placement tries first the side the other half of the link holds (or held before it dropped)
+  const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.side;
+  const sides: readonly LabelSide[] =
+    mate === undefined ? LABEL_SIDES : [mate, ...LABEL_SIDES.filter((side) => side !== mate)];
+  return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides));
+}
+
+/** The leg of a record with its slot size; undefined when the edge has no geometry or the half has no slot yet. */
+function inputOf(rec: LabelRecord): LegInput | undefined {
+  if (!rec.leg || rec.slot === undefined) {
+    return undefined;
+  }
+  return { ...rec.leg, size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 } };
+}
+
+/** Stores the placement of a record; a placed label takes its box in the grid. */
+function hold(layout: LabelLayout, rec: LabelRecord, placement: Placement): boolean {
   rec.placement = placement;
   if ('centre' in placement) {
+    rec.side = placement.side;
     rec.obstacle = { kind: 'rect', rect: boundsOf(placement.box), clearance: 0 };
     layout.grid.add(rec.obstacle);
     return true;
@@ -703,6 +785,8 @@ function fullPlacement(
     grid: obstacleIndex([]),
     widths: new Map(),
     records: new Map(),
+    max: opts.linkWidth.max,
+    min: opts.linkWidth.min,
   };
   const probe: TextProbe = (text, font) => measure(layout, text, font);
   // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
@@ -711,28 +795,58 @@ function fullPlacement(
     if (!legs.has(slot.cellId)) {
       legs.set(
         slot.cellId,
-        edgeLegs(index.get(slot.cellId)!, root, opts.linkWidth.max, halvesOf(patches, slot.cellId))
+        edgeLegs(index.get(slot.cellId)!, root, opts.linkWidth.max, halvesOf(patches, slot.cellId), opts.linkWidth.min)
       );
     }
   }
   layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe, legs));
+  const texts: Array<string | undefined> = [];
   for (const slot of slots) {
     const text = linkLabelText(slot.state, slot.mode);
+    texts.push(text);
     const rec: LabelRecord = {
       cellId: slot.cellId,
       which: slot.which,
       mode: slot.mode,
       leg: legs.get(slot.cellId)?.[slot.which],
       slot: slotOf(layout, slot, text),
+      drawn: drawnOf(layout, legs.get(slot.cellId)?.[slot.which], slot.state),
       retry: false,
     };
     layout.records.set(`${slot.cellId}:${slot.which}`, rec);
-    if (tryPlace(layout, rec)) {
-      position(ensureElement(layout, rec), rec.placement as Placed);
-    }
-    showText(rec, text);
   }
+  // the two halves of a link are placed together: both on one side when a side holds both
+  const done = new Set<LabelRecord>();
+  slots.forEach((slot, i) => {
+    const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
+    if (!done.has(rec)) {
+      const mate = layout.records.get(`${slot.cellId}:${slot.which === 'a2b' ? 'b2a' : 'a2b'}`);
+      const [a, b] = slot.which === 'a2b' ? [rec, mate] : [mate, rec];
+      const legA = a && inputOf(a);
+      const legB = b && inputOf(b);
+      if (a && b && legA && legB && !done.has(mate!)) {
+        const [pa, pb] = placeLinkLabels(legA, legB, rec.cellId, layout.grid);
+        hold(layout, a, pa);
+        hold(layout, b, pb);
+        done.add(a).add(b);
+      } else {
+        tryPlace(layout, rec);
+        done.add(rec);
+      }
+    }
+    if (rec.placement && 'centre' in rec.placement) {
+      position(layout, rec, rec.placement);
+    }
+    showText(rec, texts[i]);
+  });
   return layout;
+}
+
+/** The drawn stroke width of a half in root units: its width in the units of the edge, converted as the widest one is. */
+function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): number {
+  // the reservation holds the widths between linkWidth.min and linkWidth.max only
+  const width = Math.min(Math.max(state.width, layout.min), layout.max);
+  return leg && layout.max > 0 ? (width * leg.strokeRoot) / layout.max : width;
 }
 
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
@@ -741,14 +855,20 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
   if (layout.theme !== theme) {
     layout.theme = theme;
     for (const rec of layout.records.values()) {
-      if (rec.el) {
-        paint(rec.el, theme);
-      }
+      paint(rec, theme);
     }
   }
   for (const slot of slots) {
     const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
     const text = linkLabelText(slot.state, slot.mode);
+    // a changed load changes the drawn width: the text moves across the link, on the same side and place along it
+    const drawn = drawnOf(layout, rec.leg, slot.state);
+    if (drawn !== rec.drawn) {
+      rec.drawn = drawn;
+      if (rec.placement && 'centre' in rec.placement) {
+        draw(layout, rec, rec.placement);
+      }
+    }
     const width = slotOf(layout, slot, text);
     const slotChanged = width !== undefined && width !== rec.slot;
     if (slotChanged) {
@@ -763,7 +883,7 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
       }
       if (tryPlace(layout, rec)) {
         const el = ensureElement(layout, rec);
-        position(el, rec.placement as Placed);
+        position(layout, rec, rec.placement as Placed);
         el.removeAttribute('data-dmap-dropped');
         rec.retry = false;
         if (old) {

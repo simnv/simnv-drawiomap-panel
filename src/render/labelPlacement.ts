@@ -34,8 +34,10 @@ export interface LegInput {
   length: number;
   /** the slot size without the halo */
   size: { width: number; height: number };
-  /** the stroke width of the edge in root units (`strokeLocal × geo.unit`) */
+  /** the widest stroke of the edge in root units (`linkWidth.max × geo.unit`) */
   strokeRoot: number;
+  /** the thinnest stroke in root units (`linkWidth.min × geo.unit`); the width of a half is drawn between the two */
+  minRoot?: number;
 }
 
 export type Obstacle =
@@ -58,10 +60,33 @@ export interface Placed {
   box: OrientedBox;
   /** the arc length of the anchor along the leg */
   along: number;
+  /** where the box stands: see `LabelSide` */
+  side: LabelSide;
+  /** the height of the text box (with the halo); `box` is taller: it holds the box for every drawn width */
+  height: number;
+  /** the widest stroke in root units: the wide gap counts from its edge, whatever the drawn width */
+  maxRoot: number;
+  /** the point of the leg the box stands at, and the unit vector of the top side: `drawnCentre` needs them */
+  anchor: Point;
+  normal: Point;
 }
+/**
+ * Where a label stands: 0 on the own stroke; 1 beside it on the top side (the side the tops of the letters face,
+ * `runHeading().first`) and −1 on the bottom side, the near edge of the box `normalGap` beyond the stroke edge; 2 and
+ * −2 are the same sides with `wideGap`, for a stroke with a wide chip or pill beside it.
+ */
+export type LabelSide = 0 | 1 | -1 | 2 | -2;
+export const LABEL_SIDES: readonly LabelSide[] = [0, 1, -1, 2, -2];
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
 
-export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 4, halo: 2, alongStep: 4, endMargin: 4 } as const;
+export const LINK_LABEL_GEOMETRY = {
+  fontSize: 8,
+  normalGap: 2,
+  wideGap: 4,
+  halo: 1,
+  alongStep: 4,
+  endMargin: 4,
+} as const;
 /** The smallest glyph that reads on a screen: below it the label layer hides (decision 7). */
 export const MIN_GLYPH_PX = 7;
 /** A run whose horizontal extent is at most this is vertical. draw.io writes two decimals. */
@@ -76,12 +101,12 @@ export function labelsVisible(viewScale: number): boolean {
 
 /**
  * The reading direction of a run and the side a label tries first (portograph `candidateBox`, ADR-0014). A vertical
- * run reads bottom to top and takes the right side first. Any other run keeps its text upright (gravity): the
+ * run reads bottom to top and takes the left side first (the side the letters' tops face). Any other run keeps its text upright (gravity): the
  * heading is in (−90, 90), and the first side is above the run (up at 0°, up-left at −45°).
  */
 export function runHeading(dx: number, dy: number): { degrees: number; first: Point } {
   if (Math.abs(dx) <= VERTICAL_EPS) {
-    return { degrees: -90, first: { x: 1, y: 0 } };
+    return { degrees: -90, first: { x: -1, y: 0 } };
   }
   let degrees = (Math.atan2(dy, dx) * 180) / Math.PI;
   if (degrees > 90) {
@@ -329,14 +354,19 @@ const arcLengths = (pts: readonly Point[]): number[] => {
 /* ---------- candidates ---------- */
 
 /**
- * Places the label of one half: the first free candidate in the portograph order (the first side over the whole
- * leg, then the second; from the middle of the leg outwards in steps of `alongStep`, the lower arc length first).
- * A candidate stands on one straight run with `endMargin` to the bends; its box is `normalGap` outside the stroke
- * edge. `own` is the cell id of the edge: the pieces of its own run (`leg.id`, `Obstacle.piece`) are no obstacle,
+ * Places the label of one half: the first free candidate in the ladder order (on the stroke over the whole leg, then
+ * the top side, then the bottom side, then both again with the wide gap; from the middle of the leg outwards in steps of `alongStep`, the lower arc
+ * length first). A candidate stands on one straight run with `endMargin` to the bends; on the stroke its centre is
+ * on the leg, beside it the near edge of its box is `normalGap` beyond the stroke edge. `own` is the cell id of the edge: the pieces of its own run (`leg.id`, `Obstacle.piece`) are no obstacle,
  * its other runs are.
  */
-export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex): Placement {
-  const { halo, normalGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
+export function placeHalfLabel(
+  leg: LegInput,
+  own: string,
+  index: ObstacleIndex,
+  sides: readonly LabelSide[] = LABEL_SIDES
+): Placement {
+  const { halo, normalGap, wideGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
   const w = leg.size.width + 2 * halo;
   const h = leg.size.height + 2 * halo;
   const stops = [0, ...leg.bends, leg.length];
@@ -344,8 +374,18 @@ export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex)
   if (Math.max(...runs.map((r) => r.to - r.from)) < w + 2 * endMargin - EPS) {
     return { dropped: 'short-leg' };
   }
-  const gap = normalGap + leg.strokeRoot / 2;
-  const offset = gap + h / 2;
+  // The reservation is the union of the boxes the label can take for any drawn width between `minRoot` and
+  // `strokeRoot`. Beside the stroke the near edge of the text box stands `normalGap` (or `wideGap`) beyond the drawn
+  // stroke edge: the swept band runs from the near edge at the thinnest stroke to the far edge at the widest. On the
+  // stroke it is as high as the largest gap rect.
+  const minRoot = Math.min(leg.minRoot ?? leg.strokeRoot, leg.strokeRoot);
+  // The wide gap (a chip or a pill beside the stroke is wider than a thin stroke) counts from the edge of the widest
+  // stroke for every drawn width: its text does not move with the load.
+  const offsetOf = (side: LabelSide) =>
+    Math.sign(side) *
+    (Math.abs(side) === 2 ? wideGap + leg.strokeRoot / 2 + h / 2 : normalGap + (minRoot + leg.strokeRoot) / 4 + h / 2);
+  const sweptHeight = (side: LabelSide) =>
+    side === 0 ? Math.max(h, leg.strokeRoot + 2) : Math.abs(side) === 2 ? h : h + (leg.strokeRoot - minRoot) / 2;
   const d0 = leg.length / 2;
   // the distances from the middle, the lower one first at each step; the same list serves both sides
   const distances: number[] = [d0];
@@ -381,16 +421,74 @@ export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex)
       arcs[o.piece.index + 1] <= run.to + EPS;
     return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece }];
   });
-  for (const side of [1, -1]) {
+  for (const side of sides) {
     for (const { d, anchor, heading, ownPiece } of candidates) {
-      const centre = { x: anchor.x + side * heading.first.x * offset, y: anchor.y + side * heading.first.y * offset };
-      const box: OrientedBox = { centre, width: w, height: h, degrees: heading.degrees };
+      const shift = offsetOf(side);
+      const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
+      const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
       if (!collides(box, ownPiece, index)) {
-        return { centre, degrees: heading.degrees, box, along: d };
+        return {
+          centre,
+          degrees: heading.degrees,
+          box,
+          along: d,
+          side,
+          height: h,
+          maxRoot: leg.strokeRoot,
+          anchor,
+          normal: heading.first,
+        };
       }
     }
   }
   return { dropped: 'no-free-spot' };
+}
+
+/**
+ * The centre of the text for a stroke drawn `drawnRoot` wide (root units). The reservation of a label (`centre`,
+ * `box`) always uses the widest stroke, so that a change of the load never makes a label collide; the text stands
+ * `normalGap` (or `wideGap`) beyond the edge of the stroke as it is drawn.
+ */
+export function drawnCentre(p: Placed, drawnRoot: number): Point {
+  if (p.side === 0) {
+    return p.anchor;
+  }
+  const { normalGap, wideGap } = LINK_LABEL_GEOMETRY;
+  const wide = Math.abs(p.side) === 2;
+  const shift = Math.sign(p.side) * ((wide ? wideGap : normalGap) + (wide ? p.maxRoot : drawnRoot) / 2 + p.height / 2);
+  return { x: p.anchor.x + p.normal.x * shift, y: p.anchor.y + p.normal.y * shift };
+}
+
+/**
+ * Places the labels of the two halves of one link so that both stand in one place: on the stroke, else both on the
+ * top side, else both on the bottom side, then the same two sides with the wide gap. Only when no single place holds both, each half takes its own first free
+ * spot. The first label of a pair is an
+ * obstacle for the second while the pair is placed; the index holds no label of the pair when this returns.
+ */
+export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: ObstacleIndex): [Placement, Placement] {
+  const hold = (p: Placement): Obstacle | undefined => {
+    if (!('centre' in p)) {
+      return undefined;
+    }
+    const o: Obstacle = { kind: 'rect', rect: boundsOf(p.box), clearance: 0 };
+    index.add(o);
+    return o;
+  };
+  const drop = (o: Obstacle | undefined) => o && index.remove(o);
+  const pair = (sides: readonly LabelSide[]): [Placement, Placement] => {
+    const first = placeHalfLabel(a, own, index, sides);
+    const held = hold(first);
+    const second = placeHalfLabel(b, own, index, sides);
+    drop(held);
+    return [first, second];
+  };
+  for (const side of LABEL_SIDES) {
+    const result = pair([side]);
+    if ('centre' in result[0] && 'centre' in result[1]) {
+      return result;
+    }
+  }
+  return pair(LABEL_SIDES);
 }
 
 /** The box against the obstacles near it; the pieces of the own run (`ownPiece`) do not count. */
