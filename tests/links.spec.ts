@@ -20,6 +20,8 @@ test.describe('hover card', () => {
     await expect(card).toContainText('Traffic');
     await expect(card).toContainText('90%');
     await expect(card.getByTestId('dmap-card-spark')).toHaveCount(1);
+    // the hover card draws its charts in a second commit: wait for the chart, not for the box
+    await expect(card.getByTestId('dmap-mirror-spark')).toBeVisible();
     if (SHOTS) {
       await panel.locator.screenshot({ path: `${SHOTS}/card-hover-desktop.png` });
     }

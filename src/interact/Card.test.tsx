@@ -1,13 +1,22 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange } from '@grafana/data';
-import { expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Card } from './Card';
 import type { ConfiguredCardModel } from './cardModel';
 
-const { sparkline } = vi.hoisted(() => ({
+const { sparkline, transitions } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
+  /** When set, the transitions of the card queue here instead of running; a test runs them in an `act`. */
+  transitions: { queue: null as Array<() => void> | null },
 }));
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    startTransition: (cb: () => void) => (transitions.queue ? transitions.queue.push(cb) : actual.startTransition(cb)),
+  };
+});
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
   useStyles2: (fn: (theme: ReturnType<typeof createTheme>) => unknown) => fn(createTheme()),
@@ -452,4 +461,66 @@ it.each([
 ] as const)('names its cell in data-dmap-cell (%s)', (_name, width, variant) => {
   render(<Card model={followModel} cellId="rtr-a" pinned={false} variant={variant} width={width} height={600} />);
   expect(screen.getByTestId('dmap-card').getAttribute('data-dmap-cell')).toBe('rtr-a');
+});
+
+describe('deferred charts', () => {
+  const queued = () => {
+    transitions.queue = [];
+    sparkline.mockClear();
+  };
+  afterEach(() => {
+    transitions.queue = null;
+  });
+  const runTransitions = () =>
+    act(() => {
+      transitions.queue?.splice(0).forEach((cb) => cb());
+    });
+  const threeRows = (): ConfiguredCardModel => ({
+    ...cardOf(chartRow({ history: readyHistory([1, 2]) })),
+    rows: [
+      chartRow({ key: 'h', title: 'CPU', text: '2 %', history: readyHistory([1, 2]) }),
+      chartRow({ key: 'c', title: 'Traffic', domain: [-10, 10], directions: directions(true) }),
+      { key: 'v', kind: 'value', title: 'Temperature', text: '42 °C', state: 'ready' },
+    ],
+  });
+  const boxes = () => screen.getAllByTestId('dmap-card-spark').map((el) => [el.style.height, el.childElementCount]);
+  it('a hover card has the texts and empty chart boxes in the first commit; the charts come in the transition', () => {
+    queued();
+    render(<Card model={threeRows()} pinned={false} x={20} y={20} width={800} height={600} />);
+    expect(screen.getByText('CPU')).toBeTruthy();
+    expect(screen.getByText('2 %')).toBeTruthy();
+    expect(screen.getByText('42 °C')).toBeTruthy();
+    expect(boxes()).toEqual([
+      ['40px', 0],
+      ['80px', 0],
+    ]);
+    expect(sparkline).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('dmap-mirror-spark')).toBeNull();
+    expect(transitions.queue).toHaveLength(1);
+    runTransitions();
+    expect(sparkline).toHaveBeenCalled();
+    expect(screen.getByTestId('dmap-mirror-spark')).toBeTruthy();
+    // the box of every chart keeps its height: the card does not change its height between the commits
+    expect(boxes()).toEqual([
+      ['40px', 1],
+      ['80px', 1],
+    ]);
+  });
+  it('a hover card that unmounts before the transition pays for the texts only', () => {
+    queued();
+    const { unmount } = render(<Card model={threeRows()} pinned={false} x={20} y={20} width={800} height={600} />);
+    unmount();
+    runTransitions();
+    expect(sparkline).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['pinned', { pinned: true, variant: 'floating' }],
+    ['inline', { pinned: false, variant: 'inline' }],
+  ] as const)('the %s card has its charts in the first commit', (_name, props) => {
+    queued();
+    render(<Card model={threeRows()} {...props} x={20} y={20} width={800} height={600} />);
+    expect(sparkline).toHaveBeenCalled();
+    expect(screen.getByTestId('dmap-mirror-spark')).toBeTruthy();
+    expect(transitions.queue).toEqual([]);
+  });
 });
