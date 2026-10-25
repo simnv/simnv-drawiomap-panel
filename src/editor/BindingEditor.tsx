@@ -860,6 +860,7 @@ export function BindingEditor({
               onBox={addCells}
               chartLayer={chartLayer}
               owner={owner}
+              linkWidth={bindContext.linkWidth}
               hash={draft.diagram?.hash}
             />
           }

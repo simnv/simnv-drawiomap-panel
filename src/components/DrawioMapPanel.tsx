@@ -20,6 +20,7 @@ import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind, interactiveCells, patchAt } from '../interact/hit';
 import { applyPatches, INTERACTIVE_ATTR, markInteractive } from '../render/applier';
+import { renderLinkLabels, setLinkLabelScale } from '../render/linkLabels';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
@@ -571,19 +572,23 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     }
   }, [stage.root, isDark]);
 
-  // Apply patches and redraw the overlay once per frame.
+  // Apply patches, redraw the overlay and the value labels once per frame.
+  const { min: linkMin, max: linkMax } = opts.linkWidth;
   useEffect(() => {
     if (!stage.root) {
       return;
     }
     const root = stage.root;
+    const linkWidth = { min: linkMin, max: linkMax };
     const id = requestAnimationFrame(() => {
       patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive);
       interactiveRef.current = markInteractive(stage.index, interactive, interactiveRef.current);
       renderOverlay(root, stage.index, result.patches, { theme });
+      // after the overlay: its arrow heads are obstacles of the labels
+      renderLinkLabels(root, stage.index, result.patches, { theme, linkWidth });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, result, theme, interactive]);
+  }, [stage.root, stage.index, result, theme, interactive, linkMin, linkMax]);
 
   // After the patches (the same frame order): mark the cells of the legend entry under the pointer.
   const hits = legendBlocks.length ? legendHits : null;
@@ -618,6 +623,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       view ?? stage.base
     );
     applyLayout(stage.root, layout);
+    setLinkLabelScale(stage.root);
     if (containerRef.current) {
       containerRef.current.style.overflow = layout.overflow;
     }
