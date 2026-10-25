@@ -115,7 +115,7 @@ const demands = (
   }: { generation?: number; expr?: string; width?: number; open?: string } = {}
 ) => {
   const cfg = config(expr);
-  return demandsOf(planOf(cfg), cfg, context(generation), width, role, open);
+  return demandsOf(planOf(cfg), context(generation), width, role, open);
 };
 
 function setup() {
@@ -147,14 +147,14 @@ describe('demandsOf', () => {
     const [d] = demands('visible');
     expect(d.matchKey).toBe(matchKeyOf(query(), scope, context(1)));
     expect(d.maxDataPoints).toBe(100);
-    expect(demandsOf(planOf(config()), config(), undefined, 100, 'visible')).toEqual([]);
+    expect(demandsOf(planOf(config()), undefined, 100, 'visible')).toEqual([]);
   });
   it('skips a panel-source query: the resolver reads it from the panel data', () => {
     const cfg: DiagramConfig = {
       ...config(),
       queries: [{ id: 'health', name: 'H', source: { kind: 'panel', refId: 'A' } }],
     };
-    expect(demandsOf(planOf(cfg), cfg, context(1), 100, 'visible')).toEqual([]);
+    expect(demandsOf(planOf(cfg), context(1), 100, 'visible')).toEqual([]);
   });
 });
 
@@ -405,7 +405,7 @@ describe('the render check', () => {
     const panelPlan = planOf(cfg);
     const resolve = resolverFrom(
       [store.frame('panel:1', 'visible')],
-      demandMap(demandsOf(panelPlan, cfg, context(1), 100, 'hover', 'router')),
+      demandMap(demandsOf(panelPlan, context(1), 100, 'hover', 'router')),
       panelPlan,
       { ...data, series: [frame(9)] },
       {}

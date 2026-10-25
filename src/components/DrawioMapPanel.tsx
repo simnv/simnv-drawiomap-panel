@@ -350,13 +350,13 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   const queryContext = queryService?.context;
   const maxDataPoints = Math.max(1, Math.min(264, width - 16));
   const visibleDemands = useMemo(
-    () => demandsOf(plan, plan.config, queryContext, maxDataPoints, 'visible'),
+    () => demandsOf(plan, queryContext, maxDataPoints, 'visible'),
     [plan, queryContext, maxDataPoints]
   );
   const visible = useBindings(queryService, `panel:${id}`, 'visible', visibleDemands, paused);
   const openCellId = card?.cellId;
   const cardDemands = useMemo(
-    () => demandsOf(plan, plan.config, queryContext, maxDataPoints, 'hover', openCellId),
+    () => demandsOf(plan, queryContext, maxDataPoints, 'hover', openCellId),
     [plan, queryContext, maxDataPoints, openCellId]
   );
   const cardFrame = useBindings(queryService, `panel:${id}`, 'card', cardDemands, paused);

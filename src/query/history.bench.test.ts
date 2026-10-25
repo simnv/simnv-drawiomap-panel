@@ -176,7 +176,7 @@ describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
       dispose: () => {},
     };
     const data: PanelData = { state: LoadingState.Done, series: [], timeRange };
-    const demands = store.demandsOf(plan, plan.config, context, 264, 'visible');
+    const demands = store.demandsOf(plan, context, 264, 'visible');
     expect(demands).toHaveLength(2 * CELLS);
     const snapshots = store.createSnapshotStore(controller);
     snapshots.want('bench', 'visible', demands);

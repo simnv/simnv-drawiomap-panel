@@ -1,10 +1,10 @@
 import type { PanelData } from '@grafana/data';
 import { collectBindingDemands, resolveBinding, type BindingDemand, type BindingResolver } from '../binding/engine';
 import type { BindingPlan } from '../binding/patterns';
-import type { DiagramConfig, NamedQuery, QueryBinding } from '../model/config';
+import type { NamedQuery } from '../model/config';
 import type { TemplateScope } from '../types';
 import { stable } from './boundary';
-import type { HistoryFormat, HistoryModel } from './frames';
+import type { HistoryFormat } from './frames';
 import { panelSnapshot } from './panelSnapshot';
 import { settled, type QueryContext, type QueryController, type QuerySnapshot } from './types';
 
@@ -43,15 +43,14 @@ export interface SnapshotStore {
   want(owner: string, group: string, demands: StoreDemand[]): void;
   /** The frame of a group; without a group, of every group of the owner. */
   frame(owner: string, group?: string): Frame;
-  /** The model of a binding at a cell, from the history cache. */
-  model(shown: Shown, binding: QueryBinding, format: HistoryFormat): HistoryModel;
   /** One call per microtask batch of changes. */
   subscribe(listener: () => void): () => void;
   dispose(): void;
 }
 
 const IDLE: QuerySnapshot = { state: 'idle' };
-const LOADING: QuerySnapshot = { state: 'loading' };
+/** The snapshot of an entry before its first result, and of a demand without an entry. */
+export const LOADING: QuerySnapshot = { state: 'loading' };
 /** The frame of a hook without a store. */
 export const EMPTY_FRAME: Frame = { version: 0, get: () => undefined, size: 0 };
 
@@ -66,7 +65,6 @@ export const pairKey = (cellId: string, queryId: string): string => `${cellId}\u
  */
 export function demandsOf(
   plan: BindingPlan,
-  config: DiagramConfig,
   context: QueryContext | undefined,
   maxDataPoints: number,
   role: BindingDemand['role'],
@@ -75,7 +73,7 @@ export function demandsOf(
   if (!context) {
     return [];
   }
-  const queries = new Map(config.queries.map((query) => [query.id, query] as const));
+  const queries = new Map(plan.config.queries.map((query) => [query.id, query] as const));
   const seen = new Set<string>();
   const demands: StoreDemand[] = [];
   for (const demand of collectBindingDemands(plan, openCellId)) {
@@ -347,6 +345,11 @@ export function createSnapshotStore(controller: QueryController): SnapshotStore 
       }
       if (members && !members.size) {
         groups.delete(groupKey);
+        // the memoised frames of the group and of an owner without groups hold the last results: drop them
+        frames.delete(groupKey);
+        if (![...groups.keys()].some((key) => key.startsWith(`${owner}${SEP}`))) {
+          frames.delete(owner);
+        }
       }
       if (changed) {
         notify();
@@ -395,9 +398,6 @@ export function createSnapshotStore(controller: QueryController): SnapshotStore 
       };
       frames.set(frameKey, { version, frame, shown });
       return frame;
-    },
-    model(shown, binding, format) {
-      return resolveBinding(shown.snapshot, binding, shown.demand.scope, format);
     },
     subscribe(listener) {
       listeners.add(listener);

@@ -6,7 +6,7 @@ import { resolveBinding } from '../binding/engine';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import type { PanelQueryService } from '../query/panel';
-import { matchKeyOf, shownSnapshot, type StoreDemand } from '../query/store';
+import { LOADING, matchKeyOf, shownSnapshot, type StoreDemand } from '../query/store';
 import type { QuerySnapshot } from '../query/types';
 import { useBindings } from '../query/useBindings';
 import { readChartAnchor, type ChartAnchor } from '../render/geometry';
@@ -30,7 +30,6 @@ export interface ChartLayerProps {
 }
 
 const NO_DEMANDS: StoreDemand[] = [];
-const LOADING: QuerySnapshot = { state: 'loading' };
 
 /** Check the painted element against the panel and every clipping ancestor. */
 function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {

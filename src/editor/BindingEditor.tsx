@@ -250,18 +250,12 @@ export function BindingEditor({
 
   // The saved bindings of every cell and the hover rows of the open cell are one group of the popup's owner. The
   // owner frame holds the widget groups of the popup stage too, subscribed: a widget entry resolves at its anchor cell.
-  const visibleDemands = useMemo(
-    () => demandsOf(plan, plan.config, context, MAX_DATA_POINTS, 'visible'),
-    [plan, context]
-  );
+  const visibleDemands = useMemo(() => demandsOf(plan, context, MAX_DATA_POINTS, 'visible'), [plan, context]);
   const hoverDemands = useMemo(
-    () => demandsOf(plan, plan.config, context, MAX_DATA_POINTS, 'hover', draft.cellId),
+    () => demandsOf(plan, context, MAX_DATA_POINTS, 'hover', draft.cellId),
     [plan, context, draft.cellId]
   );
-  const widgetDemands = useMemo(
-    () => demandsOf(plan, plan.config, context, MAX_DATA_POINTS, 'widget'),
-    [plan, context]
-  );
+  const widgetDemands = useMemo(() => demandsOf(plan, context, MAX_DATA_POINTS, 'widget'), [plan, context]);
   const bindingDemands = useMemo(() => [...visibleDemands, ...hoverDemands], [visibleDemands, hoverDemands]);
   const ownerFrame = useBindings(service, owner, 'bindings', bindingDemands, false, 'owner');
   const identities = useMemo(() => demandMap(bindingDemands, widgetDemands), [bindingDemands, widgetDemands]);
