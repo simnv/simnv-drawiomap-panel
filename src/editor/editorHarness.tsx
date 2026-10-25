@@ -93,5 +93,7 @@ export function renderEditor({
     close: onRequestClose,
     /** Give the same editor a new query service, as a dashboard refresh does. */
     rerenderService: (next: PanelQueryService) => view.rerender(wrap(element, next)),
+    /** Give the same editor new props, as the panel does on new data. */
+    rerenderWith: (next: Partial<BindingEditorProps>) => view.rerender(wrap(React.cloneElement(element, next))),
   };
 }

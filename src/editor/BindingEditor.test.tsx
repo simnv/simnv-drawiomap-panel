@@ -1061,21 +1061,23 @@ describe('sample freshness in the popup stage', () => {
         },
       ],
     };
-    const series = [
-      toDataFrame({
-        refId: 'Q',
-        fields: [
-          { name: 'Time', type: FieldType.time, values: [Date.now()] },
-          { name: 'Value', type: FieldType.number, values: [1] },
-        ],
-      }),
-    ];
-    renderEditor({
-      config: timed,
-      svg: svgOf('device-1'),
-      data: { state: LoadingState.Done, series, timeRange: getDefaultTimeRange() },
+    const dataAt = (sampleAt: number): PanelData => ({
+      state: LoadingState.Done,
+      timeRange: getDefaultTimeRange(),
+      series: [
+        toDataFrame({
+          refId: 'Q',
+          fields: [
+            { name: 'Time', type: FieldType.time, values: [sampleAt] },
+            { name: 'Value', type: FieldType.number, values: [1] },
+          ],
+        }),
+      ],
     });
+    // the first sample is far in the future, so a slow first render cannot miss the fresh state
+    const view = renderEditor({ config: timed, svg: svgOf('device-1'), data: dataAt(Date.now() + 1e6) });
     await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('normal'));
+    view.rerenderWith({ data: dataAt(Date.now()) });
     await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('stale'), {
       timeout: 4000,
     });
