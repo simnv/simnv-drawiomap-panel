@@ -20,6 +20,8 @@ import { evaluateStatus, summarizeStatuses, type StatusSummary, type StatusView 
 
 export interface PlanCellPatch extends CellPatch {
   statusView?: StatusView;
+  /** the view that replaces `statusView` once the clock is after `after`; `staleStatuses` applies it */
+  staleStatus?: { after: number; view: StatusView };
   hover?: HoverSpec;
   /** the rows whose value binding is not usable for the cell */
   unavailableHoverRows?: number[];
@@ -151,6 +153,8 @@ export interface PlanBindResult {
   patches: Map<string, PlanCellPatch>;
   diagnostics: Diagnostic[];
   summaries: StatusSummary[];
+  /** the sorted unique moments after which a status cell is stale; the clock reads again after each */
+  deadlines: number[];
 }
 
 const seriesOf = new WeakMap<HistoryModel, Map<string, SeriesInfo>>();
@@ -188,8 +192,22 @@ export function historySeries(model: Extract<HistoryModel, { state: 'ready' }>, 
   return series;
 }
 
-export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindContext, nowMs: number): PlanBindResult {
-  const result: PlanBindResult = { patches: new Map(), diagnostics: [...plan.diagnostics], summaries: [] };
+/** The cells with a status, for the summary band. */
+const statusItems = (patches: Map<string, PlanCellPatch>) =>
+  [...patches.values()].flatMap((p) => (p.statusView ? [{ cellId: p.cellId, status: p.statusView }] : []));
+
+/**
+ * The patches of every cell of the plan from the results. The clock is not an input: the same plan, results and
+ * context give the same patches at any moment. `staleStatuses` applies the time.
+ */
+export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindContext): PlanBindResult {
+  const result: PlanBindResult = {
+    patches: new Map(),
+    diagnostics: [...plan.diagnostics],
+    summaries: [],
+    deadlines: [],
+  };
+  const deadlines = new Set<number>();
   for (const cell of Object.values(plan.cells)) {
     const display = cell.display;
     const patch: PlanCellPatch = {
@@ -399,20 +417,21 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
         if (model.state === 'ready') {
           primary ??= historySeries(model, display.status.binding);
         }
-        const status = evaluateStatus(
-          display.status,
-          [
-            {
-              queryId: display.status.binding.queryId,
-              availability: model.state === 'empty' ? 'missing' : model.state === 'idle' ? 'loading' : model.state,
-              value: model.state === 'ready' ? model.latestValue : undefined,
-              sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
-            },
-          ],
-          nowMs
-        );
-        if (!patch.statusView || status.state !== 'normal') {
-          patch.statusView = status;
+        const { view, stale } = evaluateStatus(display.status, [
+          {
+            queryId: display.status.binding.queryId,
+            availability: model.state === 'empty' ? 'missing' : model.state === 'idle' ? 'loading' : model.state,
+            value: model.state === 'ready' ? model.latestValue : undefined,
+            sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
+          },
+        ]);
+        if (!patch.statusView || view.state !== 'normal') {
+          patch.statusView = view;
+        }
+        if (stale) {
+          // the clock is not an input of the bind: the pass over the patches applies the stale view in time
+          patch.staleStatus = stale;
+          deadlines.add(stale.after);
         }
       }
     }
@@ -434,10 +453,43 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
     }
     result.patches.set(cell.cellId, patch);
   }
-  result.summaries = summarizeStatuses(
-    [...result.patches.values()].flatMap((p) => (p.statusView ? [{ cellId: p.cellId, status: p.statusView }] : []))
-  );
+  result.summaries = summarizeStatuses(statusItems(result.patches));
+  result.deadlines = [...deadlines].sort((a, b) => a - b);
   return result;
+}
+
+/** The latest result per bind result: one derived result, not one per stale set a held bind passed through. */
+const staleOf = new WeakMap<PlanBindResult, { key: string; result: PlanBindResult }>();
+
+/**
+ * The result at `nowMs`: each status cell whose sample passed its deadline shows its stale view, and the summaries
+ * follow. The patches of the other cells are the same objects. With nothing stale the result is the input; two
+ * consecutive calls with the same stale set give the same object, so a tick that crosses no deadline changes nothing.
+ */
+export function staleStatuses(result: PlanBindResult, nowMs: number): PlanBindResult {
+  const stale: string[] = [];
+  for (const patch of result.patches.values()) {
+    if (patch.staleStatus && nowMs > patch.staleStatus.after) {
+      stale.push(patch.cellId);
+    }
+  }
+  if (!stale.length) {
+    return result;
+  }
+  const key = stale.join('\n');
+  const seen = staleOf.get(result);
+  if (seen?.key === key) {
+    return seen.result;
+  }
+  const patches = new Map(result.patches);
+  for (const cellId of stale) {
+    const patch = patches.get(cellId)!;
+    // a stale view replaces whatever view the bind left on the cell, as the clock inside the bind did
+    patches.set(cellId, { ...patch, statusView: patch.staleStatus!.view });
+  }
+  const shown: PlanBindResult = { ...result, patches, summaries: summarizeStatuses(statusItems(patches)) };
+  staleOf.set(result, { key, result: shown });
+  return shown;
 }
 
 const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound', unavailable: 'unavailable' } as const;

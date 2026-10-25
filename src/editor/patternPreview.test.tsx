@@ -1,6 +1,6 @@
 import { buttonNamed, chooseOption, editorField, openQueryRow, selectStageCell } from './testUtils';
-import { act, fireEvent, renderHook, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
 import { createQueryController } from '../query/controller';
 import { testQueryService } from '../query/testService';
@@ -224,7 +224,7 @@ describe('explicit full pattern preview', () => {
 // Controller-boundary scenarios use the same public run as the inspector action.
 import { previewPattern } from './patternPreview';
 import { resolvePatterns } from '../binding/patterns';
-import { usePreviewTime, type QueryPreview } from './preview';
+import type { QueryPreview } from './preview';
 function batch(parameterized = true) {
   const host = document.createElement('div');
   host.innerHTML = '<svg><g data-cell-id="a"><rect/></g><g data-cell-id="b"><rect/></g></svg>';
@@ -529,34 +529,4 @@ it('applies a completed full preview once, discards prepared results, and makes 
   expect((editorField('Label template') as HTMLInputElement).value).toBe('Applied pattern');
   expect(s.execute).toHaveBeenCalledTimes(5);
   s.controller.dispose();
-});
-
-describe('usePreviewTime', () => {
-  afterEach(() => vi.useRealTimers());
-  it('reevaluates each sample-age deadline and releases timers on change and unmount', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(1000);
-    const view = renderHook(({ deadlines }) => usePreviewTime(undefined, 1, undefined, 0, deadlines), {
-      initialProps: { deadlines: [2001, 3001] },
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    expect(view.result.current).toBe(1000);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(view.result.current).toBe(2001);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    expect(view.result.current).toBe(3001);
-    view.rerender({ deadlines: [5001] });
-    expect(vi.getTimerCount()).toBe(1);
-    view.rerender({ deadlines: [] });
-    expect(vi.getTimerCount()).toBe(0);
-    view.rerender({ deadlines: [5001] });
-    view.unmount();
-    expect(vi.getTimerCount()).toBe(0);
-  });
 });

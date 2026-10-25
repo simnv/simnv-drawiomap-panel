@@ -1037,3 +1037,47 @@ describe('QueryPane component', () => {
     });
   });
 });
+
+describe('sample freshness in the popup stage', () => {
+  it('a status with a policy turns stale at its deadline on the stage, with no new data', async () => {
+    const timed: DiagramConfig = {
+      version: 3,
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
+      patterns: [],
+      widgets: [],
+      overrides: [
+        {
+          cellId: 'device-1',
+          display: {
+            status: {
+              kind: 'mapping',
+              binding: { queryId: 'q', match: {}, reducer: 'last' },
+              default: { state: 'normal', reason: 'Healthy' },
+              mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+              freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
+            },
+          },
+        },
+      ],
+    };
+    const series = [
+      toDataFrame({
+        refId: 'Q',
+        fields: [
+          { name: 'Time', type: FieldType.time, values: [Date.now()] },
+          { name: 'Value', type: FieldType.number, values: [1] },
+        ],
+      }),
+    ];
+    renderEditor({
+      config: timed,
+      svg: svgOf('device-1'),
+      data: { state: LoadingState.Done, series, timeRange: getDefaultTimeRange() },
+    });
+    await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('normal'));
+    await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('stale'), {
+      timeout: 2000,
+    });
+    expect(stageCell('device-1').getAttribute('data-dmap-reason')).toBe('Sample is stale (expected every 100 ms)');
+  });
+});

@@ -33,7 +33,7 @@ import { EMPTY_CONFIG } from '../editor/draft';
 import { legacyRulesWarning } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
-import { statusDeadlines, usePreviewTime } from '../editor/preview';
+import { useStaleStatus } from '../visuals/useSampleStale';
 import { demandMap, demandsOf, resolverFrom } from '../query/store';
 import { useBindings } from '../query/useBindings';
 import { ChartLayer } from '../visuals/ChartLayer';
@@ -374,18 +374,18 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     () => (cardDemands.length ? resolverFrom([cardFrame, visible], cardMap, plan, data, format) : resolve),
     [cardDemands.length, cardFrame, visible, cardMap, plan, data, format, resolve]
   );
-  const deadlines = useMemo(() => statusDeadlines(plan, resolve), [plan, resolve]);
-  const nowMs = usePreviewTime(data, queryContext?.generation, undefined, visible.version, deadlines);
+  // The bind takes no clock: a tick of the freshness clock runs the pass over the patches, never the bind.
+  const bound = useMemo(() => bindPlan(plan, resolve, bindingContext), [plan, resolve, bindingContext]);
+  const shown = useStaleStatus(bound);
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
-    const bound = bindPlan(plan, resolve, bindingContext, nowMs);
     const warnings = bound.diagnostics.map((d) => `${d.path}: ${d.message}`);
     if (legacyRules) {
       warnings.unshift(legacyRulesWarning(legacyRules));
     }
-    return { patches: bound.patches, warnings, diagnostics: bound.diagnostics, summaries: bound.summaries };
-  }, [plan, resolve, bindingContext, nowMs, legacyRules]);
+    return { patches: shown.patches, warnings, diagnostics: bound.diagnostics, summaries: shown.summaries };
+  }, [bound, shown, legacyRules]);
 
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);
