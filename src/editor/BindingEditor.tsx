@@ -164,7 +164,7 @@ export function BindingEditor({
   );
   const context = service?.context;
 
-  const query = draft.config.queries.find((q) => q?.id === queryId);
+  const query = draft.config.queries.find((q) => q.id === queryId);
   const previewKey = useMemo(
     () => ({
       query,
@@ -453,7 +453,7 @@ export function BindingEditor({
   // A new pattern from the selection: one step in the history. The pattern opens in the pattern scope.
   const createPatternFrom = (select: CellSelector) => {
     let n = 1;
-    while (draft.config.patterns.some((p) => p?.id === `pattern-${n}`)) {
+    while (draft.config.patterns.some((p) => p.id === `pattern-${n}`)) {
       n++;
     }
     const id = `pattern-${n}`;
@@ -520,7 +520,7 @@ export function BindingEditor({
     setOpened(true);
     if (initial?.kind === 'cell' && cells.has(initial.cellId)) {
       openCell(initial.cellId);
-    } else if (initial?.kind === 'query' && draft.config.queries.some((q) => q?.id === initial.queryId)) {
+    } else if (initial?.kind === 'query' && draft.config.queries.some((q) => q.id === initial.queryId)) {
       openQuery(initial.queryId);
     } else if (initial?.kind === 'problem') {
       setFilter({ text: '', problemsOnly: true });
@@ -545,7 +545,7 @@ export function BindingEditor({
   }, [selection, draft, bindingsList]);
 
   const selected = draft.cellId ? cells.get(draft.cellId) : undefined;
-  const overrideIndex = draft.config.overrides.findIndex((o) => o?.cellId === draft.cellId);
+  const overrideIndex = draft.config.overrides.findIndex((o) => o.cellId === draft.cellId);
   const override = overrideIndex < 0 ? undefined : draft.config.overrides[overrideIndex];
   // An override that does not parse any more (a field blanked in the form) is skipped by the plan. Its raw fields
   // stay in the form for correction, over the merge of the patterns. Validation blocks Apply.
@@ -580,7 +580,7 @@ export function BindingEditor({
   // ---- list actions ----
   const addQuery = () => {
     let n = 1;
-    while (draft.config.queries.some((q) => q?.id === `query-${n}`)) {
+    while (draft.config.queries.some((q) => q.id === `query-${n}`)) {
       n++;
     }
     const id = `query-${n}`;
@@ -593,7 +593,7 @@ export function BindingEditor({
   const addPanelQuery = () => {
     const target = data.request?.targets[0];
     let n = 1;
-    while (draft.config.queries.some((q) => q?.id === `panel-${n}`)) {
+    while (draft.config.queries.some((q) => q.id === `panel-${n}`)) {
       n++;
     }
     const id = `panel-${n}`;

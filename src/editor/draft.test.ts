@@ -13,8 +13,8 @@ import {
   type DraftAction,
 } from './draft';
 
-describe('items that do not parse in the saved config', () => {
-  // a saved document can hold anything; the draft keeps such an item in place and edits around it
+describe('entries of the saved config that are not objects', () => {
+  // a saved document can hold anything; the boundary drops such entries once, with one note
   const nulls = {
     version: 3,
     queries: [null, { id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
@@ -22,8 +22,19 @@ describe('items that do not parse in the saved config', () => {
     overrides: [null],
     widgets: [null],
   } as unknown as DiagramConfig;
-  it('every action leaves a null item where it is and does not throw', () => {
-    let draft = reduceDraft(createDraft(nulls), { type: 'select', cellId: 'device-1' });
+  it('the draft loads without them, says so once and is not dirty; every action then reads objects only', () => {
+    const loaded = createDraft(nulls);
+    expect(loaded.diagnostics).toEqual([
+      { code: 'empty-entries', path: '(root)', message: expect.stringMatching(/^4 empty entries removed/) },
+    ]);
+    expect([loaded.config.queries, loaded.config.patterns, loaded.config.overrides, loaded.config.widgets]).toEqual([
+      [nulls.queries[1]],
+      [nulls.patterns[1]],
+      [],
+      [],
+    ]);
+    expect(isDirty(loaded)).toBe(false);
+    let draft = reduceDraft(loaded, { type: 'select', cellId: 'device-1' });
     const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
     const actions: DraftAction[] = [
       { type: 'display', display: { label: 'x' } },
@@ -31,16 +42,6 @@ describe('items that do not parse in the saved config', () => {
       { type: 'query', query: { id: 'q2', name: 'Q2', source: { kind: 'panel', refId: 'B' } } },
       { type: 'pattern', pattern: { id: 'p2', name: 'P2', select: {}, display: {} } },
       { type: 'widget', widget: { id: 'w', anchorCellId: 'device-1', kind: 'sparkline', label: 'W', binding } },
-      {
-        type: 'import',
-        config: {
-          version: 3,
-          queries: [{ id: 'q3', name: 'Q3', source: { kind: 'panel', refId: 'C' } }],
-          patterns: [],
-          overrides: [{ cellId: 'device-2', display: { label: 'y' } }],
-          widgets: [],
-        },
-      },
       { type: 'remove-widget', id: 'w' },
       { type: 'remove-query', id: 'q2' },
       { type: 'remove-override', cellId: 'device-1' },
@@ -49,24 +50,36 @@ describe('items that do not parse in the saved config', () => {
       draft = reduceDraft(draft, action);
     }
     expect(draft.diagnostics).toEqual([]);
-    expect([
-      draft.config.queries[0],
-      draft.config.patterns[0],
-      draft.config.overrides[0],
-      draft.config.widgets[0],
-    ]).toEqual([null, null, null, null]);
-    expect(draft.config.queries.map((q) => q?.id)).toEqual([undefined, 'q', 'q3']);
-    expect(draft.config.overrides.map((o) => o?.cellId)).toEqual([undefined, 'device-2']);
-    const preview = previewPatternImport(
-      draft.config,
-      {
-        kind: 'drawiomap-patterns',
-        version: 1,
-        config: { ...nulls, queries: [], patterns: [], overrides: [], widgets: [] },
+    expect(draft.config.queries.map((q) => q.id)).toEqual(['q']);
+  });
+  it('an import drops them from the source and from the destination, and notes the ones of the source', () => {
+    const document = {
+      kind: 'drawiomap-patterns',
+      version: 1,
+      config: {
+        version: 3,
+        queries: [null, { id: 'q3', name: 'Q3', source: { kind: 'panel', refId: 'C' } }],
+        patterns: [3, { id: 'p3', name: 'P3', select: { ids: ['device-2'] }, display: { label: 'y' } }],
+        overrides: ['x', { cellId: 'device-2', display: { label: 'z' } }],
+        widgets: [[]],
       },
-      ['device-1']
-    );
-    expect(preview.diagnostics.map((d) => d.code)).toContain('skipped-item');
+    };
+    const preview = previewPatternImport(nulls, document, ['device-2']);
+    expect(preview.diagnostics).toEqual([]);
+    expect(preview.notes).toEqual([
+      { code: 'empty-entries', path: '(root)', message: expect.stringMatching(/^4 empty entries removed/) },
+    ]);
+    expect(preview.config?.queries.map((q) => q.id)).toEqual(['q', 'q3']);
+    expect(preview.config?.patterns.map((p) => p.id)).toEqual(['p', 'p3']);
+    expect(preview.config?.overrides.map((o) => o.cellId)).toEqual(['device-2']);
+    expect(preview.config?.widgets).toEqual([]);
+    const imported = reduceDraft(createDraft(nulls), {
+      type: 'import-patterns',
+      document,
+      cellIds: ['device-2'],
+      resolution: {},
+    });
+    expect(imported.diagnostics.map((d) => d.code)).toEqual(['empty-entries']);
   });
 });
 

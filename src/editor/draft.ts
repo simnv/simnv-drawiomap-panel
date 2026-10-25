@@ -1,6 +1,8 @@
 import {
   EMPTY_CONFIG,
+  emptyEntriesNote,
   validateConfig,
+  withoutEmptyEntries,
   type Diagnostic,
   type DiagramConfig,
   type DisplayConfig,
@@ -77,14 +79,16 @@ export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternI
   ) {
     return at;
   }
-  return patterns.findIndex((p) => p?.id === draft.patternId);
+  return patterns.findIndex((p) => p.id === draft.patternId);
 }
 export function createDraft(config: DiagramConfig, diagram?: Diagram): BindingDraft {
+  // the boundary: after it every item of a list is an object, and the editor reads them as such
+  const { config: clean, removed } = withoutEmptyEntries(copy(config));
   return {
-    saved: copy(config),
-    config: copy(config),
+    saved: copy(clean),
+    config: clean,
     scope: 'element',
-    diagnostics: [],
+    diagnostics: removed ? [emptyEntriesNote(removed)] : [],
     diagram,
     savedDiagram: diagram,
   };
@@ -120,7 +124,7 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
   if (action.type === 'import-patterns') {
     const preview = previewPatternImport(config, action.document, action.cellIds, action.resolution);
     return preview.config
-      ? { ...draft, config: preview.config, diagnostics: [] }
+      ? { ...draft, config: preview.config, diagnostics: preview.notes }
       : { ...draft, diagnostics: preview.diagnostics };
   } else if (action.type === 'import') {
     const result = validateConfig(action.config);
@@ -132,7 +136,7 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     const diagnostics: Diagnostic[] = [];
     for (const section of ['queries', 'patterns', 'widgets'] as const) {
       for (const item of incoming[section]) {
-        if (config[section].some((old) => old?.id === item.id)) {
+        if (config[section].some((old) => old.id === item.id)) {
           diagnostics.push({
             code: `import-${section === 'patterns' ? 'pattern' : section === 'queries' ? 'query' : 'widget'}-conflict`,
             path: section,
@@ -142,7 +146,7 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
       }
     }
     for (const override of incoming.overrides) {
-      if (config.overrides.some((old) => old?.cellId === override.cellId)) {
+      if (config.overrides.some((old) => old.cellId === override.cellId)) {
         diagnostics.push({
           code: 'import-override-conflict',
           path: 'overrides',
@@ -176,11 +180,11 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
       if (!draft.cellId) {
         return draft;
       }
-      const old = config.overrides.find((o) => o?.cellId === draft.cellId);
+      const old = config.overrides.find((o) => o.cellId === draft.cellId);
       config = {
         ...config,
         overrides: [
-          ...config.overrides.filter((o) => o?.cellId !== draft.cellId),
+          ...config.overrides.filter((o) => o.cellId !== draft.cellId),
           { cellId: draft.cellId, display: changeDisplay(old?.display ?? {}, action.display) },
         ],
       };
@@ -188,7 +192,7 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
   } else if (action.type === 'display-many') {
     let overrides = config.overrides;
     for (const cellId of new Set(action.cellIds)) {
-      const old = overrides.find((o) => o?.cellId === cellId);
+      const old = overrides.find((o) => o.cellId === cellId);
       const display = action.ops.reduce((acc, op) => setLeaf(acc, op.path, op.value), old?.display ?? {});
       if (Object.keys(display).length === 0) {
         // An override that holds nothing goes away; a cell without one gets none.
@@ -213,7 +217,7 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
       }
       config = { ...config, patterns: config.patterns.map((p, i) => (i === at ? { ...p, display: next } : p)) };
     } else {
-      const old = config.overrides.find((o) => o?.cellId === draft.cellId);
+      const old = config.overrides.find((o) => o.cellId === draft.cellId);
       const next = old && unsetPath(old.display, action.path);
       if (!old || !next || next === old.display) {
         return draft;
@@ -236,8 +240,8 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     const query = validated.config?.queries[0] ?? action.query;
     config = {
       ...config,
-      queries: config.queries.some((q) => q?.id === query.id)
-        ? config.queries.map((q) => (q?.id === query.id ? query : q))
+      queries: config.queries.some((q) => q.id === query.id)
+        ? config.queries.map((q) => (q.id === query.id ? query : q))
         : [...config.queries, query],
     };
   } else if (action.type === 'default-datasource') {
@@ -245,8 +249,8 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
   } else if (action.type === 'pattern') {
     config = {
       ...config,
-      patterns: config.patterns.some((p) => p?.id === action.pattern.id)
-        ? config.patterns.map((p) => (p?.id === action.pattern.id ? copy(action.pattern) : p))
+      patterns: config.patterns.some((p) => p.id === action.pattern.id)
+        ? config.patterns.map((p) => (p.id === action.pattern.id ? copy(action.pattern) : p))
         : [...config.patterns, copy(action.pattern)],
     };
   } else if (action.type === 'selector') {
@@ -257,13 +261,13 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
       ),
     };
   } else if (action.type === 'widget') {
-    config = { ...config, widgets: [...config.widgets.filter((w) => w?.id !== action.widget.id), copy(action.widget)] };
+    config = { ...config, widgets: [...config.widgets.filter((w) => w.id !== action.widget.id), copy(action.widget)] };
   } else if (action.type === 'remove-query') {
-    config = { ...config, queries: config.queries.filter((q) => q?.id !== action.id) };
+    config = { ...config, queries: config.queries.filter((q) => q.id !== action.id) };
   } else if (action.type === 'remove-widget') {
-    config = { ...config, widgets: config.widgets.filter((w) => w?.id !== action.id) };
+    config = { ...config, widgets: config.widgets.filter((w) => w.id !== action.id) };
   } else if (action.type === 'remove-override') {
-    config = { ...config, overrides: config.overrides.filter((o) => o?.cellId !== action.cellId) };
+    config = { ...config, overrides: config.overrides.filter((o) => o.cellId !== action.cellId) };
   } else if (action.type === 'remove-pattern') {
     if (!config.patterns[action.index]) {
       return draft;

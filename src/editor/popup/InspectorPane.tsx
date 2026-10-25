@@ -120,7 +120,7 @@ function CellBody({
         />
       )}
       {draft.config.widgets
-        .filter((w) => w?.anchorCellId !== undefined && !cells.has(w.anchorCellId))
+        .filter((w) => !cells.has(w.anchorCellId))
         .map((widget) => (
           <p key={widget.id}>
             Chart {widget.label} has missing anchor {widget.anchorCellId}.
@@ -135,7 +135,7 @@ function CellBody({
           size="sm"
           onClick={() => {
             let n = 1;
-            while (draft.config.patterns.some((p) => p?.id === `pattern-${n}`)) {
+            while (draft.config.patterns.some((p) => p.id === `pattern-${n}`)) {
               n++;
             }
             const id = `pattern-${n}`;

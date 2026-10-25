@@ -314,6 +314,29 @@ export function unknownQueryMessage(queryId: string, skippedAt: number | undefin
     : `Query ${queryId} has errors (see queries[${skippedAt}]).`;
 }
 
+/**
+ * The lists of a config without the entries that are not objects (null, a number, a string, an array). Such an entry
+ * carries no data. The editor drops them when it loads a draft or reads an import, and reports them once; after that
+ * every item of a list is an object, also one that does not parse.
+ */
+export function withoutEmptyEntries<T extends Record<Section, unknown[]>>(config: T): { config: T; removed: number } {
+  let removed = 0;
+  const lists = Object.fromEntries(
+    SECTIONS.map((section) => {
+      const kept = config[section].filter(isRecord);
+      removed += config[section].length - kept.length;
+      return [section, kept];
+    })
+  );
+  return removed ? { config: { ...config, ...lists }, removed } : { config, removed };
+}
+/** The one note on the entries that withoutEmptyEntries dropped. */
+export const emptyEntriesNote = (removed: number): Diagnostic => ({
+  code: 'empty-entries',
+  path: '(root)',
+  message: `${removed} empty ${removed === 1 ? 'entry' : 'entries'} removed: null or non-object items of the lists carry no data. Apply saves the config without them.`,
+});
+
 export interface ValidatedConfig {
   /** undefined only when the envelope failed or the version is not 3 */
   config?: DiagramConfig;

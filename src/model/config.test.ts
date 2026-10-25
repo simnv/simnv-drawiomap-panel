@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { DataQuery } from '@grafana/schema';
-import { displayBindings, rowCapacityBindings, validateConfig, type DiagramConfig } from './config';
+import {
+  displayBindings,
+  emptyEntriesNote,
+  rowCapacityBindings,
+  validateConfig,
+  withoutEmptyEntries,
+  type DiagramConfig,
+} from './config';
 
 const empty = () => ({ version: 3, queries: [], patterns: [], overrides: [], widgets: [] });
 const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
@@ -98,6 +105,27 @@ describe('validateConfig: round trip of the version 3 shape', () => {
     expect(result.config).toEqual(config);
     expect(result.skippedItems).toEqual([]);
     expectItemsEqual(result, config);
+  });
+  it('withoutEmptyEntries drops the entries that are not objects from the four lists and counts them', () => {
+    const query = { id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } };
+    const raw = {
+      ...empty(),
+      queries: [null, query, 7],
+      patterns: ['text', { id: 'p', select: {} }],
+      overrides: [[], { cellId: 'a', display: {} }],
+      widgets: [null],
+    } as unknown as DiagramConfig;
+    const { config, removed } = withoutEmptyEntries(raw);
+    expect(removed).toBe(5);
+    expect(config.queries).toEqual([query]);
+    // an object that does not parse stays: it is a skipped item with its own report
+    expect(config.patterns).toEqual([{ id: 'p', select: {} }]);
+    expect(config.overrides).toEqual([{ cellId: 'a', display: {} }]);
+    expect(config.widgets).toEqual([]);
+    const clean = empty() as DiagramConfig;
+    expect(withoutEmptyEntries(clean)).toEqual({ config: clean, removed: 0 });
+    expect(withoutEmptyEntries(clean).config).toBe(clean);
+    expect(emptyEntriesNote(1).message).toMatch(/^1 empty entry removed/);
   });
   it('keeps the default datasource as it is saved, key order included', () => {
     // the panel and the query context read the same saved object; a parse must not reorder its keys

@@ -40,6 +40,30 @@ describe('prepared result eligibility', () => {
     const other = { defaultDatasource: { uid: 'current', type: 'loki' } };
     expect(previewSnapshot(native, other, data, 'a', undefined, [result], 2)).toEqual({ state: 'idle' });
   });
+  it('a reference without a uid is the panel default: it matches another one without a uid, never one with a uid', () => {
+    const data: PanelData = { state: LoadingState.Done, series: [], timeRange };
+    const typed = { ...context, defaultDatasource: { type: 'prometheus' } };
+    const result: QueryPreview = { query: native, cellId: 'a', context: typed, snapshot: success };
+    expect(
+      previewSnapshot(native, { defaultDatasource: { type: 'prometheus' } }, data, 'a', undefined, [result], 2)
+    ).toBe(success);
+    expect(
+      previewSnapshot(
+        native,
+        { defaultDatasource: { uid: 'current', type: 'prometheus' } },
+        data,
+        'a',
+        undefined,
+        [result],
+        2
+      )
+    ).toEqual({ state: 'idle' });
+    const named: QueryPreview = { query: native, cellId: 'a', context, snapshot: success };
+    expect(previewSnapshot(native, { defaultDatasource: {} }, data, 'a', undefined, [named], 2)).toEqual({
+      state: 'idle',
+    });
+    expect(previewSnapshot(native, {}, data, 'a', undefined, [named], 2)).toEqual({ state: 'idle' });
+  });
   it('preserves a saved failure for display while demand reuse can select an earlier successful preview', () => {
     const data: PanelData = { state: LoadingState.Done, series: [], timeRange };
     expect(previewSnapshot(native, context, data, 'a', candidate(success), [candidate(failed)], 2)).toBe(failed);

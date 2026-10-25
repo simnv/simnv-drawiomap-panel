@@ -63,6 +63,19 @@ describe('binding inspector', () => {
     renderEditor({ config: withNulls, svg: svgOf('device-1', 'device-2') });
     selectStageCell('device-2');
     expect(screen.getByRole('heading', { name: 'device-2 bindings' })).toBeTruthy();
+    // the binding fields list the queries: the null entry is gone, the note says so
+    expect(screen.getByText(/^4 empty entries removed/)).toBeTruthy();
+  });
+  it('assigns a chart region from the first query when the saved queries start with a null entry', () => {
+    const withNull = {
+      ...config,
+      patterns: [],
+      queries: [null, { id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } }],
+    } as unknown as DiagramConfig;
+    renderEditor({ config: withNull, svg: svgOf('region') });
+    selectStageCell('region');
+    fireEvent.click(buttonNamed('Assign chart region'));
+    expect(editorField('Chart check sample freshness')).toBeTruthy();
   });
   it.each([false, true])(
     'keeps native JSON validation in the query pane and drops the typed text when the pane closes with invalid=%s',

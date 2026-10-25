@@ -96,7 +96,7 @@ export function BindingInspector({
     provenance && config
       ? (path: string) => ({ ...fieldSourceOf(provenance, path, editing, config), scope: draft.scope })
       : undefined;
-  const patternName = (id: string) => draft.config.patterns.find((p) => p?.id === id)?.name;
+  const patternName = (id: string) => draft.config.patterns.find((p) => p.id === id)?.name;
   return (
     <section aria-label="Element bindings">
       <h3 ref={heading} tabIndex={-1}>
@@ -153,7 +153,7 @@ export function BindingInspector({
         </ul>
       </EditorSection>
       {draft.config.widgets
-        .filter((w) => w?.anchorCellId === draft.cellId)
+        .filter((w) => w.anchorCellId === draft.cellId)
         .map((widget) => (
           <ChartFields
             key={widget.id}
@@ -164,14 +164,14 @@ export function BindingInspector({
             onRemove={() => dispatch({ type: 'remove-widget', id: widget.id })}
           />
         ))}
-      {chartEligible && !draft.config.widgets.some((w) => w?.anchorCellId === draft.cellId) && (
+      {chartEligible && !draft.config.widgets.some((w) => w.anchorCellId === draft.cellId) && (
         <Button
           variant="secondary"
           size="sm"
           disabled={!draft.config.queries.length}
           onClick={() => {
             let n = 1;
-            while (draft.config.widgets.some((w) => w?.id === `chart-${n}`)) {
+            while (draft.config.widgets.some((w) => w.id === `chart-${n}`)) {
               n++;
             }
             dispatch({

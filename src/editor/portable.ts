@@ -1,6 +1,8 @@
 import {
   displayBindings,
+  emptyEntriesNote,
   validateConfig,
+  withoutEmptyEntries,
   type Diagnostic,
   type DiagramConfig,
   type QueryDatasourceRef,
@@ -23,11 +25,19 @@ export interface ImportResolution {
 export interface PatternImportPreview {
   config?: DiagramConfig;
   diagnostics: Diagnostic[];
+  /** What the import changed without a failure: the empty entries it dropped. */
+  notes: Diagnostic[];
   conflicts: Array<{ section: Section; id: string }>;
   overrides: Array<{ cellId: string; applies: boolean; conflict: boolean }>;
   anchors: Array<{ cellId: string; applies: boolean }>;
 }
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+const isLists = (value: unknown): value is Record<'queries' | 'patterns' | 'overrides' | 'widgets', unknown[]> =>
+  !!value &&
+  typeof value === 'object' &&
+  (['queries', 'patterns', 'overrides', 'widgets'] as const).every((k) =>
+    Array.isArray((value as Record<string, unknown>)[k])
+  );
 /** The datasource of a query from a reference: a reference without a uid names none. */
 const refOf = (ref: DiagramConfig['defaultDatasource']): QueryDatasourceRef | undefined =>
   ref?.uid ? { uid: ref.uid, ...(ref.type ? { type: ref.type } : {}) } : undefined;
@@ -67,7 +77,7 @@ export function previewPatternImport(
   cellIds: string[],
   resolution: ImportResolution = {}
 ): PatternImportPreview {
-  const preview: PatternImportPreview = { diagnostics: [], conflicts: [], overrides: [], anchors: [] };
+  const preview: PatternImportPreview = { diagnostics: [], notes: [], conflicts: [], overrides: [], anchors: [] };
   const error = (code: string, path: string, message: string) => preview.diagnostics.push({ code, path, message });
   if (
     !input ||
@@ -82,12 +92,16 @@ export function previewPatternImport(
     error('invalid-pattern-document', '(root)', 'Expected a drawiomap-patterns document with version 1.');
     return preview;
   }
-  const result = validateConfig(input.config);
+  const source = isLists(input.config) ? withoutEmptyEntries(input.config) : { config: input.config, removed: 0 };
+  const result = validateConfig(source.config);
   if (!result.config || result.diagnostics.length) {
     return { ...preview, diagnostics: result.diagnostics };
   }
+  if (source.removed) {
+    preview.notes.push(emptyEntriesNote(source.removed));
+  }
   const incoming = result.config;
-  const config = copy(destination);
+  const config = withoutEmptyEntries(copy(destination)).config;
   incoming.queries = incoming.queries.map((q) =>
     q.source.kind === 'datasource'
       ? { ...q, source: { ...q.source, datasource: q.source.datasource ?? refOf(incoming.defaultDatasource) } }
@@ -98,7 +112,7 @@ export function previewPatternImport(
     const identities = new Set<string>();
     for (const item of incoming[section]) {
       const id = item.id;
-      const conflict = destination[section].some((old) => old.id === id);
+      const conflict = config[section].some((old) => old.id === id);
       const choice = Object.hasOwn(resolution[section] ?? {}, id) ? resolution[section]![id] : undefined;
       if (conflict) {
         preview.conflicts.push({ section, id });
@@ -107,10 +121,7 @@ export function previewPatternImport(
         }
       }
       const nextId = choice?.action === 'new' ? choice.id : id;
-      if (
-        identities.has(nextId) ||
-        (choice?.action === 'new' && destination[section].some((old) => old.id === nextId))
-      ) {
+      if (identities.has(nextId) || (choice?.action === 'new' && config[section].some((old) => old.id === nextId))) {
         error('import-identity-conflict', `${section}.${id}`, `New identity ${nextId} is already used in ${section}.`);
       }
       identities.add(nextId);
@@ -144,7 +155,7 @@ export function previewPatternImport(
   incoming.overrides = incoming.overrides.flatMap((override) => {
     const cellId = override.cellId;
     const applies = cellIds.includes(cellId);
-    const conflict = destination.overrides.some((old) => old.cellId === cellId);
+    const conflict = config.overrides.some((old) => old.cellId === cellId);
     preview.overrides.push({ cellId, applies, conflict });
     const explicit = Object.hasOwn(resolution.overrides ?? {}, cellId);
     const target = explicit ? resolution.overrides![cellId] : cellId;
@@ -169,11 +180,11 @@ export function previewPatternImport(
   }
   for (const section of ['queries', 'patterns', 'widgets'] as const) {
     // Keep replacement position, so pattern precedence remains deterministic.
-    const merged = config[section].map((old) => incoming[section].find((item) => item.id === old?.id) ?? old);
-    merged.push(...incoming[section].filter((item) => !config[section].some((old) => old?.id === item.id)));
+    const merged = config[section].map((old) => incoming[section].find((item) => item.id === old.id) ?? old);
+    merged.push(...incoming[section].filter((item) => !config[section].some((old) => old.id === item.id)));
     Object.assign(config, { [section]: merged });
   }
-  config.overrides = config.overrides.filter((old) => !overrideIds.has(old?.cellId)).concat(incoming.overrides);
+  config.overrides = config.overrides.filter((old) => !overrideIds.has(old.cellId)).concat(incoming.overrides);
   const merged = validateConfig(config);
   return { ...preview, config: merged.diagnostics.length ? undefined : merged.config, diagnostics: merged.diagnostics };
 }
