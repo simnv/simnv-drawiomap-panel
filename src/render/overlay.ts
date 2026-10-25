@@ -60,7 +60,8 @@ function el<K extends keyof SVGElementTagNameMap>(
   return e;
 }
 
-const fmt = (n: number) => String(Math.round(n * 100) / 100);
+/** A coordinate for an attribute: two decimals, as draw.io writes them. */
+export const fmt = (n: number) => String(Math.round(n * 100) / 100);
 const pointsAttr = (pts: Point[]) => pts.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(' ');
 
 function drawHalf(

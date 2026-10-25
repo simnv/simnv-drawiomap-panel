@@ -231,6 +231,20 @@ describe('placeHalfLabel: collisions', () => {
     const p = placed(placeHalfLabel(leg(horizontal(0, 200)), 'e', index));
     expect(p.centre).toEqual({ x: 100, y: OFFSET });
   });
+  it('the pieces of the own run with a turn of 5° or less are no obstacle; a piece of another run is', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 200, y: -8.57 },
+    ];
+    const own = obstacleIndex([segment(points[0], points[1], 'e'), segment(points[1], points[2], 'e')]);
+    const p = placed(placeHalfLabel(leg(points), 'e', own));
+    expect(p.along).toBeCloseTo(polylineLength(points) / 2);
+    expect(p.centre.y).toBeLessThan(0);
+    // a piece of another edge beside the run, within its clearance, is an obstacle
+    const other = obstacleIndex([segment({ x: 100, y: -6 }, { x: 200, y: -14.57 }, 'f')]);
+    expect(placed(placeHalfLabel(leg(points), 'e', other)).along).not.toBeCloseTo(polylineLength(points) / 2);
+  });
   it('a segment that crosses the box collides even with a clearance of 0', () => {
     const index = obstacleIndex([segment({ x: 100, y: -40 }, { x: 100, y: -12 }, 'other', 0)]);
     expect(placed(placeHalfLabel(leg(horizontal(0, 200)), 'e', index)).centre.x).not.toBe(100);

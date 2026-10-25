@@ -1,5 +1,6 @@
 import { formattedValueToString, type GrafanaTheme2 } from '@grafana/data';
 import type { LinkLabelMode } from '../model/config';
+import { hoverKind } from '../interact/hit';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
 import {
   applyMatrix,
@@ -10,16 +11,20 @@ import {
   parsePathPoints,
   pathGeometry,
   polylineLength,
+  scaleOf,
+  toMatrix,
   usable,
   type Matrix,
   type Point,
 } from './geometry';
 import {
+  aabbOf,
   boundsOf,
   labelsVisible,
   LINK_LABEL_GEOMETRY,
   obstacleIndex,
   placeHalfLabel,
+  pointToSegment,
   type LegInput,
   type Obstacle,
   type ObstacleIndex,
@@ -27,7 +32,7 @@ import {
   type Placement,
   type Rect,
 } from './labelPlacement';
-import { linkSplit, OVERLAY_CLASS, statusMarkerBox, type TextProbe } from './overlay';
+import { fmt, linkSplit, OVERLAY_CLASS, statusMarkerBox, type TextProbe } from './overlay';
 import { viewScaleOf } from './zoom';
 
 /*
@@ -45,8 +50,8 @@ const SLOT_GRAIN = 4;
 const WIDEST_PERCENT = '>999%';
 /** the font of the status markers: the fallback when the stage has no portograph link label */
 const FALLBACK_FONT = 'sans-serif';
-/** a direction change of at most this angle (radians) is no bend: the overlay's rule */
-const BEND_ANGLE = (5 * Math.PI) / 180;
+/** a box inside another by at most this much on a side still counts as contained (two decimals in the export) */
+const CONTAIN_EPS = 0.5;
 
 export interface LinkLabelOptions {
   theme: GrafanaTheme2;
@@ -60,6 +65,8 @@ export interface LinkLabelCounts {
 
 type Half = 'a2b' | 'b2a';
 type LabelMode = Exclude<LinkLabelMode, 'none'>;
+type Leg = Omit<LegInput, 'size'>;
+type EdgeLegs = { a2b?: Leg; b2a?: Leg };
 interface Slot {
   cellId: string;
   which: Half;
@@ -71,10 +78,9 @@ interface LabelRecord {
   which: Half;
   mode: LabelMode;
   /** the leg without its size; undefined when the edge has no usable geometry */
-  leg?: Omit<LegInput, 'size'>;
+  leg?: Leg;
   /** the slot width without the halo; undefined until the half has shown a text */
   slot?: number;
-  text?: string;
   el?: SVGTextElement;
   placement?: Placement;
   /** the box the label holds in the grid */
@@ -110,9 +116,9 @@ export function linkLabelText(state: HalfState, mode: LinkLabelMode): string | u
 }
 
 /**
- * Builds or updates the label layer. A call with a new stage, a new set of labelled halves, a new `linkWidth.max`
- * or a new font places everything; any other call changes the texts and the hidden state, and places again only a
- * label whose slot changed. Returns the counts for the tests and the debug log.
+ * Builds or updates the label layer. A call with a new stage, a new set of patched cells or labelled halves, a new
+ * `linkWidth.max` or a new font places everything; any other call changes the texts and the hidden state, and
+ * places again only a label whose slot changed. Returns the counts for the tests and the debug log.
  */
 export function renderLinkLabels(
   root: SVGSVGElement,
@@ -130,9 +136,16 @@ export function renderLinkLabels(
     return { placed: 0, dropped: 0, moved: 0 };
   }
   const fontFamily = stageFont(root);
-  const key = [slots.map((s) => `${s.cellId}:${s.which}:${s.mode}`).join('\n'), opts.linkWidth.max, fontFamily].join(
-    '|'
-  );
+  // the obstacles depend on every patched cell (its marker room, its arrows, its stroke), not only the labelled ones
+  const patched = Array.from(patches.keys())
+    .sort()
+    .map((id) => `${id}:${hasHalves(patches, id) ? 'h' : '-'}`);
+  const key = [
+    slots.map((s) => `${s.cellId}:${s.which}:${s.mode}`).join('\n'),
+    patched.join('\n'),
+    opts.linkWidth.max,
+    fontFamily,
+  ].join('|');
   const started = typeof performance === 'undefined' ? 0 : performance.now();
   let moved = 0;
   if (!layout || layout.key !== key || layout.index !== index || layout.layer.parentNode !== root) {
@@ -158,6 +171,7 @@ export function renderLinkLabels(
   layout.layer.setAttribute('data-dmap-labels-dropped', String(dropped));
   if (debugEnabled()) {
     const ms = (typeof performance === 'undefined' ? 0 : performance.now()) - started;
+    // the linter allows no console.debug; the flag `localStorage.dmapDebug` keeps it quiet by default
     console.info(`dmap link labels: ${placed} placed, ${dropped} dropped, ${moved} moved, ${ms.toFixed(1)} ms`);
   }
   return { placed, dropped, moved };
@@ -210,7 +224,10 @@ function slotOf(layout: LabelLayout, slot: Slot, text: string | undefined): numb
 
 const grain = (width: number) => Math.ceil(width / SLOT_GRAIN - 1e-9) * SLOT_GRAIN;
 
-/** The width of `text` by the hidden probe, memoised per string and font; jsdom gets 0.6 em per glyph. */
+/**
+ * The width of `text` by the hidden probe, memoised per string and font. jsdom has no measure and gets 0.6 em per
+ * glyph; a browser that measures 0 (a panel without layout at this frame) gets the same estimate, not memoised.
+ */
 function measure(
   layout: LabelLayout,
   text: string,
@@ -233,10 +250,13 @@ function measure(
     probe.removeAttribute('font-weight');
   }
   probe.textContent = text;
-  const measured = typeof probe.getComputedTextLength === 'function' ? probe.getComputedTextLength() : 0;
-  const width = measured > 0 ? measured : 0.6 * font.size * text.length;
-  layout.widths.set(key, width);
-  return width;
+  const canMeasure = typeof probe.getComputedTextLength === 'function';
+  const measured = canMeasure ? probe.getComputedTextLength() : 0;
+  const estimate = 0.6 * font.size * text.length;
+  if (measured > 0 || !canMeasure) {
+    layout.widths.set(key, measured > 0 ? measured : estimate);
+  }
+  return measured > 0 ? measured : estimate;
 }
 
 /** The font of the first portograph link label in the stage, else the status markers' font. */
@@ -249,35 +269,30 @@ function stageFont(root: SVGSVGElement): string {
 
 /* ---------- coordinates ---------- */
 
-const toM = (m: DOMMatrix | Matrix | null | undefined): Matrix | undefined =>
-  m ? { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f } : undefined;
-
-/** The matrix from the user space of `el` into root user units; undefined when it cannot be read. */
+/**
+ * The matrix from the user space of `el` into root user units: the screen CTMs of both (the outermost svg has one in
+ * every engine), the transform attributes in jsdom. Undefined when it cannot be read.
+ */
 function toRoot(el: Element, root: SVGSVGElement): Matrix | undefined {
   const g = el as SVGGraphicsElement;
-  if (typeof g.getCTM === 'function' && typeof root.getCTM === 'function') {
-    const own = toM(g.getCTM());
-    const base = toM(root.getCTM());
+  if (typeof g.getScreenCTM === 'function' && typeof root.getScreenCTM === 'function') {
+    const own = toMatrix(g.getScreenCTM());
+    const base = toMatrix(root.getScreenCTM());
     return own && base && usable(own) && usable(base) ? multiply(invert(base), own) : undefined;
   }
   return localMatrix(el, root);
 }
 
-const unitOf = (m: Matrix) => Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
-
 /** The axis-aligned box of `rect` mapped through `m`. */
 function mapRect(rect: Rect, m: Matrix): Rect {
-  const corners = [
-    { x: rect.x, y: rect.y },
-    { x: rect.x + rect.width, y: rect.y },
-    { x: rect.x + rect.width, y: rect.y + rect.height },
-    { x: rect.x, y: rect.y + rect.height },
-  ].map((p) => applyMatrix(m, p));
-  const xs = corners.map((p) => p.x);
-  const ys = corners.map((p) => p.y);
-  const x = Math.min(...xs);
-  const y = Math.min(...ys);
-  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+  return aabbOf(
+    [
+      { x: rect.x, y: rect.y },
+      { x: rect.x + rect.width, y: rect.y },
+      { x: rect.x + rect.width, y: rect.y + rect.height },
+      { x: rect.x, y: rect.y + rect.height },
+    ].map((p) => applyMatrix(m, p))
+  )!;
 }
 
 const num = (el: Element, name: string) => parseFloat(el.getAttribute(name) ?? '') || 0;
@@ -298,44 +313,30 @@ function attributeBox(el: Element): Rect | undefined {
       const ry = num(el, 'ry');
       return { x: num(el, 'cx') - rx, y: num(el, 'cy') - ry, width: 2 * rx, height: 2 * ry };
     }
+    case 'path':
+      return aabbOf(parsePathPoints(el.getAttribute('d') ?? ''));
     case 'polygon':
-    case 'polyline':
-    case 'path': {
-      const pts =
-        el.localName === 'path'
-          ? parsePathPoints(el.getAttribute('d') ?? '')
-          : (el.getAttribute('points') ?? '')
-              .trim()
-              .split(/[\s,]+/)
-              .map(Number)
-              .reduce<Point[]>((acc, v, i, all) => (i % 2 ? [...acc, { x: all[i - 1], y: v }] : acc), []);
-      if (!pts.length) {
-        return undefined;
-      }
-      const xs = pts.map((p) => p.x);
-      const ys = pts.map((p) => p.y);
-      const x = Math.min(...xs);
-      const y = Math.min(...ys);
-      return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+    case 'polyline': {
+      const nums = (el.getAttribute('points') ?? '')
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number);
+      return aabbOf(nums.flatMap((v, i) => (i % 2 ? [{ x: nums[i - 1], y: v }] : [])));
     }
     default:
       return undefined;
   }
 }
 
-const union = (a: Rect | undefined, b: Rect): Rect => {
-  if (!a) {
-    return b;
-  }
-  const x = Math.min(a.x, b.x);
-  const y = Math.min(a.y, b.y);
-  return {
-    x,
-    y,
-    width: Math.max(a.x + a.width, b.x + b.width) - x,
-    height: Math.max(a.y + a.height, b.y + b.height) - y,
-  };
-};
+const union = (a: Rect | undefined, b: Rect): Rect =>
+  a
+    ? aabbOf([
+        { x: a.x, y: a.y },
+        { x: a.x + a.width, y: a.y + a.height },
+        { x: b.x, y: b.y },
+        { x: b.x + b.width, y: b.y + b.height },
+      ])!
+    : b;
 
 /** The painted box of an element in root user units, or undefined when it cannot be read. */
 function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
@@ -367,42 +368,10 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   return local && m ? mapRect(local, m) : undefined;
 }
 
-/** The inline stroke width of a primitive, 1 (the SVG default) when it has none. */
+/** The inline stroke width of a primitive: the attribute, the style, the original style, else 1 (the SVG default). */
 function strokeWidthOf(el: SVGElement, original?: string): number {
-  const raw = el.getAttribute('stroke-width') ?? el.style.strokeWidth ?? original ?? '';
-  const n = parseFloat(raw);
+  const n = parseFloat(el.getAttribute('stroke-width') || el.style.strokeWidth || original || '');
   return Number.isFinite(n) ? n : 1;
-}
-
-/** The straight runs of a polyline: a vertex is a corner when the direction turns by more than 5°. */
-function runsOf(pts: Point[]): Array<{ a: Point; b: Point }> {
-  const runs: Array<{ a: Point; b: Point }> = [];
-  let start: Point | undefined;
-  let prev: Point | undefined;
-  let heading: number | undefined;
-  for (const p of pts) {
-    if (!prev) {
-      start = prev = p;
-      continue;
-    }
-    if (p.x === prev.x && p.y === prev.y) {
-      continue;
-    }
-    const next = Math.atan2(p.y - prev.y, p.x - prev.x);
-    if (
-      heading !== undefined &&
-      Math.abs(Math.atan2(Math.sin(next - heading), Math.cos(next - heading))) > BEND_ANGLE
-    ) {
-      runs.push({ a: start!, b: prev });
-      start = prev;
-    }
-    heading = next;
-    prev = p;
-  }
-  if (start && prev && start !== prev) {
-    runs.push({ a: start, b: prev });
-  }
-  return runs;
 }
 
 /* ---------- obstacles ---------- */
@@ -412,13 +381,56 @@ const hasHalves = (patches: PatchMap, cellId: string) => {
   return !!link && !!(link.a2b || link.b2a);
 };
 
-/** Every obstacle of the stage in root units (spec section 5), built once per full placement. */
+/** `inner` lies inside `outer` (a plain draw.io container holds its children; a background is no obstacle). */
+const contains = (outer: Rect, inner: Rect) =>
+  inner.x >= outer.x - CONTAIN_EPS &&
+  inner.y >= outer.y - CONTAIN_EPS &&
+  inner.x + inner.width <= outer.x + outer.width + CONTAIN_EPS &&
+  inner.y + inner.height <= outer.y + outer.height + CONTAIN_EPS &&
+  (inner.width < outer.width || inner.height < outer.height);
+
+/**
+ * The non-edge cell bodies that are backgrounds, not obstacles (spec section 5, decision 8): the portograph canvas,
+ * layers and groups by their kind, and in a plain draw.io diagram a vertex whose body holds another vertex's body
+ * (a container or a swimlane: the export carries no other sign of it).
+ */
+function backgroundIds(index: CellIndex, boxes: Map<string, Rect>): Set<string> {
+  const out = new Set<string>();
+  const plain: Array<[string, Rect]> = [];
+  for (const [cellId, entry] of index) {
+    if (entry.line || !entry.shape) {
+      continue;
+    }
+    const kind = hoverKind(entry);
+    if (kind === 'canvas' || kind === 'group') {
+      out.add(cellId);
+    } else if (kind === 'node' && entry.meta.kind === 'other' && !entry.ownerId) {
+      const box = boxes.get(cellId);
+      if (box) {
+        plain.push([cellId, box]);
+      }
+    }
+  }
+  for (const [outerId, outer] of plain) {
+    if (plain.some(([innerId, inner]) => innerId !== outerId && contains(outer, inner))) {
+      out.add(outerId);
+    }
+  }
+  return out;
+}
+
+/**
+ * Every obstacle of the stage in root units (spec section 5), built once per full placement. `legs` are the root
+ * polylines of the labelled edges (with the split as a vertex): their pieces are the stroke obstacles of those edges,
+ * so that a label's own run is told apart exactly.
+ */
 export function stageObstacles(
   root: SVGSVGElement,
   index: CellIndex,
   patches: PatchMap,
   max: number,
-  probe: TextProbe
+  probe: TextProbe,
+  legs: Map<string, EdgeLegs> = new Map()
 ): Obstacle[] {
   const out: Obstacle[] = [];
   const rect = (el: Element | undefined, clearance = 0) => {
@@ -427,15 +439,37 @@ export function stageObstacles(
       out.push({ kind: 'rect', rect: box, clearance });
     }
   };
+  const bodies = new Map<string, Rect>();
+  for (const [cellId, entry] of index) {
+    const box = !entry.line && entry.shape ? rootBox(entry.shape, root) : undefined;
+    if (box) {
+      bodies.set(cellId, box);
+    }
+  }
+  const backgrounds = backgroundIds(index, bodies);
+  const strokes = (cellId: string, points: Point[], clearance: number) => {
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      if (a.x !== b.x || a.y !== b.y) {
+        out.push({ kind: 'segment', a, b, clearance, owner: cellId });
+      }
+    }
+  };
   for (const [cellId, entry] of index) {
     if (entry.line) {
       const m = toRoot(entry.line, root);
       if (m) {
-        const pts = parsePathPoints(entry.line.getAttribute('d') ?? '').map((p) => applyMatrix(m, p));
-        const width = hasHalves(patches, cellId) ? max : strokeWidthOf(entry.line, entry.original.strokeWidth);
-        const clearance = (width * unitOf(m)) / 2;
-        for (const { a, b } of runsOf(pts)) {
-          out.push({ kind: 'segment', a, b, clearance, owner: cellId });
+        const unit = scaleOf(m);
+        const own =
+          legs.get(cellId) ??
+          (hasHalves(patches, cellId) ? edgeLegs(entry, root, max, halvesOf(patches, cellId)) : undefined);
+        if (own) {
+          [own.a2b, own.b2a].forEach((leg) => leg && strokes(cellId, leg.points, leg.strokeRoot / 2));
+        } else {
+          const width = hasHalves(patches, cellId) ? max : strokeWidthOf(entry.line, entry.original.strokeWidth);
+          const pts = parsePathPoints(entry.line.getAttribute('d') ?? '').map((p) => applyMatrix(m, p));
+          strokes(cellId, pts, (width * unit) / 2);
         }
       }
       for (const { el } of entry.ends ?? []) {
@@ -444,9 +478,16 @@ export function stageObstacles(
       if (!hasHalves(patches, cellId)) {
         entry.arrows.forEach((a) => rect(a));
       }
-    } else if (entry.shape) {
+    } else if (entry.shape && !backgrounds.has(cellId)) {
       const m = toRoot(entry.shape, root);
-      rect(entry.shape, m ? (strokeWidthOf(entry.shape, entry.original.strokeWidth) * unitOf(m)) / 2 : 0);
+      const body = bodies.get(cellId);
+      if (body && m) {
+        out.push({
+          kind: 'rect',
+          rect: body,
+          clearance: (strokeWidthOf(entry.shape, entry.original.strokeWidth) * scaleOf(m)) / 2,
+        });
+      }
     }
     if (entry.meta.kind === 'link-label') {
       rect(entry.group);
@@ -465,26 +506,30 @@ export function stageObstacles(
 
 /* ---------- legs ---------- */
 
+const halvesOf = (patches: PatchMap, cellId: string) => {
+  const link = patches.get(cellId)?.link;
+  return { a2b: !!link?.a2b, b2a: !!link?.b2a };
+};
+
 /** The nearest point of a polyline to `p`, with the index of the segment that holds it. */
 function nearestOnPolyline(pts: Point[], p: Point): { at: number; point: Point } {
   let best = { at: 0, point: pts[0], distance: Infinity };
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1];
     const b = pts[i];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len2 = dx * dx + dy * dy;
-    const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
-    const point = { x: a.x + t * dx, y: a.y + t * dy };
-    const distance = Math.hypot(point.x - p.x, point.y - p.y);
+    const distance = pointToSegment(p, a, b);
     if (distance < best.distance) {
-      best = { at: i - 1, point, distance };
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+      best = { at: i - 1, point: { x: a.x + t * dx, y: a.y + t * dy }, distance };
     }
   }
   return { at: best.at, point: best.point };
 }
 
-const legOf = (points: Point[], strokeRoot: number): Omit<LegInput, 'size'> => ({
+const legOf = (points: Point[], strokeRoot: number): Leg => ({
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
@@ -500,19 +545,23 @@ function edgeLegs(
   root: SVGSVGElement,
   max: number,
   halves: { a2b: boolean; b2a: boolean }
-): { a2b?: Omit<LegInput, 'size'>; b2a?: Omit<LegInput, 'size'> } {
+): EdgeLegs {
   const line = entry.line!;
-  const geoRoot = pathGeometry(line, root);
-  const pts = parsePathPoints(line.getAttribute('d') ?? '').map((p) => applyMatrix(geoRoot.matrix, p));
-  if (pts.length < 2 || !(geoRoot.length > 0)) {
+  const m = toRoot(line, root);
+  if (!m) {
     return {};
   }
-  const strokeRoot = max * geoRoot.unit;
+  const pts = parsePathPoints(line.getAttribute('d') ?? '').map((p) => applyMatrix(m, p));
+  if (pts.length < 2 || !(polylineLength(pts) > 0)) {
+    return {};
+  }
+  const strokeRoot = max * scaleOf(m);
   if (halves.a2b && halves.b2a) {
-    // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path)
+    // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
+    // then the point in the path's own space, into root units through the same matrix as the vertices
     const mid = linkSplit(pathGeometry(line, line.parentNode as SVGGraphicsElement));
-    const split = geoRoot.pointAt(mid);
-    const { at, point } = nearestOnPolyline(pts, { x: split.x, y: split.y });
+    const local = pathGeometry(line, line).pointAt(mid);
+    const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
       a2b: legOf([...pts.slice(0, at + 1), point], strokeRoot),
       b2a: legOf([...pts.slice(at + 1).reverse(), point], strokeRoot),
@@ -522,8 +571,6 @@ function edgeLegs(
 }
 
 /* ---------- the layer and its elements ---------- */
-
-const fmt = (n: number) => String(Math.round(n * 100) / 100);
 
 function createLayer(root: SVGSVGElement): SVGGElement {
   const layer = document.createElementNS(NS, 'g');
@@ -638,23 +685,25 @@ function fullPlacement(
     records: new Map(),
   };
   const probe: TextProbe = (text, font) => measure(layout, text, font);
-  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe));
-  const legs = new Map<string, ReturnType<typeof edgeLegs>>();
+  // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
+  const legs = new Map<string, EdgeLegs>();
   for (const slot of slots) {
-    let cellLegs = legs.get(slot.cellId);
-    if (!cellLegs) {
-      const link = patches.get(slot.cellId)!.link!;
-      cellLegs = edgeLegs(index.get(slot.cellId)!, root, opts.linkWidth.max, { a2b: !!link.a2b, b2a: !!link.b2a });
-      legs.set(slot.cellId, cellLegs);
+    if (!legs.has(slot.cellId)) {
+      legs.set(
+        slot.cellId,
+        edgeLegs(index.get(slot.cellId)!, root, opts.linkWidth.max, halvesOf(patches, slot.cellId))
+      );
     }
+  }
+  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe, legs));
+  for (const slot of slots) {
     const text = linkLabelText(slot.state, slot.mode);
     const rec: LabelRecord = {
       cellId: slot.cellId,
       which: slot.which,
       mode: slot.mode,
-      leg: cellLegs[slot.which],
+      leg: legs.get(slot.cellId)?.[slot.which],
       slot: slotOf(layout, slot, text),
-      text,
       retry: false,
     };
     layout.records.set(`${slot.cellId}:${slot.which}`, rec);
@@ -686,8 +735,8 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
       rec.slot = width;
     }
     if ((slotChanged || rec.retry) && text !== undefined) {
+      // the label held a box (placed, or hidden with its reserved box): a new spot is a move
       const old = rec.obstacle;
-      const wasPlaced = !!rec.placement && 'centre' in rec.placement;
       if (old) {
         layout.grid.remove(old);
       }
@@ -696,7 +745,7 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
         position(el, rec.placement as Placed);
         el.removeAttribute('data-dmap-dropped');
         rec.retry = false;
-        if (wasPlaced) {
+        if (old) {
           moved++;
         }
       } else {
@@ -706,10 +755,12 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
           rec.obstacle = old;
         }
         rec.retry = true;
-        rec.el?.setAttribute('data-dmap-dropped', 'no-free-spot');
+        rec.el?.setAttribute(
+          'data-dmap-dropped',
+          rec.placement && 'dropped' in rec.placement ? rec.placement.dropped : 'no-free-spot'
+        );
       }
     }
-    rec.text = text;
     showText(rec, text);
   }
   return moved;

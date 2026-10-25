@@ -256,6 +256,14 @@ export function invert(m: Matrix): Matrix {
   };
 }
 
+/** A plain matrix from a DOMMatrix (or any object with a..f); undefined for null. */
+export function toMatrix(m: { a: number; b: number; c: number; d: number; e: number; f: number } | null | undefined) {
+  return m ? { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f } : undefined;
+}
+
+/** The scale of a matrix (the square root of its determinant), 1 for a degenerate one. */
+export const scaleOf = (m: Matrix): number => Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
+
 export function applyMatrix(m: Matrix, p: Point): Point {
   return { x: m.a * p.x + m.c * p.y + m.e, y: m.b * p.x + m.d * p.y + m.f };
 }
@@ -302,10 +310,8 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
       matrix: IDENTITY,
     };
   }
-  const toM = (m: Matrix | null | undefined): Matrix =>
-    m ? { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f } : IDENTITY;
   const targetCTM = typeof target.getCTM === 'function' ? target.getCTM() : null;
-  const M = multiply(invert(toM(targetCTM)), toM(line.getCTM()));
+  const M = multiply(invert(toMatrix(targetCTM) ?? IDENTITY), toMatrix(line.getCTM()) ?? IDENTITY);
   const length = api.getTotalLength();
   // Bends come from the vertices of the d attribute. Curves count by their end points, so scale to the real length.
   const parsed = parsePathPoints(line.getAttribute('d') ?? '');
@@ -320,7 +326,7 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
   return {
     length,
     bends,
-    unit: Math.sqrt(Math.abs(M.a * M.d - M.b * M.c)) || 1,
+    unit: scaleOf(M),
     matrix: M,
     pointAt(d) {
       const p = at(d);

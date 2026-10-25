@@ -1,4 +1,4 @@
-import { pointAt, type Point } from './geometry';
+import { pointAt, slicePolyline, type Point } from './geometry';
 
 /*
  * The placement of the value labels of the link halves: pure numbers, no DOM. Every distance is in root user
@@ -108,13 +108,27 @@ export function cornersOf(box: OrientedBox): Point[] {
   ];
 }
 
+/** The axis-aligned box of some points: the one AABB of the module. Undefined without a point. */
+export function aabbOf(points: readonly Point[]): Rect | undefined {
+  if (!points.length) {
+    return undefined;
+  }
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const p of points) {
+    x0 = Math.min(x0, p.x);
+    y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x);
+    y1 = Math.max(y1, p.y);
+  }
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
 /** The axis-aligned bounds of an oriented box: the rect a placed label reserves. */
 export function boundsOf(box: OrientedBox): Rect {
-  const xs = cornersOf(box).map((p) => p.x);
-  const ys = cornersOf(box).map((p) => p.y);
-  const x = Math.min(...xs);
-  const y = Math.min(...ys);
-  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+  return aabbOf(cornersOf(box))!;
 }
 
 const grow = (r: Rect, by: number): Rect => ({
@@ -232,7 +246,8 @@ function overlapsRect(corners: Point[], box: OrientedBox, rect: Rect): boolean {
 const pointToRect = (p: Point, hw: number, hh: number) =>
   Math.hypot(Math.max(-hw - p.x, 0, p.x - hw), Math.max(-hh - p.y, 0, p.y - hh));
 
-const pointToSegment = (p: Point, a: Point, b: Point) => {
+/** The distance from a point to the segment a→b. */
+export const pointToSegment = (p: Point, a: Point, b: Point) => {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len2 = dx * dx + dy * dy;
@@ -300,8 +315,18 @@ function segmentHits(box: OrientedBox, a: Point, b: Point, clearance: number): b
   return distance < clearance - EPS;
 }
 
-/** True when `p` lies on the segment a→b (the anchor of a label lies on its own run). */
-const onSegment = (p: Point, a: Point, b: Point) => pointToSegment(p, a, b) <= 1e-3;
+/** The distance from a point to a polyline (0 on it). */
+export function pointToPolyline(p: Point, pts: readonly Point[]): number {
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    best = Math.min(best, pointToSegment(p, pts[i - 1], pts[i]));
+  }
+  return pts.length === 1 ? Math.hypot(p.x - pts[0].x, p.y - pts[0].y) : best;
+}
+
+/** True when the segment a→b is a piece of the run (its midpoint lies on the run's polyline). */
+const partOfRun = (a: Point, b: Point, run: readonly Point[]) =>
+  pointToPolyline({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, run) <= 1e-3;
 
 /* ---------- candidates ---------- */
 
@@ -338,21 +363,24 @@ export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex)
       distances.push(hi);
     }
   }
+  // the vertices of each run: the pieces of the own edge on it are no obstacle
+  const runPoints = runs.map((r) => slicePolyline(leg.points, r.from, r.to));
   const candidates = distances.flatMap((d) => {
-    const run = runs.find((r) => d <= r.to + EPS && d >= r.from - EPS);
+    const i = runs.findIndex((r) => d <= r.to + EPS && d >= r.from - EPS);
+    const run = runs[i];
     if (!run || d < run.from + endMargin + w / 2 - EPS || d > run.to - endMargin - w / 2 + EPS) {
       return [];
     }
     const a = pointAt(leg.points, run.from);
     const b = pointAt(leg.points, run.to);
     const anchor = pointAt(leg.points, d);
-    return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y) }];
+    return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), run: runPoints[i] }];
   });
   for (const side of [1, -1]) {
-    for (const { d, anchor, heading } of candidates) {
+    for (const { d, anchor, heading, run } of candidates) {
       const centre = { x: anchor.x + side * heading.first.x * offset, y: anchor.y + side * heading.first.y * offset };
       const box: OrientedBox = { centre, width: w, height: h, degrees: heading.degrees };
-      if (!collides(box, anchor, own, index)) {
+      if (!collides(box, run, own, index)) {
         return { centre, degrees: heading.degrees, box, along: d };
       }
     }
@@ -360,14 +388,15 @@ export function placeHalfLabel(leg: LegInput, own: string, index: ObstacleIndex)
   return { dropped: 'no-free-spot' };
 }
 
-function collides(box: OrientedBox, anchor: Point, own: string, index: ObstacleIndex): boolean {
+/** The box against the obstacles near it; the pieces of the own edge that lie on `run` do not count. */
+function collides(box: OrientedBox, run: readonly Point[], own: string, index: ObstacleIndex): boolean {
   const corners = cornersOf(box);
   for (const o of index.near(boundsOf(box))) {
     if (o.kind === 'rect') {
       if (overlapsRect(corners, box, grow(o.rect, o.clearance))) {
         return true;
       }
-    } else if (!(o.owner === own && onSegment(anchor, o.a, o.b)) && segmentHits(box, o.a, o.b, o.clearance)) {
+    } else if (!(o.owner === own && partOfRun(o.a, o.b, run)) && segmentHits(box, o.a, o.b, o.clearance)) {
       return true;
     }
   }

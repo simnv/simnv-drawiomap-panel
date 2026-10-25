@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTheme } from '@grafana/data';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
@@ -222,7 +224,8 @@ describe('renderLinkLabels: the refresh path', () => {
     // still no spot on the next refresh: it stays hidden
     expect(render(root, index, wide).dropped).toBe(1);
     // the old box stayed reserved: a text that fits goes back to the same spot
-    expect(render(root, index, value('42 Mb/s'))).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    // a label that held a reserved box and finds a spot again counts as moved, also at the same spot
+    expect(render(root, index, value('42 Mb/s'))).toEqual({ placed: 2, dropped: 0, moved: 1 });
     expect(a.getAttribute('visibility')).toBeNull();
     expect(a.getAttribute('data-dmap-dropped')).toBeNull();
     expect(a.getAttribute('transform')).toBe(transform);
@@ -292,7 +295,8 @@ describe('renderLinkLabels: obstacles', () => {
       rect: expect.objectContaining({ x: expect.closeTo(202.5, 5), y: expect.closeTo(82.5, 5) }),
       clearance: 0,
     });
-    // the edge stroke: one run at linkWidth.max / 2; the node bodies at half their stroke
+    // the edge stroke at linkWidth.max / 2: one piece for a one-leg link, the pieces up to the split for two legs;
+    // the node bodies at half their stroke
     expect(obstacles).toContainEqual({
       kind: 'segment',
       a: { x: 40, y: 100 },
@@ -300,8 +304,53 @@ describe('renderLinkLabels: obstacles', () => {
       clearance: 5,
       owner: 'e1',
     });
+    const two = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    const both = stageObstacles(root, index, two, 10, () => 60);
+    expect(both).toContainEqual({
+      kind: 'segment',
+      a: { x: 40, y: 100 },
+      b: { x: 200, y: 100 },
+      clearance: 5,
+      owner: 'e1',
+    });
+    expect(both).toContainEqual({
+      kind: 'segment',
+      a: { x: 360, y: 100 },
+      b: { x: 200, y: 100 },
+      clearance: 5,
+      owner: 'e1',
+    });
     expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 0, y: 80, width: 40, height: 40 }, clearance: 1 });
     expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 360, y: 80, width: 40, height: 40 }, clearance: 0.5 });
+  });
+});
+
+describe('renderLinkLabels: backgrounds', () => {
+  it('the portograph canvas and the groups of the demo sheet are no obstacles: the WAN link gets both labels', () => {
+    const { root, index } = build(readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8'));
+    const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+    expect(index.get('pg-canvas')?.shape?.localName).toBe('rect');
+    const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    const obstacles = stageObstacles(root, index, patches, 10, () => 60);
+    const bodies = obstacles.flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
+    expect(bodies.some((r) => r.width > 1000)).toBe(false);
+    // the vertical WAN link: the labels read bottom to top, to the right of the stroke
+    expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
+    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37 + 16, 0);
+  });
+  it('a plain draw.io container that holds other vertices is a background; the vertices inside stay obstacles', () => {
+    const container = `<g data-cell-id="box"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
+    const inner = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="20"/></g></g>`;
+    const { root, index } = build(SVG(container + inner));
+    const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(100 - 14);
+    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
+      o.kind === 'rect' ? [o.rect] : []
+    );
+    expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
+    expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 20 });
   });
 });
 
@@ -314,15 +363,16 @@ describe('renderLinkLabels: coordinates', () => {
       <g data-cell-id="e2"><g><path d="M 0 40 L 100 40" fill="none" pointer-events="stroke" stroke-width="3"/></g></g>
     </g></svg>`;
     const { root, index } = build(svg);
-    Object.assign(root, { getCTM: () => identity });
+    Object.assign(root, { getScreenCTM: () => identity });
     const line = index.get('e1')!.line!;
     Object.assign(line, {
       getTotalLength: () => 200,
       getPointAtLength: (d: number) => (d <= 100 ? { x: d, y: 0 } : { x: 100, y: d - 100 }),
       getCTM: () => scale2,
+      getScreenCTM: () => scale2,
     });
     Object.assign(line.parentNode as object, { getCTM: () => scale2 });
-    Object.assign(index.get('e2')!.line!, { getCTM: () => scale2 });
+    Object.assign(index.get('e2')!.line!, { getScreenCTM: () => scale2 });
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(renderLinkLabels(root, index, patches, opts)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     // the split: the overlay moves it from the corner (path-local 100) to 84 on the first run, root x = 168 (not 184)
@@ -343,6 +393,13 @@ describe('renderLinkLabels: coordinates', () => {
     expect(obstacles).toContainEqual({
       kind: 'segment',
       a: { x: 0, y: 0 },
+      b: { x: 168, y: 0 },
+      clearance: 10,
+      owner: 'e1',
+    });
+    expect(obstacles).toContainEqual({
+      kind: 'segment',
+      a: { x: 200, y: 200 },
       b: { x: 200, y: 0 },
       clearance: 10,
       owner: 'e1',
