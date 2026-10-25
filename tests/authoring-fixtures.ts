@@ -35,6 +35,10 @@ export const test = base.extend<{
       zoom?: Record<string, unknown>;
       /** Grafana panel queries; default: none */
       targets?: unknown[];
+      /** the field config of every panel; default: empty */
+      fieldConfig?: { defaults: Record<string, unknown>; overrides: unknown[] };
+      /** the panel options besides `config`, `diagram` and `zoom`, for example `linkWidth` */
+      options?: Record<string, unknown>;
       /** Several panels with their own config, one below the other. Replaces `clones`. */
       panels?: Array<{ config: DiagramConfig; title?: string; svg?: string }>;
       /** Dashboard auto refresh, for example `5s`; default: off */
@@ -116,8 +120,9 @@ export const test = base.extend<{
                   type: 'simnv-drawiomap-panel',
                   gridPos: { ...grid, h: settings.height ?? 20 },
                   targets: settings.targets ?? [],
-                  fieldConfig: { defaults: {}, overrides: [] },
+                  fieldConfig: settings.fieldConfig ?? { defaults: {}, overrides: [] },
                   options: {
+                    ...settings.options,
                     config: panel.config,
                     diagram: {
                       svg: ('svg' in panel && panel.svg) || (settings.svg ?? svg),

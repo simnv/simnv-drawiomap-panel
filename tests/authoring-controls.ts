@@ -77,3 +77,17 @@ export async function selectStageCell(dialog: Locator, id: string) {
 export async function filterBindings(dialog: Locator, text: string) {
   await dialog.getByRole('textbox', { name: 'Filter bindings', exact: true }).fill(text);
 }
+
+export type TouchPoint = { x: number; y: number };
+
+/** Real touch input through the browser input pipeline (Chromium), so touch-action applies. */
+export async function touch(page: Page, from: TouchPoint[], to: TouchPoint[], steps = 10) {
+  const cdp = await page.context().newCDPSession(page);
+  const at = (t: number) => from.map((p, i) => ({ id: i, x: p.x + (to[i].x - p.x) * t, y: p.y + (to[i].y - p.y) * t }));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+  for (let i = 1; i <= steps; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(i / steps) });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
