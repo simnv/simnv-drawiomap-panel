@@ -199,7 +199,7 @@ describe('placeHalfLabel: collisions', () => {
   });
   it('a leg of 20 units with a 30-unit slot is a short leg, before any candidate', () => {
     const calls: Rect[] = [];
-    const index: ObstacleIndex = { add() {}, near: (box) => (calls.push(box), []) };
+    const index: ObstacleIndex = { add() {}, remove() {}, near: (box) => (calls.push(box), []) };
     expect(placeHalfLabel(leg(horizontal(0, 20), { size: { width: 30, height: 10 } }), 'e', index)).toEqual({
       dropped: 'short-leg',
     });
@@ -290,7 +290,7 @@ describe('obstacleIndex', () => {
         )
       );
     }
-    const flat: ObstacleIndex = { add: (o) => obstacles.push(o), near: () => obstacles };
+    const flat: ObstacleIndex = { add: (o) => obstacles.push(o), remove() {}, near: () => obstacles };
     const legs = [horizontal(0, 300), horizontal(300, 0, 20), horizontal(0, 300, -45)].map((p) => leg(p));
     const withFlat = legs.map((l) => placeHalfLabel(l, 'e', flat));
     const withGrid = legs.map((l) => placeHalfLabel(l, 'e', obstacleIndex(obstacles)));

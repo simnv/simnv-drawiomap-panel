@@ -7,6 +7,7 @@ import {
   pinchView,
   readViewBox,
   viewBoxFor,
+  viewScaleOf,
   zoomAt,
 } from './zoom';
 
@@ -204,5 +205,31 @@ describe('pinch and pan math', () => {
     expect(isDefaultView({ ...base, x: 1e-9 }, base)).toBe(true);
     expect(isDefaultView(zoomAt(base, 0.9, 0, 0), base)).toBe(false);
     expect(isDefaultView({ ...base, x: 5 }, base)).toBe(false);
+  });
+});
+
+describe('viewScaleOf', () => {
+  /** an svg with the viewBox of `base` that the browser renders at `width` × `height` pixels */
+  const rendered = (width: number, height: number, vb = base) => {
+    const root = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    root.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    root.getBoundingClientRect = () => ({ width, height }) as DOMRect;
+    return root;
+  };
+  it('fit: the meet scale of the rendered rect, the smaller of the two ratios', () => {
+    expect(viewScaleOf(rendered(400, 300))).toBeCloseTo(0.4);
+    expect(viewScaleOf(rendered(1000, 200))).toBeCloseTo(0.4);
+  });
+  it('fit width: the svg is as wide as the box and as tall as the aspect gives', () => {
+    expect(viewScaleOf(rendered(400, 200))).toBeCloseTo(0.4);
+  });
+  it('a minScale layout renders the svg larger than the panel: the rendered size counts', () => {
+    expect(viewScaleOf(rendered(1300, 650))).toBeCloseTo(1.3);
+  });
+  it('a live view: the scale follows the zoomed viewBox', () => {
+    expect(viewScaleOf(rendered(400, 300, { x: 100, y: 50, w: 200, h: 100 }))).toBeCloseTo(2);
+  });
+  it('an svg without a size gives 0', () => {
+    expect(viewScaleOf(rendered(0, 0))).toBe(0);
   });
 });

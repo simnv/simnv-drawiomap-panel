@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import { ensureOverlay, renderOverlay } from './overlay';
+import { ensureOverlay, linkSplit, renderOverlay, statusMarkerBox } from './overlay';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 
@@ -277,5 +277,40 @@ describe('arrow tip position', () => {
     renderOverlay(root, index, new Map([['e1', patch('e1', { link: both })]]), opts);
     // the corner is at (100, 0) in the overlay
     expect(toBend(tipOf(root, 'a2b'), [[100, 0]])).toBeGreaterThanOrEqual(2 * ARROW - 0.01);
+  });
+});
+
+describe('linkSplit and statusMarkerBox', () => {
+  it('the split is the middle of a straight path, and moves off a corner onto one run by two arrow lengths', () => {
+    const geo = { length: 200, bends: [], unit: 1, matrix: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 } };
+    expect(linkSplit({ ...geo, pointAt: () => ({ x: 0, y: 0, angle: 0 }), polyline: () => [] })).toBe(100);
+    const bent = { ...geo, bends: [100], pointAt: () => ({ x: 0, y: 0, angle: 0 }), polyline: () => [] };
+    expect(linkSplit(bent)).toBe(84);
+    // the clearance is in the units of the path: a path drawn at half size keeps 32 of its own units
+    expect(linkSplit({ ...bent, unit: 0.5 })).toBe(68);
+  });
+  it('a shape marker sits at the bottom-left corner of the shape, in the space of the shape', () => {
+    const { index } = build();
+    const box = statusMarkerBox(index.get('n1')!)!;
+    expect(box.space).toBe(index.get('n1')!.shape);
+    expect(box.anchor).toEqual({ x: 14, y: 36 });
+    expect(box.bounds.x).toBeCloseTo(12.5);
+    expect(box.bounds.y).toBeCloseTo(36 - 12 - 1.5);
+    expect(box.bounds.width).toBeCloseTo(0.6 * 12 * '? missing'.length + 3);
+    const probed = statusMarkerBox(index.get('n1')!, () => 50)!;
+    expect(probed.bounds.width).toBeCloseTo(53);
+  });
+  it('the marker of the overlay stands at the anchor of statusMarkerBox', () => {
+    const { root, index } = build();
+    const statusView: StatusView = {
+      state: 'down',
+      reason: 'Down',
+      conditionKey: 'k',
+      queryIds: ['q'],
+      coverage: { available: 1, expected: 1 },
+    };
+    renderOverlay(root, index, new Map<string, PlanCellPatch>([['n1', { ...patch('n1', {}), statusView }]]), opts);
+    const text = root.querySelector('.dmap-status-marker text')!;
+    expect([text.getAttribute('x'), text.getAttribute('y')]).toEqual(['14', '36']);
   });
 });

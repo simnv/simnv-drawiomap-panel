@@ -44,6 +44,8 @@ export type Obstacle =
 
 export interface ObstacleIndex {
   add(o: Obstacle): void;
+  /** takes an obstacle out again (a label that is placed again leaves its old box) */
+  remove(o: Obstacle): void;
   /** the obstacles that can touch `box`; it may return more, never fewer */
   near(box: Rect): Iterable<Obstacle>;
 }
@@ -161,6 +163,18 @@ export function obstacleIndex(items: readonly Obstacle[], cell = 64): ObstacleIn
   items.forEach(add);
   return {
     add,
+    remove(o) {
+      const { x0, x1, y0, y1 } = span(obstacleBounds(o));
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let cy = y0; cy <= y1; cy++) {
+          const list = cells.get(`${cx},${cy}`);
+          const at = list?.indexOf(o) ?? -1;
+          if (list && at >= 0) {
+            list.splice(at, 1);
+          }
+        }
+      }
+    },
     near(box) {
       const { x0, x1, y0, y1 } = span(box);
       const found = new Set<Obstacle>();

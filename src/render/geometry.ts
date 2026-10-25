@@ -273,6 +273,8 @@ export interface PathGeom {
   bends: number[];
   /** length in `target` coordinates of one unit of `length` (1 unless the path has its own scale) */
   unit: number;
+  /** the matrix from the path's user space into `target` coordinates (identity in jsdom) */
+  matrix: Matrix;
 }
 
 type PathApi = SVGPathElement & { getTotalLength(): number; getPointAtLength(d: number): { x: number; y: number } };
@@ -297,6 +299,7 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
       polyline: (from, to) => slicePolyline(pts, from, to),
       bends: bendLengths(pts),
       unit: 1,
+      matrix: IDENTITY,
     };
   }
   const toM = (m: Matrix | null | undefined): Matrix =>
@@ -318,6 +321,7 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
     length,
     bends,
     unit: Math.sqrt(Math.abs(M.a * M.d - M.b * M.c)) || 1,
+    matrix: M,
     pointAt(d) {
       const p = at(d);
       const fwd = at(d + 0.5);
@@ -365,7 +369,7 @@ function parseTransform(value: string | null): Matrix | undefined {
 }
 
 /** Product of the transform attributes from `el` up to (not including) `stop`. Undefined when one is not resolved. */
-function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
+export function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
   let m = IDENTITY;
   for (let cur: Element | null = el; cur && cur !== stop; cur = cur.parentElement) {
     const t = parseTransform(cur.getAttribute('transform'));
@@ -378,7 +382,7 @@ function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
 }
 
 /** True for a matrix that can be inverted: finite entries and a determinant that is not near zero. */
-function usable(m: Matrix): boolean {
+export function usable(m: Matrix): boolean {
   const det = m.a * m.d - m.b * m.c;
   return [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite) && Number.isFinite(det) && Math.abs(det) >= 1e-9;
 }

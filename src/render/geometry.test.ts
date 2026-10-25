@@ -97,6 +97,8 @@ describe('pathGeometry', () => {
     Object.assign(g, { getCTM: () => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 }) });
     const geo = pathGeometry(p, g);
     expect(geo.length).toBe(150);
+    // the matrix from the path's space into the target's: target⁻¹ × line
+    expect(geo.matrix).toEqual({ a: 0.5, b: 0, c: 0, d: 0.5, e: 5, f: 2.5 });
     const m = geo.pointAt(75);
     expect(m.x).toBeCloseTo(42.5); // ((75 + 10) / 2)
     expect(m.y).toBeCloseTo(2.5);

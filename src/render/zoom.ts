@@ -69,6 +69,16 @@ export function viewBoxFor(
   }
 }
 
+/**
+ * Pixels per user unit of the rendered svg: the `meet` scale of its viewBox in its own rendered rect (not the panel:
+ * `minScale` and the Custom mode make the svg larger than the panel). 0 for an svg without a size.
+ */
+export function viewScaleOf(root: SVGSVGElement): number {
+  const rect = root.getBoundingClientRect();
+  const vb = readViewBox(root);
+  return Math.min(rect.width / vb.w, rect.height / vb.h);
+}
+
 /** The preserveAspectRatio value of an alignment. The diagram is always centred horizontally. */
 const ASPECT: Record<ZoomAlign, string> = { top: 'xMidYMin meet', center: 'xMidYMid meet' };
 
