@@ -19,14 +19,13 @@ import {
 /*
  * A plain diagram: two nodes and one edge of 320 units between them. The split is at x = 200; the a2b leg runs
  * from x = 40 to 200 (its anchor at 120), the b2a leg from 360 to 200 (its anchor at 280). The percent slot is
- * 24 (0.6 × 8 × 5 glyphs in jsdom), the box 26 × 12; with `linkWidth.max` 10 the centre stands 15 off the line.
+ * 24 (0.6 × 8 × 5 glyphs in jsdom), the box 26 × 12. A label stands on its stroke (centre on the line); beside it with `linkWidth.max` 10 the centre stands 13 off the line.
  */
 const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
   <g data-cell-id="n1"><g><rect x="0" y="80" width="40" height="40" stroke-width="2"/></g></g>
   <g data-cell-id="e1"><g><path d="M 40 100 L 360 100" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
   <g data-cell-id="n2"><g><rect x="360" y="80" width="40" height="40"/></g></g>${extra}
 </svg>`;
-const OFFSET = 15;
 
 function build(svg = SVG()): { root: SVGSVGElement; index: CellIndex } {
   const host = document.createElement('div');
@@ -94,12 +93,13 @@ describe('renderLinkLabels: the layer and its elements', () => {
     expect(a2b.getAttribute('data-dmap-mode')).toBe('percent');
     expect(a2b.getAttribute('pointer-events')).toBe('visiblePainted');
     expect(a2b.getAttribute('x')).toBe('120');
-    expect(a2b.getAttribute('y')).toBe(String(100 - OFFSET));
-    expect(a2b.getAttribute('transform')).toBe(`rotate(0 120 ${100 - OFFSET})`);
+    expect(a2b.getAttribute('y')).toBe('100');
+    expect(a2b.getAttribute('transform')).toBe('rotate(0 120 100)');
+    expect(a2b.getAttribute('data-dmap-side')).toBe('line');
     // the room of the status marker (the midpoint, 4 to the right, "? missing" wide) is reserved: the b2a label,
     // whose anchor is 280, slides past it towards the end of the link
     expect(b2a.getAttribute('x')).toBe('284');
-    expect(b2a.getAttribute('y')).toBe(String(100 - OFFSET));
+    expect(b2a.getAttribute('y')).toBe('100');
     expect(a2b.getAttribute('fill')).toBe(theme.colors.text.primary);
     expect(a2b.getAttribute('stroke')).toBe(theme.colors.background.primary);
     expect(a2b.getAttribute('paint-order')).toBe('stroke');
@@ -172,7 +172,7 @@ describe('renderLinkLabels: the refresh path', () => {
     expect(byHalf(root, 'a2b')).toBe(a);
     expect(a.getAttribute('visibility')).toBe('hidden');
     expect(a.getAttribute('pointer-events')).toBe('visiblePainted');
-    expect(a.getAttribute('transform')).toBe(`rotate(0 120 ${100 - OFFSET})`);
+    expect(a.getAttribute('transform')).toBe('rotate(0 120 100)');
     // the data comes back: the same spot, no new stamp
     render(root, index, two({ percentDisplay: '5%' }));
     expect(a.getAttribute('visibility')).toBeNull();
@@ -198,12 +198,9 @@ describe('renderLinkLabels: the refresh path', () => {
     expect(a.textContent).toBe('410 Mb/s');
   });
   it('a new slot that fits nowhere hides the label with its transform; it comes back when a later text fits', () => {
-    // blocks above and below the a2b leg (the label boxes span y 77..91 and 109..123) leave 60 free units around
-    // its anchor
+    // two blocks across the stroke of the a2b leg leave 60 free units around its anchor, on and beside the stroke
     const blocks = ['40', '150']
-      .flatMap((x) =>
-        [70, 106].map((y) => `<g data-cell-id="b${x}${y}"><g><rect x="${x}" y="${y}" width="50" height="24"/></g></g>`)
-      )
+      .map((x) => `<g data-cell-id="b${x}"><g><rect x="${x}" y="70" width="50" height="60"/></g></g>`)
       .join('');
     const { root, index } = build(SVG(blocks));
     const value = (text: string): PatchMap =>
@@ -213,7 +210,7 @@ describe('renderLinkLabels: the refresh path', () => {
     expect(render(root, index, value('41 Mb/s'))).toEqual({ placed: 2, dropped: 0, moved: 0 });
     const a = byHalf(root, 'a2b')!;
     const transform = a.getAttribute('transform');
-    expect(transform).toBe(`rotate(0 120 ${100 - OFFSET})`);
+    expect(transform).toBe('rotate(0 120 100)');
     const wide = value('abcdefghijklmn Mb/s');
     expect(render(root, index, wide)).toEqual({ placed: 1, dropped: 1, moved: 0 });
     expect(byHalf(root, 'a2b')).toBe(a);
@@ -232,8 +229,10 @@ describe('renderLinkLabels: the refresh path', () => {
     expect(a.textContent).toBe('42 Mb/s');
   });
   it('a dropped half keeps its side for its mate: a resize of the mate stays on that side, the recovery follows it', () => {
-    // above the a2b leg a node blocks every spot, below it two blocks leave a gap of 60: both halves start below
+    // a node sits on the whole stroke, another above the a2b leg; below it two blocks leave a gap of 60:
+    // both halves start below the stroke
     const blocks = [
+      '<g data-cell-id="strip"><g><rect x="40" y="95" width="320" height="10"/></g></g>',
       '<g data-cell-id="top"><g><rect x="40" y="60" width="160" height="26"/></g></g>',
       '<g data-cell-id="l"><g><rect x="40" y="106" width="50" height="24"/></g></g>',
       '<g data-cell-id="r"><g><rect x="150" y="106" width="50" height="24"/></g></g>',
@@ -250,7 +249,7 @@ describe('renderLinkLabels: the refresh path', () => {
           }),
         ],
       ]);
-    const below = (el: SVGTextElement) => Number(el.getAttribute('y')) > 100;
+    const below = (el: SVGTextElement) => el.getAttribute('data-dmap-side') === 'bottom';
     expect(render(root, index, value('41 Mb/s', '10 Mb/s'))).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(below(byHalf(root, 'a2b')!)).toBe(true);
     expect(below(byHalf(root, 'b2a')!)).toBe(true);
@@ -270,7 +269,8 @@ describe('renderLinkLabels: the refresh path', () => {
     const stamp = a.getAttribute('data-dmap-placed-at');
     render(root, index, two(), { ...opts, linkWidth: { min: 2, max: 2 } });
     const wider = byHalf(root, 'a2b')!;
-    expect(wider.getAttribute('y')).toBe(String(100 - (4 + 1 + 6)));
+    // on the stroke the spot does not depend on the stroke width
+    expect(wider.getAttribute('y')).toBe('100');
     expect(wider.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
     const stamp2 = wider.getAttribute('data-dmap-placed-at');
     render(root, index, two({}, {}, 'value'), { ...opts, linkWidth: { min: 2, max: 2 } });
@@ -286,14 +286,74 @@ describe('renderLinkLabels: the refresh path', () => {
   });
 });
 
+describe('renderLinkLabels: the place of a label', () => {
+  const strip = '<g data-cell-id="strip"><g><rect x="40" y="95" width="320" height="10"/></g></g>';
+  const above = '<g data-cell-id="above"><g><rect x="40" y="60" width="320" height="26"/></g></g>';
+  const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+  const bgs = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGRectElement>('rect.dmap-link-label-bg'));
+
+  it('on its stroke a label has a gap behind it: a canvas-coloured rect of the slot size, a small radius', () => {
+    const { root, index } = build();
+    render(root, index, both());
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    const rects = bgs(root);
+    expect(rects).toHaveLength(2);
+    const bg = rects[0];
+    expect(bg.getAttribute('fill')).toBe(theme.colors.background.primary);
+    expect(Number(bg.getAttribute('width'))).toBe(24);
+    expect(Number(bg.getAttribute('height'))).toBe(10);
+    expect(Number(bg.getAttribute('rx'))).toBeLessThanOrEqual(2);
+    expect(bg.getAttribute('x')).toBe('108');
+    expect(bg.getAttribute('y')).toBe('95');
+    expect(bg.getAttribute('transform')).toBe(a.getAttribute('transform'));
+    expect(bg.getAttribute('pointer-events')).toBe('none');
+    // behind its text
+    expect(bg.nextElementSibling).toBe(a);
+  });
+  it('a label beside its stroke has the halo only: no rect', () => {
+    const { root, index } = build(SVG(strip));
+    render(root, index, both());
+    expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('top');
+    expect(bgs(root)).toHaveLength(0);
+  });
+  it('the top of a horizontal link is above; the near edge of the box is 2 beyond the stroke edge', () => {
+    const { root, index } = build(SVG(strip));
+    render(root, index, both());
+    // linkWidth.max 10: the stroke edge at 95, the box (12 high) from 81 to 93 is 2 beyond it, the centre at 87
+    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('87');
+    expect(byHalf(root, 'b2a')!.getAttribute('y')).toBe('87');
+  });
+  it('both halves go to the bottom side when the top side is blocked along the whole half of one', () => {
+    const { root, index } = build(SVG(strip + above));
+    render(root, index, both());
+    expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('bottom');
+    expect(byHalf(root, 'b2a')!.getAttribute('data-dmap-side')).toBe('bottom');
+    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('113');
+  });
+  it('the gap rect hides with its text, repaints with the theme and leaves when the label moves off the stroke', () => {
+    const { root, index } = build();
+    const two = (a: HalfState) => new Map([['e1', linkPatch('e1', { a2b: a, b2a: half(), labelMode: 'percent' })]]);
+    render(root, index, two(half()));
+    const bg = bgs(root)[0];
+    render(root, index, two(nodata()));
+    expect(bg.getAttribute('visibility')).toBe('hidden');
+    render(root, index, two(half()));
+    expect(bg.getAttribute('visibility')).toBeNull();
+    const dark = createTheme({ colors: { mode: 'dark' } });
+    render(root, index, two(half()), { theme: dark, linkWidth: { min: 2, max: 10 } });
+    expect(bg.getAttribute('fill')).toBe(dark.colors.background.primary);
+  });
+});
+
 describe('renderLinkLabels: obstacles', () => {
   it('a plain draw.io node is an obstacle: the label slides towards the end of the link', () => {
-    const node = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="20"/></g></g>`;
+    const node = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="50"/></g></g>`;
     const { root, index } = build(SVG(node));
     render(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]));
     const a = byHalf(root, 'a2b')!;
     expect(Number(a.getAttribute('x'))).toBeLessThan(100 - 13);
-    expect(a.getAttribute('y')).toBe(String(100 - OFFSET));
+    expect(a.getAttribute('y')).toBe('100');
     expect(byHalf(root, 'b2a')!.getAttribute('x')).toBe('284');
   });
   it('reserves the status marker room of a patched edge; drawStatusMarker writes the anchor into x and y', () => {
@@ -370,13 +430,13 @@ describe('renderLinkLabels: backgrounds', () => {
     const obstacles = stageObstacles(root, index, patches, 10, () => 60);
     const bodies = obstacles.flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
-    // the vertical WAN link: the labels read bottom to top, to the right of the stroke
+    // the vertical WAN link: the labels read bottom to top, on the stroke
     expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
-    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37 + 15, 0);
+    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
-    const title = `<g data-cell-id="pg-groupTitle~wan"><g><rect x="100" y="60" width="40" height="20"/><text x="104" y="74">wan</text></g></g>`;
+    const title = `<g data-cell-id="pg-groupTitle~wan"><g><rect x="100" y="60" width="40" height="50"/><text x="104" y="74">wan</text></g></g>`;
     const { root, index } = build(SVG(frame + title));
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
@@ -385,11 +445,11 @@ describe('renderLinkLabels: backgrounds', () => {
       o.kind === 'rect' ? [o.rect] : []
     );
     expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
-    expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 20 });
+    expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 50 });
   });
   it('a plain draw.io container that holds other vertices is a background; the vertices inside stay obstacles', () => {
     const container = `<g data-cell-id="box"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
-    const inner = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="20"/></g></g>`;
+    const inner = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="50"/></g></g>`;
     const inner2 = `<g data-cell-id="n4"><g><rect x="260" y="130" width="40" height="20"/></g></g>`;
     const { root, index } = build(SVG(container + inner + inner2));
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
@@ -399,7 +459,7 @@ describe('renderLinkLabels: backgrounds', () => {
       o.kind === 'rect' ? [o.rect] : []
     );
     expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
-    expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 20 });
+    expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 50 });
   });
 });
 
@@ -408,7 +468,7 @@ describe('renderLinkLabels: review cases', () => {
     new Map([['e1', linkPatch('e1', { a2b: a, b2a: b, labelMode: 'percent' })]]);
   it('a slot that changes while the label is hidden is placed again: no small reservation survives', () => {
     // an obstacle right of the anchor: a 1-glyph reading fits beside it, the percent slot does not
-    const block = `<g data-cell-id="n3"><g><rect x="128" y="70" width="40" height="25"/></g></g>`;
+    const block = `<g data-cell-id="n3"><g><rect x="128" y="70" width="40" height="45"/></g></g>`;
     const { root, index } = build(SVG(block));
     const reading = half({ percent: undefined, percentDisplay: undefined, display: { text: '1', numeric: 1 } });
     render(root, index, two(reading));
@@ -423,7 +483,7 @@ describe('renderLinkLabels: review cases', () => {
     expect(Number(a.getAttribute('x'))).toBeLessThanOrEqual(128 - 13);
   });
   it('a device body with one badge inside stays an obstacle; a vertex that holds two vertices is a background', () => {
-    const device = `<g data-cell-id="dev"><g><rect x="90" y="56" width="60" height="28"/></g></g>`;
+    const device = `<g data-cell-id="dev"><g><rect x="90" y="56" width="60" height="50"/></g></g>`;
     const badge = `<g data-cell-id="badge"><g><rect x="94" y="60" width="10" height="10"/></g></g>`;
     const { root, index } = build(SVG(device + badge));
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
@@ -432,13 +492,13 @@ describe('renderLinkLabels: review cases', () => {
     const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
       o.kind === 'rect' ? [o.rect] : []
     );
-    expect(rects).toContainEqual({ x: 90, y: 56, width: 60, height: 28 });
+    expect(rects).toContainEqual({ x: 90, y: 56, width: 60, height: 50 });
     const second = `<g data-cell-id="badge2"><g><rect x="130" y="60" width="10" height="10"/></g></g>`;
     const container = build(SVG(device + badge + second));
     const more = stageObstacles(container.root, container.index, patches, 10, () => 60).flatMap((o) =>
       o.kind === 'rect' ? [o.rect] : []
     );
-    expect(more).not.toContainEqual({ x: 90, y: 56, width: 60, height: 28 });
+    expect(more).not.toContainEqual({ x: 90, y: 56, width: 60, height: 50 });
   });
   it('adding the reverse half of an unlabelled edge moves its arrow heads: the placement runs again', () => {
     const other = `<g data-cell-id="e2"><g><path d="M 40 150 L 360 150" fill="none" stroke="#333" pointer-events="stroke"/></g></g>`;
@@ -458,7 +518,7 @@ describe('renderLinkLabels: review cases', () => {
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
   });
   it('a plain text cell is an obstacle', () => {
-    const text = `<g data-cell-id="t1"><g><text x="100" y="80" font-size="10">a caption</text></g></g>`;
+    const text = `<g data-cell-id="t1"><g><text x="100" y="102" font-size="10">a caption</text></g></g>`;
     const { root, index } = build(SVG(text));
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(index.get('t1')?.label).toBeTruthy();
@@ -467,7 +527,7 @@ describe('renderLinkLabels: review cases', () => {
     const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
       o.kind === 'rect' ? [o.rect] : []
     );
-    expect(rects.some((r) => r.x === 100 && r.y < 80 && r.width > 40)).toBe(true);
+    expect(rects.some((r) => r.x === 100 && r.y < 102 && r.width > 40)).toBe(true);
   });
 });
 
@@ -495,9 +555,9 @@ describe('renderLinkLabels: coordinates', () => {
     // the split: the overlay moves it from the corner (path-local 100) to 84 on the first run, root x = 168 (not 184)
     const a = byHalf(root, 'a2b')!;
     expect(a.getAttribute('x')).toBe('84');
-    expect(a.getAttribute('y')).toBe(String(-(4 + (10 * 2) / 2 + 6)));
+    expect(a.getAttribute('y')).toBe('0');
     const b = byHalf(root, 'b2a')!;
-    expect(b.getAttribute('transform')).toBe(`rotate(-90 ${200 + 4 + 10 + 6} 84)`);
+    expect(b.getAttribute('transform')).toBe('rotate(-90 200 96)');
     // a 3-unit stroke in the scaled group: a 6-unit stroke in root units, a 3-unit clearance
     const obstacles = stageObstacles(root, index, patches, 10, (text) => 0.6 * 12 * text.length);
     expect(obstacles).toContainEqual({
@@ -531,7 +591,7 @@ describe('renderLinkLabels: coordinates', () => {
     renderLinkLabels(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]), opts);
     const a = byHalf(root, 'a2b')!;
     // the anchor is on the first segment (y = 50), not on the chord (y = 52.6): the centre sits 16 above it
-    expect(Number(a.getAttribute('y'))).toBeCloseTo(50 - OFFSET, 0);
+    expect(Number(a.getAttribute('y'))).toBeCloseTo(50, 0);
     expect(a.getAttribute('transform')).toMatch(/^rotate\(1\.49 /);
   });
 });

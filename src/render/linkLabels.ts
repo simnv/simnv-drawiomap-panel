@@ -21,7 +21,9 @@ import {
   aabbOf,
   boundsOf,
   labelsVisible,
+  LABEL_SIDES,
   LINK_LABEL_GEOMETRY,
+  type LabelSide,
   obstacleIndex,
   placeHalfLabel,
   placeLinkLabels,
@@ -43,6 +45,8 @@ import { viewScaleOf } from './zoom';
  */
 
 export const LINK_LABEL_CLASS = 'dmap-link-label';
+/** The class of the canvas-coloured rect behind the text of a label that stands on its stroke. */
+export const LINK_LABEL_BG_CLASS = 'dmap-link-label-bg';
 export const LINK_LABEL_LAYER_CLASS = 'dmap-link-labels';
 const NS = 'http://www.w3.org/2000/svg';
 /** a slot width rounds up to a multiple of this, so that a small change of a value keeps its slot */
@@ -85,7 +89,9 @@ interface LabelRecord {
   el?: SVGTextElement;
   placement?: Placement;
   /** the side of the last spot the label held; a dropped half keeps it with its reserved box */
-  side?: 1 | -1;
+  side?: LabelSide;
+  /** the canvas-coloured rect behind the text of a label that stands on its stroke */
+  bg?: SVGRectElement;
   /** the box the label holds in the grid */
   obstacle?: Obstacle;
   /** an isolated re-placement found no spot: the label is hidden and tries again on the next call */
@@ -612,9 +618,10 @@ function createProbe(layer: SVGGElement): SVGTextElement {
   return probe;
 }
 
-function paint(el: SVGTextElement, theme: GrafanaTheme2): void {
-  el.setAttribute('fill', theme.colors.text.primary);
-  el.setAttribute('stroke', theme.colors.background.primary);
+function paint(rec: LabelRecord, theme: GrafanaTheme2): void {
+  rec.el?.setAttribute('fill', theme.colors.text.primary);
+  rec.el?.setAttribute('stroke', theme.colors.background.primary);
+  rec.bg?.setAttribute('fill', theme.colors.background.primary);
 }
 
 function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
@@ -636,19 +643,46 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   el.setAttribute('stroke-linejoin', 'round');
   el.setAttribute('stroke-linecap', 'round');
   el.setAttribute('text-rendering', 'geometricPrecision');
-  paint(el, layout.theme);
   layout.layer.appendChild(el);
   rec.el = el;
+  paint(rec, layout.theme);
   return el;
 }
 
-function position(el: SVGTextElement, placed: Placed): void {
+const SIDE_NAMES = { '0': 'line', '1': 'top', '-1': 'bottom', '2': 'top-wide', '-2': 'bottom-wide' } as const;
+/** The corner radius of the gap a label on its stroke cuts into the line. */
+const GAP_RADIUS = 2;
+
+function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
+  const el = ensureElement(layout, rec);
   const x = fmt(placed.centre.x);
   const y = fmt(placed.centre.y);
+  const turn = `rotate(${fmt(placed.degrees)} ${x} ${y})`;
   el.setAttribute('x', x);
   el.setAttribute('y', y);
-  el.setAttribute('transform', `rotate(${fmt(placed.degrees)} ${x} ${y})`);
+  el.setAttribute('transform', turn);
+  el.setAttribute('data-dmap-side', SIDE_NAMES[placed.side]);
   el.setAttribute('data-dmap-placed-at', String(++stamp));
+  // a label on its stroke gets a gap in the line: a rect in the canvas colour, the size of the slot, behind the text
+  if (placed.side !== 0 || rec.slot === undefined) {
+    rec.bg?.remove();
+    rec.bg = undefined;
+    return;
+  }
+  if (!rec.bg) {
+    rec.bg = document.createElementNS(NS, 'rect');
+    rec.bg.setAttribute('class', LINK_LABEL_BG_CLASS);
+    rec.bg.setAttribute('pointer-events', 'none');
+    rec.bg.setAttribute('rx', String(GAP_RADIUS));
+    layout.layer.insertBefore(rec.bg, el);
+    paint(rec, layout.theme);
+  }
+  const height = LINK_LABEL_GEOMETRY.fontSize * 1.25;
+  rec.bg.setAttribute('x', fmt(placed.centre.x - rec.slot / 2));
+  rec.bg.setAttribute('y', fmt(placed.centre.y - height / 2));
+  rec.bg.setAttribute('width', fmt(rec.slot));
+  rec.bg.setAttribute('height', fmt(height));
+  rec.bg.setAttribute('transform', turn);
 }
 
 /** Shows `text` in the element, or hides the element (its slot stays reserved) when there is none. */
@@ -659,12 +693,14 @@ function showText(rec: LabelRecord, text: string | undefined): void {
   }
   if (text === undefined || rec.retry) {
     el.setAttribute('visibility', 'hidden');
+    rec.bg?.setAttribute('visibility', 'hidden');
     return;
   }
   if (el.textContent !== text) {
     el.textContent = text;
   }
   el.removeAttribute('visibility');
+  rec.bg?.removeAttribute('visibility');
 }
 
 /** Places one label with its current slot; a placed label takes its box in the grid. */
@@ -677,7 +713,8 @@ function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
   }
   // an isolated re-placement tries first the side the other half of the link holds (or held before it dropped)
   const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.side;
-  const sides: ReadonlyArray<1 | -1> = mate ? [mate, mate === 1 ? -1 : 1] : [1, -1];
+  const sides: readonly LabelSide[] =
+    mate === undefined ? LABEL_SIDES : [mate, ...LABEL_SIDES.filter((side) => side !== mate)];
   return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides));
 }
 
@@ -771,7 +808,7 @@ function fullPlacement(
       }
     }
     if (rec.placement && 'centre' in rec.placement) {
-      position(ensureElement(layout, rec), rec.placement);
+      position(layout, rec, rec.placement);
     }
     showText(rec, texts[i]);
   });
@@ -784,9 +821,7 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
   if (layout.theme !== theme) {
     layout.theme = theme;
     for (const rec of layout.records.values()) {
-      if (rec.el) {
-        paint(rec.el, theme);
-      }
+      paint(rec, theme);
     }
   }
   for (const slot of slots) {
@@ -806,7 +841,7 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
       }
       if (tryPlace(layout, rec)) {
         const el = ensureElement(layout, rec);
-        position(el, rec.placement as Placed);
+        position(layout, rec, rec.placement as Placed);
         el.removeAttribute('data-dmap-dropped');
         rec.retry = false;
         if (old) {

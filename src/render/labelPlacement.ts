@@ -58,12 +58,26 @@ export interface Placed {
   box: OrientedBox;
   /** the arc length of the anchor along the leg */
   along: number;
-  /** the side of the run: 1 is the first side (`runHeading().first`), −1 the second */
-  side: 1 | -1;
+  /** where the box stands: see `LabelSide` */
+  side: LabelSide;
 }
+/**
+ * Where a label stands: 0 on the own stroke; 1 beside it on the top side (the side the tops of the letters face,
+ * `runHeading().first`) and −1 on the bottom side, the near edge of the box `normalGap` beyond the stroke edge; 2 and
+ * −2 are the same sides with `wideGap`, for a stroke with a wide chip or pill beside it.
+ */
+export type LabelSide = 0 | 1 | -1 | 2 | -2;
+export const LABEL_SIDES: readonly LabelSide[] = [0, 1, -1, 2, -2];
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
 
-export const LINK_LABEL_GEOMETRY = { fontSize: 8, normalGap: 4, halo: 1, alongStep: 4, endMargin: 4 } as const;
+export const LINK_LABEL_GEOMETRY = {
+  fontSize: 8,
+  normalGap: 2,
+  wideGap: 4,
+  halo: 1,
+  alongStep: 4,
+  endMargin: 4,
+} as const;
 /** The smallest glyph that reads on a screen: below it the label layer hides (decision 7). */
 export const MIN_GLYPH_PX = 7;
 /** A run whose horizontal extent is at most this is vertical. draw.io writes two decimals. */
@@ -78,12 +92,12 @@ export function labelsVisible(viewScale: number): boolean {
 
 /**
  * The reading direction of a run and the side a label tries first (portograph `candidateBox`, ADR-0014). A vertical
- * run reads bottom to top and takes the right side first. Any other run keeps its text upright (gravity): the
+ * run reads bottom to top and takes the left side first (the side the letters' tops face). Any other run keeps its text upright (gravity): the
  * heading is in (−90, 90), and the first side is above the run (up at 0°, up-left at −45°).
  */
 export function runHeading(dx: number, dy: number): { degrees: number; first: Point } {
   if (Math.abs(dx) <= VERTICAL_EPS) {
-    return { degrees: -90, first: { x: 1, y: 0 } };
+    return { degrees: -90, first: { x: -1, y: 0 } };
   }
   let degrees = (Math.atan2(dy, dx) * 180) / Math.PI;
   if (degrees > 90) {
@@ -331,19 +345,19 @@ const arcLengths = (pts: readonly Point[]): number[] => {
 /* ---------- candidates ---------- */
 
 /**
- * Places the label of one half: the first free candidate in the portograph order (the first side over the whole
- * leg, then the second; from the middle of the leg outwards in steps of `alongStep`, the lower arc length first).
- * A candidate stands on one straight run with `endMargin` to the bends; its box is `normalGap` outside the stroke
- * edge. `own` is the cell id of the edge: the pieces of its own run (`leg.id`, `Obstacle.piece`) are no obstacle,
+ * Places the label of one half: the first free candidate in the ladder order (on the stroke over the whole leg, then
+ * the top side, then the bottom side, then both again with the wide gap; from the middle of the leg outwards in steps of `alongStep`, the lower arc
+ * length first). A candidate stands on one straight run with `endMargin` to the bends; on the stroke its centre is
+ * on the leg, beside it the near edge of its box is `normalGap` beyond the stroke edge. `own` is the cell id of the edge: the pieces of its own run (`leg.id`, `Obstacle.piece`) are no obstacle,
  * its other runs are.
  */
 export function placeHalfLabel(
   leg: LegInput,
   own: string,
   index: ObstacleIndex,
-  sides: ReadonlyArray<1 | -1> = [1, -1]
+  sides: readonly LabelSide[] = LABEL_SIDES
 ): Placement {
-  const { halo, normalGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
+  const { halo, normalGap, wideGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
   const w = leg.size.width + 2 * halo;
   const h = leg.size.height + 2 * halo;
   const stops = [0, ...leg.bends, leg.length];
@@ -351,8 +365,9 @@ export function placeHalfLabel(
   if (Math.max(...runs.map((r) => r.to - r.from)) < w + 2 * endMargin - EPS) {
     return { dropped: 'short-leg' };
   }
-  const gap = normalGap + leg.strokeRoot / 2;
-  const offset = gap + h / 2;
+  // beside the stroke the near edge of the box stands `normalGap` (or `wideGap`) beyond the stroke edge
+  const offsetOf = (side: LabelSide) =>
+    Math.sign(side) * ((Math.abs(side) === 2 ? wideGap : normalGap) + leg.strokeRoot / 2 + h / 2);
   const d0 = leg.length / 2;
   // the distances from the middle, the lower one first at each step; the same list serves both sides
   const distances: number[] = [d0];
@@ -390,7 +405,8 @@ export function placeHalfLabel(
   });
   for (const side of sides) {
     for (const { d, anchor, heading, ownPiece } of candidates) {
-      const centre = { x: anchor.x + side * heading.first.x * offset, y: anchor.y + side * heading.first.y * offset };
+      const shift = offsetOf(side);
+      const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
       const box: OrientedBox = { centre, width: w, height: h, degrees: heading.degrees };
       if (!collides(box, ownPiece, index)) {
         return { centre, degrees: heading.degrees, box, along: d, side };
@@ -401,9 +417,9 @@ export function placeHalfLabel(
 }
 
 /**
- * Places the labels of the two halves of one link so that both stand on one side of the link, as portograph does.
- * The first side is tried for both halves; when one half has no free spot there, the second side is tried for both.
- * Only when no single side holds both, each half takes its own first free spot. The first label of a pair is an
+ * Places the labels of the two halves of one link so that both stand in one place: on the stroke, else both on the
+ * top side, else both on the bottom side, then the same two sides with the wide gap. Only when no single place holds both, each half takes its own first free
+ * spot. The first label of a pair is an
  * obstacle for the second while the pair is placed; the index holds no label of the pair when this returns.
  */
 export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: ObstacleIndex): [Placement, Placement] {
@@ -416,20 +432,20 @@ export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: Ob
     return o;
   };
   const drop = (o: Obstacle | undefined) => o && index.remove(o);
-  const pair = (sides: ReadonlyArray<1 | -1>): [Placement, Placement] => {
+  const pair = (sides: readonly LabelSide[]): [Placement, Placement] => {
     const first = placeHalfLabel(a, own, index, sides);
     const held = hold(first);
     const second = placeHalfLabel(b, own, index, sides);
     drop(held);
     return [first, second];
   };
-  for (const side of [1, -1] as const) {
+  for (const side of LABEL_SIDES) {
     const result = pair([side]);
     if ('centre' in result[0] && 'centre' in result[1]) {
       return result;
     }
   }
-  return pair([1, -1]);
+  return pair(LABEL_SIDES);
 }
 
 /** The box against the obstacles near it; the pieces of the own run (`ownPiece`) do not count. */
