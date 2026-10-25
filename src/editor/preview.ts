@@ -1,4 +1,4 @@
-import { type PanelData } from '@grafana/data';
+import { type DataSourceRef, type PanelData } from '@grafana/data';
 import { resolveBinding, type BindingResolver } from '../binding/engine';
 import type { BindingPlan } from '../binding/patterns';
 import type { DiagramConfig, NamedQuery } from '../model/config';
@@ -97,6 +97,9 @@ export function previewSnapshot(
   return preparedSnapshot(query, config, cellId, preview, active, generation, purpose);
 }
 
+/** Two references name the same datasource: the same uid and type, whatever the key order of their JSON. */
+const sameDatasource = (a: DataSourceRef | undefined, b: DataSourceRef | undefined): boolean =>
+  a?.uid === b?.uid && a?.type === b?.type;
 /** Share compatibility checks; reuse prefers success while display preserves its authoritative result order. */
 export function preparedSnapshot(
   query: NamedQuery,
@@ -117,7 +120,7 @@ export function preparedSnapshot(
       !(purpose === 'reuse' && result.kept) &&
       JSON.stringify(result.query) === JSON.stringify(query) &&
       (generation === undefined || generation === result.context.generation) &&
-      JSON.stringify(result.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&
+      sameDatasource(result.context.defaultDatasource, config.defaultDatasource) &&
       (result.cellId === cellId || !parameterized)
   );
   // Reuse data before empty success. Display must still expose a later saved monitoring failure.

@@ -99,6 +99,12 @@ describe('validateConfig: round trip of the version 3 shape', () => {
     expect(result.skippedItems).toEqual([]);
     expectItemsEqual(result, config);
   });
+  it('keeps the default datasource as it is saved, key order included', () => {
+    // the panel and the query context read the same saved object; a parse must not reorder its keys
+    const result = clean({ ...empty(), defaultDatasource: { type: 'prometheus', uid: 'vm' } });
+    expect(result.diagnostics).toEqual([]);
+    expect(JSON.stringify(result.config?.defaultDatasource)).toBe('{"type":"prometheus","uid":"vm"}');
+  });
 
   it('keeps a native target as it is, also when it cannot persist, and marks the query unusable', () => {
     const target = { refId: 'A', custom: () => 1 };

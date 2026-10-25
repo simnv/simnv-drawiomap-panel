@@ -508,6 +508,10 @@ export function validateConfig(input: unknown): ValidatedConfig {
     return result;
   }
   const config: DiagramConfig = { ...parsed.data, queries: [], patterns: [], overrides: [], widgets: [] };
+  if (isRecord(input) && input.defaultDatasource !== undefined) {
+    // the saved object, key order included: the panel and its query context read the same reference
+    config.defaultDatasource = orderedCopy(input.defaultDatasource) as DiagramConfig['defaultDatasource'];
+  }
   const { diagnostics } = result;
   for (const section of SECTIONS) {
     parsed.data[section].forEach((raw, index) => {
