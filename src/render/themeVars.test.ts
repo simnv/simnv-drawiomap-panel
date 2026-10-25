@@ -17,7 +17,7 @@ describe('extractThemeVars', () => {
   });
   it('ignores names that are not --ge-*', () => {
     const r = one(`#${ID} { --x: #fff; color: red; background: #000; --ge-ok: #abc; --GE-up: #fff; }`);
-    expect([...r.keys()].sort()).toEqual(['--ge-ok', '--ge-up'].sort());
+    expect([...r.keys()]).toEqual(['--ge-ok']);
   });
   it('accepts plain colours', () => {
     const r = one(
@@ -79,6 +79,15 @@ describe('extractThemeVars', () => {
     // --ge-b came from a var(), so --ge-a does not read it and uses its own fallback.
     expect(r.get('--ge-a')).toBe('light-dark(#fff, #000)');
     expect(one(`#${ID} { --ge-a: var(--ge-b, var(--ge-c, #fff)); }`).size).toBe(0);
+  });
+  it('rejects mixed percent and number channels', () => {
+    expect(one(`#${ID} { --ge-x: rgb(1%,2,3); }`).size).toBe(0);
+    expect(one(`#${ID} { --ge-x: rgb(1%, 2%, 3%); }`).size).toBe(1);
+  });
+  it('keeps names case-sensitive and lets the last declaration win', () => {
+    expect(one(`#${ID} { --ge-x: red; --GE-x: blue; }`).get('--ge-x')).toBe('red');
+    expect(one(`#${ID} { --ge-x: red; --ge-x: var(--ge-y, blue); }`).get('--ge-x')).toBe('blue');
+    expect(one(`#${ID} { --ge-x: var(--ge-y, blue); --ge-x: red; }`).get('--ge-x')).toBe('red');
   });
   it('ignores a very long input', () => {
     const big = `#${ID} { --ge-a: #fff; ${'--ge-x: #000; '.repeat(1000)} }`;

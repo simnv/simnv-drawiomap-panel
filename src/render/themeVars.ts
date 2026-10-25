@@ -12,11 +12,12 @@ const MAX_STYLE_ELEMENTS = 8;
 const MAX_DECLARATIONS = 16;
 
 const NAMED = '(?:white|black|transparent|red|green|blue|gray|grey|yellow|orange)';
-const NUM = '\\d{1,3}(?:\\.\\d{1,4})?%?';
+const NUM = '\\d{1,3}(?:\\.\\d{1,4})?';
+const PCT = '\\d{1,3}(?:\\.\\d{1,4})?%';
 const ALPHA = '(?:\\d{1,3}(?:\\.\\d{1,4})?%?|\\.\\d{1,4})';
 const COLOR_SRC =
   `(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|${NAMED}` +
-  `|rgba?\\(\\s*${NUM}\\s*,\\s*${NUM}\\s*,\\s*${NUM}\\s*(?:,\\s*${ALPHA}\\s*)?\\))`;
+  `|rgba?\\(\\s*(?:${NUM}\\s*,\\s*${NUM}\\s*,\\s*${NUM}|${PCT}\\s*,\\s*${PCT}\\s*,\\s*${PCT})\\s*(?:,\\s*${ALPHA}\\s*)?\\))`;
 const COLOR = new RegExp(`^${COLOR_SRC}$`, 'i');
 const NAME = /^--ge-[a-z0-9-]+$/;
 // var(--ge-x) or var(--ge-x, <plain colour>). The fallback cannot hold a second var().
@@ -40,7 +41,7 @@ function resolvePlain(raw: string, plainVars: Map<string, string>): string | nul
   if (!m) {
     return null;
   }
-  const declared = plainVars.get(m[1].toLowerCase());
+  const declared = plainVars.get(m[1]);
   return declared !== undefined ? declared : (m[2] ?? null);
 }
 
@@ -122,7 +123,8 @@ export function extractThemeVars(styleTexts: string[], rootId: string | null): M
   if (!rootId || !/^[A-Za-z][\w-]{0,127}$/.test(rootId)) {
     return out;
   }
-  const pending: Array<[string, string]> = [];
+  // CSS custom property names are case-sensitive. The last declaration of a name wins.
+  const pending = new Map<string, string>();
   for (const css of styleTexts.slice(0, MAX_STYLE_ELEMENTS)) {
     if (css.length > MAX_STYLE_LENGTH || css.includes('\\') || css.includes('/*')) {
       continue;
@@ -130,9 +132,9 @@ export function extractThemeVars(styleTexts: string[], rootId: string | null): M
     for (const body of ruleBodies(css, rootId)) {
       for (const decl of body.split(';')) {
         const i = decl.indexOf(':');
-        const name = i < 0 ? '' : decl.slice(0, i).trim().toLowerCase();
-        if (NAME.test(name) && pending.length < MAX_DECLARATIONS) {
-          pending.push([name, decl.slice(i + 1).trim()]);
+        const name = i < 0 ? '' : decl.slice(0, i).trim();
+        if (NAME.test(name) && (pending.has(name) || pending.size < MAX_DECLARATIONS)) {
+          pending.set(name, decl.slice(i + 1).trim());
         }
       }
     }
