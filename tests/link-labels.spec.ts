@@ -175,7 +175,7 @@ test('no label overlaps a port pill, a label chip, a status marker or a plain no
   // the hand-drawn sheet: no label on a node body
   const handLabels = await boxes(labelsOf(hand).locator('visible=true'));
   expect(handLabels.length).toBeGreaterThan(0);
-  const bodies = await boxes(hand.locator('g[data-cell-id^="node-"] > :is(rect, ellipse, path)'));
+  const bodies = await boxes(hand.locator('g[data-cell-id^="node-"] :is(rect, ellipse)'));
   for (const box of handLabels) {
     for (const body of bodies) {
       expect(intersects(box, body), JSON.stringify({ box, body })).toBe(false);
