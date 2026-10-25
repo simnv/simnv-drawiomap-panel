@@ -211,7 +211,15 @@ History bench (`src/query/history.bench.test.ts`, jsdom, 300 cells with one seri
 | 600 resolves over 600 entries (two queries a cell) | 159 ms, 117 MB (`preparedSnapshot`)  | first pass 2.4 ms, 3.0 MB; then 0.50 ms, 0.7 MB                                          |
 | `reduceValues` calls over 20 passes                | 6000                                 | 300 (one per match, field and reducer)                                                   |
 
-The browser bench `scripts/bench/card-hover.mjs` (the pointermove task and the chart commit of the hover card) runs against the stack; its numbers go here after the e2e run of step 3.
+Browser bench `scripts/bench/card-hover.mjs` (Chromium trace, demo dashboard on 13.2, 20 bound cells, 300 ms gap, 16 cards opened in both runs; React renders a pointermove update in a task after the event, so the card cost is in "the next long task"):
+
+| Task                                                      | Before (main dist)                                 | After                                             |
+| --------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------- |
+| pointermove task that opened the card (longest per hover) | median 0.64 ms, p90 1.26 ms                        | median 0.64 ms, p90 1.25 ms                       |
+| next long task after it (the card and chart commit)       | 12 tasks; median 1.42 ms, p90 1.61 ms, max 2.25 ms | 8 tasks; median 1.22 ms, p90 1.72 ms, max 1.72 ms |
+| top self time under the opening tasks                     | `getPointAtLength` 2.2 ms, `getCTM` 0.3 ms         | plugin chunk frames only, all under 0.4 ms        |
+
+The demo cards are light (one or two rows), so the browser numbers are small on both sides; the first hover of a run pays about 270 ms once for the lazy chunks. The consumer team's dense diagram is the reference for the live profile.
 
 Bundle: `dist/module.js` 339 288 bytes (P2: 337 072), `dist/bindings-popup.js` 123 389 bytes (P2: 108 048); `check:bundle` passes.
 

@@ -75,11 +75,13 @@ await browser.startTracing(page, {
     'v8.execute',
   ],
 });
+let opened = 0;
 for (const point of points) {
   // from beside the cell, so the page sees an enter; the last move opens the card
   await page.mouse.move(point.x + 24, point.y);
   await page.mouse.move(point.x, point.y, { steps: 4 });
   await page.waitForTimeout(gapMs);
+  opened += (await page.getByTestId('dmap-card').count()) > 0 ? 1 : 0;
 }
 const buffer = await browser.stopTracing();
 await browser.close();
@@ -143,30 +145,52 @@ const holdsUplot = (task) =>
       (/uplot/i.test(s.frame?.url ?? '') || /^uPlot/.test(s.frame?.functionName ?? ''))
   );
 
-const pointerDurations = pointerTasks.map((t) => t.dur);
-const chartTasks = pointerTasks.flatMap((task) => {
-  const next = tasks.find((t) => t.ts > task.ts + task.dur && t.dur > 500 && holdsUplot(t));
-  return next ? [next] : [];
-});
-const self = new Map();
+// One hover is a burst of pointermove tasks; the gap separates the bursts. The longest task of a burst is the one
+// that opened the card (the first commit); the next long task after it is the chart commit (the transition).
+const bursts = [];
 for (const task of pointerTasks) {
-  for (const s of samples) {
-    if (s.pid === task.pid && inWindow(s, task)) {
-      const key = label(s.frame);
-      self.set(key, (self.get(key) ?? 0) + s.dur);
-    }
+  const last = bursts.at(-1);
+  if (last && task.ts - last.at(-1).ts < (gapMs * 1000) / 3) {
+    last.push(task);
+  } else {
+    bursts.push([task]);
   }
 }
+const openTasks = bursts.map((burst) => burst.reduce((a, b) => (b.dur > a.dur ? b : a)));
+const isPointer = new Set(pointerTasks);
+const chartTasks = openTasks.flatMap((task) => {
+  const end = task.ts + task.dur;
+  const next = tasks.find((t) => t.ts > end && t.ts < end + (gapMs * 1000) / 3 && t.dur > 1000 && !isPointer.has(t));
+  return next ? [next] : [];
+});
+const selfTime = (list) => {
+  const self = new Map();
+  for (const task of list) {
+    for (const s of samples) {
+      if (s.pid === task.pid && inWindow(s, task)) {
+        const key = label(s.frame);
+        self.set(key, (self.get(key) ?? 0) + s.dur);
+      }
+    }
+  }
+  return [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+};
+const stats = (list) => {
+  const durations = list.map((t) => t.dur);
+  return `${list.length}; median ${ms(quantile(durations, 0.5))} ms, p90 ${ms(quantile(durations, 0.9))} ms, max ${ms(Math.max(0, ...durations))} ms`;
+};
 
-console.log(`card-hover on ${url}/d/${dashboard}: ${points.length} cells, ${gapMs} ms gap`);
+console.log(`card-hover on ${url}/d/${dashboard}: ${points.length} cells, ${gapMs} ms gap, ${opened} cards opened`);
+console.log(`pointermove tasks, all: ${stats(pointerTasks)}`);
+console.log(`pointermove task that opened the card (longest of each hover): ${stats(openTasks)}`);
 console.log(
-  `pointermove tasks: ${pointerTasks.length}; median ${ms(quantile(pointerDurations, 0.5))} ms, p90 ${ms(quantile(pointerDurations, 0.9))} ms, max ${ms(Math.max(0, ...pointerDurations))} ms`
+  `next long task after it (the chart commit; ${chartTasks.filter(holdsUplot).length} with a uPlot frame): ${stats(chartTasks)}`
 );
-const chartDurations = [...new Set(chartTasks)].map((t) => t.dur);
-console.log(
-  `next task with uPlot (the chart commit): ${chartDurations.length}; median ${ms(quantile(chartDurations, 0.5))} ms, p90 ${ms(quantile(chartDurations, 0.9))} ms`
-);
-console.log('top self-time functions under the pointermove tasks:');
-for (const [name, dur] of [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+console.log('top self-time functions under the opening pointermove tasks:');
+for (const [name, dur] of selfTime(openTasks)) {
+  console.log(`  ${ms(dur).padStart(8)} ms  ${name}`);
+}
+console.log('top self-time functions under the chart commit tasks:');
+for (const [name, dur] of selfTime(chartTasks)) {
   console.log(`  ${ms(dur).padStart(8)} ms  ${name}`);
 }
