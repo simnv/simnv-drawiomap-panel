@@ -89,6 +89,19 @@ describe('DrawioModal start-up', () => {
     expect(screen.getByTitle('draw.io')).toBeTruthy();
   });
 
+  it('puts the help text in a focusable info button next to the title, not in the body', async () => {
+    fetchFn.mockImplementation(async () => jsResponse());
+    open();
+    await settle();
+    const help = screen.getByTestId('dmap-editor-help');
+    expect(help.tagName).toBe('BUTTON');
+    expect(help.getAttribute('aria-label')).toBe('About this editor');
+    expect(screen.getByTestId('dmap-editor-modal').textContent).not.toContain('Move or resize');
+    fireEvent.click(help);
+    await settle();
+    expect(screen.getByTestId('dmap-editor-help-text').textContent).toContain('Keep cell IDs unchanged to retain bindings. Assign queries and chart settings');
+  });
+
   it('shows the missing-editor message and no frame when dist/drawio is missing, and Close closes', async () => {
     fetchFn.mockImplementation(async () => notFound());
     open();
