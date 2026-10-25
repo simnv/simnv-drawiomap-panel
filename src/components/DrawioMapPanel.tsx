@@ -376,7 +376,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   );
   const bindingSnapshots = useBindingSnapshots(
     plan,
-    opts.config ?? EMPTY_CONFIG,
+    plan.config,
     queryService,
     undefined,
     Math.max(1, Math.min(264, width - 16)),
@@ -389,7 +389,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   // resolver of the diagram, so it never runs the bind or the patches again.
   const cardSnapshots = useBindingSnapshots(
     plan,
-    opts.config ?? EMPTY_CONFIG,
+    plan.config,
     queryService,
     card?.cellId,
     Math.max(1, Math.min(264, width - 16)),
@@ -403,7 +403,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     () =>
       createPreviewResolver(
         plan,
-        opts.config ?? EMPTY_CONFIG,
+        plan.config,
         data,
         undefined,
         {
@@ -413,14 +413,14 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         },
         activeSnapshots
       ),
-    [plan, opts.config, data, theme, timeZone, queryService?.context.generation, activeSnapshots]
+    [plan, data, theme, timeZone, queryService?.context.generation, activeSnapshots]
   );
   const cardResolve = useMemo(
     () =>
       cardSnapshots.length
         ? createPreviewResolver(
             plan,
-            opts.config ?? EMPTY_CONFIG,
+            plan.config,
             data,
             undefined,
             { theme, timeZone, generation: queryService?.context.generation },
@@ -430,7 +430,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     [
       cardSnapshots,
       plan,
-      opts.config,
       data,
       theme,
       timeZone,
@@ -488,7 +487,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
 
   // The colour legend: the scales of the bound cells. A legend entry under the pointer highlights its cells.
   const legendOptions = opts.legend;
-  const queries = opts.config?.queries;
+  const queries = plan.config.queries;
   const legendBlocks = useMemo(() => {
     if (!legendOptions.show) {
       return [];
@@ -790,7 +789,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
           root={stage.root}
           cells={stage.index}
           plan={plan}
-          queries={opts.config.queries}
+          queries={plan.config.queries}
           controller={queryService.controller}
           context={queryService.context}
           viewport={viewport}

@@ -70,6 +70,7 @@ function setup() {
     cells: {},
     widgets: [{ widget, anchorCellId: 'chart', scope: { cell: {} }, index: 0 }],
     diagnostics: [],
+    config: { version: 3, queries: [], patterns: [], overrides: [], widgets: [widget] },
   };
   return {
     host,
@@ -547,5 +548,32 @@ describe('ChartLayer', () => {
     );
     view.unmount();
     s.host.remove();
+  });
+});
+
+describe('ChartLayer with an unavailable widget', () => {
+  it('shows the reason instead of the chart and starts no query', () => {
+    const s = setup();
+    const plan: BindingPlan = {
+      ...s.plan,
+      widgets: [{ ...s.plan.widgets[0], unavailable: 'Invalid range' }],
+    };
+    sparkline.mockClear();
+    const view = render(
+      <ChartLayer
+        root={s.root}
+        cells={s.cells}
+        plan={plan}
+        queries={[query]}
+        controller={s.controller}
+        context={context}
+        viewport={s.host}
+      />
+    );
+    const status = s.root.querySelector('[data-dmap-widget-unavailable="w"]');
+    expect(status?.textContent).toBe('CPU: Invalid range');
+    expect(s.watch).not.toHaveBeenCalled();
+    expect(sparkline).not.toHaveBeenCalled();
+    view.unmount();
   });
 });

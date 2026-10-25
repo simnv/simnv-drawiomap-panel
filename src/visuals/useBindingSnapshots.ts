@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collectBindingDemands } from '../binding/engine';
 import type { BindingPlan } from '../binding/patterns';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 import type { PanelQueryService } from '../query/panel';
 import { preparedSnapshot, type QueryPreview } from '../editor/preview';
 import { settled } from '../query/types';
@@ -21,7 +21,7 @@ interface Held {
 /** Holds only active display snapshots. The shared controller owns execution and the inactive cache. */
 export function useBindingSnapshots(
   plan: BindingPlan,
-  config: DiagramConfigV2,
+  config: DiagramConfig,
   service: PanelQueryService | undefined,
   openCellId: string | undefined,
   maxDataPoints: number,

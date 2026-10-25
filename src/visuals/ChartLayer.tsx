@@ -194,7 +194,8 @@ function Region({
   }, [paused]);
 
   useEffect(() => {
-    if (!geometry?.visible || !controller || !query) {
+    // an unavailable widget shows its reason and runs no query
+    if (!geometry?.visible || !controller || !query || entry.unavailable) {
       return;
     }
     let current = true;
@@ -251,6 +252,7 @@ function Region({
     match,
     onPrepared,
     owner,
+    entry.unavailable,
   ]);
 
   if (!geometry) {
@@ -259,6 +261,31 @@ function Region({
         {widget.label} needs a rectangle with a valid transform.
       </span>
     );
+  }
+  if (entry.unavailable) {
+    // admitted with a reason (an unusable query, an invalid range or freshness): the text instead of the chart
+    return portal && geometry.visible
+      ? createPortal(
+          <div
+            data-testid="dmap-widget"
+            role="status"
+            data-dmap-widget-unavailable={widget.id}
+            aria-label={widget.label}
+            style={{
+              width: geometry.anchor.width,
+              height: geometry.anchor.height,
+              overflow: 'hidden',
+              fontSize: 12,
+              fontFamily: theme.typography.fontFamily,
+              color: theme.colors.text.secondary,
+              background: theme.colors.background.primary,
+            }}
+          >
+            {widget.label}: {entry.unavailable}
+          </div>,
+          portal
+        )
+      : null;
   }
   if (!portal || !geometry || !geometry.visible) {
     return null;

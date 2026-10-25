@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { useBindingSnapshots } from './useBindingSnapshots';
 import { createQueryController } from '../query/controller';
 import type { BindingPlan } from '../binding/patterns';
-import type { DiagramConfigV2, NamedQuery, QueryBinding } from '../model/config';
+import type { DiagramConfig, NamedQuery, QueryBinding } from '../model/config';
 import type { QueryContext, QueryExecutor } from '../query/types';
 import { preparedSnapshot, type QueryPreview } from '../editor/preview';
 
@@ -20,7 +20,7 @@ const query = (expr = 'up'): NamedQuery => ({
 });
 const binding: QueryBinding = { queryId: 'health', match: {}, reducer: 'last' };
 const config = (expr?: string) =>
-  ({ version: 2, queries: [query(expr)], patterns: [], overrides: [], widgets: [] }) as DiagramConfigV2;
+  ({ version: 3, queries: [query(expr)], patterns: [], overrides: [], widgets: [] }) as DiagramConfig;
 const plan: BindingPlan = {
   cells: {
     router: {
