@@ -339,6 +339,19 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
     expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37 + 16, 0);
   });
+  it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
+    const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
+    const title = `<g data-cell-id="pg-groupTitle~wan"><g><rect x="100" y="60" width="40" height="20"/><text x="104" y="74">wan</text></g></g>`;
+    const { root, index } = build(SVG(frame + title));
+    const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(100 - 14);
+    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
+      o.kind === 'rect' ? [o.rect] : []
+    );
+    expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
+    expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 20 });
+  });
   it('a plain draw.io container that holds other vertices is a background; the vertices inside stay obstacles', () => {
     const container = `<g data-cell-id="box"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
     const inner = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="20"/></g></g>`;

@@ -402,7 +402,8 @@ function backgroundIds(index: CellIndex, boxes: Map<string, Rect>): Set<string> 
       continue;
     }
     const kind = hoverKind(entry);
-    if (kind === 'canvas' || kind === 'group') {
+    // a group title bar is `group` too, but it carries the caption: a label must not cover it
+    if (kind === 'canvas' || (kind === 'group' && !entry.meta.id.startsWith('pg-groupTitle~'))) {
       out.add(cellId);
     } else if (kind === 'node' && entry.meta.kind === 'other' && !entry.ownerId) {
       const box = boxes.get(cellId);
