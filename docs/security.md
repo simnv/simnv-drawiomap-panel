@@ -68,6 +68,37 @@ The plugin has no external editor. An `editorUrl` value that an older version sa
 | Open a popup | yes. The popup inherits the sandbox (no `allow-popups-to-escape-sandbox`). | browser rule, not tested |
 | Navigate the frame | yes. The new document is also sandboxed and has no channel. With a copy of the token it can open a channel, but it gets nothing that the frame does not have already. | analysis, not tested |
 
+## Theme variables of the SVG
+
+The sanitizer removes every `<style>` element: a stylesheet applies to the whole page. draw.io 32 (auto theme) writes
+the label background as `fill: var(--ge-adaptive-bg, #ffffff)` and defines the variable in one `<style>` element. Without
+the definition, a chip stays white in the dark theme.
+
+Before the sanitizer removes the `<style>` elements, `src/render/themeVars.ts` reads custom-property declarations
+only. It does not keep any CSS text. The sanitizer writes the accepted variables into the `style` attribute of the svg
+root. `light-dark()` follows the `color-scheme` that the panel sets on the root from the Grafana theme. The popup stage
+uses the same path (`useStage`).
+
+A declaration passes only when all of these are true:
+
+- The name matches `--ge-[a-z0-9-]+`.
+- It is in a rule whose selector is exactly `#<id of the svg root>`. The rule can be inside
+  `@supports (color: light-dark(<hex>, <hex>))`. Other selectors, other at-rules and text that the parser cannot read
+  are ignored (the scan stops at the first text it cannot read).
+- The value is a plain colour or `light-dark(<plain colour>, <plain colour>)`. A plain colour is `#` hex (3, 4, 6 or 8
+  digits), `rgb()` or `rgba()` with numbers, or one of a short list of colour names.
+- A `var(--ge-x, <plain colour>)` in a colour position uses the value of `--ge-x` when an accepted declaration with a
+  plain colour value sets it. Otherwise it uses the fallback. The fallback cannot hold a second `var()`, and a variable
+  that was itself set from a `var()` is not read again (one level).
+
+The parser rejects a style element longer than 4096 characters, a style element with a backslash or a comment, more
+than 8 style elements and more than 16 declarations. `url(`, `expression`, `image-set`, `attr(`, `calc(`, `!important`,
+`;` or `}` in a value, and nested functions all fail the colour grammar.
+
+Why this is safe: the parser output is a closed set of colour strings. No selector, no other property, no URL and no
+rule reaches the page, so a diagram cannot restyle Grafana or load a resource through this path. A custom property on
+the svg root can only change the colour of an inline `var(--ge-*)` use inside the same svg.
+
 ## Trade-offs
 
 - draw.io cannot save its settings (`.drawio-config`) between two opens: the opaque origin has no localStorage.
