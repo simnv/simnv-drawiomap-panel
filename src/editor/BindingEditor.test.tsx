@@ -52,6 +52,18 @@ function setup() {
   return renderEditor({ config, svg: svgOf('device-1', 'device-2') });
 }
 describe('binding inspector', () => {
+  it('renders the inspector of a cell when the saved config holds items that do not parse', () => {
+    const withNulls = {
+      ...config,
+      queries: [null],
+      patterns: [...config.patterns, null],
+      widgets: [null],
+      overrides: [null],
+    } as unknown as DiagramConfig;
+    renderEditor({ config: withNulls, svg: svgOf('device-1', 'device-2') });
+    selectStageCell('device-2');
+    expect(screen.getByRole('heading', { name: 'device-2 bindings' })).toBeTruthy();
+  });
   it.each([false, true])(
     'keeps native JSON validation in the query pane and drops the typed text when the pane closes with invalid=%s',
     async (invalid) => {

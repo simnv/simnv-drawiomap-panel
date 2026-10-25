@@ -76,7 +76,7 @@ export function BulkPane({ cellIds, plan, config, fields, dispatch }: BulkPanePr
     hover: mixedPaths.includes('hover.rows') ? MIXED_NOTE : undefined,
     status: mixedPaths.some((path) => path === 'status') ? MIXED_NOTE : undefined,
   };
-  const overridden = cellIds.filter((id) => config.overrides.some((o) => o.cellId === id));
+  const overridden = cellIds.filter((id) => config.overrides.some((o) => o?.cellId === id));
 
   const change = (partial: Partial<DisplayConfig>) => {
     const next = { ...common, ...partial } as Partial<DisplayConfig>;

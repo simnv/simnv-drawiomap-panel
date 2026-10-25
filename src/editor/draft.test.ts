@@ -10,7 +10,65 @@ import {
   unsetPath,
   exportPatternDocument,
   previewPatternImport,
+  type DraftAction,
 } from './draft';
+
+describe('items that do not parse in the saved config', () => {
+  // a saved document can hold anything; the draft keeps such an item in place and edits around it
+  const nulls = {
+    version: 3,
+    queries: [null, { id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+    patterns: [null, { id: 'p', name: 'P', select: {}, display: {} }],
+    overrides: [null],
+    widgets: [null],
+  } as unknown as DiagramConfig;
+  it('every action leaves a null item where it is and does not throw', () => {
+    let draft = reduceDraft(createDraft(nulls), { type: 'select', cellId: 'device-1' });
+    const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
+    const actions: DraftAction[] = [
+      { type: 'display', display: { label: 'x' } },
+      { type: 'unset', path: 'label' },
+      { type: 'query', query: { id: 'q2', name: 'Q2', source: { kind: 'panel', refId: 'B' } } },
+      { type: 'pattern', pattern: { id: 'p2', name: 'P2', select: {}, display: {} } },
+      { type: 'widget', widget: { id: 'w', anchorCellId: 'device-1', kind: 'sparkline', label: 'W', binding } },
+      {
+        type: 'import',
+        config: {
+          version: 3,
+          queries: [{ id: 'q3', name: 'Q3', source: { kind: 'panel', refId: 'C' } }],
+          patterns: [],
+          overrides: [{ cellId: 'device-2', display: { label: 'y' } }],
+          widgets: [],
+        },
+      },
+      { type: 'remove-widget', id: 'w' },
+      { type: 'remove-query', id: 'q2' },
+      { type: 'remove-override', cellId: 'device-1' },
+    ];
+    for (const action of actions) {
+      draft = reduceDraft(draft, action);
+    }
+    expect(draft.diagnostics).toEqual([]);
+    expect([
+      draft.config.queries[0],
+      draft.config.patterns[0],
+      draft.config.overrides[0],
+      draft.config.widgets[0],
+    ]).toEqual([null, null, null, null]);
+    expect(draft.config.queries.map((q) => q?.id)).toEqual([undefined, 'q', 'q3']);
+    expect(draft.config.overrides.map((o) => o?.cellId)).toEqual([undefined, 'device-2']);
+    const preview = previewPatternImport(
+      draft.config,
+      {
+        kind: 'drawiomap-patterns',
+        version: 1,
+        config: { ...nulls, queries: [], patterns: [], overrides: [], widgets: [] },
+      },
+      ['device-1']
+    );
+    expect(preview.diagnostics.map((d) => d.code)).toContain('skipped-item');
+  });
+});
 
 export const saved: DiagramConfig = {
   version: 3,

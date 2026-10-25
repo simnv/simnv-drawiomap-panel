@@ -146,9 +146,6 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
   const result: PlanBindResult = { patches: new Map(), diagnostics: [...plan.diagnostics], summaries: [] };
   for (const cell of Object.values(plan.cells)) {
     const display = cell.display;
-    if (display.enabled === false) {
-      continue;
-    }
     const patch: PlanCellPatch = {
       cellId: cell.cellId,
       scope: cell.scope,
@@ -167,6 +164,10 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
         coverage: { available: 0, expected: 1 },
       };
       result.patches.set(cell.cellId, patch);
+      continue;
+    }
+    // unavailable wins over enabled false: only an available cell that an override disables keeps its drawn look
+    if (display.enabled === false) {
       continue;
     }
     let primary: SeriesInfo | undefined;
@@ -198,6 +199,22 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       }
       return model;
     };
+    /** The reason a configured binding cannot run for this cell, as the plan reported it; undefined when it can. */
+    const unbound = (binding: QueryBinding, path: string): string | undefined => {
+      if (cell.bindings.includes(binding)) {
+        return undefined;
+      }
+      const prefix = `cells.${cell.cellId}.${path}`;
+      const reported = plan.diagnostics.find((d) => d.path === prefix || d.path.startsWith(`${prefix}.`));
+      return reported?.message ?? 'The binding cannot run for this element.';
+    };
+    const missingView = (reason: string, binding: QueryBinding, path: string): StatusView => ({
+      state: 'missing',
+      reason,
+      queryIds: [binding.queryId],
+      conditionKey: JSON.stringify(['unavailable-binding', path, reason]),
+      coverage: { available: 0, expected: 1 },
+    });
     if (display.link?.enabled !== false && display.link) {
       const link = display.link;
       const states: HalfState[] = [];
@@ -259,80 +276,98 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
         };
       }
     }
-    if (display.shape?.enabled !== false && display.shape?.binding && cell.bindings.includes(display.shape.binding)) {
-      const model = read(display.shape.binding, 'shape.binding');
-      const target = targetOf(display.shape);
-      if (model.state === 'ready' && model.latestValue !== undefined) {
-        const series = historySeries(model, display.shape.binding);
-        primary ??= series;
-        const value = model.latestValue;
-        const shown = model.latestDisplayValue ?? ctx.display(series, value);
-        const label = display.shape.text
-          ? resolveTemplate(display.label ?? '${value}', {
-              ...cell.scope,
-              labels: model.field.labels,
-              value: formattedValueToString(shown),
-            })
-          : undefined;
-        if (label?.unresolved.length) {
-          // a text that does not resolve has no value to show: the shape is unbound, in grey
+    if (display.shape?.enabled !== false && display.shape?.binding) {
+      const reason = unbound(display.shape.binding, 'shape.binding');
+      if (reason !== undefined) {
+        // the binding cannot run for this cell: the shape is grey and says so, never the drawn colour
+        patch.shape = {
+          status: 'unbound',
+          color: noDataColor(ctx.theme),
+          target: targetOf(display.shape),
+          stepIndex: -1,
+          text: display.shape.text ? STATUS_TEXT.unavailable : undefined,
+        };
+        patch.statusView ??= missingView(reason, display.shape.binding, 'shape.binding');
+      } else {
+        const model = read(display.shape.binding, 'shape.binding');
+        const target = targetOf(display.shape);
+        if (model.state === 'ready' && model.latestValue !== undefined) {
+          const series = historySeries(model, display.shape.binding);
+          primary ??= series;
+          const value = model.latestValue;
+          const shown = model.latestDisplayValue ?? ctx.display(series, value);
+          const label = display.shape.text
+            ? resolveTemplate(display.label ?? '${value}', {
+                ...cell.scope,
+                labels: model.field.labels,
+                value: formattedValueToString(shown),
+              })
+            : undefined;
+          if (label?.unresolved.length) {
+            // a text that does not resolve has no value to show: the shape is unbound, in grey
+            patch.shape = {
+              status: 'unbound',
+              color: noDataColor(ctx.theme),
+              target,
+              stepIndex: -1,
+              text: STATUS_TEXT.unbound,
+              value,
+              display: shown,
+              series,
+            };
+            result.diagnostics.push({
+              code: 'unresolved-metadata',
+              path: `cells.${cell.cellId}.label`,
+              message: `Unresolved ${[...new Set(label.unresolved)].join(', ')}`,
+            });
+          } else {
+            // the colour of the value from the field config of its series (thresholds, scheme, mappings)
+            const { color, stepIndex } = colorFor(
+              value,
+              undefined,
+              model.field as Field,
+              shown,
+              ctx.fieldThresholds,
+              ctx.theme
+            );
+            patch.shape = { status: 'ok', color, target, stepIndex, value, display: shown, series, text: label?.text };
+          }
+        } else {
           patch.shape = {
-            status: 'unbound',
+            status: 'nodata',
             color: noDataColor(ctx.theme),
             target,
             stepIndex: -1,
-            text: STATUS_TEXT.unbound,
-            value,
-            display: shown,
-            series,
+            // a text-only binding has no colour to show the state, so the text says it
+            text: display.shape.text ? STATUS_TEXT.nodata : undefined,
           };
-          result.diagnostics.push({
-            code: 'unresolved-metadata',
-            path: `cells.${cell.cellId}.label`,
-            message: `Unresolved ${[...new Set(label.unresolved)].join(', ')}`,
-          });
-        } else {
-          // the colour of the value from the field config of its series (thresholds, scheme, mappings)
-          const { color, stepIndex } = colorFor(
-            value,
-            undefined,
-            model.field as Field,
-            shown,
-            ctx.fieldThresholds,
-            ctx.theme
-          );
-          patch.shape = { status: 'ok', color, target, stepIndex, value, display: shown, series, text: label?.text };
         }
-      } else {
-        patch.shape = {
-          status: 'nodata',
-          color: noDataColor(ctx.theme),
-          target,
-          stepIndex: -1,
-          // a text-only binding has no colour to show the state, so the text says it
-          text: display.shape.text ? STATUS_TEXT.nodata : undefined,
-        };
       }
     }
-    if (display.status?.enabled !== false && display.status && cell.bindings.includes(display.status.binding)) {
-      const model = read(display.status.binding, 'status.binding');
-      if (model.state === 'ready') {
-        primary ??= historySeries(model, display.status.binding);
-      }
-      const status = evaluateStatus(
-        display.status,
-        [
-          {
-            queryId: display.status.binding.queryId,
-            availability: model.state === 'empty' ? 'missing' : model.state === 'idle' ? 'loading' : model.state,
-            value: model.state === 'ready' ? model.latestValue : undefined,
-            sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
-          },
-        ],
-        nowMs
-      );
-      if (!patch.statusView || status.state !== 'normal') {
-        patch.statusView = status;
+    if (display.status?.enabled !== false && display.status) {
+      const reason = unbound(display.status.binding, 'status.binding');
+      if (reason !== undefined) {
+        patch.statusView = missingView(reason, display.status.binding, 'status.binding');
+      } else {
+        const model = read(display.status.binding, 'status.binding');
+        if (model.state === 'ready') {
+          primary ??= historySeries(model, display.status.binding);
+        }
+        const status = evaluateStatus(
+          display.status,
+          [
+            {
+              queryId: display.status.binding.queryId,
+              availability: model.state === 'empty' ? 'missing' : model.state === 'idle' ? 'loading' : model.state,
+              value: model.state === 'ready' ? model.latestValue : undefined,
+              sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
+            },
+          ],
+          nowMs
+        );
+        if (!patch.statusView || status.state !== 'normal') {
+          patch.statusView = status;
+        }
       }
     }
     if (display.url !== undefined) {

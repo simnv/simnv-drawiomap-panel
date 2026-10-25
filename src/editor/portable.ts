@@ -169,11 +169,11 @@ export function previewPatternImport(
   }
   for (const section of ['queries', 'patterns', 'widgets'] as const) {
     // Keep replacement position, so pattern precedence remains deterministic.
-    const merged = config[section].map((old) => incoming[section].find((item) => item.id === old.id) ?? old);
-    merged.push(...incoming[section].filter((item) => !config[section].some((old) => old.id === item.id)));
+    const merged = config[section].map((old) => incoming[section].find((item) => item.id === old?.id) ?? old);
+    merged.push(...incoming[section].filter((item) => !config[section].some((old) => old?.id === item.id)));
     Object.assign(config, { [section]: merged });
   }
-  config.overrides = config.overrides.filter((old) => !overrideIds.has(old.cellId)).concat(incoming.overrides);
+  config.overrides = config.overrides.filter((old) => !overrideIds.has(old?.cellId)).concat(incoming.overrides);
   const merged = validateConfig(config);
   return { ...preview, config: merged.diagnostics.length ? undefined : merged.config, diagnostics: merged.diagnostics };
 }

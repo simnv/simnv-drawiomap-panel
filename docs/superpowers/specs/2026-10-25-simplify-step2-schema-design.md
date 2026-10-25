@@ -303,6 +303,11 @@ others and its override into a state nobody configured. Policy, with an explicit
   The applier paints an unavailable cell in the no-data grey (the fill of a node, the stroke of a link, the same calls
   as `status: 'nodata'`), sets `data-dmap-status="unavailable"` and the aria label with the reason. It never falls into
   `reset` (`applier.ts:220`), which would restore the drawn fill, for example green.
+- `unavailable` wins over `display.enabled: false` (review, 2026-10-25): an override that disables an unavailable cell
+  does not bring the drawn colour back; the cell stays grey with the reason. Only an available cell that an override
+  disables keeps its drawn look. A shape or status binding that cannot run for the cell (an unknown, skipped or
+  unusable query, a missing parameter path) gives the shape the grey `unbound` state with the text "unavailable" and
+  the status band the `missing` state with the reason the plan reported, as an unbound link direction does.
 - A skipped pattern whose `select` parses (`select` is parsed on its own first): the cells it matches are unavailable
   with "Pattern X is not applied", from no item. One diagnostic `skipped-cells` at `patterns[i]` with the count.
 - A skipped pattern whose `select` does not parse: the match set is unknown; every cell is unavailable with that

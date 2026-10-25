@@ -655,6 +655,56 @@ describe('an unavailable cell and an unavailable direction', () => {
       ['missing', 'Pattern Broken is not applied', [link.id]],
     ]);
   });
+  it('an unavailable cell stays grey when an override disables it: unavailable wins over enabled false', () => {
+    const config = two();
+    config.patterns.push({ id: 'broken', name: 'Broken', select: {}, display: { link: { capacity: 0 } } });
+    config.overrides.push({ cellId: link.id, display: { enabled: false } });
+    const plan = resolvePatterns([link], config);
+    const patch = bindPlan(plan, () => historyValue(40), ctx, 1000).patches.get(link.id)!;
+    expect(patch.unavailable).toEqual({ reason: 'Pattern Broken is not applied', color: theme.colors.text.disabled });
+    expect(patch.statusView).toMatchObject({ state: 'missing', reason: 'Pattern Broken is not applied' });
+  });
+  it('a shape binding with an unknown query gives an unbound grey shape and a missing status with the reason', () => {
+    const node = cells[3];
+    const config = v2Config({ shape: { binding: bind$('ua'), target: 'shape', text: true } });
+    const plan = resolvePatterns([node], config);
+    expect(plan.cells[node.id].bindings).toEqual([]);
+    const resolve = vi.fn(() => historyValue(40));
+    const result = bindPlan(plan, resolve, ctx, 1000);
+    expect(resolve).not.toHaveBeenCalled();
+    const patch = result.patches.get(node.id)!;
+    expect(patch.shape).toEqual({
+      status: 'unbound',
+      color: theme.colors.text.disabled,
+      target: 'shape',
+      stepIndex: -1,
+      text: 'unavailable',
+    });
+    expect(patch.statusView).toMatchObject({
+      state: 'missing',
+      reason: 'Query ua does not exist. Choose a named query or restore its definition.',
+      queryIds: ['ua'],
+    });
+    expect(result.summaries.map((s) => [s.state, s.cellIds])).toEqual([['missing', [node.id]]]);
+  });
+  it('a status binding with an unknown query gives the missing state with the reason', () => {
+    const node = cells[3];
+    const config = v2Config({
+      status: {
+        kind: 'mapping',
+        binding: bind$('ua'),
+        default: { state: 'normal', reason: 'Healthy' },
+        mappings: [{ state: 'critical', reason: 'Down', value: 0 }],
+      },
+    });
+    const plan = resolvePatterns([node], config);
+    const result = bindPlan(plan, () => historyValue(1), ctx, 1000);
+    expect(result.patches.get(node.id)!.statusView).toMatchObject({
+      state: 'missing',
+      reason: 'Query ua does not exist. Choose a named query or restore its definition.',
+      queryIds: ['ua'],
+    });
+  });
 });
 
 describe('widgetDiagnostics', () => {
