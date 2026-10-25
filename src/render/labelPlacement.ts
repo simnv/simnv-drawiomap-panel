@@ -317,15 +317,6 @@ function segmentHits(box: OrientedBox, a: Point, b: Point, clearance: number): b
   return distance < clearance - EPS;
 }
 
-/** The distance from a point to a polyline (0 on it). */
-export function pointToPolyline(p: Point, pts: readonly Point[]): number {
-  let best = Infinity;
-  for (let i = 1; i < pts.length; i++) {
-    best = Math.min(best, pointToSegment(p, pts[i - 1], pts[i]));
-  }
-  return pts.length === 1 ? Math.hypot(p.x - pts[0].x, p.y - pts[0].y) : best;
-}
-
 /** The arc length at every vertex of a polyline. */
 const arcLengths = (pts: readonly Point[]): number[] => {
   const out = [0];

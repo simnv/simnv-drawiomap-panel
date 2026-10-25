@@ -412,10 +412,16 @@ describe('renderLinkLabels: review cases', () => {
     const other = `<g data-cell-id="e2"><g><path d="M 40 150 L 360 150" fill="none" stroke="#333" pointer-events="stroke"/></g></g>`;
     const { root, index } = build(SVG(other));
     const labelled = linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' });
-    const one = new Map([['e1', labelled], ['e2', linkPatch('e2', { a2b: half(), labelMode: 'none' })]]);
+    const one = new Map([
+      ['e1', labelled],
+      ['e2', linkPatch('e2', { a2b: half(), labelMode: 'none' })],
+    ]);
     render(root, index, one);
     const stamp = byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at');
-    const both = new Map([['e1', labelled], ['e2', linkPatch('e2', { a2b: half(), b2a: half(), labelMode: 'none' })]]);
+    const both = new Map([
+      ['e1', labelled],
+      ['e2', linkPatch('e2', { a2b: half(), b2a: half(), labelMode: 'none' })],
+    ]);
     render(root, index, both);
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
   });

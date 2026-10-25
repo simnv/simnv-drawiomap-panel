@@ -320,9 +320,9 @@ function attributeBox(el: Element): Rect | undefined {
       return aabbOf(parsePathPoints(el.getAttribute('d') ?? ''));
     case 'text': {
       // no layout in jsdom: 0.6 em per glyph on the baseline, the anchor from the text or an ancestor
-      const size = parseFloat(el.getAttribute('font-size') ?? el.closest('[font-size]')?.getAttribute('font-size') ?? '') || 12;
+      const size = parseFloat(el.closest('[font-size]')?.getAttribute('font-size') ?? '') || 12;
       const width = 0.6 * size * (el.textContent ?? '').length;
-      const anchor = el.getAttribute('text-anchor') ?? el.closest('[text-anchor]')?.getAttribute('text-anchor');
+      const anchor = el.closest('[text-anchor]')?.getAttribute('text-anchor');
       const x = num(el, 'x') - (anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0);
       return { x, y: num(el, 'y') - size, width, height: size * 1.25 };
     }
