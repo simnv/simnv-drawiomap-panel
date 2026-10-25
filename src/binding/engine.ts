@@ -16,7 +16,7 @@ import { inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity'
 import { toHistory, type HistoryModel, type HistoryFormat } from '../query/frames';
 import type { BindingPlan } from './patterns';
 import type { QuerySnapshot } from '../query/types';
-import { evaluateStatus, summarizeStatuses, type StatusSummary, type StatusView } from './status';
+import { evaluateStatus, isPast, summarizeStatuses, type StatusSummary, type StatusView } from './status';
 
 export interface PlanCellPatch extends CellPatch {
   statusView?: StatusView;
@@ -469,7 +469,7 @@ const staleOf = new WeakMap<PlanBindResult, { key: string; result: PlanBindResul
 export function staleStatuses(result: PlanBindResult, nowMs: number): PlanBindResult {
   const stale: string[] = [];
   for (const patch of result.patches.values()) {
-    if (patch.staleStatus && nowMs > patch.staleStatus.after) {
+    if (patch.staleStatus && isPast(patch.staleStatus.after, nowMs)) {
       stale.push(patch.cellId);
     }
   }

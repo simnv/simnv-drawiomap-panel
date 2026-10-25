@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { staleStatuses, type PlanBindResult } from '../binding/engine';
+import { isPast } from '../binding/status';
 import type { FreshnessPolicy } from '../model/config';
 
 /** The largest delay a timer takes; a longer wait wakes up and sets the timer again. */
@@ -7,46 +8,58 @@ const MAX_TIMER_MS = 2147483647;
 const NO_DEADLINES: readonly number[] = [];
 
 /**
- * The clock, read again after each deadline passes. `now > deadline` is the test every caller makes: a sample is
- * stale after `sampleAt + staleAfterMs`. One timer at most. A deadline that passed in real time before anyone read
- * the clock (a result arrives with a sample that is already old) is corrected in a microtask of the effect flush,
- * with no timer, so the correction renders before the next animation frame.
+ * The clock, read again after each deadline passes. `isPast(deadline, now)` is the test every caller makes: a
+ * sample is stale after `sampleAt + staleAfterMs`. One timer at most. The effect compares the stored read with the
+ * real clock: a deadline between the two (it passed before anyone read the clock, or the clock went backwards) is
+ * corrected in a microtask, with no timer, so the correction renders before the next animation frame. Each read is
+ * a new object, so a read that gives the same millisecond still runs the effect and arms the next timer.
  */
 export function useClock(deadlines: readonly number[]): number {
-  const [now, setNow] = useState(() => Date.now());
-  let next = Infinity;
-  for (const at of deadlines) {
-    if (at >= now && at < next) {
-      next = at;
-    }
-  }
+  const [clock, setClock] = useState(() => ({ now: Date.now() }));
+  const key = useMemo(() => deadlines.join('|'), [deadlines]);
   useEffect(() => {
-    if (!Number.isFinite(next)) {
+    if (!key) {
       return;
     }
     const real = Date.now();
-    if (real > next) {
+    const stored = clock.now;
+    const lo = Math.min(stored, real);
+    const hi = Math.max(stored, real);
+    let next = Infinity;
+    let unseen = false;
+    for (const at of key.split('|').map(Number)) {
+      if (at >= lo && at < hi) {
+        unseen = true;
+      }
+      if (at >= real && at < next) {
+        next = at;
+      }
+    }
+    if (unseen) {
       let active = true;
       queueMicrotask(() => {
         if (active) {
-          setNow(Date.now());
+          setClock({ now: Date.now() });
         }
       });
       return () => {
         active = false;
       };
     }
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(MAX_TIMER_MS, next - real + 1));
+    if (!Number.isFinite(next)) {
+      return;
+    }
+    const timer = setTimeout(() => setClock({ now: Date.now() }), Math.min(MAX_TIMER_MS, next - real + 1));
     return () => clearTimeout(timer);
-  }, [next, now]);
-  return now;
+  }, [key, clock]);
+  return clock.now;
 }
 
 /** A sample expires independently of fetch/cache age and query resolution. */
 export function useSampleStale(sampleAt: number | undefined, freshness?: FreshnessPolicy): boolean {
   const after = sampleAt !== undefined && freshness ? sampleAt + freshness.staleAfterMs : undefined;
   const now = useClock(after === undefined ? NO_DEADLINES : [after]);
-  return after !== undefined && now > after;
+  return after !== undefined && isPast(after, now);
 }
 
 /**

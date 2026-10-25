@@ -45,6 +45,34 @@ describe('useClock', () => {
     expect(view.result.current).toBe(9000);
     expect(vi.getTimerCount()).toBe(0);
   });
+  it('follows a clock that went backwards: a new deadline below the stored read is fresh again, with a timer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10000);
+    const view = renderHook(({ deadlines }) => useClock(deadlines), { initialProps: { deadlines: [] as number[] } });
+    expect(view.result.current).toBe(10000);
+    vi.setSystemTime(1000);
+    await act(async () => {
+      view.rerender({ deadlines: [6000] });
+    });
+    expect(view.result.current).toBe(1000);
+    expect(vi.getTimerCount()).toBe(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5001);
+    });
+    expect(view.result.current).toBe(6001);
+  });
+  it('arms the next timer also when a read gives the stored millisecond again', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const view = renderHook(() => useClock([2000, 3000]));
+    // the timer fires, but the clock reads the mount time (a backward adjustment): the state value does not change
+    vi.spyOn(Date, 'now').mockReturnValueOnce(1000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1001);
+    });
+    expect(view.result.current).toBe(2001);
+    expect(vi.getTimerCount()).toBe(1);
+  });
   it('caps a far deadline at the largest timer delay and sets the timer again after the wake-up', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

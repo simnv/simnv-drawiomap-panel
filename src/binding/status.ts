@@ -27,6 +27,9 @@ export interface StatusSummary extends StatusView {
 /** The text of a row, a widget or a status whose freshness policy is shorter than one sample interval. */
 export const INVALID_FRESHNESS_TEXT = 'Invalid freshness policy';
 
+/** The one test of a deadline against the clock: a sample is stale after `sampleAt + staleAfterMs`, not at it. */
+export const isPast = (deadline: number, now: number): boolean => now > deadline;
+
 export interface EvaluatedStatus {
   /** the status as if every sample were fresh */
   view: StatusView;

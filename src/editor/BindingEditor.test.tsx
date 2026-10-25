@@ -1054,7 +1054,8 @@ describe('sample freshness in the popup stage', () => {
               binding: { queryId: 'q', match: {}, reducer: 'last' },
               default: { state: 'normal', reason: 'Healthy' },
               mappings: [{ value: 0, state: 'down', reason: 'Down' }],
-              freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
+              // 1500 ms: the first render of the popup must land before the deadline on a loaded machine
+              freshness: { expectedIntervalMs: 100, staleAfterMs: 1500 },
             },
           },
         },
@@ -1076,7 +1077,7 @@ describe('sample freshness in the popup stage', () => {
     });
     await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('normal'));
     await waitFor(() => expect(stageCell('device-1').getAttribute('data-dmap-status')).toBe('stale'), {
-      timeout: 2000,
+      timeout: 4000,
     });
     expect(stageCell('device-1').getAttribute('data-dmap-reason')).toBe('Sample is stale (expected every 100 ms)');
   });

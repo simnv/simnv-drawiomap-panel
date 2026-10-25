@@ -2259,8 +2259,9 @@ describe('DrawioMapPanel bindings popup', () => {
     it('a status sample that is already stale on arrival shows stale in the first applier call', async () => {
       const base = props({ id: 63 });
       const saved = { ...options, config: freshnessConfig, diagram };
+      // the first sample is far in the future: the clock of the panel is read at mount and no deadline moves it
       const view = render(
-        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now())] }} />
+        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() + 1e6)] }} />
       );
       const status = () => screen.queryByTestId('dmap-status-band')?.textContent ?? '';
       const cell = () => view.container.querySelector('[data-cell-id="a"]');
@@ -2268,8 +2269,11 @@ describe('DrawioMapPanel bindings popup', () => {
       await nextFrame();
       expect(status()).not.toContain('stale');
       const applies = panelApplies();
+      // 450 ms later a sample arrives whose deadline lies between the clock read at mount and now: the pass with
+      // the stored clock would call it fresh, the correction runs before the applier's animation frame
+      await new Promise((r) => setTimeout(r, 450));
       view.rerender(
-        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 10000)] }} />
+        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 401)] }} />
       );
       await nextFrame();
       expect(status()).toContain('stale');

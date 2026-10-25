@@ -97,22 +97,28 @@ export function useSampleStale(sampleAt?: number, freshness?: FreshnessPolicy): 
 export function useStaleStatus(result: PlanBindResult): PlanBindResult; // = staleStatuses(result, useClock(result.deadlines))
 ```
 
-`useClock` keeps `now` in state (`Date.now()` at mount). Its one effect, with the dependencies `(next, now)`, takes
-`next`, the smallest deadline that `now` has not passed, and reads the real clock:
+`useClock` keeps the last read of the clock in state, as an object `{ now }` (`Date.now()` at mount; a new object per
+read, so a read that gives the same millisecond still runs the effect, R2-1). Its one effect has the dependencies
+`(key, clock)`, with `key` the joined deadlines. It reads the real clock and compares it with the stored read:
 
-- `Date.now() > next` (the deadline passed in real time while nobody read the clock: a result arrives with a sample
-  that is already old): the effect sets `now = Date.now()` in a microtask, with no timer (the lint rule
-  `react-hooks/set-state-in-effect` forbids a synchronous set; `panel.tsx` and `store.ts` use the same microtask
-  form). A microtask runs before the browser returns to its task queue, so the correction renders before the next
-  animation frame; the applier and the band never paint the fresh view (R1-1). The set happens at most once per
-  `next`: after it, `now` is past the deadline, so the effect runs once more with the following deadline.
-- else: one timer for `min(2147483647, next - Date.now() + 1)` ms (the cap of today's two clocks, R1-2); the timer
-  sets `now = Date.now()`, and the effect runs again: the deadline passed, so `next` moves on; a capped wake-up
-  before a far deadline finds the same `next` and sets the timer again.
+- a deadline between the two reads, `min(stored, real) <= at < max(stored, real)`: the stored read and the real
+  clock disagree about that deadline. Either it passed while nobody read the clock (a result arrives with a sample
+  that is already old) or the clock went backwards (R2-2). The effect sets the read to `Date.now()` in a microtask,
+  with no timer (the lint rule `react-hooks/set-state-in-effect` forbids a synchronous set; `panel.tsx` and
+  `store.ts` use the same microtask form). A microtask runs before the browser returns to its task queue, so the
+  correction renders before the next animation frame; the applier and the band never paint the fresh view (R1-1).
+- else, with `next` the smallest deadline that the real clock has not passed: one timer for
+  `min(2147483647, next - real + 1)` ms (the cap of today's two clocks, R1-2); the timer stores a new read, and the
+  effect runs again: the deadline passed, so `next` moves on; a capped wake-up before a far deadline finds the same
+  `next` and sets the timer again.
 - no deadline left: no timer.
 
 A result whose deadlines are all in the future costs no render. This is the timer of `useSampleStale` today, for a
-list. At most one timer per hook instance.
+list. At most one timer per hook instance. A clock that goes backwards with no change of the deadlines and no timer
+pending is seen at the next change of either; nothing else re-reads the clock.
+
+`isPast(deadline, now)` in `status.ts` is the one test of a deadline against the clock (`now > deadline`);
+`staleStatuses` and `useSampleStale` call it (R2-5).
 
 `useStaleStatus` is a `useMemo` over `(result, now)`. Because `staleStatuses` memoises per stale set, a tick that
 crosses no deadline gives the same object; the effects that depend on the result do not run.
@@ -174,7 +180,8 @@ Unit, `npm run test:affected` in the worktree; the full suite once on main befor
   which the stale cell has a new patch with the stale view, the other patches are the same objects, and `summaries`
   has the stale row; a stale view replaces an earlier `missing` view of the same cell (the link coverage case); two
   calls with the same stale set give the same object; the existing case "compares sample age to configured cadence
-  regardless of chart resolution" moves to `staleStatuses`.
+  regardless of chart resolution" becomes "binds without time" (its loop over `intervalMs` goes: `BindContext` has no
+  resolution, the old test spread an unknown property; the cache age of the fixture still plays no part).
 - `src/visuals/useSampleStale.test.tsx` (new): the `usePreviewTime` deadline test moves here against `useClock`:
   the clock reads again after each deadline, holds at most one timer, releases it when the deadlines change or on
   unmount; a deadline that is already passed when it arrives is corrected in a microtask, with no timer
@@ -220,3 +227,13 @@ the pause, the mount-time clock, the migration table or the coding standards.
 | R1-2 (P2). The clock dropped the `2147483647` cap of both clocks of today; a policy has no upper bound                                                                               | The cap is in the formula; a capped wake-up finds the same `next` and sets the timer again (section 3; test "a deadline more than 2147483647 ms away").                                                                                                                                 |
 | R1-3 (P2). "One bind per data change" is not a general guarantee: a generation change and its result are frames of the store                                                         | Restated as "the clock causes no bind"; the exact-count test is scoped to a panel-source update with a stable context (sections 1 and 7).                                                                                                                                               |
 | R1-4 (P2). The memo kept one derived result per stale set a held `bound` passed through, quadratic in the cells                                                                      | The memo keeps the latest pair per `bound`; identity is for consecutive calls with the same set (section 3).                                                                                                                                                                            |
+
+Review 2 (Codex, 2026-10-25, the diff of `be066ca`). No finding on the strict boundary, the precedence, the result identity, patch mutation, the summaries, the caller dependencies, the pause and remount wiring, the card, the legend, the band, or privacy.
+
+| Concern                                                                                                                                                                                   | Resolution                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R2-1 (P1). A timer that fired after a backward clock adjustment read the stored millisecond again; React skipped the equal state and no timer was armed again, so the cell stayed healthy | The read is an object `{ now }`, new per read: the effect runs after every read and arms the next timer (section 3; test "arms the next timer also when a read gives the stored millisecond again").             |
+| R2-2 (P1). With the stored read ahead of a clock that went backwards, the render-time filter discarded a new deadline below the stored read and the cell showed stale                     | The render filters nothing. The effect compares the stored read with the real clock and corrects when a deadline lies between them, in either direction (section 3; test "follows a clock that went backwards"). |
+| R2-3 (P2). The panel test "already stale on arrival" used a sample ten seconds old, stale against the mount read already, so it did not exercise the correction                           | The first sample is far in the future (no deadline moves the read); 450 ms later a sample arrives whose deadline lies between the mount read and now (section 7).                                                |
+| R2-4 (P2). The 400 ms policies of the integration tests race a slow first render                                                                                                          | The popup test uses 1500 ms; the "binds once" test does not depend on the window; the pre-existing pause test keeps its 400 ms.                                                                                  |
+| R2-5 (P2). `now > after` was written in three places                                                                                                                                      | `isPast(deadline, now)` in `status.ts`; `staleStatuses` and `useSampleStale` call it (section 3).                                                                                                                |
