@@ -446,3 +446,14 @@ describe('CardPreview component', () => {
     });
   });
 });
+
+describe('a config of version 2', () => {
+  it('shows the outdated note once above an empty list, and no problem row for it', () => {
+    mount(optionsOf({ ...config(), version: 2 } as unknown as DiagramConfig));
+    const list = screen.getByTestId('dmap-pane-list');
+    expect(within(list).getAllByText(/version 2, the shape before 1\.0\.0/)).toHaveLength(1);
+    expect(within(list).getByRole('status').textContent).toContain('regenerate the config with version 3');
+    expect(within(list).queryByRole('button', { name: /problem without an owner/ })).toBeNull();
+    expect(within(list).getByRole('button', { name: 'Patterns (0)' })).toBeTruthy();
+  });
+});
