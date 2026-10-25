@@ -8,7 +8,7 @@ import {
   type QueryPolicy,
   type QuerySnapshot,
 } from '../query/types';
-import { preparedSnapshot, type QueryPreview } from './preview';
+import type { QueryPreview } from './preview';
 
 export interface PatternPreview {
   config: DiagramConfig;
@@ -16,7 +16,18 @@ export interface PatternPreview {
   previews: QueryPreview[];
 }
 
-/** One explicit run holds bounded prepared results, never a second query cache or refresh schedule. */
+export interface PatternPreviewOptions {
+  /** Namespace of the consumer ids, for example `popup:3`. */
+  owner: string;
+  /** The resolution of the demands: the one of the store entries of the popup, so equal requests merge in the controller. */
+  maxDataPoints: number;
+  policy?: QueryPolicy;
+}
+
+/**
+ * One explicit run holds bounded prepared results, never a second query cache or refresh schedule. Its demands have
+ * the identity of the popup's own entries: the controller merges them with a running or retained request.
+ */
 export function previewPattern(
   controller: QueryController,
   plan: BindingPlan,
@@ -24,8 +35,7 @@ export function previewPattern(
   affected: string[],
   context: QueryContext,
   publish: (value: PatternPreview) => void,
-  policy: QueryPolicy = DEFAULT_QUERY_POLICY,
-  compatible: QueryPreview[] = []
+  { owner, maxDataPoints, policy = DEFAULT_QUERY_POLICY }: PatternPreviewOptions
 ): () => void {
   const demands = affected.flatMap((cellId) => {
     const cell = plan.cells[cellId];
@@ -98,20 +108,15 @@ export function previewPattern(
       }
       update();
     };
-    const existing = preparedSnapshot(demand.query, config, demand.cellId, undefined, compatible, context.generation);
-    if (existing.state === 'ready' || existing.state === 'empty') {
-      receive(existing);
-    } else {
-      releases[index] = controller.watch(
-        {
-          ...demand,
-          consumerId: `pattern-preview:${index}`,
-          context: { ...context, defaultDatasource: config.defaultDatasource, refreshMs: 0 },
-          maxDataPoints: 160,
-        },
-        receive
-      );
-    }
+    releases[index] = controller.watch(
+      {
+        ...demand,
+        consumerId: `${owner}:pattern-preview:${index}`,
+        context: { ...context, defaultDatasource: config.defaultDatasource, refreshMs: 0 },
+        maxDataPoints,
+      },
+      receive
+    );
   });
   return () => {
     active = false;

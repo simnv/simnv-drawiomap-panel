@@ -26,8 +26,8 @@ const round = (n: number, max: number) => Math.round(Math.min(Math.max(n, 0), ma
  * A mirrored series is drawn as negative values.
  */
 export function mirrorSegments(
-  values: Array<number | null>,
-  times: number[],
+  values: ReadonlyArray<number | null>,
+  times: readonly number[],
   range: { from: number; to: number },
   w: number,
   h: number,

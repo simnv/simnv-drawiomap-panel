@@ -10,19 +10,8 @@ import {
   settled,
 } from './types';
 import { panelSnapshot } from './panelSnapshot';
+import { copyFrames, stable } from './boundary';
 
-/** Canonical JSON for persisted query objects and resolved context, never datasource instances. */
-function stable(value: unknown): string {
-  return JSON.stringify(value, (_, item) =>
-    item && typeof item === 'object' && !Array.isArray(item)
-      ? Object.fromEntries(
-          Object.keys(item)
-            .sort()
-            .map((k) => [k, item[k]])
-        )
-      : item
-  );
-}
 function resolve(demand: QueryDemand, now: number): ResolvedQueryRequest {
   const { source } = demand.query;
   if (source.kind !== 'datasource') {
@@ -216,7 +205,7 @@ export function createQueryController(
                 message: 'Diagram query result exceeds the active result budget. Reduce the range or resolution.',
               };
             } else {
-              snapshot = { ...snapshot, fetchedAt: now(), fromCache: false };
+              snapshot = { ...snapshot, frames: copyFrames(snapshot.frames), fetchedAt: now(), fromCache: false };
             }
           } else if (snapshot.state === 'empty') {
             snapshot = { ...snapshot, fetchedAt: now(), fromCache: false };
@@ -275,7 +264,7 @@ export function createQueryController(
       panelData = data;
       for (const entry of entries.values()) {
         if (entry.panelRef) {
-          publish(entry, panelSnapshot(panelData, entry.panelRef, now()));
+          publish(entry, panelSnapshot(panelData, entry.panelRef, now));
         }
       }
     },
@@ -292,7 +281,7 @@ export function createQueryController(
           entry = {
             panelRef: refId,
             listeners: new Map(),
-            snapshot: panelSnapshot(panelData, refId, now()),
+            snapshot: panelSnapshot(panelData, refId, now),
             token: 0,
           };
           entries.set(key, entry);

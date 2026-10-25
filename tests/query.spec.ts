@@ -1,7 +1,7 @@
 import { attachJson, expect, observeQueries, svg, test } from './authoring-fixtures';
 import { nativeQuery } from '../src/fixtures/authoring-config';
 
-test('ready saved chart supplies scalar and history hover rows without duplicate requests and keeps unrelated hover lazy', async ({
+test('hover rows of a saved chart query cost at most one request per open at the card resolution; unrelated hover stays lazy', async ({
   page,
   config,
   createDiagram,
@@ -49,33 +49,38 @@ test('ready saved chart supplies scalar and history hover rows without duplicate
   await expect(card).toContainText('Saved history');
   await expect(card).toContainText('23');
   await expect(card.locator('canvas')).toBeVisible();
-  expect(count('SAVED')).toBe(1);
+  // Only identical requests share. The card asks at its own resolution (264 points): one request more than the
+  // chart when the chart has another width, none when the widths are equal. The cost is the same at every open.
+  const hoverCost = count('SAVED') - 1;
+  expect(hoverCost).toBeLessThanOrEqual(1);
   await page.mouse.move(1, 1);
   await expect(card).toHaveCount(0);
   await dashboard.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
-  await expect.poll(() => count('SAVED')).toBe(2);
+  // the refresh runs the chart again; the closed card holds no request
+  await expect.poll(() => count('SAVED')).toBe(2 + hoverCost);
   await expect(chart).toContainText('23');
   await panel.locator('[data-cell-id="chart-1"]').hover();
   await expect(card).toContainText('23');
-  expect(count('SAVED')).toBe(2);
+  expect(count('SAVED')).toBe(2 + 2 * hoverCost);
   await page.mouse.move(1, 1);
   await dashboard
     .getByGrafanaSelector(selectors.pages.Dashboard.SubMenu.submenuItemValueDropDownValueLinkTexts('23'))
     .click();
   await page.getByRole('option', { name: '47', exact: true }).click();
   await expect(chart).toContainText('47');
-  expect(count('SAVED')).toBe(3);
+  expect(count('SAVED')).toBe(3 + 2 * hoverCost);
   await panel.locator('[data-cell-id="chart-1"]').hover();
   await expect(card).toContainText('47');
   await expect(card.locator('canvas')).toBeVisible();
-  expect(count('SAVED')).toBe(3);
+  expect(count('SAVED')).toBe(3 + 3 * hoverCost);
   expect(count('UNRELATED')).toBe(0);
   await panel.locator('[data-cell-id="device-1"]').hover();
   await expect(card).toContainText('999');
   expect(count('UNRELATED')).toBe(1);
-  expect(count('SAVED')).toBe(3);
+  expect(count('SAVED')).toBe(3 + 3 * hoverCost);
   await attachJson(testInfo, 'saved-chart-hover-requests', {
     requests,
+    hoverCost,
     saved: count('SAVED'),
     unrelated: count('UNRELATED'),
   });

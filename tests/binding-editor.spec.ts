@@ -15,7 +15,7 @@ const openQuery = (dialog: Locator, name: string) => dialog.getByRole('button', 
 const stageText = (dialog: Locator, cell: string) =>
   dialog.getByTestId('dmap-popup-stage').locator(`[data-cell-id="${cell}"] text`).last();
 
-test('the popup keeps one watch for its own chart size and reuses it for selection and previews', async ({
+test('the popup keeps one watch for its own chart size; each preview costs at most one request at the card resolution', async ({
   page,
   config,
   createDiagram,
@@ -51,18 +51,32 @@ test('the popup keeps one watch for its own chart size and reuses it for selecti
   await inspector.getByRole('button', { name: 'Preview all pattern matches', exact: true }).click();
   await expect(inspector.getByLabel('Pattern preview progress')).toContainText('1 / 1');
   await expect(inspector.getByLabel('Affected metric resolution')).toContainText('chart-1: resolved');
-  expect(count()).toBe(base);
+  // The pattern preview asks at the card resolution of the popup (264 points). The stage chart has its own width,
+  // so the preview is at most one request more.
+  expect(count()).toBeLessThanOrEqual(base + 1);
+  const afterPattern = count();
   await openQuery(dialog, 'saved');
   await inspector.getByRole('button', { name: 'Preview query', exact: true }).click();
   await expect(inspector.getByLabel('Query preview result')).toContainText('ready');
-  // The explicit query preview asks at its own resolution: at most one more request, never one per click.
-  expect(count()).toBeLessThanOrEqual(base + 1);
+  // The explicit query preview asks at the card resolution too, so it shares the pattern preview's request. One
+  // more request is allowed: a chart whose width changes when the query pane opens asks again at its new width.
+  expect(count()).toBeLessThanOrEqual(afterPattern + 1);
+  const afterQuery = count();
   await discardDraft(dialog);
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
   await expect.poll(count).toBeGreaterThan(base);
   await expect(chart).toContainText('42');
-  await attachJson(testInfo, 'saved-chart-reuse-requests', { requests, nativeExecutions: count() });
+  await attachJson(testInfo, 'saved-chart-reuse-requests', {
+    requests: requests.map((r) => ({
+      refIds: r.queries.map((q) => q.refId),
+      maxDataPoints: r.queries[0]?.maxDataPoints,
+    })),
+    base,
+    afterPattern,
+    afterQuery,
+    nativeExecutions: count(),
+  });
 });
 
 test('representative selection focuses the heading, previews a pattern in the popup and saves an isolated override', async ({

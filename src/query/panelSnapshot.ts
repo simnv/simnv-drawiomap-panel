@@ -1,11 +1,34 @@
 import { LoadingState, type PanelData } from '@grafana/data';
+import { copyFrames } from './boundary';
 import type { QuerySnapshot } from './types';
 
-/** Interpret eager data consistently without copying Grafana's formatted fields. */
-export function panelSnapshot(data: PanelData | undefined, refId: string, fetchedAt: number): QuerySnapshot {
+const snapshots = new WeakMap<PanelData, Map<string, QuerySnapshot>>();
+
+/**
+ * The eager panel data as a snapshot, one object per `(data, refId)`: the controller's `setPanelData` and the
+ * resolver get the same object, so the history cache hits. The frames of the refId are the boundary copy. The fetch
+ * time is the time of the first call for that data: a data object has one arrival time.
+ */
+export function panelSnapshot(data: PanelData | undefined, refId: string, now: () => number = Date.now): QuerySnapshot {
   if (!data) {
     return { state: 'idle' };
   }
+  let cache = snapshots.get(data);
+  if (!cache) {
+    cache = new Map();
+    snapshots.set(data, cache);
+  }
+  const seen = cache.get(refId);
+  if (seen) {
+    return seen;
+  }
+  const snapshot = read(data, refId, now());
+  cache.set(refId, snapshot);
+  return snapshot;
+}
+
+/** Interpret eager data consistently without copying Grafana's formatted fields. */
+function read(data: PanelData, refId: string, fetchedAt: number): QuerySnapshot {
   const errors = [...(data.errors ?? []), ...(data.error ? [data.error] : [])];
   // A refId-specific failure belongs to that query. Error without details is request-wide.
   if (
@@ -21,6 +44,6 @@ export function panelSnapshot(data: PanelData | undefined, refId: string, fetche
   }
   const frames = data.series.filter((frame) => frame.refId === refId);
   return frames.length
-    ? { state: 'ready', frames, fetchedAt, fromCache: loading }
+    ? { state: 'ready', frames: copyFrames(frames), fetchedAt, fromCache: loading }
     : { state: 'empty', fetchedAt, fromCache: loading };
 }

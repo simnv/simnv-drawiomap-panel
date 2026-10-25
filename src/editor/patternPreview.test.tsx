@@ -3,6 +3,7 @@ import { act, fireEvent, renderHook, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame } from '@grafana/data';
 import { createQueryController } from '../query/controller';
+import { testQueryService } from '../query/testService';
 import { DEFAULT_QUERY_POLICY, type QueryContext, type QuerySnapshot } from '../query/types';
 import { buildCellIndex, cellMetas } from '../render/svgStage';
 import { renderEditor, svgOf } from './editorHarness';
@@ -85,7 +86,7 @@ function setup() {
     config,
     svg: svgOf('device-1', 'device-2'),
     data: { state: LoadingState.Done, series: [], timeRange: context.timeRange },
-    service: { controller, context },
+    service: testQueryService(controller, context),
   });
   selectStageCell('device-1');
   chooseOption('Edit scope', 'All elements matching this pattern');
@@ -100,7 +101,7 @@ function setup() {
   });
   /** The requests that only the full preview started: the hover row and the chart of device-2. */
   const explicit = () => pending.slice(auto);
-  const rerenderWith = (nextContext: QueryContext) => view.rerenderService({ controller, context: nextContext });
+  const rerenderWith = (nextContext: QueryContext) => view.rerenderService(testQueryService(controller, nextContext));
   return { controller, execute, pending, automatic, explicit, context, save: view.save, view, rerenderWith };
 }
 function ready(value: number): QuerySnapshot {
@@ -258,72 +259,67 @@ function batch(parameterized = true) {
   };
   return { config, plan, context };
 }
-it.each(['error', 'loading', 'unsupported', 'empty'] as const)(
-  'full pattern preview prefers ready over %s in either prepared order',
-  async (state) => {
-    for (const readyFirst of [false, true]) {
-      const s = batch(false);
-      const execute = vi.fn(() => vi.fn());
-      const controller = createQueryController(execute);
-      const other: QuerySnapshot =
-        state === 'empty'
-          ? { state, fetchedAt: 1, fromCache: false }
-          : state === 'loading'
-            ? { state }
-            : { state, message: 'Saved request did not succeed' };
-      const prepared: QueryPreview[] = s.config.queries.flatMap((query) => {
-        const values = [other, ready(42)];
-        if (readyFirst) {
-          values.reverse();
-        }
-        return values.map((snapshot) => ({ query, cellId: 'a', context: s.context, snapshot }));
-      });
-      const publish = vi.fn();
-      const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, undefined, prepared);
-      await Promise.resolve();
-      expect(execute).not.toHaveBeenCalled();
-      const results: QueryPreview[] = publish.mock.calls.at(-1)![0].previews;
-      expect(results).toHaveLength(4);
-      expect(
-        results.map(({ snapshot }) =>
-          snapshot.state === 'ready' ? snapshot.frames[0].fields[1].values[0] : snapshot.state
-        )
-      ).toEqual([42, 42, 42, 42]);
-      stop();
-      controller.dispose();
+/** The options of a run in the tests: the owner of the popup and the resolution of its entries. */
+const run = (policy?: typeof DEFAULT_QUERY_POLICY) => ({ owner: 'popup:1', maxDataPoints: 160, policy });
+it('joins a running request of the popup with the same identity instead of starting a second one', async () => {
+  const s = batch(false);
+  const execute = vi.fn((_request, _emit) => vi.fn());
+  const controller = createQueryController(execute);
+  const saved = vi.fn();
+  // the popup's own entry of the query at the cell, at the same resolution
+  const release = controller.watch(
+    {
+      consumerId: 'popup%3A1:bindings:a:q',
+      query: s.config.queries[0],
+      scope: s.plan.cells.a.scope,
+      context: s.context,
+      maxDataPoints: 160,
+    },
+    saved
+  );
+  const publish = vi.fn();
+  const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, run());
+  expect(execute).toHaveBeenCalledTimes(1);
+  execute.mock.calls[0][1](ready(42));
+  await Promise.resolve();
+  const results: QueryPreview[] = publish.mock.calls.at(-1)![0].previews;
+  expect(
+    results.map(({ snapshot }) =>
+      snapshot.state === 'ready' ? snapshot.frames[0].fields[1].values[0] : snapshot.state
+    )
+  ).toEqual([42, 42, 42, 42]);
+  // another resolution is another request
+  const other = previewPattern(controller, s.plan, s.config, ['a'], s.context, vi.fn(), {
+    owner: 'popup:1',
+    maxDataPoints: 300,
+  });
+  expect(execute).toHaveBeenCalledTimes(2);
+  other();
+  stop();
+  release();
+  controller.dispose();
+});
+it('prefixes the consumer ids with the owner', () => {
+  const s = batch(false);
+  const watch = vi.fn(() => vi.fn());
+  const stop = previewPattern(
+    { watch, setPanelData: vi.fn(), dispose: vi.fn() },
+    s.plan,
+    s.config,
+    ['a'],
+    s.context,
+    vi.fn(),
+    {
+      owner: 'popup:7',
+      maxDataPoints: 160,
     }
-  }
-);
-it.each(['error', 'loading', 'unsupported', 'empty'] as const)(
-  'full pattern preview executes when saved %s cannot satisfy demand',
-  async (state) => {
-    const s = batch(false);
-    const execute = vi.fn((_request, emit) => {
-      emit(ready(84));
-      return vi.fn();
-    });
-    const controller = createQueryController(execute);
-    const snapshot: QuerySnapshot =
-      state === 'empty'
-        ? { state, fetchedAt: 1, fromCache: false }
-        : state === 'loading'
-          ? { state }
-          : { state, message: 'Saved request failed' };
-    const prepared = s.config.queries.map((query) => ({ query, cellId: 'a', context: s.context, snapshot }));
-    const publish = vi.fn();
-    const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, undefined, prepared);
-    await Promise.resolve();
-    expect(execute).toHaveBeenCalledTimes(state === 'empty' ? 0 : 1);
-    const results: QueryPreview[] = publish.mock.calls.at(-1)![0].previews;
-    expect(
-      results.map(({ snapshot }) =>
-        snapshot.state === 'ready' ? snapshot.frames[0].fields[1].values[0] : snapshot.state
-      )
-    ).toEqual(state === 'empty' ? ['empty', 'empty', 'empty', 'empty'] : [84, 84, 84, 84]);
-    stop();
-    controller.dispose();
-  }
-);
+  );
+  expect(watch.mock.calls.map(([demand]: any) => demand.consumerId)).toEqual([
+    'popup:7:pattern-preview:0',
+    'popup:7:pattern-preview:1',
+  ]);
+  stop();
+});
 it('coalesces equal native demands across query IDs and elements and retains their shared frames once', async () => {
   const s = batch(false);
   const execute = vi.fn((_request, emit) => {
@@ -332,10 +328,15 @@ it('coalesces equal native demands across query IDs and elements and retains the
   });
   const controller = createQueryController(execute);
   const publish = vi.fn();
-  const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, {
-    ...DEFAULT_QUERY_POLICY,
-    maxEntries: 1,
-  });
+  const stop = previewPattern(
+    controller,
+    s.plan,
+    s.config,
+    ['a', 'b'],
+    s.context,
+    publish,
+    run({ ...DEFAULT_QUERY_POLICY, maxEntries: 1 })
+  );
   await Promise.resolve();
   expect(execute).toHaveBeenCalledTimes(1);
   expect(publish.mock.calls.at(-1)?.[0].previews.map((p: { snapshot: QuerySnapshot }) => p.snapshot.state)).toEqual([
@@ -353,7 +354,7 @@ it('keeps saved monitoring independent when it joins a pending one-shot preview'
     const s = batch(false);
     const execute = vi.fn((_request, _emit) => vi.fn());
     const controller = createQueryController(execute);
-    const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, vi.fn());
+    const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, vi.fn(), run());
     const saved = vi.fn();
     const release = controller.watch(
       {
@@ -378,46 +379,6 @@ it('keeps saved monitoring independent when it joins a pending one-shot preview'
     vi.useRealTimers();
   }
 });
-it('reuses compatible prepared results without new execution but rejects an older refresh generation', async () => {
-  const s = batch();
-  const execute = vi.fn(() => vi.fn());
-  const controller = createQueryController(execute);
-  const prepared = ['a', 'b'].flatMap((cellId, i) =>
-    s.config.queries.map((query) => ({ query, cellId, context: s.context, snapshot: ready(i === 0 ? 11 : 22) }))
-  );
-  const publish = vi.fn();
-  const stop = previewPattern(
-    controller,
-    s.plan,
-    s.config,
-    ['a', 'b'],
-    s.context,
-    publish,
-    DEFAULT_QUERY_POLICY,
-    prepared
-  );
-  await Promise.resolve();
-  expect(execute).not.toHaveBeenCalled();
-  expect(publish.mock.calls.at(-1)?.[0].previews.map((p: { snapshot: QuerySnapshot }) => p.snapshot.state)).toEqual([
-    'ready',
-    'ready',
-    'ready',
-    'ready',
-  ]);
-  stop();
-  previewPattern(
-    controller,
-    s.plan,
-    s.config,
-    ['a', 'b'],
-    { ...s.context, generation: 2 },
-    publish,
-    DEFAULT_QUERY_POLICY,
-    prepared
-  )();
-  expect(execute).toHaveBeenCalledTimes(2);
-  controller.dispose();
-});
 it.each([
   ['entries', { maxEntries: 1 }],
   ['sample values', { maxCachedValues: 3 }],
@@ -430,33 +391,6 @@ it.each([
   });
   const controller = createQueryController(execute);
   const publish = vi.fn();
-  const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, {
-    ...DEFAULT_QUERY_POLICY,
-    ...limit,
-  });
-  await Promise.resolve();
-  const snapshots = publish.mock.calls.at(-1)?.[0].previews.map((p: { snapshot: QuerySnapshot }) => p.snapshot);
-  expect(snapshots.filter((s: QuerySnapshot) => s.state === 'ready')).toHaveLength(2);
-  expect(snapshots.filter((s: QuerySnapshot) => s.state === 'error')).toEqual([
-    { state: 'error', message: expect.stringContaining('Reduce the pattern scope') },
-    { state: 'error', message: expect.stringContaining('Reduce the pattern scope') },
-  ]);
-  stop();
-  controller.dispose();
-});
-it.each([
-  ['entries', { maxEntries: 1 }],
-  ['sample values', { maxCachedValues: 3 }],
-  ['bytes', { maxCachedBytes: 600 }],
-])('accounts reused chart frames against aggregate prepared %s', async (_name, limit) => {
-  const s = batch();
-  const execute = vi.fn(() => vi.fn());
-  const controller = createQueryController(execute);
-  const compatible = ['a', 'b'].flatMap((cellId, index) => {
-    const snapshot = ready(index === 0 ? 42 : 84);
-    return s.config.queries.map((query) => ({ query, cellId, context: s.context, snapshot }));
-  });
-  const publish = vi.fn();
   const stop = previewPattern(
     controller,
     s.plan,
@@ -464,18 +398,15 @@ it.each([
     ['a', 'b'],
     s.context,
     publish,
-    {
-      ...DEFAULT_QUERY_POLICY,
-      ...limit,
-    },
-    compatible
+    run({ ...DEFAULT_QUERY_POLICY, ...limit })
   );
-  const snapshots: QuerySnapshot[] = publish.mock.calls
-    .at(-1)?.[0]
-    .previews.map((p: { snapshot: QuerySnapshot }) => p.snapshot);
-  expect(execute).not.toHaveBeenCalled();
-  expect(snapshots.map((snapshot) => snapshot.state)).toEqual(['ready', 'ready', 'error', 'error']);
-  expect(snapshots[2]).toEqual({ state: 'error', message: expect.stringContaining('Reduce the pattern scope') });
+  await Promise.resolve();
+  const snapshots = publish.mock.calls.at(-1)?.[0].previews.map((p: { snapshot: QuerySnapshot }) => p.snapshot);
+  expect(snapshots.filter((s: QuerySnapshot) => s.state === 'ready')).toHaveLength(2);
+  expect(snapshots.filter((s: QuerySnapshot) => s.state === 'error')).toEqual([
+    { state: 'error', message: expect.stringContaining('Reduce the pattern scope') },
+    { state: 'error', message: expect.stringContaining('Reduce the pattern scope') },
+  ]);
   stop();
   controller.dispose();
 });
@@ -489,7 +420,7 @@ it('reports exhausted controller queue and active sample budgets as completed fa
     maxActiveResultValues: 1,
   });
   const publish = vi.fn();
-  const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish);
+  const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, run());
   execute.mock.calls[0][1](ready(7));
   await Promise.resolve();
   const previews = publish.mock.calls.at(-1)?.[0].previews;
@@ -523,7 +454,7 @@ it('collects a one-shot preview without scheduling background refresh and reuses
       series: eager.state === 'ready' ? eager.frames.map((f) => ({ ...f, refId: 'A' })) : [],
     });
     const publish = vi.fn();
-    const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish);
+    const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, run());
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(1000);
     expect(execute).toHaveBeenCalledTimes(1);
@@ -548,7 +479,7 @@ it('rejects an uncancellable Promise after run cancellation', async () => {
   });
   const controller = createQueryController(execute);
   const publish = vi.fn();
-  const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish);
+  const stop = previewPattern(controller, s.plan, s.config, ['a', 'b'], s.context, publish, run());
   stop();
   const count = publish.mock.calls.length;
   finish(ready(999));
@@ -605,7 +536,7 @@ describe('usePreviewTime', () => {
   it('reevaluates each sample-age deadline and releases timers on change and unmount', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1000);
-    const view = renderHook(({ deadlines }) => usePreviewTime(undefined, 1, undefined, [], deadlines), {
+    const view = renderHook(({ deadlines }) => usePreviewTime(undefined, 1, undefined, 0, deadlines), {
       initialProps: { deadlines: [2001, 3001] },
     });
     await act(async () => {

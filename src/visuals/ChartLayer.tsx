@@ -1,38 +1,35 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme2 } from '@grafana/ui';
 import type { BindingPlan } from '../binding/patterns';
 import { resolveBinding } from '../binding/engine';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
-import type { NamedQuery } from '../model/config';
-import { settled, type QueryContext, type QueryController, type QuerySnapshot } from '../query/types';
+import type { PanelQueryService } from '../query/panel';
+import { LOADING, matchKeyOf, shownSnapshot, type StoreDemand } from '../query/store';
+import type { QuerySnapshot } from '../query/types';
+import { useBindings } from '../query/useBindings';
 import { readChartAnchor, type ChartAnchor } from '../render/geometry';
 import type { CellIndex } from '../types';
 import { SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
-import type { QueryPreview } from '../editor/preview';
-import { useHeld } from '../components/useHeld';
 
 export interface ChartLayerProps {
   root?: SVGSVGElement;
   cells: CellIndex;
   plan: BindingPlan;
-  queries: NamedQuery[];
-  controller?: QueryController;
-  context: QueryContext;
+  /** The query service: the widgets are consumers of its store. */
+  service: PanelQueryService;
   viewport: HTMLElement | null;
   revision?: unknown;
   /** Namespace of the consumer ids, for example `panel:3` or `popup:3`. */
   owner: string;
   replaceVariables?: (value: string) => string;
-  onPrepared?: (id: string, preview?: QueryPreview) => void;
-  /**
-   * The popup is open over the panel: show the last result and publish nothing. The watches stay open; the latest
-   * result shows and publishes after the pause.
-   */
+  /** The popup is open over the panel: show the held result. The watches stay open; the latest result shows after the pause. */
   paused?: boolean;
 }
+
+const NO_DEMANDS: StoreDemand[] = [];
 
 /** Check the painted element against the panel and every clipping ancestor. */
 function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
@@ -74,27 +71,36 @@ function Region({
 }: ChartLayerProps & {
   entry: BindingPlan['widgets'][number];
 }) {
-  const { root, cells, viewport, context, controller, queries, revision, replaceVariables, onPrepared, owner } = props;
+  const { root, cells, viewport, service, plan, revision, replaceVariables, owner } = props;
   const paused = !!props.paused;
+  const { context } = service;
   const { widget, scope } = entry;
   const cell = cells.get(entry.anchorCellId);
   const theme = useTheme2();
   const updateRef = useRef<() => void>();
   const [portal, setPortal] = useState<SVGForeignObjectElement>();
   const [geometry, setGeometry] = useState<{ anchor: ChartAnchor; visible: boolean; resolution: number }>();
-  const [response, setResponse] = useState<{ key: string; match: string; preview: QueryPreview }>();
-  /** The last result that is not loading, for the same query, scope and default datasource. */
-  const last = useRef<{ match: string; preview: QueryPreview }>();
-  const shown = useHeld(response, paused);
-  // The watch callback reads the flag when it runs. A change of the flag must not restart the watch.
-  const pending = useRef<{ key: string; match: string; preview: QueryPreview }>();
-  const pausedRef = useRef(paused);
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
-  const query = queries.find((q) => q.id === entry.widget.binding.queryId);
-  const match = JSON.stringify([query, entry.scope, context.defaultDatasource]);
-  const key = JSON.stringify([query, entry.scope, context, geometry?.resolution]);
+  const query = plan.config.queries.find((q) => q.id === widget.binding.queryId);
+  const resolution = geometry?.resolution;
+  // The one demand of the widget, at its anchor cell and its own resolution: a consumer of the store like a binding.
+  // An unavailable widget shows its reason and runs no query; a clipped one releases its entry.
+  const demands = useMemo(
+    () =>
+      query && resolution !== undefined && geometry?.visible && !entry.unavailable
+        ? [
+            {
+              cellId: entry.anchorCellId,
+              query,
+              scope,
+              context,
+              maxDataPoints: resolution,
+              matchKey: matchKeyOf(query, scope, context),
+            },
+          ]
+        : NO_DEMANDS,
+    [query, resolution, geometry?.visible, entry.unavailable, entry.anchorCellId, scope, context]
+  );
+  const frame = useBindings(service, owner, `widget:${widget.id}`, demands, paused);
 
   useLayoutEffect(() => {
     const shape = cell?.shape;
@@ -178,83 +184,6 @@ function Region({
     updateRef.current?.();
   }, [revision]);
 
-  // After the pause the widget shows, and the parent gets, the latest result that the watch received meanwhile. An
-  // emission while paused went to the `pending` ref: no state update, no render.
-  useEffect(() => {
-    const received = pending.current;
-    if (!paused && received) {
-      pending.current = undefined;
-      setResponse(received);
-      if (received.key === key) {
-        onPrepared?.(entry.widget.id, received.preview);
-      }
-    }
-    // Only the end of a pause applies the pending result; the watch callback applies every other one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paused]);
-
-  useEffect(() => {
-    // an unavailable widget shows its reason and runs no query
-    if (!geometry?.visible || !controller || !query || entry.unavailable) {
-      return;
-    }
-    let current = true;
-    const release = controller.watch(
-      {
-        consumerId: `${owner}:widget:${entry.widget.id}`,
-        query,
-        scope: entry.scope,
-        context,
-        maxDataPoints: geometry.resolution,
-      },
-      (received) => {
-        if (current) {
-          // A refresh or a resize starts a new request. Until it has a result, show the last result.
-          // The kept result keeps its own context: reuse for the new context needs a new result.
-          let preview: QueryPreview = { query, cellId: entry.anchorCellId, context, snapshot: received };
-          if (settled(received)) {
-            last.current = { match, preview };
-          } else if (last.current?.match === match) {
-            const kept = last.current.preview;
-            preview = {
-              ...kept,
-              kept: true,
-              snapshot:
-                kept.snapshot.state === 'ready' || kept.snapshot.state === 'empty'
-                  ? { ...kept.snapshot, fromCache: true }
-                  : kept.snapshot,
-            };
-          }
-          if (pausedRef.current) {
-            pending.current = { key, match, preview };
-          } else {
-            setResponse({ key, match, preview });
-            onPrepared?.(entry.widget.id, preview);
-          }
-        }
-      }
-    );
-    return () => {
-      current = false;
-      release();
-      onPrepared?.(entry.widget.id);
-    };
-  }, [
-    controller,
-    query,
-    entry.scope,
-    entry.widget.id,
-    entry.anchorCellId,
-    context,
-    geometry?.visible,
-    geometry?.resolution,
-    key,
-    match,
-    onPrepared,
-    owner,
-    entry.unavailable,
-  ]);
-
   if (!geometry) {
     return (
       <span role="status" data-dmap-widget-error={widget.id}>
@@ -291,12 +220,15 @@ function Region({
     return null;
   }
   const { width, height } = geometry.anchor;
-  // Until the effect watches a new key, show the last result of the same query and scope.
+  // The entry of the widget, checked against the demand of this render (the effect watches after the render):
+  // a kept result while a new generation or resolution loads, loading for a changed query, never old data as fresh.
+  const demand = demands[0];
+  const shown = demand ? frame.get(entry.anchorCellId, demand.query.id) : undefined;
   const snapshot: QuerySnapshot = !query
     ? { state: 'error', message: 'Choose a named query.' }
-    : shown && (shown.key === key || (shown.match === match && settled(shown.preview.snapshot)))
-      ? shown.preview.snapshot
-      : { state: 'loading' };
+    : demand && shown
+      ? shownSnapshot(shown, demand)
+      : LOADING;
   const model = resolveBinding(snapshot, widget.binding, scope, {
     theme,
     unit: widget.unit,

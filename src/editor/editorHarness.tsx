@@ -6,6 +6,7 @@ import { bindContextFor } from '../binding/context';
 import type { DiagramConfig } from '../model/config';
 import { createQueryController } from '../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../query/panel';
+import { testQueryService } from '../query/testService';
 import type { Diagram } from '../types';
 import { BindingEditor, type BindingEditorProps } from './BindingEditor';
 import { baseRevision } from './revision';
@@ -36,17 +37,18 @@ export const testBindContext = () =>
 type AnyMock = Mock<(...args: any[]) => any>;
 
 /** A query service whose controller never answers. The query pane needs a context. */
-export const idleService = (): PanelQueryService => ({
-  controller: createQueryController(() => () => {}),
-  context: {
-    timeRange: getDefaultTimeRange(),
-    timeZone: 'utc',
-    scopedVars: {},
-    refreshMs: 0,
-    intervalMs: 1000,
-    generation: 1,
-  },
-});
+export const idleService = (): PanelQueryService =>
+  testQueryService(
+    createQueryController(() => () => {}),
+    {
+      timeRange: getDefaultTimeRange(),
+      timeZone: 'utc',
+      scopedVars: {},
+      refreshMs: 0,
+      intervalMs: 1000,
+      generation: 1,
+    }
+  );
 
 export interface EditorHarnessProps extends Partial<Omit<BindingEditorProps, 'config' | 'diagram'>> {
   config: DiagramConfig;

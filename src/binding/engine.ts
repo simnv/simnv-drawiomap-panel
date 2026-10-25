@@ -28,12 +28,18 @@ export interface PlanCellPatch extends CellPatch {
 }
 /** Read prepared models only. Query subscriptions belong to the caller. */
 export type BindingResolver = (cellId: string, binding: QueryBinding) => HistoryModel;
-export function resolveBinding(
-  snapshot: QuerySnapshot,
-  binding: QueryBinding,
-  scope: TemplateScope,
-  format?: HistoryFormat
-): HistoryModel {
+/** The binding with its match templates resolved against a cell scope, or the unresolved names. */
+const resolvedBindings = new WeakMap<QueryBinding, WeakMap<TemplateScope, QueryBinding | string[]>>();
+function resolveBindingScope(binding: QueryBinding, scope: TemplateScope): QueryBinding | string[] {
+  let byScope = resolvedBindings.get(binding);
+  if (!byScope) {
+    byScope = new WeakMap();
+    resolvedBindings.set(binding, byScope);
+  }
+  const seen = byScope.get(scope);
+  if (seen) {
+    return seen;
+  }
   const unresolved: string[] = [];
   const text = (template: string) => {
     const result = resolveTemplate(template, scope);
@@ -45,19 +51,34 @@ export function resolveBinding(
     match: Object.fromEntries(Object.entries(binding.match).map(([key, template]) => [key, text(template)])),
     field: binding.field === undefined ? undefined : text(binding.field),
   };
-  return unresolved.length
-    ? { state: 'unsupported', message: `Unresolved binding metadata: ${[...new Set(unresolved)].join(', ')}` }
+  const value = unresolved.length ? [...new Set(unresolved)] : resolved;
+  byScope.set(scope, value);
+  return value;
+}
+export function resolveBinding(
+  snapshot: QuerySnapshot,
+  binding: QueryBinding,
+  scope: TemplateScope,
+  format?: HistoryFormat
+): HistoryModel {
+  const resolved = resolveBindingScope(binding, scope);
+  return Array.isArray(resolved)
+    ? { state: 'unsupported', message: `Unresolved binding metadata: ${resolved.join(', ')}` }
     : toHistory(snapshot, resolved, format);
 }
 export interface BindingDemand {
+  /** the cell, or the anchor cell of a chart widget */
   cellId: string;
   binding: QueryBinding;
-  role: 'visible' | 'hover';
+  role: 'visible' | 'hover' | 'widget';
   rowIndex?: number;
   /** the path of the binding in its row: `binding`, `capacityBinding`, `series[j].binding`, `series[j].capacityBinding` */
   path?: string;
 }
-/** Describes visible data plus the open card's rows; does not register or execute queries. */
+/**
+ * Describes visible data, the open card's rows and the chart widgets at their anchor cells; does not register or
+ * execute queries.
+ */
 export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
   const demands: BindingDemand[] = [];
   for (const cell of Object.values(plan.cells)) {
@@ -92,6 +113,9 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
         });
       });
     }
+  }
+  for (const entry of plan.widgets) {
+    demands.push({ cellId: entry.anchorCellId, binding: entry.widget.binding, role: 'widget' });
   }
   return demands;
 }
@@ -129,17 +153,39 @@ export interface PlanBindResult {
   summaries: StatusSummary[];
 }
 
+const seriesOf = new WeakMap<HistoryModel, Map<string, SeriesInfo>>();
+
+/** The series of a model without its gaps, built once per model and query id. */
 export function historySeries(model: Extract<HistoryModel, { state: 'ready' }>, binding: QueryBinding): SeriesInfo {
-  const numeric = model.values.flatMap((value, i) => (value === null ? [] : [{ value, time: model.timestamps[i] }]));
-  return {
+  let cache = seriesOf.get(model);
+  if (!cache) {
+    cache = new Map();
+    seriesOf.set(model, cache);
+  }
+  const seen = cache.get(binding.queryId);
+  if (seen) {
+    return seen;
+  }
+  const values: number[] = [];
+  const times: number[] = [];
+  for (let i = 0; i < model.values.length; i++) {
+    const value = model.values[i];
+    if (value !== null) {
+      values.push(value);
+      times.push(model.timestamps[i]);
+    }
+  }
+  const series: SeriesInfo = {
     refId: binding.queryId,
     name: model.field.name,
     labels: model.field.labels ?? {},
     field: model.field,
-    values: numeric.map((v) => v.value),
-    times: numeric.map((v) => v.time),
+    values,
+    times,
     frame: { length: model.values.length, fields: [model.timeField, model.field] },
   };
+  cache.set(binding.queryId, series);
+  return series;
 }
 
 export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindContext, nowMs: number): PlanBindResult {

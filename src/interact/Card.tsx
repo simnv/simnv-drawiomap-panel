@@ -1,4 +1,13 @@
-import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { css, cx } from '@emotion/css';
 import { getDefaultTimeRange, getFieldSeriesColor, type GrafanaTheme2, type TimeRange } from '@grafana/data';
 import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
@@ -167,6 +176,7 @@ const Row = memo(function Row({
   pinned,
   styles,
   width,
+  chartsReady,
 }: {
   row: ConfiguredCardRow;
   timeRange: TimeRange;
@@ -174,6 +184,8 @@ const Row = memo(function Row({
   pinned: boolean;
   styles: ReturnType<typeof getStyles>;
   width: number;
+  /** false in the first commit of a hover card: the chart rows show an empty box of their final height */
+  chartsReady: boolean;
 }) {
   const theme = useTheme2();
   const stale = useSampleStale(row.sampleAt, row.freshness);
@@ -206,7 +218,9 @@ const Row = memo(function Row({
           {stale && !history ? <small role="status"> Stale data</small> : null}
         </span>
       </div>
-      {directions && row.domain ? (
+      {!chartsReady && (history || (directions && row.domain)) ? (
+        <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark" />
+      ) : directions && row.domain ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
           <ChartHover enabled={pinned} series={hoverSeries} timeRange={timeRange} timeZone={timeZone} label={row.title}>
             <MirrorSparkline
@@ -289,6 +303,17 @@ export function Card({
   const inline = variant === 'inline';
   const sheet = !inline && width < SHEET_BELOW;
   const rowTimeRange = timeRange ?? getDefaultTimeRange();
+
+  // A hover card renders in two commits. The first, in the pointer task, has the texts and an empty box of the final
+  // height per chart row, so the card is placed once. The charts (uPlot) come in a transition. A card that unmounts
+  // before it (the pointer left the cell) pays for the texts only. A pinned card and the inline card of the popup
+  // have the charts at once: the user asked for them, and they are not on a pointer path.
+  const [chartsReady, setChartsReady] = useState(pinned || inline);
+  useEffect(() => {
+    if (!chartsReady) {
+      startTransition(() => setChartsReady(true));
+    }
+  }, [chartsReady]);
 
   // The place in the panel. A hover card follows the latest pointer position of the panel (`pointerRef`, client
   // coordinates) and nothing else. A pinned card uses only its own x and y.
@@ -390,6 +415,7 @@ export function Card({
           pinned={pinned}
           styles={styles}
           width={Math.max(1, inline ? width - INLINE_CHROME : Math.min(W, width) - 16)}
+          chartsReady={chartsReady}
         />
       ))}
       {(pinned || inline) && model.links.length ? (

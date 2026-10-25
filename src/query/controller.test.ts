@@ -589,3 +589,48 @@ describe('keep the last result during a refresh', () => {
     controller.dispose();
   });
 });
+
+describe('the boundary copy', () => {
+  it('publishes one copy of the frames per ready emission: every listener gets the same object, not the executor input', () => {
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const controller = createQueryController(execute);
+    const receiveA = vi.fn();
+    const receiveB = vi.fn();
+    controller.watch(demand('a'), receiveA);
+    controller.watch(demand('b'), receiveB);
+    const input = ready();
+    const inputValues = input.state === 'ready' ? input.frames[0].fields[1].values : [];
+    execute.mock.calls[0][1](input);
+    const a: QuerySnapshot = receiveA.mock.lastCall![0];
+    const b: QuerySnapshot = receiveB.mock.lastCall![0];
+    if (a.state !== 'ready' || b.state !== 'ready' || input.state !== 'ready') {
+      throw new Error('expected ready snapshots');
+    }
+    expect(a.frames).toBe(b.frames);
+    expect(a.frames).not.toBe(input.frames);
+    expect(a.frames[0].fields[1].values).not.toBe(inputValues);
+    expect(a.frames[0].fields[1].values).toEqual([1, null, 3]);
+    // A streaming producer appends in place: the published values do not change.
+    inputValues.push(99);
+    expect(a.frames[0].fields[1].values).toEqual([1, null, 3]);
+    expect(a.frames[0].fields[1].config).toEqual({ unit: 'percent' });
+    controller.dispose();
+  });
+
+  it('retains the copy, not the executor input, for the next consumer of the same generation', () => {
+    const execute = vi.fn<QueryExecutor>(() => () => {});
+    const cache = new Map();
+    const controller = createQueryController(execute, DEFAULT_QUERY_POLICY, Date.now, cache);
+    const release = controller.watch(demand('a'), vi.fn());
+    const input = ready();
+    execute.mock.calls[0][1](input);
+    release();
+    const retained = [...cache.values()][0].snapshot;
+    expect(retained.state).toBe('ready');
+    if (retained.state === 'ready' && input.state === 'ready') {
+      expect(retained.frames).not.toBe(input.frames);
+      expect(retained.frames[0].fields[1].values).not.toBe(input.frames[0].fields[1].values);
+    }
+    controller.dispose();
+  });
+});

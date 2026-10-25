@@ -33,8 +33,9 @@ import { EMPTY_CONFIG } from '../editor/draft';
 import { legacyRulesWarning } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
-import { createPreviewResolver, statusDeadlines, usePreviewTime, type QueryPreview } from '../editor/preview';
-import { useBindingSnapshots } from '../visuals/useBindingSnapshots';
+import { statusDeadlines, usePreviewTime } from '../editor/preview';
+import { demandMap, demandsOf, resolverFrom } from '../query/store';
+import { useBindings } from '../query/useBindings';
 import { ChartLayer } from '../visuals/ChartLayer';
 import { bandLayout, StatusBand } from './StatusBand';
 import { Legend } from '../legend/Legend';
@@ -345,94 +346,36 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     () => resolvePatterns(cellMetas(stage.index), opts.config ?? EMPTY_CONFIG),
     [stage.index, opts.config]
   );
-  // Prepared chart results belong to the current plan, stage and query service only.
-  const chartOwner = useMemo(
-    () => ({ plan, root: stage.root, context: queryService?.context, controller: queryService?.controller }),
-    [plan, stage.root, queryService?.context, queryService?.controller]
+  // The visible bindings and the rows of the open card are two groups of the store with one owner. A hover over a
+  // new cell changes the card frame only: the resolver of the diagram, the bind and the patches do not run again.
+  const queryContext = queryService?.context;
+  const maxDataPoints = Math.max(1, Math.min(264, width - 16));
+  const visibleDemands = useMemo(
+    () => demandsOf(plan, queryContext, maxDataPoints, 'visible'),
+    [plan, queryContext, maxDataPoints]
   );
-  const [chartResults, setChartResults] = useState<{ owner: object; values: Record<string, QueryPreview> }>();
-  if (chartResults && chartResults.owner !== chartOwner) {
-    setChartResults(undefined);
-  }
-  const onChartPrepared = useCallback(
-    (id: string, preview?: QueryPreview) => {
-      setChartResults((previous) => {
-        const values = previous?.owner === chartOwner ? { ...previous.values } : {};
-        if (preview) {
-          values[id] = preview;
-        } else {
-          if (previous?.owner !== chartOwner || !values[id]) {
-            return previous;
-          }
-          delete values[id];
-        }
-        return { owner: chartOwner, values };
-      });
-    },
-    [chartOwner]
+  const visible = useBindings(queryService, `panel:${id}`, 'visible', visibleDemands, paused);
+  const openCellId = card?.cellId;
+  const cardDemands = useMemo(
+    () => demandsOf(plan, queryContext, maxDataPoints, 'hover', openCellId),
+    [plan, queryContext, maxDataPoints, openCellId]
   );
-  const chartSnapshots = useMemo(
-    () => Object.values(chartResults?.owner === chartOwner ? chartResults.values : {}),
-    [chartResults, chartOwner]
-  );
-  const bindingSnapshots = useBindingSnapshots(
-    plan,
-    plan.config,
-    queryService,
-    undefined,
-    Math.max(1, Math.min(264, width - 16)),
-    chartSnapshots,
-    `panel:${id}`,
-    paused,
-    'visible'
-  );
-  // The rows of the open card have their own snapshots and resolver: a hover over a new cell never changes the
-  // resolver of the diagram, so it never runs the bind or the patches again.
-  const cardSnapshots = useBindingSnapshots(
-    plan,
-    plan.config,
-    queryService,
-    card?.cellId,
-    Math.max(1, Math.min(264, width - 16)),
-    chartSnapshots,
-    `panel:${id}:card`,
-    paused,
-    'hover'
-  );
-  const activeSnapshots = useMemo(() => [...bindingSnapshots, ...chartSnapshots], [bindingSnapshots, chartSnapshots]);
+  const cardFrame = useBindings(queryService, `panel:${id}`, 'card', cardDemands, paused);
+  const format = useMemo(() => ({ theme, timeZone }), [theme, timeZone]);
+  const visibleMap = useMemo(() => demandMap(visibleDemands), [visibleDemands]);
   const resolve = useMemo(
-    () =>
-      createPreviewResolver(
-        plan,
-        plan.config,
-        data,
-        undefined,
-        {
-          theme,
-          timeZone,
-          generation: queryService?.context.generation,
-        },
-        activeSnapshots
-      ),
-    [plan, data, theme, timeZone, queryService?.context.generation, activeSnapshots]
+    () => resolverFrom([visible], visibleMap, plan, data, format),
+    [visible, visibleMap, plan, data, format]
   );
+  // The card reads its own entries first, then the visible ones: a row that reads the query of the link has its data
+  // on the first render, before the card group watches.
+  const cardMap = useMemo(() => demandMap(cardDemands, visibleDemands), [cardDemands, visibleDemands]);
   const cardResolve = useMemo(
-    () =>
-      cardSnapshots.length
-        ? createPreviewResolver(
-            plan,
-            plan.config,
-            data,
-            undefined,
-            { theme, timeZone, generation: queryService?.context.generation },
-            [...cardSnapshots, ...activeSnapshots]
-          )
-        : resolve,
-    [cardSnapshots, plan, data, theme, timeZone, queryService?.context.generation, activeSnapshots, resolve]
+    () => (cardDemands.length ? resolverFrom([cardFrame, visible], cardMap, plan, data, format) : resolve),
+    [cardDemands.length, cardFrame, visible, cardMap, plan, data, format, resolve]
   );
-  const activeStates = useMemo(() => activeSnapshots.map((value) => value.snapshot), [activeSnapshots]);
   const deadlines = useMemo(() => statusDeadlines(plan, resolve), [plan, resolve]);
-  const nowMs = usePreviewTime(data, queryService?.context.generation, undefined, activeStates, deadlines);
+  const nowMs = usePreviewTime(data, queryContext?.generation, undefined, visible.version, deadlines);
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
@@ -786,14 +729,11 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
           root={stage.root}
           cells={stage.index}
           plan={plan}
-          queries={plan.config.queries}
-          controller={queryService.controller}
-          context={queryService.context}
+          service={queryService}
           viewport={viewport}
           owner={`panel:${id}`}
           revision={`${viewKey}|${stageHeight}${JSON.stringify(view)}`}
           replaceVariables={replaceVariables}
-          onPrepared={onChartPrepared}
           paused={paused}
         />
       ) : null}

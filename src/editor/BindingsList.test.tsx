@@ -1,5 +1,6 @@
 import { buttonNamed, filterBindings, openQueryRow, openSection, selectStageCell } from './testUtils';
 import { createQueryController } from '../query/controller';
+import { testQueryService } from '../query/testService';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderEditor, svgOf, type EditorHarnessProps } from './editorHarness';
@@ -351,7 +352,7 @@ describe('bindings list', () => {
       config: native,
       svg: svgOf('device-1', 'device-2'),
       data,
-      service: { controller, context },
+      service: testQueryService(controller, context),
     });
     selectStageCell('device-1');
     openQueryRow('One');

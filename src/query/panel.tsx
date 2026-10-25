@@ -5,10 +5,13 @@ import type { DataSourceRef } from '@grafana/schema';
 import { createQueryController } from './controller';
 import { createGrafanaExecutor } from './grafana';
 import { generationOf, newQuerySession, type QuerySession, querySession, retainQuerySession } from './session';
+import { createSnapshotStore, type SnapshotStore } from './store';
 import type { QueryContext, QueryController } from './types';
 
 export interface PanelQueryService {
   controller?: QueryController;
+  /** The live results of every consumer of the controller. Present with the controller. */
+  store?: SnapshotStore;
   context: QueryContext;
 }
 export const PanelQueryContext = createContext<PanelQueryService | undefined>(undefined);
@@ -39,19 +42,26 @@ export function PanelQueryProvider({
   const session = sessionKey === undefined ? privateSession : querySession(sessionKey);
   // The controller belongs to the session it was made for. After a session change the old controller is not exposed
   // at once, so a consumer never watches a disposed one; the replacement is attached by the effect below.
-  const [attached, setAttached] = useState<{ session: QuerySession; controller: QueryController }>();
+  const [attached, setAttached] = useState<{
+    session: QuerySession;
+    controller: QueryController;
+    store: SnapshotStore;
+  }>();
   const controller = attached?.session === session ? attached.controller : undefined;
+  const store = attached?.session === session ? attached.store : undefined;
   useEffect(() => {
     const release = sessionKey === undefined ? undefined : retainQuerySession(sessionKey);
     const current = createQueryController(createGrafanaExecutor(), undefined, undefined, session.cache);
+    const currentStore = createSnapshotStore(current);
     let attached = true;
     queueMicrotask(() => {
       if (attached) {
-        setAttached({ session, controller: current });
+        setAttached({ session, controller: current, store: currentStore });
       }
     });
     return () => {
       attached = false;
+      currentStore.dispose();
       current.dispose();
       release?.();
     };
@@ -96,6 +106,6 @@ export function PanelQueryProvider({
     setResolved({ signature, context: { ...nextContext, generation: generationOf(session, signature) } });
   }
   const context = resolved.context;
-  const service = useMemo(() => ({ controller, context }), [controller, context]);
+  const service = useMemo(() => ({ controller, store, context }), [controller, store, context]);
   return <PanelQueryContext.Provider value={service}>{children}</PanelQueryContext.Provider>;
 }
