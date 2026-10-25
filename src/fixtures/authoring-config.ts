@@ -1,4 +1,4 @@
-import type { DiagramConfigV2, NamedQuery, QueryBinding } from '../model/config';
+import type { DiagramConfig, NamedQuery, QueryBinding } from '../model/config';
 
 /** Fictional routers and constant values: no live infrastructure or credentials. */
 export const binding = (queryId: string): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
@@ -6,10 +6,10 @@ export const nativeQuery = (id: string, expr: string, parameters: Record<string,
   const target = { refId: id.toUpperCase(), expr, range: true };
   return { id, name: id, source: { kind: 'datasource', target, parameters } };
 };
-export function authoringConfig(prometheus: string, testdata: string): DiagramConfigV2 {
+export function authoringConfig(prometheus: string, testdata: string): DiagramConfig {
   const trendTarget = { refId: 'TREND', scenarioId: 'random_walk', alias: 'Sanitized trend' };
   return {
-    version: 2,
+    version: 3,
     defaultDatasource: { uid: prometheus, type: 'prometheus' },
     queries: [
       nativeQuery('health', 'label_replace(vector(1), "device", "$dm_key", "", "")', { dm_key: 'cell.key' }),
@@ -54,11 +54,11 @@ export function authoringConfig(prometheus: string, testdata: string): DiagramCo
         name: 'Directional traffic',
         select: { ids: ['link-1'] },
         display: {
-          link: { a2bBinding: binding('health'), b2aBinding: binding('health'), capacity: 100 },
+          link: { a2b: { binding: binding('health') }, b2a: { binding: binding('health') }, capacity: 100 },
           hover: {
             rows: [
               {
-                kind: 'history',
+                kind: 'combined',
                 label: 'Traffic',
                 unit: 'bps',
                 // an asymmetric link: each direction has its own capacity, from the attributes of the link

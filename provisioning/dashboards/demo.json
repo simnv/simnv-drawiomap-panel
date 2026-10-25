@@ -291,7 +291,7 @@
           "updatedAt": "2026-10-17T00:00:00.000Z"
         },
         "config": {
-          "version": 2,
+          "version": 3,
           "queries": [
             {
               "id": "A",
@@ -351,28 +351,32 @@
               },
               "display": {
                 "link": {
-                  "a2bBinding": {
-                    "queryId": "A",
-                    "match": {
-                      "job": "node-${from.node}",
-                      "device": "${from.port}"
-                    },
-                    "reducer": "last"
+                  "a2b": {
+                    "binding": {
+                      "queryId": "A",
+                      "match": {
+                        "job": "node-${from.node}",
+                        "device": "${from.port}"
+                      },
+                      "reducer": "last"
+                    }
                   },
-                  "b2aBinding": {
-                    "queryId": "A",
-                    "match": {
-                      "job": "node-${to.node}",
-                      "device": "${to.port}"
-                    },
-                    "reducer": "last"
+                  "b2a": {
+                    "binding": {
+                      "queryId": "A",
+                      "match": {
+                        "job": "node-${to.node}",
+                        "device": "${to.port}"
+                      },
+                      "reducer": "last"
+                    }
                   }
                 },
                 "hover": {
                   "title": "${from.node} ↔ ${to.node}",
                   "rows": [
                     {
-                      "kind": "history",
+                      "kind": "combined",
                       "label": "Traffic",
                       "series": [
                         {
@@ -438,27 +442,31 @@
               },
               "display": {
                 "link": {
-                  "a2bBinding": {
-                    "queryId": "W",
-                    "match": {
-                      "job": "node-${from.node}",
-                      "device": "${from.port}"
-                    },
-                    "reducer": "last"
+                  "a2b": {
+                    "binding": {
+                      "queryId": "W",
+                      "match": {
+                        "job": "node-${from.node}",
+                        "device": "${from.port}"
+                      },
+                      "reducer": "last"
+                    }
                   },
-                  "b2aBinding": {
-                    "queryId": "W",
-                    "match": {
-                      "job": "node-${to.node}",
-                      "device": "${to.port}"
-                    },
-                    "reducer": "last"
+                  "b2a": {
+                    "binding": {
+                      "queryId": "W",
+                      "match": {
+                        "job": "node-${to.node}",
+                        "device": "${to.port}"
+                      },
+                      "reducer": "last"
+                    }
                   }
                 },
                 "hover": {
                   "rows": [
                     {
-                      "kind": "history",
+                      "kind": "combined",
                       "label": "Traffic",
                       "series": [
                         {
@@ -505,7 +513,7 @@
                 "hover": {
                   "rows": [
                     {
-                      "kind": "history",
+                      "kind": "combined",
                       "label": "Traffic",
                       "series": [
                         {
@@ -688,7 +696,7 @@
           "updatedAt": "2026-10-17T00:00:00.000Z"
         },
         "config": {
-          "version": 2,
+          "version": 3,
           "queries": [
             {
               "id": "A",
@@ -711,28 +719,32 @@
               },
               "display": {
                 "link": {
-                  "a2bBinding": {
-                    "queryId": "A",
-                    "match": {
-                      "job": "node-isp-a",
-                      "device": "pppoe"
-                    },
-                    "reducer": "last"
+                  "a2b": {
+                    "binding": {
+                      "queryId": "A",
+                      "match": {
+                        "job": "node-isp-a",
+                        "device": "pppoe"
+                      },
+                      "reducer": "last"
+                    }
                   },
-                  "b2aBinding": {
-                    "queryId": "A",
-                    "match": {
-                      "job": "node-rtr-a",
-                      "device": "wan1"
-                    },
-                    "reducer": "last"
+                  "b2a": {
+                    "binding": {
+                      "queryId": "A",
+                      "match": {
+                        "job": "node-rtr-a",
+                        "device": "wan1"
+                      },
+                      "reducer": "last"
+                    }
                   },
                   "capacity": "${cell.capacity}"
                 },
                 "hover": {
                   "rows": [
                     {
-                      "kind": "history",
+                      "kind": "combined",
                       "label": "Traffic",
                       "capacity": "${cell.capacity}",
                       "series": [
@@ -789,7 +801,7 @@
       },
       "options": {
         "config": {
-          "version": 2,
+          "version": 3,
           "defaultDatasource": {
             "uid": "victoriametrics",
             "type": "prometheus"
@@ -934,22 +946,26 @@
               },
               "display": {
                 "link": {
-                  "a2bBinding": {
-                    "queryId": "health",
-                    "match": {},
-                    "reducer": "last"
+                  "a2b": {
+                    "binding": {
+                      "queryId": "health",
+                      "match": {},
+                      "reducer": "last"
+                    }
                   },
-                  "b2aBinding": {
-                    "queryId": "health",
-                    "match": {},
-                    "reducer": "last"
+                  "b2a": {
+                    "binding": {
+                      "queryId": "health",
+                      "match": {},
+                      "reducer": "last"
+                    }
                   },
                   "capacity": 100
                 },
                 "hover": {
                   "rows": [
                     {
-                      "kind": "history",
+                      "kind": "combined",
                       "label": "Traffic",
                       "unit": "bps",
                       "series": [
