@@ -95,11 +95,11 @@ describe('DrawioModal start-up', () => {
     await settle();
     const help = screen.getByTestId('dmap-editor-help');
     expect(help.tagName).toBe('BUTTON');
-    expect(help.getAttribute('aria-label')).toContain('Keep cell IDs unchanged to retain bindings.');
+    expect(help.getAttribute('aria-label')).toBe('About this editor');
     expect(screen.getByTestId('dmap-editor-modal').textContent).not.toContain('Move or resize');
-    act(() => help.focus());
+    fireEvent.click(help);
     await settle();
-    expect(screen.getByRole('tooltip').textContent).toContain('Assign queries and chart settings');
+    expect(screen.getByTestId('dmap-editor-help-text').textContent).toContain('Keep cell IDs unchanged to retain bindings. Assign queries and chart settings');
   });
 
   it('shows the missing-editor message and no frame when dist/drawio is missing, and Close closes', async () => {

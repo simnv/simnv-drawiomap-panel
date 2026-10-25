@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { Alert, Button, Icon, Modal, Spinner, Tooltip } from '@grafana/ui';
+import { Alert, Button, Icon, Modal, Spinner, Toggletip } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
 import {
   acceptChannelHello,
@@ -19,30 +19,42 @@ import { bundledEditorBase, editorTarget } from './target';
 import { EditorLoad, HELLO_TIMEOUT_MS, nextLoad, probeEditor } from './availability';
 
 const styles = {
+  // The doubled selector wins over the Grafana Modal rules (top 10%, max-height 80%, margins and padding).
   modal: css`
-    width: 96vw;
-    max-width: 96vw;
-    height: 94vh;
-    height: 94dvh;
-    max-height: 94vh;
-    max-height: 94dvh;
-    display: flex;
-    flex-direction: column;
+    && {
+      top: 50%;
+      transform: translateY(-50%);
+      width: 96vw;
+      max-width: 96vw;
+      height: 94vh;
+      height: 94dvh;
+      max-height: 94vh;
+      max-height: 94dvh;
+      display: flex;
+      flex-direction: column;
+    }
     @media (max-width: 600px) {
-      width: 100vw;
-      max-width: 100vw;
-      height: 100vh;
-      height: 100dvh;
-      max-height: 100vh;
-      max-height: 100dvh;
-      border-radius: 0;
+      && {
+        top: 0;
+        transform: none;
+        width: 100vw;
+        max-width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        max-height: 100vh;
+        max-height: 100dvh;
+        border-radius: 0;
+      }
     }
   `,
   content: css`
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    padding: 0;
+    && {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      padding: 0;
+      margin-bottom: 0;
+    }
   `,
   titleRow: css`
     display: flex;
@@ -202,11 +214,11 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
         <div className={styles.titleRow}>
           <h2>{heading}</h2>
           {mode === 'edit' && (
-            <Tooltip content={HELP} placement="bottom">
-              <button type="button" className={styles.help} aria-label={HELP} data-testid="dmap-editor-help">
+            <Toggletip content={<span data-testid="dmap-editor-help-text">{HELP}</span>} placement="bottom" closeButton={false}>
+              <button type="button" className={styles.help} aria-label="About this editor" data-testid="dmap-editor-help">
                 <Icon name="info-circle" />
               </button>
-            </Tooltip>
+            </Toggletip>
           )}
         </div>
       }
