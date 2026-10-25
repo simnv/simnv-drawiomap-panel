@@ -218,7 +218,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
     if (display.link?.enabled !== false && display.link) {
       const link = display.link;
       const states: HalfState[] = [];
-      patch.link = {};
+      patch.link = { labelMode: link.label?.mode ?? 'none' };
       for (const direction of ['a2b', 'b2a'] as const) {
         const own = link[direction];
         const binding = own?.binding;

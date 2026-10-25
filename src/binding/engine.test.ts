@@ -1142,3 +1142,47 @@ describe('the capacity text in the unit of the field', () => {
     expect(free.label).toMatch(/^41(\.0)? Mb\/s$/);
   });
 });
+
+describe('link label mode on the patch', () => {
+  const bindAll = (config: DiagramConfig) => {
+    const plan = resolvePatterns(cells, config);
+    return bindPlan(
+      plan,
+      (cellId, b) =>
+        resolveBinding(
+          { state: 'ready', fetchedAt: 1000, fromCache: false, frames: traffic.filter((f) => f.refId === b.queryId) },
+          b,
+          plan.cells[cellId].scope
+        ),
+      ctx,
+      1000
+    ).patches;
+  };
+  const base: DiagramConfig = {
+    version: 3,
+    queries: [{ id: 'A', name: 'A', source: { kind: 'panel', refId: 'A' } }],
+    patterns: [{ id: 'p', name: 'P', select: { kind: 'link' }, display: linkDisplay }],
+    overrides: [],
+    widgets: [],
+  };
+  const ISP = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+  const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';
+  it('is none when the config has no label key', () => {
+    expect(bindAll(base).get(ISP)!.link!.labelMode).toBe('none');
+  });
+  it('comes from the pattern; an override that sets none switches one link off', () => {
+    const patches = bindAll({
+      ...base,
+      patterns: [
+        {
+          ...base.patterns[0],
+          display: { ...linkDisplay, link: { ...linkDisplay.link, label: { mode: 'percent' } } },
+        },
+      ],
+      overrides: [{ cellId: RADIO, display: { link: { label: { mode: 'none' } } } }],
+    });
+    expect(patches.get(ISP)!.link!.labelMode).toBe('percent');
+    expect(patches.get(RADIO)!.link!.labelMode).toBe('none');
+    expect(patches.get(RADIO)!.link!.a2b?.status).toBe('ok');
+  });
+});

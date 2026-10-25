@@ -15,6 +15,9 @@ describe('leafPaths', () => {
       'link.a2b.binding.match.id',
     ]);
   });
+  it('lists the link label mode as one leaf', () => {
+    expect(leafPaths({ link: { label: { mode: 'percent' } } })).toEqual(['link.label.mode']);
+  });
   it('treats an array as one leaf at the array path', () => {
     expect(leafPaths({ hover: { enabled: true, rows: [{ kind: 'metadata', label: 'a', path: 'p' }] } })).toEqual([
       'hover.enabled',

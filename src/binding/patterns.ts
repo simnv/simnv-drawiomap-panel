@@ -153,6 +153,7 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
         'link.capacityBinding'
       ),
       capacity: patch.link.capacity ?? previous?.capacity,
+      label: patch.link.label ?? previous?.label,
     };
   }
   if (patch.shape) {

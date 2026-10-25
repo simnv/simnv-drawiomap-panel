@@ -630,3 +630,25 @@ describe('link directions', () => {
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
   });
 });
+
+describe('validateConfig: link label', () => {
+  const withLabel = (label: unknown) => ({
+    ...empty(),
+    queries: [panelQuery('q')],
+    patterns: [{ id: 'p', name: 'P', select: { kind: 'link' }, display: { link: { a2b: { binding }, label } } }],
+  });
+  it('parses the three modes and keeps the leaf in the round trip', () => {
+    for (const mode of ['percent', 'value', 'none']) {
+      const result = validateConfig(withLabel({ mode }));
+      expect(result.diagnostics).toEqual([]);
+      expect(result.config).toEqual(withLabel({ mode }));
+    }
+  });
+  it('skips the item for "both", for an unknown key and for a bare string', () => {
+    for (const label of [{ mode: 'both' }, { mode: 'percent', color: 'red' }, 'percent']) {
+      const result = validateConfig(withLabel(label));
+      expect(skippedOf(result, 'patterns')).toEqual([0]);
+      expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
+    }
+  });
+});
