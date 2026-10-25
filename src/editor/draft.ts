@@ -70,7 +70,11 @@ export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternI
   const { patterns } = draft.config;
   const at = draft.patternIndex;
   // a skipped pattern may have no readable id: the exact index is the only handle on it
-  if (at !== undefined && patterns[at] && (patterns[at].id === draft.patternId || typeof patterns[at].id !== 'string')) {
+  if (
+    at !== undefined &&
+    patterns[at] &&
+    (patterns[at].id === draft.patternId || typeof patterns[at].id !== 'string')
+  ) {
     return at;
   }
   return patterns.findIndex((p) => p?.id === draft.patternId);

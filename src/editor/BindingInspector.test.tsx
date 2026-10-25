@@ -231,7 +231,9 @@ describe('inspector of a skipped pattern', () => {
     setup(broken);
     fireEvent.click(screen.getByRole('button', { name: 'Edit pattern Broken' }));
     const problems = screen.getByRole('list', { name: 'Pattern problems' });
-    const items = within(problems).getAllByRole('listitem').map((li) => li.textContent);
+    const items = within(problems)
+      .getAllByRole('listitem')
+      .map((li) => li.textContent);
     expect(items).toHaveLength(3);
     expect(items).toEqual(
       expect.arrayContaining([

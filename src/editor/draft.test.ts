@@ -644,7 +644,11 @@ describe('items stay byte for byte', () => {
     max: 100,
   };
   it('an edit of a widget label keeps its other fields, in their saved order', () => {
-    const base = createDraft({ ...saved, queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }], widgets: [widget] });
+    const base = createDraft({
+      ...saved,
+      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
+      widgets: [widget],
+    });
     const next = reduceDraft(base, { type: 'widget', widget: { ...widget, label: 'CPU' } });
     expect(JSON.stringify(next.config.widgets[0])).toBe(JSON.stringify({ ...widget, label: 'CPU' }));
   });

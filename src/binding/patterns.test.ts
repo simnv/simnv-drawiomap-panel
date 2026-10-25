@@ -98,7 +98,9 @@ describe('resolvePatterns', () => {
           display: { link: { a2b: { binding: b({ device: 'p1' }), capacity: '${cell.capacity_a2b_bps}' } } },
         },
       ],
-      overrides: [{ cellId: 'l1', display: { link: { a2b: { capacityBinding: b({ job: 'cap' }) }, b2a: { capacity: 50 } } } }],
+      overrides: [
+        { cellId: 'l1', display: { link: { a2b: { capacityBinding: b({ job: 'cap' }) }, b2a: { capacity: 50 } } } },
+      ],
       widgets: [],
     };
     const plan = resolvePatterns(cells, config);
@@ -490,10 +492,16 @@ describe('resolvePatterns with items that do not parse or cannot run', () => {
           id: 'p',
           name: 'P',
           select: {},
-          display: { shape: { binding: { ...binding, queryId: 'native' } }, link: { a2b: { binding: { ...binding, queryId: 'missing' } } } },
+          display: {
+            shape: { binding: { ...binding, queryId: 'native' } },
+            link: { a2b: { binding: { ...binding, queryId: 'missing' } } },
+          },
         },
       ],
-      widgets: [widget('w', { binding: { ...binding, queryId: 'missing' } }), widget('w2', { binding: { ...binding, queryId: 'native' } })],
+      widgets: [
+        widget('w', { binding: { ...binding, queryId: 'missing' } }),
+        widget('w2', { binding: { ...binding, queryId: 'native' } }),
+      ],
     });
     expect(plan.cells.a.bindings).toEqual([]);
     expect(plan.cells.a.unavailable).toBeUndefined();
@@ -503,8 +511,16 @@ describe('resolvePatterns with items that do not parse or cannot run', () => {
     ]);
     expect(plan.diagnostics).toEqual(
       expect.arrayContaining([
-        { code: 'unknown-query', path: 'cells.a.link.a2b.binding.queryId', message: expect.stringMatching(/does not exist/) },
-        { code: 'unknown-query', path: 'cells.a.shape.binding.queryId', message: 'Query native cannot run: choose a datasource.' },
+        {
+          code: 'unknown-query',
+          path: 'cells.a.link.a2b.binding.queryId',
+          message: expect.stringMatching(/does not exist/),
+        },
+        {
+          code: 'unknown-query',
+          path: 'cells.a.shape.binding.queryId',
+          message: 'Query native cannot run: choose a datasource.',
+        },
         expect.objectContaining({ code: 'missing-datasource', path: 'queries[0].source.datasource' }),
       ])
     );

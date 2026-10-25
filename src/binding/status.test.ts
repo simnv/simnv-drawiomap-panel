@@ -15,7 +15,10 @@ describe('evaluateStatus', () => {
     const fresh = { queryId: 'health', availability: 'ready' as const, value: 1, sampleAt: 999 };
     expect(evaluateStatus(rule, [fresh], 1000)).toMatchObject({ state: 'missing', reason: 'Invalid freshness policy' });
     const stale = { ...fresh, sampleAt: 0 };
-    expect(evaluateStatus(rule, [stale], 100000)).toMatchObject({ state: 'missing', reason: 'Invalid freshness policy' });
+    expect(evaluateStatus(rule, [stale], 100000)).toMatchObject({
+      state: 'missing',
+      reason: 'Invalid freshness policy',
+    });
   });
   it('treats zero as down only through the explicit health mapping', () => {
     expect(evaluateStatus(health, [{ queryId: 'health', availability: 'ready', value: 0 }], 1000)).toMatchObject({

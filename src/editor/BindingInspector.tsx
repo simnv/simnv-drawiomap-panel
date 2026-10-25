@@ -38,10 +38,7 @@ export function BindingInspector({
   // The items that parse, dense: the merge, the provenance and the field sources read these, never a skipped item.
   const validated = useMemo(() => validateConfig(draft.config), [draft.config]);
   const config = validated.config;
-  const provenance = useMemo(
-    () => (meta && config ? displayProvenance(config, meta) : undefined),
-    [config, meta]
-  );
+  const provenance = useMemo(() => (meta && config ? displayProvenance(config, meta) : undefined), [config, meta]);
   useLayoutEffect(() => {
     if (!draft.cellId) {
       return;
@@ -55,7 +52,9 @@ export function BindingInspector({
   const name = displayName(meta, draft.cellId);
   const savedIndex = draft.scope === 'pattern' ? draftPatternIndex(draft) : -1;
   const skippedPattern =
-    savedIndex >= 0 ? validated.skippedItems.find((i) => i.section === 'patterns' && i.index === savedIndex) : undefined;
+    savedIndex >= 0
+      ? validated.skippedItems.find((i) => i.section === 'patterns' && i.index === savedIndex)
+      : undefined;
   if (skippedPattern) {
     // A pattern that does not parse has no form: its problems with their paths, and the delete button.
     const prefix = `patterns[${savedIndex}]`;
@@ -71,7 +70,9 @@ export function BindingInspector({
         <h3 ref={heading} tabIndex={-1}>
           {skippedPattern.title}
         </h3>
-        <p>{skippedPattern.title} is not applied until its errors are fixed. The panel shows its cells as unavailable.</p>
+        <p>
+          {skippedPattern.title} is not applied until its errors are fixed. The panel shows its cells as unavailable.
+        </p>
         <ul aria-label="Pattern problems">
           {problems.map((d, i) => (
             <li key={i}>
@@ -79,11 +80,7 @@ export function BindingInspector({
             </li>
           ))}
         </ul>
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={() => dispatch({ type: 'remove-pattern', index: savedIndex })}
-        >
+        <Button variant="destructive" size="sm" onClick={() => dispatch({ type: 'remove-pattern', index: savedIndex })}>
           Delete pattern
         </Button>
       </section>

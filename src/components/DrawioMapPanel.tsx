@@ -427,16 +427,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
             [...cardSnapshots, ...activeSnapshots]
           )
         : resolve,
-    [
-      cardSnapshots,
-      plan,
-      data,
-      theme,
-      timeZone,
-      queryService?.context.generation,
-      activeSnapshots,
-      resolve,
-    ]
+    [cardSnapshots, plan, data, theme, timeZone, queryService?.context.generation, activeSnapshots, resolve]
   );
   const activeStates = useMemo(() => activeSnapshots.map((value) => value.snapshot), [activeSnapshots]);
   const deadlines = useMemo(() => statusDeadlines(plan, resolve), [plan, resolve]);
