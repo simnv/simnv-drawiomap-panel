@@ -231,6 +231,38 @@ describe('renderLinkLabels: the refresh path', () => {
     expect(a.getAttribute('transform')).toBe(transform);
     expect(a.textContent).toBe('42 Mb/s');
   });
+  it('a dropped half keeps its side for its mate: a resize of the mate stays on that side, the recovery follows it', () => {
+    // above the a2b leg a node blocks every spot, below it two blocks leave a gap of 60: both halves start below
+    const blocks = [
+      '<g data-cell-id="top"><g><rect x="40" y="60" width="160" height="26"/></g></g>',
+      '<g data-cell-id="l"><g><rect x="40" y="106" width="50" height="24"/></g></g>',
+      '<g data-cell-id="r"><g><rect x="150" y="106" width="50" height="24"/></g></g>',
+    ].join('');
+    const { root, index } = build(SVG(blocks));
+    const value = (a: string, b: string): PatchMap =>
+      new Map([
+        [
+          'e1',
+          linkPatch('e1', {
+            a2b: half({ display: { text: a, numeric: 0 } }),
+            b2a: half({ display: { text: b, numeric: 0 } }),
+            labelMode: 'value',
+          }),
+        ],
+      ]);
+    const below = (el: SVGTextElement) => Number(el.getAttribute('y')) > 100;
+    expect(render(root, index, value('41 Mb/s', '10 Mb/s'))).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    expect(below(byHalf(root, 'a2b')!)).toBe(true);
+    expect(below(byHalf(root, 'b2a')!)).toBe(true);
+    // a2b widens and fits nowhere; b2a changes its slot and is placed again
+    expect(render(root, index, value('abcdefghijklmn Mb/s', '10 Mb/s')).dropped).toBe(1);
+    render(root, index, value('abcdefghijklmn Mb/s', '100 Mb/s'));
+    expect(below(byHalf(root, 'b2a')!)).toBe(true);
+    // a2b shrinks again: it recovers on the side of b2a
+    render(root, index, value('41 Mb/s', '100 Mb/s'));
+    expect(below(byHalf(root, 'a2b')!)).toBe(true);
+    expect(below(byHalf(root, 'b2a')!)).toBe(true);
+  });
   it('a changed linkWidth.max, mode or stage places everything again; a theme change repaints only', () => {
     const { root, index } = build();
     render(root, index, two());

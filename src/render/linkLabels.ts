@@ -84,6 +84,8 @@ interface LabelRecord {
   slot?: number;
   el?: SVGTextElement;
   placement?: Placement;
+  /** the side of the last spot the label held; a dropped half keeps it with its reserved box */
+  side?: 1 | -1;
   /** the box the label holds in the grid */
   obstacle?: Obstacle;
   /** an isolated re-placement found no spot: the label is hidden and tries again on the next call */
@@ -673,9 +675,9 @@ function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
     rec.obstacle = undefined;
     return false;
   }
-  // an isolated re-placement keeps the side of the other half of the link when that half is placed
-  const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.placement;
-  const sides: ReadonlyArray<1 | -1> = mate && 'centre' in mate ? [mate.side, mate.side === 1 ? -1 : 1] : [1, -1];
+  // an isolated re-placement tries first the side the other half of the link holds (or held before it dropped)
+  const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.side;
+  const sides: ReadonlyArray<1 | -1> = mate ? [mate, mate === 1 ? -1 : 1] : [1, -1];
   return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides));
 }
 
@@ -691,6 +693,7 @@ function inputOf(rec: LabelRecord): LegInput | undefined {
 function hold(layout: LabelLayout, rec: LabelRecord, placement: Placement): boolean {
   rec.placement = placement;
   if ('centre' in placement) {
+    rec.side = placement.side;
     rec.obstacle = { kind: 'rect', rect: boundsOf(placement.box), clearance: 0 };
     layout.grid.add(rec.obstacle);
     return true;
