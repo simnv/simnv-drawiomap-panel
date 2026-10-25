@@ -529,9 +529,63 @@ describe('drawnCentre: the text stands at the drawn stroke, the reservation at t
   });
   it('the wide gap and the stroke place', () => {
     const wide = placed(placeOnLadder(l, 'e', obstacleIndex([]), [2]));
-    expect(drawnCentre(wide, 2)).toEqual({ x: 100, y: -11 });
+    // the wide gap counts from the widest stroke edge, whatever the drawn width
+    expect(drawnCentre(wide, 2)).toEqual({ x: 100, y: -15 });
+    expect(drawnCentre(wide, 10)).toEqual({ x: 100, y: -15 });
     const on = placed(placeOnLadder(l, 'e', obstacleIndex([]), [0]));
     expect(drawnCentre(on, 2)).toEqual({ x: 100, y: 0 });
+  });
+});
+
+describe('the reservation sweeps the drawn width range', () => {
+  // a stroke drawn between 2 and 30 wide; the slot is 24 × 10
+  const wide = leg(horizontal(0, 200, 100), { strokeRoot: 30, minRoot: 2 });
+  const inside = (outer: Rect, inner: Rect) =>
+    inner.x >= outer.x - 1e-9 &&
+    inner.y >= outer.y - 1e-9 &&
+    inner.x + inner.width <= outer.x + outer.width + 1e-9 &&
+    inner.y + inner.height <= outer.y + outer.height + 1e-9;
+  /** the text box (with the halo) of a placed label for a stroke drawn `w` wide; the link is horizontal */
+  const textBox = (p: Placed, w: number): Rect => {
+    const c = drawnCentre(p, w);
+    return { x: c.x - p.box.width / 2, y: c.y - p.height / 2, width: p.box.width, height: p.height };
+  };
+  /** the gap rect of a label on its stroke for a stroke drawn `w` wide */
+  const gapRect = (p: Placed, w: number): Rect => {
+    const height = Math.max(10, w + 2);
+    return { x: p.anchor.x - 12, y: p.anchor.y - height / 2, width: 24, height };
+  };
+  const meets = (a: Rect, b: Rect) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  it('beside the stroke the reservation holds the text for every drawn width', () => {
+    for (const side of [1, -1, 2, -2] as const) {
+      const p = placed(placeOnLadder(wide, 'e', obstacleIndex([]), [side]));
+      for (const w of [2, 10, 30]) {
+        expect(inside(boundsOf(p.box), textBox(p, w))).toBe(true);
+      }
+    }
+  });
+  it('on the stroke the reservation holds the largest gap rect', () => {
+    const p = placed(placeOnLadder(wide, 'e', obstacleIndex([]), [0]));
+    for (const w of [2, 10, 30]) {
+      expect(inside(boundsOf(p.box), gapRect(p, w))).toBe(true);
+    }
+  });
+  it('a node that the text would meet at a thin stroke blocks the spot beside the stroke', () => {
+    // the top box at the widest stroke is y 71..83; at the width 2 the text stands at y 85..97
+    const node = rect(90, 86, 20, 28);
+    const p = placed(placeOnLadder(wide, 'e', obstacleIndex([node]), [1]));
+    for (const w of [2, 30]) {
+      expect(meets(textBox(p, w), node.kind === 'rect' ? node.rect : (undefined as never))).toBe(false);
+    }
+    expect(p.centre.x).not.toBe(100);
+  });
+  it('a node that the gap rect would cover blocks the spot on the stroke', () => {
+    const node = rect(90, 108, 20, 5);
+    const p = placed(placeOnLadder(wide, 'e', obstacleIndex([node]), [0]));
+    expect(meets(gapRect(p, 30), node.kind === 'rect' ? node.rect : (undefined as never))).toBe(false);
+    expect(p.anchor.x).not.toBe(100);
   });
 });
 

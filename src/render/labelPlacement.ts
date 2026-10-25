@@ -34,8 +34,10 @@ export interface LegInput {
   length: number;
   /** the slot size without the halo */
   size: { width: number; height: number };
-  /** the stroke width of the edge in root units (`strokeLocal × geo.unit`) */
+  /** the widest stroke of the edge in root units (`linkWidth.max × geo.unit`) */
   strokeRoot: number;
+  /** the thinnest stroke in root units (`linkWidth.min × geo.unit`); the width of a half is drawn between the two */
+  minRoot?: number;
 }
 
 export type Obstacle =
@@ -60,6 +62,10 @@ export interface Placed {
   along: number;
   /** where the box stands: see `LabelSide` */
   side: LabelSide;
+  /** the height of the text box (with the halo); `box` is taller: it holds the box for every drawn width */
+  height: number;
+  /** the widest stroke in root units: the wide gap counts from its edge, whatever the drawn width */
+  maxRoot: number;
   /** the point of the leg the box stands at, and the unit vector of the top side: `drawnCentre` needs them */
   anchor: Point;
   normal: Point;
@@ -368,9 +374,18 @@ export function placeHalfLabel(
   if (Math.max(...runs.map((r) => r.to - r.from)) < w + 2 * endMargin - EPS) {
     return { dropped: 'short-leg' };
   }
-  // beside the stroke the near edge of the box stands `normalGap` (or `wideGap`) beyond the stroke edge
+  // The reservation is the union of the boxes the label can take for any drawn width between `minRoot` and
+  // `strokeRoot`. Beside the stroke the near edge of the text box stands `normalGap` (or `wideGap`) beyond the drawn
+  // stroke edge: the swept band runs from the near edge at the thinnest stroke to the far edge at the widest. On the
+  // stroke it is as high as the largest gap rect.
+  const minRoot = Math.min(leg.minRoot ?? leg.strokeRoot, leg.strokeRoot);
+  // The wide gap (a chip or a pill beside the stroke is wider than a thin stroke) counts from the edge of the widest
+  // stroke for every drawn width: its text does not move with the load.
   const offsetOf = (side: LabelSide) =>
-    Math.sign(side) * ((Math.abs(side) === 2 ? wideGap : normalGap) + leg.strokeRoot / 2 + h / 2);
+    Math.sign(side) *
+    (Math.abs(side) === 2 ? wideGap + leg.strokeRoot / 2 + h / 2 : normalGap + (minRoot + leg.strokeRoot) / 4 + h / 2);
+  const sweptHeight = (side: LabelSide) =>
+    side === 0 ? Math.max(h, leg.strokeRoot + 2) : Math.abs(side) === 2 ? h : h + (leg.strokeRoot - minRoot) / 2;
   const d0 = leg.length / 2;
   // the distances from the middle, the lower one first at each step; the same list serves both sides
   const distances: number[] = [d0];
@@ -410,9 +425,19 @@ export function placeHalfLabel(
     for (const { d, anchor, heading, ownPiece } of candidates) {
       const shift = offsetOf(side);
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
-      const box: OrientedBox = { centre, width: w, height: h, degrees: heading.degrees };
+      const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
       if (!collides(box, ownPiece, index)) {
-        return { centre, degrees: heading.degrees, box, along: d, side, anchor, normal: heading.first };
+        return {
+          centre,
+          degrees: heading.degrees,
+          box,
+          along: d,
+          side,
+          height: h,
+          maxRoot: leg.strokeRoot,
+          anchor,
+          normal: heading.first,
+        };
       }
     }
   }
@@ -429,7 +454,8 @@ export function drawnCentre(p: Placed, drawnRoot: number): Point {
     return p.anchor;
   }
   const { normalGap, wideGap } = LINK_LABEL_GEOMETRY;
-  const shift = Math.sign(p.side) * ((Math.abs(p.side) === 2 ? wideGap : normalGap) + drawnRoot / 2 + p.box.height / 2);
+  const wide = Math.abs(p.side) === 2;
+  const shift = Math.sign(p.side) * ((wide ? wideGap : normalGap) + (wide ? p.maxRoot : drawnRoot) / 2 + p.height / 2);
   return { x: p.anchor.x + p.normal.x * shift, y: p.anchor.y + p.normal.y * shift };
 }
 

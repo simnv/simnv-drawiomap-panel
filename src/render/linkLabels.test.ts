@@ -232,7 +232,7 @@ describe('renderLinkLabels: the refresh path', () => {
     // a node sits on the whole stroke, another above the a2b leg; below it two blocks leave a gap of 60:
     // both halves start below the stroke
     const blocks = [
-      '<g data-cell-id="strip"><g><rect x="40" y="95" width="320" height="10"/></g></g>',
+      '<g data-cell-id="strip"><g><rect x="40" y="98" width="320" height="4"/></g></g>',
       '<g data-cell-id="top"><g><rect x="40" y="60" width="160" height="26"/></g></g>',
       '<g data-cell-id="l"><g><rect x="40" y="106" width="50" height="24"/></g></g>',
       '<g data-cell-id="r"><g><rect x="150" y="106" width="50" height="24"/></g></g>',
@@ -287,7 +287,7 @@ describe('renderLinkLabels: the refresh path', () => {
 });
 
 describe('renderLinkLabels: the place of a label', () => {
-  const strip = '<g data-cell-id="strip"><g><rect x="40" y="95" width="320" height="10"/></g></g>';
+  const strip = '<g data-cell-id="strip"><g><rect x="40" y="98" width="320" height="4"/></g></g>';
   const above = '<g data-cell-id="above"><g><rect x="40" y="60" width="320" height="26"/></g></g>';
   const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
   const bgs = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGRectElement>('rect.dmap-link-label-bg'));
@@ -353,9 +353,12 @@ describe('renderLinkLabels: the place of a label', () => {
     render(root, index, widths(4));
     const bg = bgs(root)[0];
     expect(Number(bg.getAttribute('height'))).toBe(10);
+    // the widest stroke, linkWidth.max 10: the rect is 12 high; a wider width is clamped to the range
+    render(root, index, widths(10));
+    expect(Number(bg.getAttribute('height'))).toBe(12);
+    expect(Number(bg.getAttribute('y'))).toBe(94);
     render(root, index, widths(14));
-    expect(Number(bg.getAttribute('height'))).toBe(16);
-    expect(Number(bg.getAttribute('y'))).toBe(92);
+    expect(Number(bg.getAttribute('height'))).toBe(12);
   });
   it('both halves go to the bottom side when the top side is blocked along the whole half of one', () => {
     const { root, index } = build(SVG(strip + above));
@@ -389,7 +392,7 @@ describe('renderLinkLabels: the gap rect follows its label', () => {
   // thin strips on the stroke leave a gap of 60 around the anchor of a2b: a short text fits on the stroke, a long one
   // stands beside it (above is free)
   const strips = ['40', '150']
-    .map((x) => `<g data-cell-id="s${x}"><g><rect x="${x}" y="95" width="50" height="10"/></g></g>`)
+    .map((x) => `<g data-cell-id="s${x}"><g><rect x="${x}" y="98" width="50" height="4"/></g></g>`)
     .join('');
   const value = (text: string): PatchMap =>
     new Map([

@@ -112,6 +112,7 @@ interface LabelLayout {
   records: Map<string, LabelRecord>;
   /** `linkWidth.max` of the placement: the widest stroke, in the units of the edge */
   max: number;
+  min: number;
 }
 
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
@@ -161,6 +162,7 @@ export function renderLinkLabels(
     slots.map((s) => `${s.cellId}:${s.which}:${s.mode}`).join('\n'),
     patched.join('\n'),
     opts.linkWidth.max,
+    opts.linkWidth.min,
     fontFamily,
   ].join('|');
   const started = typeof performance === 'undefined' ? 0 : performance.now();
@@ -559,12 +561,13 @@ function nearestOnPolyline(pts: Point[], p: Point): { at: number; point: Point }
   return { at: best.at, point: best.point };
 }
 
-const legOf = (id: string, points: Point[], strokeRoot: number): Leg => ({
+const legOf = (id: string, points: Point[], strokeRoot: number, minRoot = strokeRoot): Leg => ({
   id,
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
   strokeRoot,
+  minRoot,
 });
 
 /**
@@ -575,7 +578,8 @@ function edgeLegs(
   entry: CellEntry,
   root: SVGSVGElement,
   max: number,
-  halves: { a2b: boolean; b2a: boolean }
+  halves: { a2b: boolean; b2a: boolean },
+  min = max
 ): EdgeLegs {
   const line = entry.line!;
   const id = entry.meta.id;
@@ -588,6 +592,7 @@ function edgeLegs(
     return {};
   }
   const strokeRoot = max * scaleOf(m);
+  const minRoot = Math.min(min, max) * scaleOf(m);
   if (halves.a2b && halves.b2a) {
     // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
     // then the point in the path's own space, into root units through the same matrix as the vertices
@@ -595,13 +600,13 @@ function edgeLegs(
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
-      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot),
-      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot),
+      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot),
+      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot),
     };
   }
   return halves.a2b
-    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot) }
-    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot) };
+    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot) }
+    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot) };
 }
 
 /* ---------- the layer and its elements ---------- */
@@ -781,6 +786,7 @@ function fullPlacement(
     widths: new Map(),
     records: new Map(),
     max: opts.linkWidth.max,
+    min: opts.linkWidth.min,
   };
   const probe: TextProbe = (text, font) => measure(layout, text, font);
   // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
@@ -789,7 +795,7 @@ function fullPlacement(
     if (!legs.has(slot.cellId)) {
       legs.set(
         slot.cellId,
-        edgeLegs(index.get(slot.cellId)!, root, opts.linkWidth.max, halvesOf(patches, slot.cellId))
+        edgeLegs(index.get(slot.cellId)!, root, opts.linkWidth.max, halvesOf(patches, slot.cellId), opts.linkWidth.min)
       );
     }
   }
@@ -838,7 +844,8 @@ function fullPlacement(
 
 /** The drawn stroke width of a half in root units: its width in the units of the edge, converted as the widest one is. */
 function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): number {
-  const width = Math.max(state.width, 0);
+  // the reservation holds the widths between linkWidth.min and linkWidth.max only
+  const width = Math.min(Math.max(state.width, layout.min), layout.max);
   return leg && layout.max > 0 ? (width * leg.strokeRoot) / layout.max : width;
 }
 
