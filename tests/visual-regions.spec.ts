@@ -1,6 +1,6 @@
 import { expect, observeQueries, svg, test } from './authoring-fixtures';
 import { binding, nativeQuery } from '../src/fixtures/authoring-config';
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 
 test('visible health becomes stale without another response or network request', async ({
   page,
@@ -41,7 +41,7 @@ type State = (typeof STATES)[number];
 /** The loading panel gets its own expression, so the route holds only its query. */
 const LOADING_EXPR = 'vector(1) + 0';
 
-function stateConfig(base: DiagramConfigV2, state: State): DiagramConfigV2 {
+function stateConfig(base: DiagramConfig, state: State): DiagramConfig {
   const config = structuredClone(base);
   const expr =
     state === 'error'

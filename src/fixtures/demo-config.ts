@@ -1,4 +1,4 @@
-import type { DiagramConfigV2, HoverRow, NamedQuery, Pattern, QueryBinding } from '../model/config';
+import type { DiagramConfig, HoverRow, NamedQuery, Pattern, QueryBinding } from '../model/config';
 
 /**
  * The bindings of the two demo panels (provisioning/dashboards/demo.json). The series come from the synthetic
@@ -17,7 +17,7 @@ const HOST = { job: 'node-${cell.pg-id}' };
 
 /** One combined up/down row: up leaves the first end (a2b), down enters it (b2a). */
 const trafficRow = (queryId: string, capacity?: number): HoverRow => ({
-  kind: 'history',
+  kind: 'combined',
   label: 'Traffic',
   series: [
     { binding: bind(queryId, FROM), direction: 'up' },
@@ -35,14 +35,14 @@ const nodeRows = (): HoverRow[] => [
  * demo-l3: LAN links take their capacity from the port speed series S, WAN links from the field Max (an override
  * of query W), tunnels from a number. Later patterns override earlier ones for the same property of the same cell.
  */
-export function demoL3Config(): DiagramConfigV2 {
+export function demoL3Config(): DiagramConfig {
   const patterns: Pattern[] = [
     {
       id: 'links',
       name: 'Links',
       select: { kind: 'link' },
       display: {
-        link: { a2bBinding: bind('A', FROM), b2aBinding: bind('A', TO) },
+        link: { a2b: { binding: bind('A', FROM) }, b2a: { binding: bind('A', TO) } },
         hover: { title: '${from.node} ↔ ${to.node}', rows: [trafficRow('A')] },
         url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}',
         urlTitle: 'Traffic of ${from.node}:${from.port}',
@@ -59,7 +59,7 @@ export function demoL3Config(): DiagramConfigV2 {
       name: 'WAN uplinks',
       select: { kind: 'link', attrs: { 'pg-to': '/^rtr-(a|b):(wan1|wan2|wan3|pppoe)$/' } },
       display: {
-        link: { a2bBinding: bind('W', FROM), b2aBinding: bind('W', TO) },
+        link: { a2b: { binding: bind('W', FROM) }, b2a: { binding: bind('W', TO) } },
         hover: { rows: [trafficRow('W')] },
       },
     },
@@ -101,7 +101,7 @@ export function demoL3Config(): DiagramConfigV2 {
     },
   ];
   return {
-    version: 2,
+    version: 3,
     queries: ['A', 'W', 'S', 'C', 'D', 'E'].map(panelQuery),
     patterns,
     overrides: [],
@@ -110,11 +110,11 @@ export function demoL3Config(): DiagramConfigV2 {
 }
 
 /** hand-drawn: a plain draw.io diagram. The capacity comes from the `capacity` attribute of each edge. */
-export function handDrawnConfig(): DiagramConfigV2 {
+export function handDrawnConfig(): DiagramConfig {
   const a2b = bind('A', { job: 'node-isp-a', device: 'pppoe' });
   const b2a = bind('A', { job: 'node-rtr-a', device: 'wan1' });
   return {
-    version: 2,
+    version: 3,
     queries: [panelQuery('A')],
     patterns: [
       {
@@ -122,11 +122,11 @@ export function handDrawnConfig(): DiagramConfigV2 {
         name: 'Hand links',
         select: { ids: ['edge-ab', 'edge-cd'] },
         display: {
-          link: { a2bBinding: a2b, b2aBinding: b2a, capacity: '${cell.capacity}' },
+          link: { a2b: { binding: a2b }, b2a: { binding: b2a }, capacity: '${cell.capacity}' },
           hover: {
             rows: [
               {
-                kind: 'history',
+                kind: 'combined',
                 label: 'Traffic',
                 capacity: '${cell.capacity}',
                 series: [

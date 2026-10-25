@@ -95,6 +95,33 @@ const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
 });
 
 describe('applyPatches', () => {
+  it('paints an unavailable cell grey with data-dmap-status="unavailable"; the drawn fill comes back only without the patch', () => {
+    const index = build();
+    const GREY = /^(#999999|rgb\(153, 153, 153\))$/;
+    const unavailable = { reason: 'Pattern X is not applied', color: '#999999' };
+    const patches = new Map([
+      ['n1', patch('n1', { unavailable })],
+      ['e1', patch('e1', { unavailable })],
+    ]);
+    const n1 = index.get('n1')!;
+    const e1 = index.get('e1')!;
+    const original = (n1.shape as SVGElement).style.fill;
+    let prev = applyPatches(index, patches, new Set());
+    expect((n1.shape as SVGElement).style.fill).toMatch(GREY);
+    expect(n1.group.getAttribute('data-dmap-status')).toBe('unavailable');
+    expect(n1.group.getAttribute('data-dmap-reason')).toBe('Pattern X is not applied');
+    expect(n1.group.getAttribute('aria-label')).toBe('rtr-a: unavailable. Pattern X is not applied');
+    expect(e1.line!.style.stroke).toMatch(GREY);
+    expect(e1.group.getAttribute('data-dmap-status')).toBe('unavailable');
+    // the next apply resets and paints again: the grey stays, the drawn fill does not come back
+    prev = applyPatches(index, patches, prev);
+    expect((n1.shape as SVGElement).style.fill).toMatch(GREY);
+    expect(e1.line!.style.stroke).toMatch(GREY);
+    applyPatches(index, new Map(), prev);
+    expect((n1.shape as SVGElement).style.fill).toBe(original);
+    expect(e1.line!.style.stroke).toBe('');
+    expect(n1.group.getAttribute('data-dmap-status')).toBeNull();
+  });
   it('marks explicit health accessibly without coloring normal shapes and resets its reason', () => {
     const index = build();
     const statusView: StatusView = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 import type { Diagram } from '../types';
 import { createDraft, type DraftAction } from './draft';
 import {
@@ -11,8 +11,8 @@ import {
   type HistoryState,
 } from './history';
 
-const config: DiagramConfigV2 = {
-  version: 2,
+const config: DiagramConfig = {
+  version: 3,
   queries: [],
   overrides: [],
   widgets: [],
@@ -29,6 +29,18 @@ const labelOf = (s: HistoryState, cellId = 'a') =>
   s.present.config.overrides.find((o) => o.cellId === cellId)?.display.label;
 
 describe('history', () => {
+  it('a draft loaded from a config with null entries edits and undoes without them', () => {
+    const nulls = { ...config, overrides: [null], widgets: [null], queries: [null] } as unknown as DiagramConfig;
+    let s = reduceHistory(createHistory(createDraft(nulls, diagram(0))), { type: 'select', cellId: 'a' });
+    s = run(s, [
+      [display('one'), 0],
+      [display('two'), 5000],
+    ]);
+    expect(labelOf(s)).toBe('two');
+    s = reduceHistory(s, { type: 'undo' });
+    expect(labelOf(s)).toBe('one');
+    expect(s.present.config.overrides.every((o) => typeof o === 'object' && o !== null)).toBe(true);
+  });
   it('undoes ten edits and redoes them', () => {
     let s = start({ coalesceMs: 0 });
     for (let i = 1; i <= 10; i++) {
@@ -219,7 +231,7 @@ describe('history', () => {
     expect(fresh.past).toHaveLength(1);
     expect(fresh.present.config.overrides[0].display.shape?.binding?.field).toBe('abc');
     // An existing binding: one leaf per keystroke from the start.
-    const withBinding: DiagramConfigV2 = {
+    const withBinding: DiagramConfig = {
       ...config,
       overrides: [{ cellId: 'a', display: { shape: { binding: binding('') } } }],
     };

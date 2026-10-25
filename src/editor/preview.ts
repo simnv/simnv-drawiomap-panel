@@ -1,7 +1,7 @@
-import { type PanelData } from '@grafana/data';
+import { type DataSourceRef, type PanelData } from '@grafana/data';
 import { resolveBinding, type BindingResolver } from '../binding/engine';
 import type { BindingPlan } from '../binding/patterns';
-import type { DiagramConfigV2, NamedQuery } from '../model/config';
+import type { DiagramConfig, NamedQuery } from '../model/config';
 import type { HistoryFormat } from '../query/frames';
 import type { QueryContext, QuerySnapshot } from '../query/types';
 import { useEffect, useState } from 'react';
@@ -83,7 +83,7 @@ export interface QueryPreview {
 /** Select compatible prepared results without registering demand or consulting another cache. */
 export function previewSnapshot(
   query: NamedQuery,
-  config: Pick<DiagramConfigV2, 'defaultDatasource'>,
+  config: Pick<DiagramConfig, 'defaultDatasource'>,
   data: PanelData,
   cellId: string,
   preview?: QueryPreview,
@@ -97,10 +97,13 @@ export function previewSnapshot(
   return preparedSnapshot(query, config, cellId, preview, active, generation, purpose);
 }
 
+/** Two references name the same datasource: the same uid and type, whatever the key order of their JSON. */
+const sameDatasource = (a: DataSourceRef | undefined, b: DataSourceRef | undefined): boolean =>
+  a?.uid === b?.uid && a?.type === b?.type;
 /** Share compatibility checks; reuse prefers success while display preserves its authoritative result order. */
 export function preparedSnapshot(
   query: NamedQuery,
-  config: Pick<DiagramConfigV2, 'defaultDatasource'>,
+  config: Pick<DiagramConfig, 'defaultDatasource'>,
   cellId: string,
   preview?: QueryPreview,
   active: QueryPreview[] = [],
@@ -117,7 +120,7 @@ export function preparedSnapshot(
       !(purpose === 'reuse' && result.kept) &&
       JSON.stringify(result.query) === JSON.stringify(query) &&
       (generation === undefined || generation === result.context.generation) &&
-      JSON.stringify(result.context.defaultDatasource) === JSON.stringify(config.defaultDatasource) &&
+      sameDatasource(result.context.defaultDatasource, config.defaultDatasource) &&
       (result.cellId === cellId || !parameterized)
   );
   // Reuse data before empty success. Display must still expose a later saved monitoring failure.
@@ -133,7 +136,7 @@ export function preparedSnapshot(
 }
 export function createPreviewResolver(
   plan: BindingPlan,
-  config: DiagramConfigV2,
+  config: DiagramConfig,
   data: PanelData,
   preview?: QueryPreview,
   format: HistoryFormat & { generation?: number } = {},

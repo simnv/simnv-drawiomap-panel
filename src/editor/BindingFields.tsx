@@ -155,7 +155,7 @@ export function BindingFields({
   queries: NamedQuery[];
   fields?: string[];
   onChange: (value?: QueryBinding) => void;
-  /** The display path of the binding, for example `link.a2bBinding`. */
+  /** The display path of the binding, for example `link.a2b.binding`. */
   path?: string;
   /** A bulk edit of bindings that differ: the section shows the chip and no field, so no partial binding is built. */
   mixed?: boolean;
@@ -406,19 +406,31 @@ export function DisplayFields({
             onChange={(e) => onChange({ link: { ...value.link, enabled: e.currentTarget.checked } })}
           />
         </EditorField>
-        {(['a2bBinding', 'b2aBinding', 'capacityBinding'] as const).map((key, i) => (
+        {(['a2b', 'b2a'] as const).map((direction, i) => (
           <BindingFields
-            key={key}
-            label={['A to B', 'B to A', 'Capacity'][i]}
-            path={`link.${key}`}
-            mixed={mixedBindings.includes(`link.${key}`)}
+            key={direction}
+            label={['A to B', 'B to A'][i]}
+            path={`link.${direction}.binding`}
+            mixed={mixedBindings.includes(`link.${direction}.binding`)}
             {...src}
-            value={value.link?.[key]}
+            value={value.link?.[direction]?.binding}
             queries={queries}
             fields={fields}
-            onChange={(binding) => onChange({ link: { ...value.link, [key]: binding } })}
+            onChange={(binding) =>
+              onChange({ link: { ...value.link, [direction]: { ...value.link?.[direction], binding } } })
+            }
           />
         ))}
+        <BindingFields
+          label="Capacity"
+          path="link.capacityBinding"
+          mixed={mixedBindings.includes('link.capacityBinding')}
+          {...src}
+          value={value.link?.capacityBinding}
+          queries={queries}
+          fields={fields}
+          onChange={(binding) => onChange({ link: { ...value.link, capacityBinding: binding } })}
+        />
         <TextField
           label="Link capacity"
           path="link.capacity"
@@ -669,12 +681,17 @@ export function DisplayFields({
                           ? { kind, label, path: 'cell.key' }
                           : kind === 'drilldown'
                             ? { kind, label, url: '/d/' }
-                            : kind === 'history'
-                              ? { kind, label, binding: newBinding(first) }
-                              : { kind: 'value', label, binding: newBinding(first) }
+                            : kind === 'combined'
+                              ? { kind, label, series: [{ binding: newBinding(first), direction: 'up' }] }
+                              : kind === 'history'
+                                ? { kind, label, binding: newBinding(first) }
+                                : { kind: 'value', label, binding: newBinding(first) }
                       );
                     }}
-                    options={['metadata', 'value', 'history', 'drilldown'].map((k) => ({ value: k, label: k }))}
+                    options={['metadata', 'value', 'history', 'combined', 'drilldown'].map((k) => ({
+                      value: k,
+                      label: k,
+                    }))}
                     menuShouldPortal
                     maxMenuHeight={240}
                   />
@@ -775,7 +792,7 @@ export function DisplayFields({
                         onChange={(max) => setRow(i, { ...row, max })}
                       />
                     )}
-                    {row.kind === 'history' ? (
+                    {row.kind === 'history' || row.kind === 'combined' ? (
                       <BoundField
                         label={`Hover row ${i + 1} height`}
                         path={`hover.rows[${i}].height`}

@@ -1,7 +1,10 @@
 import {
+  EMPTY_CONFIG,
+  emptyEntriesNote,
   validateConfig,
+  withoutEmptyEntries,
   type Diagnostic,
-  type DiagramConfigV2,
+  type DiagramConfig,
   type DisplayConfig,
   type NamedQuery,
   type Pattern,
@@ -11,12 +14,10 @@ import type { CellSelector, Diagram } from '../types';
 import { previewPatternImport, type ImportResolution } from './portable';
 import { setLeaf, unsetPath } from './leafPaths';
 export { exportPatternDocument, previewPatternImport } from './portable';
-export { unsetPath };
-
-export const EMPTY_CONFIG: DiagramConfigV2 = { version: 2, queries: [], patterns: [], overrides: [], widgets: [] };
+export { unsetPath, EMPTY_CONFIG };
 export interface BindingDraft {
-  saved: DiagramConfigV2;
-  config: DiagramConfigV2;
+  saved: DiagramConfig;
+  config: DiagramConfig;
   cellId?: string;
   scope: 'element' | 'pattern';
   patternId?: string;
@@ -41,7 +42,7 @@ export type DraftAction =
   /** Remove a path from the display of the edited owner (the cell override or the edited pattern). */
   | { type: 'unset'; path: string }
   | { type: 'query'; query: NamedQuery }
-  | { type: 'default-datasource'; datasource: DiagramConfigV2['defaultDatasource'] }
+  | { type: 'default-datasource'; datasource: DiagramConfig['defaultDatasource'] }
   | { type: 'pattern'; pattern: Pattern }
   | { type: 'selector'; select: CellSelector }
   | { type: 'widget'; widget: Widget }
@@ -49,6 +50,8 @@ export type DraftAction =
   /** Remove a named query. Bindings that still use it get a diagnostic. */
   | { type: 'remove-query'; id: string }
   | { type: 'remove-override'; cellId: string }
+  /** Remove the pattern at a saved index (a skipped pattern has no usable id). The scope returns to the element. */
+  | { type: 'remove-pattern'; index: number }
   | { type: 'import'; config: unknown }
   | { type: 'import-patterns'; document: unknown; cellIds: string[]; resolution: ImportResolution }
   | { type: 'diagram'; diagram: Diagram }
@@ -67,16 +70,25 @@ function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfi
 /** The index of the pattern that the draft edits. It honours the exact index while that pattern still has the ID. */
 export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternId' | 'patternIndex'>): number {
   const { patterns } = draft.config;
-  return draft.patternIndex !== undefined && patterns[draft.patternIndex]?.id === draft.patternId
-    ? draft.patternIndex
-    : patterns.findIndex((p) => p.id === draft.patternId);
+  const at = draft.patternIndex;
+  // a skipped pattern may have no readable id: the exact index is the only handle on it
+  if (
+    at !== undefined &&
+    patterns[at] &&
+    (patterns[at].id === draft.patternId || typeof patterns[at].id !== 'string')
+  ) {
+    return at;
+  }
+  return patterns.findIndex((p) => p.id === draft.patternId);
 }
-export function createDraft(config: DiagramConfigV2, diagram?: Diagram): BindingDraft {
+export function createDraft(config: DiagramConfig, diagram?: Diagram): BindingDraft {
+  // the boundary: after it every item of a list is an object, and the editor reads them as such
+  const { config: clean, removed } = withoutEmptyEntries(copy(config));
   return {
-    saved: copy(config),
-    config: copy(config),
+    saved: copy(clean),
+    config: clean,
     scope: 'element',
-    diagnostics: [],
+    diagnostics: removed ? [emptyEntriesNote(removed)] : [],
     diagram,
     savedDiagram: diagram,
   };
@@ -112,11 +124,12 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
   if (action.type === 'import-patterns') {
     const preview = previewPatternImport(config, action.document, action.cellIds, action.resolution);
     return preview.config
-      ? { ...draft, config: preview.config, diagnostics: [] }
+      ? { ...draft, config: preview.config, diagnostics: preview.notes }
       : { ...draft, diagnostics: preview.diagnostics };
   } else if (action.type === 'import') {
     const result = validateConfig(action.config);
-    if (!result.config) {
+    // a document with an item that does not parse is not imported: its items would go missing without a trace
+    if (!result.config || result.skippedItems.length) {
       return { ...draft, diagnostics: result.diagnostics };
     }
     const incoming = result.config;
@@ -255,10 +268,16 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     config = { ...config, widgets: config.widgets.filter((w) => w.id !== action.id) };
   } else if (action.type === 'remove-override') {
     config = { ...config, overrides: config.overrides.filter((o) => o.cellId !== action.cellId) };
+  } else if (action.type === 'remove-pattern') {
+    if (!config.patterns[action.index]) {
+      return draft;
+    }
+    config = { ...config, patterns: config.patterns.filter((_, i) => i !== action.index) };
+    return { ...draft, config, diagnostics: [], scope: 'element', patternId: undefined, patternIndex: undefined };
   }
   return { ...draft, config, diagnostics: [] };
 }
-export function commitDraft(draft: BindingDraft): DiagramConfigV2 {
+export function commitDraft(draft: BindingDraft): DiagramConfig {
   const result = validateConfig(draft.config);
   const diagnostics = [...draft.diagnostics, ...result.diagnostics];
   if (!result.config || diagnostics.length) {

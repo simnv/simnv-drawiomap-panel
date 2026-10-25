@@ -1,4 +1,12 @@
-import { displayBindings, type DiagramConfigV2, type Diagnostic, type DisplayConfig } from '../model/config';
+import {
+  displayBindings,
+  EMPTY_CONFIG,
+  type Diagnostic,
+  type DisplayConfig,
+  type Section,
+  type SkippedItem,
+  type ValidatedConfig,
+} from '../model/config';
 import { cellMatches } from '../binding/select';
 import { displayProvenance, ownersOfPath } from '../binding/patterns';
 import { displayName } from '../adapter/cellTitle';
@@ -15,9 +23,11 @@ export interface RowProblem {
 interface RowBase {
   /** stable and unique key of the row, also when IDs collide */
   key: string;
-  /** index in its config array */
+  /** index in the saved config array */
   index: number;
   problems: RowProblem[];
+  /** the saved item does not parse: a problem row with its diagnostics, no matches, no form */
+  skipped?: boolean;
 }
 export interface PatternRow extends RowBase {
   kind: 'pattern';
@@ -85,72 +95,181 @@ function cellOfPath(path: string, ids: string[]): { cellId: string; rest: string
   return found;
 }
 
+/** A list row of a skipped item: the saved index, a title from the raw name or id, no matches, its problems. */
+function skippedRows<R extends BindingRow>(
+  section: Section,
+  validated: ValidatedConfig,
+  dense: R[],
+  make: (item: SkippedItem) => R
+): R[] {
+  const bySaved = new Map<number, R>();
+  dense.forEach((row, j) => bySaved.set(validated.indices[section][j], row));
+  for (const item of validated.skippedItems) {
+    if (item.section === section) {
+      bySaved.set(item.index, make(item));
+    }
+  }
+  return Array.from(bySaved.keys())
+    .sort((a, b) => a - b)
+    .map((index) => bySaved.get(index)!);
+}
+
+/** The list reads a validated config. A plain config is a clean one: every item parses, dense equals saved. */
 /**
  * Build the rows of the "All bindings" list from the config, the cells of the diagram and the diagnostics that the
  * editor and the engine already produce (config validation, pattern resolution, metric resolution, hover cards).
  * Pure: the caller decides which diagnostics it has. Matching uses the selector code of the engine (`cellMatches`).
+ * The rows follow the saved order and carry the saved index; a skipped item is a problem row without matches, and
+ * neither `cellMatches` nor the merge ever sees it.
  */
-export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], diagnostics: Diagnostic[]): BindingsList {
+export function buildBindingsList(
+  validated: ValidatedConfig,
+  cells: CellMeta[],
+  diagnostics: Diagnostic[]
+): BindingsList {
+  const config = validated.config ?? EMPTY_CONFIG;
   const ids = cells.map((c) => c.id);
   const byId = new Map(cells.map((c) => [c.id, c]));
-  const patternMatches = config.patterns.map((p) => cells.filter((c) => cellMatches(p.select, c)));
-  const patterns: PatternRow[] = config.patterns.map((p, i) => ({
-    kind: 'pattern',
-    key: `pattern:${i}:${p.id}`,
-    index: i,
-    patternId: p.id,
-    name: p.name,
-    selector: p.select.kind ?? 'any',
-    queryIds: queryIdsOf(p.display),
-    matched: patternMatches[i].map((c) => c.id),
-    matchedLabels: patternMatches[i].flatMap((c) => [c.labelText, c.title ?? '']).filter(Boolean),
-    problems: [],
-  }));
-  const overrides: OverrideRow[] = config.overrides.map((o, i) => ({
-    kind: 'override',
-    key: `override:${i}:${o.cellId}`,
-    index: i,
-    cellId: o.cellId,
-    label: byId.get(o.cellId)?.labelText ?? '',
-    handle: byId.get(o.cellId)?.handle ?? o.cellId,
-    title:
-      byId.has(o.cellId) && displayName(byId.get(o.cellId), o.cellId) !== (byId.get(o.cellId)?.handle ?? o.cellId)
-        ? displayName(byId.get(o.cellId), o.cellId)
-        : '',
-    keys: Object.entries(o.display)
-      .filter(([, value]) => value !== undefined)
-      .map(([key]) => key),
-    queryIds: queryIdsOf(o.display),
-    exists: byId.has(o.cellId),
-    problems: [],
-  }));
-  const widgets: WidgetRow[] = config.widgets.map((w, i) => ({
-    kind: 'widget',
-    key: `widget:${i}:${w.id}`,
-    index: i,
-    widgetId: w.id,
-    label: w.label,
-    widgetKind: w.kind,
-    anchorCellId: w.anchorCellId,
-    queryId: w.binding.queryId,
-    exists: byId.has(w.anchorCellId),
-    problems: [],
-  }));
+  const savedIndex = (section: Section, j: number) => validated.indices[section][j];
+  const patternMatches = new Map<number, CellMeta[]>();
+  const patterns: PatternRow[] = skippedRows(
+    'patterns',
+    validated,
+    config.patterns.map((p, j): PatternRow => {
+      const index = savedIndex('patterns', j);
+      const matched = cells.filter((c) => cellMatches(p.select, c));
+      patternMatches.set(index, matched);
+      return {
+        kind: 'pattern',
+        key: `pattern:${index}:${p.id}`,
+        index,
+        patternId: p.id,
+        name: p.name,
+        selector: p.select.kind ?? 'any',
+        queryIds: queryIdsOf(p.display),
+        matched: matched.map((c) => c.id),
+        matchedLabels: matched.flatMap((c) => [c.labelText, c.title ?? '']).filter(Boolean),
+        problems: [],
+      };
+    }),
+    (item) => ({
+      kind: 'pattern',
+      key: `pattern:${item.index}:skipped`,
+      index: item.index,
+      patternId: item.id ?? item.title,
+      name: item.title.replace(/^Pattern /, ''),
+      selector: '',
+      queryIds: [],
+      matched: [],
+      matchedLabels: [],
+      problems: [],
+      skipped: true,
+    })
+  );
+  const overrides: OverrideRow[] = skippedRows(
+    'overrides',
+    validated,
+    config.overrides.map((o, j): OverrideRow => {
+      const index = savedIndex('overrides', j);
+      return {
+        kind: 'override',
+        key: `override:${index}:${o.cellId}`,
+        index,
+        cellId: o.cellId,
+        label: byId.get(o.cellId)?.labelText ?? '',
+        handle: byId.get(o.cellId)?.handle ?? o.cellId,
+        title:
+          byId.has(o.cellId) && displayName(byId.get(o.cellId), o.cellId) !== (byId.get(o.cellId)?.handle ?? o.cellId)
+            ? displayName(byId.get(o.cellId), o.cellId)
+            : '',
+        keys: Object.entries(o.display)
+          .filter(([, value]) => value !== undefined)
+          .map(([key]) => key),
+        queryIds: queryIdsOf(o.display),
+        exists: byId.has(o.cellId),
+        problems: [],
+      };
+    }),
+    (item) => ({
+      kind: 'override',
+      key: `override:${item.index}:skipped`,
+      index: item.index,
+      cellId: item.cellId ?? '',
+      label: '',
+      handle: item.cellId ?? item.title,
+      title: '',
+      keys: [],
+      queryIds: [],
+      exists: item.cellId !== undefined && byId.has(item.cellId),
+      problems: [],
+      skipped: true,
+    })
+  );
+  const widgets: WidgetRow[] = skippedRows(
+    'widgets',
+    validated,
+    config.widgets.map((w, j): WidgetRow => {
+      const index = savedIndex('widgets', j);
+      return {
+        kind: 'widget',
+        key: `widget:${index}:${w.id}`,
+        index,
+        widgetId: w.id,
+        label: w.label,
+        widgetKind: w.kind,
+        anchorCellId: w.anchorCellId,
+        queryId: w.binding.queryId,
+        exists: byId.has(w.anchorCellId),
+        problems: [],
+      };
+    }),
+    (item) => ({
+      kind: 'widget',
+      key: `widget:${item.index}:skipped`,
+      index: item.index,
+      widgetId: item.id ?? item.title,
+      label: item.title.replace(/^Widget /, ''),
+      widgetKind: 'sparkline',
+      anchorCellId: '',
+      queryId: '',
+      exists: false,
+      problems: [],
+      skipped: true,
+    })
+  );
 
   const referencingCount = (queryId: string) =>
     patterns.filter((row) => row.queryIds.includes(queryId)).length +
     overrides.filter((row) => row.queryIds.includes(queryId)).length +
     widgets.filter((row) => row.queryId === queryId).length;
-  const queries: QueryRow[] = config.queries.map((q, i) => ({
-    kind: 'query',
-    key: `query:${i}:${q.id}`,
-    index: i,
-    queryId: q.id,
-    name: q.name,
-    sourceKind: q.source.kind,
-    uses: referencingCount(q.id),
-    problems: [],
-  }));
+  const queries: QueryRow[] = skippedRows(
+    'queries',
+    validated,
+    config.queries.map((q, j): QueryRow => {
+      const index = savedIndex('queries', j);
+      return {
+        kind: 'query',
+        key: `query:${index}:${q.id}`,
+        index,
+        queryId: q.id,
+        name: q.name,
+        sourceKind: q.source.kind,
+        uses: referencingCount(q.id),
+        problems: [],
+      };
+    }),
+    (item) => ({
+      kind: 'query',
+      key: `query:${item.index}:skipped`,
+      index: item.index,
+      queryId: item.id ?? item.title,
+      name: item.title.replace(/^Query /, ''),
+      sourceKind: 'panel',
+      uses: 0,
+      problems: [],
+      skipped: true,
+    })
+  );
 
   const provenance = new Map<string, ReturnType<typeof displayProvenance>>();
   const provenanceOf = (cell: CellMeta) => {
@@ -168,6 +287,9 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
       (row ? row.problems : general).push(problem);
     }
   };
+  /** the row of a saved index in a section */
+  const rowAt = <R extends BindingRow>(rows: R[], index: number | undefined): R | undefined =>
+    index === undefined ? undefined : rows.find((row) => row.index === index);
   const indexed = (path: string, section: string) => {
     const match = new RegExp(`^${section}\\[(\\d+)\\]`).exec(path);
     return match ? Number(match[1]) : undefined;
@@ -179,26 +301,22 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
   ];
   for (const d of diagnostics) {
     const problem: RowProblem = { code: d.code, message: d.message, path: d.path };
-    const p = indexed(d.path, 'patterns');
-    const o = indexed(d.path, 'overrides');
-    const w = indexed(d.path, 'widgets');
-    const q = indexed(d.path, 'queries');
-    if (p !== undefined && patterns[p]) {
+    const p = rowAt(patterns, indexed(d.path, 'patterns'));
+    const o = rowAt(overrides, indexed(d.path, 'overrides'));
+    const w = rowAt(widgets, indexed(d.path, 'widgets'));
+    const q = rowAt(queries, indexed(d.path, 'queries'));
+    if (p) {
       // A colliding ID is a problem of every pattern that has it: any of them would open the wrong one.
-      const rows =
-        d.code === 'duplicate-pattern-id'
-          ? patterns.filter((r) => r.patternId === patterns[p].patternId)
-          : [patterns[p]];
+      const rows = d.code === 'duplicate-pattern-id' ? patterns.filter((r) => r.patternId === p.patternId) : [p];
       rows.forEach((row) => add(row, problem));
-    } else if (o !== undefined && overrides[o]) {
-      add(overrides[o], problem);
-    } else if (w !== undefined && widgets[w]) {
-      const rows =
-        d.code === 'duplicate-widget-id' ? widgets.filter((r) => r.widgetId === widgets[w].widgetId) : [widgets[w]];
+    } else if (o) {
+      add(o, problem);
+    } else if (w) {
+      const rows = d.code === 'duplicate-widget-id' ? widgets.filter((r) => r.widgetId === w.widgetId) : [w];
       rows.forEach((row) => add(row, problem));
-    } else if (q !== undefined && queries[q]) {
+    } else if (q) {
       // The query row owns the problem. The rows that use the query show it too.
-      [queries[q], ...referencing(queries[q].queryId)].forEach((row) => add(row, problem));
+      [q, ...referencing(q.queryId)].forEach((row) => add(row, problem));
     } else {
       const hit = cellOfPath(d.path, ids);
       if (!hit) {
@@ -207,14 +325,15 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
       }
       // Blame every owner that contributed a field of the failing path to the merge (the shared merge says who).
       // When none did, the merge itself is the cause: blame all the owners of the cell.
-      const matching = patterns.filter((_, i) => patternMatches[i].some((c) => c.id === hit.cellId));
+      const matching = patterns.filter((row) => patternMatches.get(row.index)?.some((c) => c.id === hit.cellId));
       const override = overrides.find((row) => row.cellId === hit.cellId);
       const chain: BindingRow[] = [...matching, ...(override ? [override] : [])];
       const meta = byId.get(hit.cellId);
       const contributed = meta ? ownersOfPath(provenanceOf(meta), hit.rest) : [];
+      // a provenance owner holds the dense index of the pattern: the row has the saved one
       const owners: BindingRow[] = contributed.flatMap((owner) =>
         owner.kind === 'pattern'
-          ? [patterns[owner.index] as BindingRow]
+          ? ((rowAt(patterns, savedIndex('patterns', owner.index)) as BindingRow | undefined) ?? [])
           : overrides.filter((row) => row.cellId === owner.cellId)
       );
       for (const row of owners.length ? owners : chain) {
@@ -228,7 +347,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
   // Problems that the diagram alone shows. The engine reports the missing ones too, but not while the config is invalid.
   if (cells.length > 0) {
     for (const row of patterns) {
-      if (!row.matched.length) {
+      if (!row.matched.length && !row.skipped) {
         add(row, {
           code: 'no-match',
           path: `patterns[${row.index}].select`,
@@ -237,7 +356,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
       }
     }
     for (const row of overrides) {
-      if (!row.exists) {
+      if (!row.exists && !row.skipped) {
         add(row, {
           code: 'missing-cell',
           path: `overrides[${row.index}].cellId`,
@@ -246,7 +365,7 @@ export function buildBindingsList(config: DiagramConfigV2, cells: CellMeta[], di
       }
     }
     for (const row of widgets) {
-      if (!row.exists) {
+      if (!row.exists && !row.skipped) {
         add(row, {
           code: 'missing-anchor',
           path: `widgets[${row.index}].anchorCellId`,

@@ -1,9 +1,17 @@
-import { displayBindings, validateConfig, type Diagnostic, type DiagramConfigV2 } from '../model/config';
+import {
+  displayBindings,
+  emptyEntriesNote,
+  validateConfig,
+  withoutEmptyEntries,
+  type Diagnostic,
+  type DiagramConfig,
+  type QueryDatasourceRef,
+} from '../model/config';
 
 export interface PatternDocument {
   kind: 'drawiomap-patterns';
   version: 1;
-  config: DiagramConfigV2;
+  config: DiagramConfig;
 }
 type Section = 'queries' | 'patterns' | 'widgets';
 export type ImportDecision = { action: 'replace' } | { action: 'new'; id: string };
@@ -15,23 +23,35 @@ export interface ImportResolution {
   anchors?: Record<string, string>;
 }
 export interface PatternImportPreview {
-  config?: DiagramConfigV2;
+  config?: DiagramConfig;
   diagnostics: Diagnostic[];
+  /** What the import changed without a failure: the empty entries it dropped. */
+  notes: Diagnostic[];
   conflicts: Array<{ section: Section; id: string }>;
   overrides: Array<{ cellId: string; applies: boolean; conflict: boolean }>;
   anchors: Array<{ cellId: string; applies: boolean }>;
 }
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
-function checked(input: unknown): DiagramConfigV2 {
+const isLists = (value: unknown): value is Record<'queries' | 'patterns' | 'overrides' | 'widgets', unknown[]> =>
+  !!value &&
+  typeof value === 'object' &&
+  (['queries', 'patterns', 'overrides', 'widgets'] as const).every((k) =>
+    Array.isArray((value as Record<string, unknown>)[k])
+  );
+/** The datasource of a query from a reference: a reference without a uid names none. */
+const refOf = (ref: DiagramConfig['defaultDatasource']): QueryDatasourceRef | undefined =>
+  ref?.uid ? { uid: ref.uid, ...(ref.type ? { type: ref.type } : {}) } : undefined;
+/** A clean config: it parses and has no diagnostic. A portable document carries nothing else. */
+function checked(input: unknown): DiagramConfig {
   const result = validateConfig(input);
-  if (!result.config) {
+  if (!result.config || result.diagnostics.length) {
     throw new Error(result.diagnostics.map((d) => `${d.path}: ${d.message}`).join('\n'));
   }
   return result.config;
 }
 
 /** A portable document carries the datasource context of every referenced native definition. */
-export function exportPatternDocument(config: DiagramConfigV2): PatternDocument {
+export function exportPatternDocument(config: DiagramConfig): PatternDocument {
   const value = checked(config);
   const referenced = new Set([
     ...[...value.patterns, ...value.overrides].flatMap((p) => displayBindings(p.display).map((b) => b.binding.queryId)),
@@ -41,7 +61,10 @@ export function exportPatternDocument(config: DiagramConfigV2): PatternDocument 
     .filter((q) => referenced.has(q.id))
     .map((query) =>
       query.source.kind === 'datasource'
-        ? { ...query, source: { ...query.source, datasource: query.source.datasource ?? value.defaultDatasource } }
+        ? {
+            ...query,
+            source: { ...query.source, datasource: query.source.datasource ?? refOf(value.defaultDatasource) },
+          }
         : query
     );
   return { kind: 'drawiomap-patterns', version: 1, config: checked(value) };
@@ -49,12 +72,12 @@ export function exportPatternDocument(config: DiagramConfigV2): PatternDocument 
 
 /** Preparing an import performs no I/O and never mutates the destination. */
 export function previewPatternImport(
-  destination: DiagramConfigV2,
+  destination: DiagramConfig,
   input: unknown,
   cellIds: string[],
   resolution: ImportResolution = {}
 ): PatternImportPreview {
-  const preview: PatternImportPreview = { diagnostics: [], conflicts: [], overrides: [], anchors: [] };
+  const preview: PatternImportPreview = { diagnostics: [], notes: [], conflicts: [], overrides: [], anchors: [] };
   const error = (code: string, path: string, message: string) => preview.diagnostics.push({ code, path, message });
   if (
     !input ||
@@ -69,15 +92,19 @@ export function previewPatternImport(
     error('invalid-pattern-document', '(root)', 'Expected a drawiomap-patterns document with version 1.');
     return preview;
   }
-  const result = validateConfig(input.config);
-  if (!result.config) {
+  const source = isLists(input.config) ? withoutEmptyEntries(input.config) : { config: input.config, removed: 0 };
+  const result = validateConfig(source.config);
+  if (!result.config || result.diagnostics.length) {
     return { ...preview, diagnostics: result.diagnostics };
   }
+  if (source.removed) {
+    preview.notes.push(emptyEntriesNote(source.removed));
+  }
   const incoming = result.config;
-  const config = copy(destination);
+  const config = withoutEmptyEntries(copy(destination)).config;
   incoming.queries = incoming.queries.map((q) =>
     q.source.kind === 'datasource'
-      ? { ...q, source: { ...q.source, datasource: q.source.datasource ?? incoming.defaultDatasource } }
+      ? { ...q, source: { ...q.source, datasource: q.source.datasource ?? refOf(incoming.defaultDatasource) } }
       : q
   );
   const queryIds = new Map<string, string>();
@@ -85,7 +112,7 @@ export function previewPatternImport(
     const identities = new Set<string>();
     for (const item of incoming[section]) {
       const id = item.id;
-      const conflict = destination[section].some((old) => old.id === id);
+      const conflict = config[section].some((old) => old.id === id);
       const choice = Object.hasOwn(resolution[section] ?? {}, id) ? resolution[section]![id] : undefined;
       if (conflict) {
         preview.conflicts.push({ section, id });
@@ -94,10 +121,7 @@ export function previewPatternImport(
         }
       }
       const nextId = choice?.action === 'new' ? choice.id : id;
-      if (
-        identities.has(nextId) ||
-        (choice?.action === 'new' && destination[section].some((old) => old.id === nextId))
-      ) {
+      if (identities.has(nextId) || (choice?.action === 'new' && config[section].some((old) => old.id === nextId))) {
         error('import-identity-conflict', `${section}.${id}`, `New identity ${nextId} is already used in ${section}.`);
       }
       identities.add(nextId);
@@ -131,7 +155,7 @@ export function previewPatternImport(
   incoming.overrides = incoming.overrides.flatMap((override) => {
     const cellId = override.cellId;
     const applies = cellIds.includes(cellId);
-    const conflict = destination.overrides.some((old) => old.cellId === cellId);
+    const conflict = config.overrides.some((old) => old.cellId === cellId);
     preview.overrides.push({ cellId, applies, conflict });
     const explicit = Object.hasOwn(resolution.overrides ?? {}, cellId);
     const target = explicit ? resolution.overrides![cellId] : cellId;
@@ -161,5 +185,6 @@ export function previewPatternImport(
     Object.assign(config, { [section]: merged });
   }
   config.overrides = config.overrides.filter((old) => !overrideIds.has(old.cellId)).concat(incoming.overrides);
-  return { ...preview, ...validateConfig(config) };
+  const merged = validateConfig(config);
+  return { ...preview, config: merged.diagnostics.length ? undefined : merged.config, diagnostics: merged.diagnostics };
 }

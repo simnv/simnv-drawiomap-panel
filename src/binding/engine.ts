@@ -1,25 +1,18 @@
-import { type Field, formattedValueToString, getValueFormat } from '@grafana/data';
-import type {
-  BindContext,
-  CapacitySource,
-  CellPatch,
-  HalfState,
-  SeriesInfo,
-  ShapeTarget,
-  TemplateScope,
-} from '../types';
+import { type DisplayValue, type Field, formattedValueToString } from '@grafana/data';
+import type { BindContext, CellPatch, HalfState, SeriesInfo, ShapeTarget, TemplateScope } from '../types';
 import { colorFor, noDataColor, widthFor } from './color';
 import { resolveTemplate, shield } from './template';
 import { toBitsPerSecond } from './units';
 import { isAllowedUrl } from './url';
 import {
   rowBindings,
+  rowCapacityBindings,
   type Diagnostic,
   type HoverSpec,
-  type LinkCapacity,
   type QueryBinding,
   type ShapeDisplay,
 } from '../model/config';
+import { inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity';
 import { toHistory, type HistoryModel, type HistoryFormat } from '../query/frames';
 import type { BindingPlan } from './patterns';
 import type { QuerySnapshot } from '../query/types';
@@ -28,7 +21,10 @@ import { evaluateStatus, summarizeStatuses, type StatusSummary, type StatusView 
 export interface PlanCellPatch extends CellPatch {
   statusView?: StatusView;
   hover?: HoverSpec;
+  /** the rows whose value binding is not usable for the cell */
   unavailableHoverRows?: number[];
+  /** the bindings that can run for the cell (`EffectiveCellBinding.bindings`); the card reads no other */
+  bindings?: QueryBinding[];
 }
 /** Read prepared models only. Query subscriptions belong to the caller. */
 export type BindingResolver = (cellId: string, binding: QueryBinding) => HistoryModel;
@@ -58,8 +54,8 @@ export interface BindingDemand {
   binding: QueryBinding;
   role: 'visible' | 'hover';
   rowIndex?: number;
-  /** the index in the series list of a combined row */
-  seriesIndex?: number;
+  /** the path of the binding in its row: `binding`, `capacityBinding`, `series[j].binding`, `series[j].capacityBinding` */
+  path?: string;
 }
 /** Describes visible data plus the open card's rows; does not register or execute queries. */
 export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
@@ -73,11 +69,11 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
       ...(d.link?.enabled === false
         ? []
         : [
-            d.link?.a2bBinding,
-            d.link?.b2aBinding,
+            d.link?.a2b?.binding,
+            d.link?.a2b?.capacityBinding,
+            d.link?.b2a?.binding,
+            d.link?.b2a?.capacityBinding,
             d.link?.capacityBinding,
-            d.link?.capacityA2bBinding,
-            d.link?.capacityB2aBinding,
           ]),
       d.shape?.enabled === false ? undefined : d.shape?.binding,
       d.status?.enabled === false ? undefined : d.status?.binding,
@@ -89,15 +85,11 @@ export function collectBindingDemands(plan: BindingPlan, openCellId?: string): B
     }
     if (cell.cellId === openCellId && d.hover?.enabled !== false) {
       d.hover?.rows.forEach((row, rowIndex) => {
-        if ('series' in row) {
-          row.series.forEach(({ binding }, seriesIndex) => {
-            if (cell.bindings.includes(binding)) {
-              demands.push({ cellId: cell.cellId, binding, role: 'hover', rowIndex, seriesIndex });
-            }
-          });
-        } else if ('binding' in row && cell.bindings.includes(row.binding)) {
-          demands.push({ cellId: cell.cellId, binding: row.binding, role: 'hover', rowIndex });
-        }
+        [...rowBindings(row), ...rowCapacityBindings(row)].forEach(({ binding, path }) => {
+          if (cell.bindings.includes(binding)) {
+            demands.push({ cellId: cell.cellId, binding, role: 'hover', rowIndex, path });
+          }
+        });
       });
     }
   }
@@ -154,9 +146,6 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
   const result: PlanBindResult = { patches: new Map(), diagnostics: [...plan.diagnostics], summaries: [] };
   for (const cell of Object.values(plan.cells)) {
     const display = cell.display;
-    if (display.enabled === false) {
-      continue;
-    }
     const patch: PlanCellPatch = {
       cellId: cell.cellId,
       scope: cell.scope,
@@ -164,13 +153,38 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       urls: [],
       warnings: [],
     };
+    if (cell.unavailable !== undefined) {
+      // nothing binds: the cell is grey with the reason, and the status band counts it
+      patch.unavailable = { reason: cell.unavailable, color: noDataColor(ctx.theme) };
+      patch.statusView = {
+        state: 'missing',
+        reason: cell.unavailable,
+        queryIds: [],
+        conditionKey: JSON.stringify(['unavailable', cell.unavailable]),
+        coverage: { available: 0, expected: 1 },
+      };
+      result.patches.set(cell.cellId, patch);
+      continue;
+    }
+    // unavailable wins over enabled false: only an available cell that an override disables keeps its drawn look
+    if (display.enabled === false) {
+      continue;
+    }
     let primary: SeriesInfo | undefined;
     patch.hover = display.hover;
+    patch.bindings = cell.bindings;
     patch.unavailableHoverRows = display.hover?.rows.flatMap((row, i) =>
       rowBindings(row).some(({ binding }) => !cell.bindings.includes(binding)) ? [i] : []
     );
+    // one read per path: both link directions read the shared capacity series, and it is reported once
+    const models = new Map<string, HistoryModel>();
     const read = (binding: QueryBinding, path: string): HistoryModel => {
+      const seen = models.get(path);
+      if (seen) {
+        return seen;
+      }
       const model = resolve(cell.cellId, binding);
+      models.set(path, model);
       const problem = metricProblem(model, binding);
       if (problem) {
         const { message } = problem;
@@ -185,52 +199,65 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       }
       return model;
     };
+    /** The reason a configured binding cannot run for this cell, as the plan reported it; undefined when it can. */
+    const unbound = (binding: QueryBinding, path: string): string | undefined => {
+      if (cell.bindings.includes(binding)) {
+        return undefined;
+      }
+      const prefix = `cells.${cell.cellId}.${path}`;
+      const reported = plan.diagnostics.find((d) => d.path === prefix || d.path.startsWith(`${prefix}.`));
+      return reported?.message ?? 'The binding cannot run for this element.';
+    };
+    const missingView = (reason: string, binding: QueryBinding, path: string): StatusView => ({
+      state: 'missing',
+      reason,
+      queryIds: [binding.queryId],
+      conditionKey: JSON.stringify(['unavailable-binding', path, reason]),
+      coverage: { available: 0, expected: 1 },
+    });
     if (display.link?.enabled !== false && display.link) {
       const link = display.link;
-      let cap = capacityOf(link.capacity, cell.scope);
-      if (cap.unresolved.length) {
-        result.diagnostics.push({
-          code: 'unresolved-metadata',
-          path: `cells.${cell.cellId}.link.capacity`,
-          message: `Capacity is not usable: ${[...new Set(cap.unresolved)].join(', ')}`,
-        });
-      }
-      if (link.capacityBinding && cell.bindings.includes(link.capacityBinding)) {
-        cap = capacityFromBinding(read(link.capacityBinding, 'link.capacityBinding'), link.capacityBinding) ?? cap;
-      }
       const states: HalfState[] = [];
       patch.link = {};
       for (const direction of ['a2b', 'b2a'] as const) {
-        const binding = link[`${direction}Binding`];
-        if (!binding || !cell.bindings.includes(binding)) {
+        const own = link[direction];
+        const binding = own?.binding;
+        if (!binding) {
           continue;
         }
-        const model = read(binding, `link.${direction}Binding`);
-        // the capacity of this half: its own binding, its own number or template, then the shared capacity
-        const key = direction === 'a2b' ? 'capacityA2b' : 'capacityB2a';
-        let halfCap = cap;
-        const own = link[key];
-        if (own !== undefined) {
-          const c = capacityOf(own, cell.scope);
-          if (c.bits !== undefined) {
-            halfCap = c;
-          } else if (typeof own === 'string') {
-            result.diagnostics.push({
-              code: 'unresolved-metadata',
-              path: `cells.${cell.cellId}.link.${key}`,
-              message: `Capacity is not usable: ${[...new Set(c.unresolved)].join(', ')}`,
-            });
-          }
+        const path = `link.${direction}`;
+        if (!cell.bindings.includes(binding)) {
+          // configured but not usable for this cell: an explicit grey half, so the other half cannot cover it
+          const unbound: HalfState = {
+            status: 'unbound',
+            color: noDataColor(ctx.theme),
+            width: ctx.linkWidth.min,
+            label: STATUS_TEXT.unavailable,
+            stepIndex: -1,
+          };
+          patch.link[direction] = unbound;
+          states.push(unbound);
+          continue;
         }
-        const ownBinding = link[`${key}Binding`];
-        if (ownBinding && cell.bindings.includes(ownBinding)) {
-          halfCap = capacityFromBinding(read(ownBinding, `link.${key}Binding`), ownBinding) ?? halfCap;
+        const model = read(binding, `${path}.binding`);
+        const cap = resolveCapacity({
+          own,
+          ownPath: path,
+          shared: link,
+          sharedPath: 'link',
+          numberUnit: 'canonical',
+          scope: cell.scope,
+          field: model.state === 'ready' ? model.field : undefined,
+          read: (b, at) => (cell.bindings.includes(b) ? read(b, at) : undefined),
+        });
+        for (const d of cap.diagnostics) {
+          result.diagnostics.push({ ...d, path: `cells.${cell.cellId}.${d.path}` });
         }
-        const h = half(model, binding, halfCap, ctx);
+        const h = halfState(model, binding, cap, ctx);
         for (const note of new Set(h.notes)) {
           result.diagnostics.push({
             code: 'unit-not-rate',
-            path: `cells.${cell.cellId}.link.${direction}Binding`,
+            path: `cells.${cell.cellId}.${path}.binding`,
             message: note,
           });
         }
@@ -243,86 +270,104 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
         patch.statusView = {
           state: 'missing',
           reason: `Incomplete coverage (${available}/${states.length} directions available)`,
-          queryIds: [link.a2bBinding, link.b2aBinding].flatMap((b) => (b ? [b.queryId] : [])),
-          conditionKey: JSON.stringify(['link-coverage', link.a2bBinding?.queryId, link.b2aBinding?.queryId]),
+          queryIds: [link.a2b?.binding, link.b2a?.binding].flatMap((b) => (b ? [b.queryId] : [])),
+          conditionKey: JSON.stringify(['link-coverage', link.a2b?.binding?.queryId, link.b2a?.binding?.queryId]),
           coverage: { available, expected: states.length },
         };
       }
     }
-    if (display.shape?.enabled !== false && display.shape?.binding && cell.bindings.includes(display.shape.binding)) {
-      const model = read(display.shape.binding, 'shape.binding');
-      const target = targetOf(display.shape);
-      if (model.state === 'ready' && model.latestValue !== undefined) {
-        const series = historySeries(model, display.shape.binding);
-        primary ??= series;
-        const value = model.latestValue;
-        const shown = model.latestDisplayValue ?? ctx.display(series, value);
-        const label = display.shape.text
-          ? resolveTemplate(display.label ?? '${value}', {
-              ...cell.scope,
-              labels: model.field.labels,
-              value: formattedValueToString(shown),
-            })
-          : undefined;
-        if (label?.unresolved.length) {
-          // a text that does not resolve has no value to show: the shape is unbound, in grey
+    if (display.shape?.enabled !== false && display.shape?.binding) {
+      const reason = unbound(display.shape.binding, 'shape.binding');
+      if (reason !== undefined) {
+        // the binding cannot run for this cell: the shape is grey and says so, never the drawn colour
+        patch.shape = {
+          status: 'unbound',
+          color: noDataColor(ctx.theme),
+          target: targetOf(display.shape),
+          stepIndex: -1,
+          text: display.shape.text ? STATUS_TEXT.unavailable : undefined,
+        };
+        patch.statusView ??= missingView(reason, display.shape.binding, 'shape.binding');
+      } else {
+        const model = read(display.shape.binding, 'shape.binding');
+        const target = targetOf(display.shape);
+        if (model.state === 'ready' && model.latestValue !== undefined) {
+          const series = historySeries(model, display.shape.binding);
+          primary ??= series;
+          const value = model.latestValue;
+          const shown = model.latestDisplayValue ?? ctx.display(series, value);
+          const label = display.shape.text
+            ? resolveTemplate(display.label ?? '${value}', {
+                ...cell.scope,
+                labels: model.field.labels,
+                value: formattedValueToString(shown),
+              })
+            : undefined;
+          if (label?.unresolved.length) {
+            // a text that does not resolve has no value to show: the shape is unbound, in grey
+            patch.shape = {
+              status: 'unbound',
+              color: noDataColor(ctx.theme),
+              target,
+              stepIndex: -1,
+              text: STATUS_TEXT.unbound,
+              value,
+              display: shown,
+              series,
+            };
+            result.diagnostics.push({
+              code: 'unresolved-metadata',
+              path: `cells.${cell.cellId}.label`,
+              message: `Unresolved ${[...new Set(label.unresolved)].join(', ')}`,
+            });
+          } else {
+            // the colour of the value from the field config of its series (thresholds, scheme, mappings)
+            const { color, stepIndex } = colorFor(
+              value,
+              undefined,
+              model.field as Field,
+              shown,
+              ctx.fieldThresholds,
+              ctx.theme
+            );
+            patch.shape = { status: 'ok', color, target, stepIndex, value, display: shown, series, text: label?.text };
+          }
+        } else {
           patch.shape = {
-            status: 'unbound',
+            status: 'nodata',
             color: noDataColor(ctx.theme),
             target,
             stepIndex: -1,
-            text: STATUS_TEXT.unbound,
-            value,
-            display: shown,
-            series,
+            // a text-only binding has no colour to show the state, so the text says it
+            text: display.shape.text ? STATUS_TEXT.nodata : undefined,
           };
-          result.diagnostics.push({
-            code: 'unresolved-metadata',
-            path: `cells.${cell.cellId}.label`,
-            message: `Unresolved ${[...new Set(label.unresolved)].join(', ')}`,
-          });
-        } else {
-          // the colour of the value from the field config of its series (thresholds, scheme, mappings)
-          const { color, stepIndex } = colorFor(
-            value,
-            undefined,
-            model.field as Field,
-            shown,
-            ctx.fieldThresholds,
-            ctx.theme
-          );
-          patch.shape = { status: 'ok', color, target, stepIndex, value, display: shown, series, text: label?.text };
         }
-      } else {
-        patch.shape = {
-          status: 'nodata',
-          color: noDataColor(ctx.theme),
-          target,
-          stepIndex: -1,
-          // a text-only binding has no colour to show the state, so the text says it
-          text: display.shape.text ? STATUS_TEXT.nodata : undefined,
-        };
       }
     }
-    if (display.status?.enabled !== false && display.status && cell.bindings.includes(display.status.binding)) {
-      const model = read(display.status.binding, 'status.binding');
-      if (model.state === 'ready') {
-        primary ??= historySeries(model, display.status.binding);
-      }
-      const status = evaluateStatus(
-        display.status,
-        [
-          {
-            queryId: display.status.binding.queryId,
-            availability: model.state === 'empty' ? 'missing' : model.state === 'idle' ? 'loading' : model.state,
-            value: model.state === 'ready' ? model.latestValue : undefined,
-            sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
-          },
-        ],
-        nowMs
-      );
-      if (!patch.statusView || status.state !== 'normal') {
-        patch.statusView = status;
+    if (display.status?.enabled !== false && display.status) {
+      const reason = unbound(display.status.binding, 'status.binding');
+      if (reason !== undefined) {
+        patch.statusView = missingView(reason, display.status.binding, 'status.binding');
+      } else {
+        const model = read(display.status.binding, 'status.binding');
+        if (model.state === 'ready') {
+          primary ??= historySeries(model, display.status.binding);
+        }
+        const status = evaluateStatus(
+          display.status,
+          [
+            {
+              queryId: display.status.binding.queryId,
+              availability: model.state === 'empty' ? 'missing' : model.state === 'idle' ? 'loading' : model.state,
+              value: model.state === 'ready' ? model.latestValue : undefined,
+              sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
+            },
+          ],
+          nowMs
+        );
+        if (!patch.statusView || status.state !== 'normal') {
+          patch.statusView = status;
+        }
       }
     }
     if (display.url !== undefined) {
@@ -349,7 +394,17 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
   return result;
 }
 
-const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound' } as const;
+const STATUS_TEXT = { nodata: 'no data', unbound: 'unbound', unavailable: 'unavailable' } as const;
+
+/** "4.10" reads "4.1", "100.00" reads "100": a capacity is a round figure, its text carries no filler zeros. */
+const withoutTrailingZeros = (shown: DisplayValue): DisplayValue =>
+  /^-?\d+\.\d*0$/.test(shown.text) ? { ...shown, text: shown.text.replace(/\.?0+$/, '') } : shown;
+/** The field a capacity is formatted with: the unit of the values, automatic decimals, no cached processor. */
+const capacityField = (field: Field): Field => ({
+  ...field,
+  display: undefined,
+  config: { ...field.config, decimals: undefined },
+});
 
 const unitNote = (unit: string) => `unit "${unit}" is not a data rate, the raw value is used as bit/s`;
 
@@ -362,12 +417,19 @@ function bitsOf(value: number, s: SeriesInfo, notes: string[]): number {
   return rate.bits;
 }
 
-/** The state of one link half from its history: the colour, the width and the card text. */
-function half(
+/** The context that `halfState` needs: the link engine has all of it, the card builds its own `display`. */
+export type HalfContext = Pick<BindContext, 'theme' | 'fieldThresholds' | 'display' | 'linkWidth'>;
+
+/**
+ * The state of one direction from its history and its resolved capacity: the colour, the width and the card text.
+ * A link half and a card direction both come from here. The capacity never produces a value on its own: without a
+ * value the direction is grey "no data"; without a capacity it has no percent and the colour of the raw value.
+ */
+export function halfState(
   model: HistoryModel,
   binding: QueryBinding,
-  cap: ResolvedCapacity,
-  ctx: BindContext
+  cap: Pick<ResolvedCapacity, 'amount' | 'source'>,
+  ctx: HalfContext
 ): { state: HalfState; notes: string[] } {
   if (model.state !== 'ready' || model.latestValue === undefined) {
     return {
@@ -377,7 +439,7 @@ function half(
         width: ctx.linkWidth.min,
         label: STATUS_TEXT.nodata,
         stepIndex: -1,
-        capacity: cap.bits,
+        capacity: cap.amount,
         capacitySource: cap.source,
       },
       notes: [],
@@ -386,22 +448,23 @@ function half(
   const series = historySeries(model, binding);
   const value = model.latestValue;
   const notes: string[] = [];
-  let { bits: capacity, source } = cap;
-  // the last source: the Max of the field config (a standard option, also by override), in the field unit
-  const max = series.field.config?.max;
-  if (capacity === undefined && typeof max === 'number' && max > 0) {
-    capacity = bitsOf(max, series, notes);
-    source = 'fieldMax';
-  }
-  // the capacity is in bit/s; the field unit tells how to read the value
+  const capacity = cap.amount;
+  // the capacity is in the canonical unit; the field unit tells how to read the value
   const percent = capacity === undefined ? undefined : (bitsOf(value, series, notes) / capacity) * 100;
   const display = model.latestDisplayValue ?? ctx.display(series, value);
+  // the capacity, once, in the unit of the field with automatic decimals: the card and the labels show this text
+  const capacityDisplay =
+    capacity === undefined
+      ? undefined
+      : withoutTrailingZeros(
+          ctx.display({ ...series, field: capacityField(series.field) }, inFieldUnit(capacity, series.field))
+        );
   const { color, stepIndex } = colorFor(value, percent, series.field, display, ctx.fieldThresholds, ctx.theme);
   const text = formattedValueToString(display);
   const label =
-    percent === undefined || capacity === undefined
+    percent === undefined || capacityDisplay === undefined
       ? text
-      : `${text} · ${Math.round(percent)}% of ${formattedValueToString(getValueFormat('bps')(capacity))}`;
+      : `${text} · ${Math.round(percent)}% of ${formattedValueToString(capacityDisplay)}`;
   return {
     state: {
       status: 'ok',
@@ -412,46 +475,13 @@ function half(
       value,
       percent,
       capacity,
-      capacitySource: capacity === undefined ? 'none' : source,
+      capacitySource: capacity === undefined ? 'none' : cap.source,
+      capacityDisplay,
       display,
       series,
     },
     notes,
   };
-}
-
-/** The capacity of a link in bit/s, from the display. Without it, each half can use the Max of its field. */
-interface ResolvedCapacity {
-  bits?: number;
-  source: CapacitySource;
-  unresolved: string[];
-}
-
-/** The capacity from a read binding: its latest value through the field unit, when it is positive. */
-function capacityFromBinding(model: HistoryModel, binding: QueryBinding): ResolvedCapacity | undefined {
-  if (model.state !== 'ready' || model.latestValue === undefined) {
-    return undefined;
-  }
-  const bits = bitsOf(model.latestValue, historySeries(model, binding), []);
-  return bits > 0 ? { bits, source: 'series', unresolved: [] } : undefined;
-}
-
-/** A number, or a template that resolves to a positive number. Anything else gives no capacity. */
-function capacityOf(c: LinkCapacity | undefined, scope: TemplateScope): ResolvedCapacity {
-  if (c === undefined) {
-    return { source: 'none', unresolved: [] };
-  }
-  if (typeof c === 'number') {
-    return c > 0 ? { bits: c, source: 'number', unresolved: [] } : { source: 'none', unresolved: [] };
-  }
-  const r = resolveTemplate(c, scope);
-  if (r.unresolved.length) {
-    return { source: 'none', unresolved: r.unresolved };
-  }
-  const n = Number(r.text);
-  return Number.isFinite(n) && n > 0
-    ? { bits: n, source: c.includes('${') ? 'attr' : 'number', unresolved: [] }
-    : { source: 'none', unresolved: [`capacity "${r.text}" is not a number`] };
 }
 
 /** Only an explicit target colours the node. Saved dashboards without one keep their look. */

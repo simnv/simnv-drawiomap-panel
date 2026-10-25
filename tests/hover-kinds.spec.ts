@@ -1,4 +1,4 @@
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 import type { Locator } from '@playwright/test';
 import { expect, test } from './authoring-fixtures';
 
@@ -19,7 +19,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360" vi
   </g>
 </svg>`;
 
-function cardsForAll(config: DiagramConfigV2): DiagramConfigV2 {
+function cardsForAll(config: DiagramConfig): DiagramConfig {
   return {
     ...config,
     queries: [],

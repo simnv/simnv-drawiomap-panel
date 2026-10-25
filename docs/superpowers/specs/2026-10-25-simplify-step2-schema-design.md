@@ -281,7 +281,8 @@ export function validateConfig(input: unknown): ValidatedConfig;
      the chart. The form stays, so the user can fix the number.
    - `missing-datasource`, `invalid-parameter-name`, `invalid-native-target` on a query: the query is in
      `unusableQueries` with the reason; its editor stays open to fix it.
-   - Duplicates: `duplicate-query-id`: the first stays, each later one is unusable ("Duplicate query id");
+   - Duplicates: `duplicate-query-id`: the first stays usable, each later one is reported only (`unusableQueries`
+     is keyed by id, and the first has the same id); every reader takes the first query of an id;
      `duplicate-pattern-id`, `duplicate-widget-id`, `duplicate-override`: reported only; `mergeCell` takes the first
      override as today.
 4. References. A binding whose query is unknown, skipped or unusable is left out of `cell.bindings` by
@@ -302,6 +303,11 @@ others and its override into a state nobody configured. Policy, with an explicit
   The applier paints an unavailable cell in the no-data grey (the fill of a node, the stroke of a link, the same calls
   as `status: 'nodata'`), sets `data-dmap-status="unavailable"` and the aria label with the reason. It never falls into
   `reset` (`applier.ts:220`), which would restore the drawn fill, for example green.
+- `unavailable` wins over `display.enabled: false` (review, 2026-10-25): an override that disables an unavailable cell
+  does not bring the drawn colour back; the cell stays grey with the reason. Only an available cell that an override
+  disables keeps its drawn look. A shape or status binding that cannot run for the cell (an unknown, skipped or
+  unusable query, a missing parameter path) gives the shape the grey `unbound` state with the text "unavailable" and
+  the status band the `missing` state with the reason the plan reported, as an unbound link direction does.
 - A skipped pattern whose `select` parses (`select` is parsed on its own first): the cells it matches are unavailable
   with "Pattern X is not applied", from no item. One diagnostic `skipped-cells` at `patterns[i]` with the count.
 - A skipped pattern whose `select` does not parse: the match set is unknown; every cell is unavailable with that
@@ -353,8 +359,8 @@ Unit, one file per concept, `--maxWorkers=2` while a worker runs them:
   when its items are valid version 3 items; a `rules` document gives `legacy-config`; version 4 gives
   `invalid-config`; a version 3 document with an old key (`a2bBinding`, a `history` row with `series`, `capacity: 0`,
   `capacity: { refId }`) skips that item only. Per-item: one
-  invalid pattern keeps the others, `indices` and `skipped` hold saved indices, `skipped-item` present; a duplicate query
-  id keeps the first and marks the later unusable; an unknown query keeps the pattern and lists `unknown-query`; a bad
+  invalid pattern keeps the others, `indices` and `skippedItems` hold saved indices, `skipped-item` present; a duplicate
+  query id keeps the first usable and reports the later one; an unknown query keeps the pattern and lists `unknown-query`; a bad
   envelope gives no config; freshness and bounds keep the item unchanged and report; a bad parameter name puts the
   query in `unusableQueries`. The step 1 tests of the dropped fields are deleted.
 - `src/binding/patterns.test.ts`: `mergeDisplay` merges `a2b` as an object (binding from the pattern, capacity from the

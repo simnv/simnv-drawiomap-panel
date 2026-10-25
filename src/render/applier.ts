@@ -183,6 +183,22 @@ function applyLink(entry: CellEntry, patch: CellPatch): void {
   }
 }
 
+/**
+ * A cell that is configured but cannot bind: the no-data colour on the fill of a node or the stroke of a link. The
+ * patch exists, so the reset of the next apply never puts the drawn fill (for example green) back by mistake.
+ */
+function applyUnavailable(entry: CellEntry, patch: CellPatch): void {
+  const u = patch.unavailable;
+  if (!u) {
+    return;
+  }
+  if (entry.line) {
+    entry.line.style.stroke = u.color;
+  } else if (entry.shape) {
+    (entry.shape as SVGElement).style.fill = u.color;
+  }
+}
+
 function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined, interactive: boolean): void {
   if (target) {
     entry.group.setAttribute('data-dmap-target', target);
@@ -190,7 +206,7 @@ function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined,
   // Keyboard access: Tab moves to the cell, Enter or Space opens its card. A cell without a card is not a button.
   // tabindex, role and aria-label go into the applier layer: the binding editor writes the same attributes.
   const label = entry.meta.title || entry.meta.labelText || entry.meta.key;
-  const view = patch.statusView;
+  const view = patch.unavailable ? { state: 'unavailable', reason: patch.unavailable.reason } : patch.statusView;
   setOwnedAttrs(entry.group, 'applier', {
     ...(interactive ? { tabindex: '0', role: 'button' } : {}),
     'aria-label': view ? `${label}: ${view.state}. ${view.reason}` : label,
@@ -235,6 +251,7 @@ function reset(entry: CellEntry, index: CellIndex): void {
   if (entry.line) {
     entry.line.style.strokeOpacity = '';
     entry.line.style.strokeWidth = entry.original.strokeWidth ?? '';
+    entry.line.style.stroke = entry.original.stroke ?? '';
   }
   for (const a of entry.arrows) {
     a.style.opacity = '';
@@ -303,6 +320,7 @@ export function applyPatches(
       continue;
     }
     const target = applyShape(entry, patch, index);
+    applyUnavailable(entry, patch);
     applyLink(entry, patch);
     tag(entry, patch, target, !interactive || interactive.has(id));
     done.add(id);

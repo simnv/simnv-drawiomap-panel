@@ -1,5 +1,5 @@
 import type { Page, Request } from '@playwright/test';
-import type { DiagramConfigV2 } from '../src/model/config';
+import type { DiagramConfig } from '../src/model/config';
 import { binding, nativeQuery } from '../src/fixtures/authoring-config';
 import { openBindingsPopup, popupInspector, selectStageCell } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
@@ -11,7 +11,7 @@ import { expect, test } from './authoring-fixtures';
  */
 
 /** Three fictional devices with one health query each: scalar bindings whose resolution does not follow the width. */
-function statusConfig(config: DiagramConfigV2): DiagramConfigV2 {
+function statusConfig(config: DiagramConfig): DiagramConfig {
   const queries = ['device-1', 'device-2', 'link-1'].map((id) => nativeQuery(`health-${id}`, 'vector(1)'));
   return {
     ...config,

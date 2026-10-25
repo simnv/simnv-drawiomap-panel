@@ -40,7 +40,7 @@ test('a combined up/down row shows both values, a zero line and the down series 
   const row = panel.locator.getByRole('tooltip').getByTestId('dmap-card-row').filter({ hasText: 'Traffic' });
   // synthetic rtr-a wan1: transmit 10 Mb/s of 100 Mb/s, receive 41 Mb/s of 50 Mb/s (an asymmetric link)
   await expect(row.getByTestId('dmap-card-value')).toHaveText(
-    /^↑ (9\.\d+|10(\.\d+)?) Mb\/s · 10%  ↓ (40\.\d+|41(\.\d+)?) Mb\/s · 8[0-2]%$/
+    /^↑ (9\.\d+|10(\.\d+)?) Mb\/s · 10% of 100 Mb\/s  ↓ (40\.\d+|41(\.\d+)?) Mb\/s · 8[0-2]% of 50 Mb\/s$/
   );
   const spark = row.getByTestId('dmap-mirror-spark');
   const zero = Number(await spark.getByTestId('dmap-zero-line').getAttribute('y1'));

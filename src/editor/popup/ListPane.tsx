@@ -2,7 +2,7 @@ import React from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, Checkbox, Input, useStyles2 } from '@grafana/ui';
-import type { DiagramConfigV2 } from '../../model/config';
+import type { DiagramConfig } from '../../model/config';
 import type { CellMeta } from '../../types';
 import { BindingsList, type BindingsListProps } from '../BindingsList';
 import { TextField } from '../BindingFields';
@@ -23,7 +23,7 @@ export interface ListPaneProps extends Pick<
 > {
   list: BindingsListModel;
   cells: CellMeta[];
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   filter: BindingsFilter;
   onFilterChange: (filter: BindingsFilter) => void;
   /** The panel has saved rules of version 1. The panel ignores them. */
@@ -53,6 +53,9 @@ export function ListPane({
   const styles = useStyles2(getStyles);
   const total = list.patterns.length + list.overrides.length + list.widgets.length;
   const hasBindings = config.patterns.length || config.overrides.length || config.widgets.length;
+  // the note on an outdated config stands above the list once; it is not a problem row to open
+  const outdated = list.general.filter((problem) => problem.code === 'outdated-config');
+  const shown = outdated.length ? { ...list, general: list.general.filter((p) => !outdated.includes(p)) } : list;
   return (
     <div className={styles.pane}>
       <div className={styles.header}>
@@ -77,7 +80,12 @@ export function ListPane({
             here. Pattern, override and chart bindings appear in this list after you create them.
           </p>
         )}
-        <BindingsList list={list} cells={cells} filter={filter} {...rows} />
+        {outdated.map((problem) => (
+          <p key={problem.code} role="status">
+            {problem.message}
+          </p>
+        ))}
+        <BindingsList list={shown} cells={cells} filter={filter} {...rows} />
       </div>
       <footer className={styles.footer} aria-label="Query library">
         <div className={styles.actions}>

@@ -1,16 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { displayProvenance, mergeCell, mergeDisplay, ownersOfPath, resolvePatterns } from './patterns';
-import type { DiagramConfigV2 } from '../model/config';
-import { demoL3Config } from '../fixtures/demo-config';
+import type { DiagramConfig } from '../model/config';
 
-const empty = (): DiagramConfigV2 => ({ version: 2, queries: [], patterns: [], overrides: [], widgets: [] });
+const empty = (): DiagramConfig => ({ version: 3, queries: [], patterns: [], overrides: [], widgets: [] });
 
 describe('resolvePatterns', () => {
   it('applies element overrides after matching patterns', () => {
     const cells = [cellMetaFromAttrs('device-1', { 'pg-kind': 'node', 'pg-id': 'router-1' }, false)];
     const config = {
-      version: 2 as const,
+      version: 3 as const,
       queries: [],
       widgets: [],
       patterns: [{ id: 'devices', name: 'Devices', select: {}, display: { shape: { target: 'icon' as const } } }],
@@ -21,7 +20,7 @@ describe('resolvePatterns', () => {
 
   it('diagnoses a widget whose anchor was removed', () => {
     const config = {
-      version: 2 as const,
+      version: 3 as const,
       queries: [{ id: 'load', name: 'Load', source: { kind: 'panel' as const, refId: 'A' } }],
       patterns: [],
       overrides: [],
@@ -42,7 +41,7 @@ describe('resolvePatterns', () => {
     const cells = ['device-1', 'device-2'].map((id) =>
       cellMetaFromAttrs(id, { 'pg-kind': 'node', 'pg-id': id }, false, 'Router')
     );
-    const config: DiagramConfigV2 = {
+    const config: DiagramConfig = {
       ...empty(),
       patterns: [
         {
@@ -79,10 +78,10 @@ describe('resolvePatterns', () => {
     expect(JSON.stringify({ cells, config })).toBe(before);
   });
 
-  it('merges the directional capacity bindings and templates of later patterns', () => {
+  it('merges a link direction as an object: the binding from the patterns, the capacity from the override', () => {
     const cells = [cellMetaFromAttrs('l1', { 'pg-kind': 'link', 'pg-id': 'a:1->b:2' }, true)];
     const b = (match: Record<string, string>) => ({ queryId: 'q', match, reducer: 'last' as const });
-    const config: DiagramConfigV2 = {
+    const config: DiagramConfig = {
       ...empty(),
       queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
       patterns: [
@@ -90,28 +89,41 @@ describe('resolvePatterns', () => {
           id: 'first',
           name: 'First',
           select: {},
-          display: { link: { capacityA2b: 100, capacityA2bBinding: b({ job: 'a' }), capacityB2aBinding: b({}) } },
+          display: { link: { a2b: { binding: b({ job: 'a' }), capacity: 100 }, b2a: { capacityBinding: b({}) } } },
         },
         {
           id: 'second',
           name: 'Second',
           select: {},
-          display: { link: { capacityA2b: '${cell.capacity_a2b_bps}', capacityA2bBinding: b({ device: 'p1' }) } },
+          display: { link: { a2b: { binding: b({ device: 'p1' }), capacity: '${cell.capacity_a2b_bps}' } } },
         },
       ],
-      overrides: [],
+      overrides: [
+        { cellId: 'l1', display: { link: { a2b: { capacityBinding: b({ job: 'cap' }) }, b2a: { capacity: 50 } } } },
+      ],
       widgets: [],
     };
     const plan = resolvePatterns(cells, config);
     expect(plan.diagnostics).toEqual([]);
-    expect(plan.cells.l1.display.link).toMatchObject({
-      capacityA2b: '${cell.capacity_a2b_bps}',
-      capacityA2bBinding: b({ job: 'a', device: 'p1' }),
-      capacityB2aBinding: b({}),
+    expect(plan.cells.l1.display.link).toEqual({
+      a2b: {
+        binding: b({ job: 'a', device: 'p1' }),
+        capacity: '${cell.capacity_a2b_bps}',
+        capacityBinding: b({ job: 'cap' }),
+      },
+      b2a: { capacityBinding: b({}), capacity: 50 },
     });
     expect(plan.cells.l1.bindings.map((x) => x.match)).toEqual(
-      expect.arrayContaining([{ job: 'a', device: 'p1' }, {}])
+      expect.arrayContaining([{ job: 'a', device: 'p1' }, { job: 'cap' }, {}])
     );
+    // the provenance follows the same merge, leaf by leaf
+    const provenance = displayProvenance(config, cells[0]);
+    expect(provenance.get('link.a2b.binding.match.job')).toEqual([{ kind: 'pattern', index: 0 }]);
+    expect(provenance.get('link.a2b.binding.match.device')).toEqual([{ kind: 'pattern', index: 1 }]);
+    expect(provenance.get('link.a2b.capacity')).toEqual([{ kind: 'pattern', index: 1 }]);
+    expect(provenance.get('link.a2b.capacityBinding.queryId')).toEqual([{ kind: 'override', cellId: 'l1' }]);
+    expect(provenance.get('link.b2a.capacity')).toEqual([{ kind: 'override', cellId: 'l1' }]);
+    expect(provenance.get('link.b2a.capacityBinding.queryId')).toEqual([{ kind: 'pattern', index: 0 }]);
   });
 
   it('uses physical cell IDs for overrides, even when devices share a display label', () => {
@@ -129,7 +141,7 @@ describe('resolvePatterns', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it('rejects ambiguous semantic and physical IDs instead of choosing the first cell', () => {
+  it('marks the cells of an ambiguous semantic or physical ID unavailable instead of choosing the first cell', () => {
     const a = cellMetaFromAttrs('a', { 'pg-kind': 'node', 'pg-id': 'same' }, false);
     const b = cellMetaFromAttrs('b', { 'pg-kind': 'node', 'pg-id': 'same' }, false);
     const result = resolvePatterns([a, b, { ...a }], empty());
@@ -139,7 +151,9 @@ describe('resolvePatterns', () => {
         expect.objectContaining({ code: 'duplicate-cell-id' }),
       ])
     );
-    expect(Object.keys(result.cells)).toEqual([]);
+    expect(Object.keys(result.cells)).toEqual(['a', 'b']);
+    expect(result.cells.a.unavailable).toMatch(/ambiguous/);
+    expect(result.cells.b.unavailable).toMatch(/ambiguous/);
   });
 
   it('validates the schema at resolution time and diagnoses overrides for removed cells', () => {
@@ -164,7 +178,7 @@ describe('resolvePatterns', () => {
       cellMetaFromAttrs('b', { 'pg-kind': 'node' }, false),
     ];
     const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
-    const config: DiagramConfigV2 = {
+    const config: DiagramConfig = {
       ...empty(),
       defaultDatasource: { uid: 'ds' },
       queries: [
@@ -195,7 +209,7 @@ describe('resolvePatterns', () => {
   it('replaces status alternatives and keeps disabled sections out of active query bindings', () => {
     const cells = [cellMetaFromAttrs('a', {}, false)];
     const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
-    const config: DiagramConfigV2 = {
+    const config: DiagramConfig = {
       ...empty(),
       queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
       patterns: [
@@ -224,7 +238,7 @@ describe('resolvePatterns', () => {
               predicates: [{ op: 'gt', value: 10, state: 'warning', reason: 'Warning' }],
             },
             shape: { enabled: false, binding },
-            link: { enabled: false, a2bBinding: binding },
+            link: { enabled: false, a2b: { binding: binding } },
             hover: { enabled: false, rows: [{ kind: 'history', label: 'History', binding }] },
           },
         },
@@ -243,7 +257,7 @@ describe('resolvePatterns', () => {
   it('resolves widget anchors and directional parameters without DOM objects', () => {
     const cell = cellMetaFromAttrs('link', { 'pg-kind': 'link', 'pg-from': 'a:p1', 'pg-to': 'b:p2' }, true);
     const binding = { queryId: 'q', match: { host: '${from.node}' }, reducer: 'last' as const };
-    const config: DiagramConfigV2 = {
+    const config: DiagramConfig = {
       ...empty(),
       defaultDatasource: { uid: 'ds' },
       queries: [
@@ -278,7 +292,7 @@ describe('resolvePatterns', () => {
 
   it('rejects inherited object properties as missing semantic parameters', () => {
     const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
-    const config: DiagramConfigV2 = {
+    const config: DiagramConfig = {
       ...empty(),
       defaultDatasource: { uid: 'ds' },
       queries: [
@@ -291,7 +305,8 @@ describe('resolvePatterns', () => {
       widgets: [{ id: 'w', anchorCellId: 'a', kind: 'sparkline', label: 'Load', binding }],
     };
     const result = resolvePatterns([cellMetaFromAttrs('a', {}, false)], config);
-    expect(result.widgets).toEqual([]);
+    // the widget is admitted with the reason: the chart layer shows the text instead of the chart
+    expect(result.widgets).toEqual([expect.objectContaining({ unavailable: 'Binding metadata is unavailable' })]);
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ code: 'missing-parameter-path', path: 'widgets[0].binding.parameters.dm_device' })
     );
@@ -300,7 +315,7 @@ describe('resolvePatterns', () => {
 
 describe('display provenance', () => {
   const sel = (match: Record<string, string>) => ({ queryId: 'q', match, reducer: 'last' as const });
-  const config: DiagramConfigV2 = {
+  const config: DiagramConfig = {
     ...empty(),
     queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
     patterns: [
@@ -351,7 +366,7 @@ describe('display provenance of a status and of the fast path', () => {
       default: { state: 'normal', reason },
       mappings: [{ value: 1, state: 'down', reason }],
     }) as never;
-  const config: DiagramConfigV2 = {
+  const config: DiagramConfig = {
     ...empty(),
     queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
     patterns: [
@@ -373,7 +388,7 @@ describe('display provenance of a status and of the fast path', () => {
       default: { state: 'normal', reason: 'x' },
       predicates: [{ op: 'gt', value: 1, state: 'down', reason: 'x' }],
     } as never;
-    const other: DiagramConfigV2 = {
+    const other: DiagramConfig = {
       ...config,
       patterns: [config.patterns[0], { ...config.patterns[1], display: { status: predicates } }],
     };
@@ -405,55 +420,150 @@ describe('display provenance of a status and of the fast path', () => {
   });
 });
 
-describe('a config saved before the schema dropped the fields of version 1', () => {
-  it('gives the same plan as the clean demo config', () => {
-    const cells = [
-      cellMetaFromAttrs('pg-node~rtr-a', { 'pg-kind': 'node', 'pg-id': 'rtr-a' }, false, 'rtr-a'),
-      cellMetaFromAttrs(
-        'pg-link~isp-a:pppoe->rtr-a:wan1',
-        { 'pg-kind': 'link', 'pg-id': 'isp-a:pppoe->rtr-a:wan1', 'pg-from': 'isp-a:pppoe', 'pg-to': 'rtr-a:wan1' },
-        true
-      ),
-      cellMetaFromAttrs(
-        'pg-link~rtr-a:lan1->sw-a:br-lan',
-        { 'pg-kind': 'link', 'pg-id': 'rtr-a:lan1->sw-a:br-lan', 'pg-from': 'rtr-a:lan1', 'pg-to': 'sw-a:br-lan' },
-        true
-      ),
-    ];
-    const clean = demoL3Config();
-    const saved = demoL3Config() as unknown as { patterns: Array<{ id: string; display: Record<string, unknown> }> };
-    for (const pattern of saved.patterns) {
-      const display = pattern.display;
-      const link = display.link as Record<string, unknown> | undefined;
-      const hover = display.hover as { title?: string } | undefined;
-      if (link?.a2bBinding) {
-        const a2b = link.a2bBinding as { queryId: string; match: Record<string, string> };
-        display.link = {
-          ...link,
-          a2b: { refId: a2b.queryId, match: a2b.match },
-          b2a: { refId: a2b.queryId, match: a2b.match },
-          card: hover?.title ? { title: hover.title, url: '/d/old' } : { url: '/d/old' },
-        };
-      }
-      if (pattern.id === 'lan-speed') {
-        const { capacityBinding, ...rest } = link!;
-        const cap = capacityBinding as { queryId: string; match: Record<string, string>; reducer: string };
-        display.link = { ...rest, capacity: { refId: cap.queryId, match: cap.match, reducer: cap.reducer } };
-      }
-      if (display.shape) {
-        display.shape = {
-          ...(display.shape as object),
-          fill: false,
-          stroke: false,
-          card: [{ title: 'CPU', refId: 'C', unit: 'percent' }],
-          sparkline: { refId: 'C', position: 'bottom' },
-        };
-      }
-    }
-    expect(saved).not.toEqual(clean);
-    const expected = resolvePatterns(cells, clean);
-    expect(Object.keys(expected.cells)).toHaveLength(3);
-    expect(expected.diagnostics).toEqual([]);
-    expect(resolvePatterns(cells, saved as unknown as DiagramConfigV2)).toEqual(expected);
+describe('resolvePatterns with items that do not parse or cannot run', () => {
+  const cells = ['a', 'b', 'c'].map((id) => cellMetaFromAttrs(id, { 'pg-kind': 'node', 'pg-id': id }, false));
+  const q = { id: 'q', name: 'Q', source: { kind: 'panel' as const, refId: 'A' } };
+  const binding = { queryId: 'q', match: {}, reducer: 'last' as const };
+  const good = { id: 'all', name: 'All', select: {}, display: { shape: { binding } } };
+  const widget = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    anchorCellId: 'a',
+    kind: 'sparkline',
+    label: id,
+    binding,
+    ...over,
+  });
+
+  it('one invalid override keeps the other cells and marks that cell unavailable', () => {
+    const plan = resolvePatterns(cells, {
+      ...empty(),
+      queries: [q],
+      patterns: [good],
+      overrides: [{ cellId: 'b', display: { shape: { target: 'round' } } }],
+    });
+    expect(plan.cells.a).toMatchObject({ bindings: [binding] });
+    expect(plan.cells.a.unavailable).toBeUndefined();
+    expect(plan.cells.b).toMatchObject({ unavailable: 'Override of b is not applied', bindings: [] });
+    expect(plan.cells.c.bindings).toEqual([binding]);
+    expect(plan.diagnostics.map((d) => [d.code, d.path])).toEqual([
+      ['invalid-config', 'overrides[0].display.shape.target'],
+      ['skipped-item', 'overrides[0]'],
+    ]);
+  });
+  it('a skipped pattern with a valid select marks its cells unavailable and reports skipped-cells', () => {
+    const plan = resolvePatterns(cells, {
+      ...empty(),
+      queries: [q],
+      patterns: [good, { id: 'bad', name: 'Bad', select: { ids: ['a', 'b'] }, display: { link: { capacity: 0 } } }],
+    });
+    expect(plan.cells.a.unavailable).toBe('Pattern Bad is not applied');
+    expect(plan.cells.b.unavailable).toBe('Pattern Bad is not applied');
+    expect(plan.cells.a.bindings).toEqual([]);
+    expect(plan.cells.c.unavailable).toBeUndefined();
+    expect(plan.cells.c.bindings).toEqual([binding]);
+    expect(plan.diagnostics).toContainEqual({
+      code: 'skipped-cells',
+      path: 'patterns[1]',
+      message: '2 cells unavailable: Pattern Bad is not applied.',
+    });
+    expect(plan.config.patterns.map((p) => p.id)).toEqual(['all']);
+  });
+  it('a skipped pattern with an invalid select marks every cell unavailable and keeps the widgets', () => {
+    const plan = resolvePatterns(cells, {
+      ...empty(),
+      queries: [q],
+      patterns: [good, { id: 'bad', name: 'Bad', select: { kind: 'host' }, display: {} }],
+      widgets: [widget('w', { anchorCellId: 'c' })],
+    });
+    expect(Object.values(plan.cells).map((c) => c.unavailable)).toEqual(Array(3).fill('Pattern Bad is not applied'));
+    expect(plan.widgets).toHaveLength(1);
+    expect(plan.widgets[0].unavailable).toBeUndefined();
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'skipped-cells', path: 'patterns[1].select' })
+    );
+  });
+  it('a binding to an unknown or unusable query is absent from cell.bindings, with the reason at the cell path', () => {
+    const native = { id: 'native', name: 'N', source: { kind: 'datasource', target: { refId: 'N' }, parameters: {} } };
+    const plan = resolvePatterns(cells.slice(0, 1), {
+      ...empty(),
+      queries: [native],
+      patterns: [
+        {
+          id: 'p',
+          name: 'P',
+          select: {},
+          display: {
+            shape: { binding: { ...binding, queryId: 'native' } },
+            link: { a2b: { binding: { ...binding, queryId: 'missing' } } },
+          },
+        },
+      ],
+      widgets: [
+        widget('w', { binding: { ...binding, queryId: 'missing' } }),
+        widget('w2', { binding: { ...binding, queryId: 'native' } }),
+      ],
+    });
+    expect(plan.cells.a.bindings).toEqual([]);
+    expect(plan.cells.a.unavailable).toBeUndefined();
+    expect(plan.widgets.map((w) => [w.widget.id, w.unavailable])).toEqual([
+      ['w', 'Query missing does not exist. Choose a named query or restore its definition.'],
+      ['w2', 'Query native cannot run: choose a datasource.'],
+    ]);
+    expect(plan.diagnostics).toEqual(
+      expect.arrayContaining([
+        {
+          code: 'unknown-query',
+          path: 'cells.a.link.a2b.binding.queryId',
+          message: expect.stringMatching(/does not exist/),
+        },
+        {
+          code: 'unknown-query',
+          path: 'cells.a.shape.binding.queryId',
+          message: 'Query native cannot run: choose a datasource.',
+        },
+        expect.objectContaining({ code: 'missing-datasource', path: 'queries[0].source.datasource' }),
+      ])
+    );
+  });
+  it('a widget with an invalid range or freshness is admitted with the reason', () => {
+    const plan = resolvePatterns(cells, {
+      ...empty(),
+      queries: [q],
+      widgets: [
+        widget('w', { kind: 'bar', min: 10, max: 1 }),
+        widget('f', { freshness: { expectedIntervalMs: 1000, staleAfterMs: 10 } }),
+      ],
+    });
+    expect(plan.widgets.map((w) => w.unavailable)).toEqual(['Invalid range', 'Invalid freshness policy']);
+  });
+  it('uses the saved indices in missing-cell, missing-anchor and the widget index', () => {
+    const plan = resolvePatterns(cells, {
+      ...empty(),
+      queries: [q],
+      overrides: [
+        { cellId: 'a', display: { unknown: 1 } },
+        { cellId: 'gone', display: {} },
+      ],
+      widgets: [{ bad: true }, widget('w', { anchorCellId: 'nowhere' }), widget('w2')],
+    });
+    expect(plan.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'missing-cell', path: 'overrides[1].cellId' }),
+        expect.objectContaining({ code: 'missing-anchor', path: 'widgets[1].anchorCellId' }),
+      ])
+    );
+    expect(plan.widgets.map((w) => [w.widget.id, w.index])).toEqual([['w2', 2]]);
+  });
+  it('an ambiguous cell id is unavailable with the reason; the other cells bind', () => {
+    const twice = [cells[0], cellMetaFromAttrs('a', { 'pg-kind': 'node', 'pg-id': 'a2' }, false), cells[2]];
+    const plan = resolvePatterns(twice, { ...empty(), queries: [q], patterns: [good] });
+    expect(plan.cells.a.unavailable).toMatch(/ambiguous/);
+    expect(plan.cells.c.bindings).toEqual([binding]);
+  });
+  it('a version 2 document binds nothing and keeps its diagnostic; the plan config is empty', () => {
+    const plan = resolvePatterns(cells, { ...empty(), version: 2, queries: [q], patterns: [good] });
+    expect(plan.cells).toEqual({});
+    expect(plan.config).toEqual({ version: 3, queries: [], patterns: [], overrides: [], widgets: [] });
+    expect(plan.diagnostics.map((d) => d.code)).toEqual(['outdated-config']);
   });
 });

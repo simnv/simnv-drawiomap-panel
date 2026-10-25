@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { DiagramConfigV2, DisplayConfig, HoverRow, QueryBinding } from '../model/config';
+import type { DiagramConfig, DisplayConfig, HoverRow, QueryBinding } from '../model/config';
 import { renderEditor, svgOf } from './editorHarness';
 import { buttonNamed, chooseOption, editorField, openSection, selectStageCell } from './testUtils';
 import { DisplayFields } from './BindingFields';
@@ -22,8 +22,8 @@ const patternRows: HoverRow[] = [
   { kind: 'metadata', label: 'Device', path: 'cell.key' },
   { kind: 'metadata', label: 'Kind', path: 'cell.kind' },
 ];
-const config = (): DiagramConfigV2 => ({
-  version: 2,
+const config = (): DiagramConfig => ({
+  version: 3,
   queries: [],
   widgets: [],
   patterns: [
@@ -138,7 +138,7 @@ describe('DisplayFields component', () => {
     label: 'L',
     url: '/d/x',
     shape: { binding, text: true },
-    link: { a2bBinding: binding, b2aBinding: binding, capacityBinding: binding, capacity: 10 },
+    link: { a2b: { binding: binding }, b2a: { binding: binding }, capacityBinding: binding, capacity: 10 },
     status: {
       kind: 'predicates',
       binding,
@@ -181,8 +181,8 @@ describe('DisplayFields component', () => {
         'shape.binding',
         'shape.target',
         'link.enabled',
-        'link.a2bBinding',
-        'link.b2aBinding',
+        'link.a2b.binding',
+        'link.b2a.binding',
         'link.capacityBinding',
         'link.capacity',
         'status.enabled',
@@ -219,5 +219,33 @@ describe('DisplayFields component', () => {
       // Every request became a chip.
       expect(screen.getAllByTestId('dmap-field-source')).toHaveLength(sourceOf.mock.calls.length);
     });
+  });
+});
+
+describe('inspector of a skipped pattern', () => {
+  it('shows the problems with their paths and a delete button, and no form; delete removes the pattern', () => {
+    const broken = {
+      ...config(),
+      patterns: [...config().patterns, { id: 'broken', name: 'Broken', select: { kind: 'host' }, display: {} }],
+    } as unknown as DiagramConfig;
+    setup(broken);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit pattern Broken' }));
+    const problems = screen.getByRole('list', { name: 'Pattern problems' });
+    const items = within(problems)
+      .getAllByRole('listitem')
+      .map((li) => li.textContent);
+    expect(items).toHaveLength(3);
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^patterns\[1\]\.select\.kind: /),
+        'patterns[1]: Pattern Broken is not applied until its errors are fixed.',
+        expect.stringMatching(/^patterns\[1\]\.select: Every cell is unavailable/),
+      ])
+    );
+    expect(screen.queryByLabelText('Edit scope')).toBeNull();
+    expect(screen.queryByLabelText('Label template')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete pattern' }));
+    expect(screen.queryByRole('button', { name: 'Edit pattern Broken' })).toBeNull();
+    expect(screen.getByLabelText('Edit scope')).toBeTruthy();
   });
 });

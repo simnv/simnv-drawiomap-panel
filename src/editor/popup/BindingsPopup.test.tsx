@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createQueryController } from '../../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../../query/panel';
 import { DEFAULT_OPTIONS, type Options } from '../../types';
-import type { DiagramConfigV2, QueryBinding } from '../../model/config';
+import type { DiagramConfig, QueryBinding } from '../../model/config';
 import { nativeQuery } from '../../fixtures/authoring-config';
 import { diagramOf, svgOf } from '../editorHarness';
 import { buttonNamed, selectStageCell } from '../testUtils';
@@ -27,15 +27,15 @@ const service = (): PanelQueryService => ({
   },
 });
 
-const config = (label = ''): DiagramConfigV2 => ({
-  version: 2,
+const config = (label = ''): DiagramConfig => ({
+  version: 3,
   queries: [],
   widgets: [],
   patterns: [],
   overrides: label ? [{ cellId: 'a', display: { label } }] : [],
 });
 
-const optionsOf = (c: DiagramConfigV2 = config()): Options => ({
+const optionsOf = (c: DiagramConfig = config()): Options => ({
   ...DEFAULT_OPTIONS,
   rules: [],
   config: c,
@@ -444,5 +444,16 @@ describe('CardPreview component', () => {
       rerender(view(patch({ enabled: false, rows: withRows.hover!.rows }), resolverFor(1)));
       expect(screen.getByText('No card for this element')).toBeTruthy();
     });
+  });
+});
+
+describe('a config of version 2', () => {
+  it('shows the outdated note once above an empty list, and no problem row for it', () => {
+    mount(optionsOf({ ...config(), version: 2 } as unknown as DiagramConfig));
+    const list = screen.getByTestId('dmap-pane-list');
+    expect(within(list).getAllByText(/version 2, the shape before 1\.0\.0/)).toHaveLength(1);
+    expect(within(list).getByRole('status').textContent).toContain('regenerate the config with version 3');
+    expect(within(list).queryByRole('button', { name: /problem without an owner/ })).toBeNull();
+    expect(within(list).getByRole('button', { name: 'Patterns (0)' })).toBeTruthy();
   });
 });

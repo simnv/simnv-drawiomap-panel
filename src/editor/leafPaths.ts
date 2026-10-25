@@ -32,11 +32,11 @@ export function leafPaths(partial: Partial<DisplayConfig>, units: readonly strin
 export const UNIT_PATHS = [
   'status',
   'shape.binding',
-  'link.a2bBinding',
-  'link.b2aBinding',
+  'link.a2b.binding',
+  'link.a2b.capacityBinding',
+  'link.b2a.binding',
+  'link.b2a.capacityBinding',
   'link.capacityBinding',
-  'link.capacityA2bBinding',
-  'link.capacityB2aBinding',
 ] as const;
 
 /** The value of a dotted path (with `[i]` indexes) in a display, or `undefined`. */

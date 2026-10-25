@@ -102,6 +102,19 @@ describe('ensureOverlay', () => {
 });
 
 describe('renderOverlay', () => {
+  it('draws an ok half and an unbound half as two halves, the unbound one in its grey', () => {
+    const { root, index } = build();
+    const unbound: HalfState = { status: 'unbound', color: '#808080', width: 2, label: 'unavailable', stepIndex: -1 };
+    renderOverlay(root, index, new Map([['e1', patch('e1', { link: { a2b: half(), b2a: unbound } })]]), opts);
+    expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(2);
+    const a2b = root.querySelector('polyline.dmap-half[data-dmap-half="a2b"]')!;
+    expect(a2b.getAttribute('points')).toBe('0,0 75,0');
+    expect(a2b.getAttribute('stroke')).toBe('#00ff00');
+    const b2a = root.querySelector('polyline.dmap-half[data-dmap-half="b2a"]')!;
+    expect(b2a.getAttribute('points')).toBe('75,0 100,0 100,50');
+    expect(b2a.getAttribute('stroke')).toBe('#808080');
+    expect(b2a.getAttribute('data-dmap-status')).toBe('unbound');
+  });
   it('draws two halves and two arrows for a two-way link, without value labels', () => {
     const { root, index } = build();
     const patches: PatchMap = new Map([

@@ -24,7 +24,7 @@ async function cornerDashboard(request: APIRequestContext, uid: string, title: s
   const demo = await (await request.get('/api/dashboards/uid/drawiomap-demo')).json();
   const panel = demo.dashboard.panels.find((p: { id: number }) => p.id === 1);
   const config = {
-    version: 2,
+    version: 3,
     defaultDatasource: { uid: 'victoriametrics', type: 'prometheus' },
     queries: [nativeQuery('absent', 'absent(vector(1))')],
     patterns: [],

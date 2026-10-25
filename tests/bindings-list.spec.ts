@@ -147,3 +147,23 @@ for (const [name, viewport] of [
     await expect(list.getByRole('textbox', { name: 'Default datasource UID' })).toBeVisible();
   });
 }
+
+test('a config of version 2 binds nothing: the panel warns and the list shows the outdated note', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  const outdated = { ...config, version: 2 } as unknown as typeof config;
+  const uid = await createDiagram(outdated);
+  const panelEdit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const panel = panelEdit.panel.locator;
+  await expect(panel.locator('[data-dmap-warnings]')).toHaveAttribute('data-dmap-warnings', /^[1-9]/);
+  await expect(panel.locator('polyline.dmap-half')).toHaveCount(0);
+  await expect(panel.locator('[data-cell-id][data-dmap-status]')).toHaveCount(0);
+  const dialog = await openBindingsPopup(page);
+  const list = listOf(dialog);
+  await expect(list.getByText(/version 2, the shape before 1\.0\.0/)).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Patterns (0)', exact: true })).toBeVisible();
+  await discardDraft(dialog);
+});

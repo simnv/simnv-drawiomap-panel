@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import type { DiagramConfigV2, NamedQuery } from '../src/model/config';
+import type { DiagramConfig, NamedQuery } from '../src/model/config';
 import { binding, nativeQuery } from '../src/fixtures/authoring-config';
 import { openBindingsPopup, closeBindingsPopup } from './authoring-controls';
 import { expect, observeQueries, test } from './authoring-fixtures';
@@ -14,7 +14,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="330" height="80" vie
   ).join('')}</g>
 </svg>`;
 
-function statusConfig(config: DiagramConfigV2, queries: NamedQuery[]): DiagramConfigV2 {
+function statusConfig(config: DiagramConfig, queries: NamedQuery[]): DiagramConfig {
   return {
     ...config,
     queries,
@@ -179,7 +179,7 @@ test.describe('popup open', () => {
   }) => {
     const testdata = await readProvisionedDataSource({ fileName: 'authoring.yaml' });
     const walk = binding('walk');
-    const live: DiagramConfigV2 = {
+    const live: DiagramConfig = {
       ...config,
       queries: [{ id: 'walk', name: 'walk', source: { kind: 'panel', refId: 'A' } }],
       patterns: [
@@ -188,7 +188,7 @@ test.describe('popup open', () => {
           name: 'Links',
           select: { ids: ['link-1'] },
           display: {
-            link: { a2bBinding: walk, b2aBinding: walk, capacity: 100 },
+            link: { a2b: { binding: walk }, b2a: { binding: walk }, capacity: 100 },
             hover: { rows: [{ kind: 'value', label: 'Walk', binding: walk }] },
           },
         },

@@ -6,7 +6,7 @@ import type { CellMeta } from '../types';
 import { fieldSourceOf } from './fieldSource';
 import { draftPatternIndex, type BindingDraft, type DraftAction } from './draft';
 import { DisplayFields, newBinding, TextField } from './BindingFields';
-import type { DisplayConfig } from '../model/config';
+import { validateConfig, type Diagnostic, type DisplayConfig } from '../model/config';
 import { ChartFields } from './ChartFields';
 import { EditorField, EditorSection } from './EditorLayout';
 
@@ -20,6 +20,8 @@ export interface BindingInspectorProps {
   chartEligible?: boolean;
   /** The identity of the selected cell: the sources of its fields come from the merge of the draft. */
   meta?: CellMeta;
+  /** The diagnostics of the draft, for the problems of a skipped pattern. */
+  diagnostics?: Diagnostic[];
 }
 export function BindingInspector({
   draft,
@@ -30,9 +32,13 @@ export function BindingInspector({
   fields,
   chartEligible,
   meta,
+  diagnostics = [],
 }: BindingInspectorProps) {
   const heading = useRef<HTMLHeadingElement>(null);
-  const provenance = useMemo(() => (meta ? displayProvenance(draft.config, meta) : undefined), [draft.config, meta]);
+  // The items that parse, dense: the merge, the provenance and the field sources read these, never a skipped item.
+  const validated = useMemo(() => validateConfig(draft.config), [draft.config]);
+  const config = validated.config;
+  const provenance = useMemo(() => (meta && config ? displayProvenance(config, meta) : undefined), [config, meta]);
   useLayoutEffect(() => {
     if (!draft.cellId) {
       return;
@@ -44,14 +50,53 @@ export function BindingInspector({
     return <p>Select a diagram element to edit its bindings.</p>;
   }
   const name = displayName(meta, draft.cellId);
-  const pattern = draft.scope === 'pattern' ? draft.config.patterns[draftPatternIndex(draft)] : undefined;
+  const savedIndex = draft.scope === 'pattern' ? draftPatternIndex(draft) : -1;
+  const skippedPattern =
+    savedIndex >= 0
+      ? validated.skippedItems.find((i) => i.section === 'patterns' && i.index === savedIndex)
+      : undefined;
+  if (skippedPattern) {
+    // A pattern that does not parse has no form: its problems with their paths, and the delete button.
+    const prefix = `patterns[${savedIndex}]`;
+    // the editor collects the same diagnostic from the validation and from the plan: each one once
+    const seen = new Set<string>();
+    const problems = diagnostics.filter((d) => {
+      const key = `${d.code}|${d.path}|${d.message}`;
+      const own = d.path === prefix || d.path.startsWith(`${prefix}.`);
+      return own && !seen.has(key) && !!seen.add(key);
+    });
+    return (
+      <section aria-label="Element bindings">
+        <h3 ref={heading} tabIndex={-1}>
+          {skippedPattern.title}
+        </h3>
+        <p>
+          {skippedPattern.title} is not applied until its errors are fixed. The panel shows its cells as unavailable.
+        </p>
+        <ul aria-label="Pattern problems">
+          {problems.map((d, i) => (
+            <li key={i}>
+              {d.path}: {d.message}
+            </li>
+          ))}
+        </ul>
+        <Button variant="destructive" size="sm" onClick={() => dispatch({ type: 'remove-pattern', index: savedIndex })}>
+          Delete pattern
+        </Button>
+      </section>
+    );
+  }
+  const pattern = draft.scope === 'pattern' ? draft.config.patterns[savedIndex] : undefined;
   const editDisplay = pattern?.display ?? binding.display;
+  // a provenance owner holds the dense index of a pattern (the index in the validated config)
   const editing: DisplayOwner = pattern
-    ? { kind: 'pattern', index: draftPatternIndex(draft) }
+    ? { kind: 'pattern', index: validated.indices.patterns.indexOf(savedIndex) }
     : { kind: 'override', cellId: draft.cellId };
-  const sourceOf = provenance
-    ? (path: string) => ({ ...fieldSourceOf(provenance, path, editing, draft.config), scope: draft.scope })
-    : undefined;
+  const sourceOf =
+    provenance && config
+      ? (path: string) => ({ ...fieldSourceOf(provenance, path, editing, config), scope: draft.scope })
+      : undefined;
+  const patternName = (id: string) => draft.config.patterns.find((p) => p.id === id)?.name;
   return (
     <section aria-label="Element bindings">
       <h3 ref={heading} tabIndex={-1}>
@@ -60,11 +105,8 @@ export function BindingInspector({
       <EditorSection title="Element details">
         <p>Name: {name}</p>
         <p>Identity: {identityOf(meta, draft.cellId)}</p>
-        <p>
-          Patterns:{' '}
-          {binding.patternIds.map((id) => draft.config.patterns.find((p) => p.id === id)?.name ?? id).join(', ') ||
-            'None'}
-        </p>
+        <p>Patterns: {binding.patternIds.map((id) => patternName(id) ?? id).join(', ') || 'None'}</p>
+        {binding.unavailable && <p role="status">Unavailable: {binding.unavailable}</p>}
       </EditorSection>
       <p>Element override: {binding.overridden ? 'Yes' : 'No'}</p>
       <EditorField label="Edit scope">
@@ -94,10 +136,7 @@ export function BindingInspector({
             onChange={(selection) => dispatch({ type: 'scope', scope: 'pattern', patternId: selection.value ?? '' })}
             options={[
               ...Array.from(new Set([...binding.patternIds, ...(draft.patternId ? [draft.patternId] : [])])).map(
-                (id) => ({
-                  value: id,
-                  label: draft.config.patterns.find((p) => p.id === id)?.name,
-                })
+                (id) => ({ value: id, label: patternName(id) })
               ),
             ]}
             menuShouldPortal

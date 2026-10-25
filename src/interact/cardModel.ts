@@ -1,25 +1,30 @@
-import { Field, formattedValueToString, GrafanaTheme2, LinkModel, ScopedVars, ThresholdsConfig } from '@grafana/data';
+import { formattedValueToString, GrafanaTheme2, LinkModel, ScopedVars, ThresholdsConfig } from '@grafana/data';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
 import {
+  halfState,
   historySeries,
   metricProblem,
   type BindingDemand,
   type BindingResolver,
+  type HalfContext,
   type PlanCellPatch,
 } from '../binding/engine';
+import { inFieldUnit, resolveCapacity, type CapacityDiagnostic } from '../binding/capacity';
+import { INVALID_FRESHNESS_TEXT } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import {
+  invalidBounds,
+  invalidFreshness,
   rowBindings,
+  type CombinedRow,
   type Diagnostic,
   type FreshnessPolicy,
   type HoverRow,
   type QueryBinding,
-  type RowCapacity,
 } from '../model/config';
-import { colorFor, noDataColor } from '../binding/color';
-import { toBitsPerSecond } from '../binding/units';
+import { noDataColor } from '../binding/color';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 
 export interface ConfiguredCardRow {
@@ -59,6 +64,17 @@ export interface ConfiguredCardModel {
   links: LinkModel[];
   demands: BindingDemand[];
   diagnostics: Diagnostic[];
+}
+
+const UNAVAILABLE_TEXT = 'Binding metadata is unavailable';
+
+/** Why a data row cannot show its data, from its own options: a freshness policy or a range that cannot be met. */
+function rowProblem(row: Extract<HoverRow, { kind: 'value' | 'history' | 'combined' }>): string | undefined {
+  return invalidFreshness(row.freshness)
+    ? INVALID_FRESHNESS_TEXT
+    : invalidBounds(row.min, row.max)
+      ? 'Invalid range'
+      : undefined;
 }
 
 export function buildConfiguredCard(
@@ -107,21 +123,16 @@ export function buildConfiguredCard(
         card.links.push({ title: base.title, href, target: '_blank', origin: patch });
       }
     } else {
-      const unavailable = patch.unavailableHoverRows?.includes(i);
-      const combined = 'series' in row;
+      // a row that cannot show data: its binding is not usable for the cell, or its own options cannot be met
+      const blocked = patch.unavailableHoverRows?.includes(i) ? UNAVAILABLE_TEXT : rowProblem(row);
       const parts = rowBindings(row).map(({ binding, path }, j) => {
-        if (!unavailable) {
-          card.demands.push({
-            cellId: patch.cellId,
-            binding,
-            role: 'hover',
-            rowIndex: i,
-            ...(combined ? { seriesIndex: j } : {}),
-          });
+        if (blocked === undefined) {
+          card.demands.push({ cellId: patch.cellId, binding, role: 'hover', rowIndex: i, path });
         }
-        const model: HistoryModel = unavailable
-          ? { state: 'unsupported', message: 'Binding metadata is unavailable' }
-          : readBinding(patch, binding, `hover.rows[${i}].${path}`, row.unit, resolve, ctx, card.diagnostics);
+        const model: HistoryModel =
+          blocked !== undefined
+            ? { state: 'unsupported', message: blocked }
+            : readBinding(patch, binding, `hover.rows[${i}].${path}`, row.unit, resolve, ctx, card.diagnostics);
         const series = model.state === 'ready' ? historySeries(model, binding) : undefined;
         const primary: Primary = {
           status: model.state === 'ready' ? 'ok' : 'nodata',
@@ -131,25 +142,25 @@ export function buildConfiguredCard(
         };
         return { model, primary };
       });
-      if ('series' in row) {
+      if (row.kind === 'combined') {
         const href = rowHref(patch, row.url, (parts.find((p) => p.primary.series) ?? parts[0]).primary, ctx);
         card.rows.push({
           ...base,
           freshness: row.freshness,
           href,
           height: row.height,
-          ...(unavailable
-            ? { state: 'unsupported', text: 'Binding metadata is unavailable' }
+          ...(blocked !== undefined
+            ? { state: 'unsupported', text: blocked }
             : combinedRow(
                 row,
                 parts.map((p) => p.model),
                 ctx,
-                { patch, rowIndex: i, diagnostics: card.diagnostics }
+                { patch, rowIndex: i, resolve, card }
               )),
         });
         return;
       }
-      const model = parts[0]?.model ?? { state: 'unsupported', message: 'Binding metadata is unavailable' };
+      const model = parts[0]?.model ?? { state: 'unsupported', message: UNAVAILABLE_TEXT };
       card.rows.push({
         ...base,
         text: stateText(model),
@@ -210,7 +221,7 @@ export interface DirectionRowModel {
   direction: 'up' | 'down';
   /** "↑" or "↓" by default */
   label: string;
-  /** current value, for example "8.2 Mb/s · 8%", or why there is no value */
+  /** current value, for example "8.2 Mb/s · 8% of 100 Mb/s", or why there is no value */
   text: string;
   /** from the field config and thresholds of its own value, as a link half */
   color: string;
@@ -219,52 +230,14 @@ export interface DirectionRowModel {
   history: HistoryModel;
 }
 
-const positive = (v: unknown): number | undefined => (typeof v === 'number' && v > 0 ? v : undefined);
-
-/** A capacity from the row: an amount in the unit of the values, or in bit/s (a template). */
-interface RowCapacityValue {
-  amount?: number;
-  bitsPerSecond: boolean;
-  /** the author set a capacity and it gives no usable number */
-  failed: boolean;
-}
-
-/** Resolves a capacity of a combined row. An unusable template gives a diagnostic and no number. */
-function resolveRowCapacity(
-  spec: RowCapacity | undefined,
-  patch: PlanCellPatch,
-  path: string,
-  diagnostics: Diagnostic[]
-): RowCapacityValue {
-  if (spec === undefined) {
-    return { bitsPerSecond: false, failed: false };
-  }
-  if (typeof spec === 'number') {
-    const amount = positive(spec);
-    return { amount, bitsPerSecond: false, failed: amount === undefined };
-  }
-  const resolved = resolveTemplate(spec, patch.scope);
-  const amount = resolved.unresolved.length || resolved.text.trim() === '' ? NaN : Number(resolved.text);
-  if (Number.isFinite(amount) && amount > 0) {
-    return { amount, bitsPerSecond: true, failed: false };
-  }
-  diagnostics.push({
-    code: 'unresolved-metadata',
-    path: `cells.${patch.cellId}.${path}`,
-    message: resolved.unresolved.length
-      ? `Unresolved ${[...new Set(resolved.unresolved)].join(', ')}`
-      : `Capacity "${resolved.text}" is not a positive number of bit/s.`,
-  });
-  return { bitsPerSecond: true, failed: true };
-}
-
-/** The capacity in the unit of the values of a series (a number already has it; bit/s is converted). */
-function inValueUnit(c: RowCapacityValue, model: HistoryModel | undefined): number | undefined {
-  if (c.amount === undefined || !c.bitsPerSecond) {
-    return c.amount;
-  }
-  const unit = model?.state === 'ready' ? model.field.config?.unit : undefined;
-  return c.amount / toBitsPerSecond(1, unit).bits;
+/** The link-half context of a card: the field of the series formats the values and the capacity. */
+function halfContext(ctx: CardContext): HalfContext {
+  return {
+    theme: ctx.theme,
+    fieldThresholds: ctx.fieldThresholds,
+    linkWidth: { min: 0, max: 0 },
+    display: (series, value) => fieldDisplay(series.field, ctx.theme)(value),
+  };
 }
 
 /**
@@ -273,30 +246,63 @@ function inValueUnit(c: RowCapacityValue, model: HistoryModel | undefined): numb
  * the capacity or the row max. A single direction stays positive and uses yDomain.
  */
 function combinedRow(
-  row: Extract<HoverRow, { series: unknown }>,
+  row: CombinedRow,
   models: HistoryModel[],
   ctx: CardContext,
-  at: { patch: PlanCellPatch; rowIndex: number; diagnostics: Diagnostic[] }
+  at: { patch: PlanCellPatch; rowIndex: number; resolve: BindingResolver; card: ConfiguredCardModel }
 ): Pick<ConfiguredCardRow, 'text' | 'state' | 'sampleAt' | 'directions' | 'domain'> {
+  const { patch, card } = at;
   const rowPath = `hover.rows[${at.rowIndex}]`;
-  const rowCapacity = resolveRowCapacity(row.capacity, at.patch, `${rowPath}.capacity`, at.diagnostics);
-  // The capacity of a direction: its own, else the row capacity, else the Max of its field config.
-  // A capacity that the author set and that gives no number is not replaced: the direction has no percent.
-  const capacities = row.series.map((s, j): number | undefined => {
-    const own =
-      s.capacity === undefined
-        ? rowCapacity
-        : resolveRowCapacity(s.capacity, at.patch, `${rowPath}.series[${j}].capacity`, at.diagnostics);
+  // The row capacity sources are resolved once per direction: one report of each problem, one read of each series.
+  const reported = new Set<string>();
+  const report = (d: CapacityDiagnostic) => {
+    const key = `${d.code}|${d.path}|${d.message}`;
+    if (!reported.has(key)) {
+      reported.add(key);
+      card.diagnostics.push({ ...d, path: `cells.${patch.cellId}.${d.path}` });
+    }
+  };
+  const reads = new Map<string, HistoryModel>();
+  const read = (binding: QueryBinding, path: string): HistoryModel | undefined => {
+    if (patch.bindings && !patch.bindings.includes(binding)) {
+      return undefined;
+    }
+    const seen = reads.get(path);
+    if (seen) {
+      return seen;
+    }
+    // the demand names the place in the row, as collectBindingDemands does: `series[j].capacityBinding`
+    card.demands.push({
+      cellId: patch.cellId,
+      binding,
+      role: 'hover',
+      rowIndex: at.rowIndex,
+      path: path.slice(rowPath.length + 1),
+    });
+    const model = readBinding(patch, binding, path, undefined, at.resolve, ctx, card.diagnostics);
+    reads.set(path, model);
+    return model;
+  };
+  const halves = halfContext(ctx);
+  const mirrored = row.series.length === 2;
+  const capacities: Array<number | undefined> = [];
+  const directions = row.series.map((s, j): DirectionRowModel => {
     const model = models[j];
     // a direction without data has no unit: it takes the unit of the other direction
     const unitModel = model.state === 'ready' ? model : models.find((m) => m.state === 'ready');
-    return own.failed
-      ? undefined
-      : (inValueUnit(own, unitModel) ?? (model.state === 'ready' ? positive(model.field.config.max) : undefined));
-  });
-  const mirrored = row.series.length === 2;
-  const directions = row.series.map((s, j): DirectionRowModel => {
-    const model = models[j];
+    const field = unitModel?.state === 'ready' ? unitModel.field : undefined;
+    const cap = resolveCapacity({
+      own: s,
+      ownPath: `${rowPath}.series[${j}]`,
+      shared: row,
+      sharedPath: rowPath,
+      numberUnit: 'field',
+      scope: patch.scope,
+      field,
+      read,
+    });
+    cap.diagnostics.forEach(report);
+    capacities.push(cap.amount === undefined ? undefined : inFieldUnit(cap.amount, field));
     const base = {
       direction: s.direction,
       label: s.label ?? (s.direction === 'up' ? '↑' : '↓'),
@@ -306,21 +312,14 @@ function combinedRow(
     if (model.state !== 'ready' || model.latestValue === undefined) {
       return { ...base, text: stateText(model), color: noDataColor(ctx.theme) };
     }
-    const capacity = capacities[j];
-    const percent = capacity ? (model.latestValue / capacity) * 100 : undefined;
-    const { color } = colorFor(
-      model.latestValue,
-      percent,
-      model.field as Field,
-      model.latestDisplayValue,
-      ctx.fieldThresholds,
-      ctx.theme
-    );
-    const value = stateText(model);
-    return { ...base, text: percent === undefined ? value : `${value} · ${Math.round(percent)}%`, color };
+    const half = halfState(model, s.binding, cap, halves);
+    for (const note of new Set(half.notes)) {
+      report({ code: 'unit-not-rate', path: `${rowPath}.series[${j}].binding`, message: note });
+    }
+    return { ...base, text: half.state.label, color: half.state.color };
   });
   const ready = models.filter((m): m is Extract<HistoryModel, { state: 'ready' }> => m.state === 'ready');
-  // for max "capacity": the larger capacity of the two directions
+  // for max "capacity": the larger capacity of the two directions, in the unit of the values
   const known = capacities.filter((c): c is number => c !== undefined);
   const capacity = known.length ? Math.max(...known) : undefined;
   // One shared scale for both directions: the data, not the capacity, unless the row says so.

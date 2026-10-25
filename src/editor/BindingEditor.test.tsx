@@ -10,7 +10,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { DiagramConfigV2, NamedQuery } from '../model/config';
+import type { DiagramConfig, NamedQuery } from '../model/config';
 import { FieldType, getDefaultTimeRange, LoadingState, toDataFrame, type PanelData } from '@grafana/data';
 import { createQueryController } from '../query/controller';
 import { exportPatternDocument } from './draft';
@@ -29,8 +29,8 @@ vi.mock('@grafana/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/runtime')>()),
   getDataSourceSrv: () => ({ get: async () => ({ components: {} }), getInstanceSettings: () => undefined }),
 }));
-const config: DiagramConfigV2 = {
-  version: 2,
+const config: DiagramConfig = {
+  version: 3,
   queries: [],
   overrides: [],
   widgets: [],
@@ -52,6 +52,31 @@ function setup() {
   return renderEditor({ config, svg: svgOf('device-1', 'device-2') });
 }
 describe('binding inspector', () => {
+  it('renders the inspector of a cell when the saved config holds items that do not parse', () => {
+    const withNulls = {
+      ...config,
+      queries: [null],
+      patterns: [...config.patterns, null],
+      widgets: [null],
+      overrides: [null],
+    } as unknown as DiagramConfig;
+    renderEditor({ config: withNulls, svg: svgOf('device-1', 'device-2') });
+    selectStageCell('device-2');
+    expect(screen.getByRole('heading', { name: 'device-2 bindings' })).toBeTruthy();
+    // the binding fields list the queries: the null entry is gone, the note says so
+    expect(screen.getByText(/^4 empty entries removed/)).toBeTruthy();
+  });
+  it('assigns a chart region from the first query when the saved queries start with a null entry', () => {
+    const withNull = {
+      ...config,
+      patterns: [],
+      queries: [null, { id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } }],
+    } as unknown as DiagramConfig;
+    renderEditor({ config: withNull, svg: svgOf('region') });
+    selectStageCell('region');
+    fireEvent.click(buttonNamed('Assign chart region'));
+    expect(editorField('Chart check sample freshness')).toBeTruthy();
+  });
   it.each([false, true])(
     'keeps native JSON validation in the query pane and drops the typed text when the pane closes with invalid=%s',
     async (invalid) => {
@@ -111,7 +136,7 @@ describe('binding inspector', () => {
   it('previews portable conflicts and stages an import without query execution, then cancels or applies', () => {
     const execute = vi.fn();
     const controller = createQueryController(execute);
-    const source: DiagramConfigV2 = {
+    const source: DiagramConfig = {
       ...config,
       patterns: [],
       defaultDatasource: { uid: 'source' },
@@ -133,7 +158,7 @@ describe('binding inspector', () => {
       ],
       overrides: [{ cellId: 'region', display: { label: 'Imported' } }],
     };
-    const destination: DiagramConfigV2 = {
+    const destination: DiagramConfig = {
       ...config,
       patterns: [],
       defaultDatasource: { uid: 'destination' },
@@ -208,7 +233,7 @@ describe('binding inspector', () => {
     // This case makes about forty edits and re-renders the whole popup for each; allow the time.
   }, 20000);
   it('assigns an ordinary rectangle to a named chart query, persists its identity and removes it explicitly', () => {
-    const chartConfig: DiagramConfigV2 = {
+    const chartConfig: DiagramConfig = {
       ...config,
       patterns: [],
       queries: [
@@ -228,7 +253,7 @@ describe('binding inspector', () => {
     fireEvent.change(editorField('Chart drilldown URL'), { target: { value: '/d/cpu' } });
     expect(first.save).not.toHaveBeenCalled();
     fireEvent.click(applyButton());
-    const persisted = JSON.parse(JSON.stringify(first.save.mock.calls[0][0])) as DiagramConfigV2;
+    const persisted = JSON.parse(JSON.stringify(first.save.mock.calls[0][0])) as DiagramConfig;
     expect(persisted.widgets).toEqual([
       expect.objectContaining({
         anchorCellId: 'plain-rectangle',
@@ -293,7 +318,7 @@ describe('binding inspector', () => {
     expect((editorField('Label template') as HTMLInputElement).value).toBe('Only panel one');
   });
   it('keeps unedited shape settings inherited when creating an element override', () => {
-    const inherited: DiagramConfigV2 = {
+    const inherited: DiagramConfig = {
       ...config,
       queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }],
       patterns: [
@@ -357,7 +382,7 @@ describe('binding inspector', () => {
     expect(screen.getByRole('alert').textContent).toContain('missing');
   });
   it('authors hover rows, shape/link bindings and explicit health rules through forms', () => {
-    const withQuery: DiagramConfigV2 = {
+    const withQuery: DiagramConfig = {
       ...config,
       queries: [{ id: 'health', name: 'Health', source: { kind: 'panel', refId: 'A' } }],
     };
@@ -374,13 +399,13 @@ describe('binding inspector', () => {
     fireEvent.click(applyButton());
     const display = save.mock.calls[0][0].overrides[0].display;
     expect(display.shape.binding.queryId).toBe('health');
-    expect(display.link.a2bBinding.queryId).toBe('health');
+    expect(display.link.a2b.binding.queryId).toBe('health');
     expect(display.hover.rows[0]).toMatchObject({ kind: 'history', binding: { queryId: 'health' } });
     expect(display.status.mappings[0]).toEqual({ value: 0, state: 'down', reason: 'Health check failed' });
   });
   it('edits the bindings of a combined up/down row and the auto Y range of rows and charts', () => {
     const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
-    const withRow: DiagramConfigV2 = {
+    const withRow: DiagramConfig = {
       ...config,
       queries: [
         { id: 'tx', name: 'TX', source: { kind: 'panel', refId: 'A' } },
@@ -393,7 +418,7 @@ describe('binding inspector', () => {
             hover: {
               rows: [
                 {
-                  kind: 'history',
+                  kind: 'combined',
                   label: 'Traffic',
                   series: [
                     { binding: tx, direction: 'up', label: '↑' },
@@ -414,7 +439,7 @@ describe('binding inspector', () => {
     fireEvent.change(editorField('Hover row 1 maximum'), { target: { value: '100000000' } });
     fireEvent.click(applyButton());
     expect(save.mock.calls[0][0].overrides[0].display.hover.rows[0]).toEqual({
-      kind: 'history',
+      kind: 'combined',
       label: 'Traffic',
       min: 'auto',
       max: 100000000,
@@ -426,14 +451,14 @@ describe('binding inspector', () => {
   });
   it('accepts the maximum "capacity" on a combined row', () => {
     const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
-    const withRow: DiagramConfigV2 = {
+    const withRow: DiagramConfig = {
       ...config,
       queries: [{ id: 'tx', name: 'TX', source: { kind: 'panel', refId: 'A' } }],
       overrides: [
         {
           cellId: 'device-1',
           display: {
-            hover: { rows: [{ kind: 'history', label: 'Traffic', series: [{ binding: tx, direction: 'up' }] }] },
+            hover: { rows: [{ kind: 'combined', label: 'Traffic', series: [{ binding: tx, direction: 'up' }] }] },
           },
         },
       ],
@@ -448,7 +473,7 @@ describe('binding inspector', () => {
   it('validates, clears and removes history height; a combined series row converts to a single binding', () => {
     const tx = { queryId: 'tx', match: {}, reducer: 'last' as const };
     const mount = (combined: boolean) => {
-      const withRows: DiagramConfigV2 = {
+      const withRows: DiagramConfig = {
         ...config,
         queries: [{ id: 'tx', name: 'TX', source: { kind: 'panel', refId: 'A' } }],
         overrides: [
@@ -458,7 +483,7 @@ describe('binding inspector', () => {
               hover: {
                 rows: [
                   combined
-                    ? { kind: 'history', label: 'Traffic', series: [{ binding: tx, direction: 'up' }] }
+                    ? { kind: 'combined', label: 'Traffic', series: [{ binding: tx, direction: 'up' }] }
                     : { kind: 'history', label: 'Traffic', binding: tx },
                   { kind: 'value', label: 'Now', binding: tx },
                 ],
@@ -515,7 +540,7 @@ describe('binding inspector', () => {
     });
   });
   it('keeps a chart minimum "auto"', () => {
-    const withQuery: DiagramConfigV2 = {
+    const withQuery: DiagramConfig = {
       ...config,
       queries: [{ id: 'cpu', name: 'CPU', source: { kind: 'panel', refId: 'A' } }],
     };
@@ -558,7 +583,7 @@ describe('binding inspector', () => {
       return () => {};
     });
     const controller = createQueryController(execute);
-    const nativeConfig: DiagramConfigV2 = {
+    const nativeConfig: DiagramConfig = {
       ...config,
       queries: [
         {
@@ -604,7 +629,7 @@ describe('binding inspector', () => {
   });
   it('shows a failed nonrepresentative eager match before Apply', () => {
     const timeRange = getDefaultTimeRange();
-    const eagerConfig: DiagramConfigV2 = {
+    const eagerConfig: DiagramConfig = {
       ...config,
       queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'A' } }],
       patterns: [
@@ -668,7 +693,7 @@ describe('binding inspector', () => {
       return cancel;
     });
     const controller = createQueryController(execute);
-    const queryConfig: DiagramConfigV2 = {
+    const queryConfig: DiagramConfig = {
       ...config,
       queries: [
         {
@@ -700,7 +725,7 @@ describe('binding inspector', () => {
   });
   it('reports ambiguous and unmatched eager metrics and lets the user choose the result field', () => {
     const timeRange = getDefaultTimeRange();
-    const withBinding: DiagramConfigV2 = {
+    const withBinding: DiagramConfig = {
       ...config,
       queries: [{ id: 'q', name: 'Metrics', source: { kind: 'panel', refId: 'A' } }],
       patterns: [
@@ -791,7 +816,7 @@ describe('binding inspector', () => {
   });
 
   describe('undo and the local state of the query pane', () => {
-    const nativeConfig: DiagramConfigV2 = {
+    const nativeConfig: DiagramConfig = {
       ...config,
       defaultDatasource: { uid: 'test' },
       queries: [{ id: 'q', name: 'Native', source: { kind: 'datasource', target: { refId: 'D' }, parameters: {} } }],

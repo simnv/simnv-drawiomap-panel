@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { useBindingSnapshots } from './useBindingSnapshots';
 import { createQueryController } from '../query/controller';
 import type { BindingPlan } from '../binding/patterns';
-import type { DiagramConfigV2, NamedQuery, QueryBinding } from '../model/config';
+import type { DiagramConfig, NamedQuery, QueryBinding } from '../model/config';
 import type { QueryContext, QueryExecutor } from '../query/types';
 import { preparedSnapshot, type QueryPreview } from '../editor/preview';
 
@@ -20,7 +20,7 @@ const query = (expr = 'up'): NamedQuery => ({
 });
 const binding: QueryBinding = { queryId: 'health', match: {}, reducer: 'last' };
 const config = (expr?: string) =>
-  ({ version: 2, queries: [query(expr)], patterns: [], overrides: [], widgets: [] }) as DiagramConfigV2;
+  ({ version: 3, queries: [query(expr)], patterns: [], overrides: [], widgets: [] }) as DiagramConfig;
 const plan: BindingPlan = {
   cells: {
     router: {
@@ -190,6 +190,35 @@ describe('useBindingSnapshots consumer owners', () => {
     const again = owned('popup:1', service);
     expect(again.result.current.map((p) => p.snapshot.state)).toEqual(['ready']);
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('watches the value and the capacity series of one direction as two consumers', () => {
+    const capacity: QueryBinding = { queryId: 'speed', match: {}, reducer: 'last' };
+    const card = {
+      ...plan,
+      cells: {
+        router: {
+          ...plan.cells.router,
+          bindings: [binding, capacity],
+          display: {
+            hover: {
+              rows: [
+                {
+                  kind: 'combined',
+                  label: 'Traffic',
+                  series: [{ binding, direction: 'up', capacityBinding: capacity }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    } as unknown as BindingPlan;
+    const queries = { ...config(), queries: [query(), { ...query(), id: 'speed', name: 'Speed' }] };
+    const watch = vi.fn(() => () => {});
+    const service = { controller: { watch, setPanelData: vi.fn() }, context: context(1) };
+    renderHook(() => useBindingSnapshots(card, queries, service as never, 'router', 100, undefined, 'panel:1'));
+    expect(new Set(consumerIds(watch)).size).toBe(2);
   });
 
   it('does not let a second owner with the same ids take the watch of the first', () => {

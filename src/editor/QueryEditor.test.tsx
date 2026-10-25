@@ -81,7 +81,7 @@ describe('named query editor', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Native replacement' }));
     expect(change.mock.calls[0][0].source.target).toEqual({ refId: 'D', expr: 'new' });
     expect(
-      validateConfig({ version: 2, queries: [change.mock.calls[0][0]], patterns: [], overrides: [], widgets: [] })
+      validateConfig({ version: 3, queries: [change.mock.calls[0][0]], patterns: [], overrides: [], widgets: [] })
         .diagnostics
     ).toEqual([]);
     fireEvent.click(buttonNamed('Native edit without identity'));

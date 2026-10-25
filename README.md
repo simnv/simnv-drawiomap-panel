@@ -82,7 +82,7 @@ Work in this order:
 
 The popup edits a draft. The panel behind it keeps the saved bindings and shows the draft only after Apply or, with Apply while the popup is open, only after the popup closes (see [The panel while the popup is open](#the-panel-while-the-popup-is-open)). Close the popup with **Cancel**, the close button or **Esc**. When the draft has changes, the popup asks **Discard changes?** first; choose **Discard and close** to drop the draft or **Keep editing**. **Esc** closes only the innermost layer: an open menu, a datasource dialog, the draw.io editor or the question. If another editor saves the panel while the popup is open, a warning appears and Apply stops. Choose **Overwrite** to save your draft, or **Reload saved** to start again from the saved bindings. Leaving the panel editor closes the popup and drops its draft.
 
-A warning icon marks a row with problems: an invalid config, an unknown query, an unresolved metadata template, no metric for a query, a pattern that matches no cell, and an override or chart whose cell no longer exists in the diagram. Each message shows the config path. A message for one cell is shown under the pattern or override whose value is the effective one after the merge. A problem of a named query is shown under every row that uses it. A problem with no owner row is shown in **General**; **Problems only** keeps it. A pattern ID that is used twice is flagged on every pattern with it. Select a row to open it. An override or widget selects its cell. A pattern selects its first matched cell with the scope **All elements matching this pattern**, so you can fix its selector. A row whose cell no longer exists only shows its problems; delete it or restore the cell. A panel with saved rules of version 1 shows a note above an empty list: the panel ignores them (see [Rules of version 1](#rules-of-version-1)).
+A warning icon marks a row with problems: an invalid config, an unknown query, an unresolved metadata template, no metric for a query, a pattern that matches no cell, and an override or chart whose cell no longer exists in the diagram. Each message shows the config path. An item that does not parse (an unknown key, a wrong type) is a **problem row**: it keeps its place in the list, matches nothing, and its inspector shows the problems and a delete button, not the form. The other items still apply. The panel shows the cells that a skipped pattern or override touched as **unavailable**: grey, with the reason in the status band and in the card, so a cell never shows a merge that nobody configured. A binding whose query is unknown, skipped or cannot run leaves its link direction grey ("unavailable"), its hover row unsupported and its chart region with the reason; the other direction and the other rows still bind. A shape or status binding that cannot run leaves the shape grey and puts the cell in the **missing** state with the reason. An unavailable cell stays grey also when an override disables it. A message for one cell is shown under the pattern or override whose value is the effective one after the merge. A problem of a named query is shown under every row that uses it. A problem with no owner row is shown in **General**; **Problems only** keeps it. A pattern ID that is used twice is flagged on every pattern with it. Select a row to open it. An override or widget selects its cell. A pattern selects its first matched cell with the scope **All elements matching this pattern**, so you can fix its selector. A row whose cell no longer exists only shows its problems; delete it or restore the cell. A panel with saved rules of version 1 shows a note above an empty list: the panel ignores them (see [Rules of version 1](#rules-of-version-1)).
 
 Draw.io owns geometry and stable cell IDs. The inspector owns queries, formatting, rules and chart behavior. **Edit geometry in draw.io** opens the editor on top of the popup; a save changes the diagram of the popup, and Apply commits it with the bindings. Deleted chart anchors remain diagnostic until repaired or explicitly removed. Duplicate physical IDs are rejected; copied semantic `pg-id` values must be repaired.
 
@@ -183,11 +183,11 @@ The inspector has the fields **Hover row N minimum**, **Hover row N maximum** an
 
 ### Combined up/down row
 
-A history row can show the two directions of one subject (a port, a link) in one chart. Give it `series` instead of `binding`:
+A row of kind `combined` shows the two directions of one subject (a port, a link) in one chart. It has a `series` list instead of a `binding`:
 
 ```json
 {
-  "kind": "history",
+  "kind": "combined",
   "label": "Traffic",
   "unit": "bps",
   "capacity": 100000000,
@@ -209,11 +209,13 @@ A history row can show the two directions of one subject (a port, a link) in one
 
 | Key                  | Meaning                                                                                                                                                        |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `series`             | One or two entries. Each direction (`up`, `down`) can occur once. A row has `binding` or `series`, not both.                                                   |
+| `series`             | One or two entries. Each direction (`up`, `down`) can occur once. A `combined` row has `series`; a `history` row has `binding`.                              |
 | `series[].direction` | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).                                                    |
 | `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                                                                          |
-| `series[].capacity`  | Optional. The capacity of this direction: a number in the unit of the values, or a template in bit/s. It replaces the row `capacity` for this direction.       |
+| `series[].capacity`  | Optional. The capacity of this direction: a number in the unit of the values, or a template in bit/s. It comes before the row `capacity` for this direction.    |
+| `series[].capacityBinding` | Optional. A query binding whose latest value is the capacity of this direction, read through the unit of its field. It comes before `series[].capacity`. |
 | `capacity`           | Optional. A number in the unit of the values, or a template in bit/s (see below). For both directions. The default is the field config **Max** of each series. |
+| `capacityBinding`    | Optional. A query binding for the capacity of both directions, as `series[].capacityBinding`. It comes before the row `capacity`.                              |
 | `max`                | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.                                                      |
 | `height`             | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                                                                    |
 | `unit`, `url`        | As for other rows. `min` applies only to a row with one direction.                                                                                             |
@@ -229,26 +231,26 @@ With both directions, up is above a thin zero line and down is mirrored below it
 The capacity gives only the percent text and the colours; it does not change the range, unless `max` is `"capacity"`. Thus 12 Mb/s on a 1 Gb/s link fills the chart. When all values are 0, M is 1% of the capacity, or 1 when the capacity is not known.
 
 ```json
-{ "kind": "history", "label": "Traffic", "capacity": 1000000000, "max": "auto", "series": [] }
-{ "kind": "history", "label": "Traffic", "capacity": 1000000000, "max": "capacity", "series": [] }
-{ "kind": "history", "label": "Traffic", "max": 50000000, "series": [] }
+{ "kind": "combined", "label": "Traffic", "capacity": 1000000000, "max": "auto", "series": [] }
+{ "kind": "combined", "label": "Traffic", "capacity": 1000000000, "max": "capacity", "series": [] }
+{ "kind": "combined", "label": "Traffic", "max": 50000000, "series": [] }
 ```
 
 In these examples, `series` is shortened; use the two entries of the example above.
 
-The value text shows both current values, formatted with the field display processor, for example `↑ 10 Mb/s · 10%  ↓ 41 Mb/s · 41%`. The percent of the capacity shows only when the capacity is known. Each direction has its own colour, from the field config and thresholds of its own value, as a link half. With a capacity, the threshold steps are percent. The arrows in the value text have the colour of their line. A direction without data shows `No data` and no line; the other direction stays. A click on the row opens its `url`.
+The value text shows both current values, formatted with the field display processor, and the capacity in the unit of the values, for example `↑ 10 Mb/s · 10% of 100 Mb/s  ↓ 41 Mb/s · 41% of 100 Mb/s`. The percent and the capacity show only when the capacity is known. Each direction has its own colour, from the field config and thresholds of its own value, as a link half. With a capacity, the threshold steps are percent. The arrows in the value text have the colour of their line. A direction without data shows `No data` and no line; the other direction stays. A click on the row opens its `url`.
 
 #### Template capacity
 
 The row `capacity` can be a template. It resolves against the cell scope when the card opens, so one pattern fits many links. The value is in bit/s and must resolve to a finite number above 0.
 
 ```json
-{ "kind": "history", "label": "Traffic", "capacity": "${cell.capacity_a2b_bps}", "max": "capacity", "series": [] }
+{ "kind": "combined", "label": "Traffic", "capacity": "${cell.capacity_a2b_bps}", "max": "capacity", "series": [] }
 ```
 
 On a port, use for example `"${cell.capacity_bps}"`. The panel converts the bit/s to the unit of the values (for example `Bps`), so the percent is correct. A number stays in the unit of the values.
 
-The order is: row `capacity` (a number, or a resolved template), then the largest field config **Max** of the series, then no percent. If the template does not resolve, or does not give a positive number, the row shows no percent (the field **Max** does not take its place) and the card adds the diagnostic `unresolved-metadata` at `cells.<id>.hover.rows[<i>].capacity`. With `"max": "capacity"`, the range uses the resolved capacity. When it is not known, the range is as `"auto"`.
+The order for each direction is: its `series[].capacityBinding`, its `series[].capacity` (a number, or a resolved template), the row `capacityBinding`, the row `capacity`, the field config **Max** of its series, then no percent. It is the chain of a link half (`src/binding/capacity.ts`), the same code. A source that fails falls through to the next one and reports where: a template that does not resolve, or does not give a positive number, adds the diagnostic `unresolved-metadata` at `cells.<id>.hover.rows[<i>].capacity` (or `.series[<j>].capacity`), and the direction takes the next source. With `"max": "capacity"`, the range uses the resolved capacity, in the unit of the values. When it is not known, the range is as `"auto"`.
 
 #### Capacity of each direction
 
@@ -256,7 +258,7 @@ An asymmetric link has one capacity for each direction. Set `capacity` on a `ser
 
 ```json
 {
-  "kind": "history",
+  "kind": "combined",
   "label": "Traffic",
   "unit": "bps",
   "max": "capacity",
@@ -275,18 +277,18 @@ An asymmetric link has one capacity for each direction. Set `capacity` on a `ser
 }
 ```
 
-For one direction, the order is: the `capacity` of the `series` entry, the row `capacity`, the **Max** of its field config, no percent. A `series` capacity or a row capacity that does not resolve gives no percent for the direction (see above). With `"max": "capacity"`, the half range is the larger of the two capacities. The legend title stays **Link load %**. The demo panel 3 has a link with the attributes `capacity_a2b_bps` (100 Mb/s) and `capacity_b2a_bps` (50 Mb/s), and its combined row uses them.
+For one direction, the order is: the `capacityBinding` and the `capacity` of the `series` entry, the row `capacityBinding` and `capacity`, the **Max** of its field config, no percent. A source that does not resolve reports its path and the direction takes the next source (see above). With `"max": "capacity"`, the half range is the larger of the two capacities. The legend title stays **Link load %**. The demo panel 3 has a link with the attributes `capacity_a2b_bps` (100 Mb/s) and `capacity_b2a_bps` (50 Mb/s), and its combined row uses them.
 
 #### Chart height
 
 A chart with both directions is 80 px tall by default. Each half is 40 px tall, the same height as a single sparkline. A row with one direction is 40 px tall. With both directions, the zero line stays in the middle of the chart.
 
-Set `height` on a V2 `display.hover.rows` history row to change the chart height. Use a number from 16 to 400, in pixels. This option applies to single and combined history rows.
+Set `height` on a `display.hover.rows` row of kind `history` or `combined` to change the chart height. Use a number from 16 to 400, in pixels.
 
 Click or tap to pin the card before you scroll. The desktop card scrolls when its content exceeds the available panel height. In panels narrower than 480 px, the card becomes a bottom sheet. The sheet scrolls when its content exceeds 60% of the viewport height.
 
 ```json
-{ "kind": "history", "label": "Traffic", "capacity": 100000000, "height": 120, "series": [] }
+{ "kind": "combined", "label": "Traffic", "capacity": 100000000, "height": 120, "series": [] }
 { "kind": "history", "label": "CPU", "height": 64, "binding": { "queryId": "cpu", "match": {}, "reducer": "last" } }
 ```
 
@@ -306,24 +308,26 @@ Finite Grafana data frames with one selected numeric series and one time field s
 
 Only the installed Prometheus and TestData plugins in the [tested matrix](docs/research/authoring-compatibility.md) have browser evidence. Other datasource editors can require capabilities this panel does not supply. Without a supported editor, use validated native-target JSON import. This is not universal datasource compatibility.
 
-The plugin is unshipped. Recreate authoring configuration if a saved format cannot be migrated. The rules of version 1 are not read any more, see [Rules of version 1](#rules-of-version-1). Back up dashboard JSON before conversion. Revert the implementation commits and restore that JSON for rollback; draw.io XML/SVG alone does not contain plugin behavior.
+The plugin is unshipped. Recreate authoring configuration if a saved format cannot be migrated. The rules of version 1 are not read any more, see [Rules of version 1](#rules-of-version-1); a config of version 2 binds nothing, see [Configs of version 2](#configs-of-version-2). Back up dashboard JSON before conversion. Revert the implementation commits and restore that JSON for rollback; draw.io XML/SVG alone does not contain plugin behavior.
+
+### Configs of version 2
+
+The config shape is **version 3** since 2026-10-25. Before 1.0.0 there is no migration: a saved config with `"version": 2` loads, the diagram renders, the panel binds nothing and shows one warning, `This configuration has version 2, the shape before 1.0.0`. The bindings popup shows the same note above an empty list. Create the bindings again in **Edit bindings**, or regenerate the config with `"version": 3`. The changes from version 2: `link.a2bBinding` and `link.b2aBinding` became `link.a2b.binding` and `link.b2a.binding`; `link.capacityA2b`, `link.capacityB2a`, `link.capacityA2bBinding` and `link.capacityB2aBinding` became `link.a2b.capacity`, `link.b2a.capacity`, `link.a2b.capacityBinding` and `link.b2a.capacityBinding`; a `history` row with `series` became a `combined` row; a `capacity` is a positive number or a template (no `0`, no numeric string, no `"auto"`). Inside a version 3 document, an item with an old key does not parse: it is skipped with its diagnostics, the other items still apply.
 
 ## Rules of version 1
 
-Version 1 of the plugin bound cells with the `rules` option: a YAML list of rules with `select`, `link`, `shape`, `card` and `url`. This option is removed. A dashboard that still has it loads: the panel ignores the rules, binds the version 2 config and shows one warning, `The panel ignores N rules of version 1`. The bindings popup shows the same note above an empty list. Create the bindings again in **Edit bindings**, then save the dashboard. The saved `rules` value stays in the dashboard JSON until you remove it. There is no migration on load.
+Version 1 of the plugin bound cells with the `rules` option: a YAML list of rules with `select`, `link`, `shape`, `card` and `url`. This option is removed. A dashboard that still has it loads: the panel ignores the rules, binds the config (`options.config`, see [Configs of version 2](#configs-of-version-2)) and shows one warning, `The panel ignores N rules of version 1`. The bindings popup shows the same note above an empty list. Create the bindings again in **Edit bindings**, then save the dashboard. The saved `rules` value stays in the dashboard JSON until you remove it. There is no migration on load.
 
-The table gives the version 2 field of each rule field. `src/fixtures/demo-config.ts` is the version 2 form of the former demo rules.
+The table gives the version 3 field of each rule field. `src/fixtures/demo-config.ts` is the version 3 form of the former demo rules.
 
-A version 2 config saved before 2026-10-24 can carry rule fields in `link` and `shape`: `link.a2b`, `link.b2a`, `link.card`, a capacity series object, `shape.series`, `shape.fill`, `shape.stroke`, `shape.card` and `shape.sparkline`. Such a config loads. The panel drops these fields, takes `link.card.title` as the hover title when the hover has none, and turns a capacity series into `capacityBinding` when a panel query has its `refId`. The saved JSON changes on the next Apply in the editor.
-
-| Version 1 rule                                         | Version 2 pattern (`display`)                                                                                                                                        |
+| Version 1 rule                                         | Version 3 pattern (`display`)                                                                                                                                        |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `select`                                               | `select`, unchanged (see [Cell selectors](#cell-selectors-select))                                                                                                   |
-| `link.a2b`, `link.b2a` (`refId`, `match`)              | `link.a2bBinding`, `link.b2aBinding`: `{ queryId, match, reducer }`. The `queryId` names a query of the config; a panel query is `source: { kind: 'panel', refId }`. |
+| `link.a2b`, `link.b2a` (`refId`, `match`)              | `link.a2b.binding`, `link.b2a.binding`: `{ queryId, match, reducer }`. The `queryId` names a query of the config; a panel query is `source: { kind: 'panel', refId }`. |
 | `link.capacity` as a series selector                   | `link.capacityBinding`                                                                                                                                               |
 | `link.capacity` as a number or a template              | `link.capacity`, unchanged                                                                                                                                           |
 | `link.card.title`                                      | `hover.title`                                                                                                                                                        |
-| `link.card.url` and the two direction rows             | one `hover.rows` history row with `series: [{ binding, direction: 'up' }, { binding, direction: 'down' }]`, its `capacity` and its `url`                             |
+| `link.card.url` and the two direction rows             | one `hover.rows` row of kind `combined` with `series: [{ binding, direction: 'up' }, { binding, direction: 'down' }]`, its `capacity` and its `url`                  |
 | `shape.series`, `shape.target`, `shape.text`, `label`  | `shape.binding`, `shape.target`, `shape.text`, `label`. `fill: true` is `target: shape`; `stroke: true` is `target: stroke`.                                         |
 | `shape.card` rows (`title`, `unit`, `decimals`, `url`) | `hover.rows` value or history rows (`label`, `unit`, `url`). `decimals` has no equivalent.                                                                           |
 | `reducer`                                              | the `reducer` of each binding                                                                                                                                        |
@@ -459,7 +463,7 @@ In the panel JSON:
 
 ### Capacity
 
-The panel gives each link half a capacity in bit/s. It uses the first source that gives a value:
+The panel gives each link half a capacity. It uses the first source that gives a value; a source that fails reports where and the next one applies:
 
 | Order | Source            | Example                                                                                                      | Notes                                                                                                                              |
 | ----- | ----------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -470,33 +474,40 @@ The panel gives each link half a capacity in bit/s. It uses the first source tha
 
 The `reducer` of the capacity binding reduces its series. If the capacity series is missing, the field **Max** applies and the panel reports the missing metric. A capacity template that does not resolve gives the diagnostic `unresolved-metadata`, and the half falls to the field **Max**. A field unit that is not a data rate gives the diagnostic `unit-not-rate`; the panel uses the raw value as bit/s.
 
-The hover card shows the capacity of each half, for example `41 Mb/s · 41% of 100 Mb/s`. Without a capacity, it shows only the value.
+The hover card shows the capacity of each half in the unit of the value field, for example `41 Mb/s · 41% of 100 Mb/s`; a field in `Bps` with a capacity of 1 Gb/s shows `… of 125 MB/s`, a field in m³ shows `… of 4.1 m³`. The percent and the colour do not depend on the unit. Without a capacity, the card shows only the value. A direction without a value is grey "no data", also with a capacity: a capacity never produces a value or a percent on its own.
 
 The units are the data-rate units of Grafana: `bps`, `Kbits` … `Pbits`, `Bps`, `KBs` … `PBs`, and the binary (IEC) forms. A field without a unit is in bit/s. A unit that is not a data rate gives a warning, and the panel uses the raw value as bit/s.
 
 #### Capacity of each link direction
 
-In `display.link` of a pattern, each half can have its own capacity. All values are in bit/s.
+In `display.link` of a pattern, each direction is an object: `a2b` goes from the first end of the link to the second, `b2a` the other way. Each holds the `binding` of its value and, optionally, its own capacity sources. All numbers are in bit/s.
 
 ```json
 {
   "link": {
-    "a2bBinding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-    "b2aBinding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-    "capacityA2b": "${cell.capacity_a2b_bps}",
-    "capacityB2a": "${cell.capacity_b2a_bps}",
+    "a2b": {
+      "binding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "capacity": "${cell.capacity_a2b_bps}"
+    },
+    "b2a": {
+      "binding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
+      "capacity": "${cell.capacity_b2a_bps}"
+    },
     "capacity": 100000000
   }
 }
 ```
 
-| Key                                        | Meaning                                                                                                      |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `capacityA2b`, `capacityB2a`               | A number or a template, for one half.                                                                        |
-| `capacityA2bBinding`, `capacityB2aBinding` | A query binding for one half. It is read like `capacityBinding`: the field unit converts the value to bit/s. |
-| `capacityBinding`, `capacity`              | As before: shared by both halves.                                                                            |
+| Key                                        | Meaning                                                                                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `a2b.binding`, `b2a.binding`               | The value series of the direction. A direction without a binding shows nothing; an override may set only a capacity.      |
+| `a2b.capacity`, `b2a.capacity`             | A positive number in bit/s, or a template, for one direction.                                                             |
+| `a2b.capacityBinding`, `b2a.capacityBinding` | A query binding for one direction. It is read like `capacityBinding`: the field unit converts the value to bit/s.       |
+| `capacityBinding`, `capacity`              | Shared by both directions.                                                                                                |
 
-The order for each half is: its binding, its number or template, `capacityBinding`, `capacity`, the field **Max**, no percent. A value that is missing, not positive or not a number falls to the next source. A directional template that does not resolve also adds the diagnostic `unresolved-metadata` at `cells.<id>.link.capacityA2b` (or `capacityB2a`). The legend title stays **Link load %**.
+The order for each direction is: its `capacityBinding`, its `capacity`, the link `capacityBinding`, the link `capacity`, the field **Max**, no percent. A source that fails (no data, not positive, not a number) falls to the next one and reports where, for example `unresolved-metadata` at `cells.<id>.link.a2b.capacity`. A later pattern or an override merges each direction field by field: it can replace a capacity and keep the binding of an earlier pattern. The legend title stays **Link load %**.
+
+A direction whose binding cannot run for the cell (its query is unknown, skipped or cannot run, or a parameter path is missing) is drawn as its own grey half, "unavailable", so the other half never covers it. The status band counts it as incomplete coverage.
 
 The demo dashboard uses all four sources: LAN links get the port speed series `S`, WAN links the **Max** of an override of query `W`, tunnels a number, and the hand-drawn panel the `capacity` attribute of its cells.
 

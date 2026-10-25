@@ -21,7 +21,7 @@ import {
 import { DrawioMapPanel } from './DrawioMapPanel';
 import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
-import type { DiagramConfigV2 } from '../model/config';
+import type { DiagramConfig } from '../model/config';
 import { Observable } from 'rxjs';
 import { clearQuerySessions } from '../query/session';
 const nativeQuery = vi.hoisted(() => vi.fn());
@@ -129,8 +129,8 @@ const frame = (refId: string, labels: Record<string, string>, values: number[], 
 const binding = (queryId: string, match: Record<string, string>) => ({ queryId, match, reducer: 'last' as const });
 const a2b = binding('A', { job: 'node-${from.node}', device: '${from.port}' });
 const b2a = binding('A', { job: 'node-${to.node}', device: '${to.port}' });
-const demoConfig: DiagramConfigV2 = {
-  version: 2,
+const demoConfig: DiagramConfig = {
+  version: 3,
   queries: ['A', 'C', 'E'].map((id) => ({ id, name: id, source: { kind: 'panel', refId: id } })),
   patterns: [
     {
@@ -138,7 +138,7 @@ const demoConfig: DiagramConfigV2 = {
       name: 'links',
       select: { kind: 'link' },
       display: {
-        link: { a2bBinding: a2b, b2aBinding: b2a, capacity: 100000000 },
+        link: { a2b: { binding: a2b }, b2a: { binding: b2a }, capacity: 100000000 },
         hover: {
           rows: [
             { kind: 'history', label: '${from.node} → ${to.node}', binding: a2b },
@@ -159,7 +159,7 @@ const demoConfig: DiagramConfigV2 = {
   widgets: [],
 };
 /** The CPU row of one router, with its own url. */
-const cpuPattern: DiagramConfigV2['patterns'][number] = {
+const cpuPattern: DiagramConfig['patterns'][number] = {
   id: 'router cpu',
   name: 'router cpu',
   select: { ids: ['rtr-b'] },
@@ -177,7 +177,7 @@ const cpuPattern: DiagramConfigV2['patterns'][number] = {
     },
   },
 };
-const withPatterns = (...patterns: DiagramConfigV2['patterns']): DiagramConfigV2 => ({
+const withPatterns = (...patterns: DiagramConfig['patterns']): DiagramConfig => ({
   ...demoConfig,
   patterns: [...demoConfig.patterns, ...patterns],
 });
@@ -277,8 +277,8 @@ describe('DrawioMapPanel', () => {
     });
     try {
       nativeQuery.mockReset().mockRejectedValue(new Error('private datasource failure'));
-      const config: DiagramConfigV2 = {
-        version: 2,
+      const config: DiagramConfig = {
+        version: 3,
         patterns: [],
         overrides: [],
         queries: [
@@ -423,8 +423,8 @@ describe('DrawioMapPanel hover card', () => {
         })
     );
     const binding = { queryId: 'q', reducer: 'last', match: {} } as const;
-    const config: DiagramConfigV2 = {
-      version: 2,
+    const config: DiagramConfig = {
+      version: 3,
       queries: [
         {
           id: 'q',
@@ -490,8 +490,8 @@ describe('DrawioMapPanel hover card', () => {
           return release;
         })
     );
-    const config: DiagramConfigV2 = {
-      version: 2,
+    const config: DiagramConfig = {
+      version: 3,
       queries: [
         {
           id: 'detail',
@@ -552,8 +552,8 @@ describe('DrawioMapPanel hover card', () => {
   describe('hover cost', () => {
     const small =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/></g><g data-cell-id="b"><rect x="50" width="40" height="30"/></g></svg>';
-    const hoverConfig = (): DiagramConfigV2 => ({
-      version: 2,
+    const hoverConfig = (): DiagramConfig => ({
+      version: 3,
       queries: [
         {
           id: 'detail',
@@ -1202,8 +1202,8 @@ describe('saved chart results in authoring previews', () => {
     restoreGeometry();
   });
   function fixture() {
-    const config: DiagramConfigV2 = {
-      version: 2,
+    const config: DiagramConfig = {
+      version: 3,
       overrides: [],
       queries: [
         {
@@ -1548,8 +1548,8 @@ describe('DrawioMapPanel status band', () => {
         `<g data-cell-id="c${i}" transform="translate(${(i % 6) * 60} ${Math.floor(i / 6) * 50})"><rect width="40" height="30"/><text>C${i}</text></g>`
     ).join('');
     const svgText = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 250">${cells}</svg>`;
-    const config: DiagramConfigV2 = {
-      version: 2,
+    const config: DiagramConfig = {
+      version: 3,
       queries: Array.from({ length: count }, (_, i) => ({
         id: `q${i}`,
         name: `Q${i}`,
@@ -1646,8 +1646,8 @@ describe('DrawioMapPanel cards only for cells with content', () => {
   </g></svg>`;
   const roleRow = { kind: 'metadata', label: 'Role', path: 'cell.key' } as const;
   function structurePanel(select: { ids?: string[] }, over: Partial<Options> = {}) {
-    const config: DiagramConfigV2 = {
-      version: 2,
+    const config: DiagramConfig = {
+      version: 3,
       queries: [],
       widgets: [],
       overrides: [],
@@ -1845,13 +1845,13 @@ describe('DrawioMapPanel bindings popup', () => {
   const small =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/><text>A</text></g><g data-cell-id="b"><rect x="50" width="40" height="30"/><text>B</text></g></svg>';
   const diagram = { xml: '<mxfile/>', svg: small, hash: 'popup-panel', updatedAt: '' };
-  const metric = (id = 'q'): DiagramConfigV2['queries'][number] => ({
+  const metric = (id = 'q'): DiagramConfig['queries'][number] => ({
     id,
     name: 'Metric',
     source: { kind: 'datasource', target: { refId: 'D' }, parameters: { dm_key: 'cell.key' } },
   });
-  const labelled = (): DiagramConfigV2 => ({
-    version: 2,
+  const labelled = (): DiagramConfig => ({
+    version: 3,
     defaultDatasource: { uid: 'native' },
     widgets: [],
     overrides: [],
@@ -1869,7 +1869,7 @@ describe('DrawioMapPanel bindings popup', () => {
     ],
   });
   /** A panel that keeps the saved options, as the dashboard does. */
-  function renderSaved(config: DiagramConfigV2, id = 61, shown = diagram) {
+  function renderSaved(config: DiagramConfig, id = 61, shown = diagram) {
     const save = vi.fn();
     function SavedPanel() {
       const [saved, setSaved] = React.useState<Options>({ ...options, config, diagram: shown });
@@ -2093,8 +2093,8 @@ describe('DrawioMapPanel bindings popup', () => {
           return () => {};
         })
     );
-    const config: DiagramConfigV2 = {
-      version: 2,
+    const config: DiagramConfig = {
+      version: 3,
       overrides: [],
       queries: [
         {
@@ -2261,8 +2261,8 @@ describe('DrawioMapPanel bindings popup', () => {
 
     it('lets a freshness deadline mark the status stale while paused, with one applier call', async () => {
       const binding = { queryId: 'q', match: {}, reducer: 'last' } as const;
-      const config: DiagramConfigV2 = {
-        version: 2,
+      const config: DiagramConfig = {
+        version: 3,
         queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
         patterns: [],
         widgets: [],

@@ -1,4 +1,4 @@
-import type { StatusCondition, StatusRule, StatusState } from '../model/config';
+import { invalidFreshness, type StatusCondition, type StatusRule, type StatusState } from '../model/config';
 
 export interface ResolvedValue {
   queryId: string;
@@ -24,6 +24,9 @@ export interface StatusSummary extends StatusView {
   cellIds: string[];
 }
 
+/** The text of a row, a widget or a status whose freshness policy is shorter than one sample interval. */
+export const INVALID_FRESHNESS_TEXT = 'Invalid freshness policy';
+
 export function evaluateStatus(rule: StatusRule, values: ResolvedValue[], nowMs: number): StatusView {
   const selected = values.filter((v) => v.queryId === rule.binding.queryId);
   const available = selected.filter((v) => v.availability === 'ready' && Number.isFinite(v.value));
@@ -48,6 +51,10 @@ export function evaluateStatus(rule: StatusRule, values: ResolvedValue[], nowMs:
     return view('missing', reason, 'availability');
   }
   if (rule.freshness) {
+    // a policy that can never be met makes the element unavailable: stale data must never show as healthy
+    if (invalidFreshness(rule.freshness)) {
+      return view('missing', INVALID_FRESHNESS_TEXT, 'freshness');
+    }
     if (available.some((v) => !Number.isFinite(v.sampleAt))) {
       return view('missing', 'Sample timestamp is missing', 'timestamp');
     }

@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import type { BindingPlan } from '../../binding/patterns';
-import type { DiagramConfigV2 } from '../../model/config';
+import type { DiagramConfig } from '../../model/config';
 import { idAndName } from '../../adapter/cellTitle';
 import type { CellMeta, CellSelector } from '../../types';
 import type { DraftAction } from '../draft';
@@ -19,7 +19,7 @@ export interface MultiSelectionProps {
   /** Create a pattern with this selector. */
   onCreatePattern: (select: CellSelector) => void;
   plan: BindingPlan;
-  config: DiagramConfigV2;
+  config: DiagramConfig;
   fields: string[];
   dispatch: (action: DraftAction) => void;
 }
