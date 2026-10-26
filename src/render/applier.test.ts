@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { colorManipulator, createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
+import { noDataColor, statusColor, tintFill } from '../binding/color';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
 import { applyPatches, colourAlpha, INTERACTIVE_ATTR, markInteractive } from './applier';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
@@ -16,6 +18,8 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="i1"><g><ellipse cx="20" cy="20" rx="5" ry="5" fill="#4f9aa6" style="fill: rgb(79, 154, 166);"/><path d="M 0 0 L 1 1" fill="#fff"/></g></g>
   <g data-cell-id="i2"><g><image x="10" y="50" width="10" height="10"/></g></g>
   <g data-cell-id="e1"><g><path d="M 60 25 L 150 25" fill="none" stroke="#333" stroke-width="2" pointer-events="stroke"/><path d="M 150 20 L 160 25 L 150 30 Z" fill="#333" pointer-events="all"/></g></g>
+  <g data-cell-id="n3"><g><rect x="100" y="50" width="50" height="30" fill="#d5e8d4" stroke="#82b366" stroke-width="4"/></g></g>
+  <g data-cell-id="n4"><g><rect x="100" y="10" width="50" height="30" fill="url(#g)"/></g></g>
 </svg>`;
 
 function build(): CellIndex {
@@ -65,6 +69,17 @@ function build(): CellIndex {
     arrows: [paths[1]],
     original: { stroke: '', strokeWidth: '' },
   });
+  for (const id of ['n3', 'n4']) {
+    const node = g(id);
+    const rect = node.querySelector('rect')!;
+    index.set(id, {
+      meta: cellMetaFromAttrs(id, {}, false, id),
+      group: node,
+      shape: rect,
+      arrows: [],
+      original: { fill: rect.style.fill, stroke: rect.style.stroke, strokeWidth: rect.style.strokeWidth },
+    });
+  }
   return index;
 }
 
@@ -122,7 +137,7 @@ describe('applyPatches', () => {
     expect(e1.line!.style.stroke).toBe('');
     expect(n1.group.getAttribute('data-dmap-status')).toBeNull();
   });
-  it('marks explicit health accessibly without coloring normal shapes and resets its reason', () => {
+  it('marks explicit health accessibly, leaves a normal shape alone and resets its reason', () => {
     const index = build();
     const statusView: StatusView = {
       state: 'down',
@@ -397,9 +412,10 @@ describe('applyPatches with a patched icon cell', () => {
     index.get('i1')!.ownerId = 'n1';
     const icon = () => index.get('i1')!.shape as SVGElement;
     const node = (color = '#ff0000') => patch('n1', { shape: shape({ target: 'icon', color }) });
+    // a normal status: a new key for the icon cell, and no paint of its own
     const statusView: StatusView = {
-      state: 'down',
-      reason: 'Down',
+      state: 'normal',
+      reason: 'Healthy',
       conditionKey: 'k',
       queryIds: ['q'],
       coverage: { available: 1, expected: 1 },
@@ -422,7 +438,7 @@ describe('applyPatches with a patched icon cell', () => {
       prev
     );
     expect(icon().style.fill).toMatch(RED);
-    expect(index.get('i1')!.group.getAttribute('data-dmap-status')).toBe('down');
+    expect(index.get('i1')!.group.getAttribute('data-dmap-status')).toBe('normal');
     // the patch of the icon cell goes: the icon keeps the node colour
     prev = applyPatches(index, new Map([['n1', node()]]), prev);
     expect(icon().style.fill).toMatch(RED);
@@ -726,7 +742,8 @@ describe('applyPatches diff', () => {
   });
   it('another theme or OS colour scheme resets and writes every cell; the same scheme again writes nothing', () => {
     const index = build();
-    const light = { isDark: false, osDark: false };
+    const light = { theme: createTheme({ colors: { mode: 'light' } }), osDark: false };
+    const dark = createTheme({ colors: { mode: 'dark' } });
     let prev = applyPatches(index, round(), undefined, undefined, light);
     const observer = observe(index);
     const everyCell = () => {
@@ -739,14 +756,14 @@ describe('applyPatches diff', () => {
       }
     };
     // the theme
-    prev = applyPatches(index, round(), prev, undefined, { ...light, isDark: true });
+    prev = applyPatches(index, round(), prev, undefined, { theme: dark, osDark: false });
     everyCell();
     expect(prev.scheme).toEqual({ isDark: true, osDark: false });
     // the OS preference, with the same theme
-    prev = applyPatches(index, round(), prev, undefined, { isDark: true, osDark: true });
+    prev = applyPatches(index, round(), prev, undefined, { theme: dark, osDark: true });
     everyCell();
     // the same scheme again: nothing
-    applyPatches(index, round(), prev, undefined, { isDark: true, osDark: true });
+    applyPatches(index, round(), prev, undefined, { theme: dark, osDark: true });
     expect(observer.takeRecords()).toHaveLength(0);
   });
   it('markInteractive with the same ids makes no mutation, and marks the cells of a new stage', () => {
@@ -769,5 +786,136 @@ describe('applyPatches diff', () => {
     // the old stage keeps its paint: nothing of it was reset
     expect((a.get('n1')!.shape as SVGElement).style.fill).toMatch(RED);
     expect(done.index).toBe(b);
+  });
+});
+
+describe('applyPatches status paint', () => {
+  const light = createTheme({ colors: { mode: 'light' } });
+  const dark = createTheme({ colors: { mode: 'dark' } });
+  const view = (state: StatusView['state'], reason = 'Health check failed'): StatusView => ({
+    state,
+    reason,
+    conditionKey: 'health',
+    queryIds: ['up'],
+    coverage: { available: 1, expected: 1 },
+  });
+  const withStatus = (cellId: string, state: StatusView['state'], p: Partial<CellPatch> = {}): PlanCellPatch => ({
+    ...patch(cellId, p),
+    statusView: view(state),
+  });
+  /** jsdom keeps a hex colour as written or reads it back as rgb(). */
+  const expectColour = (actual: string, expected: string) =>
+    expect([expected.toLowerCase(), colorManipulator.asRgbString(expected)]).toContain(actual.toLowerCase());
+  const red = statusColor({ state: 'down' }, light);
+  const rect = (index: CellIndex, id: string) => index.get(id)!.shape as SVGElement;
+
+  it('a down node gets a border in the status colour, 1.5 times its width and at least 2, and a tinted fill', () => {
+    const index = build();
+    const prev = applyPatches(index, new Map([['n3', withStatus('n3', 'down')]]), undefined, undefined, {
+      theme: light,
+      osDark: false,
+    });
+    const n3 = rect(index, 'n3');
+    expectColour(n3.style.stroke, red);
+    expect(n3.style.strokeWidth).toBe('6');
+    expectColour(n3.style.fill, tintFill('#d5e8d4', red)!);
+    expect(n3.getAttribute('fill')).toBe('#d5e8d4');
+    // a shape without a width: 2
+    applyPatches(index, new Map([['n4', withStatus('n4', 'down')]]), prev, undefined, { theme: light, osDark: false });
+    expect(rect(index, 'n4').style.strokeWidth).toBe('2');
+  });
+  it('the paint goes with a normal status and with the patch; the originals come back', () => {
+    const index = build();
+    const n3 = rect(index, 'n3');
+    const ctx = { theme: light, osDark: false };
+    let prev = applyPatches(index, new Map([['n3', withStatus('n3', 'warning')]]), undefined, undefined, ctx);
+    expectColour(n3.style.stroke, statusColor({ state: 'warning' }, light));
+    prev = applyPatches(index, new Map([['n3', withStatus('n3', 'normal')]]), prev, undefined, ctx);
+    expect([n3.style.fill, n3.style.stroke, n3.style.strokeWidth]).toEqual(['', '', '']);
+    expect(index.get('n3')!.group.getAttribute('data-dmap-status')).toBe('normal');
+    prev = applyPatches(index, new Map([['n3', withStatus('n3', 'missing', {})]]), prev, undefined, ctx);
+    expectColour(n3.style.stroke, noDataColor(light));
+    applyPatches(index, new Map(), prev, undefined, ctx);
+    expect([n3.style.fill, n3.style.stroke, n3.style.strokeWidth]).toEqual(['', '', '']);
+  });
+  it('with a shape target the tint is of the binding colour; with a stroke target the status border wins', () => {
+    const index = build();
+    const ctx = { theme: light, osDark: false };
+    let prev = applyPatches(
+      index,
+      new Map([['n3', withStatus('n3', 'down', { shape: shape({ color: '#00ff00', target: 'shape' }) })]]),
+      undefined,
+      undefined,
+      ctx
+    );
+    const n3 = rect(index, 'n3');
+    expectColour(n3.style.fill, tintFill('#00ff00', red)!);
+    prev = applyPatches(
+      index,
+      new Map([['n3', withStatus('n3', 'down', { shape: shape({ color: '#00ff00', target: 'stroke' }) })]]),
+      prev,
+      undefined,
+      ctx
+    );
+    expectColour(n3.style.stroke, red);
+    expect(n3.style.strokeWidth).toBe('6');
+    // the binding outline alone: the drawn width plus one
+    applyPatches(index, new Map([['n3', patch('n3', { shape: shape({ target: 'stroke' }) })]]), prev, undefined, ctx);
+    expect(n3.style.strokeWidth).toBe('5');
+    expectColour(n3.style.stroke, '#ff0000');
+  });
+  it('a fill that is not an opaque colour keeps its fill: the border alone shows the status', () => {
+    const index = build();
+    applyPatches(index, new Map([['n4', withStatus('n4', 'down')]]), undefined, undefined, {
+      theme: light,
+      osDark: false,
+    });
+    const n4 = rect(index, 'n4');
+    expect(n4.style.fill).toBe('');
+    expectColour(n4.style.stroke, red);
+  });
+  it('an edge without halves takes the status colour on its stroke; a normal status leaves it', () => {
+    const index = build();
+    const ctx = { theme: light, osDark: false };
+    const line = index.get('e1')!.line!;
+    let prev = applyPatches(index, new Map([['e1', withStatus('e1', 'down')]]), undefined, undefined, ctx);
+    expectColour(line.style.stroke, red);
+    expect(line.style.strokeOpacity).toBe('');
+    prev = applyPatches(index, new Map([['e1', withStatus('e1', 'missing')]]), prev, undefined, ctx);
+    expectColour(line.style.stroke, noDataColor(light));
+    applyPatches(index, new Map([['e1', withStatus('e1', 'normal')]]), prev, undefined, ctx);
+    expect(line.style.stroke).toBe('');
+  });
+  it('a link with halves and a down status paints the end dots in the status colour; missing leaves the half colour', () => {
+    const ID = 'pg-link~dot-a-b';
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/bare-end-dot.svg'), 'utf8');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(raw).svg));
+    const [start, end] = index.get(ID)!.ends!.map((e) => e.el as SVGElement);
+    const original = start.style.fill;
+    const ctx = { theme: light, osDark: false };
+    const link = { a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) };
+    let prev = applyPatches(index, new Map([[ID, withStatus(ID, 'down', { link })]]), undefined, undefined, ctx);
+    expectColour(start.style.fill, red);
+    expectColour(end.style.fill, red);
+    // the hidden edge stroke stays hidden: the halves show the colour
+    expect(index.get(ID)!.line!.style.strokeOpacity).toBe('0');
+    prev = applyPatches(index, new Map([[ID, withStatus(ID, 'missing', { link })]]), prev, undefined, ctx);
+    expectColour(start.style.fill, '#ff8800');
+    expectColour(end.style.fill, '#0000ff');
+    applyPatches(index, new Map(), prev, undefined, ctx);
+    expect(start.style.fill).toBe(original);
+  });
+  it('the same status again writes nothing; another theme writes the paint in its own colour', () => {
+    const index = build();
+    const round = () => new Map([['n3', withStatus('n3', 'down')]]);
+    let prev = applyPatches(index, round(), undefined, undefined, { theme: light, osDark: false });
+    const observer = new MutationObserver(() => {});
+    observer.observe(index.get('n3')!.group, { attributes: true, subtree: true });
+    prev = applyPatches(index, round(), prev, undefined, { theme: light, osDark: false });
+    expect(observer.takeRecords()).toHaveLength(0);
+    applyPatches(index, round(), prev, undefined, { theme: dark, osDark: false });
+    expect(observer.takeRecords().length).toBeGreaterThan(0);
+    expectColour(rect(index, 'n3').style.stroke, statusColor({ state: 'down' }, dark));
+    expect(statusColor({ state: 'down' }, dark)).not.toBe(red);
   });
 });

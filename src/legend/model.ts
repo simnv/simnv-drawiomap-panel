@@ -13,8 +13,7 @@ import {
 } from '@grafana/data';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
-import { noDataColor } from '../binding/color';
-import { statusColor } from '../render/overlay';
+import { noDataColor, statusColor } from '../binding/color';
 import type { HalfState, SeriesInfo, ShapeState } from '../types';
 
 /** One colour of a scale: a swatch and its threshold or mapping text. */

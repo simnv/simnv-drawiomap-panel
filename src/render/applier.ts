@@ -1,6 +1,9 @@
+import { createTheme, type GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
+import { linkStatusPaint, statusPaint, tintFill } from '../binding/color';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
+import { strokeWidthOf } from './geometry';
 
 /** Labels that a patch wrote text into. Only these need a label reset. */
 const written = new WeakSet<Element>();
@@ -73,7 +76,7 @@ function applyShape(entry: CellEntry, patch: CellPatch, index: CellIndex): strin
   }
   if (shape && target === 'stroke') {
     shape.style.stroke = s.color;
-    shape.style.strokeWidth = String((parseFloat(shape.getAttribute('stroke-width') ?? '') || 1) + 1);
+    shape.style.strokeWidth = String(strokeWidthOf(shape, entry.original.strokeWidth) + 1);
   }
   return target;
 }
@@ -150,8 +153,11 @@ const snapshot = (m: SVGElement, prop: 'fill' | 'stroke'): Paint => ({
   priority: m.style.getPropertyPriority(prop),
 });
 
-/** Paints the end markers (the dot of a bare end) with the colour of the half that they close. */
-function paintEnds(entry: CellEntry, l: NonNullable<CellPatch['link']>): void {
+/**
+ * Paints the end markers (the dot of a bare end) with the colour of the half that they close, or with the status
+ * colour of the link when its status paints (`linkStatusPaint`), the colour the halves show then.
+ */
+function paintEnds(entry: CellEntry, l: NonNullable<CellPatch['link']>, status: string | undefined): void {
   for (const { el: marker, end } of entry.ends ?? []) {
     const m = marker as SVGElement;
     const half = end === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b);
@@ -163,23 +169,74 @@ function paintEnds(entry: CellEntry, l: NonNullable<CellPatch['link']>): void {
     }
     for (const prop of ['fill', 'stroke'] as const) {
       if (paints(m, prop)) {
-        m.style.setProperty(prop, half.color, endOriginal.get(m)![prop].priority);
+        m.style.setProperty(prop, status ?? half.color, endOriginal.get(m)![prop].priority);
       }
     }
   }
 }
 
-function applyLink(entry: CellEntry, patch: CellPatch): void {
+/** The halves of a link, or the status colour of a link without halves (`status` is `linkStatusPaint`). */
+function applyLink(entry: CellEntry, patch: CellPatch, status: string | undefined): void {
   const l = patch.link;
   if (!l || (!l.a2b && !l.b2a)) {
+    // a status rule on an edge with no link binding: the stroke takes the status colour, as the no-data grey does
+    if (status && entry.line) {
+      entry.line.style.stroke = status;
+    }
     return;
   }
-  paintEnds(entry, l);
+  paintEnds(entry, l, status);
   if (entry.line) {
     entry.line.style.strokeOpacity = '0';
   }
   for (const a of entry.arrows) {
     a.style.opacity = '0';
+  }
+}
+
+/** The border of a device with a status: at least this wide, in the user units of its shape ... */
+const STATUS_BORDER_MIN = 2;
+/** ... and this many times the width the shape had. */
+const STATUS_BORDER_SCALE = 1.5;
+
+/**
+ * The fill of `shape` mixed with the status colour. The computed fill is the one the shape shows (`light-dark()` and
+ * `var()` resolved for the colour scheme of the root); a host without one gives the inline style, then the attribute.
+ * Undefined when that fill is not an opaque colour: the border alone shows the status then.
+ */
+function tintedFill(shape: SVGElement, status: string): string | undefined {
+  let computed = '';
+  try {
+    computed = getComputedStyle(shape).getPropertyValue('fill').trim();
+  } catch {
+    // no computed style in this host
+  }
+  const fills = computed ? [computed] : [shape.style.getPropertyValue('fill'), shape.getAttribute('fill') ?? ''];
+  for (const fill of fills) {
+    const tint = fill ? tintFill(fill, status) : undefined;
+    if (tint) {
+      return tint;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A device whose status is not normal: a border in the status colour, wider than the stroke the shape had
+ * (`width`, read before the shape binding wrote its own), and a light tint of the fill it shows now. It runs after
+ * `applyShape`, so the border wins over a `stroke` target and the tint goes over a `shape` target.
+ */
+function applyStatus(entry: CellEntry, patch: PlanCellPatch, width: number, theme: GrafanaTheme2): void {
+  const shape = entry.shape as SVGElement | undefined;
+  const paint = entry.line ? undefined : statusPaint(patch.statusView, theme);
+  if (!shape || !paint) {
+    return;
+  }
+  shape.style.stroke = paint;
+  shape.style.strokeWidth = String(Math.max(STATUS_BORDER_MIN, STATUS_BORDER_SCALE * width));
+  const tint = tintedFill(shape, paint);
+  if (tint) {
+    shape.style.fill = tint;
   }
 }
 
@@ -306,6 +363,16 @@ export interface ColourScheme {
   osDark: boolean;
 }
 
+/** What an apply runs under: the theme (its colour scheme, and the status colours) and the OS preference. */
+export interface ApplyContext {
+  theme: GrafanaTheme2;
+  osDark: boolean;
+}
+
+let fallbackTheme: GrafanaTheme2 | undefined;
+/** The context of a call without one (the tests): the light theme, no OS preference. */
+const defaultContext = (): ApplyContext => ({ theme: (fallbackTheme ??= createTheme()), osDark: false });
+
 /** What one apply left in the DOM: the key of the applied patch per cell, for the index and the colour scheme it ran under. */
 export interface Applied {
   index: CellIndex;
@@ -346,8 +413,9 @@ export function applyPatches(
   patches: PatchMap,
   previous?: Applied,
   interactive?: Set<string>,
-  scheme: ColourScheme = { isDark: false, osDark: false }
+  ctx: ApplyContext = defaultContext()
 ): Applied {
+  const scheme: ColourScheme = { isDark: ctx.theme.isDark, osDark: ctx.osDark };
   const same = previous?.index === index;
   const before = same ? previous.keys : new Map<string, string>();
   const all = same && !sameScheme(previous.scheme, scheme);
@@ -393,9 +461,12 @@ export function applyPatches(
     if (!entry) {
       continue;
     }
+    // the width the shape had, before the shape binding writes its own
+    const width = entry.shape && !entry.line ? strokeWidthOf(entry.shape, entry.original.strokeWidth) : 0;
     const target = applyShape(entry, patch, index);
     applyUnavailable(entry, patch);
-    applyLink(entry, patch);
+    applyLink(entry, patch, linkStatusPaint(patch, ctx.theme));
+    applyStatus(entry, patch, width, ctx.theme);
     tag(entry, patch, target, !interactive || interactive.has(id));
   }
   return { index, scheme, keys };

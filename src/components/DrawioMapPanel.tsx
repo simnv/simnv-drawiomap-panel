@@ -527,15 +527,15 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     const root = stage.root;
     const linkWidth = { min: linkMin, max: linkMax };
     const id = requestAnimationFrame(() => {
-      const scheme = { isDark, osDark };
-      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive, scheme);
+      const ctx = { theme, osDark };
+      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive, ctx);
       interactiveRef.current = markInteractive(stage.index, interactive, interactiveRef.current);
       renderOverlay(root, stage.index, result.patches, { theme });
       // after the overlay: its arrow heads are obstacles of the labels
       renderLinkLabels(root, stage.index, result.patches, { theme, linkWidth });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, result, theme, isDark, osDark, interactive, linkMin, linkMax]);
+  }, [stage.root, stage.index, result, theme, osDark, interactive, linkMin, linkMax]);
 
   // After the patches (the same frame order): mark the cells of the legend entry under the pointer.
   const hits = legendBlocks.length ? legendHits : null;

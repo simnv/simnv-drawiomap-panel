@@ -1,5 +1,14 @@
 import type { CellEntry } from '../types';
 
+/**
+ * The stroke width a primitive was drawn with, in its user units: the attribute, else the original inline style
+ * (`CellEntry.original.strokeWidth`, captured before any patch), else the inline style now, else 1 (the SVG default).
+ */
+export function strokeWidthOf(el: SVGElement, original?: string): number {
+  const n = parseFloat(el.getAttribute('stroke-width') || original || el.style.strokeWidth || '');
+  return Number.isFinite(n) ? n : 1;
+}
+
 export interface ChartAnchor {
   x: number;
   y: number;

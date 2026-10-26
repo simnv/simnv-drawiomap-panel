@@ -12,6 +12,7 @@ import {
   pathGeometry,
   polylineLength,
   scaleOf,
+  strokeWidthOf,
   toMatrix,
   usable,
   type Matrix,
@@ -36,7 +37,7 @@ import {
   type Placement,
   type Rect,
 } from './labelPlacement';
-import { fmt, linkSplit, OVERLAY_CLASS, statusMarkerBox, type TextProbe } from './overlay';
+import { fmt, linkSplit, OVERLAY_CLASS } from './overlay';
 import { viewScaleOf } from './zoom';
 
 /*
@@ -54,7 +55,7 @@ const NS = 'http://www.w3.org/2000/svg';
 const SLOT_GRAIN = 4;
 /** the widest text `percentText` produces: every percent label has this one slot */
 const WIDEST_PERCENT = '>999%';
-/** the font of the status markers: the fallback when the stage has no portograph link label */
+/** the fallback font family when the stage has no portograph link label */
 const FALLBACK_FONT = 'sans-serif';
 /** a box inside another by at most this much on a side still counts as contained (two decimals in the export) */
 const CONTAIN_EPS = 0.5;
@@ -157,7 +158,7 @@ export function renderLinkLabels(
     return { placed: 0, dropped: 0, moved: 0 };
   }
   const fontFamily = stageFont(root);
-  // the obstacles depend on every patched cell (its marker room, its arrows, its stroke, the split of its halves)
+  // the obstacles depend on every patched cell (its arrows, its stroke, the split of its halves)
   const patched = Array.from(patches.keys())
     .sort()
     .map((id) => {
@@ -299,7 +300,7 @@ function measure(
   return measured > 0 ? measured : estimate;
 }
 
-/** The font of the first portograph link label in the stage, else the status markers' font. */
+/** The font of the first portograph link label in the stage, else the fallback font. */
 function stageFont(root: SVGSVGElement): string {
   const text = root.querySelector('g[data-cell-id^="pg-linkLabel"] text');
   const family =
@@ -465,12 +466,6 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   return local && m ? mapRect(local, m) : undefined;
 }
 
-/** The inline stroke width of a primitive: the attribute, the style, the original style, else 1 (the SVG default). */
-function strokeWidthOf(el: SVGElement, original?: string): number {
-  const n = parseFloat(el.getAttribute('stroke-width') || el.style.strokeWidth || original || '');
-  return Number.isFinite(n) ? n : 1;
-}
-
 /* ---------- obstacles ---------- */
 
 const hasHalves = (patches: PatchMap, cellId: string) => {
@@ -528,7 +523,6 @@ export function stageObstacles(
   index: CellIndex,
   patches: PatchMap,
   max: number,
-  probe: TextProbe,
   legs: Map<string, EdgeLegs> = new Map()
 ): Obstacle[] {
   const out: Obstacle[] = [];
@@ -595,13 +589,6 @@ export function stageObstacles(
     }
     if (entry.meta.kind === 'link-label') {
       rect(entry.group);
-    }
-    if (patches.has(cellId)) {
-      const marker = statusMarkerBox(entry, probe);
-      const m = marker && toRoot(marker.space, root);
-      if (marker && m) {
-        out.push({ kind: 'rect', rect: mapRect(marker.bounds, m), clearance: 0 });
-      }
     }
   }
   root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => rect(a));
@@ -1041,7 +1028,6 @@ function fullPlacement(
     max: opts.linkWidth.max,
     min: opts.linkWidth.min,
   };
-  const probe: TextProbe = (text, font) => measure(layout, text, font);
   // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
   const legs = new Map<string, EdgeLegs>();
   for (const slot of slots) {
@@ -1052,7 +1038,7 @@ function fullPlacement(
       );
     }
   }
-  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe, legs));
+  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, legs));
   const texts: Array<string | undefined> = [];
   for (const slot of slots) {
     const text = linkLabelText(slot.state, slot.mode);

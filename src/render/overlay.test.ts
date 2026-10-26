@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import { ensureOverlay, linkSplit, renderOverlay, statusMarkerBox } from './overlay';
+import { ensureOverlay, linkSplit, renderOverlay } from './overlay';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
+import { statusColor } from '../binding/color';
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g><g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30"/></g></g>
@@ -65,35 +66,67 @@ const opts = { theme: createTheme() };
 
 const before = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
-describe('status overlay', () => {
-  it('marks every affected element without a summary inside the diagram and without changing directional colors', () => {
-    const { root, index } = build();
-    const statusView: StatusView = {
-      state: 'down',
-      reason: 'Device down',
-      conditionKey: 'health-zero',
-      queryIds: ['up'],
-      coverage: { available: 1, expected: 1 },
-    };
-    const patches = new Map<string, PlanCellPatch>([
-      ['n1', { ...patch('n1', {}), statusView }],
-      ['e1', { ...patch('e1', { link: { a2b: half() } }), statusView }],
+describe('status paint of the halves', () => {
+  const statusView: StatusView = {
+    state: 'down',
+    reason: 'Device down',
+    conditionKey: 'health-zero',
+    queryIds: ['up'],
+    coverage: { available: 1, expected: 1 },
+  };
+  const round = (view: StatusView | undefined) =>
+    new Map<string, PlanCellPatch>([
+      ['n1', { ...patch('n1', {}), statusView: view }],
+      ['e1', { ...patch('e1', { link: { a2b: half(), b2a: half({ status: 'nodata', stepIndex: -1 }) } }), statusView: view }],
     ]);
-    renderOverlay(root, index, patches, opts);
-    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(2);
-    // the panel shows the summary in a band above the diagram, never on top of it
-    expect(root.querySelectorAll('.dmap-status-summary')).toHaveLength(0);
-    expect(root.querySelector('.dmap-half')!.getAttribute('stroke')).toBe('#00ff00');
-    expect(root.querySelector('.dmap-status-marker text')!.textContent).toContain('!');
-    expect(root.querySelector('.dmap-status-marker')!.getAttribute('pointer-events')).toBe('none');
-    patches.get('e1')!.statusView = { ...statusView, conditionKey: 'power', reason: 'Power lost' };
-    renderOverlay(root, index, patches, opts);
-    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(2);
-    for (const p of patches.values()) {
-      p.statusView = { ...statusView, state: 'normal', reason: 'Healthy' };
-    }
-    renderOverlay(root, index, patches, opts);
+  const strokes = (root: SVGSVGElement) =>
+    Array.from(root.querySelectorAll('.dmap-half'), (el) => el.getAttribute('stroke'));
+  const fills = (root: SVGSVGElement) =>
+    Array.from(root.querySelectorAll('.dmap-arrow'), (el) => el.getAttribute('fill'));
+
+  it('a status that is not normal paints both halves and arrow heads in the status colour; the data attributes stay', () => {
+    const { root, index } = build();
+    const red = statusColor({ state: 'down' }, opts.theme);
+    renderOverlay(root, index, round(statusView), opts);
+    expect(strokes(root)).toEqual([red, red]);
+    expect(fills(root)).toEqual([red, red]);
+    const [a2b, b2a] = Array.from(root.querySelectorAll('.dmap-half'));
+    expect(a2b.getAttribute('data-dmap-status')).toBe('ok');
+    expect(b2a.getAttribute('data-dmap-status')).toBe('nodata');
+    expect(b2a.getAttribute('data-dmap-step')).toBe('-1');
+    // nothing is drawn on the device and no marker anywhere: the applier paints the shape
     expect(root.querySelectorAll('.dmap-status-marker, .dmap-status-summary')).toHaveLength(0);
+    expect(root.querySelectorAll('[data-dmap-cell="n1"]')).toHaveLength(0);
+    // the summary lives in a band above the diagram, never on top of it
+    expect(root.querySelector('.dmap-status-summary')).toBeNull();
+  });
+  it('a normal status and a missing status leave the binding colours; the same elements are updated in place', () => {
+    const { root, index } = build();
+    renderOverlay(root, index, round(statusView), opts);
+    const before = Array.from(root.querySelectorAll('.dmap-half, .dmap-arrow'));
+    renderOverlay(root, index, round({ ...statusView, state: 'normal', reason: 'Healthy' }), opts);
+    expect(strokes(root)).toEqual(['#00ff00', '#00ff00']);
+    expect(Array.from(root.querySelectorAll('.dmap-half, .dmap-arrow'))).toEqual(before);
+    renderOverlay(root, index, round({ ...statusView, state: 'missing', reason: 'No data' }), opts);
+    expect(strokes(root)).toEqual(['#00ff00', '#00ff00']);
+    renderOverlay(root, index, round({ ...statusView, state: 'warning' }), opts);
+    const orange = statusColor({ state: 'warning' }, opts.theme);
+    expect(strokes(root)).toEqual([orange, orange]);
+    expect(Array.from(root.querySelectorAll('.dmap-half, .dmap-arrow'))).toEqual(before);
+    renderOverlay(root, index, round(undefined), opts);
+    expect(strokes(root)).toEqual(['#00ff00', '#00ff00']);
+  });
+  it('a new theme paints the same elements in its own status colour', () => {
+    const { root, index } = build();
+    const light = createTheme({ colors: { mode: 'light' } });
+    const dark = createTheme({ colors: { mode: 'dark' } });
+    renderOverlay(root, index, round(statusView), { theme: light });
+    const before = Array.from(root.querySelectorAll('.dmap-half'));
+    expect(strokes(root)).toEqual([statusColor(statusView, light), statusColor(statusView, light)]);
+    renderOverlay(root, index, round(statusView), { theme: dark });
+    expect(strokes(root)).toEqual([statusColor(statusView, dark), statusColor(statusView, dark)]);
+    expect(statusColor(statusView, dark)).not.toBe(statusColor(statusView, light));
+    expect(Array.from(root.querySelectorAll('.dmap-half'))).toEqual(before);
   });
 });
 
@@ -223,12 +256,10 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     const { root, index } = build();
     renderOverlay(root, index, round(), opts);
     const before = strokes(root, 'e1');
-    const marker = root.querySelector('.dmap-status-marker')!;
     const observer = observe(root);
     renderOverlay(root, index, round(), opts);
     expect(observer.takeRecords()).toHaveLength(0);
     expect(same(before, strokes(root, 'e1'))).toBe(true);
-    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(true);
     expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(3);
   });
   it('a colour and width change updates the same elements in place and keeps the points and the mask', () => {
@@ -251,7 +282,7 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     expect(line.getAttribute('mask')).toBe('url(#dmap-lm-1-0)');
     expect(arrow.getAttribute('fill')).toBe('#0000ff');
     expect(arrow.getAttribute('mask')).toBe('url(#dmap-lm-1-0)');
-    // the other link and the marker are not touched
+    // the other link is not touched
     expect(same(strokes(root, 'e2'), strokes(root, 'e2'))).toBe(true);
   });
   it('a half that goes rebuilds the layer of that link only', () => {
@@ -269,58 +300,33 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     expect(same(e2, strokes(root, 'e2'))).toBe(true);
     expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(2);
   });
-  it('a marker with the same state and reason stays; a new reason replaces it; a normal view removes it', () => {
+  it('a status cell draws nothing of its own; a status on a link changes no element count', () => {
     const { root, index } = build();
     renderOverlay(root, index, round(), opts);
-    const marker = root.querySelector('.dmap-status-marker')!;
-    renderOverlay(root, index, round({}, { ...statusView, conditionKey: 'other' }), opts);
-    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(true);
-    renderOverlay(root, index, round({}, { ...statusView, reason: 'Power lost' }), opts);
-    const replaced = root.querySelector('.dmap-status-marker')!;
-    expect(replaced.isSameNode(marker)).toBe(false);
-    expect(replaced.querySelector('title')!.textContent).toBe('Power lost');
-    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(1);
+    expect(root.querySelectorAll('[data-dmap-cell="n1"]')).toHaveLength(0);
+    const count = root.querySelectorAll('*').length;
     renderOverlay(root, index, round({}, { ...statusView, state: 'normal', reason: 'Healthy' }), opts);
-    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(0);
     renderOverlay(root, index, round({}, null), opts);
-    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(0);
+    expect(root.querySelectorAll('*')).toHaveLength(count);
   });
-  it('a new theme draws the markers again in its colours', () => {
-    const { root, index } = build();
-    renderOverlay(root, index, round(), { theme: createTheme({ colors: { mode: 'light' } }) });
-    const light = root.querySelector('.dmap-status-marker text')!;
-    const dark = createTheme({ colors: { mode: 'dark' } });
-    renderOverlay(root, index, round(), { theme: dark });
-    const text = root.querySelector('.dmap-status-marker text')!;
-    expect(text.isSameNode(light)).toBe(false);
-    expect(text.getAttribute('fill')).toBe(dark.colors.error.text);
-    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(1);
-  });
-  it('the child order on an edge without arrow heads is path, marker, overlay after a fresh render and after a rebuild', () => {
+  it('the child order on an edge is path, overlay without arrow heads and path, arrow, overlay with them, also after a rebuild', () => {
     const { root, index } = build();
     const order = () =>
       Array.from(index.get('e2')!.line!.parentElement!.children).map((c) =>
-        c.localName === 'path'
-          ? 'path'
-          : c.classList.contains('dmap-status-marker')
-            ? 'marker'
-            : c.getAttribute('class')
+        c.localName === 'path' ? 'path' : c.getAttribute('class')
       );
-    const withMarker = (b2a: boolean) =>
+    const withStatus = (b2a: boolean) =>
       new Map<string, PlanCellPatch>([
         ['e2', { ...patch('e2', { link: { a2b: half(), ...(b2a ? { b2a: half() } : {}) } }), statusView }],
       ]);
-    renderOverlay(root, index, withMarker(true), opts);
-    expect(order()).toEqual(['path', 'marker', 'dmap-overlay']);
-    const marker = root.querySelector('.dmap-status-marker')!;
-    // a half goes: the layer is built again; the kept marker stays under it
-    renderOverlay(root, index, withMarker(false), opts);
-    expect(order()).toEqual(['path', 'marker', 'dmap-overlay']);
-    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(true);
-    // and on an edge with arrow heads: path, marker, arrow, overlay
+    renderOverlay(root, index, withStatus(true), opts);
+    expect(order()).toEqual(['path', 'dmap-overlay']);
+    // a half goes: the layer is built again in the same place
+    renderOverlay(root, index, withStatus(false), opts);
+    expect(order()).toEqual(['path', 'dmap-overlay']);
     renderOverlay(root, index, new Map([['e1', { ...patch('e1', { link: { a2b: half() } }), statusView }]]), opts);
     const e1 = Array.from(index.get('e1')!.line!.parentElement!.children).map((c) => c.getAttribute('class') ?? c.id);
-    expect(e1).toEqual([null, 'dmap-status-marker', 'e1-arrow', 'dmap-overlay'].map((v) => v ?? expect.anything()));
+    expect(e1).toEqual([null, 'e1-arrow', 'dmap-overlay'].map((v) => v ?? expect.anything()));
   });
   it('a link patch that goes removes its overlay; a new index removes every element of the old render', () => {
     const { root, index } = build();
@@ -331,13 +337,10 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     expect(strokes(root, 'e2')).toHaveLength(0);
     expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(1);
     const e1 = strokes(root, 'e1');
-    const marker = root.querySelector('.dmap-status-marker')!;
     // the same elements under a new index: the state of the old index does not apply
     renderOverlay(root, new Map(index), next, opts);
     expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(1);
-    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(1);
     expect(strokes(root, 'e1').some((el) => e1.includes(el))).toBe(false);
-    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(false);
   });
 });
 
@@ -435,7 +438,7 @@ describe('arrow tip position', () => {
   });
 });
 
-describe('linkSplit and statusMarkerBox', () => {
+describe('linkSplit', () => {
   it('the split is the middle of a straight path, and moves off a corner onto one run by two arrow lengths', () => {
     const geo = { length: 200, bends: [], unit: 1, matrix: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 } };
     expect(linkSplit({ ...geo, pointAt: () => ({ x: 0, y: 0, angle: 0 }), polyline: () => [] })).toBe(100);
@@ -443,29 +446,5 @@ describe('linkSplit and statusMarkerBox', () => {
     expect(linkSplit(bent)).toBe(84);
     // the clearance is in the units of the path: a path drawn at half size keeps 32 of its own units
     expect(linkSplit({ ...bent, unit: 0.5 })).toBe(68);
-  });
-  it('a shape marker sits at the bottom-left corner of the shape, in the space of the shape', () => {
-    const { index } = build();
-    const box = statusMarkerBox(index.get('n1')!)!;
-    expect(box.space).toBe(index.get('n1')!.shape);
-    expect(box.anchor).toEqual({ x: 14, y: 36 });
-    expect(box.bounds.x).toBeCloseTo(12.5);
-    expect(box.bounds.y).toBeCloseTo(36 - 12 - 1.5);
-    expect(box.bounds.width).toBeCloseTo(0.6 * 12 * '? missing'.length + 3);
-    const probed = statusMarkerBox(index.get('n1')!, () => 50)!;
-    expect(probed.bounds.width).toBeCloseTo(53);
-  });
-  it('the marker of the overlay stands at the anchor of statusMarkerBox', () => {
-    const { root, index } = build();
-    const statusView: StatusView = {
-      state: 'down',
-      reason: 'Down',
-      conditionKey: 'k',
-      queryIds: ['q'],
-      coverage: { available: 1, expected: 1 },
-    };
-    renderOverlay(root, index, new Map<string, PlanCellPatch>([['n1', { ...patch('n1', {}), statusView }]]), opts);
-    const text = root.querySelector('.dmap-status-marker text')!;
-    expect([text.getAttribute('x'), text.getAttribute('y')]).toEqual(['14', '36']);
   });
 });
