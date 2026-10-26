@@ -580,6 +580,10 @@ export function stageObstacles(
     } else if (!entry.shape && entry.label) {
       // a plain text cell: its text is as much in the way as a body
       rect(entry.label);
+    } else if (entry.shape && backgrounds.has(cellId)) {
+      // a group or a container is a background, but its title text is not: a label must not stand on the caption
+      // (the frame line and the interior stay free; the halo covers the frame)
+      rect(entry.label);
     } else if (entry.shape && !backgrounds.has(cellId)) {
       const m = toRoot(entry.shape, root);
       const body = bodies.get(cellId);
