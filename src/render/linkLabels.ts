@@ -11,6 +11,7 @@ import {
   parsePathPoints,
   pathGeometry,
   polylineLength,
+  maxScaleOf,
   scaleOf,
   drawnStrokeWidth,
   originalStrokeWidth,
@@ -585,7 +586,7 @@ export function stageObstacles(
         out.push({
           kind: 'rect',
           rect: body,
-          clearance: (bodyReach(entry) * scaleOf(m)) / 2,
+          clearance: (bodyReach(entry) * maxScaleOf(m)) / 2,
         });
       }
     }
@@ -598,8 +599,8 @@ export function stageObstacles(
 }
 
 /**
- * The widest stroke that a device body can show, in its user units: its original stroke or its status border,
- * whichever is wider; an `<image>` has no stroke, only the border of the overlay. The reach does not depend on the
+ * The widest stroke that a device body can show, in its user units: its original stroke, its status border or the
+ * stroke drawn now, whichever is widest; an `<image>` has no stroke, only the border of the overlay. The reach does not depend on the
  * status, so a status change never needs new obstacles.
  */
 function bodyReach(entry: CellEntry): number {
@@ -608,7 +609,8 @@ function bodyReach(entry: CellEntry): number {
     return statusBorderWidth(0);
   }
   const width = originalStrokeWidth(shape, entry.original.strokeWidth);
-  return Math.max(width, statusBorderWidth(width));
+  // the drawn width (a stroke binding writes one) only adds room; the status border is in the max already
+  return Math.max(width, statusBorderWidth(width), drawnStrokeWidth(shape));
 }
 
 /* ---------- legs ---------- */

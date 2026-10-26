@@ -281,6 +281,8 @@ export function toMatrix(m: { a: number; b: number; c: number; d: number; e: num
 }
 
 /** The scale of a matrix (the square root of its determinant), 1 for a degenerate one. */
+/** The largest stretch of a matrix along an axis: a stroke can reach this far in root units per user unit. */
+export const maxScaleOf = (m: Matrix): number => Math.max(Math.hypot(m.a, m.b), Math.hypot(m.c, m.d)) || 1;
 export const scaleOf = (m: Matrix): number => Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
 
 export function applyMatrix(m: Matrix, p: Point): Point {
