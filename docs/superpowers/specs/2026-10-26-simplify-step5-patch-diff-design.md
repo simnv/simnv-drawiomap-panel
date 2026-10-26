@@ -101,8 +101,11 @@ The pass:
 3. A node and its icon cell change together (R1-2). `applyShape` of a node with `target: 'icon'` colours the shape of
    its icon cell (`entry.iconId`), and `reset` of the icon cell puts the icon's own fill back. If the icon cell has a
    patch of its own (a url, an unavailable state) and only one of the two changes, the one that is skipped loses its
-   paint. So the changed set closes over the pair: a changed cell with an `iconId` adds that icon cell; a changed cell
-   with an `ownerId` adds its owner. Both are in the index (`CellEntry.iconId`, `CellEntry.ownerId`), one hop each.
+   paint. So the changed set is closed over both relations of the index (`CellEntry.iconId`: a node to its icon;
+   `CellEntry.ownerId`: a part, the icon, the icon tile or a description, to its node) until nothing is added: a
+   changed description leads to its node, and the node to its icon, so the icon's own grey patch is written again
+   after the node coloured it (R2-1). Only cells with a patch now or before join. The closure is bounded by the
+   parts of one node.
 4. Resets first, then writes, as today (a node colours the icon of another cell; a later reset must not undo it).
    Every cell of the changed set that is in `previous.keys` is reset; then every cell of the changed set that is in
    `patches` and has an entry is written, in the order of `patches`, with the functions of today (`applyShape`,
@@ -111,8 +114,17 @@ The pass:
    `iconOwner` and `endOriginal` records stay, so the reset of a later change still puts the diagram's values back.
 6. The result holds `index`, `isDark` and the keys of every cell that was written or kept.
 
-`markInteractive` keeps its signature. Today it writes the attribute on every interactive cell on every pass; it now
-writes only the cells that are new in `ids` and removes only the ones that left (R1-5).
+`markInteractive(index, ids, previous?: Marked): Marked` with `Marked = { index, ids }`. Today it writes the
+attribute on every interactive cell on every pass; it now writes only the cells that are new in `ids` and removes
+only the ones that left (R1-5). `previous` of another index counts as empty, the rule of `Applied`: the ref of the
+panel survives a new stage, and the new elements get the attribute (R2-2).
+
+The sanitizer (R2-3). A descendant could carry `style="color-scheme: light dark"` (an accepted inline style) and a
+`light-dark()` paint: its subtree would follow the OS preference, and `paints()` would change with no change of
+`isDark`. The sanitizer strips the `color-scheme` declaration from the inline style of every descendant and the
+`color-scheme` attribute from descendants; the root keeps its own, which the panel overwrites from the theme. draw.io
+writes `color-scheme` on the root only (the demo exports have it there and nowhere else), so no diagram changes. The
+Grafana theme alone decides the scheme; `docs/security.md` says so.
 
 ### 3.2 The overlay
 
@@ -316,3 +328,15 @@ the hit test, the popup stage, the bench method or the e2e plan.
 | R1-3 (P1). The key ignored the theme in `paints()`: an end dot with a `light-dark()` fill kept its patched paint after a theme switch, where it had to be evaluated again | The callers pass `theme.isDark`; `Applied` records it; another value resets and writes every cell (section 3.1, "The colour scheme"; test "an end dot with a light-dark() fill").           |
 | R1-4 (P1). A kept marker stayed above a rebuilt layer: on an edge without arrow heads the order went from path, marker, overlay to path, overlay, marker                  | The marker step moves a kept marker back after its primitive when it is not the next sibling (section 3.2, item 5; test on the child order).                                                |
 | R1-5 (P3). The text said `markInteractive` already diffs; it rewrote every interactive cell that stays on each pass                                                       | It writes only the new ids and removes only the ones that left (section 3.1; test "makes no mutation with the same ids").                                                                   |
+
+Re-check (Codex, 2026-10-26, the spec at `2a4557e`). R1-1 and R1-4 accepted.
+
+| Concern                                                                                                                                                                       | Resolution                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R2-1 (P1). One hop from a changed description reached its node, but not the node's icon: the node repainted the icon and the icon's unchanged grey patch was skipped and lost | The changed set is the closure over `iconId` and `ownerId` (section 3.1, item 3; test "a changed description of the node leaves the grey of the icon cell in place").                                      |
+| R2-2 (P2). `markInteractive` skipped the retained ids after a new stage mounted, but the ref survives the stage: the new elements lost the attribute and the hand cursor      | `Marked = { index, ids }`; another index counts as empty (section 3.1; test "marks the cells of a new stage").                                                                                             |
+| R2-3 (P2). A descendant with an accepted `color-scheme` inline style and a `light-dark()` paint followed the OS preference; `paints()` changed with the same `isDark`         | The sanitizer strips `color-scheme` from descendants; the root keeps its own (section 3.1, "The sanitizer"; `sanitize.test.ts` "keeps the colour scheme of the root and strips it from every descendant"). |
+
+Found during the implementation: `dropMasks` took the mask off the strokes with the selector `[mask^="url(#dmap-lm-"]`,
+which jsdom does not match; the strokes were new on every pass before this step, so the miss had no effect. It now
+filters `[mask]` by the prefix (the one logic change in `linkLabels.ts`).
