@@ -89,8 +89,9 @@ export function buildConfiguredCard(
   }
   const primary = primaryOf(patch);
   card.links = resolveLinks(patch, primary, ctx.replaceVariables, card.title);
-  // the status state and its reason first: the element shows the colour, the card says why
-  if (patch.statusView) {
+  // A state that is not normal and its reason come first: the element shows the colour, the card says why.
+  // A normal status adds a row only to a card with no hover rows (the card then has something to show).
+  if (patch.statusView && (patch.statusView.state !== 'normal' || !patch.hover)) {
     card.rows.push({
       key: 'status',
       kind: 'status',

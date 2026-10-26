@@ -28,8 +28,9 @@
 4. The status colours come from the theme, as the rest of the panel: `down` and `critical` the palette red, `warning`
    and `stale` the palette orange, `missing` the no-data grey. The band and the legend use the same function, so the
    three places agree.
-5. The hover card shows the status state and its reason for every cell that has a status, also when the cell has
-   hover rows. The status row is the first row, in the card's existing status row style.
+5. The hover card shows the status state and its reason for every cell that has a status other than `normal`, also
+   when the cell has hover rows (owner decision: non-normal only; a `normal` status adds a row only to a card with
+   no hover rows). The status row is the first row, in the card's existing status row style.
 6. Every new write is a function of the step 5 key and of the colour scheme; the reset of the applier puts the
    diagram's values back when the status goes back to `normal` or the cell leaves.
 
@@ -130,7 +131,7 @@ colour again through their own key.
 
 ## 4. The hover card
 
-`buildConfiguredCard` adds the status row for every patch with a `statusView`, as the first row, before the hover
+`buildConfiguredCard` adds the status row for every patch with a non-normal `statusView` (and for a `normal` one only when the cell has no hover rows), as the first row, before the hover
 rows: `{ key: 'status', kind: 'status', title: state, text: reason }`, the row that a status-only cell shows today.
 `opensCard` does not change (a status already opens the card). The editor's card preview uses the same model.
 
@@ -157,7 +158,7 @@ Unit (`npm run test:affected`; failing tests first):
 - `linkLabels.test.ts`: the label expectations without the marker room (the `b2a` label stays at its own spot); the
   `stageObstacles` calls without the probe; the obstacle list has no rect at the midpoint of a patched edge.
 - `cardModel.test.ts`: a patch with hover rows and a status gives the status row first, then the hover rows; a
-  `normal` status gives the row too (the card says `normal` and its reason); no status, no row.
+  `normal` status gives no row; a `normal` status without hover rows gives the one row; no status, no row.
 - `legend/model.test.ts` and `StatusBand.test.tsx`: the colours follow `statusColor` (the assertions that name a
   theme token change to the palette colour).
 

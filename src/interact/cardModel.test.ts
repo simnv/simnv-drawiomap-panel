@@ -105,7 +105,7 @@ describe('configured cards', () => {
     ]);
     expect(card.demands).toEqual([]);
   });
-  it('shows the status state and its reason first, before the hover rows, also for a normal status', () => {
+  it('shows the status state and its reason first, before the hover rows, only when the state is not normal', () => {
     const status = (state: StatusView['state'], reason: string): StatusView => ({
       state,
       reason,
@@ -118,8 +118,17 @@ describe('configured cards', () => {
     expect(down.rows[0]).toMatchObject({ key: 'status', kind: 'status', title: 'warning', text: 'probe delay ≥ 400 ms' });
     // the hover rows follow (the drilldown row is a footer link, not a row)
     expect(down.rows.slice(1).map((r) => r.key)).toEqual(['row-0', 'row-1', 'row-2']);
+    for (const state of ['down', 'critical', 'warning', 'stale', 'missing'] as const) {
+      const card = buildConfiguredCard({ ...patch(), statusView: status(state, 'why') }, read, ctx);
+      expect(card.rows[0]).toMatchObject({ kind: 'status', title: state, text: 'why' });
+    }
+    // a normal status adds no row to a card with hover rows
     const normal = buildConfiguredCard({ ...patch(), statusView: status('normal', 'Healthy') }, read, ctx);
-    expect(normal.rows[0]).toMatchObject({ kind: 'status', title: 'normal', text: 'Healthy' });
+    expect(normal.rows.map((r) => r.key)).toEqual(buildConfiguredCard(patch(), read, ctx).rows.map((r) => r.key));
+    expect(normal.rows.some((r) => r.kind === 'status')).toBe(false);
+    // a normal status on a cell with no hover rows: the one status row, as before
+    const normalOnly = buildConfiguredCard({ ...nodePatch(), statusView: status('normal', 'Healthy') }, read, ctx);
+    expect(normalOnly.rows.map((r) => [r.kind, r.title, r.text])).toEqual([['status', 'normal', 'Healthy']]);
     expect(buildConfiguredCard(patch(), read, ctx).rows.some((r) => r.kind === 'status')).toBe(false);
     // a status-only cell: the one row, as before
     const only = buildConfiguredCard({ ...nodePatch(), statusView: status('down', 'Device down') }, read, ctx);
