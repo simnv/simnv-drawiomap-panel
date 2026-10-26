@@ -465,21 +465,6 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   return local && m ? mapRect(local, m) : undefined;
 }
 
-/** A frame stands this far beyond the half of its stroke: a label never touches it. */
-const FRAME_CLEARANCE = 0;
-
-/** The shape of the entry draws a stroke that can be seen: a colour (not none) and a width above 0. */
-function hasStroke(entry: CellEntry): boolean {
-  const el = entry.shape as SVGElement | undefined;
-  if (!el) {
-    return false;
-  }
-  const computed = typeof getComputedStyle === 'function' ? getComputedStyle(el) : undefined;
-  const value = (el.style.stroke || computed?.stroke || el.getAttribute('stroke') || '').trim();
-  const width = strokeWidthOf(el, entry.original.strokeWidth);
-  return value !== '' && value !== 'none' && value !== 'transparent' && width > 0;
-}
-
 /** The inline stroke width of a primitive: the attribute, the style, the original style, else 1 (the SVG default). */
 function strokeWidthOf(el: SVGElement, original?: string): number {
   const n = parseFloat(el.getAttribute('stroke-width') || el.style.strokeWidth || original || '');
@@ -606,17 +591,6 @@ export function stageObstacles(
           rect: body,
           clearance: (strokeWidthOf(entry.shape, entry.original.strokeWidth) * scaleOf(m)) / 2,
         });
-      }
-    }
-    if (entry.shape && backgrounds.has(cellId) && hoverKind(entry) !== 'canvas' && hasStroke(entry)) {
-      // the frame of a group or a container: four thin lines on its edges; the inside stays free
-      const m = toRoot(entry.shape, root);
-      const whole = rootBox(entry.group, root);
-      if (m && whole) {
-        const c = { x: whole.x, y: whole.y };
-        const d = { x: whole.x + whole.width, y: whole.y + whole.height };
-        const clearance = (strokeWidthOf(entry.shape, entry.original.strokeWidth) * scaleOf(m)) / 2 + FRAME_CLEARANCE;
-        strokes(cellId, [c, { x: d.x, y: c.y }, d, { x: c.x, y: d.y }, c], clearance);
       }
     }
     if (entry.meta.kind === 'link-label') {

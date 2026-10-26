@@ -612,26 +612,18 @@ describe('renderLinkLabels: obstacles', () => {
 });
 
 describe('renderLinkLabels: backgrounds', () => {
-  it('the portograph canvas and the groups of the demo sheet are no obstacles; their frames are', () => {
+  it('the portograph canvas and the groups of the demo sheet are no obstacles: the WAN link gets both labels', () => {
     const { root, index } = build(readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8'));
     const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
     expect(index.get('pg-canvas')?.shape?.localName).toBe('rect');
     const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     const obstacles = stageObstacles(root, index, patches, 10, () => 60);
-    // the frames of the two groups (the lines at y 387.5 and 447.5) leave a gap of 60 between the port pills and the
-    // marker room of this 104-long link: a label that fits there stands in it, the others drop; none crosses a frame
-    const counts = render(root, index, patches);
-    expect(counts.placed + counts.dropped).toBe(2);
-    for (const el of labels(root).filter((l) => l.getAttribute('visibility') !== 'hidden')) {
-      const y = Number(el.getAttribute('y'));
-      for (const line of [387.53, 447.53]) {
-        expect(Math.abs(y - line)).toBeGreaterThanOrEqual(12);
-      }
-    }
     const bodies = obstacles.flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
-    // the groups add frame lines but no interior
-    expect(obstacles.filter((o) => o.kind === 'segment' && o.owner === 'pg-group~wan')).toHaveLength(4);
+    // the vertical WAN link: the labels read bottom to top, on the stroke
+    expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
+    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
@@ -798,40 +790,6 @@ describe('renderLinkLabels: the halo colour', () => {
     render(root, index, both(), { ...opts, theme: light });
     labels(root).forEach((el) => expect(el.getAttribute('stroke')).toBe(DARK));
     expect(DARK).not.toBe(light.colors.background.canvas);
-  });
-});
-
-describe('renderLinkLabels: frames of groups', () => {
-  const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
-  // a container with two vertices inside is a background; its frame is four lines, the inside is free
-  const inner = `<g data-cell-id="n3"><g><rect x="140" y="50" width="20" height="20"/></g></g>
-    <g data-cell-id="n4"><g><rect x="140" y="130" width="20" height="20"/></g></g>`;
-  const frame = (x: number, w: number, attrs: string) =>
-    `<g data-cell-id="box"><g><rect x="${x}" y="40" width="${w}" height="120" fill="none" ${attrs}/></g></g>`;
-  const centre = (root: SVGSVGElement) => Number(byHalf(root, 'a2b')!.getAttribute('x'));
-  const spots = (root: SVGSVGElement, index: CellIndex) =>
-    stageObstacles(root, index, both(), 10, () => 60).flatMap((o) => (o.kind === 'segment' ? [o] : []));
-
-  it('a label does not cross the frame line of a group: it slides off it', () => {
-    // the anchor of a2b is 120 and the frame line stands at 118
-    const { root, index } = build(SVG(frame(118, 200, 'stroke="#000" stroke-width="2"') + inner));
-    render(root, index, both());
-    expect(Math.abs(centre(root) - 118)).toBeGreaterThanOrEqual(12);
-    expect(spots(root, index).filter((o) => o.owner === 'box')).toHaveLength(4);
-  });
-  it('a label inside a group still places on its anchor', () => {
-    const { root, index } = build(SVG(frame(60, 280, 'stroke="#000" stroke-width="2"') + inner));
-    render(root, index, both());
-    expect(centre(root)).toBe(120);
-    expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('line');
-  });
-  it('a frame without a visible stroke is no obstacle', () => {
-    for (const attrs of ['', 'stroke="none"', 'stroke="#000" stroke-width="0"']) {
-      const { root, index } = build(SVG(frame(118, 200, attrs) + inner));
-      render(root, index, both());
-      expect(centre(root)).toBe(120);
-      expect(spots(root, index).filter((o) => o.owner === 'box')).toHaveLength(0);
-    }
   });
 });
 
