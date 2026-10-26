@@ -370,7 +370,7 @@ export interface ApplyContext {
 }
 
 let fallbackTheme: GrafanaTheme2 | undefined;
-/** The context of a call without one (the tests): the light theme, no OS preference. */
+/** The context of a call without one (the tests): the default theme of `createTheme()`, no OS preference. */
 const defaultContext = (): ApplyContext => ({ theme: (fallbackTheme ??= createTheme()), osDark: false });
 
 /** What one apply left in the DOM: the key of the applied patch per cell, for the index and the colour scheme it ran under. */

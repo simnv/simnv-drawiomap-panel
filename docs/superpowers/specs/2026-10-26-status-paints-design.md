@@ -122,7 +122,7 @@ colour again through their own key.
   of `Applied`: another theme or OS preference resets and writes every cell, so the tint is read again.
 - The applier needs the theme for the colours. The fifth parameter `scheme: ColourScheme` becomes
   `ctx: ApplyContext = { theme: GrafanaTheme2; osDark: boolean }`; `Applied.scheme` stays `{ isDark: theme.isDark, osDark }`.
-  Both callers have the theme at hand. Without a context the applier uses the light theme (`createTheme()`, cached),
+  Both callers have the theme at hand. Without a context the applier uses the default theme of `createTheme()` (cached),
   for the tests.
 - The overlay: the key of a half (`halfKey`) is computed from the state the half is drawn with, which is the binding
   state with the status colour in `color` when the status paints. A theme change gives other theme colours, so the
