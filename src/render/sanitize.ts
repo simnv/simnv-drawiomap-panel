@@ -7,6 +7,8 @@ export interface SanitizeResult {
   warnings: string[];
 }
 
+import { extractThemeVars } from './themeVars';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export function parseSvg(text: string): SVGSVGElement {
@@ -92,6 +94,11 @@ export function sanitizeSvg(text: string): SanitizeResult {
   }
   // A <style> element applies to the whole page, not only to the SVG: it can hide or restyle Grafana.
   // draw.io writes inline style attributes only, so remove every <style> element.
+  // Before that, keep the --ge-* colour variables (draw.io auto theme) in a strict, value-checked form.
+  const themeVars = extractThemeVars(
+    Array.from(root.querySelectorAll('style'), (st) => st.textContent ?? ''),
+    root.getAttribute('id')
+  );
   for (const st of Array.from(root.querySelectorAll('style'))) {
     st.remove();
     removed.elements++;
@@ -124,6 +131,12 @@ export function sanitizeSvg(text: string): SanitizeResult {
   // Literal xmlns attributes (e.g. on HTML label divs) make XMLSerializer write xmlns twice; it declares namespaces itself.
   for (const el of [svg, ...Array.from(svg.querySelectorAll('*'))]) {
     el.removeAttribute('xmlns');
+  }
+  if (themeVars.size) {
+    // The values are plain colours (themeVars.ts), so a string append cannot add a property or close the attribute.
+    const decls = [...themeVars].map(([name, value]) => `${name}: ${value};`).join(' ');
+    const current = (svg.getAttribute('style') ?? '').trim();
+    svg.setAttribute('style', current ? `${current}${current.endsWith(';') ? '' : ';'} ${decls}` : decls);
   }
   return { svg: new XMLSerializer().serializeToString(svg), removed, foreignObjects, warnings };
 }
