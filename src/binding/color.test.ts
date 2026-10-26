@@ -9,7 +9,8 @@ import {
   getFieldColorMode,
   ThresholdsMode,
 } from '@grafana/data';
-import { colorFor, noDataColor, widthFor } from './color';
+import { colorFor, linkStatusPaint, noDataColor, statusColor, statusPaint, tintFill, widthFor } from './color';
+import type { StatusView } from './status';
 
 const theme = createTheme();
 const named = (c: string) => theme.visualization.getColorByName(c);
@@ -94,5 +95,64 @@ describe('widthFor', () => {
     expect(widthFor(50, { min: 2, max: 10 })).toBe(6);
     expect(widthFor(500, { min: 2, max: 10 })).toBe(10);
     expect(widthFor(undefined, { min: 2, max: 10 })).toBe(2);
+  });
+});
+
+describe('status colours', () => {
+  const view = (state: StatusView['state']): StatusView => ({
+    state,
+    reason: 'r',
+    queryIds: [],
+    conditionKey: 'k',
+    coverage: { available: 1, expected: 1 },
+  });
+  it('takes the palette red and orange of the theme, and the no-data grey for missing', () => {
+    for (const t of [createTheme({ colors: { mode: 'light' } }), createTheme({ colors: { mode: 'dark' } })]) {
+      const red = t.visualization.getColorByName('red');
+      const orange = t.visualization.getColorByName('orange');
+      expect(statusColor(view('down'), t)).toBe(red);
+      expect(statusColor(view('critical'), t)).toBe(red);
+      expect(statusColor(view('warning'), t)).toBe(orange);
+      expect(statusColor(view('stale'), t)).toBe(orange);
+      expect(statusColor(view('missing'), t)).toBe(noDataColor(t));
+    }
+    expect(statusColor(view('down'), createTheme({ colors: { mode: 'light' } }))).not.toBe(
+      statusColor(view('down'), createTheme({ colors: { mode: 'dark' } }))
+    );
+  });
+  it('statusPaint is a colour for a state that is not normal, else undefined', () => {
+    expect(statusPaint(view('down'), theme)).toBe(named('red'));
+    expect(statusPaint(view('missing'), theme)).toBe(noDataColor(theme));
+    expect(statusPaint(view('normal'), theme)).toBeUndefined();
+    expect(statusPaint(undefined, theme)).toBeUndefined();
+  });
+  it('linkStatusPaint leaves the halves alone for missing, and paints a link without halves grey', () => {
+    const halves = { link: { a2b: { status: 'ok', color: '#0f0', width: 2, stepIndex: 0, label: '1' } } } as const;
+    expect(linkStatusPaint({ ...halves, statusView: view('missing') }, theme)).toBeUndefined();
+    expect(linkStatusPaint({ ...halves, statusView: view('down') }, theme)).toBe(named('red'));
+    expect(linkStatusPaint({ statusView: view('missing') }, theme)).toBe(noDataColor(theme));
+    expect(linkStatusPaint({ link: {}, statusView: view('missing') }, theme)).toBe(noDataColor(theme));
+    expect(linkStatusPaint({ ...halves, statusView: view('normal') }, theme)).toBeUndefined();
+    expect(linkStatusPaint({ ...halves }, theme)).toBeUndefined();
+  });
+});
+
+describe('tintFill', () => {
+  it('mixes a fifth of the status colour into an opaque fill', () => {
+    // 213 + (255 - 213) * 0.2 = 221.4; 232 * 0.8 = 185.6; 212 * 0.8 = 169.6
+    expect(tintFill('rgb(213, 232, 212)', '#ff0000')).toBe('rgb(221, 186, 170)');
+    expect(tintFill('#d5e8d4', 'rgb(255, 0, 0)')).toBe('rgb(221, 186, 170)');
+    expect(tintFill('#fff', '#000')).toBe('rgb(204, 204, 204)');
+  });
+  it('a status colour with an alpha mixes by ratio times alpha', () => {
+    // 0.2 * 0.5 = 0.1: 255 - 255 * 0.1 = 229.5
+    expect(tintFill('#ffffff', 'rgba(0, 0, 0, 0.5)')).toBe('rgb(230, 230, 230)');
+  });
+  it('gives nothing for a fill that is not an opaque colour, or a status colour that does not parse', () => {
+    const fills = ['none', 'url(#g)', 'rgba(1, 2, 3, 0.5)', 'currentColor', 'transparent', '', 'light-dark(#fff, #000)'];
+    for (const fill of fills) {
+      expect(tintFill(fill, '#f00'), fill).toBeUndefined();
+    }
+    expect(tintFill('#ffffff', 'currentColor')).toBeUndefined();
   });
 });
