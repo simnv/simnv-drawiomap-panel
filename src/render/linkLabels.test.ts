@@ -21,7 +21,7 @@ import {
  * from x = 40 to 200 (its anchor at 120), the b2a leg from 360 to 200 (its anchor at 280). The percent slot is
  * 24 (0.6 × 8 × 5 glyphs in jsdom), the box 26 × 12. A label stands on its stroke (centre on the line); beside it with `linkWidth.max` 10 the centre stands 13 off the line.
  */
-const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
   <g data-cell-id="n1"><g><rect x="0" y="80" width="40" height="40" stroke-width="2"/></g></g>
   <g data-cell-id="e1"><g><path d="M 40 100 L 360 100" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
   <g data-cell-id="n2"><g><rect x="360" y="80" width="40" height="40"/></g></g>${extra}
@@ -55,6 +55,8 @@ const linkPatch = (cellId: string, link: CellPatch['link']): CellPatch => ({
   link,
 });
 const theme = createTheme();
+/** the resolved colour of the background of the test svg */
+const DARK = 'rgb(29, 45, 61)';
 const opts = { theme, linkWidth: { min: 2, max: 10 } };
 const labels = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGTextElement>(`text.${LINK_LABEL_CLASS}`));
 const byHalf = (root: SVGSVGElement, which: string, cell = 'e1') =>
@@ -115,9 +117,12 @@ describe('renderLinkLabels: the layer and its elements', () => {
     expect(b2a.getAttribute('x')).toBe('284');
     expect(b2a.getAttribute('y')).toBe('100');
     expect(a2b.getAttribute('fill')).toBe(theme.colors.text.primary);
-    // no halo: the text has no stroke
-    expect(a2b.hasAttribute('stroke')).toBe(false);
-    expect(a2b.hasAttribute('paint-order')).toBe(false);
+    // the halo: a thin stroke in the background of the diagram, painted behind the glyphs
+    expect(a2b.getAttribute('stroke')).toBe(DARK);
+    expect(a2b.getAttribute('stroke-width')).toBe('2');
+    expect(a2b.getAttribute('paint-order')).toBe('stroke');
+    expect(a2b.getAttribute('stroke-linejoin')).toBe('round');
+    expect(a2b.getAttribute('stroke-linecap')).toBe('round');
     expect(a2b.getAttribute('font-size')).toBe('8');
     expect(a2b.getAttribute('font-family')).toBe('sans-serif');
     expect(a2b.getAttribute('data-dmap-placed-at')).toMatch(/^\d+$/);
@@ -337,13 +342,13 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(maskOf(root)).toBeNull();
     strokesOf(root).forEach((el) => expect(el.hasAttribute('mask')).toBe(false));
   });
-  it('a light theme with a dark diagram draws no rect and no theme colour behind the text', () => {
+  it('a light theme with a dark diagram draws no rect and a dark halo', () => {
     const light = createTheme({ colors: { mode: 'light' } });
     const { root, index } = build();
     render(root, index, both(), { ...opts, theme: light });
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('line');
     expect(layerOf(root)!.querySelectorAll('rect')).toHaveLength(0);
-    expect(byHalf(root, 'a2b')!.hasAttribute('stroke')).toBe(false);
+    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe(DARK);
     const fills = Array.from(maskOf(root)!.querySelectorAll('rect')).map((r) => r.getAttribute('fill'));
     expect(new Set(fills)).toEqual(new Set(['white', 'black']));
     expect(byHalf(root, 'a2b')!.getAttribute('fill')).toBe(light.colors.text.primary);
@@ -779,6 +784,54 @@ describe('renderLinkLabels: review cases', () => {
       render(root, index, both());
       expect(clear(root, { x: 100, w: 50 })).toBe(true);
     });
+  });
+});
+
+describe('renderLinkLabels: the halo colour', () => {
+  const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+  const bare = () => build(SVG().replace(' style="background-color: #1d2d3d"', ''));
+  it('is the computed background of the root; a transparent root takes the canvas colour of the theme', () => {
+    const dark = build();
+    render(dark.root, dark.index, both());
+    labels(dark.root).forEach((el) => expect(el.getAttribute('stroke')).toBe(DARK));
+    for (const style of ['', 'background-color: transparent', 'background-color: rgba(0, 0, 0, 0)']) {
+      const { root, index } = build(SVG().replace(' style="background-color: #1d2d3d"', style ? ` style="${style}"` : ''));
+      render(root, index, both());
+      labels(root).forEach((el) => expect(el.getAttribute('stroke')).toBe(theme.colors.background.canvas));
+    }
+  });
+  it('keeps an opaque colour with a zero channel and falls back for any alpha below 1', () => {
+    const colour = (css: string) => {
+      const { root, index } = build();
+      root.style.backgroundColor = css;
+      render(root, index, both());
+      return byHalf(root, 'a2b')!.getAttribute('stroke');
+    };
+    expect(colour('rgb(0, 0, 0)')).toBe('rgb(0, 0, 0)');
+    expect(colour('rgb(255, 0, 0)')).toBe('rgb(255, 0, 0)');
+    expect(colour('rgba(29, 45, 61, 0.5)')).toBe(theme.colors.background.canvas);
+    expect(colour('rgba(0, 0, 0, 0)')).toBe(theme.colors.background.canvas);
+    expect(colour('rgb(0 0 0 / 0.5)')).toBe(theme.colors.background.canvas);
+  });
+  it('is read again on a theme change', () => {
+    const { root, index } = bare();
+    render(root, index, both());
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('stroke')).toBe(theme.colors.background.canvas);
+    const light = createTheme({ colors: { mode: 'light' } });
+    render(root, index, both(), { ...opts, theme: light });
+    expect(a.getAttribute('stroke')).toBe(light.colors.background.canvas);
+    expect(a.getAttribute('fill')).toBe(light.colors.text.primary);
+    root.style.backgroundColor = '#1d2d3d';
+    render(root, index, both(), { ...opts, theme: createTheme({ colors: { mode: 'light' } }) });
+    expect(a.getAttribute('stroke')).toBe(DARK);
+  });
+  it('a light theme with a dark root gives a dark halo, never the colour of the light theme', () => {
+    const light = createTheme({ colors: { mode: 'light' } });
+    const { root, index } = build();
+    render(root, index, both(), { ...opts, theme: light });
+    labels(root).forEach((el) => expect(el.getAttribute('stroke')).toBe(DARK));
+    expect(DARK).not.toBe(light.colors.background.canvas);
   });
 });
 
