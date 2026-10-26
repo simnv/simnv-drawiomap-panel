@@ -12,7 +12,7 @@ import {
   type PlanCellPatch,
 } from '../binding/engine';
 import { inFieldUnit, resolveCapacity, type CapacityDiagnostic } from '../binding/capacity';
-import { INVALID_FRESHNESS_TEXT } from '../binding/status';
+import { INVALID_FRESHNESS_TEXT, type StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import {
   invalidBounds,
@@ -30,6 +30,8 @@ import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 export interface ConfiguredCardRow {
   key: string;
   kind: HoverRow['kind'] | 'status';
+  /** the state of a status row: its word takes the status colour */
+  status?: StatusView['state'];
   title: string;
   text: string;
   state: HistoryModel['state'];
@@ -95,6 +97,7 @@ export function buildConfiguredCard(
     card.rows.push({
       key: 'status',
       kind: 'status',
+      status: patch.statusView.state,
       title: patch.statusView.state,
       text: patch.statusView.reason,
       state: 'ready',

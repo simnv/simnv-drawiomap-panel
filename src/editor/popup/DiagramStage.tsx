@@ -5,7 +5,7 @@ import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellAt } from '../../interact/hit';
 import { applyPatches, type Applied } from '../../render/applier';
 import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
-import { renderLinkLabels, setLinkLabelScale } from '../../render/linkLabels';
+import { renderLinkLabels, setLinkLabelScale, watchLinkLabelFonts } from '../../render/linkLabels';
 import { renderOverlay } from '../../render/overlay';
 import { applyLayout, viewBoxFor, type ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
@@ -142,6 +142,9 @@ export function DiagramStage({
     });
     return () => cancelAnimationFrame(id);
   }, [stage.root, stage.index, stage.base, patches, theme, osDark, linkWidth]);
+
+  // A web font that loads late widens the glyphs: cut the strokes under the labels again.
+  useEffect(() => (stage.root ? watchLinkLabelFonts(stage.root) : undefined), [stage.root]);
 
   // Fit the diagram into the pane. A live view (pan or zoom) changes the viewBox only.
   useEffect(() => {

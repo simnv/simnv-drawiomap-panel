@@ -241,6 +241,33 @@ export function setLinkLabelScale(root: SVGSVGElement): void {
   }
 }
 
+/**
+ * Cuts the strokes again when a web font finishes loading: the cut follows the painted box of the text (`getBBox`),
+ * and the glyphs of a late font are wider than those of the first render. Only the masks change. The placement uses
+ * the slot, which is an estimate from the font size and not a measure, so a font does not move any label. Runs once
+ * for `document.fonts.ready` and after each 'loadingdone'. A host without `document.fonts` does nothing. Returns the
+ * cleanup for the unmount.
+ */
+export function watchLinkLabelFonts(root: SVGSVGElement): () => void {
+  const fonts = typeof document === 'undefined' ? undefined : (document.fonts as FontFaceSet | undefined);
+  if (!fonts) {
+    return () => {};
+  }
+  let live = true;
+  const resync = () => {
+    const layout = layouts.get(root);
+    if (live && layout && layout.layer.parentNode === root) {
+      syncMasks(root, layout);
+    }
+  };
+  fonts.addEventListener?.('loadingdone', resync);
+  fonts.ready?.then(resync, () => {});
+  return () => {
+    live = false;
+    fonts.removeEventListener?.('loadingdone', resync);
+  };
+}
+
 /* ---------- the slots ---------- */
 
 /** The labelled halves in placement order: cell id ascending, a2b before b2a. */
