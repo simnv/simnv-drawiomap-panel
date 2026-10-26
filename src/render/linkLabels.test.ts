@@ -731,6 +731,58 @@ describe('renderLinkLabels: review cases', () => {
   });
 });
 
+describe('renderLinkLabels: HTML labels', () => {
+  // draw.io writes an HTML label as a foreignObject of 100% x 100% with overflow visible: its own box is the whole
+  // viewport, the text is a flex child that overflows it. The obstacle is the box of that content.
+  const fo = `<switch><foreignObject width="100%" height="100%" style="overflow: visible"><div xmlns="http://www.w3.org/1999/xhtml" class="inner"><div>tunnel link</div></div></foreignObject></switch>`;
+  const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+  const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  /** the content box of the label as the browser would report it, in screen pixels (= root units here) */
+  function stubContent(root: SVGSVGElement, box: { x: number; y: number; width: number; height: number }) {
+    Object.assign(root, { getScreenCTM: () => identity });
+    const inner = root.querySelector('div.inner') as HTMLElement;
+    inner.getBoundingClientRect = () =>
+      ({ ...box, left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }) as DOMRect;
+  }
+  const rects = (root: SVGSVGElement, index: CellIndex, patches: PatchMap) =>
+    stageObstacles(root, index, patches, 10, () => 60).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
+
+  it('an HTML edge label is an obstacle of its content box, not of the 100% viewport box', () => {
+    const svg = SVG().replace('pointer-events="stroke"/>', `pointer-events="stroke"/></g><g>${fo}`);
+    const { root, index } = build(svg);
+    expect(index.get('e1')?.label?.localName).toBe('foreignObject');
+    stubContent(root, { x: 100, y: 94, width: 50, height: 12 });
+    const boxes = rects(root, index, both());
+    expect(boxes).toContainEqual({ x: 100, y: 94, width: 50, height: 12 });
+    expect(boxes.some((r) => r.width >= 100 && r.height >= 100)).toBe(false);
+    // every label still has a place: the label slides along or steps off the line, none is dropped
+    expect(render(root, index, both())).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    const a = byHalf(root, 'a2b')!;
+    const x = Number(a.getAttribute('x'));
+    expect(a.getAttribute('data-dmap-side') !== 'line' || x + 12 <= 100 || x - 12 >= 150).toBe(true);
+  });
+  it('a plain text cell and a chip with an HTML label measure the content too', () => {
+    const cell = `<g data-cell-id="t1"><g>${fo}</g></g>`;
+    const { root, index } = build(SVG(cell));
+    stubContent(root, { x: 100, y: 94, width: 50, height: 12 });
+    const boxes = rects(root, index, both());
+    expect(boxes).toContainEqual({ x: 100, y: 94, width: 50, height: 12 });
+    expect(boxes.some((r) => r.width >= 100 && r.height >= 100)).toBe(false);
+    const chip = `<g data-cell-id="pg-linkLabel~e1" data-meta-pg-kind="link-label"><g>${fo}</g></g>`;
+    const second = build(SVG(chip));
+    stubContent(second.root, { x: 100, y: 94, width: 50, height: 12 });
+    const chips = rects(second.root, second.index, both());
+    expect(chips.some((r) => r.width >= 100 && r.height >= 100)).toBe(false);
+    expect(chips).toContainEqual({ x: 100, y: 94, width: 50, height: 12 });
+  });
+  it('a content box that cannot be read gives no obstacle, never the 100% box', () => {
+    const cell = `<g data-cell-id="t1"><g>${fo}</g></g>`;
+    const { root, index } = build(SVG(cell));
+    const boxes = rects(root, index, both());
+    expect(boxes.some((r) => r.width >= 100 && r.height >= 100)).toBe(false);
+  });
+});
+
 describe('renderLinkLabels: coordinates', () => {
   const scale2 = { a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 };
   const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
@@ -797,6 +849,31 @@ describe('renderLinkLabels: coordinates', () => {
 });
 
 describe('setLinkLabelScale', () => {
+  it('a pan or a zoom with the same visibility does not rebuild the masks', () => {
+    const { root, index } = build();
+    sized(root, 1);
+    const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    render(root, index, patches);
+    const mask = maskOf(root)!;
+    const children = Array.from(mask.children);
+    const key = mask.getAttribute('data-dmap-key');
+    sized(root, 1.5);
+    setLinkLabelScale(root);
+    sized(root, 2);
+    setLinkLabelScale(root);
+    expect(Array.from(mask.children)).toEqual(children);
+    expect(mask.getAttribute('data-dmap-key')).toBe(key);
+    // a data refresh with the same geometry keeps them too; a new width rebuilds
+    render(root, index, patches);
+    expect(Array.from(maskOf(root)!.children)).toEqual(children);
+    // a flip of the visibility does change them
+    sized(root, 0.2);
+    setLinkLabelScale(root);
+    expect(maskOf(root)).toBeNull();
+    sized(root, 1);
+    setLinkLabelScale(root);
+    expect(maskOf(root)).not.toBeNull();
+  });
   it('hides the layer below 7 px per glyph, shows it above; a fresh layer takes the current scale', () => {
     const { root, index } = build();
     sized(root, 0.2);

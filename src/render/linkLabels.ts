@@ -174,7 +174,7 @@ export function renderLinkLabels(
   if (!layout || layout.key !== key || layout.index !== index || layout.layer.parentNode !== root) {
     layout = fullPlacement(root, index, patches, slots, opts, key, fontFamily, layout);
     layouts.set(root, layout);
-    setLinkLabelScale(root);
+    applyScale(root);
   } else {
     moved = refresh(layout, slots, opts.theme);
   }
@@ -201,22 +201,32 @@ export function renderLinkLabels(
   return { placed, dropped, moved };
 }
 
-/**
- * Hides the layer when a glyph would be smaller than the minimum on-screen size, shows it otherwise (spec section
- * 6). O(1): one rect, one attribute. The zoom effects call it after `applyLayout`.
- */
-export function setLinkLabelScale(root: SVGSVGElement): void {
+/** Writes the visibility of the layer for the current scale; true when it flipped. */
+function applyScale(root: SVGSVGElement): { layer?: Element; flipped: boolean } {
   const layer = Array.from(root.children).find((c) => c.classList.contains(LINK_LABEL_LAYER_CLASS));
   if (!layer) {
-    return;
+    return { flipped: false };
   }
-  if (labelsVisible(viewScaleOf(root))) {
-    layer.removeAttribute('visibility');
-  } else {
+  const hidden = !labelsVisible(viewScaleOf(root));
+  const flipped = hidden !== (layer.getAttribute('visibility') === 'hidden');
+  if (hidden) {
     layer.setAttribute('visibility', 'hidden');
+  } else {
+    layer.removeAttribute('visibility');
   }
+  return { layer, flipped };
+}
+
+/**
+ * Hides the layer when a glyph would be smaller than the minimum on-screen size, shows it otherwise (spec section
+ * 6). One rect read and one attribute on a pan or a zoom; the masks that cut the strokes change only when the layer
+ * flips (a pan or a zoom changes nothing in the local space of the overlay). The zoom effects call it after
+ * `applyLayout`.
+ */
+export function setLinkLabelScale(root: SVGSVGElement): void {
+  const { flipped } = applyScale(root);
   const layout = layouts.get(root);
-  if (layout) {
+  if (flipped && layout) {
     syncMasks(root, layout);
   }
 }
@@ -301,11 +311,11 @@ function stageFont(root: SVGSVGElement): string {
  * The matrix from the user space of `el` into root user units: the screen CTMs of both (the outermost svg has one in
  * every engine), the transform attributes in jsdom. Undefined when it cannot be read.
  */
-function toRoot(el: Element, root: SVGSVGElement): Matrix | undefined {
+function toRoot(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Matrix | undefined {
   const g = el as SVGGraphicsElement;
   if (typeof g.getScreenCTM === 'function' && typeof root.getScreenCTM === 'function') {
     const own = toMatrix(g.getScreenCTM());
-    const base = toMatrix(root.getScreenCTM());
+    const base = rootCtm ?? toMatrix(root.getScreenCTM());
     return own && base && usable(own) && usable(base) ? multiply(invert(base), own) : undefined;
   }
   return localMatrix(el, root);
@@ -374,10 +384,48 @@ const union = (a: Rect | undefined, b: Rect): Rect =>
       ])!
     : b;
 
+/** A foreignObject sized in percent (draw.io: 100% x 100%, overflow visible): its own box is the whole viewport. */
+const isFluid = (el: Element) =>
+  el.localName === 'foreignObject' && ['width', 'height'].some((a) => (el.getAttribute(a) ?? '').trim().endsWith('%'));
+
+/**
+ * The box of the HTML content of a fluid foreignObject in root units: the text line boxes (a range over the
+ * contents), else the box of its first element child. The foreignObject box is never used. Undefined when the
+ * content has no box.
+ */
+function htmlBox(fo: Element, root: SVGSVGElement): Rect | undefined {
+  const empty = (r: { width: number; height: number } | undefined) => !r || !(r.width > 0) || !(r.height > 0);
+  let r: DOMRect | undefined;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(fo);
+    r = typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : undefined;
+  } catch {
+    r = undefined;
+  }
+  if (empty(r)) {
+    r = fo.firstElementChild?.getBoundingClientRect();
+  }
+  if (!r || empty(r) || ![r.x, r.y, r.width, r.height].every(Number.isFinite)) {
+    return undefined;
+  }
+  // screen pixels into root units; a root without a screen matrix (jsdom) keeps them as they are
+  const base = typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
+  if (!base) {
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }
+  return usable(base) ? mapRect({ x: r.x, y: r.y, width: r.width, height: r.height }, invert(base)) : undefined;
+}
+
 /** The painted box of an element in root user units, or undefined when it cannot be read. */
 function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   const g = el as SVGGraphicsElement;
-  if (typeof g.getBBox === 'function') {
+  if (isFluid(el)) {
+    return htmlBox(el, root);
+  }
+  // a group with a fluid foreignObject inside: its own box would be the viewport, so take the union of the children
+  const fluidInside = Array.from(el.querySelectorAll('foreignObject')).some(isFluid);
+  if (typeof g.getBBox === 'function' && !fluidInside) {
     try {
       const m = toRoot(el, root);
       const b = g.getBBox();
@@ -391,7 +439,9 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   }
   if (el.localName === 'g' || el.localName === 'switch') {
     let box: Rect | undefined;
-    for (const child of Array.from(el.children)) {
+    // a switch draws its first usable child: the foreignObject, not the image fallback after it
+    const fo = el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
+    for (const child of fo ? [fo] : Array.from(el.children)) {
       const b = rootBox(child, root);
       if (b) {
         box = union(box, b);
@@ -734,15 +784,50 @@ function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
     const cell = el.getAttribute('data-dmap-cell') ?? '';
     strokes.set(cell, [...(strokes.get(cell) ?? []), el]);
   });
-  let defs = root.querySelector<SVGDefsElement>(`defs.${LINK_LABEL_DEFS_CLASS}`);
-  const live = new Set<string>();
+  // all the reads first (the matrices and the boxes), then all the writes: one layout, not one per link
+  const base = typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
+  interface Plan {
+    cell: string;
+    els: SVGElement[];
+    area: Rect;
+    slots: Array<Record<string, string>>;
+    key: string;
+  }
+  const plans: Plan[] = [];
   for (const [cell, recs] of wanted) {
     const els = strokes.get(cell);
     const space = els?.[0].parentElement;
-    const m = space && toRoot(space, root);
+    const m = space && toRoot(space, root, base);
     if (!els || !space || !m) {
       continue;
     }
+    const back = invert(m);
+    // the white rect covers the strokes of the link with a margin; everything it covers is kept except the slots
+    const margin = 3 * layout.max * scaleOf(m) + 20;
+    const box = rootBox(space, root);
+    const area = box
+      ? mapRect(
+          { x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin },
+          back
+        )
+      : { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
+    const slots = recs.map((rec) => {
+      const placed = rec.placement as Placed;
+      const at = drawnCentre(placed, rec.drawn);
+      const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
+      return {
+        x: fmt(at.x - rec.slot! / 2),
+        y: fmt(at.y - height / 2),
+        width: fmt(rec.slot!),
+        height: fmt(height),
+        transform: `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`,
+      };
+    });
+    plans.push({ cell, els, area, slots, key: JSON.stringify([fmt(area.x), fmt(area.y), fmt(area.width), fmt(area.height), slots]) });
+  }
+  let defs = root.querySelector<SVGDefsElement>(`defs.${LINK_LABEL_DEFS_CLASS}`);
+  const live = new Set<string>();
+  for (const { cell, els, area, slots, key } of plans) {
     if (!defs) {
       defs = document.createElementNS(NS, 'defs') as SVGDefsElement;
       defs.setAttribute('class', LINK_LABEL_DEFS_CLASS);
@@ -762,38 +847,34 @@ function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
       mask.setAttribute('maskContentUnits', 'userSpaceOnUse');
       defs.appendChild(mask);
     }
-    const back = invert(m);
-    // the white rect covers the strokes of the link with a margin; everything it covers is kept except the slots
-    const margin = 3 * layout.max * scaleOf(m) + 20;
-    const box = rootBox(space, root);
-    const area = box
-      ? mapRect({ x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin }, back)
-      : { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
-    for (const [k, v] of Object.entries({ x: area.x, y: area.y, width: area.width, height: area.height })) {
-      mask.setAttribute(k, fmt(v));
-    }
-    const white = document.createElementNS(NS, 'rect');
-    for (const [k, v] of Object.entries({ x: area.x, y: area.y, width: area.width, height: area.height })) {
-      white.setAttribute(k, fmt(v));
-    }
-    white.setAttribute('fill', 'white');
-    const slots = recs.map((rec) => {
-      const placed = rec.placement as Placed;
-      const at = drawnCentre(placed, rec.drawn);
-      const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
-      const k = document.createElementNS(NS, 'rect');
-      k.setAttribute('x', fmt(at.x - rec.slot! / 2));
-      k.setAttribute('y', fmt(at.y - height / 2));
-      k.setAttribute('width', fmt(rec.slot!));
-      k.setAttribute('height', fmt(height));
-      k.setAttribute('rx', String(GAP_RADIUS));
-      k.setAttribute('fill', 'black');
-      k.setAttribute('transform', `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`);
-      return k;
-    });
-    mask.replaceChildren(white, ...slots);
     live.add(id);
-    els.forEach((el) => el.setAttribute('mask', `url(#${id})`));
+    // a pan or a zoom changes nothing in the local space of the overlay: an unchanged mask is not rebuilt
+    if (mask.getAttribute('data-dmap-key') !== key) {
+      mask.setAttribute('data-dmap-key', key);
+      const frame = { x: fmt(area.x), y: fmt(area.y), width: fmt(area.width), height: fmt(area.height) };
+      for (const [k, v] of Object.entries(frame)) {
+        mask.setAttribute(k, v);
+      }
+      const white = document.createElementNS(NS, 'rect');
+      for (const [k, v] of Object.entries(frame)) {
+        white.setAttribute(k, v);
+      }
+      white.setAttribute('fill', 'white');
+      mask.replaceChildren(
+        white,
+        ...slots.map((spec) => {
+          const k = document.createElementNS(NS, 'rect');
+          for (const [name, v] of Object.entries(spec)) {
+            k.setAttribute(name, v);
+          }
+          k.setAttribute('rx', String(GAP_RADIUS));
+          k.setAttribute('fill', 'black');
+          return k;
+        })
+      );
+    }
+    const ref = `url(#${id})`;
+    els.forEach((el) => el.getAttribute('mask') !== ref && el.setAttribute('mask', ref));
   }
   Array.from(defs?.children ?? []).forEach((c) => {
     if (!live.has(c.id)) {
