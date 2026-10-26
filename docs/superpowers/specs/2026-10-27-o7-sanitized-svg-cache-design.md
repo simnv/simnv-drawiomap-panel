@@ -62,3 +62,8 @@ A module-level cache inside `sanitize.ts`. `sanitizeSvg` is the cached function.
   next result.
 - The digest of `PURIFY_CONFIG` test above.
 - A synthetic diagram with 2,000 cells: the second call is faster than 5% of the first (the figures go into the report).
+
+## 5. Result
+
+Measured in the same jsdom run with the 2,000 cell diagram: miss 176.5 ms, hit 0.02 ms. A hit costs one string-keyed
+Map lookup and a copy of two small objects. The panel still parses the string once per mount (`mountSvg`).
