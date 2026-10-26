@@ -412,8 +412,37 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(Number(k.getAttribute('y'))).toBe(94);
     render(root, index, widths(14));
     expect(Number(blacks(maskOf(root)!)[0].getAttribute('height'))).toBe(12);
-    // the overlay is drawn again on each frame: the new strokes wear the mask too
+    // the overlay updates its strokes in place: they still wear the mask
     strokesOf(root).forEach((el) => expect(el.getAttribute('mask')).toBe(`url(#${maskOf(root)!.id})`));
+  });
+  it('a refresh keeps the strokes and their mask; a rebuilt overlay layer gets the mask in the same pass', () => {
+    const { root, index } = build();
+    const widths = (w: number, b2a = true) =>
+      new Map([
+        [
+          'e1',
+          linkPatch('e1', { a2b: half({ width: w }), ...(b2a ? { b2a: half({ width: w }) } : {}), labelMode: 'percent' }),
+        ],
+      ]);
+    render(root, index, widths(4));
+    const before = strokesOf(root);
+    expect(before).toHaveLength(4);
+    const ref = `url(#${maskOf(root)!.id})`;
+    // the same values in new objects: the same elements, the mask stays
+    render(root, index, widths(4));
+    expect(strokesOf(root).every((el, i) => el.isSameNode(before[i]))).toBe(true);
+    strokesOf(root).forEach((el) => expect(el.getAttribute('mask')).toBe(ref));
+    // a new width: the same elements, updated, the mask stays
+    render(root, index, widths(8));
+    expect(strokesOf(root).every((el, i) => el.isSameNode(before[i]))).toBe(true);
+    strokesOf(root).forEach((el) => expect(el.getAttribute('mask')).toBe(ref));
+    // a half goes: the layer of the link is built again, and its new strokes wear the mask of the on-stroke label
+    render(root, index, widths(8, false));
+    const after = strokesOf(root);
+    expect(after).toHaveLength(2);
+    expect(after.some((el) => before.includes(el))).toBe(false);
+    const m = maskOf(root);
+    after.forEach((el) => expect(el.getAttribute('mask')).toBe(m ? `url(#${m.id})` : null));
   });
   it('both halves go to the bottom side when the top side is blocked along the whole half of one', () => {
     const { root, index } = build(SVG(strip + above));
