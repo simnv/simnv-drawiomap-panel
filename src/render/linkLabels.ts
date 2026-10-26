@@ -105,6 +105,8 @@ interface LabelLayout {
   probe: SVGTextElement;
   fontFamily: string;
   theme: GrafanaTheme2;
+  /** the halo colour of this pass: the computed background of the root, else the canvas colour of the theme */
+  halo: string;
   grid: ObstacleIndex;
   widths: Map<string, number>;
   records: Map<string, LabelRecord>;
@@ -176,7 +178,7 @@ export function renderLinkLabels(
     layouts.set(root, layout);
     applyScale(root);
   } else {
-    moved = refresh(layout, slots, opts.theme);
+    moved = refresh(layout, slots, opts.theme, root);
   }
   if (root.lastElementChild !== layout.layer) {
     root.appendChild(layout.layer);
@@ -698,8 +700,35 @@ function createProbe(layer: SVGGElement): SVGTextElement {
   return probe;
 }
 
-function paint(rec: LabelRecord, theme: GrafanaTheme2): void {
+/**
+ * The halo colour: the computed `background-color` of the root svg (draw.io writes the page background there; the
+ * browser has resolved `light-dark()` with the colour scheme of the panel), else the canvas colour of the theme when
+ * the root has none (transparent) or it cannot be read. One colour per pass: never a guess from the shapes below.
+ */
+export function haloColour(root: SVGSVGElement, theme: GrafanaTheme2): string {
+  const value = typeof getComputedStyle === 'function' ? getComputedStyle(root).backgroundColor.trim() : '';
+  return opaqueColour(value) ?? theme.colors.background.canvas;
+}
+
+/**
+ * The colour when it is opaque, else undefined. `rgb(r, g, b)` and `rgb(r g b)` have alpha 1; `rgba(r, g, b, a)` and
+ * `rgb(r g b / a)` have the alpha a (a number or a percent); `transparent`, an empty value and anything that is not
+ * an rgb colour (for example a keyword) give undefined.
+ */
+function opaqueColour(value: string): string | undefined {
+  const m = /^rgba?\(\s*([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/i.exec(
+    value
+  );
+  if (!m) {
+    return undefined;
+  }
+  const alpha = m[4] === undefined ? 1 : m[5] ? Number(m[4]) / 100 : Number(m[4]);
+  return alpha === 1 ? value : undefined;
+}
+
+function paint(rec: LabelRecord, theme: GrafanaTheme2, halo: string): void {
   rec.el?.setAttribute('fill', theme.colors.text.primary);
+  rec.el?.setAttribute('stroke', halo);
 }
 
 function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
@@ -716,10 +745,14 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   el.setAttribute('dominant-baseline', 'central');
   el.setAttribute('font-size', String(LINK_LABEL_GEOMETRY.fontSize));
   el.setAttribute('font-family', layout.fontFamily);
+  el.setAttribute('stroke-width', String(2 * LINK_LABEL_GEOMETRY.halo));
+  el.setAttribute('paint-order', 'stroke');
+  el.setAttribute('stroke-linejoin', 'round');
+  el.setAttribute('stroke-linecap', 'round');
   el.setAttribute('text-rendering', 'geometricPrecision');
   layout.layer.appendChild(el);
   rec.el = el;
-  paint(rec, layout.theme);
+  paint(rec, layout.theme, layout.halo);
   return el;
 }
 
@@ -993,6 +1026,7 @@ function fullPlacement(
     probe: createProbe(layer),
     fontFamily,
     theme: opts.theme,
+    halo: haloColour(root, opts.theme),
     grid: obstacleIndex([]),
     widths: new Map(),
     records: new Map(),
@@ -1063,12 +1097,14 @@ function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): n
 }
 
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
-function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): number {
+function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root: SVGSVGElement): number {
   let moved = 0;
-  if (layout.theme !== theme) {
+  const halo = haloColour(root, theme);
+  if (layout.theme !== theme || layout.halo !== halo) {
     layout.theme = theme;
+    layout.halo = halo;
     for (const rec of layout.records.values()) {
-      paint(rec, theme);
+      paint(rec, theme, halo);
     }
   }
   for (const slot of slots) {
