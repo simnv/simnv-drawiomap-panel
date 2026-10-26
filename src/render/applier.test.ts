@@ -20,6 +20,7 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="e1"><g><path d="M 60 25 L 150 25" fill="none" stroke="#333" stroke-width="2" pointer-events="stroke"/><path d="M 150 20 L 160 25 L 150 30 Z" fill="#333" pointer-events="all"/></g></g>
   <g data-cell-id="n3"><g><rect x="100" y="50" width="50" height="30" fill="#d5e8d4" stroke="#82b366" stroke-width="4"/></g></g>
   <g data-cell-id="n4"><g><rect x="100" y="10" width="50" height="30" fill="url(#g)"/></g></g>
+  <g data-cell-id="n5"><g><rect x="150" y="50" width="20" height="20" style="fill: light-dark(#fff, #111) !important; stroke: #000 !important; stroke-width: 4px !important;"/></g></g>
 </svg>`;
 
 function build(): CellIndex {
@@ -69,7 +70,7 @@ function build(): CellIndex {
     arrows: [paths[1]],
     original: { stroke: '', strokeWidth: '' },
   });
-  for (const id of ['n3', 'n4']) {
+  for (const id of ['n3', 'n4', 'n5']) {
     const node = g(id);
     const rect = node.querySelector('rect')!;
     index.set(id, {
@@ -758,7 +759,7 @@ describe('applyPatches diff', () => {
     // the theme
     prev = applyPatches(index, round(), prev, undefined, { theme: dark, osDark: false });
     everyCell();
-    expect(prev.scheme).toEqual({ isDark: true, osDark: false });
+    expect(prev.scheme).toMatchObject({ isDark: true, osDark: false });
     // the OS preference, with the same theme
     prev = applyPatches(index, round(), prev, undefined, { theme: dark, osDark: true });
     everyCell();
@@ -904,6 +905,74 @@ describe('applyPatches status paint', () => {
     expectColour(end.style.fill, '#0000ff');
     applyPatches(index, new Map(), prev, undefined, ctx);
     expect(start.style.fill).toBe(original);
+  });
+  it('a theme with another palette and the same colour scheme writes the paint again (R1)', () => {
+    const index = build();
+    const round = () => new Map([['n3', withStatus('n3', 'down')]]);
+    const prev = applyPatches(index, round(), undefined, undefined, { theme: dark, osDark: false });
+    const palette = createTheme({
+      colors: { mode: 'dark' },
+      visualization: { hues: [{ name: 'red', shades: [{ name: 'red', color: '#123456', primary: true }] }] },
+    });
+    expect(palette.isDark).toBe(true);
+    expect(statusColor({ state: 'down' }, palette)).toBe('#123456');
+    const observer = new MutationObserver(() => {});
+    observer.observe(index.get('n3')!.group, { attributes: true, subtree: true });
+    const done = applyPatches(index, round(), prev, undefined, { theme: palette, osDark: false });
+    expect(observer.takeRecords().length).toBeGreaterThan(0);
+    expectColour(rect(index, 'n3').style.stroke, '#123456');
+    expect(done.scheme).not.toEqual(prev.scheme);
+    // the same palette again: nothing
+    applyPatches(index, round(), done, undefined, { theme: palette, osDark: false });
+    expect(observer.takeRecords()).toHaveLength(0);
+  });
+  it('keeps the !important priority of the inline fill, stroke and width, and restores each declaration (R2)', () => {
+    const index = build();
+    const n5 = rect(index, 'n5');
+    const props = ['fill', 'stroke', 'stroke-width'];
+    const read = () => props.map((p) => [n5.style.getPropertyValue(p), n5.style.getPropertyPriority(p)]);
+    const before = read();
+    expect(before.map((d) => d[1])).toEqual(['important', 'important', 'important']);
+    const ctx = { theme: light, osDark: false };
+    const down = () =>
+      new Map([['n5', withStatus('n5', 'down', { shape: shape({ color: '#00ff00', target: 'shape' }) })]]);
+    let prev = applyPatches(index, down(), undefined, undefined, ctx);
+    expectColour(n5.style.getPropertyValue('stroke'), red);
+    expectColour(n5.style.getPropertyValue('fill'), tintFill('#00ff00', red)!);
+    expect(n5.style.getPropertyValue('stroke-width')).toBe('6');
+    // the written declarations keep the priority of the diagram's
+    expect(read().map((d) => d[1])).toEqual(['important', 'important', 'important']);
+    prev = applyPatches(index, new Map([['n5', withStatus('n5', 'normal')]]), prev, undefined, ctx);
+    expect(read()).toEqual(before);
+    prev = applyPatches(index, down(), prev, undefined, ctx);
+    applyPatches(index, new Map(), prev, undefined, ctx);
+    expect(read()).toEqual(before);
+  });
+  it('a status-only edge paints its end dots in the status colour too, and restores them (R3)', () => {
+    const ID = 'pg-link~dot-a-b';
+    const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/bare-end-dot.svg'), 'utf8');
+    const index = buildCellIndex(mountSvg(document.createElement('div'), sanitizeSvg(raw).svg));
+    const [start, end] = index.get(ID)!.ends!.map((e) => e.el as SVGElement);
+    const original = start.style.fill;
+    const originalStroke = index.get(ID)!.line!.style.stroke;
+    const ctx = { theme: light, osDark: false };
+    const prev = applyPatches(index, new Map([[ID, withStatus(ID, 'down')]]), undefined, undefined, ctx);
+    expectColour(index.get(ID)!.line!.style.stroke, red);
+    expectColour(start.style.fill, red);
+    expectColour(end.style.fill, red);
+    applyPatches(index, new Map([[ID, withStatus(ID, 'normal')]]), prev, undefined, ctx);
+    expect(start.style.fill).toBe(original);
+    expect(index.get(ID)!.line!.style.stroke).toBe(originalStroke);
+  });
+  it('an image device gets no style paint: the overlay draws its border (R4)', () => {
+    const index = build();
+    applyPatches(index, new Map([['i2', withStatus('i2', 'down')]]), undefined, undefined, {
+      theme: light,
+      osDark: false,
+    });
+    const image = rect(index, 'i2');
+    expect([image.style.stroke, image.style.strokeWidth, image.style.fill]).toEqual(['', '', '']);
+    expect(index.get('i2')!.group.getAttribute('data-dmap-status')).toBe('down');
   });
   it('the same status again writes nothing; another theme writes the paint in its own colour', () => {
     const index = build();

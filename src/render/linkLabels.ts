@@ -12,7 +12,7 @@ import {
   pathGeometry,
   polylineLength,
   scaleOf,
-  strokeWidthOf,
+  drawnStrokeWidth,
   toMatrix,
   usable,
   type Matrix,
@@ -560,7 +560,7 @@ export function stageObstacles(
         if (own) {
           [own.a2b, own.b2a].forEach((leg) => leg && strokes(cellId, leg.points, leg.strokeRoot / 2, leg.id));
         } else {
-          const width = hasHalves(patches, cellId) ? max : strokeWidthOf(entry.line, entry.original.strokeWidth);
+          const width = hasHalves(patches, cellId) ? max : drawnStrokeWidth(entry.line);
           const pts = parsePathPoints(entry.line.getAttribute('d') ?? '').map((p) => applyMatrix(m, p));
           strokes(cellId, pts, (width * unit) / 2);
         }
@@ -583,7 +583,7 @@ export function stageObstacles(
         out.push({
           kind: 'rect',
           rect: body,
-          clearance: (strokeWidthOf(entry.shape, entry.original.strokeWidth) * scaleOf(m)) / 2,
+          clearance: (drawnStrokeWidth(entry.shape) * scaleOf(m)) / 2,
         });
       }
     }

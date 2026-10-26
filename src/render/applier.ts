@@ -1,9 +1,9 @@
 import { createTheme, type GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
-import { linkStatusPaint, statusPaint, tintFill } from '../binding/color';
+import { linkStatusPaint, statusBorderWidth, statusPaint, statusPalette, tintFill } from '../binding/color';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
-import { strokeWidthOf } from './geometry';
+import { originalStrokeWidth } from './geometry';
 
 /** Labels that a patch wrote text into. Only these need a label reset. */
 const written = new WeakSet<Element>();
@@ -44,6 +44,48 @@ function setText(label: Element | undefined, text: string): void {
 /** Icon cells that a patch coloured, with the patch's node. Only these need an icon reset. */
 const iconOwner = new WeakMap<Element, CellEntry>();
 
+type Paint = { value: string; priority: string };
+
+/** The inline declaration (value and priority) of a style property before the first patch wrote it, per element. */
+const styleOriginal = new WeakMap<Element, Map<string, Paint>>();
+
+/**
+ * Writes an inline style property and keeps the diagram's declaration for the reset. The write takes the priority
+ * of that declaration, so an `!important` fill of the diagram stays important while it is painted.
+ */
+function writeStyle(el: SVGElement, prop: string, value: string): void {
+  let props = styleOriginal.get(el);
+  if (!props) {
+    props = new Map();
+    styleOriginal.set(el, props);
+  }
+  let original = props.get(prop);
+  if (!original) {
+    original = { value: el.style.getPropertyValue(prop), priority: el.style.getPropertyPriority(prop) };
+    props.set(prop, original);
+  }
+  el.style.setProperty(prop, value, original.priority);
+}
+
+/** Puts the diagram's declarations back on `el`: the given properties, else every one a patch wrote. */
+function restoreStyle(el: SVGElement, only?: string[]): void {
+  const props = styleOriginal.get(el);
+  if (!props) {
+    return;
+  }
+  for (const [prop, { value, priority }] of props) {
+    if (only && !only.includes(prop)) {
+      continue;
+    }
+    if (value) {
+      el.style.setProperty(prop, value, priority);
+    } else {
+      el.style.removeProperty(prop);
+    }
+    props.delete(prop);
+  }
+}
+
 /** The shape that takes the icon colour, or undefined when the node has no usable icon. */
 function iconShape(entry: CellEntry, index: CellIndex): SVGElement | undefined {
   const shape = entry.iconId ? index.get(entry.iconId)?.shape : undefined;
@@ -64,7 +106,7 @@ function applyShape(entry: CellEntry, patch: CellPatch, index: CellIndex): strin
   if (target === 'icon') {
     const icon = iconShape(entry, index);
     if (icon) {
-      icon.style.fill = s.color;
+      writeStyle(icon, 'fill', s.color);
       iconOwner.set(icon, entry);
       return target;
     }
@@ -72,19 +114,14 @@ function applyShape(entry: CellEntry, patch: CellPatch, index: CellIndex): strin
   }
   const shape = entry.shape as SVGElement | undefined;
   if (shape && target === 'shape') {
-    shape.style.fill = s.color;
+    writeStyle(shape, 'fill', s.color);
   }
   if (shape && target === 'stroke') {
-    shape.style.stroke = s.color;
-    shape.style.strokeWidth = String(strokeWidthOf(shape, entry.original.strokeWidth) + 1);
+    writeStyle(shape, 'stroke', s.color);
+    writeStyle(shape, 'stroke-width', String(originalStrokeWidth(shape, entry.original.strokeWidth) + 1));
   }
   return target;
 }
-
-type Paint = { value: string; priority: string };
-
-/** The inline paint of an end marker before the first patch, so that a reset puts it back with its priority. */
-const endOriginal = new WeakMap<Element, { fill: Paint; stroke: Paint }>();
 
 /** The alpha of a CSS colour, 0 to 1. A colour that is not understood, or not a plain colour (url, var), counts as opaque. */
 export function colourAlpha(value: string): number {
@@ -148,28 +185,20 @@ function paints(m: SVGElement, prop: 'fill' | 'stroke'): boolean {
   return [`${prop}-opacity`, 'opacity'].every((o) => colourAlpha(effective(m, o, '1')) > 0);
 }
 
-const snapshot = (m: SVGElement, prop: 'fill' | 'stroke'): Paint => ({
-  value: m.style.getPropertyValue(prop),
-  priority: m.style.getPropertyPriority(prop),
-});
-
 /**
- * Paints the end markers (the dot of a bare end) with the colour of the half that they close, or with the status
- * colour of the link when its status paints (`linkStatusPaint`), the colour the halves show then.
+ * Paints the end markers (the dot of a bare end) with the colour that `colourAt` gives for their end: the colour of
+ * the half that they close, or the status colour of the link when its status paints (`linkStatusPaint`).
  */
-function paintEnds(entry: CellEntry, l: NonNullable<CellPatch['link']>, status: string | undefined): void {
+function paintEnds(entry: CellEntry, colourAt: (end: 'start' | 'end') => string | undefined): void {
   for (const { el: marker, end } of entry.ends ?? []) {
     const m = marker as SVGElement;
-    const half = end === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b);
-    if (!half) {
+    const colour = colourAt(end);
+    if (!colour) {
       continue;
-    }
-    if (!endOriginal.has(m)) {
-      endOriginal.set(m, { fill: snapshot(m, 'fill'), stroke: snapshot(m, 'stroke') });
     }
     for (const prop of ['fill', 'stroke'] as const) {
       if (paints(m, prop)) {
-        m.style.setProperty(prop, status ?? half.color, endOriginal.get(m)![prop].priority);
+        writeStyle(m, prop, colour);
       }
     }
   }
@@ -179,13 +208,17 @@ function paintEnds(entry: CellEntry, l: NonNullable<CellPatch['link']>, status: 
 function applyLink(entry: CellEntry, patch: CellPatch, status: string | undefined): void {
   const l = patch.link;
   if (!l || (!l.a2b && !l.b2a)) {
-    // a status rule on an edge with no link binding: the stroke takes the status colour, as the no-data grey does
-    if (status && entry.line) {
-      entry.line.style.stroke = status;
+    // a status rule on an edge with no link binding: the stroke and the end dots take the status colour, as the
+    // no-data grey does for the stroke
+    if (status) {
+      if (entry.line) {
+        writeStyle(entry.line, 'stroke', status);
+      }
+      paintEnds(entry, () => status);
     }
     return;
   }
-  paintEnds(entry, l, status);
+  paintEnds(entry, (end) => status ?? (end === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b))?.color);
   if (entry.line) {
     entry.line.style.strokeOpacity = '0';
   }
@@ -193,11 +226,6 @@ function applyLink(entry: CellEntry, patch: CellPatch, status: string | undefine
     a.style.opacity = '0';
   }
 }
-
-/** The border of a device with a status: at least this wide, in the user units of its shape ... */
-const STATUS_BORDER_MIN = 2;
-/** ... and this many times the width the shape had. */
-const STATUS_BORDER_SCALE = 1.5;
 
 /**
  * The fill of `shape` mixed with the status colour. The computed fill is the one the shape shows (`light-dark()` and
@@ -224,19 +252,20 @@ function tintedFill(shape: SVGElement, status: string): string | undefined {
 /**
  * A device whose status is not normal: a border in the status colour, wider than the stroke the shape had
  * (`width`, read before the shape binding wrote its own), and a light tint of the fill it shows now. It runs after
- * `applyShape`, so the border wins over a `stroke` target and the tint goes over a `shape` target.
+ * `applyShape`, so the border wins over a `stroke` target and the tint goes over a `shape` target. A bitmap device
+ * (an `<image>`) takes no fill and no stroke: the overlay draws its border (`renderOverlay`).
  */
 function applyStatus(entry: CellEntry, patch: PlanCellPatch, width: number, theme: GrafanaTheme2): void {
   const shape = entry.shape as SVGElement | undefined;
-  const paint = entry.line ? undefined : statusPaint(patch.statusView, theme);
+  const paint = entry.line || shape?.localName === 'image' ? undefined : statusPaint(patch.statusView, theme);
   if (!shape || !paint) {
     return;
   }
-  shape.style.stroke = paint;
-  shape.style.strokeWidth = String(Math.max(STATUS_BORDER_MIN, STATUS_BORDER_SCALE * width));
+  writeStyle(shape, 'stroke', paint);
+  writeStyle(shape, 'stroke-width', String(statusBorderWidth(width)));
   const tint = tintedFill(shape, paint);
   if (tint) {
-    shape.style.fill = tint;
+    writeStyle(shape, 'fill', tint);
   }
 }
 
@@ -250,9 +279,9 @@ function applyUnavailable(entry: CellEntry, patch: CellPatch): void {
     return;
   }
   if (entry.line) {
-    entry.line.style.stroke = u.color;
+    writeStyle(entry.line, 'stroke', u.color);
   } else if (entry.shape) {
-    (entry.shape as SVGElement).style.fill = u.color;
+    writeStyle(entry.shape as SVGElement, 'fill', u.color);
   }
 }
 
@@ -293,39 +322,23 @@ function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined,
 function reset(entry: CellEntry, index: CellIndex): void {
   const shape = entry.shape as SVGElement | undefined;
   if (shape) {
-    shape.style.fill = entry.original.fill ?? '';
-    shape.style.stroke = entry.original.stroke ?? '';
-    if (!entry.line) {
-      shape.style.strokeWidth = entry.original.strokeWidth ?? '';
-    }
+    restoreStyle(shape);
   }
   const iconEntry = entry.iconId ? index.get(entry.iconId) : undefined;
   const icon = iconEntry?.shape as SVGElement | undefined;
   if (icon && iconOwner.get(icon) === entry) {
-    icon.style.fill = iconEntry!.original.fill ?? '';
+    restoreStyle(icon, ['fill']);
     iconOwner.delete(icon);
   }
   if (entry.line) {
     entry.line.style.strokeOpacity = '';
-    entry.line.style.strokeWidth = entry.original.strokeWidth ?? '';
-    entry.line.style.stroke = entry.original.stroke ?? '';
+    restoreStyle(entry.line);
   }
   for (const a of entry.arrows) {
     a.style.opacity = '';
   }
   for (const { el: marker } of entry.ends ?? []) {
-    const original = endOriginal.get(marker);
-    if (original) {
-      for (const prop of ['fill', 'stroke'] as const) {
-        const { value, priority } = original[prop];
-        if (value) {
-          (marker as SVGElement).style.setProperty(prop, value, priority);
-        } else {
-          (marker as SVGElement).style.removeProperty(prop);
-        }
-      }
-      endOriginal.delete(marker);
-    }
+    restoreStyle(marker as SVGElement);
   }
   const label = entry.label;
   if (label && written.has(label)) {
@@ -361,6 +374,8 @@ function reset(entry: CellEntry, index: CellIndex): void {
 export interface ColourScheme {
   isDark: boolean;
   osDark: boolean;
+  /** the status colours of the theme (`statusPalette`): a theme with another palette paints every cell again */
+  palette: string;
 }
 
 /** What an apply runs under: the theme (its colour scheme, and the status colours) and the OS preference. */
@@ -380,7 +395,8 @@ export interface Applied {
   keys: Map<string, string>;
 }
 
-const sameScheme = (a: ColourScheme, b: ColourScheme) => a.isDark === b.isDark && a.osDark === b.osDark;
+const sameScheme = (a: ColourScheme, b: ColourScheme) =>
+  a.isDark === b.isDark && a.osDark === b.osDark && a.palette === b.palette;
 
 /**
  * The fields of a patch that the writes above read, as one string. Two patches with the same key draw the same
@@ -415,7 +431,7 @@ export function applyPatches(
   interactive?: Set<string>,
   ctx: ApplyContext = defaultContext()
 ): Applied {
-  const scheme: ColourScheme = { isDark: ctx.theme.isDark, osDark: ctx.osDark };
+  const scheme: ColourScheme = { isDark: ctx.theme.isDark, osDark: ctx.osDark, palette: statusPalette(ctx.theme) };
   const same = previous?.index === index;
   const before = same ? previous.keys : new Map<string, string>();
   const all = same && !sameScheme(previous.scheme, scheme);
@@ -462,7 +478,7 @@ export function applyPatches(
       continue;
     }
     // the width the shape had, before the shape binding writes its own
-    const width = entry.shape && !entry.line ? strokeWidthOf(entry.shape, entry.original.strokeWidth) : 0;
+    const width = entry.shape && !entry.line ? originalStrokeWidth(entry.shape, entry.original.strokeWidth) : 0;
     const target = applyShape(entry, patch, index);
     applyUnavailable(entry, patch);
     applyLink(entry, patch, linkStatusPaint(patch, ctx.theme));

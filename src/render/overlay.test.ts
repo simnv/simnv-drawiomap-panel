@@ -12,7 +12,8 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="e1"><g><path d="M 0 0 L 100 0 L 100 50" fill="none" stroke="#333" pointer-events="stroke"/><path id="e1-arrow" d="M 100 50 L 98 46 L 102 46 Z" pointer-events="all"/></g><g id="e1-value"><text>10G</text></g>
     <g data-cell-id="lbl1"><g><rect x="90" y="20" width="20" height="10"/><text>edge label</text></g></g></g>
   <g data-cell-id="n2"><g><rect x="150" y="10" width="40" height="30"/></g></g>
-  <g data-cell-id="e2"><g><path d="M 0 80 L 200 80" fill="none" stroke="#333" pointer-events="stroke"/></g></g></g>
+  <g data-cell-id="e2"><g><path d="M 0 80 L 200 80" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
+  <g data-cell-id="n3"><g><image x="10" y="60" width="20" height="20"/></g></g></g>
 </svg>`;
 
 function build(d?: string): { root: SVGSVGElement; index: CellIndex } {
@@ -41,6 +42,14 @@ function build(d?: string): { root: SVGSVGElement; index: CellIndex } {
     meta: cellMetaFromAttrs('e2', {}, true),
     group: e2,
     line: e2.querySelector('path')!,
+    arrows: [],
+    original: {},
+  });
+  const n3 = root.querySelector('[data-cell-id="n3"]') as SVGGElement;
+  index.set('n3', {
+    meta: cellMetaFromAttrs('n3', {}, false, 'n3'),
+    group: n3,
+    shape: n3.querySelector('image')!,
     arrows: [],
     original: {},
   });
@@ -115,6 +124,42 @@ describe('status paint of the halves', () => {
     expect(Array.from(root.querySelectorAll('.dmap-half, .dmap-arrow'))).toEqual(before);
     renderOverlay(root, index, round(undefined), opts);
     expect(strokes(root)).toEqual(['#00ff00', '#00ff00']);
+  });
+  it('an image device gets a border rect in the status colour after its image; a normal status removes it (R4)', () => {
+    const { root, index } = build();
+    const image = index.get('n3')!.shape!;
+    const red = statusColor({ state: 'down' }, opts.theme);
+    const withView = (view: StatusView | undefined) =>
+      new Map<string, PlanCellPatch>([['n3', { ...patch('n3', {}), ...(view ? { statusView: view } : {}) }]]);
+    renderOverlay(root, index, withView(statusView), opts);
+    const border = root.querySelector('rect.dmap-status-border')!;
+    expect(border).not.toBeNull();
+    expect(border.previousElementSibling).toBe(image);
+    expect(['x', 'y', 'width', 'height'].map((a) => border.getAttribute(a))).toEqual(['10', '60', '20', '20']);
+    expect(border.getAttribute('stroke')).toBe(red);
+    expect(border.getAttribute('stroke-width')).toBe('2');
+    expect(border.getAttribute('fill')).toBe('none');
+    expect(border.getAttribute('pointer-events')).toBe('none');
+    expect(border.getAttribute('data-dmap-cell')).toBe('n3');
+    // the same status: the same element; another colour: updated in place
+    renderOverlay(root, index, withView({ ...statusView, reason: 'Power lost' }), opts);
+    expect(root.querySelector('rect.dmap-status-border')!.isSameNode(border)).toBe(true);
+    renderOverlay(root, index, withView({ ...statusView, state: 'warning' }), opts);
+    expect(root.querySelector('rect.dmap-status-border')!.isSameNode(border)).toBe(true);
+    expect(border.getAttribute('stroke')).toBe(statusColor({ state: 'warning' }, opts.theme));
+    renderOverlay(root, index, withView({ ...statusView, state: 'normal', reason: 'Healthy' }), opts);
+    expect(root.querySelectorAll('.dmap-status-border')).toHaveLength(0);
+    renderOverlay(root, index, withView(statusView), opts);
+    expect(root.querySelectorAll('.dmap-status-border')).toHaveLength(1);
+    renderOverlay(root, index, withView(undefined), opts);
+    expect(root.querySelectorAll('.dmap-status-border')).toHaveLength(0);
+    // a rect device gets no border element: the applier paints its shape
+    renderOverlay(root, index, new Map([['n1', { ...patch('n1', {}), statusView }]]), opts);
+    expect(root.querySelectorAll('.dmap-status-border')).toHaveLength(0);
+    // a new index removes the border of the old render
+    renderOverlay(root, index, withView(statusView), opts);
+    renderOverlay(root, new Map(index), new Map(), opts);
+    expect(root.querySelectorAll('.dmap-status-border')).toHaveLength(0);
   });
   it('a new theme paints the same elements in its own status colour', () => {
     const { root, index } = build();

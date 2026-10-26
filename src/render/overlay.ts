@@ -2,7 +2,7 @@ import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
 import { arrowAnchor, PathGeom, pathGeometry, Point } from './geometry';
 import type { PlanCellPatch } from '../binding/engine';
-import { linkStatusPaint } from '../binding/color';
+import { linkStatusPaint, statusBorderWidth, statusPaint } from '../binding/color';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
 /** the length of an arrow head of a half, in the units of the edge */
@@ -76,11 +76,55 @@ interface LinkDrawn {
   a2b?: HalfDrawn;
   b2a?: HalfDrawn;
 }
+/** The status border of a bitmap device: a rect after its image, with the status colour it shows. */
+interface BorderDrawn {
+  el: SVGRectElement;
+  key: string;
+}
 /** What `renderOverlay` left under one root. The elements live across refreshes; the keys say what they show. */
 interface OverlayState {
   index: CellIndex;
   arrowSize: number;
   links: Map<string, LinkDrawn>;
+  borders: Map<string, BorderDrawn>;
+}
+
+export const STATUS_BORDER_CLASS = 'dmap-status-border';
+
+/**
+ * The status border of a device whose shape is an `<image>`: fill and stroke do nothing on an image, so a rect with
+ * the box of the image goes right after it, in the same space (the transform of the image is copied). An image has
+ * no stroke of its own: the border has the minimum width.
+ */
+function drawBorder(image: SVGGraphicsElement, cellId: string, paint: string): SVGRectElement {
+  let box = ['x', 'y', 'width', 'height'].map((a) => image.getAttribute(a) ?? '0');
+  try {
+    const b = image.getBBox();
+    if (b.width > 0 && b.height > 0) {
+      box = [b.x, b.y, b.width, b.height].map(fmt);
+    }
+  } catch {
+    // no layout in this host: the attributes locate the image
+  }
+  const [x, y, width, height] = box;
+  const rect = el('rect', {
+    class: STATUS_BORDER_CLASS,
+    'data-dmap-cell': cellId,
+    x,
+    y,
+    width,
+    height,
+    fill: 'none',
+    stroke: paint,
+    'stroke-width': statusBorderWidth(0),
+    'pointer-events': 'none',
+  });
+  const transform = image.getAttribute('transform');
+  if (transform) {
+    rect.setAttribute('transform', transform);
+  }
+  image.after(rect);
+  return rect;
 }
 
 const states = new WeakMap<SVGSVGElement, OverlayState>();
@@ -214,8 +258,8 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
   const o: Required<OverlayOptions> = { arrowSize: ARROW_SIZE, ...opts };
   let state = states.get(root);
   if (!state || state.index !== index || state.arrowSize !== o.arrowSize) {
-    root.querySelectorAll(`g.${OVERLAY_CLASS}`).forEach((g) => g.remove());
-    state = { index, arrowSize: o.arrowSize, links: new Map() };
+    root.querySelectorAll(`g.${OVERLAY_CLASS}, .${STATUS_BORDER_CLASS}`).forEach((g) => g.remove());
+    state = { index, arrowSize: o.arrowSize, links: new Map(), borders: new Map() };
     states.set(root, state);
   }
   const liveLinks = new Set<string>();
@@ -247,6 +291,32 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
     if (!liveLinks.has(id)) {
       drawn.layer.remove();
       state.links.delete(id);
+    }
+  }
+  // the status border of a bitmap device (the applier paints every other shape itself)
+  const liveBorders = new Set<string>();
+  for (const [id, patch] of patches as Map<string, PlanCellPatch>) {
+    const image = index.get(id)?.shape;
+    const paint = image?.localName === 'image' ? statusPaint(patch.statusView, opts.theme) : undefined;
+    if (!image || !paint) {
+      continue;
+    }
+    liveBorders.add(id);
+    const drawn = state.borders.get(id);
+    if (drawn && drawn.el.parentNode) {
+      if (drawn.key !== paint) {
+        drawn.el.setAttribute('stroke', paint);
+        drawn.key = paint;
+      }
+      continue;
+    }
+    drawn?.el.remove();
+    state.borders.set(id, { el: drawBorder(image, id, paint), key: paint });
+  }
+  for (const [id, drawn] of state.borders) {
+    if (!liveBorders.has(id)) {
+      drawn.el.remove();
+      state.borders.delete(id);
     }
   }
 }

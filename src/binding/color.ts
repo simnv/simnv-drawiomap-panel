@@ -55,6 +55,20 @@ export function linkStatusPaint(
 
 /** The share of the status colour in the tinted fill of a device. */
 export const STATUS_TINT = 0.2;
+/** The border of a device with a status: at least this wide, in the user units of its shape ... */
+const STATUS_BORDER_MIN = 2;
+/** ... and this many times the width the shape was drawn with. */
+const STATUS_BORDER_SCALE = 1.5;
+
+/** The width of the status border of a device whose shape was drawn `width` wide (0 for a shape with no stroke). */
+export function statusBorderWidth(width: number): number {
+  return Math.max(STATUS_BORDER_MIN, STATUS_BORDER_SCALE * width);
+}
+
+/** The status colours of a theme as one string: a palette with other colours must paint every element again. */
+export function statusPalette(theme: GrafanaTheme2): string {
+  return (['down', 'warning', 'missing'] as const).map((state) => statusColor({ state }, theme)).join('|');
+}
 
 /** The channels of a CSS colour: red, green, blue (0 to 255) and alpha (0 to 1); undefined when it does not parse. */
 function channels(value: string): [number, number, number, number] | undefined {

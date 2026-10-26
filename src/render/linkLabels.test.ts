@@ -8,6 +8,7 @@ import type { PlanCellPatch } from '../binding/engine';
 import { cellAt, patchAt } from '../interact/hit';
 import { buildCellIndex } from './svgStage';
 import { renderOverlay } from './overlay';
+import { applyPatches } from './applier';
 import {
   LINK_LABEL_CLASS,
   LINK_LABEL_LAYER_CLASS,
@@ -574,6 +575,24 @@ describe('renderLinkLabels: obstacles', () => {
     expect(Number(a.getAttribute('x'))).toBeLessThan(100 - 13);
     expect(a.getAttribute('y')).toBe('100');
     expect(byHalf(root, 'b2a')!.getAttribute('x')).toBe('280');
+  });
+  it('the clearance of a node body is half its drawn stroke: a status border of 12 reserves 6 (R5)', () => {
+    const node = `<g data-cell-id="n3"><g><rect x="100" y="20" width="40" height="30" stroke-width="8"/></g></g>`;
+    const { root, index } = build(SVG(node));
+    const statusView: StatusView = {
+      state: 'down',
+      reason: 'Down',
+      conditionKey: 'k',
+      queryIds: ['q'],
+      coverage: { available: 1, expected: 1 },
+    };
+    const down: PlanCellPatch = { cellId: 'n3', ruleNames: ['r'], scope: { cell: {} }, urls: [], warnings: [], statusView };
+    const before = stageObstacles(root, index, new Map(), 10);
+    expect(before).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 4 });
+    applyPatches(index, new Map([['n3', down]]), undefined, undefined, { theme, osDark: false });
+    expect((index.get('n3')!.shape as SVGElement).style.strokeWidth).toBe('12');
+    const after = stageObstacles(root, index, new Map(), 10);
+    expect(after).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 6 });
   });
   it('a status on a patched edge reserves no room: the obstacles are the stroke pieces and the node bodies', () => {
     const { root, index } = build();

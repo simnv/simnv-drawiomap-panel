@@ -1,12 +1,22 @@
 import type { CellEntry } from '../types';
 
-/**
- * The stroke width a primitive was drawn with, in its user units: the attribute, else the original inline style
- * (`CellEntry.original.strokeWidth`, captured before any patch), else the inline style now, else 1 (the SVG default).
- */
-export function strokeWidthOf(el: SVGElement, original?: string): number {
-  const n = parseFloat(el.getAttribute('stroke-width') || original || el.style.strokeWidth || '');
+const widthOr1 = (inline: string | undefined, attribute: string | null): number => {
+  // an inline style beats the presentation attribute, as in CSS; 1 is the SVG default
+  const n = parseFloat(inline || attribute || '');
   return Number.isFinite(n) ? n : 1;
+};
+
+/**
+ * The stroke width a primitive was drawn with before any patch, in its user units: the original inline style
+ * (`CellEntry.original.strokeWidth`, captured when the stage was indexed), else the attribute, else 1.
+ */
+export function originalStrokeWidth(el: SVGElement, original?: string): number {
+  return widthOr1(original, el.getAttribute('stroke-width'));
+}
+
+/** The stroke width a primitive shows now, patches included: the inline style now, else the attribute, else 1. */
+export function drawnStrokeWidth(el: SVGElement): number {
+  return widthOr1(el.style.strokeWidth, el.getAttribute('stroke-width'));
 }
 
 export interface ChartAnchor {
