@@ -724,20 +724,29 @@ describe('applyPatches diff', () => {
     applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ stepIndex: 2, status: 'nodata' }) })]]), prev);
     expect(group.getAttribute('data-dmap-status')).toBe('nodata');
   });
-  it('another colour scheme resets and writes every cell; the same scheme again writes nothing', () => {
+  it('another theme or OS colour scheme resets and writes every cell; the same scheme again writes nothing', () => {
     const index = build();
-    const prev = applyPatches(index, round(), undefined, undefined, false);
+    const light = { isDark: false, osDark: false };
+    let prev = applyPatches(index, round(), undefined, undefined, light);
     const observer = observe(index);
-    const done = applyPatches(index, round(), prev, undefined, true);
-    const touched = observer.takeRecords().map((r) => r.target);
-    for (const id of ['n1', 'e1', 'n2']) {
-      expect(
-        touched.some((t) => index.get(id)!.group.contains(t)),
-        id
-      ).toBe(true);
-    }
-    expect(done.isDark).toBe(true);
-    applyPatches(index, round(), done, undefined, true);
+    const everyCell = () => {
+      const touched = observer.takeRecords().map((r) => r.target);
+      for (const id of ['n1', 'e1', 'n2']) {
+        expect(
+          touched.some((t) => index.get(id)!.group.contains(t)),
+          id
+        ).toBe(true);
+      }
+    };
+    // the theme
+    prev = applyPatches(index, round(), prev, undefined, { ...light, isDark: true });
+    everyCell();
+    expect(prev.scheme).toEqual({ isDark: true, osDark: false });
+    // the OS preference, with the same theme
+    prev = applyPatches(index, round(), prev, undefined, { isDark: true, osDark: true });
+    everyCell();
+    // the same scheme again: nothing
+    applyPatches(index, round(), prev, undefined, { isDark: true, osDark: true });
     expect(observer.takeRecords()).toHaveLength(0);
   });
   it('markInteractive with the same ids makes no mutation, and marks the cells of a new stage', () => {

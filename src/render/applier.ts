@@ -296,12 +296,24 @@ function reset(entry: CellEntry, index: CellIndex): void {
   clearOwnedAttrs(entry.group, 'applier');
 }
 
+/**
+ * The two inputs a `light-dark()` paint resolves against: the Grafana theme, which the panel writes as the
+ * `color-scheme` of the root, and the OS preference, which an element that sets its own `color-scheme` follows.
+ * `paints()` reads the effective paint of an end marker, so a change of either must evaluate every cell again.
+ */
+export interface ColourScheme {
+  isDark: boolean;
+  osDark: boolean;
+}
+
 /** What one apply left in the DOM: the key of the applied patch per cell, for the index and the colour scheme it ran under. */
 export interface Applied {
   index: CellIndex;
-  isDark: boolean;
+  scheme: ColourScheme;
   keys: Map<string, string>;
 }
+
+const sameScheme = (a: ColourScheme, b: ColourScheme) => a.isDark === b.isDark && a.osDark === b.osDark;
 
 /**
  * The fields of a patch that the writes above read, as one string. Two patches with the same key draw the same
@@ -326,19 +338,19 @@ export function applyKey(patch: PlanCellPatch, interactive: boolean): string {
 /**
  * Write patches into the SVG DOM and return what is applied now. Only the `interactive` cells become buttons;
  * without the set, all patched cells do. A cell whose key equals the one of `previous` is not touched; `previous`
- * of another index counts as empty (a new stage has new elements), and another colour scheme (`isDark`: a
- * `light-dark()` paint of an end marker resolves against it) resets and writes every cell.
+ * of another index counts as empty (a new stage has new elements), and another colour scheme (the theme or the OS
+ * preference) resets and writes every cell.
  */
 export function applyPatches(
   index: CellIndex,
   patches: PatchMap,
   previous?: Applied,
   interactive?: Set<string>,
-  isDark = false
+  scheme: ColourScheme = { isDark: false, osDark: false }
 ): Applied {
   const same = previous?.index === index;
   const before = same ? previous.keys : new Map<string, string>();
-  const all = same && previous.isDark !== isDark;
+  const all = same && !sameScheme(previous.scheme, scheme);
   const keys = new Map<string, string>();
   const changed = new Set<string>();
   for (const [id, patch] of patches) {
@@ -386,7 +398,7 @@ export function applyPatches(
     applyLink(entry, patch);
     tag(entry, patch, target, !interactive || interactive.has(id));
   }
-  return { index, isDark, keys };
+  return { index, scheme, keys };
 }
 
 export const INTERACTIVE_ATTR = 'data-dmap-interactive';

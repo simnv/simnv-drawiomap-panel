@@ -12,6 +12,7 @@ import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../components/usePanZoom';
 import type { Stage } from '../../components/useStage';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
+import { useOsDark } from '../../visuals/useOsDark';
 import { boxTargets } from './boxTargets';
 import { useBoxSelect } from './useBoxSelect';
 
@@ -121,20 +122,22 @@ export function DiagramStage({
     }
   }, [stage.root, isDark]);
 
-  // Apply the draft patches and redraw the overlay in one frame.
+  // Apply the draft patches and redraw the overlay in one frame. The OS preference is an input of the applier's
+  // colour scheme, as in the panel.
+  const osDark = useOsDark();
   useEffect(() => {
     const root = stage.root;
     if (!root) {
       return;
     }
     const id = requestAnimationFrame(() => {
-      patched.current = applyPatches(stage.index, patches, patched.current, undefined, isDark);
+      patched.current = applyPatches(stage.index, patches, patched.current, undefined, { isDark, osDark });
       renderOverlay(root, stage.index, patches, { theme });
       // after the overlay, as in the panel: the preview shows the label mode while the user edits it
       renderLinkLabels(root, stage.index, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, patches, theme, isDark, linkWidth]);
+  }, [stage.root, stage.index, patches, theme, isDark, osDark, linkWidth]);
 
   // Fit the diagram into the pane. A live view (pan or zoom) changes the viewBox only.
   useEffect(() => {

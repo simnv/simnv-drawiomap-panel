@@ -20,59 +20,6 @@ export function parseSvg(text: string): SVGSVGElement {
   return root as unknown as SVGSVGElement;
 }
 
-/**
- * The declarations of an inline style of a descendant: a `;` inside quotes or parentheses does not split. Undefined
- * when the style is not in the small grammar this scan reads, and the whole attribute must go: a backslash (a CSS
- * escape), a comment, a line break (CSS ends a string there and recovers; this scan does not), or a quote or a
- * parenthesis that is not closed. draw.io writes none of these in a style attribute. The scan fails closed: without
- * them the grammar left is plain declarations with quotes and parentheses, which the scan reads exactly.
- */
-function splitDeclarations(style: string): string[] | undefined {
-  if (/[\\\n\r\f]|\/\*/.test(style)) {
-    return undefined;
-  }
-  const out: string[] = [];
-  let quote = '';
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < style.length; i++) {
-    const c = style[i];
-    if (quote) {
-      if (c === quote) {
-        quote = '';
-      }
-    } else if (c === '"' || c === "'") {
-      quote = c;
-    } else if (c === '(') {
-      depth++;
-    } else if (c === ')') {
-      if (depth === 0) {
-        return undefined;
-      }
-      depth--;
-    } else if (c === ';' && depth === 0) {
-      out.push(style.slice(start, i));
-      start = i + 1;
-    }
-  }
-  if (quote || depth !== 0) {
-    return undefined;
-  }
-  out.push(style.slice(start));
-  return out;
-}
-
-/**
- * True for a declaration that a descendant must not keep: `color-scheme` in any case, and any declaration whose
- * name hides behind a CSS escape (`color\-scheme`, `\63 olor-scheme`) or a comment (`color-scheme/**\/:`). draw.io
- * writes neither, so a strict drop loses nothing real. The value is not read.
- */
-function setsColorScheme(declaration: string): boolean {
-  const colon = declaration.indexOf(':');
-  const name = (colon < 0 ? declaration : declaration.slice(0, colon)).trim();
-  return !!name && (/[\\/*]/.test(name) || name.toLowerCase() === 'color-scheme');
-}
-
 /** true when a CSS text references anything that is not a local #id */
 function hasExternalUrl(cssText: string): boolean {
   if (/@import/i.test(cssText)) {
@@ -161,38 +108,6 @@ export function sanitizeSvg(text: string): SanitizeResult {
     if (style && hasExternalUrl(style)) {
       el.removeAttribute('style');
       removed.attributes++;
-    }
-  }
-  // The colour scheme is the panel's: it writes it on the root from the Grafana theme. A descendant must not turn
-  // the OS preference back on for its subtree, else a light-dark() paint under it changes with no theme change.
-  for (const el of Array.from(root.querySelectorAll('[style]'))) {
-    const style = el.getAttribute('style') ?? '';
-    const declarations = splitDeclarations(style);
-    if (!declarations) {
-      el.removeAttribute('style');
-      removed.attributes++;
-      continue;
-    }
-    const kept = declarations.filter((declaration) => !setsColorScheme(declaration));
-    if (kept.length !== declarations.length) {
-      const joined = kept
-        .map((d) => d.trim())
-        .filter(Boolean)
-        .join('; ');
-      if (joined) {
-        el.setAttribute('style', joined);
-      } else {
-        el.removeAttribute('style');
-      }
-      removed.attributes++;
-    }
-  }
-  for (const el of Array.from(root.querySelectorAll('*'))) {
-    for (const name of Array.from(el.attributes, (a) => a.name)) {
-      if (name.toLowerCase() === 'color-scheme') {
-        el.removeAttribute(name);
-        removed.attributes++;
-      }
     }
   }
 

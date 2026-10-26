@@ -2068,6 +2068,35 @@ describe('DrawioMapPanel bindings popup', () => {
       };
     };
 
+    it('an OS colour scheme change runs the applier once more with the same picture; the listener goes on unmount', async () => {
+      const listeners = new Set<() => void>();
+      const media = {
+        matches: false,
+        media: '(prefers-color-scheme: dark)',
+        addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+        removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+      };
+      vi.stubGlobal('matchMedia', () => media);
+      try {
+        const base = props({ id: 61 });
+        const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+        await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        const panel = screen.getByTestId('dmap-panel');
+        const picture = halves(panel);
+        const applies = panelApplies();
+        expect(listeners.size).toBeGreaterThan(0);
+        media.matches = true;
+        act(() => listeners.forEach((cb) => cb()));
+        await waitFor(() => expect(panelApplies()).toBe(applies + 1));
+        expect(halves(panel)).toBe(picture);
+        view.unmount();
+        expect(listeners.size).toBe(0);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('a data refresh with equal values keeps the overlay elements; a changed value updates them in place', async () => {
       const base = props({ id: 61 });
       const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
