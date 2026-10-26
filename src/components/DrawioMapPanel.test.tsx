@@ -2068,6 +2068,27 @@ describe('DrawioMapPanel bindings popup', () => {
       };
     };
 
+    it('a data refresh with equal values keeps the overlay elements; a changed value updates them in place', async () => {
+      const base = props({ id: 61 });
+      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const panel = screen.getByTestId('dmap-panel');
+      const elements = () => Array.from(panel.querySelectorAll('polyline.dmap-half, polygon.dmap-arrow'));
+      const before = elements();
+      const picture = halves(panel);
+      // the same values in a new data object: the same elements, the same picture
+      view.rerender(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      expect(elements().every((el, i) => el.isSameNode(before[i]))).toBe(true);
+      expect(halves(panel)).toBe(picture);
+      // a new value: the same elements with a new stroke
+      view.rerender(<DrawioMapPanel {...base} data={seriesWith(95e6)} />);
+      await waitFor(() => expect(halves(panel)).not.toBe(picture));
+      expect(elements().every((el, i) => el.isSameNode(before[i]))).toBe(true);
+    });
+
     it('does no per-refresh work for the panel behind and renders the latest data once on close', async () => {
       const base = props({ id: 61 });
       const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
