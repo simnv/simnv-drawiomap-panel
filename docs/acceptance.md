@@ -268,6 +268,29 @@ Browser bench `scripts/bench/card-hover.mjs` (Chromium trace, demo dashboard on 
 
 The demo cards are light (one or two rows), so the browser numbers are small on both sides; the first hover of a run pays about 270 ms once for the lazy chunks. The consumer team's dense diagram is the reference for the live profile.
 
+Legend highlight (O8, 2026-10-27, `docs/superpowers/specs/2026-10-27-o8-legend-highlight-design.md`):
+
+| Check                                                                                       | Evidence                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A legend entry or a legend row of the diagram marks the cells and does not render the panel | Unit `DrawioMapPanel.test.tsx` "highlight cost" (pointer and focus, zero view renders, no applier call), "a row hover does not render the panel view", `highlightStore.test.ts`. e2e `legend.spec.ts` 8/8, `hover-kinds` 2/2, `card-tooltip` 8/8, `visual-regions` 4/4 (13.2). |
+| A pinned card stays pinned; a refresh during a hover keeps the marks                        | Unit "a pinned card stays open and pinned during a legend hover", "a data refresh during a hover keeps the marks on the cells of the entry now".                                                                                                                               |
+| The popup ends the highlight; nothing behind the popup marks cells                          | Unit "opening the bindings popup ends the highlight; a hover behind it marks nothing", "a freshness deadline after the popup opened marks no legend cells" (it fails with no `paused` guard in the reader).                                                                    |
+
+Browser bench `scripts/bench/legend-hover.mjs` (Chromium, a copy of the demo dashboard with the auto refresh off, 13.2, 1600×1000, first panel, 9 legend entries and 2 diagram rows, 3 rounds, 300 ms gap; one run each; the task time holds the style and paint of the dim, which this change does not touch):
+
+| Per hover                                        | Before (main dist, `000c690`) | After                       |
+| ------------------------------------------------ | ----------------------------- | --------------------------- |
+| entry: React commits                             | 2 (the legend, then the view) | 1 (the legend)              |
+| entry: renders over 27 hovers (view/legend/band) | 28 / 54 / 27                  | 0 / 28 / 0                  |
+| entry: pointer event to the class change         | median 14.2 ms, p90 23.7 ms   | median 14.6 ms, p90 22.1 ms |
+| entry: main-thread task time in the window       | median 11.8 ms, p90 20.2 ms   | median 11.1 ms, p90 17.1 ms |
+| row: React commits                               | 1 (the view)                  | 0                           |
+| row: renders over 6 hovers (view/legend/band)    | 6 / 6 / 6                     | 0 / 0 / 0                   |
+| row: pointer event to the class change           | median 11.0 ms, p90 19.2 ms   | median 1.9 ms, p90 2.7 ms   |
+| row: main-thread task time in the window         | median 14.1 ms, p90 15.2 ms   | median 10.4 ms, p90 12.9 ms |
+
+The demo view is light (118 cells, few patterns), so its render costs little; the counts are the result that carries to the consumer team's dense sheet, where each view render costs more. A hover that leaves an open hover card (not pinned) still renders the view once: the panel closes the card.
+
 Bundle: `dist/module.js` 339 288 bytes (P2: 337 072), `dist/bindings-popup.js` 123 389 bytes (P2: 108 048); `check:bundle` passes.
 
 Screenshot (written by the browser tests to `/tmp/dmap-popup-p3/`): `pattern-from-selection-<port>.png` (two routers boxed, the

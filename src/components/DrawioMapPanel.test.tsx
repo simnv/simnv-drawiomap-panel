@@ -867,7 +867,10 @@ describe('DrawioMapPanel hover card', () => {
     const dialog = await screen.findByRole('dialog');
     const rows = screen.getAllByTestId('dmap-card-row');
     // the status row first (the node has a missing status), then the one configured row
-    expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining('missing'), expect.stringContaining('CPU')]);
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('missing'),
+      expect.stringContaining('CPU'),
+    ]);
     const row = rows[1];
     expect(row.textContent).toContain('CPU');
     expect(row.textContent).toContain('42%');
@@ -1694,6 +1697,18 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
     await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
     expect(container.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
   });
+  it('a row hover does not render the panel view', async () => {
+    const { container } = render(<DrawioMapPanel {...panel(true)} />);
+    const el = await row();
+    const root = container.querySelector('[data-testid="dmap-stage"] > svg')!;
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+    const renders = work.viewRenders;
+    fireEvent(el, Object.assign(new Event('pointerover', { bubbles: true }), { pointerType: 'mouse' }));
+    await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+    fireEvent(root, Object.assign(new Event('pointerleave'), { pointerType: 'mouse' }));
+    await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+    expect(work.viewRenders).toBe(renders);
+  });
   it('a diagram without pg-symbol does nothing', async () => {
     const { container } = render(<DrawioMapPanel {...panel(false)} />);
     const el = await row();
@@ -1748,6 +1763,90 @@ describe('DrawioMapPanel colour legend', () => {
     fireEvent.pointerLeave(entry);
     await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
     expect(container.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
+  });
+
+  describe('highlight cost', () => {
+    const frame = () => act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+    /** A settled panel with an open legend: an entry that has cells, and the stage root. */
+    async function settled() {
+      const r = await setup(openLegend());
+      await frame();
+      await frame();
+      const block = within(legend()!)
+        .getAllByTestId('dmap-legend-block')
+        .find((b) => b.getAttribute('aria-label') === 'Link load %')!;
+      const entry = within(block)
+        .getAllByTestId('dmap-legend-entry')
+        .find((e) => !e.getAttribute('aria-label')!.endsWith(': 0 elements'))!;
+      const root = r.container.querySelector('[data-testid="dmap-stage"] > svg')!;
+      return { ...r, entry, root };
+    }
+    const hits = (container: Element) =>
+      Array.from(container.querySelectorAll('.dmap-legend-hit'), (el) => el.getAttribute('data-cell-id'));
+
+    it('a pointer and a focus on an entry mark the cells and do not render the panel view or apply the patches', async () => {
+      const { container, entry, root } = await settled();
+      const renders = work.viewRenders;
+      const applied = work.applied.length;
+      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+      const byPointer = hits(container);
+      expect(byPointer.length).toBeGreaterThan(0);
+      fireEvent.pointerLeave(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+      act(() => entry.focus());
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+      expect(hits(container)).toEqual(byPointer);
+      act(() => entry.blur());
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+      expect(container.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
+      expect(work.viewRenders).toBe(renders);
+      expect(work.applied.length).toBe(applied);
+    });
+
+    it('a pinned card stays open and pinned during a legend hover', async () => {
+      const { container, entry, root } = await settled();
+      fireEvent.click(container.querySelector('polyline.dmap-half')!, { clientX: 50, clientY: 40 });
+      const dialog = await screen.findByRole('dialog');
+      await frame();
+      const renders = work.viewRenders;
+      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+      fireEvent.pointerLeave(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+      expect(screen.getByRole('dialog')).toBe(dialog);
+      expect(dialog.getAttribute('data-pinned')).toBe('true');
+      expect(work.viewRenders).toBe(renders);
+    });
+
+    it('a data refresh during a hover keeps the marks on the cells of the entry now', async () => {
+      const { container, entry, root, rerender } = await settled();
+      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+      const before = hits(container);
+      rerender(<DrawioMapPanel {...openLegend()} />);
+      await frame();
+      await frame();
+      expect(root.classList.contains('dmap-legend-active')).toBe(true);
+      expect(hits(container)).toEqual(before);
+    });
+
+    it('opening the bindings popup ends the highlight; a hover behind it marks nothing', async () => {
+      locationService.partial({ editPanel: 1 });
+      onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
+      const { entry, root } = await settled();
+      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+      openPopup();
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+      expect(root.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
+      // a hover behind the popup marks nothing
+      fireEvent.pointerLeave(entry, { pointerType: 'mouse' });
+      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
+      await frame();
+      await frame();
+      expect(root.classList.contains('dmap-legend-active')).toBe(false);
+    });
   });
 });
 
@@ -2262,6 +2361,63 @@ describe('DrawioMapPanel bindings popup', () => {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       expect(panelApplies()).toBe(applies + 1);
       expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
+    });
+
+    it('a freshness deadline after the popup opened marks no legend cells, while the legend keeps its entry', async () => {
+      const binding = { queryId: 'q', match: {}, reducer: 'last' } as const;
+      const status: NonNullable<DiagramConfig['overrides'][number]['display']['status']> = {
+        kind: 'mapping',
+        binding,
+        default: { state: 'normal', reason: 'Healthy' },
+        mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+        freshness: { expectedIntervalMs: 100, staleAfterMs: 1000 },
+      };
+      const config: DiagramConfig = {
+        version: 3,
+        queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
+        patterns: [],
+        widgets: [],
+        overrides: ['a', 'b'].map((cellId) => ({ cellId, display: { status } })),
+      };
+      const fresh = toDataFrame({
+        refId: 'Q',
+        fields: [
+          { name: 'Time', type: FieldType.time, values: [Date.now()] },
+          { name: 'Value', type: FieldType.number, values: [1] },
+        ],
+      });
+      const base = props({ id: 61 });
+      const saved: Options = {
+        ...options,
+        config,
+        diagram,
+        legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false },
+      };
+      const view = render(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
+      // the entry of the down state: no cells now and none after the deadline, but a new id list on each render
+      const entry = await waitFor(() => {
+        const found = screen
+          .getAllByTestId('dmap-legend-entry')
+          .find((e) => e.getAttribute('aria-label')!.startsWith('Down, critical'));
+        expect(found).toBeTruthy();
+        return found!;
+      });
+      const root = view.container.querySelector('[data-testid="dmap-stage"] > svg')!;
+      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+      const panelCell = () => view.container.querySelector('[data-testid="dmap-stage"] [data-cell-id="a"]');
+      expect(panelCell()?.getAttribute('data-dmap-status')).not.toBe('stale');
+      openPopup();
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+      // the deadline passes behind the popup: new patches, new legend blocks, a new id list from the legend
+      view.rerender(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
+      // the cell of the panel stage (not the popup stage) is stale: the view rendered and applied behind the popup
+      await waitFor(() => expect(panelCell()?.getAttribute('data-dmap-status')).toBe('stale'), { timeout: 3000 });
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
+      expect(root.classList.contains('dmap-legend-active')).toBe(false);
+      expect(root.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
     });
 
     /** One status element bound to the panel query Q, with a freshness policy of 400 ms. */
