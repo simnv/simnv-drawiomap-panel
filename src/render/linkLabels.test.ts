@@ -21,7 +21,7 @@ import {
  * from x = 40 to 200 (its anchor at 120), the b2a leg from 360 to 200 (its anchor at 280). The percent slot is
  * 24 (0.6 × 8 × 5 glyphs in jsdom), the box 26 × 12. A label stands on its stroke (centre on the line); beside it with `linkWidth.max` 10 the centre stands 13 off the line.
  */
-const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
   <g data-cell-id="n1"><g><rect x="0" y="80" width="40" height="40" stroke-width="2"/></g></g>
   <g data-cell-id="e1"><g><path d="M 40 100 L 360 100" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
   <g data-cell-id="n2"><g><rect x="360" y="80" width="40" height="40"/></g></g>${extra}
@@ -55,6 +55,8 @@ const linkPatch = (cellId: string, link: CellPatch['link']): CellPatch => ({
   link,
 });
 const theme = createTheme();
+/** the resolved colour of the background of the test svg */
+const DARK = 'rgb(29, 45, 61)';
 const opts = { theme, linkWidth: { min: 2, max: 10 } };
 const labels = (root: SVGSVGElement) => Array.from(root.querySelectorAll<SVGTextElement>(`text.${LINK_LABEL_CLASS}`));
 const byHalf = (root: SVGSVGElement, which: string, cell = 'e1') =>
@@ -115,9 +117,12 @@ describe('renderLinkLabels: the layer and its elements', () => {
     expect(b2a.getAttribute('x')).toBe('284');
     expect(b2a.getAttribute('y')).toBe('100');
     expect(a2b.getAttribute('fill')).toBe(theme.colors.text.primary);
-    // no halo: the text has no stroke
-    expect(a2b.hasAttribute('stroke')).toBe(false);
-    expect(a2b.hasAttribute('paint-order')).toBe(false);
+    // the halo: a thin stroke in the background of the diagram, painted behind the glyphs
+    expect(a2b.getAttribute('stroke')).toBe(DARK);
+    expect(a2b.getAttribute('stroke-width')).toBe('2');
+    expect(a2b.getAttribute('paint-order')).toBe('stroke');
+    expect(a2b.getAttribute('stroke-linejoin')).toBe('round');
+    expect(a2b.getAttribute('stroke-linecap')).toBe('round');
     expect(a2b.getAttribute('font-size')).toBe('8');
     expect(a2b.getAttribute('font-family')).toBe('sans-serif');
     expect(a2b.getAttribute('data-dmap-placed-at')).toMatch(/^\d+$/);
@@ -337,13 +342,13 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(maskOf(root)).toBeNull();
     strokesOf(root).forEach((el) => expect(el.hasAttribute('mask')).toBe(false));
   });
-  it('a light theme with a dark diagram draws no rect and no theme colour behind the text', () => {
+  it('a light theme with a dark diagram draws no rect and a dark halo', () => {
     const light = createTheme({ colors: { mode: 'light' } });
     const { root, index } = build();
     render(root, index, both(), { ...opts, theme: light });
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('line');
     expect(layerOf(root)!.querySelectorAll('rect')).toHaveLength(0);
-    expect(byHalf(root, 'a2b')!.hasAttribute('stroke')).toBe(false);
+    expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe(DARK);
     const fills = Array.from(maskOf(root)!.querySelectorAll('rect')).map((r) => r.getAttribute('fill'));
     expect(new Set(fills)).toEqual(new Set(['white', 'black']));
     expect(byHalf(root, 'a2b')!.getAttribute('fill')).toBe(light.colors.text.primary);
@@ -607,18 +612,26 @@ describe('renderLinkLabels: obstacles', () => {
 });
 
 describe('renderLinkLabels: backgrounds', () => {
-  it('the portograph canvas and the groups of the demo sheet are no obstacles: the WAN link gets both labels', () => {
+  it('the portograph canvas and the groups of the demo sheet are no obstacles; their frames are', () => {
     const { root, index } = build(readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8'));
     const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
     expect(index.get('pg-canvas')?.shape?.localName).toBe('rect');
     const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
-    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     const obstacles = stageObstacles(root, index, patches, 10, () => 60);
+    // the frames of the two groups (the lines at y 387.5 and 447.5) leave a gap of 60 between the port pills and the
+    // marker room of this 104-long link: a label that fits there stands in it, the others drop; none crosses a frame
+    const counts = render(root, index, patches);
+    expect(counts.placed + counts.dropped).toBe(2);
+    for (const el of labels(root).filter((l) => l.getAttribute('visibility') !== 'hidden')) {
+      const y = Number(el.getAttribute('y'));
+      for (const line of [387.53, 447.53]) {
+        expect(Math.abs(y - line)).toBeGreaterThanOrEqual(12);
+      }
+    }
     const bodies = obstacles.flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
-    // the vertical WAN link: the labels read bottom to top, on the stroke
-    expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
-    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
+    // the groups add frame lines but no interior
+    expect(obstacles.filter((o) => o.kind === 'segment' && o.owner === 'pg-group~wan')).toHaveLength(4);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
@@ -750,6 +763,75 @@ describe('renderLinkLabels: review cases', () => {
       render(root, index, both());
       expect(clear(root, { x: 100, w: 50 })).toBe(true);
     });
+  });
+});
+
+describe('renderLinkLabels: the halo colour', () => {
+  const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+  const bare = () => build(SVG().replace(' style="background-color: #1d2d3d"', ''));
+  it('is the computed background of the root; a transparent root takes the canvas colour of the theme', () => {
+    const dark = build();
+    render(dark.root, dark.index, both());
+    labels(dark.root).forEach((el) => expect(el.getAttribute('stroke')).toBe(DARK));
+    for (const style of ['', 'background-color: transparent', 'background-color: rgba(0, 0, 0, 0)']) {
+      const { root, index } = build(SVG().replace(' style="background-color: #1d2d3d"', style ? ` style="${style}"` : ''));
+      render(root, index, both());
+      labels(root).forEach((el) => expect(el.getAttribute('stroke')).toBe(theme.colors.background.canvas));
+    }
+  });
+  it('is read again on a theme change', () => {
+    const { root, index } = bare();
+    render(root, index, both());
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('stroke')).toBe(theme.colors.background.canvas);
+    const light = createTheme({ colors: { mode: 'light' } });
+    render(root, index, both(), { ...opts, theme: light });
+    expect(a.getAttribute('stroke')).toBe(light.colors.background.canvas);
+    expect(a.getAttribute('fill')).toBe(light.colors.text.primary);
+    root.style.backgroundColor = '#1d2d3d';
+    render(root, index, both(), { ...opts, theme: createTheme({ colors: { mode: 'light' } }) });
+    expect(a.getAttribute('stroke')).toBe(DARK);
+  });
+  it('a light theme with a dark root gives a dark halo, never the colour of the light theme', () => {
+    const light = createTheme({ colors: { mode: 'light' } });
+    const { root, index } = build();
+    render(root, index, both(), { ...opts, theme: light });
+    labels(root).forEach((el) => expect(el.getAttribute('stroke')).toBe(DARK));
+    expect(DARK).not.toBe(light.colors.background.canvas);
+  });
+});
+
+describe('renderLinkLabels: frames of groups', () => {
+  const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+  // a container with two vertices inside is a background; its frame is four lines, the inside is free
+  const inner = `<g data-cell-id="n3"><g><rect x="140" y="50" width="20" height="20"/></g></g>
+    <g data-cell-id="n4"><g><rect x="140" y="130" width="20" height="20"/></g></g>`;
+  const frame = (x: number, w: number, attrs: string) =>
+    `<g data-cell-id="box"><g><rect x="${x}" y="40" width="${w}" height="120" fill="none" ${attrs}/></g></g>`;
+  const centre = (root: SVGSVGElement) => Number(byHalf(root, 'a2b')!.getAttribute('x'));
+  const spots = (root: SVGSVGElement, index: CellIndex) =>
+    stageObstacles(root, index, both(), 10, () => 60).flatMap((o) => (o.kind === 'segment' ? [o] : []));
+
+  it('a label does not cross the frame line of a group: it slides off it', () => {
+    // the anchor of a2b is 120 and the frame line stands at 118
+    const { root, index } = build(SVG(frame(118, 200, 'stroke="#000" stroke-width="2"') + inner));
+    render(root, index, both());
+    expect(Math.abs(centre(root) - 118)).toBeGreaterThanOrEqual(12);
+    expect(spots(root, index).filter((o) => o.owner === 'box')).toHaveLength(4);
+  });
+  it('a label inside a group still places on its anchor', () => {
+    const { root, index } = build(SVG(frame(60, 280, 'stroke="#000" stroke-width="2"') + inner));
+    render(root, index, both());
+    expect(centre(root)).toBe(120);
+    expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('line');
+  });
+  it('a frame without a visible stroke is no obstacle', () => {
+    for (const attrs of ['', 'stroke="none"', 'stroke="#000" stroke-width="0"']) {
+      const { root, index } = build(SVG(frame(118, 200, attrs) + inner));
+      render(root, index, both());
+      expect(centre(root)).toBe(120);
+      expect(spots(root, index).filter((o) => o.owner === 'box')).toHaveLength(0);
+    }
   });
 });
 

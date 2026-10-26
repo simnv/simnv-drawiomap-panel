@@ -105,6 +105,8 @@ interface LabelLayout {
   probe: SVGTextElement;
   fontFamily: string;
   theme: GrafanaTheme2;
+  /** the halo colour of this pass: the computed background of the root, else the canvas colour of the theme */
+  halo: string;
   grid: ObstacleIndex;
   widths: Map<string, number>;
   records: Map<string, LabelRecord>;
@@ -176,7 +178,7 @@ export function renderLinkLabels(
     layouts.set(root, layout);
     applyScale(root);
   } else {
-    moved = refresh(layout, slots, opts.theme);
+    moved = refresh(layout, slots, opts.theme, root);
   }
   if (root.lastElementChild !== layout.layer) {
     root.appendChild(layout.layer);
@@ -463,6 +465,21 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   return local && m ? mapRect(local, m) : undefined;
 }
 
+/** A frame stands this far beyond the half of its stroke: a label never touches it. */
+const FRAME_CLEARANCE = 0;
+
+/** The shape of the entry draws a stroke that can be seen: a colour (not none) and a width above 0. */
+function hasStroke(entry: CellEntry): boolean {
+  const el = entry.shape as SVGElement | undefined;
+  if (!el) {
+    return false;
+  }
+  const computed = typeof getComputedStyle === 'function' ? getComputedStyle(el) : undefined;
+  const value = (el.style.stroke || computed?.stroke || el.getAttribute('stroke') || '').trim();
+  const width = strokeWidthOf(el, entry.original.strokeWidth);
+  return value !== '' && value !== 'none' && value !== 'transparent' && width > 0;
+}
+
 /** The inline stroke width of a primitive: the attribute, the style, the original style, else 1 (the SVG default). */
 function strokeWidthOf(el: SVGElement, original?: string): number {
   const n = parseFloat(el.getAttribute('stroke-width') || el.style.strokeWidth || original || '');
@@ -591,6 +608,17 @@ export function stageObstacles(
         });
       }
     }
+    if (entry.shape && backgrounds.has(cellId) && hoverKind(entry) !== 'canvas' && hasStroke(entry)) {
+      // the frame of a group or a container: four thin lines on its edges; the inside stays free
+      const m = toRoot(entry.shape, root);
+      const whole = rootBox(entry.group, root);
+      if (m && whole) {
+        const c = { x: whole.x, y: whole.y };
+        const d = { x: whole.x + whole.width, y: whole.y + whole.height };
+        const clearance = (strokeWidthOf(entry.shape, entry.original.strokeWidth) * scaleOf(m)) / 2 + FRAME_CLEARANCE;
+        strokes(cellId, [c, { x: d.x, y: c.y }, d, { x: c.x, y: d.y }, c], clearance);
+      }
+    }
     if (entry.meta.kind === 'link-label') {
       rect(entry.group);
     }
@@ -698,8 +726,20 @@ function createProbe(layer: SVGGElement): SVGTextElement {
   return probe;
 }
 
-function paint(rec: LabelRecord, theme: GrafanaTheme2): void {
+/**
+ * The halo colour: the computed `background-color` of the root svg (draw.io writes the page background there; the
+ * browser has resolved `light-dark()` with the colour scheme of the panel), else the canvas colour of the theme when
+ * the root has none (transparent) or it cannot be read. One colour per pass: never a guess from the shapes below.
+ */
+export function haloColour(root: SVGSVGElement, theme: GrafanaTheme2): string {
+  const value = typeof getComputedStyle === 'function' ? getComputedStyle(root).backgroundColor.trim() : '';
+  const clear = value === '' || value === 'transparent' || /^rgba?\(.*[,/]\s*0(\.0+)?%?\s*\)$/.test(value);
+  return clear ? theme.colors.background.canvas : value;
+}
+
+function paint(rec: LabelRecord, theme: GrafanaTheme2, halo: string): void {
   rec.el?.setAttribute('fill', theme.colors.text.primary);
+  rec.el?.setAttribute('stroke', halo);
 }
 
 function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
@@ -716,10 +756,14 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   el.setAttribute('dominant-baseline', 'central');
   el.setAttribute('font-size', String(LINK_LABEL_GEOMETRY.fontSize));
   el.setAttribute('font-family', layout.fontFamily);
+  el.setAttribute('stroke-width', String(2 * LINK_LABEL_GEOMETRY.halo));
+  el.setAttribute('paint-order', 'stroke');
+  el.setAttribute('stroke-linejoin', 'round');
+  el.setAttribute('stroke-linecap', 'round');
   el.setAttribute('text-rendering', 'geometricPrecision');
   layout.layer.appendChild(el);
   rec.el = el;
-  paint(rec, layout.theme);
+  paint(rec, layout.theme, layout.halo);
   return el;
 }
 
@@ -993,6 +1037,7 @@ function fullPlacement(
     probe: createProbe(layer),
     fontFamily,
     theme: opts.theme,
+    halo: haloColour(root, opts.theme),
     grid: obstacleIndex([]),
     widths: new Map(),
     records: new Map(),
@@ -1063,12 +1108,14 @@ function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): n
 }
 
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
-function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): number {
+function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root: SVGSVGElement): number {
   let moved = 0;
-  if (layout.theme !== theme) {
+  const halo = haloColour(root, theme);
+  if (layout.theme !== theme || layout.halo !== halo) {
     layout.theme = theme;
+    layout.halo = halo;
     for (const rec of layout.records.values()) {
-      paint(rec, theme);
+      paint(rec, theme, halo);
     }
   }
   for (const slot of slots) {
