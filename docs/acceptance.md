@@ -223,11 +223,18 @@ Patch diff and geometry cache (simplify step 5, 2026-10-26, `docs/superpowers/sp
 
 Browser bench `scripts/bench/refresh.mjs` (Chromium, demo dashboard on 13.2, 1600×1000, 2 stages, 118 cells, 24 link halves, 10 refreshes by the refresh button, 1500 ms gap; the demo values change on every refresh, so some widths and colours change each time):
 
-| Per refresh                                                    | Before (main dist, `e5a27d5`)                          | After      |
-| -------------------------------------------------------------- | ------------------------------------------------------ | ---------- |
-| DOM mutation records under the stages                          | 723 (648 attributes, 63 nodes added, 13 nodes removed) | to measure |
-| apply passes (animation frame callbacks that mutated a stage)  | 2; median 2.40 ms, p90 3.30 ms, max 3.80 ms            | to measure |
-| path API calls: `getTotalLength`, `getPointAtLength`, `getCTM` | 13, 713, 26                                            | to measure |
+| Per refresh                                                    | Before (main dist, `e5a27d5`)                          | After                                                |
+| -------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------- |
+| DOM mutation records under the stages                          | 723 (648 attributes, 63 nodes added, 13 nodes removed) | 242 (242 attributes, 0 nodes added, 0 nodes removed) |
+| apply passes (animation frame callbacks that mutated a stage)  | 2; median 2.40 ms, p90 3.30 ms, max 3.80 ms            | 2; median 0.20 ms, p90 0.30 ms, max 0.30 ms          |
+| path API calls: `getTotalLength`, `getPointAtLength`, `getCTM` | 13, 713, 26                                            | 0, 0, 0                                              |
+
+The "before" dist is `e5a27d5` (before the label halo of `8e0ad81`); the "after" dist is this branch with main merged. The
+halo is a stroke attribute of the label texts, not a per-refresh write, so the two runs compare the same work. The 242
+attribute writes that remain are the changed cells of the refresh: the demo values move on every refresh, so most halves
+get a new width (five attributes per half: `stroke`, `stroke-width`, `data-dmap-status` and `data-dmap-step` on the
+polyline, `fill` on the arrow head), and the applier resets and writes those link cells. The consumer team's dense sheet
+has mostly idle links, so its share of equal cells is higher than the demo's.
 
 History bench (`src/query/history.bench.test.ts`, jsdom, 300 cells with one series of 300 points each, one worker, `--expose-gc --max-semi-space-size=512`; one pass = every cell once; "then" is the mean of 19 passes after the first):
 

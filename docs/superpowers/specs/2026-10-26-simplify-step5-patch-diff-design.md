@@ -161,7 +161,7 @@ The pass:
    sweeps of today remove every overlay group and marker under the root, and the state starts empty. This is the only
    case that sweeps the DOM.
 2. Links. For each patch with a half and an entry with a line: `combo` names the halves present. A drawn link with the
-   same `combo` whose layer is still connected is updated in place: for each half whose key changed, the polyline
+   same `combo` whose layer still has a parent (`isConnected` is false in the detached hosts of the tests) is updated in place: for each half whose key changed, the polyline
    gets `stroke`, `stroke-width`, `data-dmap-status` and `data-dmap-step`, the polygon gets `fill`. The `points`
    attributes are not written: the geometry of a half depends on the path and the combo only. Else (new link, a new
    combo, a layer that is gone) the old layer is removed and `drawLink` runs as today; the new elements go into the
