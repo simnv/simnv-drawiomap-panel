@@ -628,6 +628,53 @@ describe('renderLinkLabels: obstacles', () => {
     const r = stageObstacles(root, index, new Map(), 10).find((o) => o.kind === 'rect' && o.rect.y === 20);
     expect(r && r.kind === 'rect' && r.clearance).toBeGreaterThanOrEqual(1.25);
   });
+  it('a stroke binding keeps the reserve of the grid through down and normal (the widest stroke is fixed)', () => {
+    const node = `<g data-cell-id="n6"><g><rect x="100" y="20" width="40" height="30" stroke-width="1.5"/></g></g>`;
+    const { root, index } = build(SVG(node));
+    const view = (state: 'down' | 'normal'): StatusView => ({
+      state,
+      reason: state,
+      conditionKey: 'k',
+      queryIds: ['q'],
+      coverage: { available: 1, expected: 1 },
+    });
+    const patch = (state: 'down' | 'normal') =>
+      ({
+        cellId: 'n6',
+        ruleNames: ['r'],
+        scope: { cell: {} },
+        urls: [],
+        warnings: [],
+        shape: { color: '#00ff00', target: 'stroke' },
+        statusView: view(state),
+      }) as unknown as PlanCellPatch;
+    const ctx = { theme, osDark: false };
+    const grid = stageObstacles(root, index, new Map(), 10);
+    const prev = applyPatches(index, new Map([['n6', patch('down')]]), undefined, undefined, ctx);
+    applyPatches(index, new Map([['n6', patch('normal')]]), prev, undefined, ctx);
+    expect((index.get('n6')!.shape as SVGElement).style.strokeWidth).toBe('2.5');
+    const reach = (o: ReturnType<typeof stageObstacles>) => {
+      const r = o.find((x) => x.kind === 'rect' && x.rect.y === 20);
+      return r && r.kind === 'rect' ? r.clearance : 0;
+    };
+    expect(reach(grid)).toBeGreaterThanOrEqual(1.25);
+    expect(reach(stageObstacles(root, index, new Map(), 10))).toBe(reach(grid));
+  });
+  it('a rotated, unevenly scaled border is reserved by the bounding box of its square', () => {
+    const wrap = (t: string) =>
+      `<g transform="${t}"><g data-cell-id="n7"><g><image x="25" y="20" width="10" height="30" href="data:image/png;base64,AAAA"/></g></g></g>`;
+    const clearance = (t: string) => {
+      const { root, index } = build(SVG(wrap(t)));
+      const base = stageObstacles(...(Object.values(build()) as [SVGSVGElement, CellIndex]), new Map(), 10);
+      const extra = stageObstacles(root, index, new Map(), 10).filter(
+        (o) => o.kind === 'rect' && !base.some((b) => JSON.stringify(b) === JSON.stringify(o))
+      );
+      const r = extra[0];
+      return r && r.kind === 'rect' ? r.clearance : 0;
+    };
+    expect(clearance('scale(4,1)')).toBe(4);
+    expect(clearance('matrix(2.8284271 0.7071068 -2.8284271 0.7071068 0 0)')).toBeGreaterThanOrEqual(5.65);
+  });
   it('an image device reserves the half of its status border: 1 unit', () => {
     const node = `<g data-cell-id="n4"><g><image x="100" y="20" width="40" height="30" href="data:image/png;base64,AAAA"/></g></g>`;
     const { root, index } = build(SVG(node));

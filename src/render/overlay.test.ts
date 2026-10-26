@@ -86,7 +86,10 @@ describe('status paint of the halves', () => {
   const round = (view: StatusView | undefined) =>
     new Map<string, PlanCellPatch>([
       ['n1', { ...patch('n1', {}), statusView: view }],
-      ['e1', { ...patch('e1', { link: { a2b: half(), b2a: half({ status: 'nodata', stepIndex: -1 }) } }), statusView: view }],
+      [
+        'e1',
+        { ...patch('e1', { link: { a2b: half(), b2a: half({ status: 'nodata', stepIndex: -1 }) } }), statusView: view },
+      ],
     ]);
   const strokes = (root: SVGSVGElement) =>
     Array.from(root.querySelectorAll('.dmap-half'), (el) => el.getAttribute('stroke'));

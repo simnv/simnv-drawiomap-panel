@@ -1,7 +1,14 @@
 import { createTheme, type GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
-import { linkStatusPaint, statusBorderWidth, statusPaint, statusPalette, tintFill } from '../binding/color';
+import {
+  linkStatusPaint,
+  STROKE_TARGET_EXTRA,
+  statusBorderWidth,
+  statusPaint,
+  statusPalette,
+  tintFill,
+} from '../binding/color';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { originalStrokeWidth } from './geometry';
 
@@ -118,7 +125,11 @@ function applyShape(entry: CellEntry, patch: CellPatch, index: CellIndex): strin
   }
   if (shape && target === 'stroke') {
     writeStyle(shape, 'stroke', s.color);
-    writeStyle(shape, 'stroke-width', String(originalStrokeWidth(shape, entry.original.strokeWidth) + 1));
+    writeStyle(
+      shape,
+      'stroke-width',
+      String(originalStrokeWidth(shape, entry.original.strokeWidth) + STROKE_TARGET_EXTRA)
+    );
   }
   return target;
 }

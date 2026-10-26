@@ -65,6 +65,14 @@ export function statusBorderWidth(width: number): number {
   return Math.max(STATUS_BORDER_MIN, STATUS_BORDER_SCALE * width);
 }
 
+/** A stroke binding draws the shape with its original stroke plus this much. */
+export const STROKE_TARGET_EXTRA = 1;
+
+/** The widest stroke that a shape drawn `width` wide can ever show: a stroke binding or the status border. */
+export function maxBodyWidth(width: number): number {
+  return Math.max(width + STROKE_TARGET_EXTRA, statusBorderWidth(width));
+}
+
 /** The status colours of a theme as one string: a palette with other colours must paint every element again. */
 export function statusPalette(theme: GrafanaTheme2): string {
   return (['down', 'warning', 'missing'] as const).map((state) => statusColor({ state }, theme)).join('|');

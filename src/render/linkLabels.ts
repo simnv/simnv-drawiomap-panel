@@ -11,7 +11,7 @@ import {
   parsePathPoints,
   pathGeometry,
   polylineLength,
-  maxScaleOf,
+  strokeReach,
   scaleOf,
   drawnStrokeWidth,
   originalStrokeWidth,
@@ -39,7 +39,7 @@ import {
   type Placement,
   type Rect,
 } from './labelPlacement';
-import { statusBorderWidth } from '../binding/color';
+import { maxBodyWidth, statusBorderWidth } from '../binding/color';
 import { fmt, linkSplit, OVERLAY_CLASS } from './overlay';
 import { viewScaleOf } from './zoom';
 
@@ -454,7 +454,8 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   if (el.localName === 'g' || el.localName === 'a' || el.localName === 'switch') {
     let box: Rect | undefined;
     // a switch draws its first usable child: the foreignObject, not the image fallback after it
-    const fo = el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
+    const fo =
+      el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
     for (const child of fo ? [fo] : Array.from(el.children)) {
       const b = rootBox(child, root);
       // an empty child (a box of 0 x 0 at the origin) would stretch the union
@@ -586,7 +587,7 @@ export function stageObstacles(
         out.push({
           kind: 'rect',
           rect: body,
-          clearance: (bodyReach(entry) * maxScaleOf(m)) / 2,
+          clearance: strokeReach(m, bodyReach(entry)),
         });
       }
     }
@@ -599,18 +600,16 @@ export function stageObstacles(
 }
 
 /**
- * The widest stroke that a device body can show, in its user units: its original stroke, its status border or the
- * stroke drawn now, whichever is widest; an `<image>` has no stroke, only the border of the overlay. The reach does not depend on the
- * status, so a status change never needs new obstacles.
+ * The widest stroke that a device body can ever show, in its user units: a fixed value of its original stroke (a
+ * stroke binding or the status border, `maxBodyWidth`); an `<image>` has no stroke, only the border of the overlay.
+ * It reads nothing that a patch changes, so a status change never needs new obstacles.
  */
 function bodyReach(entry: CellEntry): number {
   const shape = entry.shape as SVGElement;
   if (shape.localName === 'image') {
     return statusBorderWidth(0);
   }
-  const width = originalStrokeWidth(shape, entry.original.strokeWidth);
-  // the drawn width (a stroke binding writes one) only adds room; the status border is in the max already
-  return Math.max(width, statusBorderWidth(width), drawnStrokeWidth(shape));
+  return maxBodyWidth(originalStrokeWidth(shape, entry.original.strokeWidth));
 }
 
 /* ---------- legs ---------- */
@@ -897,7 +896,13 @@ function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
         transform: `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`,
       };
     });
-    plans.push({ cell, els, area, slots, key: JSON.stringify([fmt(area.x), fmt(area.y), fmt(area.width), fmt(area.height), slots]) });
+    plans.push({
+      cell,
+      els,
+      area,
+      slots,
+      key: JSON.stringify([fmt(area.x), fmt(area.y), fmt(area.width), fmt(area.height), slots]),
+    });
   }
   let defs = root.querySelector<SVGDefsElement>(`defs.${LINK_LABEL_DEFS_CLASS}`);
   const live = new Set<string>();
