@@ -1,0 +1,277 @@
+# Simplify step 5: a patch diff in the applier and the overlay, a path geometry cache
+
+- Status: draft 2026-10-26. Design only; no code in this change.
+- Scope: `src/render/applier.ts` (`applyPatches`), `src/render/overlay.ts` (`renderOverlay`), `src/render/geometry.ts`
+  (`pathGeometry`), `src/render/linkLabels.ts` (one comment, no logic), `src/components/DrawioMapPanel.tsx` and
+  `src/editor/popup/DiagramStage.tsx` (the type of the applied set), their tests, a new bench
+  `scripts/bench/refresh.mjs`, `docs/acceptance.md`.
+- Reads: the simplify plan (step 5, O2), the consumer team's measurement on a dense sheet of about 300 cells, the
+  step 4 spec section 4 (the identity rule of a stale tick), the link labels spec sections 6 and 7 (the placement runs
+  once per stage; `syncMasks` runs on every pass), `CODING_STANDARDS.md` "State and data" and "Rendering and layout".
+- Out of scope: the bind (`bindPlan` builds new patch objects per result; this step does not change that), the
+  placement of the link labels (it already runs once per stage), the mask measurement in `syncMasks` (section 8),
+  the legend highlight, the card.
+
+## 1. Goals and decisions
+
+1. A data refresh touches the DOM of a cell only when the patch of that cell changed in a field the applier or the
+   overlay reads. A cell with an equal patch gets no attribute write, no style write and no element.
+2. The overlay elements of a link (two polylines, two arrow heads) and the status marker of a cell live across
+   refreshes. A change of colour, width or status updates the attributes of the existing elements. The layer of a
+   link is built again only when its set of halves changes (a half appears or goes) or the stage changes.
+3. The path geometry of an edge (`getTotalLength`, `getPointAtLength`, the parsed vertices, the bends) is measured
+   once per path element and reused by every caller: the overlay, the status marker and the link label legs. A new
+   diagram has new elements, so it measures again. A resize or a zoom changes the viewBox of the root and no path, so
+   nothing is measured again.
+4. The visible result does not change: the same colours, widths, arrow heads, markers, texts, masks, `data-dmap-*`
+   attributes, tab stops and `aria-label`, the same z-order. The hover card and the keyboard access see the same
+   elements as before, only older.
+5. Equality is structural, not by identity. A refresh is a new bind with new patch objects (step 4 keeps identity on a
+   stale tick only), and the overlay tests change a view inside one patch object and render again. The key of a cell
+   is a short string of the fields that the applier or the overlay reads (section 3). Two patches with the same key
+   draw the same picture.
+
+## 2. Today: the flow
+
+Both callers (`DrawioMapPanel.tsx:520-536`, `DiagramStage.tsx:125-137`) run, in one animation frame after each
+`result`:
+
+1. `applyPatches(index, patches, previous: Set<string>, interactive?)` (`applier.ts`): resets every cell of
+   `previous` (fill, stroke, stroke width, the icon fill, the end markers, the label text, five `data-dmap-*`
+   attributes, the owned `tabindex`, `role` and `aria-label`), then applies every patch (the same writes in the other
+   direction). About 15 writes per cell per refresh; for 300 cells, about 4 500 attribute and style writes, all of them
+   for cells whose data did not change.
+2. `renderOverlay(root, index, patches, { theme })` (`overlay.ts:142-164`): removes every `g.dmap-overlay` and every
+   `.dmap-status-marker` under the root with two `querySelectorAll` sweeps, then for every link patch calls
+   `pathGeometry(entry.line, layer)` (two `getCTM`, one `getTotalLength`, a parse of `d`, the bends) and
+   `geo.polyline` and `geo.pointAt` (one `getPointAtLength` per sample point, about one per four units of length, plus
+   three per arrow tip), creates two polylines and two polygons per two-way link, and one marker group per non-normal
+   status. In the browser profile of the hover bench, `getPointAtLength` was the top self-time frame of the panel's
+   own code (`docs/acceptance.md`, the card-hover table). The consumer team's live profile shows the same frame on a
+   refresh, for every link of the sheet.
+3. `renderLinkLabels(root, index, patches, opts)` (`linkLabels.ts:141-202`): with the same key, `refresh` writes the
+   texts and the drawn widths that changed; then `syncMasks` (`linkLabels.ts:794-923`) selects every `.dmap-half` and
+   `.dmap-arrow` of the root again, measures the labels, and sets `mask="url(#...)"` on the new elements of every
+   masked link. Its comment says why: "the overlay is drawn again on each frame". A mask whose key did not change is
+   not rebuilt.
+
+Item 3 holds the links' placement across refreshes because the spec of step 2 of the link labels asked for it. Items
+1 and 2 do not: the applier and the overlay rebuild everything.
+
+## 3. The new flow
+
+### 3.1 The applier
+
+```ts
+/** What one apply left in the DOM: the key of the applied patch per cell, for the index it was applied to. */
+export interface Applied {
+  index: CellIndex;
+  keys: Map<string, string>;
+}
+export function applyPatches(
+  index: CellIndex,
+  patches: PatchMap,
+  previous?: Applied,
+  interactive?: Set<string>
+): Applied;
+```
+
+`applyKey(patch, interactive): string` is one function in `applier.ts`. It joins the fields the applier reads:
+`shape` (`target`, `color`, `text`), `unavailable` (`color`, `reason`), `link.a2b` and `link.b2a` (`status`, `color`,
+`width`, `stepIndex`), `statusView` (`state`, `reason`) and the `interactive` flag. `JSON.stringify` of a short array
+is the format: a missing part is `null`, so `shape.text` undefined and `shape.text` `""` differ. The cell label of
+`aria-label` comes from `entry.meta`, constant per index, so it is not in the key.
+
+The pass:
+
+1. `previous` applies when `previous.index === index`; else it counts as empty. A new stage has new elements: every
+   patch is applied, nothing is reset (the old DOM is gone).
+2. Resets first, then writes, as today (a node colours the icon of another cell; a later reset must not undo it). A
+   cell is reset when it is in `previous.keys` and either is not in `patches`, has no entry, or has a new key. A cell
+   is written when it has an entry and its key differs from `previous.keys` (or is new). The writes are the functions
+   of today (`applyShape`, `applyUnavailable`, `applyLink`, `tag`) with no change.
+3. A cell whose key is equal is not touched: no reset, no write, no `setOwnedAttrs` call. Its `written`, `iconOwner`
+   and `endOriginal` records stay, so the reset of a later change still puts the diagram's values back.
+4. The result holds `index` and the keys of every cell that was written or kept.
+
+`markInteractive` keeps its signature: it already diffs by id.
+
+### 3.2 The overlay
+
+`renderOverlay(root, index, patches, opts)` keeps its signature. Its state is per root, in a
+`WeakMap<SVGSVGElement, OverlayState>`:
+
+```ts
+interface HalfDrawn {
+  line: SVGPolylineElement;
+  arrow: SVGPolygonElement;
+  key: string;
+} // key: status|color|width|stepIndex
+interface LinkDrawn {
+  layer: SVGGElement;
+  combo: 'ab' | 'a' | 'b';
+  a2b?: HalfDrawn;
+  b2a?: HalfDrawn;
+}
+interface MarkerDrawn {
+  layer: SVGGElement;
+  key: string;
+} // key: state|reason|fill|halo colours
+interface OverlayState {
+  index: CellIndex;
+  arrowSize: number;
+  links: Map<string, LinkDrawn>;
+  markers: Map<string, MarkerDrawn>;
+}
+```
+
+The pass:
+
+1. The state belongs to `(root, index, arrowSize)`. With another index or arrow size, the two `querySelectorAll`
+   sweeps of today remove every overlay group and marker under the root, and the state starts empty. This is the only
+   case that sweeps the DOM.
+2. Links. For each patch with a half and an entry with a line: `combo` names the halves present. A drawn link with the
+   same `combo` whose layer is still connected is updated in place: for each half whose key changed, the polyline
+   gets `stroke`, `stroke-width`, `data-dmap-status` and `data-dmap-step`, the polygon gets `fill`. The `points`
+   attributes are not written: the geometry of a half depends on the path and the combo only. Else (new link, a new
+   combo, a layer that is gone) the old layer is removed and `drawLink` runs as today; the new elements go into the
+   state. A path with no length draws nothing, as today, and holds no record.
+3. A drawn link whose cell has no half in `patches` any more (or no entry) loses its layer and its record.
+4. Markers. For each patch with a non-normal `statusView` and an entry: a drawn marker with the same key stays. Else
+   the old marker is removed and `drawStatusMarker` runs as today. A drawn marker of a cell that is now normal, has
+   no view or no patch is removed.
+5. `ensureOverlay` does not change: it already returns the existing layer after the arrow heads.
+
+The z-order holds: an updated element keeps its place; a rebuilt layer goes where `ensureOverlay` puts it, as today.
+
+The mask. `syncMasks` sets `mask` only when the attribute differs and removes it from the strokes of a link that lost
+its mask. An updated polyline keeps its `mask` attribute; a rebuilt layer has none and gets it in the same pass,
+because both callers run `renderLinkLabels` after `renderOverlay`. The comment "the overlay is drawn again on each
+frame" becomes "a rebuilt layer has no mask yet". No logic changes in `linkLabels.ts`.
+
+The hover card. `hit.ts` finds the cell of an overlay element by `data-dmap-cell`; the element under the pointer now
+stays the same element across refreshes. The native `pointerleave` listener of the panel (for the case that the
+redraw removed the element under the pointer) stays: a rebuilt layer is still possible.
+
+### 3.3 The geometry cache
+
+`pathGeometry(line, target)` keeps its signature and its two branches. The measurements that depend on the path only
+are cached per path element in a `WeakMap<SVGPathElement, LocalGeom>`:
+
+```ts
+interface LocalGeom {
+  length: number; // getTotalLength once, or the parsed polyline length in jsdom
+  bends: number[]; // from the parsed vertices, scaled to `length` as today
+  parsed: Point[]; // parsePathPoints(d) once
+  at(d: number): Point; // getPointAtLength(clamp(d)) memoised per d, in the path's user space
+  samples(from: number, to: number): Point[]; // the sample points of `polyline(from, to)` memoised per pair, path space
+}
+```
+
+The matrix `M` (the inverse of `target.getCTM()` times `line.getCTM()`) is read on every call, as today: it is the
+part that a test stubs per call and that a host without layout gives as null; it is not cached. `pointAt` and
+`polyline` map the cached path-space points through `M` (no mapping for the identity). `unit` and `matrix` come from
+`M`.
+
+Who calls it after this step: `drawLink` for a new or rebuilt link only (section 3.2); `statusMarkerBox` for a new
+or rebuilt marker and for the full placement of the labels; `edgeLegs` for the full placement. A refresh with equal
+link sets and equal markers calls no `getPointAtLength`, no `getTotalLength` and no `getCTM`.
+
+Invalidation. The cache is keyed by the element. A new diagram (a save in the editor, a new panel option) builds a
+new stage with new elements: the old entries go with them. The stage DOM is immutable after `buildCellIndex`: nothing
+writes `d` or `transform` of an edge path (the applier writes styles and `data-dmap-*` only; the zoom writes the
+viewBox of the root). A resize changes the panel size and the viewBox, not the path. The matrix between the path and
+its sibling layer does not depend on the viewBox. So the cache has no time and no size input; nothing clears it by
+hand.
+
+## 4. What changes on a refresh
+
+| Output                                                        | Equal patch (same key)         | Colour or width change                                                   | A half appears or goes, or a new stage    |
+| ------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------- |
+| the shape fill, stroke, icon, end markers, label text         | not touched                    | reset, then written                                                      | reset, then written                       |
+| `data-dmap-status`, `-step`, `-target`, `-reason`, aria attrs | not touched                    | reset, then written                                                      | reset, then written                       |
+| the overlay polylines and polygons                            | the same elements, not touched | the same elements; `stroke`, `stroke-width`, `fill`, two data attributes | new elements in a new layer               |
+| the `points` attributes, `getPointAtLength`, `getCTM`         | none                           | none                                                                     | from the cache (the matrix is read)       |
+| the status marker                                             | the same element               | the same element (a new reason: a new element)                           | a new element                             |
+| the `mask` attribute of the strokes                           | stays                          | stays                                                                    | set again by `syncMasks` in the same pass |
+| the link label text and drawn width                           | as today (`refresh`)           | as today                                                                 | as today (a full placement on a new key)  |
+
+## 5. The bench
+
+`scripts/bench/refresh.mjs`, in the style of `card-hover.mjs`: it opens the demo dashboard on `GRAFANA_URL`, installs
+in the page (before the plugin loads) a `MutationObserver` over the stage of each panel, counters around
+`SVGPathElement.prototype.getTotalLength`, `getPointAtLength` and `SVGGraphicsElement.prototype.getCTM`, and a wrapper
+of `requestAnimationFrame` that times each callback and takes the mutation records right after it. Then it clicks the
+refresh button `REFRESHES` times (default 10) with a gap (`GAP_MS`, default 1500), and prints, per panel: the DOM
+mutations per refresh (median and max), the duration of the animation frame callbacks that mutated the stage (the
+apply pass: applier, overlay, labels; median and p90), and the path API calls per refresh. The demo queries are
+synthetic series that change with time, so the colours and widths of some links change on each refresh; the numbers
+show the cost of the equal cells against the changed ones. The bench is not an e2e project and does not run in CI.
+
+Measure before (the dist of `main`) and after on 13.2, 1600×1000; put both rows in `docs/acceptance.md`.
+
+## 6. Migration of each caller
+
+| Caller                                  | Today                                                                                               | After                                                                                                                        |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `DrawioMapPanel.tsx`                    | `patchedRef = useRef<Set<string>>(new Set())`; `applyPatches(..., patchedRef.current, interactive)` | `useRef<Applied>()`; the same call; nothing else changes                                                                     |
+| `DiagramStage.tsx`                      | `patched = useRef<Set<string>>(new Set())`                                                          | `useRef<Applied>()`                                                                                                          |
+| `overlay.ts` `renderOverlay`            | sweeps and redraws                                                                                  | the state per root (section 3.2); `drawLink`, `drawStatusMarker`, `ensureOverlay` unchanged, `drawHalf` returns its elements |
+| `geometry.ts` `pathGeometry`            | measures per call                                                                                   | the per-element cache (section 3.3); same `PathGeom`                                                                         |
+| `linkLabels.ts` `syncMasks`, `edgeLegs` | unchanged logic                                                                                     | one comment; `edgeLegs` reads the cache through `pathGeometry`                                                               |
+| the tests of `applyPatches`             | `applyPatches(index, patches, new Set())`                                                           | `applyPatches(index, patches)`; `prev` is the returned `Applied`                                                             |
+
+## 7. Test plan
+
+Unit, `npm run test:affected` in the worktree; the full suite once on main before the push. Failing tests first.
+
+- `src/render/applier.test.ts`: a second apply with equal patches (new objects, the same values) makes no DOM
+  mutation (`MutationObserver.takeRecords()` on the host is empty) and returns the same keys; a changed colour of one
+  cell writes that cell only (the records name its elements, no other); a removed cell is reset; a changed
+  `interactive` flag rewrites the tab stop; an `Applied` of another index counts as empty (every patch is written, no
+  reset); the editor's owned attributes survive an equal apply (the existing test stays green); the end-marker and
+  text cases stay green with the new signature.
+- `src/render/overlay.test.ts`: a second render with equal halves keeps the same polyline and polygon elements
+  (`isSameNode`) and makes no mutation under the root; a colour and width change updates `stroke`, `stroke-width`,
+  `data-dmap-status`, `data-dmap-step` and the arrow `fill` on the same elements and leaves `points` and a `mask`
+  attribute set by hand in place; a half that goes (two-way to one-way) rebuilds the layer of that link only, the
+  other link keeps its elements; a marker with the same state and reason is the same element; a new reason is a new
+  element; a normal view removes it; a link patch that goes removes its overlay; a new index removes every element of
+  the old render ("clears the previous render" adapted); the theme change case: a new theme draws the markers again.
+- `src/render/geometry.test.ts`: with stubbed `getTotalLength`, `getPointAtLength` and `getCTM` on one path, two
+  `pathGeometry` calls and the same `pointAt` and `polyline` arguments call `getTotalLength` once and
+  `getPointAtLength` once per distinct arc length, and `getCTM` on every call; a second path element measures again;
+  the jsdom branch gives the same points as before (the existing cases stay green).
+- `src/render/linkLabels.test.ts`: two passes of `renderOverlay` then `renderLinkLabels` with new half objects of the
+  same values: the strokes are the same elements and keep their `mask`; a pass with a changed colour keeps the mask on
+  the updated elements; a pass after a half went away sets the mask on the rebuilt elements.
+- `src/components/DrawioMapPanel.test.tsx`: "a data refresh with equal values keeps the overlay elements": two results
+  with the same values give the same `polyline.dmap-half` elements (`isSameNode`) and the same outer HTML; the pause
+  tests and their applier counts stay green (the applier is still called once per result; it writes less).
+
+E2E, when the coordinator frees the shared dist, one spec at a time on 13.2: `tests/refresh.spec.ts` (its control
+step expects at least one mutation per refresh without the popup: the demo query is a random walk, so a width
+changes; the popup pause step still expects zero), `tests/link-labels.spec.ts` ("a dashboard refresh keeps every
+label element and its transform"; the masks), `tests/links.spec.ts` (the hover card over a half), `tests/view.spec.ts`
+and `tests/color.spec.ts` (the colours after the first refresh), `tests/legend.spec.ts` (the highlight over the
+patched cells). On main before the push: `npm run e2e:matrix` (the rendered panel changes).
+
+Docs in the same diff: `docs/acceptance.md` (a "Patch diff and geometry cache" block with the check table and the
+bench rows before and after); the link labels spec, section 7 bullet "The cut" (the reason `syncMasks` runs on every
+pass). The README changes nothing: no option changes.
+
+## 8. Open questions, with a recommendation each
+
+1. `syncMasks` still measures every on-stroke label (`getBBox`) and the box of every masked overlay group on every
+   pass, then compares keys. That is label geometry, not path geometry, and the writes are already skipped.
+   Recommendation: out of scope; the bench reports the pass time, and a follow-up can key the measurement on the
+   label records that changed.
+2. The key of the applier could be the patch identity first and the string second (a stale tick keeps identity).
+   Recommendation: the string only; one rule is simpler, and the string costs microseconds per cell.
+3. A status marker whose cell moved (nothing moves a cell) or whose font changed (constant) would need a new box.
+   Recommendation: no handling; a new stage rebuilds everything.
+4. The applier could also skip `markInteractive` writes; it already diffs by id. No change.
+
+## 9. Review resolutions
+
+To be filled after the review.
