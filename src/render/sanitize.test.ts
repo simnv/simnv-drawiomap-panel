@@ -145,22 +145,41 @@ describe('sanitizeSvg: draw.io export', () => {
     expect(root.querySelector('rect')!.getAttribute('style')).toContain('stroke: blue');
     expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
   });
-  it('drops a descendant declaration whose name hides behind a CSS escape or a comment, and keeps a quoted value whole', () => {
+  it('removes the whole style of a descendant that holds an escape, a comment, a line break or an unbalanced quote or parenthesis', () => {
     const r = sanitizeSvg(
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" style="color-scheme: light dark;">` +
         `<g id="a" style="color\\-scheme: light dark; opacity: 0.5">` +
         `<g id="b" style="\\63 olor-scheme: light dark; fill: red">` +
         `<g id="c" style="color-scheme/**/: light dark; stroke: blue">` +
+        `<g id="f" style="fill: red /* ( */; color-scheme: light dark">` +
+        `<g id="g" style="font-family: x\\(; color-scheme: light dark">` +
+        `<g id="h" style="font-family: 'x&#10;; color-scheme: light dark">` +
+        `<g id="i" style="font-family: 'x; color-scheme: light dark">` +
+        `<g id="j" style="fill: url(#a; color-scheme: light dark">` +
+        `<g id="k" style="fill: red); color-scheme: light dark">` +
+        `<rect width="1" height="1"/></g></g></g></g></g></g></g></g></g></svg>`
+    );
+    const root = new DOMParser().parseFromString(r.svg, 'image/svg+xml').documentElement;
+    expect(root.getAttribute('style')).toContain('color-scheme: light dark');
+    for (const id of ['a', 'b', 'c', 'f', 'g', 'h', 'i', 'j', 'k']) {
+      expect(root.querySelector(`#${id}`)!.hasAttribute('style'), id).toBe(false);
+    }
+    expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
+  });
+  it('keeps a draw.io style byte for byte, and splits on `;` outside quotes and parentheses only', () => {
+    const flex =
+      'box-sizing: border-box; font-size: 0px; text-align: center; max-height: 46px; overflow: hidden; ' +
+      'font-family: &quot;Helvetica&quot;; background-color: light-dark(#f2f2f3, #1d1d1e); fill: url(#grad);';
+    const r = sanitizeSvg(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" style="color-scheme: light dark;">` +
+        `<g id="p" style="${flex}">` +
         `<g id="d" style="font-family: 'demo;color-scheme:dark'; fill: red; color-scheme: dark">` +
         `<g id="e" style="fill: url(#g;x); color-scheme: dark; stroke: green">` +
-        `<rect width="1" height="1"/></g></g></g></g></g></svg>`
+        `<rect width="1" height="1"/></g></g></g></svg>`
     );
     const root = new DOMParser().parseFromString(r.svg, 'image/svg+xml').documentElement;
     const style = (id: string) => root.querySelector(`#${id}`)!.getAttribute('style') ?? '';
-    expect(root.getAttribute('style')).toContain('color-scheme: light dark');
-    expect(style('a')).toBe('opacity: 0.5');
-    expect(style('b')).toBe('fill: red');
-    expect(style('c')).toBe('stroke: blue');
+    expect(style('p')).toBe(flex.replace(/&quot;/g, '"'));
     // a `;` or a `:` inside quotes or parentheses does not split a declaration
     expect(style('d')).toBe("font-family: 'demo;color-scheme:dark'; fill: red");
     expect(style('e')).toBe('fill: url(#g;x); stroke: green');

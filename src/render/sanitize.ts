@@ -20,8 +20,17 @@ export function parseSvg(text: string): SVGSVGElement {
   return root as unknown as SVGSVGElement;
 }
 
-/** The declarations of an inline style: a `;` inside quotes or parentheses does not split. */
-function splitDeclarations(style: string): string[] {
+/**
+ * The declarations of an inline style of a descendant: a `;` inside quotes or parentheses does not split. Undefined
+ * when the style is not in the small grammar this scan reads, and the whole attribute must go: a backslash (a CSS
+ * escape), a comment, a line break (CSS ends a string there and recovers; this scan does not), or a quote or a
+ * parenthesis that is not closed. draw.io writes none of these in a style attribute. The scan fails closed: without
+ * them the grammar left is plain declarations with quotes and parentheses, which the scan reads exactly.
+ */
+function splitDeclarations(style: string): string[] | undefined {
+  if (/[\\\n\r\f]|\/\*/.test(style)) {
+    return undefined;
+  }
   const out: string[] = [];
   let quote = '';
   let depth = 0;
@@ -29,9 +38,7 @@ function splitDeclarations(style: string): string[] {
   for (let i = 0; i < style.length; i++) {
     const c = style[i];
     if (quote) {
-      if (c === '\\') {
-        i++;
-      } else if (c === quote) {
+      if (c === quote) {
         quote = '';
       }
     } else if (c === '"' || c === "'") {
@@ -39,11 +46,17 @@ function splitDeclarations(style: string): string[] {
     } else if (c === '(') {
       depth++;
     } else if (c === ')') {
-      depth = Math.max(0, depth - 1);
+      if (depth === 0) {
+        return undefined;
+      }
+      depth--;
     } else if (c === ';' && depth === 0) {
       out.push(style.slice(start, i));
       start = i + 1;
     }
+  }
+  if (quote || depth !== 0) {
+    return undefined;
   }
   out.push(style.slice(start));
   return out;
@@ -155,6 +168,11 @@ export function sanitizeSvg(text: string): SanitizeResult {
   for (const el of Array.from(root.querySelectorAll('[style]'))) {
     const style = el.getAttribute('style') ?? '';
     const declarations = splitDeclarations(style);
+    if (!declarations) {
+      el.removeAttribute('style');
+      removed.attributes++;
+      continue;
+    }
     const kept = declarations.filter((declaration) => !setsColorScheme(declaration));
     if (kept.length !== declarations.length) {
       const joined = kept

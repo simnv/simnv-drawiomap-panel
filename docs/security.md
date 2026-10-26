@@ -78,8 +78,11 @@ Before the sanitizer removes the `<style>` elements, `src/render/themeVars.ts` r
 only. It does not keep any CSS text. The sanitizer writes the accepted variables into the `style` attribute of the svg
 root. `light-dark()` follows the `color-scheme` that the panel sets on the root from the Grafana theme. The sanitizer
 strips `color-scheme` from the inline style and the attributes of every descendant, so no subtree follows the OS
-preference instead (the patch applier evaluates a `light-dark()` paint again only when the theme changes). The popup
-stage uses the same path (`useStage`).
+preference instead (the patch applier evaluates a `light-dark()` paint again only when the theme changes). The strip
+reads a small grammar only: declarations split on `;` outside quotes and parentheses, the name before the first `:`.
+A descendant style that holds a backslash, a comment, a line break, or a quote or parenthesis that is not closed is
+removed whole, and so is a declaration whose name holds a `/` or a `*`; draw.io writes none of these (the count over
+every SVG in `fixtures/` and the consumer team's samples is 0). The popup stage uses the same path (`useStage`).
 
 A declaration passes only when all of these are true:
 
