@@ -79,8 +79,12 @@ the store also works with `useSyncExternalStore` if a later change needs it.
 
 - `Legend` gets `onHighlight={store.setLegend}`. Its interface does not change.
 - `bindSymbolLegend(root, index, store.setRows)`.
-- Opening the popup: an effect `if (paused) store.clear()`. Today a state adjustment in the render does the same
-  (`setLegendHits(null)` and `setRowMarks(null)`). The `Legend` keeps its `active` state in both cases, as today.
+- The popup: an effect clears the store on each change of `paused`, and the highlight effect does not subscribe
+  while the view is paused (it removes the marks once). So opening the popup ends the highlight, and a hover behind
+  the popup marks nothing, also after the popup closes. Today a state adjustment in the render does the same: a write
+  while paused renders the view once, and `setLegendHits(null)` and `setRowMarks(null)` drop it. The `Legend` keeps
+  its `active` state in both cases, as today. (Added after the first draft: a test showed that a store without this
+  guard marks cells behind the popup.)
 
 ### 3.3 The reader: one effect, no state
 
@@ -94,6 +98,9 @@ run yet, and the cleanup cancels it too.
 useEffect(() => {
   if (!stage.root) return;
   const root = stage.root;
+  if (paused) {
+    /* one frame of highlightCells(root, stage.index, [], null); no subscription */
+  }
   let frame: number | undefined;
   const paint = () => {
     if (frame !== undefined) cancelAnimationFrame(frame);
@@ -111,7 +118,7 @@ useEffect(() => {
     unsubscribe();
     if (frame !== undefined) cancelAnimationFrame(frame);
   };
-}, [stage.root, stage.index, legendMembers, hasBlocks, result, highlight]);
+}, [stage.root, stage.index, legendMembers, hasBlocks, result, highlight, paused]);
 ```
 
 The effect stays in the view, after the apply effect, so in a commit that runs both, the highlight frame comes after
@@ -141,8 +148,8 @@ Unit, written first (they fail on main):
   call.
 - "legend rows of the diagram": a row hover gives the same classes and renders the view zero times.
 - A pinned card stays pinned and open during a legend hover (and the view does not render).
-- "bindings popup": opening the popup during a legend hover ends the highlight (a characterisation test: it passes
-  before and after).
+- Opening the popup during a legend hover ends the highlight, and a hover behind the popup marks nothing (a
+  characterisation test: it passes before and after).
 
 The `Legend.test.tsx` and `symbolRows.test.ts` tests do not change: the interfaces stay.
 
