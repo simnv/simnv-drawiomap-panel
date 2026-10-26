@@ -287,62 +287,131 @@ export interface PathGeom {
 
 type PathApi = SVGPathElement & { getTotalLength(): number; getPointAtLength(d: number): { x: number; y: number } };
 
+/** The measurements of one path that depend on the path alone, in its own user space. */
+interface LocalGeom {
+  /** true with the browser API (getTotalLength, getPointAtLength, getCTM); false for the parsed polyline (jsdom) */
+  api: boolean;
+  /** the vertices of the d attribute */
+  parsed: Point[];
+  /** arc length: getTotalLength, or the parsed polyline length without the API */
+  length: number;
+  /** arc lengths of the bends, scaled to `length` */
+  bends: number[];
+  /** the point at a clamped arc length (getPointAtLength once per distinct `d`) */
+  at(d: number): Point;
+  /** the sample points of `polyline(from, to)`, once per pair */
+  samples(from: number, to: number): Point[];
+}
+
 /**
- * Geometry of an edge path expressed in the coordinate system of `target` (the overlay group of the link, a sibling of the path).
- * Browser: getTotalLength/getPointAtLength on the real path, points mapped with
- * target.getCTM()^-1 × line.getCTM(), so transforms on the edge or its ancestors are respected.
- * jsdom: pure parser on the d attribute (M/L exact, curves approximated); identity transform.
+ * The cache of `pathGeometry`, by path element. The stage DOM is immutable after the index is built (nothing writes
+ * the `d` or the transform of an edge; the zoom writes the viewBox of the root), and a new diagram has new elements,
+ * so an entry is never cleared by hand. The matrices are not in it: they are read on every call.
  */
-export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): PathGeom {
+const localGeoms = new WeakMap<SVGPathElement, LocalGeom>();
+
+function localGeom(line: SVGPathElement): LocalGeom {
+  const known = localGeoms.get(line);
+  if (known) {
+    return known;
+  }
   const api = line as PathApi;
   const hasApi =
     typeof api.getTotalLength === 'function' &&
     typeof api.getPointAtLength === 'function' &&
     typeof line.getCTM === 'function';
+  const parsed = parsePathPoints(line.getAttribute('d') ?? '');
+  const parsedLength = polylineLength(parsed);
+  let geom: LocalGeom;
   if (!hasApi) {
-    const pts = parsePathPoints(line.getAttribute('d') ?? '');
+    geom = {
+      api: false,
+      parsed,
+      length: parsedLength,
+      bends: bendLengths(parsed),
+      at: (d) => pointAt(parsed, d),
+      samples: (from, to) => slicePolyline(parsed, from, to),
+    };
+  } else {
+    const length = api.getTotalLength();
+    // Bends come from the vertices of the d attribute. Curves count by their end points, so scale to the real length.
+    const scale = parsedLength > 0 && length > 0 ? length / parsedLength : 1;
+    const points = new Map<number, Point>();
+    const runs = new Map<string, Point[]>();
+    const at = (d: number): Point => {
+      const clamped = Math.min(length, Math.max(0, d));
+      let p = points.get(clamped);
+      if (!p) {
+        const raw = api.getPointAtLength(clamped);
+        p = { x: raw.x, y: raw.y };
+        points.set(clamped, p);
+      }
+      return p;
+    };
+    geom = {
+      api: true,
+      parsed,
+      length,
+      bends: bendLengths(parsed).map((b) => b * scale),
+      at,
+      samples(from, to) {
+        const key = `${from},${to}`;
+        let out = runs.get(key);
+        if (!out) {
+          const n = Math.max(2, Math.ceil(Math.abs(to - from) / 4));
+          out = [];
+          for (let i = 0; i <= n; i++) {
+            out.push(at(from + ((to - from) * i) / n));
+          }
+          runs.set(key, out);
+        }
+        return out;
+      },
+    };
+  }
+  localGeoms.set(line, geom);
+  return geom;
+}
+
+/**
+ * Geometry of an edge path expressed in the coordinate system of `target` (the overlay group of the link, a sibling of the path).
+ * Browser: getTotalLength/getPointAtLength on the real path, points mapped with
+ * target.getCTM()^-1 × line.getCTM(), so transforms on the edge or its ancestors are respected.
+ * jsdom: pure parser on the d attribute (M/L exact, curves approximated); identity transform.
+ * The path is measured once per element (`localGeom`); the matrices are read on every call.
+ */
+export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): PathGeom {
+  const local = localGeom(line);
+  if (!local.api) {
     return {
-      length: polylineLength(pts),
-      pointAt: (d) => pointAt(pts, d),
-      polyline: (from, to) => slicePolyline(pts, from, to),
-      bends: bendLengths(pts),
+      length: local.length,
+      pointAt: (d) => pointAt(local.parsed, d),
+      polyline: (from, to) => local.samples(from, to),
+      bends: local.bends,
       unit: 1,
       matrix: IDENTITY,
     };
   }
   const targetCTM = typeof target.getCTM === 'function' ? target.getCTM() : null;
   const M = multiply(invert(toMatrix(targetCTM) ?? IDENTITY), toMatrix(line.getCTM()) ?? IDENTITY);
-  const length = api.getTotalLength();
-  // Bends come from the vertices of the d attribute. Curves count by their end points, so scale to the real length.
-  const parsed = parsePathPoints(line.getAttribute('d') ?? '');
-  const parsedLength = polylineLength(parsed);
-  const scale = parsedLength > 0 && length > 0 ? length / parsedLength : 1;
-  const bends = bendLengths(parsed).map((b) => b * scale);
-  const clamp = (d: number) => Math.min(length, Math.max(0, d));
-  const at = (d: number): Point => {
-    const p = api.getPointAtLength(clamp(d));
-    return applyMatrix(M, { x: p.x, y: p.y });
-  };
+  const identity = M.a === 1 && M.b === 0 && M.c === 0 && M.d === 1 && M.e === 0 && M.f === 0;
+  const map = (p: Point): Point => (identity ? { x: p.x, y: p.y } : applyMatrix(M, p));
   return {
-    length,
-    bends,
+    length: local.length,
+    bends: local.bends,
     unit: scaleOf(M),
     matrix: M,
-    pointAt(d) {
-      const p = at(d);
-      const fwd = at(d + 0.5);
-      const back = at(d - 0.5);
-      return { x: p.x, y: p.y, angle: Math.atan2(fwd.y - back.y, fwd.x - back.x) };
-    },
-    polyline(from, to) {
-      const n = Math.max(2, Math.ceil(Math.abs(to - from) / 4));
-      const out: Point[] = [];
-      for (let i = 0; i <= n; i++) {
-        out.push(at(from + ((to - from) * i) / n));
-      }
-      return out;
-    },
+    pointAt: (d) => tangent(local, d, M),
+    polyline: (from, to) => local.samples(from, to).map(map),
   };
+}
+
+/** The point at `d` with the tangent angle, mapped through `M`: the direction between the points 0.5 before and after. */
+function tangent(local: LocalGeom, d: number, M: Matrix): { x: number; y: number; angle: number } {
+  const p = applyMatrix(M, local.at(d));
+  const fwd = applyMatrix(M, local.at(d + 0.5));
+  const back = applyMatrix(M, local.at(d - 0.5));
+  return { x: p.x, y: p.y, angle: Math.atan2(fwd.y - back.y, fwd.x - back.x) };
 }
 
 /* ---------- end markers: which end of an edge does a dot close ---------- */

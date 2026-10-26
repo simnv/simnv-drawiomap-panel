@@ -1,4 +1,4 @@
-import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
+import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 
@@ -297,25 +297,99 @@ function reset(entry: CellEntry, index: CellIndex): void {
 }
 
 /**
- * Write patches into the SVG DOM. Returns the ids that are patched now. Only the `interactive` cells become
- * buttons; without the set, all patched cells do.
+ * The two inputs a `light-dark()` paint resolves against: the Grafana theme, which the panel writes as the
+ * `color-scheme` of the root, and the OS preference, which an element that sets its own `color-scheme` follows.
+ * `paints()` reads the effective paint of an end marker, so a change of either must evaluate every cell again.
+ */
+export interface ColourScheme {
+  isDark: boolean;
+  osDark: boolean;
+}
+
+/** What one apply left in the DOM: the key of the applied patch per cell, for the index and the colour scheme it ran under. */
+export interface Applied {
+  index: CellIndex;
+  scheme: ColourScheme;
+  keys: Map<string, string>;
+}
+
+const sameScheme = (a: ColourScheme, b: ColourScheme) => a.isDark === b.isDark && a.osDark === b.osDark;
+
+/**
+ * The fields of a patch that the writes above read, as one string. Two patches with the same key draw the same
+ * picture, so a cell whose key did not change is not touched on a refresh. The cell label of `aria-label` comes
+ * from the entry, constant per index.
+ */
+export function applyKey(patch: PlanCellPatch, interactive: boolean): string {
+  const half = (h: HalfState | undefined) => (h ? [h.status, h.color, h.width, h.stepIndex] : null);
+  const s = patch.shape;
+  const u = patch.unavailable;
+  const l = patch.link;
+  const v = patch.statusView;
+  return JSON.stringify([
+    s ? [s.status, s.stepIndex, s.target, s.color, s.text ?? null] : null,
+    u ? [u.color, u.reason] : null,
+    l ? [half(l.a2b), half(l.b2a)] : null,
+    v ? [v.state, v.reason] : null,
+    interactive,
+  ]);
+}
+
+/**
+ * Write patches into the SVG DOM and return what is applied now. Only the `interactive` cells become buttons;
+ * without the set, all patched cells do. A cell whose key equals the one of `previous` is not touched; `previous`
+ * of another index counts as empty (a new stage has new elements), and another colour scheme (the theme or the OS
+ * preference) resets and writes every cell.
  */
 export function applyPatches(
   index: CellIndex,
   patches: PatchMap,
-  previous: Set<string>,
-  interactive?: Set<string>
-): Set<string> {
-  const done = new Set<string>();
+  previous?: Applied,
+  interactive?: Set<string>,
+  scheme: ColourScheme = { isDark: false, osDark: false }
+): Applied {
+  const same = previous?.index === index;
+  const before = same ? previous.keys : new Map<string, string>();
+  const all = same && !sameScheme(previous.scheme, scheme);
+  const keys = new Map<string, string>();
+  const changed = new Set<string>();
+  for (const [id, patch] of patches) {
+    if (!index.has(id)) {
+      continue;
+    }
+    const key = applyKey(patch, !interactive || interactive.has(id));
+    keys.set(id, key);
+    if (all || before.get(id) !== key) {
+      changed.add(id);
+    }
+  }
+  for (const id of before.keys()) {
+    if (all || !keys.has(id)) {
+      changed.add(id);
+    }
+  }
+  // A node colours the shape of its icon cell, and the reset of the icon cell puts the icon's own fill back. A part
+  // of a node (its icon, a description) leads to its node, and a node to its icon: the closure over both relations
+  // changes together, else a cell that is skipped loses its paint.
+  const queue = [...changed];
+  while (queue.length) {
+    const entry = index.get(queue.pop()!);
+    for (const other of [entry?.iconId, entry?.ownerId]) {
+      if (other && !changed.has(other) && (keys.has(other) || before.has(other))) {
+        changed.add(other);
+        queue.push(other);
+      }
+    }
+  }
   // Reset everything first: a node colours the shape of another cell (its icon), so a later reset must not undo it.
-  for (const id of previous) {
-    const entry = index.get(id);
+  for (const id of changed) {
+    const entry = before.has(id) ? index.get(id) : undefined;
     if (entry) {
       reset(entry, index);
     }
   }
   for (const [id, patch] of patches) {
-    const entry = index.get(id);
+    const entry = changed.has(id) ? index.get(id) : undefined;
     if (!entry) {
       continue;
     }
@@ -323,27 +397,38 @@ export function applyPatches(
     applyUnavailable(entry, patch);
     applyLink(entry, patch);
     tag(entry, patch, target, !interactive || interactive.has(id));
-    done.add(id);
   }
-  return done;
+  return { index, scheme, keys };
 }
 
 export const INTERACTIVE_ATTR = 'data-dmap-interactive';
 
-/** Marks the cells that open a card (the panel CSS gives them the hand cursor). Returns the ids that are marked now. */
-export function markInteractive(index: CellIndex, ids: Set<string>, previous: Set<string>): Set<string> {
-  for (const id of previous) {
+/** The cells that `markInteractive` marked, for the index it marked them in. */
+export interface Marked {
+  index: CellIndex;
+  ids: Set<string>;
+}
+
+/**
+ * Marks the cells that open a card (the panel CSS gives them the hand cursor) and returns what is marked now. A cell
+ * that was marked before is not written again; `previous` of another index counts as empty, as in `applyPatches`.
+ */
+export function markInteractive(index: CellIndex, ids: Set<string>, previous?: Marked): Marked {
+  const before = previous?.index === index ? previous.ids : new Set<string>();
+  for (const id of before) {
     if (!ids.has(id)) {
       index.get(id)?.group.removeAttribute(INTERACTIVE_ATTR);
     }
   }
-  const done = new Set<string>();
+  const marked = new Set<string>();
   for (const id of ids) {
     const entry = index.get(id);
     if (entry) {
-      entry.group.setAttribute(INTERACTIVE_ATTR, '');
-      done.add(id);
+      if (!before.has(id)) {
+        entry.group.setAttribute(INTERACTIVE_ATTR, '');
+      }
+      marked.add(id);
     }
   }
-  return done;
+  return { index, ids: marked };
 }

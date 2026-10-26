@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
-import { applyPatches, colourAlpha, markInteractive } from './applier';
+import { applyPatches, colourAlpha, INTERACTIVE_ATTR, markInteractive } from './applier';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
@@ -106,7 +106,7 @@ describe('applyPatches', () => {
     const n1 = index.get('n1')!;
     const e1 = index.get('e1')!;
     const original = (n1.shape as SVGElement).style.fill;
-    let prev = applyPatches(index, patches, new Set());
+    let prev = applyPatches(index, patches);
     expect((n1.shape as SVGElement).style.fill).toMatch(GREY);
     expect(n1.group.getAttribute('data-dmap-status')).toBe('unavailable');
     expect(n1.group.getAttribute('data-dmap-reason')).toBe('Pattern X is not applied');
@@ -132,7 +132,7 @@ describe('applyPatches', () => {
       coverage: { available: 1, expected: 1 },
     };
     const p: PlanCellPatch = { ...patch('n1', {}), statusView };
-    const prev = applyPatches(index, new Map([['n1', p]]), new Set());
+    const prev = applyPatches(index, new Map([['n1', p]]));
     expect(index.get('n1')!.group.getAttribute('data-dmap-status')).toBe('down');
     expect(index.get('n1')!.group.getAttribute('data-dmap-reason')).toBe('Device down');
     expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a: down. Device down');
@@ -145,7 +145,7 @@ describe('applyPatches', () => {
   it('fills a shape through style and tags the group', () => {
     const index = build();
     const patches: PatchMap = new Map([['n1', patch('n1', { shape: shape() })]]);
-    const done = applyPatches(index, patches, new Set());
+    const done = applyPatches(index, patches);
     const rect = index.get('n1')!.shape as SVGElement;
     expect(rect.style.fill).toMatch(RED);
     expect(rect.getAttribute('fill')).toBe('#fff');
@@ -154,7 +154,8 @@ describe('applyPatches', () => {
     expect(index.get('n1')!.group.getAttribute('tabindex')).toBe('0');
     expect(index.get('n1')!.group.getAttribute('role')).toBe('button');
     expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a');
-    expect([...done]).toEqual(['n1']);
+    expect([...done.keys.keys()]).toEqual(['n1']);
+    expect(done.index).toBe(index);
   });
   it('makes a patched cell focusable only when it is interactive', () => {
     const index = build();
@@ -162,7 +163,7 @@ describe('applyPatches', () => {
       ['n1', patch('n1', { shape: shape() })],
       ['n2', patch('n2', { shape: shape() })],
     ]);
-    applyPatches(index, patches, new Set(), new Set(['n1']));
+    applyPatches(index, patches, undefined, new Set(['n1']));
     expect(index.get('n1')!.group.getAttribute('role')).toBe('button');
     expect(index.get('n2')!.group.hasAttribute('role')).toBe(false);
     expect(index.get('n2')!.group.hasAttribute('tabindex')).toBe(false);
@@ -176,7 +177,7 @@ describe('applyPatches', () => {
       ['n2', patch('n2', { shape: shape() })],
     ]);
     // the panel applies the patches, then the binding editor makes every cell a button
-    let prev = applyPatches(index, patches, new Set(), new Set(['n1']));
+    let prev = applyPatches(index, patches, undefined, new Set(['n1']));
     for (const [id, cell] of index) {
       setOwnedAttrs(cell.group, 'editor', { tabindex: '0', role: 'button', 'aria-label': `${id} diagram element` });
     }
@@ -197,8 +198,8 @@ describe('applyPatches', () => {
   });
   it('marks the interactive cells and clears the cells that are no longer interactive', () => {
     const index = build();
-    const prev = markInteractive(index, new Set(['n1', 'i1', 'missing']), new Set());
-    expect([...prev].sort()).toEqual(['i1', 'n1']);
+    const prev = markInteractive(index, new Set(['n1', 'i1', 'missing']));
+    expect([...prev.ids].sort()).toEqual(['i1', 'n1']);
     expect(index.get('i1')!.group.hasAttribute('data-dmap-interactive')).toBe(true);
     expect(index.get('n2')!.group.hasAttribute('data-dmap-interactive')).toBe(false);
     markInteractive(index, new Set(['n2']), prev);
@@ -212,7 +213,7 @@ describe('applyPatches', () => {
       ['n1', patch('n1', { shape: shape({ target: 'stroke', text: 'rtr-a 1' }) })],
       ['n2', patch('n2', { shape: shape({ text: 'new' }) })],
     ]);
-    applyPatches(index, patches, new Set());
+    applyPatches(index, patches);
     expect((index.get('n1')!.shape as SVGElement).style.stroke).toMatch(RED);
     expect((index.get('n1')!.shape as SVGElement).style.fill).not.toMatch(RED);
     expect(index.get('n1')!.label!.textContent).toBe('rtr-a 1');
@@ -223,7 +224,7 @@ describe('applyPatches', () => {
     const patches: PatchMap = new Map([
       ['e1', patch('e1', { link: { a2b: ok(), b2a: ok({ status: 'nodata', stepIndex: -1 }) } })],
     ]);
-    applyPatches(index, patches, new Set());
+    applyPatches(index, patches);
     const e = index.get('e1')!;
     expect(e.line!.style.strokeOpacity).toBe('0');
     expect(e.arrows[0].style.opacity).toBe('0');
@@ -235,7 +236,7 @@ describe('applyPatches', () => {
     const patches: PatchMap = new Map([
       ['e1', patch('e1', { link: { a2b: ok({ status: 'nodata', stepIndex: -1 }) } })],
     ]);
-    applyPatches(index, patches, new Set());
+    applyPatches(index, patches);
     expect(index.get('e1')!.group.getAttribute('data-dmap-status')).toBe('nodata');
     expect(index.get('e1')!.group.getAttribute('data-dmap-step')).toBe('-1');
   });
@@ -245,9 +246,9 @@ describe('applyPatches', () => {
       ['n1', patch('n1', { shape: shape({ text: 'x' }) })],
       ['e1', patch('e1', { link: { a2b: ok() } })],
     ]);
-    const prev = applyPatches(index, first, new Set());
+    const prev = applyPatches(index, first);
     const done = applyPatches(index, new Map(), prev);
-    expect(done.size).toBe(0);
+    expect(done.keys.size).toBe(0);
     const rect = index.get('n1')!.shape as SVGElement;
     expect(rect.style.fill).toBe(index.get('n1')!.original.fill ?? '');
     expect(index.get('n1')!.label!.textContent).toBe('rtr-a');
@@ -265,7 +266,7 @@ describe('applyPatches on a native text label (demo-l3)', () => {
     expect(entry.label!.localName).toBe('text');
     const before = entry.label!.outerHTML;
     const round = (text: string) => new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape({ text }) })]]);
-    const prev = applyPatches(index, round('up 1'), new Set());
+    const prev = applyPatches(index, round('up 1'));
     expect(entry.label!.textContent).toBe('up 1');
     applyPatches(index, new Map(), prev);
     expect(entry.label!.outerHTML).toBe(before);
@@ -276,7 +277,7 @@ describe('applyPatches on a native text label (demo-l3)', () => {
     const label = index.get('n')!.label!;
     const before = label.innerHTML;
     const lines = Array.from(label.querySelectorAll('text'));
-    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up' }) })]]), new Set());
+    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up' }) })]]));
     expect(lines.map((t) => t.textContent)).toEqual(['up', '']);
     prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'up 2' }) })]]), prev);
     applyPatches(index, new Map(), prev);
@@ -290,7 +291,7 @@ describe('applyPatches on a native text label (demo-l3)', () => {
     const entry = index.get('n')!;
     expect(entry.label!.localName).toBe('g');
     const rect = entry.shape!;
-    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'x' }) })]]), new Set());
+    let prev = applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'x' }) })]]));
     prev = applyPatches(index, new Map(), prev);
     applyPatches(index, new Map([['n', patch('n', { shape: shape({ text: 'y' }) })]]), prev);
     expect(entry.group.contains(rect)).toBe(true);
@@ -315,7 +316,7 @@ describe('applyPatches on a multi-line foreignObject label (legacy-html-labels)'
     const { index, entry, before } = load();
     expect(lines(entry.label!)).toEqual(['rtr-a', 'multi-WAN + PBR']);
     const round = () => new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape() })]]);
-    const prev = applyPatches(index, round(), new Set());
+    const prev = applyPatches(index, round());
     applyPatches(index, round(), prev);
     expect(entry.label!.innerHTML).toBe(before);
     expect(lines(entry.label!)).toEqual(['rtr-a', 'multi-WAN + PBR']);
@@ -323,7 +324,7 @@ describe('applyPatches on a multi-line foreignObject label (legacy-html-labels)'
   it('restores the exact markup after a text patch', () => {
     const { index, entry, before } = load();
     const round = (text: string) => new Map([['pg-node~rtr-a', patch('pg-node~rtr-a', { shape: shape({ text }) })]]);
-    let prev = applyPatches(index, round('up 1'), new Set());
+    let prev = applyPatches(index, round('up 1'));
     prev = applyPatches(index, round('up 2'), prev);
     expect(entry.label!.textContent).toBe('up 2');
     applyPatches(index, new Map(), prev);
@@ -337,7 +338,7 @@ describe('applyPatches shape targets', () => {
   it('icon: fills the first shape of the icon cell and leaves the node shape alone', () => {
     const index = build();
     index.get('n1')!.iconId = 'i1';
-    const prev = applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'icon' }) })]]), new Set());
+    const prev = applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'icon' }) })]]));
     expect(iconOf(index, 'i1').style.fill).toMatch(RED);
     expect((index.get('n1')!.shape as SVGElement).style.fill).not.toMatch(RED);
     expect((index.get('n1')!.shape as SVGElement).style.stroke).not.toMatch(RED);
@@ -348,20 +349,20 @@ describe('applyPatches shape targets', () => {
   });
   it('icon: falls back to the stroke without an icon cell', () => {
     const index = build();
-    applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'icon' }) })]]), new Set());
+    applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'icon' }) })]]));
     expect((index.get('n1')!.shape as SVGElement).style.stroke).toMatch(RED);
     expect(index.get('n1')!.group.getAttribute('data-dmap-target')).toBe('stroke');
   });
   it('icon: falls back to the stroke when the icon is a bitmap image', () => {
     const index = build();
     index.get('n2')!.iconId = 'i2';
-    applyPatches(index, new Map([['n2', patch('n2', { shape: shape({ target: 'icon' }) })]]), new Set());
+    applyPatches(index, new Map([['n2', patch('n2', { shape: shape({ target: 'icon' }) })]]));
     expect((index.get('n2')!.shape as SVGElement).style.stroke).toMatch(RED);
     expect(index.get('n2')!.group.getAttribute('data-dmap-target')).toBe('stroke');
   });
   it('stroke: colours and widens the outline, the reset puts the width back', () => {
     const index = build();
-    const prev = applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'stroke' }) })]]), new Set());
+    const prev = applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'stroke' }) })]]));
     const rect = index.get('n1')!.shape as SVGElement;
     expect(rect.style.stroke).toMatch(RED);
     expect(rect.style.strokeWidth).toBe('2');
@@ -370,7 +371,7 @@ describe('applyPatches shape targets', () => {
   });
   it('none: colours nothing', () => {
     const index = build();
-    applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'none', text: 't' }) })]]), new Set());
+    applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ target: 'none', text: 't' }) })]]));
     const rect = index.get('n1')!.shape as SVGElement;
     expect(rect.style.fill).not.toMatch(RED);
     expect(rect.style.stroke).not.toMatch(RED);
@@ -386,9 +387,88 @@ describe('applyPatches with a patched icon cell', () => {
       ['n1', patch('n1', { shape: shape({ target: 'icon' }) })],
       ['i1', patch('i1', { urls: [{ title: 'u', url: '/x' }] })],
     ]);
-    const prev = applyPatches(index, patches, new Set());
+    const prev = applyPatches(index, patches);
     applyPatches(index, patches, prev);
     expect((index.get('i1')!.shape as SVGElement).style.fill).toMatch(RED);
+  });
+  it('keeps the icon colour when the patch of the icon cell changes or goes; the icon keeps its own grey when the node changes', () => {
+    const index = build();
+    index.get('n1')!.iconId = 'i1';
+    index.get('i1')!.ownerId = 'n1';
+    const icon = () => index.get('i1')!.shape as SVGElement;
+    const node = (color = '#ff0000') => patch('n1', { shape: shape({ target: 'icon', color }) });
+    const statusView: StatusView = {
+      state: 'down',
+      reason: 'Down',
+      conditionKey: 'k',
+      queryIds: ['q'],
+      coverage: { available: 1, expected: 1 },
+    };
+    let prev = applyPatches(
+      index,
+      new Map([
+        ['n1', node()],
+        ['i1', patch('i1', {})],
+      ])
+    );
+    expect(icon().style.fill).toMatch(RED);
+    // the icon cell gets a status (a new key), the node does not change: the icon keeps the node colour
+    prev = applyPatches(
+      index,
+      new Map<string, PlanCellPatch>([
+        ['n1', node()],
+        ['i1', { ...patch('i1', {}), statusView }],
+      ]),
+      prev
+    );
+    expect(icon().style.fill).toMatch(RED);
+    expect(index.get('i1')!.group.getAttribute('data-dmap-status')).toBe('down');
+    // the patch of the icon cell goes: the icon keeps the node colour
+    prev = applyPatches(index, new Map([['n1', node()]]), prev);
+    expect(icon().style.fill).toMatch(RED);
+    // the icon cell is unavailable (grey on its own shape) and the node changes colour: the grey wins, as in a full apply
+    const grey = { reason: 'Pattern X is not applied', color: '#999999' };
+    prev = applyPatches(
+      index,
+      new Map([
+        ['n1', node()],
+        ['i1', patch('i1', { unavailable: grey })],
+      ]),
+      prev
+    );
+    expect(icon().style.fill).toMatch(/^(#999999|rgb\(153, 153, 153\))$/);
+    prev = applyPatches(
+      index,
+      new Map([
+        ['n1', node('#00ff00')],
+        ['i1', patch('i1', { unavailable: grey })],
+      ]),
+      prev
+    );
+    expect(icon().style.fill).toMatch(/^(#999999|rgb\(153, 153, 153\))$/);
+    // nothing patched: the icon's own fill comes back
+    applyPatches(index, new Map(), prev);
+    expect(icon().style.fill).toBe('rgb(79, 154, 166)');
+  });
+  it('a changed description of the node leaves the grey of the icon cell in place (the closure reaches the icon)', () => {
+    const index = build();
+    index.get('n1')!.iconId = 'i1';
+    index.get('i1')!.ownerId = 'n1';
+    // n2 stands for a description of n1: a part outside the node group
+    index.get('n2')!.ownerId = 'n1';
+    const grey = { reason: 'Pattern X is not applied', color: '#999999' };
+    const GREY = /^(#999999|rgb\(153, 153, 153\))$/;
+    const round = (text: string): PatchMap =>
+      new Map([
+        ['n1', patch('n1', { shape: shape({ target: 'icon' }) })],
+        ['i1', patch('i1', { unavailable: grey })],
+        ['n2', patch('n2', { shape: shape({ target: 'none', text }) })],
+      ]);
+    const prev = applyPatches(index, round('one'));
+    expect((index.get('i1')!.shape as SVGElement).style.fill).toMatch(GREY);
+    applyPatches(index, round('two'), prev);
+    expect((index.get('i1')!.shape as SVGElement).style.fill).toMatch(GREY);
+    expect(index.get('n2')!.label!.textContent).toBe('two');
   });
 });
 
@@ -409,7 +489,7 @@ describe('applyPatches on the dot of a bare link end (bare-end-dot)', () => {
   });
   it('paints each dot with the colour of the half at its end, fill and stroke', () => {
     const { index, start, end } = load();
-    applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }), new Set());
+    applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }));
     expect(start.style.fill).toMatch(AMBER);
     expect(start.style.stroke).toMatch(AMBER);
     expect(end.style.fill).toMatch(BLUE);
@@ -418,7 +498,7 @@ describe('applyPatches on the dot of a bare link end (bare-end-dot)', () => {
   });
   it('paints both dots with the colour of the only half', () => {
     const { index, start, end } = load();
-    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }), new Set());
+    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }));
     expect(start.style.fill).toMatch(AMBER);
     expect(end.style.fill).toMatch(AMBER);
     prev = applyPatches(index, link({ b2a: ok({ color: '#0000ff' }) }), prev);
@@ -428,14 +508,14 @@ describe('applyPatches on the dot of a bare link end (bare-end-dot)', () => {
   it('restores the original paint when the link has no patch any more', () => {
     const { index, start, end } = load();
     const before = [start, end].map((e) => [e.style.fill, e.style.stroke]);
-    const prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }), new Set());
+    const prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) }));
     applyPatches(index, new Map(), prev);
     expect([start, end].map((e) => [e.style.fill, e.style.stroke])).toEqual(before);
   });
   it('restores the original paint when a refresh patch has no halves', () => {
     const { index, start } = load();
     const before = start.style.fill;
-    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }), new Set());
+    let prev = applyPatches(index, link({ a2b: ok({ color: '#ff8800' }) }));
     prev = applyPatches(index, link({}), prev);
     expect(start.style.fill).toBe(before);
   });
@@ -464,26 +544,26 @@ describe('end markers: which shapes count and how they are painted', () => {
     const { index, entry } = load(
       '<circle id="bg" cx="105" cy="30" r="9" fill="#fff"/><ellipse cx="200" cy="30" rx="4" ry="4" fill="#333"/>'
     );
-    applyPatches(index, both(), new Set());
+    applyPatches(index, both());
     expect(entry.group.querySelector<SVGElement>('#bg')!.style.fill).toBe('');
     expect((entry.ends![0].el as SVGElement).style.fill).toMatch(BLUE);
   });
   it('assigns a marker with a translate to the end that it sits on', () => {
     const { index, entry } = load('<circle cx="0" cy="0" r="4" fill="#333" transform="translate(200,30)"/>');
     expect(entry.ends).toHaveLength(1);
-    applyPatches(index, both(), new Set());
+    applyPatches(index, both());
     expect((entry.ends![0].el as SVGElement).style.fill).toMatch(BLUE);
   });
   it('resolves a transform on the group of the edge for the path and the marker alike', () => {
     const { index, entry } = load('<circle cx="10" cy="30" r="4" fill="#333"/>', ' transform="translate(0.5,0.5)"');
-    applyPatches(index, both(), new Set());
+    applyPatches(index, both());
     expect((entry.ends![0].el as SVGElement).style.fill).toMatch(AMBER);
   });
   it('does not paint a transparent fill and paints an inline-only stroke', () => {
     const { index, entry } = load(
       '<circle cx="10" cy="30" r="4" fill="none" style="stroke: #333"/><circle cx="200" cy="30" r="4" fill="transparent" fill-opacity="0" stroke="none"/>'
     );
-    applyPatches(index, both(), new Set());
+    applyPatches(index, both());
     const [a, b] = entry.ends!.map((e) => e.el as SVGElement);
     expect(a.style.stroke).toMatch(AMBER);
     expect(a.style.fill).toBe('');
@@ -493,7 +573,7 @@ describe('end markers: which shapes count and how they are painted', () => {
   it('restores the CSS priority of the original inline paint', () => {
     const { index, entry } = load('<circle cx="10" cy="30" r="4" style="fill: #333 !important"/>');
     const m = entry.ends![0].el as SVGElement;
-    const prev = applyPatches(index, both(), new Set());
+    const prev = applyPatches(index, both());
     expect(m.style.getPropertyPriority('fill')).toBe('important');
     applyPatches(index, new Map(), prev);
     expect(m.style.getPropertyValue('fill')).toMatch(/#333|51, 51, 51/);
@@ -561,10 +641,133 @@ describe('end markers: unusable geometry and cost', () => {
       expect(index.get('e')!.ends).toEqual([expect.objectContaining({ end: 'start' })]);
       getCTM.mockClear();
       const link = { a2b: ok({ color: '#ff8800' }), b2a: ok({ color: '#0000ff' }) };
-      const prev = applyPatches(index, new Map([['e', patch('e', { link })]]), new Set());
+      const prev = applyPatches(index, new Map([['e', patch('e', { link })]]));
       applyPatches(index, new Map([['e', patch('e', { link })]]), prev);
       expect(getCTM).not.toHaveBeenCalled();
       expect((index.get('e')!.ends![0].el as SVGElement).style.fill).toMatch(/ff8800|255, 136, 0/);
     });
+  });
+});
+
+describe('applyPatches diff', () => {
+  const statusView: StatusView = {
+    state: 'down',
+    reason: 'Device down',
+    conditionKey: 'health',
+    queryIds: ['up'],
+    coverage: { available: 1, expected: 1 },
+  };
+  /** The patches of one refresh: a coloured node, a two-way link and a status cell. New objects on every call. */
+  const round = (color = '#ff0000'): Map<string, PlanCellPatch> =>
+    new Map<string, PlanCellPatch>([
+      ['n1', patch('n1', { shape: shape({ color, text: 'up' }) })],
+      ['e1', patch('e1', { link: { a2b: ok(), b2a: ok({ color: '#0000ff' }) } })],
+      ['n2', { ...patch('n2', {}), statusView }],
+    ]);
+  const observe = (index: CellIndex) => {
+    const root = index.get('n1')!.group.closest('svg')!;
+    const observer = new MutationObserver(() => {});
+    observer.observe(root, { attributes: true, childList: true, subtree: true, characterData: true });
+    return observer;
+  };
+  it('a second apply with equal patches of new objects writes nothing', () => {
+    const index = build();
+    const prev = applyPatches(index, round(), undefined, new Set(['n1']));
+    const observer = observe(index);
+    const done = applyPatches(index, round(), prev, new Set(['n1']));
+    expect(observer.takeRecords()).toHaveLength(0);
+    expect(done.keys).toEqual(prev.keys);
+    expect((index.get('n1')!.shape as SVGElement).style.fill).toMatch(RED);
+    expect(index.get('n2')!.group.getAttribute('data-dmap-status')).toBe('down');
+  });
+  it('a changed colour writes that cell only', () => {
+    const index = build();
+    const prev = applyPatches(index, round());
+    const observer = observe(index);
+    applyPatches(index, round('#00ff00'), prev);
+    const records = observer.takeRecords();
+    expect(records.length).toBeGreaterThan(0);
+    const n1 = index.get('n1')!.group;
+    records.forEach((r) => expect(n1.contains(r.target)).toBe(true));
+    expect((index.get('n1')!.shape as SVGElement).style.fill).toMatch(/^(#00ff00|rgb\(0, 255, 0\))$/);
+  });
+  it('a removed cell is reset and the others are not touched', () => {
+    const index = build();
+    const prev = applyPatches(index, round());
+    const observer = observe(index);
+    const next = round();
+    next.delete('e1');
+    const done = applyPatches(index, next, prev);
+    const e1 = index.get('e1')!;
+    const records = observer.takeRecords();
+    expect(records.length).toBeGreaterThan(0);
+    records.forEach((r) => expect(e1.group.contains(r.target)).toBe(true));
+    expect(e1.line!.style.strokeOpacity).toBe('');
+    expect([...done.keys.keys()].sort()).toEqual(['n1', 'n2']);
+  });
+  it('a changed interactive flag rewrites the tab stop of that cell', () => {
+    const index = build();
+    const prev = applyPatches(index, round(), undefined, new Set(['n1']));
+    expect(index.get('n1')!.group.getAttribute('role')).toBe('button');
+    const observer = observe(index);
+    applyPatches(index, round(), prev, new Set());
+    expect(index.get('n1')!.group.hasAttribute('role')).toBe(false);
+    observer.takeRecords().forEach((r) => expect(index.get('n1')!.group.contains(r.target)).toBe(true));
+  });
+  it('a shape whose step or status changes with the same colour gets the new data attributes', () => {
+    const index = build();
+    const group = index.get('n1')!.group;
+    let prev = applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ stepIndex: 0 }) })]]));
+    expect(group.getAttribute('data-dmap-step')).toBe('0');
+    prev = applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ stepIndex: 2 }) })]]), prev);
+    expect(group.getAttribute('data-dmap-step')).toBe('2');
+    applyPatches(index, new Map([['n1', patch('n1', { shape: shape({ stepIndex: 2, status: 'nodata' }) })]]), prev);
+    expect(group.getAttribute('data-dmap-status')).toBe('nodata');
+  });
+  it('another theme or OS colour scheme resets and writes every cell; the same scheme again writes nothing', () => {
+    const index = build();
+    const light = { isDark: false, osDark: false };
+    let prev = applyPatches(index, round(), undefined, undefined, light);
+    const observer = observe(index);
+    const everyCell = () => {
+      const touched = observer.takeRecords().map((r) => r.target);
+      for (const id of ['n1', 'e1', 'n2']) {
+        expect(
+          touched.some((t) => index.get(id)!.group.contains(t)),
+          id
+        ).toBe(true);
+      }
+    };
+    // the theme
+    prev = applyPatches(index, round(), prev, undefined, { ...light, isDark: true });
+    everyCell();
+    expect(prev.scheme).toEqual({ isDark: true, osDark: false });
+    // the OS preference, with the same theme
+    prev = applyPatches(index, round(), prev, undefined, { isDark: true, osDark: true });
+    everyCell();
+    // the same scheme again: nothing
+    applyPatches(index, round(), prev, undefined, { isDark: true, osDark: true });
+    expect(observer.takeRecords()).toHaveLength(0);
+  });
+  it('markInteractive with the same ids makes no mutation, and marks the cells of a new stage', () => {
+    const index = build();
+    const prev = markInteractive(index, new Set(['n1', 'n2']));
+    const observer = observe(index);
+    markInteractive(index, new Set(['n1', 'n2']), prev);
+    expect(observer.takeRecords()).toHaveLength(0);
+    const other = build();
+    markInteractive(other, new Set(['n1']), prev);
+    expect(other.get('n1')!.group.hasAttribute(INTERACTIVE_ATTR)).toBe(true);
+  });
+  it('an applied set of another index counts as empty: every patch is written, nothing is reset', () => {
+    const a = build();
+    const b = build();
+    const prev = applyPatches(a, round());
+    const done = applyPatches(b, round(), prev);
+    expect((b.get('n1')!.shape as SVGElement).style.fill).toMatch(RED);
+    expect(b.get('e1')!.line!.style.strokeOpacity).toBe('0');
+    // the old stage keeps its paint: nothing of it was reset
+    expect((a.get('n1')!.shape as SVGElement).style.fill).toMatch(RED);
+    expect(done.index).toBe(b);
   });
 });

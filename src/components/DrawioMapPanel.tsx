@@ -19,7 +19,7 @@ import { resolvePatterns } from '../binding/patterns';
 import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind, interactiveCells, patchAt } from '../interact/hit';
-import { applyPatches, INTERACTIVE_ATTR, markInteractive } from '../render/applier';
+import { applyPatches, type Applied, INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import { renderLinkLabels, setLinkLabelScale } from '../render/linkLabels';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
@@ -34,6 +34,7 @@ import { legacyRulesWarning } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { useStaleStatus } from '../visuals/useSampleStale';
+import { useOsDark } from '../visuals/useOsDark';
 import { demandMap, demandsOf, resolverFrom } from '../query/store';
 import { useBindings } from '../query/useBindings';
 import { ChartLayer } from '../visuals/ChartLayer';
@@ -288,8 +289,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     setViewport(element);
   }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
-  const patchedRef = useRef<Set<string>>(new Set());
-  const interactiveRef = useRef<Set<string>>(new Set());
+  const patchedRef = useRef<Applied>();
+  const interactiveRef = useRef<Marked>();
   const [card, setCard] = useState<CardState | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -515,7 +516,9 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     }
   }, [stage.root, isDark]);
 
-  // Apply patches, redraw the overlay and the value labels once per frame.
+  // Apply patches, redraw the overlay and the value labels once per frame. The OS preference is an input of the
+  // applier's colour scheme: a change of it writes every cell again (an element with its own color-scheme follows it).
+  const osDark = useOsDark();
   const { min: linkMin, max: linkMax } = opts.linkWidth;
   useEffect(() => {
     if (!stage.root) {
@@ -524,14 +527,15 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     const root = stage.root;
     const linkWidth = { min: linkMin, max: linkMax };
     const id = requestAnimationFrame(() => {
-      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive);
+      const scheme = { isDark, osDark };
+      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive, scheme);
       interactiveRef.current = markInteractive(stage.index, interactive, interactiveRef.current);
       renderOverlay(root, stage.index, result.patches, { theme });
       // after the overlay: its arrow heads are obstacles of the labels
       renderLinkLabels(root, stage.index, result.patches, { theme, linkWidth });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, result, theme, interactive, linkMin, linkMax]);
+  }, [stage.root, stage.index, result, theme, isDark, osDark, interactive, linkMin, linkMax]);
 
   // After the patches (the same frame order): mark the cells of the legend entry under the pointer.
   const hits = legendBlocks.length ? legendHits : null;

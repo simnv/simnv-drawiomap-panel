@@ -10,7 +10,8 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g><g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30"/></g></g>
   <g data-cell-id="e1"><g><path d="M 0 0 L 100 0 L 100 50" fill="none" stroke="#333" pointer-events="stroke"/><path id="e1-arrow" d="M 100 50 L 98 46 L 102 46 Z" pointer-events="all"/></g><g id="e1-value"><text>10G</text></g>
     <g data-cell-id="lbl1"><g><rect x="90" y="20" width="20" height="10"/><text>edge label</text></g></g></g>
-  <g data-cell-id="n2"><g><rect x="150" y="10" width="40" height="30"/></g></g></g>
+  <g data-cell-id="n2"><g><rect x="150" y="10" width="40" height="30"/></g></g>
+  <g data-cell-id="e2"><g><path d="M 0 80 L 200 80" fill="none" stroke="#333" pointer-events="stroke"/></g></g></g>
 </svg>`;
 
 function build(d?: string): { root: SVGSVGElement; index: CellIndex } {
@@ -32,6 +33,14 @@ function build(d?: string): { root: SVGSVGElement; index: CellIndex } {
     group: e1,
     line: e1.querySelector('path')!,
     arrows: [e1.querySelector('#e1-arrow')!],
+    original: {},
+  });
+  const e2 = root.querySelector('[data-cell-id="e2"]') as SVGGElement;
+  index.set('e2', {
+    meta: cellMetaFromAttrs('e2', {}, true),
+    group: e2,
+    line: e2.querySelector('path')!,
+    arrows: [],
     original: {},
   });
   return { root, index };
@@ -183,6 +192,152 @@ describe('renderOverlay', () => {
       expect(before(item, root.querySelector('[data-cell-id="lbl1"] text')!)).toBe(true);
       expect(before(item, root.querySelector('[data-cell-id="n2"]')!)).toBe(true);
     }
+  });
+});
+
+describe('renderOverlay keeps its elements across refreshes', () => {
+  const statusView: StatusView = {
+    state: 'down',
+    reason: 'Device down',
+    conditionKey: 'k',
+    queryIds: ['q'],
+    coverage: { available: 1, expected: 1 },
+  };
+  /** Two links and a status cell; new objects on every call. */
+  const round = (a2b: Partial<HalfState> = {}, view: StatusView | null = statusView) =>
+    new Map<string, PlanCellPatch>([
+      ['e1', patch('e1', { link: { a2b: half(a2b), b2a: half({ color: '#ff0000', stepIndex: 2 }) } })],
+      ['e2', patch('e2', { link: { a2b: half() } })],
+      ['n1', { ...patch('n1', {}), ...(view ? { statusView: view } : {}) }],
+    ]);
+  const observe = (root: SVGSVGElement) => {
+    const observer = new MutationObserver(() => {});
+    observer.observe(root, { attributes: true, childList: true, subtree: true, characterData: true });
+    return observer;
+  };
+  const strokes = (root: SVGSVGElement, cell: string) =>
+    Array.from(root.querySelectorAll(`.dmap-half[data-dmap-cell="${cell}"], .dmap-arrow[data-dmap-cell="${cell}"]`));
+  const same = (a: Element[], b: Element[]) => a.length === b.length && a.every((el, i) => el.isSameNode(b[i]));
+
+  it('a second render with equal halves keeps the same elements and writes nothing', () => {
+    const { root, index } = build();
+    renderOverlay(root, index, round(), opts);
+    const before = strokes(root, 'e1');
+    const marker = root.querySelector('.dmap-status-marker')!;
+    const observer = observe(root);
+    renderOverlay(root, index, round(), opts);
+    expect(observer.takeRecords()).toHaveLength(0);
+    expect(same(before, strokes(root, 'e1'))).toBe(true);
+    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(true);
+    expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(3);
+  });
+  it('a colour and width change updates the same elements in place and keeps the points and the mask', () => {
+    const { root, index } = build();
+    renderOverlay(root, index, round(), opts);
+    const [line, arrow] = strokes(root, 'e1');
+    const points = line.getAttribute('points');
+    line.setAttribute('mask', 'url(#dmap-lm-1-0)');
+    arrow.setAttribute('mask', 'url(#dmap-lm-1-0)');
+    const observer = observe(root);
+    renderOverlay(root, index, round({ color: '#0000ff', width: 7, stepIndex: 3, status: 'ok' }), opts);
+    const records = observer.takeRecords();
+    expect(records.length).toBeGreaterThan(0);
+    records.forEach((r) => expect(r.type).toBe('attributes'));
+    records.forEach((r) => expect([line, arrow]).toContain(r.target));
+    expect(line.getAttribute('stroke')).toBe('#0000ff');
+    expect(line.getAttribute('stroke-width')).toBe('7');
+    expect(line.getAttribute('data-dmap-step')).toBe('3');
+    expect(line.getAttribute('points')).toBe(points);
+    expect(line.getAttribute('mask')).toBe('url(#dmap-lm-1-0)');
+    expect(arrow.getAttribute('fill')).toBe('#0000ff');
+    expect(arrow.getAttribute('mask')).toBe('url(#dmap-lm-1-0)');
+    // the other link and the marker are not touched
+    expect(same(strokes(root, 'e2'), strokes(root, 'e2'))).toBe(true);
+  });
+  it('a half that goes rebuilds the layer of that link only', () => {
+    const { root, index } = build();
+    renderOverlay(root, index, round(), opts);
+    const e1 = strokes(root, 'e1');
+    const e2 = strokes(root, 'e2');
+    const next = round();
+    next.get('e1')!.link = { a2b: half() };
+    renderOverlay(root, index, next, opts);
+    const after = strokes(root, 'e1');
+    expect(after).toHaveLength(2);
+    expect(after.some((el) => e1.includes(el))).toBe(false);
+    expect(after[0].getAttribute('points')).toBe('0,0 100,0 100,50');
+    expect(same(e2, strokes(root, 'e2'))).toBe(true);
+    expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(2);
+  });
+  it('a marker with the same state and reason stays; a new reason replaces it; a normal view removes it', () => {
+    const { root, index } = build();
+    renderOverlay(root, index, round(), opts);
+    const marker = root.querySelector('.dmap-status-marker')!;
+    renderOverlay(root, index, round({}, { ...statusView, conditionKey: 'other' }), opts);
+    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(true);
+    renderOverlay(root, index, round({}, { ...statusView, reason: 'Power lost' }), opts);
+    const replaced = root.querySelector('.dmap-status-marker')!;
+    expect(replaced.isSameNode(marker)).toBe(false);
+    expect(replaced.querySelector('title')!.textContent).toBe('Power lost');
+    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(1);
+    renderOverlay(root, index, round({}, { ...statusView, state: 'normal', reason: 'Healthy' }), opts);
+    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(0);
+    renderOverlay(root, index, round({}, null), opts);
+    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(0);
+  });
+  it('a new theme draws the markers again in its colours', () => {
+    const { root, index } = build();
+    renderOverlay(root, index, round(), { theme: createTheme({ colors: { mode: 'light' } }) });
+    const light = root.querySelector('.dmap-status-marker text')!;
+    const dark = createTheme({ colors: { mode: 'dark' } });
+    renderOverlay(root, index, round(), { theme: dark });
+    const text = root.querySelector('.dmap-status-marker text')!;
+    expect(text.isSameNode(light)).toBe(false);
+    expect(text.getAttribute('fill')).toBe(dark.colors.error.text);
+    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(1);
+  });
+  it('the child order on an edge without arrow heads is path, marker, overlay after a fresh render and after a rebuild', () => {
+    const { root, index } = build();
+    const order = () =>
+      Array.from(index.get('e2')!.line!.parentElement!.children).map((c) =>
+        c.localName === 'path'
+          ? 'path'
+          : c.classList.contains('dmap-status-marker')
+            ? 'marker'
+            : c.getAttribute('class')
+      );
+    const withMarker = (b2a: boolean) =>
+      new Map<string, PlanCellPatch>([
+        ['e2', { ...patch('e2', { link: { a2b: half(), ...(b2a ? { b2a: half() } : {}) } }), statusView }],
+      ]);
+    renderOverlay(root, index, withMarker(true), opts);
+    expect(order()).toEqual(['path', 'marker', 'dmap-overlay']);
+    const marker = root.querySelector('.dmap-status-marker')!;
+    // a half goes: the layer is built again; the kept marker stays under it
+    renderOverlay(root, index, withMarker(false), opts);
+    expect(order()).toEqual(['path', 'marker', 'dmap-overlay']);
+    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(true);
+    // and on an edge with arrow heads: path, marker, arrow, overlay
+    renderOverlay(root, index, new Map([['e1', { ...patch('e1', { link: { a2b: half() } }), statusView }]]), opts);
+    const e1 = Array.from(index.get('e1')!.line!.parentElement!.children).map((c) => c.getAttribute('class') ?? c.id);
+    expect(e1).toEqual([null, 'dmap-status-marker', 'e1-arrow', 'dmap-overlay'].map((v) => v ?? expect.anything()));
+  });
+  it('a link patch that goes removes its overlay; a new index removes every element of the old render', () => {
+    const { root, index } = build();
+    renderOverlay(root, index, round(), opts);
+    const next = round();
+    next.delete('e2');
+    renderOverlay(root, index, next, opts);
+    expect(strokes(root, 'e2')).toHaveLength(0);
+    expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(1);
+    const e1 = strokes(root, 'e1');
+    const marker = root.querySelector('.dmap-status-marker')!;
+    // the same elements under a new index: the state of the old index does not apply
+    renderOverlay(root, new Map(index), next, opts);
+    expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(1);
+    expect(root.querySelectorAll('.dmap-status-marker')).toHaveLength(1);
+    expect(strokes(root, 'e1').some((el) => e1.includes(el))).toBe(false);
+    expect(root.querySelector('.dmap-status-marker')!.isSameNode(marker)).toBe(false);
   });
 });
 

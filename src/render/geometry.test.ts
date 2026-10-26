@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   arrowAnchor,
   bendLengths,
@@ -121,6 +121,41 @@ describe('pathGeometry', () => {
     const m = geo.pointAt(150);
     expect(m.x).toBeCloseTo(110);
     expect(m.y).toBeCloseTo(55);
+  });
+  it('measures a path once: the length and each arc length are read once, the matrices on every call', () => {
+    const { g, p } = mk();
+    const getTotalLength = vi.fn(() => 150);
+    const getPointAtLength = vi.fn((d: number) => (d <= 100 ? { x: d, y: 0 } : { x: 100, y: d - 100 }));
+    const lineCtm = vi.fn(() => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }));
+    const targetCtm = vi.fn(() => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }));
+    Object.assign(p, { getTotalLength, getPointAtLength, getCTM: lineCtm });
+    Object.assign(g, { getCTM: targetCtm });
+    const first = pathGeometry(p, g);
+    const poly = first.polyline(0, 150);
+    const tip = first.pointAt(75);
+    const reads = getPointAtLength.mock.calls.length;
+    expect(reads).toBeGreaterThan(0);
+    const second = pathGeometry(p, g);
+    expect(second.length).toBe(150);
+    expect(second.bends).toEqual(first.bends);
+    expect(second.polyline(0, 150)).toEqual(poly);
+    expect(second.pointAt(75)).toEqual(tip);
+    expect(getTotalLength).toHaveBeenCalledTimes(1);
+    expect(getPointAtLength).toHaveBeenCalledTimes(reads);
+    expect(lineCtm).toHaveBeenCalledTimes(2);
+    expect(targetCtm).toHaveBeenCalledTimes(2);
+    // a new arc length is one more read
+    second.pointAt(20);
+    expect(getPointAtLength.mock.calls.length).toBeGreaterThan(reads);
+    // the matrix of the call applies to the cached points
+    targetCtm.mockReturnValue({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+    expect(pathGeometry(p, g).pointAt(75).x).toBeCloseTo(37.5);
+    // another path element measures again
+    const other = mk();
+    const otherLength = vi.fn(() => 150);
+    Object.assign(other.p, { getTotalLength: otherLength, getPointAtLength, getCTM: lineCtm });
+    pathGeometry(other.p, other.g);
+    expect(otherLength).toHaveBeenCalledTimes(1);
   });
 });
 

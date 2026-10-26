@@ -812,7 +812,12 @@ function textSpan(rec: LabelRecord, at: Point): { centre: number; length: number
 /** Takes every mask off the strokes and removes the defs of the stage. */
 function dropMasks(root: SVGSVGElement): void {
   root.querySelectorAll(`defs.${LINK_LABEL_DEFS_CLASS}`).forEach((d) => d.remove());
-  root.querySelectorAll('[mask^="url(#' + MASK_PREFIX + '"]').forEach((el) => el.removeAttribute('mask'));
+  // the strokes live across refreshes now, so this is the only place that takes the mask off when the labels go
+  root.querySelectorAll('[mask]').forEach((el) => {
+    if (el.getAttribute('mask')?.startsWith(`url(#${MASK_PREFIX}`)) {
+      el.removeAttribute('mask');
+    }
+  });
 }
 
 /**
@@ -821,8 +826,9 @@ function dropMasks(root: SVGSVGElement): void {
  * (the slot wide, the drawn stroke plus 1 on each side high). The mask content is in the user space of the element
  * that wears the mask, the overlay group of the link, so each slot is the root box mapped through the inverse of
  * the matrix of that group, with the rotation of the label after it. The elements that draw the stroke are the halves
- * and the arrow heads of the overlay (the edge itself is invisible under a patch). Called on every pass, because the
- * overlay is drawn again on each frame.
+ * and the arrow heads of the overlay (the edge itself is invisible under a patch). Called on every pass: an overlay
+ * layer that was built again in this frame (a half appeared or went, a new stage) has no mask yet; an updated layer
+ * keeps its elements and their mask.
  */
 function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
   const shown = layout.layer.getAttribute('visibility') !== 'hidden';

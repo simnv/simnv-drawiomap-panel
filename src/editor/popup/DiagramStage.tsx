@@ -3,7 +3,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellAt } from '../../interact/hit';
-import { applyPatches } from '../../render/applier';
+import { applyPatches, type Applied } from '../../render/applier';
 import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
 import { renderLinkLabels, setLinkLabelScale } from '../../render/linkLabels';
 import { renderOverlay } from '../../render/overlay';
@@ -12,6 +12,7 @@ import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../components/usePanZoom';
 import type { Stage } from '../../components/useStage';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
+import { useOsDark } from '../../visuals/useOsDark';
 import { boxTargets } from './boxTargets';
 import { useBoxSelect } from './useBoxSelect';
 
@@ -82,7 +83,7 @@ export function DiagramStage({
   );
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState<ViewBox | null>(null);
-  const patched = useRef<Set<string>>(new Set());
+  const patched = useRef<Applied>();
 
   // A new diagram starts at the fitted view.
   const [viewRoot, setViewRoot] = useState(stage.root);
@@ -121,20 +122,22 @@ export function DiagramStage({
     }
   }, [stage.root, isDark]);
 
-  // Apply the draft patches and redraw the overlay in one frame.
+  // Apply the draft patches and redraw the overlay in one frame. The OS preference is an input of the applier's
+  // colour scheme, as in the panel.
+  const osDark = useOsDark();
   useEffect(() => {
     const root = stage.root;
     if (!root) {
       return;
     }
     const id = requestAnimationFrame(() => {
-      patched.current = applyPatches(stage.index, patches, patched.current);
+      patched.current = applyPatches(stage.index, patches, patched.current, undefined, { isDark, osDark });
       renderOverlay(root, stage.index, patches, { theme });
       // after the overlay, as in the panel: the preview shows the label mode while the user edits it
       renderLinkLabels(root, stage.index, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, patches, theme, linkWidth]);
+  }, [stage.root, stage.index, patches, theme, isDark, osDark, linkWidth]);
 
   // Fit the diagram into the pane. A live view (pan or zoom) changes the viewBox only.
   useEffect(() => {
