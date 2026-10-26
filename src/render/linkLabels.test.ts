@@ -318,9 +318,9 @@ describe('renderLinkLabels: the place of a label', () => {
     const slots = blacks(m);
     expect(slots).toHaveLength(2);
     const k = slots[0];
-    expect(Number(k.getAttribute('width'))).toBe(24);
+    expect(Number(k.getAttribute('width'))).toBe(27);
     expect(Number(k.getAttribute('height'))).toBe(10);
-    expect(k.getAttribute('x')).toBe('108');
+    expect(k.getAttribute('x')).toBe('106.5');
     expect(k.getAttribute('y')).toBe('95');
     expect(k.getAttribute('transform')).toBe('matrix(1 0 0 1 0 0) rotate(0 120 100)');
     // every element that draws the stroke of the link wears it; no rect is drawn in the diagram
@@ -376,6 +376,28 @@ describe('renderLinkLabels: the place of a label', () => {
     expect(a.getAttribute('x')).toBe(x);
     expect(a.getAttribute('data-dmap-placed-at')).toBe(stamp);
     expect(a.getAttribute('data-dmap-side')).toBe('top');
+  });
+  it('the cut follows the drawn text: its length plus 1.5 on each end, centred on the text, rebuilt when the text changes', () => {
+    const { root, index } = build();
+    render(root, index, both());
+    const text = byHalf(root, 'a2b')!;
+    // a text of 14 units whose glyphs stand 1 left of the anchor 120: the box x 112..126, the centre 119
+    (text as unknown as { getBBox: () => unknown }).getBBox = () => ({ x: 112, y: 96, width: 14, height: 8 });
+    render(root, index, both());
+    let k = blacks(maskOf(root)!)[0];
+    expect(Number(k.getAttribute('width'))).toBe(17);
+    expect(Number(k.getAttribute('x'))).toBe(110.5);
+    // the pads are equal: 112 - 110.5 = 127.5 - 126
+    expect(Number(k.getAttribute('x')) + Number(k.getAttribute('width')) - 126).toBe(112 - Number(k.getAttribute('x')));
+    expect(k.getAttribute('transform')).toBe('matrix(1 0 0 1 0 0) rotate(0 120 100)');
+    const key = maskOf(root)!.getAttribute('data-dmap-key');
+    // a longer text changes the key and the cut
+    (text as unknown as { getBBox: () => unknown }).getBBox = () => ({ x: 108, y: 96, width: 22, height: 8 });
+    render(root, index, both());
+    k = blacks(maskOf(root)!)[0];
+    expect(maskOf(root)!.getAttribute('data-dmap-key')).not.toBe(key);
+    expect(Number(k.getAttribute('width'))).toBe(25);
+    expect(Number(k.getAttribute('x'))).toBe(106.5);
   });
   it('the cut covers the drawn stroke plus 1 on each side and follows the width on a refresh', () => {
     const { root, index } = build();
@@ -486,7 +508,7 @@ describe('renderLinkLabels: the cut follows its label', () => {
     const k = blacks(maskOf(root)!)[0];
     // the inverse of translate(10 20) scale(2): scale 0.5, shift -5 -10
     expect(k.getAttribute('transform')).toMatch(/^matrix\(0\.5 0 0 0\.5 -5 -10\) rotate\(0 /);
-    expect(Number(k.getAttribute('width'))).toBe(24);
+    expect(Number(k.getAttribute('width'))).toBe(27);
     expect(strokesOf(root)[0].getAttribute('mask')).toBe(`url(#${maskOf(root)!.id})`);
   });
   it('a vertical link has a rotated slot', () => {

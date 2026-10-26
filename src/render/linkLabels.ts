@@ -755,6 +755,26 @@ const turnOf = (degrees: number, at: Point) => `rotate(${fmt(degrees)} ${fmt(at.
 const mnum = (n: number) => String(Math.round(n * 1e6) / 1e6);
 const matrixAttr = (m: Matrix) => `matrix(${[m.a, m.b, m.c, m.d, m.e, m.f].map(mnum).join(' ')})`;
 const MASK_PREFIX = 'dmap-lm-';
+/** the cut stands this far beyond each end of the text */
+const CUT_PAD = 1.5;
+
+/**
+ * The text of a label along its own axis: the length and the centre (in the x of the text element, before its
+ * rotation). The painted box of the glyphs when it can be read, else the slot centred on the anchor. The slot of a
+ * percent label is the width of ">999%", so a short text such as "<1%" would get a cut that is too long.
+ */
+function textSpan(rec: LabelRecord, at: Point): { centre: number; length: number } {
+  const el = rec.el as (SVGGraphicsElement & { getBBox?: () => DOMRect }) | undefined;
+  try {
+    const b = typeof el?.getBBox === 'function' ? el.getBBox() : undefined;
+    if (b && b.width > 0 && Number.isFinite(b.x) && Number.isFinite(b.width)) {
+      return { centre: b.x + b.width / 2, length: b.width };
+    }
+  } catch {
+    // no layout: the slot
+  }
+  return { centre: at.x, length: rec.slot! };
+}
 
 /** Takes every mask off the strokes and removes the defs of the stage. */
 function dropMasks(root: SVGSVGElement): void {
@@ -824,10 +844,11 @@ function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
       const placed = rec.placement as Placed;
       const at = drawnCentre(placed, rec.drawn);
       const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
+      const { centre, length } = textSpan(rec, at);
       return {
-        x: fmt(at.x - rec.slot! / 2),
+        x: fmt(centre - length / 2 - CUT_PAD),
         y: fmt(at.y - height / 2),
-        width: fmt(rec.slot!),
+        width: fmt(length + 2 * CUT_PAD),
         height: fmt(height),
         transform: `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`,
       };
