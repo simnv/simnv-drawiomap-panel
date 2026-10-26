@@ -588,11 +588,18 @@ describe('renderLinkLabels: obstacles', () => {
     };
     const down: PlanCellPatch = { cellId: 'n3', ruleNames: ['r'], scope: { cell: {} }, urls: [], warnings: [], statusView };
     const before = stageObstacles(root, index, new Map(), 10);
-    expect(before).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 4 });
+    // the reach is the border a down status gives (12), also while the status is normal
+    expect(before).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 6 });
     applyPatches(index, new Map([['n3', down]]), undefined, undefined, { theme, osDark: false });
     expect((index.get('n3')!.shape as SVGElement).style.strokeWidth).toBe('12');
     const after = stageObstacles(root, index, new Map(), 10);
-    expect(after).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 6 });
+    expect(after).toEqual(before);
+  });
+  it('an image device reserves the half of its status border: 1 unit', () => {
+    const node = `<g data-cell-id="n4"><g><image x="100" y="20" width="40" height="30" href="data:image/png;base64,AAAA"/></g></g>`;
+    const { root, index } = build(SVG(node));
+    const obstacles = stageObstacles(root, index, new Map(), 10);
+    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 1 });
   });
   it('a status on a patched edge reserves no room: the obstacles are the stroke pieces and the node bodies', () => {
     const { root, index } = build();
@@ -641,8 +648,8 @@ describe('renderLinkLabels: obstacles', () => {
       owner: 'e1',
       piece: { leg: 'e1:b2a', index: 0 },
     });
-    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 0, y: 80, width: 40, height: 40 }, clearance: 1 });
-    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 360, y: 80, width: 40, height: 40 }, clearance: 0.5 });
+    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 0, y: 80, width: 40, height: 40 }, clearance: 1.5 });
+    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 360, y: 80, width: 40, height: 40 }, clearance: 1 });
   });
 });
 

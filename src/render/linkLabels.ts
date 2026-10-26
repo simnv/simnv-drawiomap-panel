@@ -13,6 +13,7 @@ import {
   polylineLength,
   scaleOf,
   drawnStrokeWidth,
+  originalStrokeWidth,
   toMatrix,
   usable,
   type Matrix,
@@ -37,6 +38,7 @@ import {
   type Placement,
   type Rect,
 } from './labelPlacement';
+import { statusBorderWidth } from '../binding/color';
 import { fmt, linkSplit, OVERLAY_CLASS } from './overlay';
 import { viewScaleOf } from './zoom';
 
@@ -583,7 +585,7 @@ export function stageObstacles(
         out.push({
           kind: 'rect',
           rect: body,
-          clearance: (drawnStrokeWidth(entry.shape) * scaleOf(m)) / 2,
+          clearance: (bodyReach(entry) * scaleOf(m)) / 2,
         });
       }
     }
@@ -593,6 +595,20 @@ export function stageObstacles(
   }
   root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => rect(a));
   return out;
+}
+
+/**
+ * The widest stroke that a device body can show, in its user units: its original stroke or its status border,
+ * whichever is wider; an `<image>` has no stroke, only the border of the overlay. The reach does not depend on the
+ * status, so a status change never needs new obstacles.
+ */
+function bodyReach(entry: CellEntry): number {
+  const shape = entry.shape as SVGElement;
+  if (shape.localName === 'image') {
+    return statusBorderWidth(0);
+  }
+  const width = originalStrokeWidth(shape, entry.original.strokeWidth);
+  return Math.max(width, statusBorderWidth(width));
 }
 
 /* ---------- legs ---------- */
