@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { colorManipulator, createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { noDataColor, statusColor, tintFill } from '../binding/color';
@@ -586,6 +586,21 @@ describe('end markers: which shapes count and how they are painted', () => {
     expect(a.style.fill).toBe('');
     expect(b.style.fill).toBe('');
     expect(b.style.stroke).toBe('');
+  });
+  describe.each([
+    ['the transparent branch', 'rgba(0, 0, 0, 0)', false],
+    ['the opaque branch', 'rgb(51, 51, 51)', true],
+  ])('an inline light-dark() fill, %s resolved', (_name, resolved, painted) => {
+    afterEach(() => vi.restoreAllMocks());
+    it(`${painted ? 'paints' : 'leaves'} the dot by the computed fill`, () => {
+      const { index, entry } = load('<circle cx="10" cy="30" r="4" style="fill: light-dark(transparent, #333)"/>');
+      vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+        getPropertyValue: (p: string) => (p === 'fill' ? resolved : ''),
+      } as unknown as CSSStyleDeclaration);
+      applyPatches(index, both());
+      const m = entry.ends![0].el as SVGElement;
+      expect(/ff8800|255, 136, 0/.test(m.style.fill)).toBe(painted);
+    });
   });
   it('restores the CSS priority of the original inline paint', () => {
     const { index, entry } = load('<circle cx="10" cy="30" r="4" style="fill: #333 !important"/>');
