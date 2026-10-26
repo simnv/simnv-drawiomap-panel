@@ -15,6 +15,7 @@ import {
   renderLinkLabels,
   setLinkLabelScale,
   stageObstacles,
+  watchLinkLabelFonts,
 } from './linkLabels';
 
 /*
@@ -1111,6 +1112,55 @@ describe('renderLinkLabels: coordinates', () => {
     // the anchor is on the first segment (y = 50), not on the chord (y = 52.6): the centre sits 16 above it
     expect(Number(a.getAttribute('y'))).toBeCloseTo(50, 0);
     expect(a.getAttribute('transform')).toMatch(/^rotate\(1\.49 /);
+  });
+});
+
+describe('watchLinkLabelFonts', () => {
+  const patches = (): PatchMap =>
+    new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+  const cutWidth = (root: SVGSVGElement) => Number(blacks(maskOf(root)!)[0].getAttribute('width'));
+  const glyphs = (root: SVGSVGElement, width: number) =>
+    labels(root).forEach((t) => {
+      (t as unknown as { getBBox: () => DOMRect }).getBBox = () =>
+        ({ x: -width / 2, y: 0, width, height: 10 }) as DOMRect;
+    });
+  const setFonts = (value: unknown) => Object.defineProperty(document, 'fonts', { value, configurable: true });
+  afterEach(() => {
+    Reflect.deleteProperty(document, 'fonts');
+  });
+  it('cuts the stroke again when a web font loads and the glyphs grow; the cleanup stops it', () => {
+    const fonts = Object.assign(new EventTarget(), { ready: Promise.resolve() });
+    setFonts(fonts);
+    const { root, index } = build();
+    render(root, index, patches());
+    glyphs(root, 20);
+    const stop = watchLinkLabelFonts(root);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(cutWidth(root)).toBe(23);
+    glyphs(root, 40);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(cutWidth(root)).toBe(43);
+    stop();
+    glyphs(root, 60);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(cutWidth(root)).toBe(43);
+  });
+  it('cuts again when document.fonts.ready resolves', async () => {
+    let done!: () => void;
+    setFonts(Object.assign(new EventTarget(), { ready: new Promise<void>((r) => (done = r)) }));
+    const { root, index } = build();
+    render(root, index, patches());
+    glyphs(root, 20);
+    watchLinkLabelFonts(root);
+    glyphs(root, 40);
+    done();
+    await Promise.resolve();
+    expect(cutWidth(root)).toBe(43);
+  });
+  it('does nothing in a host without document.fonts', () => {
+    setFonts(undefined);
+    const { root } = build();
+    expect(() => watchLinkLabelFonts(root)()).not.toThrow();
   });
 });
 
