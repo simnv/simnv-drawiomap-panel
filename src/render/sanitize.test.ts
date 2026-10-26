@@ -114,6 +114,19 @@ describe('sanitizeSvg: draw.io export', () => {
     expect(r.warnings).toEqual([]);
     expect((r.svg.match(/<text/g) ?? []).length).toBe((l3.match(/<text/g) ?? []).length);
   });
+  it('keeps the colour scheme of the root and strips it from every descendant', () => {
+    const r = sanitizeSvg(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" style="background: #fff; color-scheme: light dark;"><g style="color-scheme: light dark; opacity: 0.5"><rect color-scheme="dark" style="color-scheme: dark" width="1" height="1" fill="light-dark(#000, #fff)"/></g></svg>`
+    );
+    const root = new DOMParser().parseFromString(r.svg, 'image/svg+xml').documentElement;
+    expect(root.getAttribute('style')).toContain('color-scheme: light dark');
+    expect(root.querySelector('g')!.getAttribute('style')).not.toContain('color-scheme');
+    expect(root.querySelector('g')!.getAttribute('style')).toContain('opacity: 0.5');
+    expect(root.querySelector('rect')!.getAttribute('style') ?? '').not.toContain('color-scheme');
+    expect(root.querySelector('rect')!.hasAttribute('color-scheme')).toBe(false);
+    expect(r.svg).toContain('light-dark(#000, #fff)');
+    expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
+  });
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
     expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(108);

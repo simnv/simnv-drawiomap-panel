@@ -110,6 +110,19 @@ export function sanitizeSvg(text: string): SanitizeResult {
       removed.attributes++;
     }
   }
+  // The colour scheme is the panel's: it writes it on the root from the Grafana theme. A descendant must not turn
+  // the OS preference back on for its subtree, else a light-dark() paint under it changes with no theme change.
+  for (const el of Array.from(root.querySelectorAll('[style*="color-scheme"]'))) {
+    const kept = (el.getAttribute('style') ?? '')
+      .split(';')
+      .filter((declaration) => !/^\s*color-scheme\s*:/i.test(declaration))
+      .join(';');
+    el.setAttribute('style', kept);
+  }
+  for (const el of Array.from(root.querySelectorAll('[color-scheme]'))) {
+    el.removeAttribute('color-scheme');
+    removed.attributes++;
+  }
 
   // Pass 2: DOMPurify.
   const serialized = new XMLSerializer().serializeToString(root);

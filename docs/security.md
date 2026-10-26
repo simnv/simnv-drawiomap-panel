@@ -22,15 +22,15 @@ same-origin fallback would only add risk.
 
 ## How the isolation works
 
-| Part | What it does | File |
-|---|---|---|
-| `<iframe srcdoc>` | Grafana sends `X-Frame-Options: deny` for plugin files, so the frame cannot load `drawio/index.html`. A srcdoc document is not subject to `X-Frame-Options`. | `src/editor/target.ts` |
-| `sandbox="allow-scripts allow-popups allow-downloads allow-modals"` | No `allow-same-origin`: the document has an opaque origin (`window.origin === 'null'`). No `allow-top-navigation`, no `allow-popups-to-escape-sandbox`, no `allow-forms`. | `src/editor/target.ts` (`EDITOR_SANDBOX`) |
-| `<base href=".../public/plugins/simnv-drawiomap-panel/drawio/">` | Absolute URLs for all draw.io files. Scripts, styles and images load cross-origin. Grafana sends no `Cross-Origin-Resource-Policy`, so the browser does not block them. | `src/editor/target.ts` |
-| CSP `<meta>` | draw.io can load files only from `drawio/` (plus `data:` and `blob:`). Frames, objects and forms are blocked. The frame also inherits the Grafana CSP. | `src/editor/target.ts` (`editorCsp`) |
-| Text resources as scripts | XHR from an opaque origin to Grafana fails (no CORS). The vendor script converts `resources/dia*.txt` to `resources/dia*.txt.js`. The shim loads the script file when draw.io requests the text file, and finishes the XHR without a network request. | `scripts/vendor-drawio.sh`, `src/editor/drawio-shim.js` |
-| Message channel | See below. | `src/editor/protocol.ts`, `src/editor/drawio-shim.js`, `src/editor/DrawioModal.tsx` |
-| Image files for the export | The frame cannot read image bytes of `drawio/img` (no CORS), but the export must embed images as `data:` URLs. The frame asks the panel through the channel. The panel reads only image files (png, gif, jpg, svg, webp) inside `drawio/`, without credentials and without redirects, up to 10 MB. | `src/editor/files.ts` |
+| Part                                                                | What it does                                                                                                                                                                                                                                                                                       | File                                                                                |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `<iframe srcdoc>`                                                   | Grafana sends `X-Frame-Options: deny` for plugin files, so the frame cannot load `drawio/index.html`. A srcdoc document is not subject to `X-Frame-Options`.                                                                                                                                       | `src/editor/target.ts`                                                              |
+| `sandbox="allow-scripts allow-popups allow-downloads allow-modals"` | No `allow-same-origin`: the document has an opaque origin (`window.origin === 'null'`). No `allow-top-navigation`, no `allow-popups-to-escape-sandbox`, no `allow-forms`.                                                                                                                          | `src/editor/target.ts` (`EDITOR_SANDBOX`)                                           |
+| `<base href=".../public/plugins/simnv-drawiomap-panel/drawio/">`    | Absolute URLs for all draw.io files. Scripts, styles and images load cross-origin. Grafana sends no `Cross-Origin-Resource-Policy`, so the browser does not block them.                                                                                                                            | `src/editor/target.ts`                                                              |
+| CSP `<meta>`                                                        | draw.io can load files only from `drawio/` (plus `data:` and `blob:`). Frames, objects and forms are blocked. The frame also inherits the Grafana CSP.                                                                                                                                             | `src/editor/target.ts` (`editorCsp`)                                                |
+| Text resources as scripts                                           | XHR from an opaque origin to Grafana fails (no CORS). The vendor script converts `resources/dia*.txt` to `resources/dia*.txt.js`. The shim loads the script file when draw.io requests the text file, and finishes the XHR without a network request.                                              | `scripts/vendor-drawio.sh`, `src/editor/drawio-shim.js`                             |
+| Message channel                                                     | See below.                                                                                                                                                                                                                                                                                         | `src/editor/protocol.ts`, `src/editor/drawio-shim.js`, `src/editor/DrawioModal.tsx` |
+| Image files for the export                                          | The frame cannot read image bytes of `drawio/img` (no CORS), but the export must embed images as `data:` URLs. The frame asks the panel through the channel. The panel reads only image files (png, gif, jpg, svg, webp) inside `drawio/`, without credentials and without redirects, up to 10 MB. | `src/editor/files.ts`                                                               |
 
 ### Message channel
 
@@ -56,17 +56,17 @@ The plugin has no external editor. An `editorUrl` value that an older version sa
 
 ## What script in the bundled editor frame can do
 
-| Action | Result | Proof |
-|---|---|---|
-| Read `window.top.document` | `SecurityError` | `tests/editor.spec.ts` |
-| Read `document.cookie` | `SecurityError` | `tests/editor.spec.ts` |
-| Use `localStorage` | `SecurityError` | `tests/editor.spec.ts` |
-| `fetch` a plugin file (CSP allows it) | `TypeError` (no CORS) | `tests/editor.spec.ts` |
-| `fetch` the Grafana API | blocked by the CSP `<meta>`. Without the CSP: no CORS, so the frame cannot read the answer | manual check (CSP violation in the console) |
-| Send protocol messages | yes: this is the editor. A save stores the diagram in the panel options. The panel sanitizes the SVG (`src/render/sanitize.ts`). | `src/editor/protocol.ts` |
-| Read files through the panel | only image files inside `drawio/`. These are public plugin files. | `src/editor/files.test.ts` |
-| Open a popup | yes. The popup inherits the sandbox (no `allow-popups-to-escape-sandbox`). | browser rule, not tested |
-| Navigate the frame | yes. The new document is also sandboxed and has no channel. With a copy of the token it can open a channel, but it gets nothing that the frame does not have already. | analysis, not tested |
+| Action                                | Result                                                                                                                                                                | Proof                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Read `window.top.document`            | `SecurityError`                                                                                                                                                       | `tests/editor.spec.ts`                      |
+| Read `document.cookie`                | `SecurityError`                                                                                                                                                       | `tests/editor.spec.ts`                      |
+| Use `localStorage`                    | `SecurityError`                                                                                                                                                       | `tests/editor.spec.ts`                      |
+| `fetch` a plugin file (CSP allows it) | `TypeError` (no CORS)                                                                                                                                                 | `tests/editor.spec.ts`                      |
+| `fetch` the Grafana API               | blocked by the CSP `<meta>`. Without the CSP: no CORS, so the frame cannot read the answer                                                                            | manual check (CSP violation in the console) |
+| Send protocol messages                | yes: this is the editor. A save stores the diagram in the panel options. The panel sanitizes the SVG (`src/render/sanitize.ts`).                                      | `src/editor/protocol.ts`                    |
+| Read files through the panel          | only image files inside `drawio/`. These are public plugin files.                                                                                                     | `src/editor/files.test.ts`                  |
+| Open a popup                          | yes. The popup inherits the sandbox (no `allow-popups-to-escape-sandbox`).                                                                                            | browser rule, not tested                    |
+| Navigate the frame                    | yes. The new document is also sandboxed and has no channel. With a copy of the token it can open a channel, but it gets nothing that the frame does not have already. | analysis, not tested                        |
 
 ## Theme variables of the SVG
 
@@ -76,8 +76,10 @@ the definition, a chip stays white in the dark theme.
 
 Before the sanitizer removes the `<style>` elements, `src/render/themeVars.ts` reads custom-property declarations
 only. It does not keep any CSS text. The sanitizer writes the accepted variables into the `style` attribute of the svg
-root. `light-dark()` follows the `color-scheme` that the panel sets on the root from the Grafana theme. The popup stage
-uses the same path (`useStage`).
+root. `light-dark()` follows the `color-scheme` that the panel sets on the root from the Grafana theme. The sanitizer
+strips `color-scheme` from the inline style and the attributes of every descendant, so no subtree follows the OS
+preference instead (the patch applier evaluates a `light-dark()` paint again only when the theme changes). The popup
+stage uses the same path (`useStage`).
 
 A declaration passes only when all of these are true:
 
@@ -121,14 +123,14 @@ embedding. The sandbox, CSP and sub-path rows use the services of the compose pr
 `GRAFANA_URL=<url> npx playwright test tests/editor.spec.ts` as part of the full e2e run (see `docs/acceptance.md`).
 "3 passed" is the login setup and the 2 editor tests.
 
-| Grafana | Setting | URL | Editor tests |
-|---|---|---|---|
-| 12.4.13 | default | http://localhost:3012 | 3 passed |
-| 13.2.4 | default | http://localhost:3013 | 3 passed |
-| 12.4.13 | frontend sandbox | http://localhost:3122 | 3 passed |
-| 13.2.4 | frontend sandbox | http://localhost:3123 | 3 passed |
-| 13.2.4 | `content_security_policy = true` | http://localhost:3133 | 3 passed |
-| 13.2.4 | frontend sandbox + CSP | http://localhost:3143 | 3 passed |
-| 13.2.4 | `app_sub_url = /grafana` | http://localhost:3153/grafana | 3 passed |
+| Grafana | Setting                          | URL                           | Editor tests |
+| ------- | -------------------------------- | ----------------------------- | ------------ |
+| 12.4.13 | default                          | http://localhost:3012         | 3 passed     |
+| 13.2.4  | default                          | http://localhost:3013         | 3 passed     |
+| 12.4.13 | frontend sandbox                 | http://localhost:3122         | 3 passed     |
+| 13.2.4  | frontend sandbox                 | http://localhost:3123         | 3 passed     |
+| 13.2.4  | `content_security_policy = true` | http://localhost:3133         | 3 passed     |
+| 13.2.4  | frontend sandbox + CSP           | http://localhost:3143         | 3 passed     |
+| 13.2.4  | `app_sub_url = /grafana`         | http://localhost:3153/grafana | 3 passed     |
 
 The design record is `docs/adr/0001-bundled-editor-opaque-origin.md`.
