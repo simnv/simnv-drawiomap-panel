@@ -322,3 +322,41 @@ test.describe('phone', () => {
     await expect(label(panel, ISP_A, 'a2b')).toBeVisible();
   });
 });
+
+test('an HTML edge label (a 100% foreignObject) does not drop the labels and no label stands on its text', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const prom = await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' });
+  const datasource = { uid: prom.uid, type: prom.type };
+  const legacySvg = fs.readFileSync('fixtures/demo/svg/legacy-html-labels.svg', 'utf8');
+  const uid = await createDiagram(demoL3Config('percent'), {
+    panels: [{ config: demoL3Config('percent'), svg: legacySvg, title: 'labels html' }],
+    targets: demoTargets(datasource),
+    fieldConfig,
+    height: 18,
+    zoom: { mode: 'fit', wheel: true, pan: true },
+  });
+  const dashboardPage = await gotoDashboardPage({ uid });
+  const panel = (await dashboardPage.getPanelByTitle('labels html')).locator;
+  await expect(label(panel, ISP_A, 'a2b')).toHaveAttribute('data-dmap-placed-at', /\d+/);
+  // the sheet has HTML labels in 100% x 100% foreignObjects, and the labels are not all dropped
+  expect(await panel.locator('foreignObject[width="100%"]').count()).toBeGreaterThan(0);
+  const placed = await boxes(labelsOf(panel).locator('visible=true'));
+  const total = await labelsOf(panel).count();
+  const dropped = Number(await layerOf(panel).getAttribute('data-dmap-labels-dropped'));
+  expect(total, `dropped ${dropped}`).toBeGreaterThan(0);
+  // the same sheet with plain labels places all eight halves (two of them have no data and stay hidden)
+  expect(total).toBe(8);
+  expect(dropped).toBe(0);
+  expect(placed.length).toBe(6);
+  // none sits on the text of an HTML label (the innermost text blocks of the foreignObjects)
+  const texts = await boxes(panel.locator('foreignObject div:not(:has(div))'));
+  expect(texts.length).toBeGreaterThan(0);
+  for (const box of placed) {
+    for (const text of texts) {
+      expect(intersects(box, text), JSON.stringify({ box, text })).toBe(false);
+    }
+  }
+});

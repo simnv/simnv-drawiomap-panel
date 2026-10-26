@@ -46,8 +46,8 @@ import { viewScaleOf } from './zoom';
  */
 
 export const LINK_LABEL_CLASS = 'dmap-link-label';
-/** The class of the canvas-coloured rect behind the text of a label that stands on its stroke. */
-export const LINK_LABEL_BG_CLASS = 'dmap-link-label-bg';
+/** The class of the defs that hold the masks which cut the stroke of a link under its on-stroke labels. */
+export const LINK_LABEL_DEFS_CLASS = 'dmap-link-label-defs';
 export const LINK_LABEL_LAYER_CLASS = 'dmap-link-labels';
 const NS = 'http://www.w3.org/2000/svg';
 /** a slot width rounds up to a multiple of this, so that a small change of a value keeps its slot */
@@ -93,8 +93,6 @@ interface LabelRecord {
   side?: LabelSide;
   /** the drawn stroke width of the half in root units (`HalfState.width` as the overlay draws it) */
   drawn: number;
-  /** the canvas-coloured rect behind the text of a label that stands on its stroke */
-  bg?: SVGRectElement;
   /** the box the label holds in the grid */
   obstacle?: Obstacle;
   /** an isolated re-placement found no spot: the label is hidden and tries again on the next call */
@@ -110,12 +108,17 @@ interface LabelLayout {
   grid: ObstacleIndex;
   widths: Map<string, number>;
   records: Map<string, LabelRecord>;
+  /** the number of this panel instance; the mask ids carry it, so that two panels on one page never share one */
+  uid: number;
+  /** the mask id of each link that has one */
+  maskIds: Map<string, string>;
   /** `linkWidth.max` of the placement: the widest stroke, in the units of the edge */
   max: number;
   min: number;
 }
 
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
+let instances = 0;
 let stamp = 0;
 
 /** The text of a half label (spec section 3): nothing for no data, an unbound half or an empty display. */
@@ -148,6 +151,7 @@ export function renderLinkLabels(
       layout.layer.remove();
       layouts.delete(root);
     }
+    dropMasks(root);
     return { placed: 0, dropped: 0, moved: 0 };
   }
   const fontFamily = stageFont(root);
@@ -170,7 +174,7 @@ export function renderLinkLabels(
   if (!layout || layout.key !== key || layout.index !== index || layout.layer.parentNode !== root) {
     layout = fullPlacement(root, index, patches, slots, opts, key, fontFamily, layout);
     layouts.set(root, layout);
-    setLinkLabelScale(root);
+    applyScale(root);
   } else {
     moved = refresh(layout, slots, opts.theme);
   }
@@ -186,6 +190,7 @@ export function renderLinkLabels(
       dropped++;
     }
   }
+  syncMasks(root, layout);
   layout.layer.setAttribute('data-dmap-labels-placed', String(placed));
   layout.layer.setAttribute('data-dmap-labels-dropped', String(dropped));
   if (debugEnabled()) {
@@ -196,19 +201,33 @@ export function renderLinkLabels(
   return { placed, dropped, moved };
 }
 
-/**
- * Hides the layer when a glyph would be smaller than the minimum on-screen size, shows it otherwise (spec section
- * 6). O(1): one rect, one attribute. The zoom effects call it after `applyLayout`.
- */
-export function setLinkLabelScale(root: SVGSVGElement): void {
+/** Writes the visibility of the layer for the current scale; true when it flipped. */
+function applyScale(root: SVGSVGElement): { layer?: Element; flipped: boolean } {
   const layer = Array.from(root.children).find((c) => c.classList.contains(LINK_LABEL_LAYER_CLASS));
   if (!layer) {
-    return;
+    return { flipped: false };
   }
-  if (labelsVisible(viewScaleOf(root))) {
-    layer.removeAttribute('visibility');
-  } else {
+  const hidden = !labelsVisible(viewScaleOf(root));
+  const flipped = hidden !== (layer.getAttribute('visibility') === 'hidden');
+  if (hidden) {
     layer.setAttribute('visibility', 'hidden');
+  } else {
+    layer.removeAttribute('visibility');
+  }
+  return { layer, flipped };
+}
+
+/**
+ * Hides the layer when a glyph would be smaller than the minimum on-screen size, shows it otherwise (spec section
+ * 6). One rect read and one attribute on a pan or a zoom; the masks that cut the strokes change only when the layer
+ * flips (a pan or a zoom changes nothing in the local space of the overlay). The zoom effects call it after
+ * `applyLayout`.
+ */
+export function setLinkLabelScale(root: SVGSVGElement): void {
+  const { flipped } = applyScale(root);
+  const layout = layouts.get(root);
+  if (flipped && layout) {
+    syncMasks(root, layout);
   }
 }
 
@@ -292,11 +311,11 @@ function stageFont(root: SVGSVGElement): string {
  * The matrix from the user space of `el` into root user units: the screen CTMs of both (the outermost svg has one in
  * every engine), the transform attributes in jsdom. Undefined when it cannot be read.
  */
-function toRoot(el: Element, root: SVGSVGElement): Matrix | undefined {
+function toRoot(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Matrix | undefined {
   const g = el as SVGGraphicsElement;
   if (typeof g.getScreenCTM === 'function' && typeof root.getScreenCTM === 'function') {
     const own = toMatrix(g.getScreenCTM());
-    const base = toMatrix(root.getScreenCTM());
+    const base = rootCtm ?? toMatrix(root.getScreenCTM());
     return own && base && usable(own) && usable(base) ? multiply(invert(base), own) : undefined;
   }
   return localMatrix(el, root);
@@ -365,10 +384,56 @@ const union = (a: Rect | undefined, b: Rect): Rect =>
       ])!
     : b;
 
+/** A foreignObject sized in percent (draw.io: 100% x 100%, overflow visible): its own box is the whole viewport. */
+const isFluid = (el: Element) =>
+  el.localName === 'foreignObject' && ['width', 'height'].some((a) => (el.getAttribute(a) ?? '').trim().endsWith('%'));
+
+/**
+ * The box of the HTML content of a fluid foreignObject in root units: the union of the line boxes of its text nodes
+ * (a range per text node; a range over the elements would add the 1 px wide flex wrapper with its padding that
+ * draw.io uses to position the text). Where ranges have no layout (jsdom), the box of its first element child.
+ * The foreignObject box is never used. Undefined when the content has no box.
+ */
+function htmlBox(fo: Element, root: SVGSVGElement): Rect | undefined {
+  const empty = (r: { width: number; height: number } | undefined) => !r || !(r.width > 0) || !(r.height > 0);
+  let r: { x: number; y: number; width: number; height: number } | undefined;
+  const probe = document.createRange();
+  if (typeof probe.getBoundingClientRect === 'function') {
+    const walker = document.createTreeWalker(fo, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent?.trim()) {
+        continue;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const b = range.getBoundingClientRect();
+      if (!empty(b)) {
+        r = union(r, { x: b.x, y: b.y, width: b.width, height: b.height });
+      }
+    }
+  } else {
+    r = fo.firstElementChild?.getBoundingClientRect();
+  }
+  if (!r || empty(r) || ![r.x, r.y, r.width, r.height].every(Number.isFinite)) {
+    return undefined;
+  }
+  // screen pixels into root units; a root without a screen matrix (jsdom) keeps them as they are
+  const base = typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
+  if (!base) {
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }
+  return usable(base) ? mapRect({ x: r.x, y: r.y, width: r.width, height: r.height }, invert(base)) : undefined;
+}
+
 /** The painted box of an element in root user units, or undefined when it cannot be read. */
 function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   const g = el as SVGGraphicsElement;
-  if (typeof g.getBBox === 'function') {
+  if (isFluid(el)) {
+    return htmlBox(el, root);
+  }
+  // a group with a fluid foreignObject inside: its own box would be the viewport, so take the union of the children
+  const fluidInside = Array.from(el.querySelectorAll('foreignObject')).some(isFluid);
+  if (typeof g.getBBox === 'function' && !fluidInside) {
     try {
       const m = toRoot(el, root);
       const b = g.getBBox();
@@ -380,11 +445,14 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
       return undefined;
     }
   }
-  if (el.localName === 'g' || el.localName === 'switch') {
+  if (el.localName === 'g' || el.localName === 'a' || el.localName === 'switch') {
     let box: Rect | undefined;
-    for (const child of Array.from(el.children)) {
+    // a switch draws its first usable child: the foreignObject, not the image fallback after it
+    const fo = el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
+    for (const child of fo ? [fo] : Array.from(el.children)) {
       const b = rootBox(child, root);
-      if (b) {
+      // an empty child (a box of 0 x 0 at the origin) would stretch the union
+      if (b && (b.width > 0 || b.height > 0)) {
         box = union(box, b);
       }
     }
@@ -504,6 +572,8 @@ export function stageObstacles(
       for (const { el } of entry.ends ?? []) {
         rect(el);
       }
+      // the value text of the edge is drawn in its own cell group: the exemption of the own stroke does not cover it
+      rect(entry.label);
       if (!hasHalves(patches, cellId)) {
         entry.arrows.forEach((a) => rect(a));
       }
@@ -630,8 +700,6 @@ function createProbe(layer: SVGGElement): SVGTextElement {
 
 function paint(rec: LabelRecord, theme: GrafanaTheme2): void {
   rec.el?.setAttribute('fill', theme.colors.text.primary);
-  rec.el?.setAttribute('stroke', theme.colors.background.primary);
-  rec.bg?.setAttribute('fill', theme.colors.background.primary);
 }
 
 function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
@@ -648,10 +716,6 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   el.setAttribute('dominant-baseline', 'central');
   el.setAttribute('font-size', String(LINK_LABEL_GEOMETRY.fontSize));
   el.setAttribute('font-family', layout.fontFamily);
-  el.setAttribute('stroke-width', String(2 * LINK_LABEL_GEOMETRY.halo));
-  el.setAttribute('paint-order', 'stroke');
-  el.setAttribute('stroke-linejoin', 'round');
-  el.setAttribute('stroke-linecap', 'round');
   el.setAttribute('text-rendering', 'geometricPrecision');
   layout.layer.appendChild(el);
   rec.el = el;
@@ -659,19 +723,18 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   return el;
 }
 
-const SIDE_NAMES = { '0': 'line', '1': 'top', '-1': 'bottom', '2': 'top-wide', '-2': 'bottom-wide' } as const;
-/** The corner radius of the gap a label on its stroke cuts into the line. */
+/** The corner radius of the cut a label on its stroke makes in the line. */
 const GAP_RADIUS = 2;
-
+const SIDE_NAMES = { '0': 'line', '1': 'top', '-1': 'bottom', '2': 'top-wide', '-2': 'bottom-wide' } as const;
 function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   const el = ensureElement(layout, rec);
   el.setAttribute('data-dmap-side', SIDE_NAMES[placed.side]);
   el.setAttribute('data-dmap-placed-at', String(++stamp));
-  draw(layout, rec, placed);
+  draw(rec, placed);
 }
 
-/** Writes the geometry of a placed label: the text at the drawn stroke, the gap rect behind it on the stroke. */
-function draw(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
+/** Writes the geometry of a placed label: the text at the drawn stroke. The cut in the stroke is `syncMasks`. */
+function draw(rec: LabelRecord, placed: Placed): void {
   const el = rec.el;
   if (!el) {
     return;
@@ -679,34 +742,163 @@ function draw(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   const at = drawnCentre(placed, rec.drawn);
   const x = fmt(at.x);
   const y = fmt(at.y);
-  const turn = `rotate(${fmt(placed.degrees)} ${x} ${y})`;
   el.setAttribute('x', x);
   el.setAttribute('y', y);
-  el.setAttribute('transform', turn);
-  // a label on its stroke gets a gap in the line: a rect in the canvas colour behind the text, as wide as the slot
-  // and covering the drawn stroke with 1 unit more on each side
-  if (placed.side !== 0 || rec.slot === undefined) {
-    rec.bg?.remove();
-    rec.bg = undefined;
-    return;
-  }
-  if (!rec.bg) {
-    rec.bg = document.createElementNS(NS, 'rect');
-    rec.bg.setAttribute('class', LINK_LABEL_BG_CLASS);
-    rec.bg.setAttribute('pointer-events', 'none');
-    rec.bg.setAttribute('rx', String(GAP_RADIUS));
-    layout.layer.insertBefore(rec.bg, el);
-    paint(rec, layout.theme);
-    if (el.getAttribute('visibility') === 'hidden') {
-      rec.bg.setAttribute('visibility', 'hidden');
+  el.setAttribute('transform', turnOf(placed.degrees, at));
+}
+
+const turnOf = (degrees: number, at: Point) => `rotate(${fmt(degrees)} ${fmt(at.x)} ${fmt(at.y)})`;
+
+/* ---------- the cut in the stroke ---------- */
+
+/** a matrix number for an attribute: six decimals, so that a rotated group keeps its angle */
+const mnum = (n: number) => String(Math.round(n * 1e6) / 1e6);
+const matrixAttr = (m: Matrix) => `matrix(${[m.a, m.b, m.c, m.d, m.e, m.f].map(mnum).join(' ')})`;
+const MASK_PREFIX = 'dmap-lm-';
+
+/** Takes every mask off the strokes and removes the defs of the stage. */
+function dropMasks(root: SVGSVGElement): void {
+  root.querySelectorAll(`defs.${LINK_LABEL_DEFS_CLASS}`).forEach((d) => d.remove());
+  root.querySelectorAll('[mask^="url(#' + MASK_PREFIX + '"]').forEach((el) => el.removeAttribute('mask'));
+}
+
+/**
+ * The stroke of a link stops under the text of its on-stroke labels, whatever lies behind it (no colour is read): one
+ * `<mask>` per link, a white rect over the strokes of the link and a black rect per label slot, as the gap had been
+ * (the slot wide, the drawn stroke plus 1 on each side high). The mask content is in the user space of the element
+ * that wears the mask, the overlay group of the link, so each slot is the root box mapped through the inverse of
+ * the matrix of that group, with the rotation of the label after it. The elements that draw the stroke are the halves
+ * and the arrow heads of the overlay (the edge itself is invisible under a patch). Called on every pass, because the
+ * overlay is drawn again on each frame.
+ */
+function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
+  const shown = layout.layer.getAttribute('visibility') !== 'hidden';
+  const wanted = new Map<string, LabelRecord[]>();
+  for (const rec of layout.records.values()) {
+    const placed = rec.placement;
+    if (
+      shown &&
+      placed &&
+      'centre' in placed &&
+      placed.side === 0 &&
+      rec.slot !== undefined &&
+      rec.el &&
+      rec.el.getAttribute('visibility') !== 'hidden'
+    ) {
+      wanted.set(rec.cellId, [...(wanted.get(rec.cellId) ?? []), rec]);
     }
   }
-  const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
-  rec.bg.setAttribute('x', fmt(at.x - rec.slot / 2));
-  rec.bg.setAttribute('y', fmt(at.y - height / 2));
-  rec.bg.setAttribute('width', fmt(rec.slot));
-  rec.bg.setAttribute('height', fmt(height));
-  rec.bg.setAttribute('transform', turn);
+  const strokes = new Map<string, SVGElement[]>();
+  root.querySelectorAll<SVGElement>(`g.${OVERLAY_CLASS} .dmap-half, g.${OVERLAY_CLASS} .dmap-arrow`).forEach((el) => {
+    const cell = el.getAttribute('data-dmap-cell') ?? '';
+    strokes.set(cell, [...(strokes.get(cell) ?? []), el]);
+  });
+  // all the reads first (the matrices and the boxes), then all the writes: one layout, not one per link
+  const base = typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
+  interface Plan {
+    cell: string;
+    els: SVGElement[];
+    area: Rect;
+    slots: Array<Record<string, string>>;
+    key: string;
+  }
+  const plans: Plan[] = [];
+  for (const [cell, recs] of wanted) {
+    const els = strokes.get(cell);
+    const space = els?.[0].parentElement;
+    const m = space && toRoot(space, root, base);
+    if (!els || !space || !m) {
+      continue;
+    }
+    const back = invert(m);
+    // the white rect covers the strokes of the link with a margin; everything it covers is kept except the slots
+    const margin = 3 * layout.max * scaleOf(m) + 20;
+    const box = rootBox(space, root);
+    const area = box
+      ? mapRect(
+          { x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin },
+          back
+        )
+      : { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
+    const slots = recs.map((rec) => {
+      const placed = rec.placement as Placed;
+      const at = drawnCentre(placed, rec.drawn);
+      const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
+      return {
+        x: fmt(at.x - rec.slot! / 2),
+        y: fmt(at.y - height / 2),
+        width: fmt(rec.slot!),
+        height: fmt(height),
+        transform: `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`,
+      };
+    });
+    plans.push({ cell, els, area, slots, key: JSON.stringify([fmt(area.x), fmt(area.y), fmt(area.width), fmt(area.height), slots]) });
+  }
+  let defs = root.querySelector<SVGDefsElement>(`defs.${LINK_LABEL_DEFS_CLASS}`);
+  const live = new Set<string>();
+  for (const { cell, els, area, slots, key } of plans) {
+    if (!defs) {
+      defs = document.createElementNS(NS, 'defs') as SVGDefsElement;
+      defs.setAttribute('class', LINK_LABEL_DEFS_CLASS);
+      root.insertBefore(defs, layout.layer);
+    }
+    let id = layout.maskIds.get(cell);
+    if (!id) {
+      id = `${MASK_PREFIX}${layout.uid}-${layout.maskIds.size}`;
+      layout.maskIds.set(cell, id);
+    }
+    let mask = Array.from(defs.children).find((c) => c.id === id) as SVGMaskElement | undefined;
+    if (!mask) {
+      mask = document.createElementNS(NS, 'mask') as SVGMaskElement;
+      mask.setAttribute('id', id);
+      mask.setAttribute('data-dmap-cell', cell);
+      mask.setAttribute('maskUnits', 'userSpaceOnUse');
+      mask.setAttribute('maskContentUnits', 'userSpaceOnUse');
+      defs.appendChild(mask);
+    }
+    live.add(id);
+    // a pan or a zoom changes nothing in the local space of the overlay: an unchanged mask is not rebuilt
+    if (mask.getAttribute('data-dmap-key') !== key) {
+      mask.setAttribute('data-dmap-key', key);
+      const frame = { x: fmt(area.x), y: fmt(area.y), width: fmt(area.width), height: fmt(area.height) };
+      for (const [k, v] of Object.entries(frame)) {
+        mask.setAttribute(k, v);
+      }
+      const white = document.createElementNS(NS, 'rect');
+      for (const [k, v] of Object.entries(frame)) {
+        white.setAttribute(k, v);
+      }
+      white.setAttribute('fill', 'white');
+      mask.replaceChildren(
+        white,
+        ...slots.map((spec) => {
+          const k = document.createElementNS(NS, 'rect');
+          for (const [name, v] of Object.entries(spec)) {
+            k.setAttribute(name, v);
+          }
+          k.setAttribute('rx', String(GAP_RADIUS));
+          k.setAttribute('fill', 'black');
+          return k;
+        })
+      );
+    }
+    const ref = `url(#${id})`;
+    els.forEach((el) => el.getAttribute('mask') !== ref && el.setAttribute('mask', ref));
+  }
+  Array.from(defs?.children ?? []).forEach((c) => {
+    if (!live.has(c.id)) {
+      c.remove();
+    }
+  });
+  if (defs && !defs.firstElementChild) {
+    defs.remove();
+  }
+  for (const [cell, els] of strokes) {
+    const id = layout.maskIds.get(cell);
+    if (!id || !live.has(id)) {
+      els.forEach((el) => el.getAttribute('mask')?.startsWith(`url(#${MASK_PREFIX}`) && el.removeAttribute('mask'));
+    }
+  }
 }
 
 /** Shows `text` in the element, or hides the element (its slot stays reserved) when there is none. */
@@ -717,14 +909,12 @@ function showText(rec: LabelRecord, text: string | undefined): void {
   }
   if (text === undefined || rec.retry) {
     el.setAttribute('visibility', 'hidden');
-    rec.bg?.setAttribute('visibility', 'hidden');
     return;
   }
   if (el.textContent !== text) {
     el.textContent = text;
   }
   el.removeAttribute('visibility');
-  rec.bg?.removeAttribute('visibility');
 }
 
 /** Places one label with its current slot; a placed label takes its box in the grid. */
@@ -785,6 +975,8 @@ function fullPlacement(
     grid: obstacleIndex([]),
     widths: new Map(),
     records: new Map(),
+    uid: previous?.uid ?? ++instances,
+    maskIds: previous?.maskIds ?? new Map(),
     max: opts.linkWidth.max,
     min: opts.linkWidth.min,
   };
@@ -866,7 +1058,7 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2): numb
     if (drawn !== rec.drawn) {
       rec.drawn = drawn;
       if (rec.placement && 'centre' in rec.placement) {
-        draw(layout, rec, rec.placement);
+        draw(rec, rec.placement);
       }
     }
     const width = slotOf(layout, slot, text);
