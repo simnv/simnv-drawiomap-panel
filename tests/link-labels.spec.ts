@@ -350,7 +350,7 @@ test('an HTML edge label (a 100% foreignObject) does not drop the labels and no 
   // the same sheet with plain labels places all eight halves (two of them have no data and stay hidden)
   expect(total).toBe(8);
   expect(dropped).toBe(0);
-  expect(placed.length).toBeGreaterThan(4);
+  expect(placed.length).toBe(6);
   // none sits on the text of an HTML label (the innermost text blocks of the foreignObjects)
   const texts = await boxes(panel.locator('foreignObject div:not(:has(div))'));
   expect(texts.length).toBeGreaterThan(0);

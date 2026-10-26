@@ -723,7 +723,7 @@ describe('renderLinkLabels: review cases', () => {
       expect(clear(root, { x: 100, w: 50 })).toBe(true);
     });
     it('a portograph link label cell is an obstacle', () => {
-      const chip = `<g data-cell-id="pg-linkLabel~e1" data-pg-kind="link-label"><g><rect x="100" y="94" width="50" height="12"/><text x="102" y="102" font-size="8">metric 10</text></g></g>`;
+      const chip = `<g data-cell-id="0" data-meta-label="" data-meta-pg-schema="1"/><g data-cell-id="pg-linkLabel~e1" data-pg-kind="link-label"><g><rect x="100" y="94" width="50" height="12"/><text x="102" y="102" font-size="8">metric 10</text></g></g>`;
       const { root, index } = build(SVG(chip));
       render(root, index, both());
       expect(clear(root, { x: 100, w: 50 })).toBe(true);
@@ -768,12 +768,29 @@ describe('renderLinkLabels: HTML labels', () => {
     const boxes = rects(root, index, both());
     expect(boxes).toContainEqual({ x: 100, y: 94, width: 50, height: 12 });
     expect(boxes.some((r) => r.width >= 100 && r.height >= 100)).toBe(false);
-    const chip = `<g data-cell-id="pg-linkLabel~e1" data-meta-pg-kind="link-label"><g>${fo}</g></g>`;
+    const chip = `<g data-cell-id="0" data-meta-label="" data-meta-pg-schema="1"/><g data-cell-id="pg-linkLabel~e1" data-meta-pg-kind="link-label"><g>${fo}</g></g>`;
     const second = build(SVG(chip));
     stubContent(second.root, { x: 100, y: 94, width: 50, height: 12 });
     const chips = rects(second.root, second.index, both());
     expect(chips.some((r) => r.width >= 100 && r.height >= 100)).toBe(false);
     expect(chips).toContainEqual({ x: 100, y: 94, width: 50, height: 12 });
+  });
+  it('an empty child next to an HTML label does not stretch the box to the origin', () => {
+    const cell = `<g data-cell-id="0" data-meta-label="" data-meta-pg-schema="1"/><g data-cell-id="pg-linkLabel~e1" data-meta-pg-kind="link-label" data-meta-pg-of="e1"><g><rect width="0" height="0"/>${fo}</g></g>`;
+    const { root, index } = build(SVG(cell));
+    stubContent(root, { x: 100, y: 94, width: 50, height: 12 });
+    const boxes = rects(root, index, both());
+    expect(boxes).toContainEqual({ x: 100, y: 94, width: 50, height: 12 });
+    expect(boxes.some((r) => r.x === 0 && r.y === 0 && r.width > 0)).toBe(false);
+  });
+  it('a linked cell (an <a> around the label) measures the HTML content too', () => {
+    const cell = `<g data-cell-id="0" data-meta-label="" data-meta-pg-schema="1"/><g data-cell-id="pg-linkLabel~e1" data-meta-pg-kind="link-label" data-meta-pg-of="e1"><g><rect x="90" y="90" width="5" height="5"/><a href="#x">${fo}</a></g></g>`;
+    const { root, index } = build(SVG(cell));
+    stubContent(root, { x: 100, y: 94, width: 50, height: 12 });
+    // the chip box (the group) holds the swatch and the content of the label inside the link
+    expect(
+      rects(root, index, both()).some((r) => r.x <= 90 && r.x + r.width >= 150 && r.y <= 90 && r.y + r.height >= 106)
+    ).toBe(true);
   });
   it('a content box that cannot be read gives no obstacle, never the 100% box', () => {
     const cell = `<g data-cell-id="t1"><g>${fo}</g></g>`;
@@ -866,6 +883,12 @@ describe('setLinkLabelScale', () => {
     // a data refresh with the same geometry keeps them too; a new width rebuilds
     render(root, index, patches);
     expect(Array.from(maskOf(root)!.children)).toEqual(children);
+    const wider = new Map([
+      ['e1', linkPatch('e1', { a2b: half({ width: 9 }), b2a: half({ width: 9 }), labelMode: 'percent' })],
+    ]);
+    render(root, index, wider);
+    expect(maskOf(root)!.getAttribute('data-dmap-key')).not.toBe(key);
+    expect(Array.from(maskOf(root)!.children)).not.toEqual(children);
     // a flip of the visibility does change them
     sized(root, 0.2);
     setLinkLabelScale(root);

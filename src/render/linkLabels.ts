@@ -445,13 +445,14 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
       return undefined;
     }
   }
-  if (el.localName === 'g' || el.localName === 'switch') {
+  if (el.localName === 'g' || el.localName === 'a' || el.localName === 'switch') {
     let box: Rect | undefined;
     // a switch draws its first usable child: the foreignObject, not the image fallback after it
     const fo = el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
     for (const child of fo ? [fo] : Array.from(el.children)) {
       const b = rootBox(child, root);
-      if (b) {
+      // an empty child (a box of 0 x 0 at the origin) would stretch the union
+      if (b && (b.width > 0 || b.height > 0)) {
         box = union(box, b);
       }
     }
