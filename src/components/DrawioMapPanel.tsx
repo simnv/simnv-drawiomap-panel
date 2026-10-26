@@ -42,7 +42,8 @@ import { bandLayout, StatusBand } from './StatusBand';
 import { Legend } from '../legend/Legend';
 import { buildLegend } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
-import { bindSymbolLegend, LEGEND_ROW_ATTR, type RowMarks } from '../legend/symbolRows';
+import { bindSymbolLegend, LEGEND_ROW_ATTR } from '../legend/symbolRows';
+import { createHighlightStore } from '../legend/highlightStore';
 
 /**
  * Height in px that the top-right corner keeps free for the Grafana panel menu button. A panel without a title
@@ -436,16 +437,12 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     });
   }, [legendOptions.show, queries, result.patches, theme, fieldConfig.defaults.thresholds]);
   const legendMembers = useMemo(() => [...new Set(legendBlocks.flatMap((b) => b.cellIds))], [legendBlocks]);
-  const [legendHits, setLegendHits] = useState<string[] | null>(null);
-  // Opening the popup also ends the legend highlight.
-  if (paused && legendHits) {
-    setLegendHits(null);
-  }
-  // The marks of a legend row inside the diagram (portograph rows with a symbol). They come before the panel legend.
-  const [rowMarks, setRowMarks] = useState<RowMarks | null>(null);
-  if (paused && rowMarks) {
-    setRowMarks(null);
-  }
+  // The active entry of the panel legend and the marks of a legend row inside the diagram (portograph rows with a
+  // symbol). They are not state: a hover writes the store, and only the highlight effect below reads it, so a hover
+  // does not render the view.
+  const [highlight] = useState(createHighlightStore);
+  // Opening the popup ends the legend highlight, and a hover behind the popup marks nothing, also after it closes.
+  useEffect(() => highlight.clear(), [paused, highlight]);
   const legendRef = useRef<HTMLElement>(null);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
@@ -537,25 +534,48 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     return () => cancelAnimationFrame(id);
   }, [stage.root, stage.index, stage.base, result, theme, osDark, interactive, linkMin, linkMax]);
 
-  // After the patches (the same frame order): mark the cells of the legend entry under the pointer.
-  const hits = legendBlocks.length ? legendHits : null;
+  // After the patches (the same frame order): mark the cells of the legend entry under the pointer. The effect runs
+  // again for a new stage or new data; a change of the store paints in the next frame with no render. The rows of the
+  // diagram come before the panel legend.
+  const hasBlocks = legendBlocks.length > 0;
   useEffect(() => {
     if (!stage.root) {
       return;
     }
     const root = stage.root;
-    const id = requestAnimationFrame(() =>
-      rowMarks
-        ? highlightCells(root, stage.index, rowMarks.members, rowMarks.hits)
-        : highlightCells(root, stage.index, legendMembers, hits)
-    );
-    return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, legendMembers, hits, rowMarks, result]);
+    if (paused) {
+      const id = requestAnimationFrame(() => highlightCells(root, stage.index, [], null));
+      return () => cancelAnimationFrame(id);
+    }
+    let frame: number | undefined;
+    const paint = () => {
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        const { legend, rows } = highlight.get();
+        if (rows) {
+          highlightCells(root, stage.index, rows.members, rows.hits);
+        } else {
+          highlightCells(root, stage.index, legendMembers, hasBlocks ? legend : null);
+        }
+      });
+    };
+    paint();
+    const unsubscribe = highlight.subscribe(paint);
+    return () => {
+      unsubscribe();
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+    };
+  }, [stage.root, stage.index, legendMembers, hasBlocks, result, highlight, paused]);
 
   // The legend rows of the diagram: a row with a symbol marks the nodes of that symbol.
   useEffect(
-    () => (stage.root ? bindSymbolLegend(stage.root, stage.index, setRowMarks) : undefined),
-    [stage.root, stage.index]
+    () => (stage.root ? bindSymbolLegend(stage.root, stage.index, highlight.setRows) : undefined),
+    [stage.root, stage.index, highlight]
   );
 
   // Zoom layout.
@@ -691,7 +711,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       blocks={legendBlocks}
       maxBlocks={legendOptions.maxBlocks}
       collapsed={legendOptions.collapsed}
-      onHighlight={setLegendHits}
+      onHighlight={highlight.setLegend}
       style={corners[legendCorner]}
       corner={legendCorner}
     />
