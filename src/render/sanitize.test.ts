@@ -73,6 +73,25 @@ describe('sanitizeSvg: adversarial input', () => {
     expect(r.svg).toContain('label');
     expect(r.removed.elements).toBeGreaterThanOrEqual(3);
   });
+  it('turns the draw.io theme <style> into variables on the root and removes the <style>', () => {
+    const id = 'ge-svg-FsRRRb8MO-OGrmC6xf82';
+    const css = `@supports (color: light-dark(#000, #fff)) { #${id} { --ge-adaptive-bg: light-dark(#ffffff, var(--ge-dark-color, #121212)); } }`;
+    const text = `<svg xmlns="http://www.w3.org/2000/svg" id="${id}" viewBox="0 0 10 10" style="color-scheme: light dark;"><defs><style type="text/css">${css}</style></defs><rect width="1" height="1" style="fill: var(--ge-adaptive-bg, #ffffff);"/></svg>`;
+    const r = sanitizeSvg(text);
+    expect(r.svg).not.toMatch(/<style/i);
+    const root = new DOMParser().parseFromString(r.svg, 'image/svg+xml').documentElement;
+    expect(root.getAttribute('style')).toContain('--ge-adaptive-bg: light-dark(#ffffff, #121212)');
+    expect(root.getAttribute('style')).toContain('color-scheme');
+    expect(r.svg).toContain('var(--ge-adaptive-bg, #ffffff)');
+    expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
+  });
+  it('sets no variable from a hostile <style>', () => {
+    const r = sanitizeSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" id="a1" viewBox="0 0 10 10"><style>#a1 { --ge-x: url(https://evil.example/p) } svg { --ge-y: #fff }</style></svg>'
+    );
+    expect(r.svg).not.toContain('--ge-');
+    expect(r.svg).not.toContain('evil.example');
+  });
   it('keeps data URI images and drops nothing that is needed', () => {
     const r = sanitizeSvg(wrap('<image href="data:image/png;base64,iVBORw0KGgo=" width="1" height="1"/>'));
     expect(r.svg).toContain('data:image/png;base64,iVBORw0KGgo=');

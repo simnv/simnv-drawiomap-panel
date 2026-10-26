@@ -13,6 +13,8 @@ A Grafana panel plugin (`simnv-drawiomap-panel`). It shows a draw.io diagram as 
 
 View mode loads no draw.io code. The panel stores the diagram XML and the SVG that draw.io exported. The panel shows the SVG and writes colours into it.
 
+The panel removes every `<style>` element from the SVG. It keeps only the `--ge-*` colour variables of the draw.io auto theme (for example the label background), so they follow the Grafana light or dark theme. See [Theme variables](docs/security.md#theme-variables-of-the-svg).
+
 ## Requirements
 
 - Grafana 12.4 or later (`>=12.4.0`). Exact tested releases, sandbox modes and the development build are in the [compatibility matrix](docs/research/authoring-compatibility.md).
