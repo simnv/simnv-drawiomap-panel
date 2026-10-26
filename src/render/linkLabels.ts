@@ -389,21 +389,29 @@ const isFluid = (el: Element) =>
   el.localName === 'foreignObject' && ['width', 'height'].some((a) => (el.getAttribute(a) ?? '').trim().endsWith('%'));
 
 /**
- * The box of the HTML content of a fluid foreignObject in root units: the text line boxes (a range over the
- * contents), else the box of its first element child. The foreignObject box is never used. Undefined when the
- * content has no box.
+ * The box of the HTML content of a fluid foreignObject in root units: the union of the line boxes of its text nodes
+ * (a range per text node; a range over the elements would add the 1 px wide flex wrapper with its padding that
+ * draw.io uses to position the text). Where ranges have no layout (jsdom), the box of its first element child.
+ * The foreignObject box is never used. Undefined when the content has no box.
  */
 function htmlBox(fo: Element, root: SVGSVGElement): Rect | undefined {
   const empty = (r: { width: number; height: number } | undefined) => !r || !(r.width > 0) || !(r.height > 0);
-  let r: DOMRect | undefined;
-  try {
-    const range = document.createRange();
-    range.selectNodeContents(fo);
-    r = typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : undefined;
-  } catch {
-    r = undefined;
-  }
-  if (empty(r)) {
+  let r: { x: number; y: number; width: number; height: number } | undefined;
+  const probe = document.createRange();
+  if (typeof probe.getBoundingClientRect === 'function') {
+    const walker = document.createTreeWalker(fo, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent?.trim()) {
+        continue;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const b = range.getBoundingClientRect();
+      if (!empty(b)) {
+        r = union(r, { x: b.x, y: b.y, width: b.width, height: b.height });
+      }
+    }
+  } else {
     r = fo.firstElementChild?.getBoundingClientRect();
   }
   if (!r || empty(r) || ![r.x, r.y, r.width, r.height].every(Number.isFinite)) {
