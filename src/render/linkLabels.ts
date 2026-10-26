@@ -1003,7 +1003,7 @@ function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
   const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.side;
   const sides: readonly LabelSide[] =
     mate === undefined ? LABEL_SIDES : [mate, ...LABEL_SIDES.filter((side) => side !== mate)];
-  return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides));
+  return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides, true));
 }
 
 /** The leg of a record with its slot size; undefined when the edge has no geometry or the half has no slot yet. */
