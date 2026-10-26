@@ -89,16 +89,17 @@ export function buildConfiguredCard(
   }
   const primary = primaryOf(patch);
   card.links = resolveLinks(patch, primary, ctx.replaceVariables, card.title);
+  // the status state and its reason first: the element shows the colour, the card says why
+  if (patch.statusView) {
+    card.rows.push({
+      key: 'status',
+      kind: 'status',
+      title: patch.statusView.state,
+      text: patch.statusView.reason,
+      state: 'ready',
+    });
+  }
   if (!patch.hover) {
-    if (patch.statusView) {
-      card.rows.push({
-        key: 'status',
-        kind: 'status',
-        title: patch.statusView.state,
-        text: patch.statusView.reason,
-        state: 'ready',
-      });
-    }
     return card;
   }
   patch.hover.rows.forEach((row, i) => {

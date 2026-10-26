@@ -4,7 +4,8 @@ import type { CellPatch, SeriesInfo } from '../types';
 import { buildConfiguredCard, CardContext, chartHeight, opensCard, SPARK_HEIGHT } from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
 import type { QueryBinding } from '../model/config';
-import { toHistory } from '../query/frames';
+import { type HistoryModel, toHistory } from '../query/frames';
+import type { StatusView } from '../binding/status';
 
 const theme = createTheme();
 const fieldLink: LinkModel<Field> = { href: '/d/field', title: 'Field link', target: '_blank', origin: {} as Field };
@@ -103,6 +104,26 @@ describe('configured cards', () => {
       ['unsupported', 'Binding metadata is unavailable'],
     ]);
     expect(card.demands).toEqual([]);
+  });
+  it('shows the status state and its reason first, before the hover rows, also for a normal status', () => {
+    const status = (state: StatusView['state'], reason: string): StatusView => ({
+      state,
+      reason,
+      conditionKey: 'k',
+      queryIds: ['health'],
+      coverage: { available: 1, expected: 1 },
+    });
+    const read = () => ({ state: 'empty' }) as HistoryModel;
+    const down = buildConfiguredCard({ ...patch(), statusView: status('warning', 'probe delay ≥ 400 ms') }, read, ctx);
+    expect(down.rows[0]).toMatchObject({ key: 'status', kind: 'status', title: 'warning', text: 'probe delay ≥ 400 ms' });
+    // the hover rows follow (the drilldown row is a footer link, not a row)
+    expect(down.rows.slice(1).map((r) => r.key)).toEqual(['row-0', 'row-1', 'row-2']);
+    const normal = buildConfiguredCard({ ...patch(), statusView: status('normal', 'Healthy') }, read, ctx);
+    expect(normal.rows[0]).toMatchObject({ kind: 'status', title: 'normal', text: 'Healthy' });
+    expect(buildConfiguredCard(patch(), read, ctx).rows.some((r) => r.kind === 'status')).toBe(false);
+    // a status-only cell: the one row, as before
+    const only = buildConfiguredCard({ ...nodePatch(), statusView: status('down', 'Device down') }, read, ctx);
+    expect(only.rows.map((r) => [r.kind, r.title, r.text])).toEqual([['status', 'down', 'Device down']]);
   });
   it('uses configured rows, preserves formatted affixes and null gaps, and limits histories to explicit history rows', () => {
     const model = toHistory(
