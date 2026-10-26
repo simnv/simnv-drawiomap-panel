@@ -11,7 +11,10 @@ import {
   parsePathPoints,
   pathGeometry,
   polylineLength,
+  strokeReach,
   scaleOf,
+  drawnStrokeWidth,
+  originalStrokeWidth,
   toMatrix,
   usable,
   type Matrix,
@@ -36,7 +39,8 @@ import {
   type Placement,
   type Rect,
 } from './labelPlacement';
-import { fmt, linkSplit, OVERLAY_CLASS, statusMarkerBox, type TextProbe } from './overlay';
+import { maxBodyWidth, statusBorderWidth } from '../binding/color';
+import { fmt, linkSplit, OVERLAY_CLASS } from './overlay';
 import { viewScaleOf } from './zoom';
 
 /*
@@ -54,7 +58,7 @@ const NS = 'http://www.w3.org/2000/svg';
 const SLOT_GRAIN = 4;
 /** the widest text `percentText` produces: every percent label has this one slot */
 const WIDEST_PERCENT = '>999%';
-/** the font of the status markers: the fallback when the stage has no portograph link label */
+/** the fallback font family when the stage has no portograph link label */
 const FALLBACK_FONT = 'sans-serif';
 /** a box inside another by at most this much on a side still counts as contained (two decimals in the export) */
 const CONTAIN_EPS = 0.5;
@@ -157,7 +161,7 @@ export function renderLinkLabels(
     return { placed: 0, dropped: 0, moved: 0 };
   }
   const fontFamily = stageFont(root);
-  // the obstacles depend on every patched cell (its marker room, its arrows, its stroke, the split of its halves)
+  // the obstacles depend on every patched cell (its arrows, its stroke, the split of its halves)
   const patched = Array.from(patches.keys())
     .sort()
     .map((id) => {
@@ -299,7 +303,7 @@ function measure(
   return measured > 0 ? measured : estimate;
 }
 
-/** The font of the first portograph link label in the stage, else the status markers' font. */
+/** The font of the first portograph link label in the stage, else the fallback font. */
 function stageFont(root: SVGSVGElement): string {
   const text = root.querySelector('g[data-cell-id^="pg-linkLabel"] text');
   const family =
@@ -450,7 +454,8 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   if (el.localName === 'g' || el.localName === 'a' || el.localName === 'switch') {
     let box: Rect | undefined;
     // a switch draws its first usable child: the foreignObject, not the image fallback after it
-    const fo = el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
+    const fo =
+      el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
     for (const child of fo ? [fo] : Array.from(el.children)) {
       const b = rootBox(child, root);
       // an empty child (a box of 0 x 0 at the origin) would stretch the union
@@ -463,12 +468,6 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
   const local = attributeBox(el);
   const m = local && toRoot(el, root);
   return local && m ? mapRect(local, m) : undefined;
-}
-
-/** The inline stroke width of a primitive: the attribute, the style, the original style, else 1 (the SVG default). */
-function strokeWidthOf(el: SVGElement, original?: string): number {
-  const n = parseFloat(el.getAttribute('stroke-width') || el.style.strokeWidth || original || '');
-  return Number.isFinite(n) ? n : 1;
 }
 
 /* ---------- obstacles ---------- */
@@ -528,7 +527,6 @@ export function stageObstacles(
   index: CellIndex,
   patches: PatchMap,
   max: number,
-  probe: TextProbe,
   legs: Map<string, EdgeLegs> = new Map()
 ): Obstacle[] {
   const out: Obstacle[] = [];
@@ -566,7 +564,7 @@ export function stageObstacles(
         if (own) {
           [own.a2b, own.b2a].forEach((leg) => leg && strokes(cellId, leg.points, leg.strokeRoot / 2, leg.id));
         } else {
-          const width = hasHalves(patches, cellId) ? max : strokeWidthOf(entry.line, entry.original.strokeWidth);
+          const width = hasHalves(patches, cellId) ? max : drawnStrokeWidth(entry.line);
           const pts = parsePathPoints(entry.line.getAttribute('d') ?? '').map((p) => applyMatrix(m, p));
           strokes(cellId, pts, (width * unit) / 2);
         }
@@ -589,23 +587,29 @@ export function stageObstacles(
         out.push({
           kind: 'rect',
           rect: body,
-          clearance: (strokeWidthOf(entry.shape, entry.original.strokeWidth) * scaleOf(m)) / 2,
+          clearance: strokeReach(m, bodyReach(entry)),
         });
       }
     }
     if (entry.meta.kind === 'link-label') {
       rect(entry.group);
     }
-    if (patches.has(cellId)) {
-      const marker = statusMarkerBox(entry, probe);
-      const m = marker && toRoot(marker.space, root);
-      if (marker && m) {
-        out.push({ kind: 'rect', rect: mapRect(marker.bounds, m), clearance: 0 });
-      }
-    }
   }
   root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => rect(a));
   return out;
+}
+
+/**
+ * The widest stroke that a device body can ever show, in its user units: a fixed value of its original stroke (a
+ * stroke binding or the status border, `maxBodyWidth`); an `<image>` has no stroke, only the border of the overlay.
+ * It reads nothing that a patch changes, so a status change never needs new obstacles.
+ */
+function bodyReach(entry: CellEntry): number {
+  const shape = entry.shape as SVGElement;
+  if (shape.localName === 'image') {
+    return statusBorderWidth(0);
+  }
+  return maxBodyWidth(originalStrokeWidth(shape, entry.original.strokeWidth));
 }
 
 /* ---------- legs ---------- */
@@ -892,7 +896,13 @@ function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
         transform: `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`,
       };
     });
-    plans.push({ cell, els, area, slots, key: JSON.stringify([fmt(area.x), fmt(area.y), fmt(area.width), fmt(area.height), slots]) });
+    plans.push({
+      cell,
+      els,
+      area,
+      slots,
+      key: JSON.stringify([fmt(area.x), fmt(area.y), fmt(area.width), fmt(area.height), slots]),
+    });
   }
   let defs = root.querySelector<SVGDefsElement>(`defs.${LINK_LABEL_DEFS_CLASS}`);
   const live = new Set<string>();
@@ -1041,7 +1051,6 @@ function fullPlacement(
     max: opts.linkWidth.max,
     min: opts.linkWidth.min,
   };
-  const probe: TextProbe = (text, font) => measure(layout, text, font);
   // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
   const legs = new Map<string, EdgeLegs>();
   for (const slot of slots) {
@@ -1052,7 +1061,7 @@ function fullPlacement(
       );
     }
   }
-  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, probe, legs));
+  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, legs));
   const texts: Array<string | undefined> = [];
   for (const slot of slots) {
     const text = linkLabelText(slot.state, slot.mode);

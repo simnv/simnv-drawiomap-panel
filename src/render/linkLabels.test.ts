@@ -7,7 +7,8 @@ import type { StatusView } from '../binding/status';
 import type { PlanCellPatch } from '../binding/engine';
 import { cellAt, patchAt } from '../interact/hit';
 import { buildCellIndex } from './svgStage';
-import { renderOverlay, statusMarkerBox } from './overlay';
+import { renderOverlay } from './overlay';
+import { applyPatches } from './applier';
 import {
   LINK_LABEL_CLASS,
   LINK_LABEL_LAYER_CLASS,
@@ -21,7 +22,9 @@ import {
  * from x = 40 to 200 (its anchor at 120), the b2a leg from 360 to 200 (its anchor at 280). The percent slot is
  * 24 (0.6 × 8 × 5 glyphs in jsdom), the box 26 × 12. A label stands on its stroke (centre on the line); beside it with `linkWidth.max` 10 the centre stands 13 off the line.
  */
-const SVG = (extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
+const SVG = (
+  extra = ''
+) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
   <g data-cell-id="n1"><g><rect x="0" y="80" width="40" height="40" stroke-width="2"/></g></g>
   <g data-cell-id="e1"><g><path d="M 40 100 L 360 100" fill="none" stroke="#333" pointer-events="stroke"/></g></g>
   <g data-cell-id="n2"><g><rect x="360" y="80" width="40" height="40"/></g></g>${extra}
@@ -112,9 +115,8 @@ describe('renderLinkLabels: the layer and its elements', () => {
     expect(a2b.getAttribute('y')).toBe('100');
     expect(a2b.getAttribute('transform')).toBe('rotate(0 120 100)');
     expect(a2b.getAttribute('data-dmap-side')).toBe('line');
-    // the room of the status marker (the midpoint, 4 to the right, "? missing" wide) is reserved: the b2a label,
-    // whose anchor is 280, slides past it towards the end of the link
-    expect(b2a.getAttribute('x')).toBe('284');
+    // the b2a label stands at its own anchor, the middle of its half
+    expect(b2a.getAttribute('x')).toBe('280');
     expect(b2a.getAttribute('y')).toBe('100');
     expect(a2b.getAttribute('fill')).toBe(theme.colors.text.primary);
     // the halo: a thin stroke in the background of the diagram, painted behind the glyphs
@@ -426,7 +428,11 @@ describe('renderLinkLabels: the place of a label', () => {
       new Map([
         [
           'e1',
-          linkPatch('e1', { a2b: half({ width: w }), ...(b2a ? { b2a: half({ width: w }) } : {}), labelMode: 'percent' }),
+          linkPatch('e1', {
+            a2b: half({ width: w }),
+            ...(b2a ? { b2a: half({ width: w }) } : {}),
+            labelMode: 'percent',
+          }),
         ],
       ]);
     render(root, index, widths(4));
@@ -556,8 +562,7 @@ describe('renderLinkLabels: the cut follows its label', () => {
   it('two panels get two different mask ids', () => {
     const one = build();
     const two = build();
-    const patches = () =>
-      new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+    const patches = () => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     render(one.root, one.index, patches());
     render(two.root, two.index, patches());
     const ids = [maskOf(one.root)!.id, maskOf(two.root)!.id];
@@ -574,17 +579,110 @@ describe('renderLinkLabels: obstacles', () => {
     const a = byHalf(root, 'a2b')!;
     expect(Number(a.getAttribute('x'))).toBeLessThan(100 - 13);
     expect(a.getAttribute('y')).toBe('100');
-    expect(byHalf(root, 'b2a')!.getAttribute('x')).toBe('284');
+    expect(byHalf(root, 'b2a')!.getAttribute('x')).toBe('280');
   });
-  it('reserves the status marker room of a patched edge; drawStatusMarker writes the anchor into x and y', () => {
+  it('the clearance of a node body is half its drawn stroke: a status border of 12 reserves 6 (R5)', () => {
+    const node = `<g data-cell-id="n3"><g><rect x="100" y="20" width="40" height="30" stroke-width="8"/></g></g>`;
+    const { root, index } = build(SVG(node));
+    const statusView: StatusView = {
+      state: 'down',
+      reason: 'Down',
+      conditionKey: 'k',
+      queryIds: ['q'],
+      coverage: { available: 1, expected: 1 },
+    };
+    const down: PlanCellPatch = {
+      cellId: 'n3',
+      ruleNames: ['r'],
+      scope: { cell: {} },
+      urls: [],
+      warnings: [],
+      statusView,
+    };
+    const before = stageObstacles(root, index, new Map(), 10);
+    // the reach is the border a down status gives (12), also while the status is normal
+    expect(before).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 6 });
+    applyPatches(index, new Map([['n3', down]]), undefined, undefined, { theme, osDark: false });
+    expect((index.get('n3')!.shape as SVGElement).style.strokeWidth).toBe('12');
+    const after = stageObstacles(root, index, new Map(), 10);
+    expect(after).toEqual(before);
+  });
+  it('an image under scale(4,1) reserves 4 root units on its wide axis', () => {
+    const node = `<g transform="scale(4,1)"><g data-cell-id="n4"><g><image x="25" y="20" width="10" height="30" href="data:image/png;base64,AAAA"/></g></g></g>`;
+    const { root, index } = build(SVG(node));
+    const r = stageObstacles(root, index, new Map(), 10).find((o) => o.kind === 'rect' && o.rect.y === 20);
+    expect(r && r.kind === 'rect' && r.clearance).toBe(4);
+  });
+  it('a 1.5 stroke with a stroke binding (painted 2.5) reserves at least 1.25', () => {
+    const node = `<g data-cell-id="n5"><g><rect x="100" y="20" width="40" height="30" stroke-width="1.5"/></g></g>`;
+    const { root, index } = build(SVG(node));
+    const patch = {
+      cellId: 'n5',
+      ruleNames: ['r'],
+      scope: { cell: {} },
+      urls: [],
+      warnings: [],
+      shape: { color: '#00ff00', target: 'stroke' },
+    } as unknown as PlanCellPatch;
+    applyPatches(index, new Map([['n5', patch]]), undefined, undefined, { theme, osDark: false });
+    const r = stageObstacles(root, index, new Map(), 10).find((o) => o.kind === 'rect' && o.rect.y === 20);
+    expect(r && r.kind === 'rect' && r.clearance).toBeGreaterThanOrEqual(1.25);
+  });
+  it('a stroke binding keeps the reserve of the grid through down and normal (the widest stroke is fixed)', () => {
+    const node = `<g data-cell-id="n6"><g><rect x="100" y="20" width="40" height="30" stroke-width="1.5"/></g></g>`;
+    const { root, index } = build(SVG(node));
+    const view = (state: 'down' | 'normal'): StatusView => ({
+      state,
+      reason: state,
+      conditionKey: 'k',
+      queryIds: ['q'],
+      coverage: { available: 1, expected: 1 },
+    });
+    const patch = (state: 'down' | 'normal') =>
+      ({
+        cellId: 'n6',
+        ruleNames: ['r'],
+        scope: { cell: {} },
+        urls: [],
+        warnings: [],
+        shape: { color: '#00ff00', target: 'stroke' },
+        statusView: view(state),
+      }) as unknown as PlanCellPatch;
+    const ctx = { theme, osDark: false };
+    const grid = stageObstacles(root, index, new Map(), 10);
+    const prev = applyPatches(index, new Map([['n6', patch('down')]]), undefined, undefined, ctx);
+    applyPatches(index, new Map([['n6', patch('normal')]]), prev, undefined, ctx);
+    expect((index.get('n6')!.shape as SVGElement).style.strokeWidth).toBe('2.5');
+    const reach = (o: ReturnType<typeof stageObstacles>) => {
+      const r = o.find((x) => x.kind === 'rect' && x.rect.y === 20);
+      return r && r.kind === 'rect' ? r.clearance : 0;
+    };
+    expect(reach(grid)).toBeGreaterThanOrEqual(1.25);
+    expect(reach(stageObstacles(root, index, new Map(), 10))).toBe(reach(grid));
+  });
+  it('a rotated, unevenly scaled border is reserved by the bounding box of its square', () => {
+    const wrap = (t: string) =>
+      `<g transform="${t}"><g data-cell-id="n7"><g><image x="25" y="20" width="10" height="30" href="data:image/png;base64,AAAA"/></g></g></g>`;
+    const clearance = (t: string) => {
+      const { root, index } = build(SVG(wrap(t)));
+      const base = stageObstacles(...(Object.values(build()) as [SVGSVGElement, CellIndex]), new Map(), 10);
+      const extra = stageObstacles(root, index, new Map(), 10).filter(
+        (o) => o.kind === 'rect' && !base.some((b) => JSON.stringify(b) === JSON.stringify(o))
+      );
+      const r = extra[0];
+      return r && r.kind === 'rect' ? r.clearance : 0;
+    };
+    expect(clearance('scale(4,1)')).toBe(4);
+    expect(clearance('matrix(2.8284271 0.7071068 -2.8284271 0.7071068 0 0)')).toBeGreaterThanOrEqual(5.65);
+  });
+  it('an image device reserves the half of its status border: 1 unit', () => {
+    const node = `<g data-cell-id="n4"><g><image x="100" y="20" width="40" height="30" href="data:image/png;base64,AAAA"/></g></g>`;
+    const { root, index } = build(SVG(node));
+    const obstacles = stageObstacles(root, index, new Map(), 10);
+    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 100, y: 20, width: 40, height: 30 }, clearance: 1 });
+  });
+  it('a status on a patched edge reserves no room: the obstacles are the stroke pieces and the node bodies', () => {
     const { root, index } = build();
-    const entry = index.get('e1')!;
-    const box = statusMarkerBox(entry)!;
-    expect(box.anchor).toEqual({ x: 204, y: 96 });
-    expect(box.space).toBe(entry.line!.parentNode);
-    expect(box.bounds.x).toBeCloseTo(202.5);
-    expect(box.bounds.y).toBeCloseTo(96 - 12 - 1.5);
-    expect(box.bounds.height).toBeCloseTo(15 + 3);
     const statusView: StatusView = {
       state: 'down',
       reason: 'Down',
@@ -595,18 +693,13 @@ describe('renderLinkLabels: obstacles', () => {
     const patch: PlanCellPatch = { ...linkPatch('e1', { a2b: half(), labelMode: 'percent' }), statusView };
     const patches = new Map<string, PlanCellPatch>([['e1', patch]]);
     render(root, index, patches);
-    const marker = root.querySelector('.dmap-status-marker text')!;
-    expect(marker.getAttribute('x')).toBe('204');
-    expect(marker.getAttribute('y')).toBe('96');
-    // one leg: its anchor is the midpoint, inside the marker room; the label moves away from it
+    expect(root.querySelector('.dmap-status-marker')).toBeNull();
+    // one leg: its label stands at the midpoint of the edge
     const a = byHalf(root, 'a2b')!;
-    expect(Number(a.getAttribute('x'))).toBeLessThan(200);
-    const obstacles = stageObstacles(root, index, patches, 10, (text) => 0.6 * 12 * text.length);
-    expect(obstacles).toContainEqual({
-      kind: 'rect',
-      rect: expect.objectContaining({ x: expect.closeTo(202.5, 5), y: expect.closeTo(82.5, 5) }),
-      clearance: 0,
-    });
+    expect(a.getAttribute('x')).toBe('200');
+    const obstacles = stageObstacles(root, index, patches, 10);
+    // no rect at the midpoint of the edge (the room of the marker of old)
+    expect(obstacles.some((o) => o.kind === 'rect' && o.rect.x > 190 && o.rect.x < 215)).toBe(false);
     // the edge stroke at linkWidth.max / 2: one piece for a one-leg link, the pieces up to the split for two legs;
     // the node bodies at half their stroke
     expect(obstacles).toContainEqual({
@@ -618,7 +711,7 @@ describe('renderLinkLabels: obstacles', () => {
       piece: { leg: 'e1:a2b', index: 0 },
     });
     const two = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
-    const both = stageObstacles(root, index, two, 10, () => 60);
+    const both = stageObstacles(root, index, two, 10);
     expect(both).toContainEqual({
       kind: 'segment',
       a: { x: 40, y: 100 },
@@ -635,8 +728,8 @@ describe('renderLinkLabels: obstacles', () => {
       owner: 'e1',
       piece: { leg: 'e1:b2a', index: 0 },
     });
-    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 0, y: 80, width: 40, height: 40 }, clearance: 1 });
-    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 360, y: 80, width: 40, height: 40 }, clearance: 0.5 });
+    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 0, y: 80, width: 40, height: 40 }, clearance: 1.5 });
+    expect(obstacles).toContainEqual({ kind: 'rect', rect: { x: 360, y: 80, width: 40, height: 40 }, clearance: 1 });
   });
 });
 
@@ -647,7 +740,7 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(index.get('pg-canvas')?.shape?.localName).toBe('rect');
     const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
-    const obstacles = stageObstacles(root, index, patches, 10, () => 60);
+    const obstacles = stageObstacles(root, index, patches, 10);
     const bodies = obstacles.flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
     // the vertical WAN link: the labels read bottom to top, on the stroke
@@ -661,9 +754,7 @@ describe('renderLinkLabels: backgrounds', () => {
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(100 - 13);
-    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
-      o.kind === 'rect' ? [o.rect] : []
-    );
+    const rects = stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
     expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 50 });
   });
@@ -675,9 +766,7 @@ describe('renderLinkLabels: backgrounds', () => {
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(100 - 13);
-    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
-      o.kind === 'rect' ? [o.rect] : []
-    );
+    const rects = stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
     expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 50 });
   });
@@ -709,13 +798,11 @@ describe('renderLinkLabels: review cases', () => {
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     render(root, index, patches);
     expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).toBeLessThan(90 - 13);
-    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
-      o.kind === 'rect' ? [o.rect] : []
-    );
+    const rects = stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(rects).toContainEqual({ x: 90, y: 56, width: 60, height: 50 });
     const second = `<g data-cell-id="badge2"><g><rect x="130" y="60" width="10" height="10"/></g></g>`;
     const container = build(SVG(device + badge + second));
-    const more = stageObstacles(container.root, container.index, patches, 10, () => 60).flatMap((o) =>
+    const more = stageObstacles(container.root, container.index, patches, 10).flatMap((o) =>
       o.kind === 'rect' ? [o.rect] : []
     );
     expect(more).not.toContainEqual({ x: 90, y: 56, width: 60, height: 50 });
@@ -744,15 +831,13 @@ describe('renderLinkLabels: review cases', () => {
     expect(index.get('t1')?.label).toBeTruthy();
     render(root, index, patches);
     expect(Number(byHalf(root, 'a2b')!.getAttribute('x'))).not.toBe(120);
-    const rects = stageObstacles(root, index, patches, 10, () => 60).flatMap((o) =>
-      o.kind === 'rect' ? [o.rect] : []
-    );
+    const rects = stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     expect(rects.some((r) => r.x === 100 && r.y < 102 && r.width > 40)).toBe(true);
   });
   describe('edge text', () => {
     // the label spot of the a2b half is x 120 (anchor), y 100: a text box of "tunnel link" stands on it
     const rectsOf = (root: SVGSVGElement, index: CellIndex, patches: PatchMap) =>
-      stageObstacles(root, index, patches, 10, () => 60).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
+      stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
     const both = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     /** the label box of the half as the DOM says it: centre x/y and the 24 x 10 slot */
     const clear = (root: SVGSVGElement, text: { x: number; w: number }) => {
@@ -795,7 +880,9 @@ describe('renderLinkLabels: the halo colour', () => {
     render(dark.root, dark.index, both());
     labels(dark.root).forEach((el) => expect(el.getAttribute('stroke')).toBe(DARK));
     for (const style of ['', 'background-color: transparent', 'background-color: rgba(0, 0, 0, 0)']) {
-      const { root, index } = build(SVG().replace(' style="background-color: #1d2d3d"', style ? ` style="${style}"` : ''));
+      const { root, index } = build(
+        SVG().replace(' style="background-color: #1d2d3d"', style ? ` style="${style}"` : '')
+      );
       render(root, index, both());
       labels(root).forEach((el) => expect(el.getAttribute('stroke')).toBe(theme.colors.background.canvas));
     }
@@ -849,7 +936,7 @@ describe('renderLinkLabels: HTML labels', () => {
       ({ ...box, left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }) as DOMRect;
   }
   const rects = (root: SVGSVGElement, index: CellIndex, patches: PatchMap) =>
-    stageObstacles(root, index, patches, 10, () => 60).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
+    stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
 
   it('an HTML edge label is an obstacle of its content box, not of the 100% viewport box', () => {
     const svg = SVG().replace('pointer-events="stroke"/>', `pointer-events="stroke"/></g><g>${fo}`);
@@ -932,7 +1019,7 @@ describe('renderLinkLabels: coordinates', () => {
     const b = byHalf(root, 'b2a')!;
     expect(b.getAttribute('transform')).toBe('rotate(-90 200 96)');
     // a 3-unit stroke in the scaled group: a 6-unit stroke in root units, a 3-unit clearance
-    const obstacles = stageObstacles(root, index, patches, 10, (text) => 0.6 * 12 * text.length);
+    const obstacles = stageObstacles(root, index, patches, 10);
     expect(obstacles).toContainEqual({
       kind: 'segment',
       a: { x: 0, y: 80 },

@@ -1,9 +1,8 @@
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
 import { arrowAnchor, PathGeom, pathGeometry, Point } from './geometry';
-import type { Rect } from './labelPlacement';
 import type { PlanCellPatch } from '../binding/engine';
-import type { StatusView } from '../binding/status';
+import { linkStatusPaint, statusBorderWidth, statusPaint } from '../binding/color';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
 /** the length of an arrow head of a half, in the units of the edge */
@@ -77,8 +76,9 @@ interface LinkDrawn {
   a2b?: HalfDrawn;
   b2a?: HalfDrawn;
 }
-interface MarkerDrawn {
-  layer: SVGGElement;
+/** The status border of a bitmap device: a rect after its image, with the status colour it shows. */
+interface BorderDrawn {
+  el: SVGRectElement;
   key: string;
 }
 /** What `renderOverlay` left under one root. The elements live across refreshes; the keys say what they show. */
@@ -86,16 +86,68 @@ interface OverlayState {
   index: CellIndex;
   arrowSize: number;
   links: Map<string, LinkDrawn>;
-  markers: Map<string, MarkerDrawn>;
+  borders: Map<string, BorderDrawn>;
+}
+
+export const STATUS_BORDER_CLASS = 'dmap-status-border';
+
+/**
+ * The status border of a device whose shape is an `<image>`: fill and stroke do nothing on an image, so a rect with
+ * the box of the image goes right after it, in the same space (the transform of the image is copied). An image has
+ * no stroke of its own: the border has the minimum width.
+ */
+function drawBorder(image: SVGGraphicsElement, cellId: string, paint: string): SVGRectElement {
+  let box = ['x', 'y', 'width', 'height'].map((a) => image.getAttribute(a) ?? '0');
+  try {
+    const b = image.getBBox();
+    if (b.width > 0 && b.height > 0) {
+      box = [b.x, b.y, b.width, b.height].map(fmt);
+    }
+  } catch {
+    // no layout in this host: the attributes locate the image
+  }
+  const [x, y, width, height] = box;
+  const rect = el('rect', {
+    class: STATUS_BORDER_CLASS,
+    'data-dmap-cell': cellId,
+    x,
+    y,
+    width,
+    height,
+    fill: 'none',
+    stroke: paint,
+    'stroke-width': statusBorderWidth(0),
+    'pointer-events': 'none',
+  });
+  const transform = image.getAttribute('transform');
+  if (transform) {
+    rect.setAttribute('transform', transform);
+  }
+  image.after(rect);
+  return rect;
 }
 
 const states = new WeakMap<SVGSVGElement, OverlayState>();
 
 /** The fields of a half that its elements show; the geometry is not among them. */
 const halfKey = (s: HalfState) => `${s.status}|${s.color}|${s.width}|${s.stepIndex}`;
-/** The fields of a marker: its text, its title, and the two theme colours it is painted with. */
-const markerKey = (v: StatusView, theme: GrafanaTheme2) =>
-  `${v.state}|${v.reason}|${statusColor(v, theme)}|${theme.colors.background.primary}`;
+
+/**
+ * The halves as they are drawn: with the status colour of the link in place of the binding colour when the status
+ * paints (`linkStatusPaint`: a status that is not normal wins over the binding colour). `status` and `stepIndex`
+ * stay the binding's: the data attributes and the legend highlight read them.
+ */
+function drawnHalves(patch: PlanCellPatch, theme: GrafanaTheme2): { a2b?: HalfState; b2a?: HalfState } {
+  const link = patch.link ?? {};
+  const color = linkStatusPaint(patch, theme);
+  if (!color) {
+    return link;
+  }
+  return {
+    ...(link.a2b ? { a2b: { ...link.a2b, color } } : {}),
+    ...(link.b2a ? { b2a: { ...link.b2a, color } } : {}),
+  };
+}
 
 function drawHalf(
   layer: SVGGElement,
@@ -198,26 +250,25 @@ const comboOf = (link: { a2b?: HalfState; b2a?: HalfState }) => `${link.a2b ? 'a
 
 /**
  * Draws the overlay of the patches under `root` and keeps it across calls. A link whose set of halves did not change
- * keeps its elements; a changed state is written into them. A marker with the same state and reason stays. The
- * layers and markers are built again only for a new index or arrow size (a new stage), when a half appears or
- * goes, or when a layer left the DOM.
+ * keeps its elements; a changed state (a binding colour, a width, the status paint) is written into them. The layers
+ * are built again only for a new index or arrow size (a new stage), when a half appears or goes, or when a layer
+ * left the DOM.
  */
 export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: PatchMap, opts: OverlayOptions): void {
   const o: Required<OverlayOptions> = { arrowSize: ARROW_SIZE, ...opts };
   let state = states.get(root);
   if (!state || state.index !== index || state.arrowSize !== o.arrowSize) {
-    root.querySelectorAll(`g.${OVERLAY_CLASS}`).forEach((g) => g.remove());
-    root.querySelectorAll('.dmap-status-marker').forEach((g) => g.remove());
-    state = { index, arrowSize: o.arrowSize, links: new Map(), markers: new Map() };
+    root.querySelectorAll(`g.${OVERLAY_CLASS}, .${STATUS_BORDER_CLASS}`).forEach((g) => g.remove());
+    state = { index, arrowSize: o.arrowSize, links: new Map(), borders: new Map() };
     states.set(root, state);
   }
   const liveLinks = new Set<string>();
-  for (const [id, patch] of patches) {
+  for (const [id, patch] of patches as Map<string, PlanCellPatch>) {
     const entry = index.get(id);
-    const link = patch.link;
-    if (!entry?.line || !link || (!link.a2b && !link.b2a)) {
+    if (!entry?.line || !(patch.link?.a2b || patch.link?.b2a)) {
       continue;
     }
+    const link = drawnHalves(patch, opts.theme);
     liveLinks.add(id);
     const drawn = state.links.get(id);
     if (drawn && drawn.combo === comboOf(link) && drawn.layer.parentNode) {
@@ -242,138 +293,30 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
       state.links.delete(id);
     }
   }
-  const liveMarkers = new Set<string>();
+  // the status border of a bitmap device (the applier paints every other shape itself)
+  const liveBorders = new Set<string>();
   for (const [id, patch] of patches as Map<string, PlanCellPatch>) {
-    const entry = index.get(id);
-    const status = patch.statusView;
-    if (!entry || !status || status.state === 'normal') {
+    const image = index.get(id)?.shape;
+    const paint = image?.localName === 'image' ? statusPaint(patch.statusView, opts.theme) : undefined;
+    if (!image || !paint) {
       continue;
     }
-    const key = markerKey(status, opts.theme);
-    const drawn = state.markers.get(id);
-    if (drawn && drawn.key === key && drawn.layer.parentNode) {
-      liveMarkers.add(id);
-      // a rebuilt layer went in after the path: the kept marker goes back under it, where a fresh draw puts it
-      const primitive = entry.shape ?? entry.line;
-      if (primitive && primitive.nextSibling !== drawn.layer) {
-        primitive.after(drawn.layer);
+    liveBorders.add(id);
+    const drawn = state.borders.get(id);
+    if (drawn && drawn.el.parentNode) {
+      if (drawn.key !== paint) {
+        drawn.el.setAttribute('stroke', paint);
+        drawn.key = paint;
       }
       continue;
     }
-    drawn?.layer.remove();
-    state.markers.delete(id);
-    const layer = drawStatusMarker(entry, status, opts.theme);
-    if (layer) {
-      state.markers.set(id, { layer, key });
-      liveMarkers.add(id);
+    drawn?.el.remove();
+    state.borders.set(id, { el: drawBorder(image, id, paint), key: paint });
+  }
+  for (const [id, drawn] of state.borders) {
+    if (!liveBorders.has(id)) {
+      drawn.el.remove();
+      state.borders.delete(id);
     }
   }
-  for (const [id, drawn] of state.markers) {
-    if (!liveMarkers.has(id)) {
-      drawn.layer.remove();
-      state.markers.delete(id);
-    }
-  }
-}
-
-export function statusColor(status: StatusView, theme: GrafanaTheme2): string {
-  return status.state === 'critical' || status.state === 'down'
-    ? theme.colors.error.text
-    : status.state === 'warning' || status.state === 'stale'
-      ? theme.colors.warning.text
-      : theme.colors.text.secondary;
-}
-
-/** The font of a status marker; the label layer measures the widest marker text with it. */
-export const STATUS_MARKER_FONT = { family: 'sans-serif', size: 12, weight: 'bold' } as const;
-/** the widest text a marker shows */
-const WIDEST_MARKER = '? missing';
-/** the halo stroke of a marker text */
-const MARKER_HALO = 3;
-/** the width of `text` in `font`, in user units */
-export type TextProbe = (text: string, font: { family: string; size: number; weight?: string }) => number;
-
-export interface StatusMarkerBox {
-  /** the element whose user space `anchor` and `bounds` are in: the marker layer draws in it */
-  space: SVGGraphicsElement;
-  /** the baseline start of the marker text */
-  anchor: Point;
-  /** the painted box of the widest marker text on that baseline, the halo included */
-  bounds: Rect;
-}
-
-/**
- * Where the status marker of a cell goes, from the geometry alone: the midpoint of an edge, the bottom-left corner
- * of a shape. `drawStatusMarker` draws at `anchor`; the label layer reserves `bounds` for every patched cell, so a
- * marker that appears on a later refresh never meets a label. Without a probe the width is an estimate.
- */
-export function statusMarkerBox(entry: CellEntry, probe?: TextProbe): StatusMarkerBox | undefined {
-  const primitive = entry.shape ?? entry.line;
-  if (!primitive?.parentNode) {
-    return undefined;
-  }
-  let x = Number(primitive.getAttribute('x') ?? primitive.getAttribute('cx') ?? 0);
-  let y = Number(primitive.getAttribute('y') ?? primitive.getAttribute('cy') ?? 0);
-  if (entry.line) {
-    // the marker layer is a sibling of the edge path: the parent's space
-    const space = entry.line.parentNode as SVGGraphicsElement;
-    const geometry = pathGeometry(entry.line, space);
-    const point = geometry.pointAt(geometry.length / 2);
-    x = point.x;
-    y = point.y;
-  } else {
-    // Keep device markers inside the shape, including cells at the SVG's top edge.
-    y += Number(primitive.getAttribute('height') ?? 0);
-    try {
-      const box = primitive.getBBox();
-      x = box.x;
-      y = box.y + box.height;
-    } catch {
-      // Some SVG hosts do not expose getBBox; rectangle/ellipse attributes still locate the marker.
-    }
-  }
-  const { family, size, weight } = STATUS_MARKER_FONT;
-  const width = probe ? probe(WIDEST_MARKER, { family, size, weight }) : 0.6 * size * WIDEST_MARKER.length;
-  const anchor = { x: x + 4, y: y - 4 };
-  const grow = MARKER_HALO / 2;
-  return {
-    space: entry.line ? (entry.line.parentNode as SVGGraphicsElement) : primitive,
-    anchor,
-    bounds: {
-      x: anchor.x - grow,
-      y: anchor.y - size - grow,
-      width: width + 2 * grow,
-      height: size * 1.25 + 2 * grow,
-    },
-  };
-}
-
-function drawStatusMarker(entry: CellEntry, status: StatusView, theme: GrafanaTheme2): SVGGElement | undefined {
-  const box = statusMarkerBox(entry);
-  const primitive = entry.shape ?? entry.line;
-  if (!box || !primitive) {
-    return undefined;
-  }
-  const layer = el('g', { class: 'dmap-status-marker', 'data-dmap-cell': entry.meta.id, 'pointer-events': 'none' });
-  primitive.after(layer);
-  const transform = entry.line ? null : primitive.getAttribute('transform');
-  if (transform) {
-    layer.setAttribute('transform', transform);
-  }
-  const text = el('text', {
-    x: box.anchor.x,
-    y: box.anchor.y,
-    'font-family': STATUS_MARKER_FONT.family,
-    'font-size': STATUS_MARKER_FONT.size,
-    'font-weight': STATUS_MARKER_FONT.weight,
-    fill: statusColor(status, theme),
-    stroke: theme.colors.background.primary,
-    'stroke-width': MARKER_HALO,
-    'paint-order': 'stroke',
-  });
-  text.textContent = `${status.state === 'missing' || status.state === 'stale' ? '?' : '!'} ${status.state}`;
-  const title = el('title', {});
-  title.textContent = status.reason;
-  layer.append(title, text);
-  return layer;
 }

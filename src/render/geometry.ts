@@ -1,5 +1,24 @@
 import type { CellEntry } from '../types';
 
+const widthOr1 = (inline: string | undefined, attribute: string | null): number => {
+  // an inline style beats the presentation attribute, as in CSS; 1 is the SVG default
+  const n = parseFloat(inline || attribute || '');
+  return Number.isFinite(n) ? n : 1;
+};
+
+/**
+ * The stroke width a primitive was drawn with before any patch, in its user units: the original inline style
+ * (`CellEntry.original.strokeWidth`, captured when the stage was indexed), else the attribute, else 1.
+ */
+export function originalStrokeWidth(el: SVGElement, original?: string): number {
+  return widthOr1(original, el.getAttribute('stroke-width'));
+}
+
+/** The stroke width a primitive shows now, patches included: the inline style now, else the attribute, else 1. */
+export function drawnStrokeWidth(el: SVGElement): number {
+  return widthOr1(el.style.strokeWidth, el.getAttribute('stroke-width'));
+}
+
 export interface ChartAnchor {
   x: number;
   y: number;
@@ -262,6 +281,13 @@ export function toMatrix(m: { a: number; b: number; c: number; d: number; e: num
 }
 
 /** The scale of a matrix (the square root of its determinant), 1 for a degenerate one. */
+/**
+ * How far a stroke of width `w` (user units) reaches from its path in root units, mitered corners included: the
+ * half-box of the transformed square of side `w`, so it holds under any linear map.
+ */
+export const strokeReach = (m: Matrix, w: number): number =>
+  (w / 2) * Math.max(Math.abs(m.a) + Math.abs(m.c), Math.abs(m.b) + Math.abs(m.d));
+
 export const scaleOf = (m: Matrix): number => Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
 
 export function applyMatrix(m: Matrix, p: Point): Point {

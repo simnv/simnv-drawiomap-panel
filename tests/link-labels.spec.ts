@@ -175,7 +175,7 @@ test('value: the a2b text of the WAN link is the reading in the unit of the fiel
   await expect(label(hand, 'edge-ab', 'a2b')).toHaveText(/^41(\.\d)? Mb\/s$/);
 });
 
-test('no label overlaps a port pill, a label chip, a status marker or a plain node body', async ({
+test('no label overlaps a port pill, a label chip or a plain node body', async ({
   createDiagram,
   gotoDashboardPage,
   readProvisionedDataSource,
@@ -189,9 +189,8 @@ test('no label overlaps a port pill, a label chip, a status marker or a plain no
   expect(placed.length).toBeGreaterThan(4);
   const pills = await boxes(panel.locator('g[data-cell-id^="pg-port"] rect'));
   const chips = await boxes(panel.locator('g[data-cell-id^="pg-linkLabel"]'));
-  const markers = await boxes(panel.locator('.dmap-status-marker text'));
   for (const box of placed) {
-    for (const other of [...pills, ...chips, ...markers]) {
+    for (const other of [...pills, ...chips]) {
       expect(intersects(box, other), JSON.stringify({ box, other })).toBe(false);
     }
   }

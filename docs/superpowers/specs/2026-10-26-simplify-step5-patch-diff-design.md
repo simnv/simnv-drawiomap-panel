@@ -1,6 +1,6 @@
 # Simplify step 5: a patch diff in the applier and the overlay, a path geometry cache
 
-- Status: draft 2026-10-26. Design only; no code in this change.
+- Status: draft 2026-10-26. Design only; no code in this change. The status markers of sections 3.2 (items 4 and 5) and R1-4 went on 2026-10-26 (`2026-10-26-status-paints-design.md`); the text below stays as the record of this step.
 - Scope: `src/render/applier.ts` (`applyPatches`), `src/render/overlay.ts` (`renderOverlay`), `src/render/geometry.ts`
   (`pathGeometry`), `src/render/linkLabels.ts` (one comment, no logic), `src/components/DrawioMapPanel.tsx` and
   `src/editor/popup/DiagramStage.tsx` (the type of the applied set), their tests, a new bench

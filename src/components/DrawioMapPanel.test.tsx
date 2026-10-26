@@ -815,7 +815,10 @@ describe('DrawioMapPanel hover card', () => {
     const { cell } = await setup(withCpu({ timeRange: range }));
     fireEvent.click(cell('pg-node~rtr-b'));
     await screen.findByRole('dialog');
-    const row = screen.getAllByTestId('dmap-card-row')[0];
+    // the status row (the node has a missing status) comes first; the CPU row follows
+    const rows = screen.getAllByTestId('dmap-card-row');
+    expect(rows[0].textContent).toContain('missing');
+    const row = rows.find((r) => r.textContent?.includes('CPU'))!;
     const [head, spark] = Array.from(row.children);
     expect(head.textContent).toContain('CPU');
     expect(head.textContent).toContain('42%');
@@ -862,7 +865,10 @@ describe('DrawioMapPanel hover card', () => {
     const { cell } = await setup(withCpu());
     fireEvent.click(cell('pg-node~rtr-b'));
     const dialog = await screen.findByRole('dialog');
-    const row = screen.getByTestId('dmap-card-row');
+    const rows = screen.getAllByTestId('dmap-card-row');
+    // the status row first (the node has a missing status), then the one configured row
+    expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining('missing'), expect.stringContaining('CPU')]);
+    const row = rows[1];
     expect(row.textContent).toContain('CPU');
     expect(row.textContent).toContain('42%');
     expect(row.getAttribute('href')).toBe('/d/cpu?h=rtr-b');

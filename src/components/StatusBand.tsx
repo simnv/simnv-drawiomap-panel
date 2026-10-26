@@ -3,7 +3,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
 import type { StatusSummary } from '../binding/status';
-import { statusColor } from '../render/overlay';
+import { statusColor } from '../binding/color';
 
 /** Height of one band row in px. The panel computes the band height from it before it renders. */
 export const BAND_ROW = 20;

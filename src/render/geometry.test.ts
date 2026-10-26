@@ -2,12 +2,37 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   arrowAnchor,
   bendLengths,
+  drawnStrokeWidth,
+  originalStrokeWidth,
   parsePathPoints,
   pathGeometry,
   pointAt,
   polylineLength,
   slicePolyline,
 } from './geometry';
+
+describe('originalStrokeWidth and drawnStrokeWidth', () => {
+  const rect = (attrs: string) => {
+    const host = document.createElement('div');
+    host.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg"><rect ${attrs}/></svg>`;
+    return host.querySelector('rect') as SVGElement;
+  };
+  it('the original width: the original inline style, else the attribute, else 1', () => {
+    expect(originalStrokeWidth(rect('stroke-width="4"'), '3')).toBe(3);
+    expect(originalStrokeWidth(rect('stroke-width="4"'))).toBe(4);
+    expect(originalStrokeWidth(rect('stroke-width="4"'), '')).toBe(4);
+    expect(originalStrokeWidth(rect(''))).toBe(1);
+    expect(originalStrokeWidth(rect('stroke-width="x"'))).toBe(1);
+  });
+  it('the drawn width follows a later inline write; the original does not', () => {
+    const el = rect('stroke-width="4"');
+    expect(drawnStrokeWidth(el)).toBe(4);
+    el.style.strokeWidth = '12';
+    expect(drawnStrokeWidth(el)).toBe(12);
+    expect(originalStrokeWidth(el)).toBe(4);
+    expect(originalStrokeWidth(el, '2')).toBe(2);
+  });
+});
 
 describe('parsePathPoints', () => {
   it('parses M/L absolute', () => {
