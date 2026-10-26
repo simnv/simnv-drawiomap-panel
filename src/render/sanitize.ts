@@ -35,15 +35,26 @@ function hasExternalUrl(cssText: string): boolean {
   return false;
 }
 
-const PURIFY_CONFIG: Config = {
+const deepFreeze = <T extends object>(o: T): T => {
+  for (const v of Object.values(o)) {
+    if (v && typeof v === 'object') {
+      deepFreeze(v);
+    }
+  }
+  return Object.freeze(o);
+};
+
+// Frozen: DOMPurify lowercases array entries of the config in place, so each call gets a deep copy and the original
+// never changes. Entries are already in the lowercase form that DOMPurify expects. The cache pin hashes this object.
+export const PURIFY_CONFIG: Config = deepFreeze({
   USE_PROFILES: { svg: true, svgFilters: true, html: true },
   // DOMPurify forbids foreignObject by default; the spec keeps HTML labels. The html profile
   // sanitises their content; iframe/object/embed/script are forbidden below.
   // DOMPurify does not allow `use`. Pass 1 removes every `use` that does not point to a local #id.
-  ADD_TAGS: ['foreignObject', 'switch', 'use'],
+  ADD_TAGS: ['foreignobject', 'switch', 'use'],
   // Without this, DOMPurify removes every HTML element inside foreignObject (the label text).
   HTML_INTEGRATION_POINTS: { foreignobject: true, 'annotation-xml': true },
-  ADD_ATTR: ['data-cell-id', 'pointer-events', 'requiredFeatures', 'color-scheme', 'xml:space'],
+  ADD_ATTR: ['data-cell-id', 'pointer-events', 'requiredfeatures', 'color-scheme', 'xml:space'],
   FORBID_TAGS: [
     'iframe',
     'object',
@@ -67,9 +78,9 @@ const PURIFY_CONFIG: Config = {
   ADD_DATA_URI_TAGS: ['image'],
   ALLOW_DATA_ATTR: true,
   RETURN_DOM: true,
-};
+});
 
-export function sanitizeSvg(text: string): SanitizeResult {
+export function sanitizeSvgUncached(text: string): SanitizeResult {
   const root = parseSvg(text);
   const removed = { elements: 0, attributes: 0, images: 0 };
 
@@ -113,7 +124,7 @@ export function sanitizeSvg(text: string): SanitizeResult {
 
   // Pass 2: DOMPurify.
   const serialized = new XMLSerializer().serializeToString(root);
-  const body = DOMPurify.sanitize(serialized, PURIFY_CONFIG) as unknown as HTMLElement;
+  const body = DOMPurify.sanitize(serialized, structuredClone(PURIFY_CONFIG)) as unknown as HTMLElement;
   removed.elements += DOMPurify.removed.filter((r) => 'element' in r).length;
   removed.attributes += DOMPurify.removed.filter((r) => 'attribute' in r).length;
   const svg = body.querySelector('svg');
@@ -139,4 +150,74 @@ export function sanitizeSvg(text: string): SanitizeResult {
     svg.setAttribute('style', current ? `${current}${current.endsWith(';') ? '' : ';'} ${decls}` : decls);
   }
   return { svg: new XMLSerializer().serializeToString(svg), removed, foreignObjects, warnings };
+}
+
+/**
+ * Names the sanitizer code that the cache key stands for: PURIFY_CONFIG, the structural pass, the theme variable step
+ * and the serialisation. Raise it when any of them changes. A test pins a digest of PURIFY_CONFIG.
+ */
+export const SANITIZER_VERSION = 'o7-1';
+
+const MAX_ENTRIES = 8;
+/** 2 bytes per UTF-16 character of the key and of the output */
+const MAX_BYTES = 8 * 1024 * 1024;
+
+interface CacheEntry {
+  result: SanitizeResult;
+  bytes: number;
+}
+
+// Strings and numbers only, never a DOM node: every caller parses its own copy of `svg`.
+// The Map compares keys by full string equality, so no other input can reach this output.
+const cache = new Map<string, CacheEntry>();
+let cacheBytes = 0;
+let hits = 0;
+let misses = 0;
+
+const copyOf = (r: SanitizeResult): SanitizeResult => ({
+  svg: r.svg,
+  removed: { ...r.removed },
+  foreignObjects: r.foreignObjects,
+  warnings: [...r.warnings],
+});
+
+/**
+ * sanitizeSvgUncached with a bounded LRU cache keyed by the exact input string (and SANITIZER_VERSION).
+ * It returns what sanitizeSvgUncached returns for that input. An input that throws is not cached.
+ */
+export function sanitizeSvg(text: string): SanitizeResult {
+  const key = `${SANITIZER_VERSION}\n${text}`;
+  const hit = cache.get(key);
+  if (hit) {
+    hits++;
+    cache.delete(key); // re-insert: the newest entry goes last
+    cache.set(key, hit);
+    return copyOf(hit.result);
+  }
+  misses++;
+  const result = sanitizeSvgUncached(text);
+  const bytes = 2 * (key.length + result.svg.length);
+  if (bytes <= MAX_BYTES) {
+    cache.set(key, { result: copyOf(result), bytes });
+    cacheBytes += bytes;
+    for (const [oldKey, old] of cache) {
+      if (cache.size <= MAX_ENTRIES && cacheBytes <= MAX_BYTES) {
+        break;
+      }
+      cache.delete(oldKey);
+      cacheBytes -= old.bytes;
+    }
+  }
+  return result;
+}
+
+export function clearSanitizeCache(): void {
+  cache.clear();
+  cacheBytes = 0;
+  hits = 0;
+  misses = 0;
+}
+
+export function sanitizeCacheStats() {
+  return { entries: cache.size, bytes: cacheBytes, maxBytes: MAX_BYTES, hits, misses };
 }

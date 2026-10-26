@@ -99,6 +99,14 @@ Why this is safe: the parser output is a closed set of colour strings. No select
 rule reaches the page, so a diagram cannot restyle Grafana or load a resource through this path. A custom property on
 the svg root can only change the colour of an inline `var(--ge-*)` use inside the same svg.
 
+## Cache of the sanitized SVG
+
+`sanitizeSvg` keeps its result in a module-level cache (8 entries, 8 MB). The key is the exact input string and
+`SANITIZER_VERSION`, compared by full string equality, so no other diagram can reach a stored output. The cache holds
+strings and numbers only, never a DOM node: each mount parses its own copy, and a hit returns copies of the counts and
+warnings. A hit returns what `sanitizeSvgUncached` returns for that input. A change to `PURIFY_CONFIG` or to a sanitizer
+step needs a new `SANITIZER_VERSION` (a test pins a digest of the options). Tests: `src/render/sanitizeCache.test.ts`.
+
 ## Trade-offs
 
 - draw.io cannot save its settings (`.drawio-config`) between two opens: the opaque origin has no localStorage.
