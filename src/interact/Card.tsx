@@ -11,6 +11,7 @@ import React, {
 import { css, cx } from '@emotion/css';
 import { getDefaultTimeRange, getFieldSeriesColor, type GrafanaTheme2, type TimeRange } from '@grafana/data';
 import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
+import { statusColor } from '../binding/color';
 import { chartHeight, type ConfiguredCardModel, type ConfiguredCardRow } from './cardModel';
 import { SparklineView } from '../visuals/SparklineView';
 import { MirrorSparkline } from '../visuals/MirrorSparkline';
@@ -205,7 +206,12 @@ const Row = memo(function Row({
   const body = (
     <>
       <div className={styles.rowHead}>
-        <span className={styles.rowTitle}>{row.title}</span>
+        <span
+          className={styles.rowTitle}
+          style={row.status ? { color: statusColor({ state: row.status }, theme) } : undefined}
+        >
+          {row.title}
+        </span>
         <span className={cx(styles.value, directions && styles.pre)} data-testid="dmap-card-value">
           {directions
             ? directions.map((d, j) => (

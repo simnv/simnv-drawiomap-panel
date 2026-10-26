@@ -4,6 +4,8 @@ import { createTheme, getDefaultTimeRange } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Card } from './Card';
 import type { ConfiguredCardModel } from './cardModel';
+import { statusColor } from '../binding/color';
+import type { StatusView } from '../binding/status';
 
 const { sparkline, transitions } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
@@ -523,4 +525,25 @@ describe('deferred charts', () => {
     expect(screen.getByTestId('dmap-mirror-spark')).toBeTruthy();
     expect(transitions.queue).toEqual([]);
   });
+});
+
+describe('the status row', () => {
+  const statusRow = (status: StatusView['state']): ConfiguredCardModel['rows'][number] => ({
+    key: 'status',
+    kind: 'status',
+    title: status,
+    text: 'probe delay over 400 ms',
+    state: 'ready',
+    status,
+  });
+  it.each(['down', 'critical', 'warning', 'stale', 'missing'] as const)(
+    'shows the state word %s in its status colour and the reason in the plain colour',
+    (status) => {
+      renderCard(cardOf(statusRow(status)));
+      const probe = document.createElement('span');
+      probe.style.color = statusColor({ state: status }, createTheme());
+      expect(screen.getByText(status).style.color).toBe(probe.style.color);
+      expect(screen.getByText('probe delay over 400 ms').style.color).toBe('');
+    }
+  );
 });

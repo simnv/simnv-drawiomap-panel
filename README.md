@@ -313,7 +313,7 @@ A status that is not `normal` paints its element. The colours come from the them
 - Limit: a link with no link binding (only a status) paints its stroke and end dots; the arrow heads that draw.io drew into the edge keep their colour. A device drawn as a bitmap (an `<image>`) gets the border only, as a rectangle around the image, and no tint.
 - Both themes: a theme change paints every element again. When the status goes back to `normal`, or the element leaves the bindings, the panel puts the drawn colours back.
 
-The hover card of a device or a link with a status that is not `normal` shows the state and its reason as its first row, for example `warning   probe delay ≥ 400 ms`, before the configured hover rows. A `normal` status adds no row to a card that has hover rows. A card with no hover rows shows the `normal` row.
+The hover card of a device or a link with a status that is not `normal` shows the state and its reason as its first row, for example `warning   probe delay ≥ 400 ms`, before the configured hover rows. The state word has the colour of its status (the colour of the paint, the band and the legend); the reason keeps the plain text colour. A `normal` status adds no row to a card that has hover rows. A card with no hover rows shows the `normal` row.
 
 ### Supported query results and migration
 
