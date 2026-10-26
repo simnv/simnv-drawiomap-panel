@@ -20,7 +20,7 @@ import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind, interactiveCells, patchAt } from '../interact/hit';
 import { applyPatches, type Applied, INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
-import { renderLinkLabels, setLinkLabelScale } from '../render/linkLabels';
+import { renderLinkLabels, setLinkLabelScale, watchLinkLabelFonts } from '../render/linkLabels';
 import { renderOverlay } from '../render/overlay';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
@@ -577,6 +577,9 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     () => (stage.root ? bindSymbolLegend(stage.root, stage.index, highlight.setRows) : undefined),
     [stage.root, stage.index, highlight]
   );
+
+  // A web font that loads late widens the glyphs: cut the strokes under the labels again.
+  useEffect(() => (stage.root ? watchLinkLabelFonts(stage.root) : undefined), [stage.root]);
 
   // Zoom layout.
   useEffect(() => {

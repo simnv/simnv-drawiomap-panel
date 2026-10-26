@@ -1,9 +1,11 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { createTheme, getDefaultTimeRange } from '@grafana/data';
+import { colorManipulator, createTheme, getDefaultTimeRange } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Card } from './Card';
 import type { ConfiguredCardModel } from './cardModel';
+import { statusTextColor } from '../binding/color';
+import type { StatusView } from '../binding/status';
 
 const { sparkline, transitions } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
@@ -522,5 +524,40 @@ describe('deferred charts', () => {
     expect(sparkline).toHaveBeenCalled();
     expect(screen.getByTestId('dmap-mirror-spark')).toBeTruthy();
     expect(transitions.queue).toEqual([]);
+  });
+});
+
+describe('the status row', () => {
+  const statusRow = (status: StatusView['state']): ConfiguredCardModel['rows'][number] => ({
+    key: 'status',
+    kind: 'status',
+    title: status,
+    text: 'probe delay over 400 ms',
+    state: 'ready',
+    status,
+  });
+  const theme = createTheme();
+  const colourOf = (v: string) => {
+    const probe = document.createElement('span');
+    probe.style.color = v;
+    return probe.style.color;
+  };
+  it.each([
+    ['down', theme.colors.error.text],
+    ['critical', theme.colors.error.text],
+    ['warning', theme.colors.warning.text],
+    ['stale', theme.colors.warning.text],
+    ['missing', theme.colors.text.secondary],
+  ] as const)('shows the state word %s in the text-safe colour and the reason in the plain colour', (status, want) => {
+    renderCard(cardOf(statusRow(status)));
+    expect(screen.getByText(status).style.color).toBe(colourOf(want));
+    expect(screen.getByText('probe delay over 400 ms').style.color).toBe('');
+  });
+  it('keeps the warning word readable on the light card', () => {
+    const light = createTheme({ colors: { mode: 'light' } });
+    expect(statusTextColor({ state: 'warning' }, light)).toBe(light.colors.warning.text);
+    expect(
+      colorManipulator.getContrastRatio(statusTextColor({ state: 'warning' }, light), light.colors.background.primary)
+    ).toBeGreaterThanOrEqual(4.5);
   });
 });

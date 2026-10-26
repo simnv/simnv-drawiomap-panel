@@ -32,6 +32,19 @@ export function statusColor(status: Pick<StatusView, 'state'>, theme: GrafanaThe
       : noDataColor(theme);
 }
 
+/**
+ * The colour of a status word as text: the semantic text colours of the theme, which keep their contrast in both
+ * themes (the palette orange is too light for text on a white card). The paint, the band and the legend use
+ * `statusColor`.
+ */
+export function statusTextColor(status: Pick<StatusView, 'state'>, theme: GrafanaTheme2): string {
+  return status.state === 'critical' || status.state === 'down'
+    ? theme.colors.error.text
+    : status.state === 'warning' || status.state === 'stale'
+      ? theme.colors.warning.text
+      : theme.colors.text.secondary;
+}
+
 /** The colour a status paints its element with: a state that is not normal. A normal status paints nothing. */
 export function statusPaint(status: Pick<StatusView, 'state'> | undefined, theme: GrafanaTheme2): string | undefined {
   return status && status.state !== 'normal' ? statusColor(status, theme) : undefined;

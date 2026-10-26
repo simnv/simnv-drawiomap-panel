@@ -176,14 +176,17 @@ export function colourAlpha(value: string): number {
 /** The effective value of a paint property: inline style, then the computed style (CSS rules), then the attribute. */
 function effective(m: SVGElement, prop: string, fallback: string): string {
   const inline = m.style.getPropertyValue(prop).trim();
-  if (inline) {
-    return inline;
-  }
   let computed = '';
-  try {
-    computed = getComputedStyle(m).getPropertyValue(prop).trim();
-  } catch {
-    // no computed style in this host
+  // an inline value that is not a plain colour (light-dark(), var()) is classified by what it resolves to
+  if (!inline || /\b(?:light-dark|var)\(/i.test(inline)) {
+    try {
+      computed = getComputedStyle(m).getPropertyValue(prop).trim();
+    } catch {
+      // no computed style in this host
+    }
+  }
+  if (inline) {
+    return computed || inline;
   }
   return computed || (m.getAttribute(prop) ?? '').trim() || fallback;
 }
