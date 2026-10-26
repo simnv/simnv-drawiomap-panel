@@ -63,38 +63,56 @@ Item 3 holds the links' placement across refreshes because the spec of step 2 of
 ### 3.1 The applier
 
 ```ts
-/** What one apply left in the DOM: the key of the applied patch per cell, for the index it was applied to. */
+/** What one apply left in the DOM: the key of the applied patch per cell, for the index and the colour scheme it was applied under. */
 export interface Applied {
   index: CellIndex;
+  isDark: boolean;
   keys: Map<string, string>;
 }
 export function applyPatches(
   index: CellIndex,
   patches: PatchMap,
   previous?: Applied,
-  interactive?: Set<string>
+  interactive?: Set<string>,
+  isDark?: boolean
 ): Applied;
 ```
 
 `applyKey(patch, interactive): string` is one function in `applier.ts`. It joins the fields the applier reads:
-`shape` (`target`, `color`, `text`), `unavailable` (`color`, `reason`), `link.a2b` and `link.b2a` (`status`, `color`,
-`width`, `stepIndex`), `statusView` (`state`, `reason`) and the `interactive` flag. `JSON.stringify` of a short array
-is the format: a missing part is `null`, so `shape.text` undefined and `shape.text` `""` differ. The cell label of
-`aria-label` comes from `entry.meta`, constant per index, so it is not in the key.
+`shape` (`status`, `stepIndex`, `target`, `color`, `text`), `unavailable` (`color`, `reason`), `link.a2b` and
+`link.b2a` (`status`, `color`, `width`, `stepIndex`), `statusView` (`state`, `reason`) and the `interactive` flag
+(`tag` reads `status` and `stepIndex` of the shape and of both halves for `data-dmap-status` and `data-dmap-step`,
+R1-1). `JSON.stringify` of a short array is the format: a missing part is `null`, so `shape.text` undefined and
+`shape.text` `""` differ. The cell label of `aria-label` comes from `entry.meta`, constant per index, so it is not in
+the key.
+
+The colour scheme (R1-3). `paints()` decides from the effective style whether an end marker gets the colour of its
+half; a `light-dark()` paint resolves against the `color-scheme` of the root, which the panel writes from
+`theme.isDark`. The patches do not carry it (an ok half keeps its threshold colour in both themes), so the callers pass
+`theme.isDark`, and `Applied` records it. A pass with another `isDark` than `previous` resets and writes every cell, as
+every pass did before this step.
 
 The pass:
 
 1. `previous` applies when `previous.index === index`; else it counts as empty. A new stage has new elements: every
    patch is applied, nothing is reset (the old DOM is gone).
-2. Resets first, then writes, as today (a node colours the icon of another cell; a later reset must not undo it). A
-   cell is reset when it is in `previous.keys` and either is not in `patches`, has no entry, or has a new key. A cell
-   is written when it has an entry and its key differs from `previous.keys` (or is new). The writes are the functions
-   of today (`applyShape`, `applyUnavailable`, `applyLink`, `tag`) with no change.
-3. A cell whose key is equal is not touched: no reset, no write, no `setOwnedAttrs` call. Its `written`, `iconOwner`
-   and `endOriginal` records stay, so the reset of a later change still puts the diagram's values back.
-4. The result holds `index` and the keys of every cell that was written or kept.
+2. The changed set: the cells of `patches` whose key differs from `previous.keys` (or are new), plus every cell of
+   `previous.keys` that is not in `patches` or has no entry. With another `isDark`, every cell of both.
+3. A node and its icon cell change together (R1-2). `applyShape` of a node with `target: 'icon'` colours the shape of
+   its icon cell (`entry.iconId`), and `reset` of the icon cell puts the icon's own fill back. If the icon cell has a
+   patch of its own (a url, an unavailable state) and only one of the two changes, the one that is skipped loses its
+   paint. So the changed set closes over the pair: a changed cell with an `iconId` adds that icon cell; a changed cell
+   with an `ownerId` adds its owner. Both are in the index (`CellEntry.iconId`, `CellEntry.ownerId`), one hop each.
+4. Resets first, then writes, as today (a node colours the icon of another cell; a later reset must not undo it).
+   Every cell of the changed set that is in `previous.keys` is reset; then every cell of the changed set that is in
+   `patches` and has an entry is written, in the order of `patches`, with the functions of today (`applyShape`,
+   `applyUnavailable`, `applyLink`, `tag`) and no change in them.
+5. A cell outside the changed set is not touched: no reset, no write, no `setOwnedAttrs` call. Its `written`,
+   `iconOwner` and `endOriginal` records stay, so the reset of a later change still puts the diagram's values back.
+6. The result holds `index`, `isDark` and the keys of every cell that was written or kept.
 
-`markInteractive` keeps its signature: it already diffs by id.
+`markInteractive` keeps its signature. Today it writes the attribute on every interactive cell on every pass; it now
+writes only the cells that are new in `ids` and removes only the ones that left (R1-5).
 
 ### 3.2 The overlay
 
@@ -140,9 +158,17 @@ The pass:
 4. Markers. For each patch with a non-normal `statusView` and an entry: a drawn marker with the same key stays. Else
    the old marker is removed and `drawStatusMarker` runs as today. A drawn marker of a cell that is now normal, has
    no view or no patch is removed.
-5. `ensureOverlay` does not change: it already returns the existing layer after the arrow heads.
+5. The place of a kept marker (R1-4). `drawStatusMarker` puts the marker right after the primitive (`primitive.after`),
+   so on an edge without arrow heads the order is path, marker, overlay: the marker lies under the halves. A rebuilt
+   layer goes after the path again (`ensureOverlay` anchors on the path and its arrow heads), which would put the
+   kept marker above the new layer. So the marker step moves a kept marker back when it is not the next sibling of
+   its primitive (`primitive.after(marker)`, one move on a rebuild, nothing on a kept layer). The child order of
+   path, marker, arrow heads, overlay is the same as a fresh render in every case (test on the child order).
+6. `ensureOverlay` does not change: it already returns the existing layer after the arrow heads. A kept layer is not
+   looked up at all: the state holds it.
 
-The z-order holds: an updated element keeps its place; a rebuilt layer goes where `ensureOverlay` puts it, as today.
+The z-order holds: an updated element keeps its place; a rebuilt layer goes where `ensureOverlay` puts it, as today,
+and the marker of its cell goes back under it.
 
 The mask. `syncMasks` sets `mask` only when the attribute differs and removes it from the strokes of a link that lost
 its mask. An updated polyline keeps its `mask` attribute; a rebuilt layer has none and gets it in the same pass,
@@ -214,8 +240,8 @@ Measure before (the dist of `main`) and after on 13.2, 1600×1000; put both rows
 
 | Caller                                  | Today                                                                                               | After                                                                                                                        |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `DrawioMapPanel.tsx`                    | `patchedRef = useRef<Set<string>>(new Set())`; `applyPatches(..., patchedRef.current, interactive)` | `useRef<Applied>()`; the same call; nothing else changes                                                                     |
-| `DiagramStage.tsx`                      | `patched = useRef<Set<string>>(new Set())`                                                          | `useRef<Applied>()`                                                                                                          |
+| `DrawioMapPanel.tsx`                    | `patchedRef = useRef<Set<string>>(new Set())`; `applyPatches(..., patchedRef.current, interactive)` | `useRef<Applied>()`; `applyPatches(..., patchedRef.current, interactive, theme.isDark)`; nothing else changes                |
+| `DiagramStage.tsx`                      | `patched = useRef<Set<string>>(new Set())`                                                          | `useRef<Applied>()`; `applyPatches(stage.index, patches, patched.current, undefined, theme.isDark)`                          |
 | `overlay.ts` `renderOverlay`            | sweeps and redraws                                                                                  | the state per root (section 3.2); `drawLink`, `drawStatusMarker`, `ensureOverlay` unchanged, `drawHalf` returns its elements |
 | `geometry.ts` `pathGeometry`            | measures per call                                                                                   | the per-element cache (section 3.3); same `PathGeom`                                                                         |
 | `linkLabels.ts` `syncMasks`, `edgeLegs` | unchanged logic                                                                                     | one comment; `edgeLegs` reads the cache through `pathGeometry`                                                               |
@@ -230,14 +256,20 @@ Unit, `npm run test:affected` in the worktree; the full suite once on main befor
   cell writes that cell only (the records name its elements, no other); a removed cell is reset; a changed
   `interactive` flag rewrites the tab stop; an `Applied` of another index counts as empty (every patch is written, no
   reset); the editor's owned attributes survive an equal apply (the existing test stays green); the end-marker and
-  text cases stay green with the new signature.
+  text cases stay green with the new signature. The review cases: a shape whose `stepIndex` (or `status`) changes
+  with the same colour gets the new `data-dmap-step` (R1-1); a node that colours its icon keeps the icon colour when
+  the patch of the icon cell changes or goes, and the icon cell keeps its own grey when the node's patch changes
+  (R1-2); an end dot with a `light-dark()` fill is evaluated again after a pass with another `isDark` (R1-3);
+  `markInteractive` with the same ids makes no mutation (R1-5).
 - `src/render/overlay.test.ts`: a second render with equal halves keeps the same polyline and polygon elements
   (`isSameNode`) and makes no mutation under the root; a colour and width change updates `stroke`, `stroke-width`,
   `data-dmap-status`, `data-dmap-step` and the arrow `fill` on the same elements and leaves `points` and a `mask`
   attribute set by hand in place; a half that goes (two-way to one-way) rebuilds the layer of that link only, the
   other link keeps its elements; a marker with the same state and reason is the same element; a new reason is a new
   element; a normal view removes it; a link patch that goes removes its overlay; a new index removes every element of
-  the old render ("clears the previous render" adapted); the theme change case: a new theme draws the markers again.
+  the old render ("clears the previous render" adapted); the theme change case: a new theme draws the markers again;
+  the child order on an edge without arrow heads is path, marker, overlay after a fresh render and after a rebuild of
+  the layer with a kept marker (R1-4).
 - `src/render/geometry.test.ts`: with stubbed `getTotalLength`, `getPointAtLength` and `getCTM` on one path, two
   `pathGeometry` calls and the same `pointAt` and `polyline` arguments call `getTotalLength` once and
   `getPointAtLength` once per distinct arc length, and `getCTM` on every call; a second path element measures again;
@@ -270,8 +302,17 @@ pass). The README changes nothing: no option changes.
    Recommendation: the string only; one rule is simpler, and the string costs microseconds per cell.
 3. A status marker whose cell moved (nothing moves a cell) or whose font changed (constant) would need a new box.
    Recommendation: no handling; a new stage rebuilds everything.
-4. The applier could also skip `markInteractive` writes; it already diffs by id. No change.
+4. (closed by R1-5) `markInteractive` diffs its writes too.
 
 ## 9. Review resolutions
 
-To be filled after the review.
+Review 1 (Codex, 2026-10-26, the spec at `eec0c82`). No finding on the geometry cache and its invalidation, the mask,
+the hit test, the popup stage, the bench method or the e2e plan.
+
+| Concern                                                                                                                                                                   | Resolution                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1-1 (P1). The key omitted `shape.status` and `shape.stepIndex`, which `tag` reads: a threshold change with the same colour left stale data attributes                    | Both are in the key (section 3.1; test "a shape whose stepIndex changes with the same colour").                                                                                             |
+| R1-2 (P1). A changed or removed patch of an icon cell was reset while its unchanged node owner was skipped: `reset` put the icon fill back and the node colour was lost   | The changed set closes over the node and its icon cell through `iconId` and `ownerId`; both are reset and written together (section 3.1, item 3; tests "a node that colours its icon ..."). |
+| R1-3 (P1). The key ignored the theme in `paints()`: an end dot with a `light-dark()` fill kept its patched paint after a theme switch, where it had to be evaluated again | The callers pass `theme.isDark`; `Applied` records it; another value resets and writes every cell (section 3.1, "The colour scheme"; test "an end dot with a light-dark() fill").           |
+| R1-4 (P1). A kept marker stayed above a rebuilt layer: on an edge without arrow heads the order went from path, marker, overlay to path, overlay, marker                  | The marker step moves a kept marker back after its primitive when it is not the next sibling (section 3.2, item 5; test on the child order).                                                |
+| R1-5 (P3). The text said `markInteractive` already diffs; it rewrote every interactive cell that stays on each pass                                                       | It writes only the new ids and removes only the ones that left (section 3.1; test "makes no mutation with the same ids").                                                                   |
