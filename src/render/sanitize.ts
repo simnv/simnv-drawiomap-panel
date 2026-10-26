@@ -35,15 +35,26 @@ function hasExternalUrl(cssText: string): boolean {
   return false;
 }
 
-export const PURIFY_CONFIG: Config = {
+const deepFreeze = <T extends object>(o: T): T => {
+  for (const v of Object.values(o)) {
+    if (v && typeof v === 'object') {
+      deepFreeze(v);
+    }
+  }
+  return Object.freeze(o);
+};
+
+// Frozen: DOMPurify lowercases array entries of the config in place, so each call gets a deep copy and the original
+// never changes. Entries are already in the lowercase form that DOMPurify expects. The cache pin hashes this object.
+export const PURIFY_CONFIG: Config = deepFreeze({
   USE_PROFILES: { svg: true, svgFilters: true, html: true },
   // DOMPurify forbids foreignObject by default; the spec keeps HTML labels. The html profile
   // sanitises their content; iframe/object/embed/script are forbidden below.
   // DOMPurify does not allow `use`. Pass 1 removes every `use` that does not point to a local #id.
-  ADD_TAGS: ['foreignObject', 'switch', 'use'],
+  ADD_TAGS: ['foreignobject', 'switch', 'use'],
   // Without this, DOMPurify removes every HTML element inside foreignObject (the label text).
   HTML_INTEGRATION_POINTS: { foreignobject: true, 'annotation-xml': true },
-  ADD_ATTR: ['data-cell-id', 'pointer-events', 'requiredFeatures', 'color-scheme', 'xml:space'],
+  ADD_ATTR: ['data-cell-id', 'pointer-events', 'requiredfeatures', 'color-scheme', 'xml:space'],
   FORBID_TAGS: [
     'iframe',
     'object',
@@ -67,7 +78,7 @@ export const PURIFY_CONFIG: Config = {
   ADD_DATA_URI_TAGS: ['image'],
   ALLOW_DATA_ATTR: true,
   RETURN_DOM: true,
-};
+});
 
 export function sanitizeSvgUncached(text: string): SanitizeResult {
   const root = parseSvg(text);
@@ -113,7 +124,7 @@ export function sanitizeSvgUncached(text: string): SanitizeResult {
 
   // Pass 2: DOMPurify.
   const serialized = new XMLSerializer().serializeToString(root);
-  const body = DOMPurify.sanitize(serialized, PURIFY_CONFIG) as unknown as HTMLElement;
+  const body = DOMPurify.sanitize(serialized, structuredClone(PURIFY_CONFIG)) as unknown as HTMLElement;
   removed.elements += DOMPurify.removed.filter((r) => 'element' in r).length;
   removed.attributes += DOMPurify.removed.filter((r) => 'attribute' in r).length;
   const svg = body.querySelector('svg');

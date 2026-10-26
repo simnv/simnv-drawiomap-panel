@@ -146,6 +146,14 @@ describe('sanitizeSvg cache: a caller cannot change the cache', () => {
 });
 
 describe('sanitizeSvg cache: key inputs', () => {
+  it('the exported options are frozen and the same before and after a sanitize', () => {
+    const before = JSON.stringify(PURIFY_CONFIG);
+    expect(Object.isFrozen(PURIFY_CONFIG)).toBe(true);
+    expect(Object.isFrozen(PURIFY_CONFIG.ADD_TAGS)).toBe(true);
+    sanitizeSvgUncached(demo('legacy-html-labels'));
+    expect(JSON.stringify(PURIFY_CONFIG)).toBe(before);
+  });
+
   it('pins the sanitizer options to the version constant', () => {
     // When this fails, you changed PURIFY_CONFIG. Raise SANITIZER_VERSION and update the pin.
     expect([SANITIZER_VERSION, fnv(JSON.stringify(PURIFY_CONFIG))]).toEqual(['o7-1', '63ac6b03']);
