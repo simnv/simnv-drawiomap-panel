@@ -61,6 +61,10 @@ function stateConfig(base: DiagramConfig, state: State): DiagramConfig {
       display: { status: { ...config.patterns[0].display.status!, binding: binding('healthy-peer') } },
     });
   }
+  if (state === 'widespread outage') {
+    // the link takes the status too: its halves show the status colour over the binding colour
+    config.overrides.push({ cellId: 'link-1', display: { status: config.patterns[0].display.status! } });
+  }
   if (state === 'stale') config.patterns[0].display.status!.freshness = { expectedIntervalMs: 1, staleAfterMs: 2 };
   if (state === 'zero') config.queries[2] = nativeQuery('trend', 'vector(0)');
   return config;
@@ -123,13 +127,36 @@ for (const theme of ['light', 'dark'] as const) {
             await expect(device).toHaveAttribute('data-dmap-status', expected);
             if (state === 'partial outage')
               await expect(panel.locator('[data-cell-id="device-2"]')).toHaveAttribute('data-dmap-status', 'normal');
+            const rect = device.locator('rect').first();
             if (state === 'widespread outage') {
-              await expect(panel.locator('.dmap-status-marker')).toHaveCount(2);
+              await expect(panel.locator('.dmap-status-marker')).toHaveCount(0);
               await expect(panel.locator('.dmap-status-summary')).toHaveCount(1);
               await expect(panel.locator('.dmap-status-summary')).toHaveAttribute(
                 'title',
-                'down: Health check failed (2 elements)'
+                'down: Health check failed (3 elements)'
               );
+              // the status paints the device: a border twice the default width in the status colour, a tinted fill
+              await expect(rect).toHaveCSS('stroke-width', '2px');
+              const paint = await rect.evaluate((el) => ({
+                stroke: el.style.stroke,
+                fill: getComputedStyle(el).fill,
+                drawn: el.getAttribute('fill'),
+              }));
+              expect(paint.stroke).not.toBe('');
+              expect(paint.fill).toMatch(/^rgb\(/);
+              expect(paint.fill).not.toBe('rgb(213, 232, 212)');
+              expect(paint.drawn).toBe('#d5e8d4');
+              // and the link: both halves and arrow heads in the same status colour, over the binding colour
+              const halves = panel.locator('.dmap-half[data-dmap-cell="link-1"]');
+              await expect(halves).toHaveCount(2);
+              const strokes = await halves.evaluateAll((els) => els.map((el) => getComputedStyle(el).stroke));
+              const deviceStroke = await rect.evaluate((el) => getComputedStyle(el).stroke);
+              expect(strokes).toEqual([deviceStroke, deviceStroke]);
+              await expect(halves.first()).toHaveAttribute('data-dmap-status', 'ok');
+            }
+            if (state === 'normal') {
+              // a normal status paints nothing: the drawn colours stay
+              expect(await rect.evaluate((el) => [el.style.stroke, el.style.fill])).toEqual(['', '']);
             }
             if (expected !== 'normal') {
               const reason = state.includes('outage')
@@ -159,12 +186,9 @@ for (const theme of ['light', 'dark'] as const) {
           await expect(
             panel.locator('.dmap-status-summary[title="down: Health check failed (2 elements)"]')
           ).toBeVisible();
-          // One evaluate reads the panel and every marker from one DOM state. Locator calls one by one race with a redraw.
-          const { top, markerTops } = await panel.evaluate((el) => ({
-            top: el.getBoundingClientRect().y,
-            markerTops: Array.from(el.querySelectorAll('.dmap-status-marker text'), (m) => m.getBoundingClientRect().y),
-          }));
-          for (const markerTop of markerTops) expect(markerTop).toBeGreaterThanOrEqual(top);
+          // the two down devices are painted, nothing is drawn on top of the diagram
+          await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="down"]')).toHaveCount(2);
+          await expect(panel.locator('.dmap-status-marker')).toHaveCount(0);
           await shoot(panel, 'crowded');
         });
       } finally {
