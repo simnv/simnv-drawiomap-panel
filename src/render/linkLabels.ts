@@ -707,8 +707,23 @@ function createProbe(layer: SVGGElement): SVGTextElement {
  */
 export function haloColour(root: SVGSVGElement, theme: GrafanaTheme2): string {
   const value = typeof getComputedStyle === 'function' ? getComputedStyle(root).backgroundColor.trim() : '';
-  const clear = value === '' || value === 'transparent' || /^rgba?\(.*[,/]\s*0(\.0+)?%?\s*\)$/.test(value);
-  return clear ? theme.colors.background.canvas : value;
+  return opaqueColour(value) ?? theme.colors.background.canvas;
+}
+
+/**
+ * The colour when it is opaque, else undefined. `rgb(r, g, b)` and `rgb(r g b)` have alpha 1; `rgba(r, g, b, a)` and
+ * `rgb(r g b / a)` have the alpha a (a number or a percent); `transparent`, an empty value and anything that is not
+ * an rgb colour (for example a keyword) give undefined.
+ */
+function opaqueColour(value: string): string | undefined {
+  const m = /^rgba?\(\s*([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/i.exec(
+    value
+  );
+  if (!m) {
+    return undefined;
+  }
+  const alpha = m[4] === undefined ? 1 : m[5] ? Number(m[4]) / 100 : Number(m[4]);
+  return alpha === 1 ? value : undefined;
 }
 
 function paint(rec: LabelRecord, theme: GrafanaTheme2, halo: string): void {

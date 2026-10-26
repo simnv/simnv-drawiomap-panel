@@ -771,6 +771,19 @@ describe('renderLinkLabels: the halo colour', () => {
       labels(root).forEach((el) => expect(el.getAttribute('stroke')).toBe(theme.colors.background.canvas));
     }
   });
+  it('keeps an opaque colour with a zero channel and falls back for any alpha below 1', () => {
+    const colour = (css: string) => {
+      const { root, index } = build();
+      root.style.backgroundColor = css;
+      render(root, index, both());
+      return byHalf(root, 'a2b')!.getAttribute('stroke');
+    };
+    expect(colour('rgb(0, 0, 0)')).toBe('rgb(0, 0, 0)');
+    expect(colour('rgb(255, 0, 0)')).toBe('rgb(255, 0, 0)');
+    expect(colour('rgba(29, 45, 61, 0.5)')).toBe(theme.colors.background.canvas);
+    expect(colour('rgba(0, 0, 0, 0)')).toBe(theme.colors.background.canvas);
+    expect(colour('rgb(0 0 0 / 0.5)')).toBe(theme.colors.background.canvas);
+  });
   it('is read again on a theme change', () => {
     const { root, index } = bare();
     render(root, index, both());
