@@ -145,6 +145,27 @@ describe('sanitizeSvg: draw.io export', () => {
     expect(root.querySelector('rect')!.getAttribute('style')).toContain('stroke: blue');
     expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
   });
+  it('drops a descendant declaration whose name hides behind a CSS escape or a comment, and keeps a quoted value whole', () => {
+    const r = sanitizeSvg(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" style="color-scheme: light dark;">` +
+        `<g id="a" style="color\\-scheme: light dark; opacity: 0.5">` +
+        `<g id="b" style="\\63 olor-scheme: light dark; fill: red">` +
+        `<g id="c" style="color-scheme/**/: light dark; stroke: blue">` +
+        `<g id="d" style="font-family: 'demo;color-scheme:dark'; fill: red; color-scheme: dark">` +
+        `<g id="e" style="fill: url(#g;x); color-scheme: dark; stroke: green">` +
+        `<rect width="1" height="1"/></g></g></g></g></g></svg>`
+    );
+    const root = new DOMParser().parseFromString(r.svg, 'image/svg+xml').documentElement;
+    const style = (id: string) => root.querySelector(`#${id}`)!.getAttribute('style') ?? '';
+    expect(root.getAttribute('style')).toContain('color-scheme: light dark');
+    expect(style('a')).toBe('opacity: 0.5');
+    expect(style('b')).toBe('fill: red');
+    expect(style('c')).toBe('stroke: blue');
+    // a `;` or a `:` inside quotes or parentheses does not split a declaration
+    expect(style('d')).toBe("font-family: 'demo;color-scheme:dark'; fill: red");
+    expect(style('e')).toBe('fill: url(#g;x); stroke: green');
+    expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
+  });
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
     expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(108);

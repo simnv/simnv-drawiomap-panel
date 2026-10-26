@@ -20,6 +20,46 @@ export function parseSvg(text: string): SVGSVGElement {
   return root as unknown as SVGSVGElement;
 }
 
+/** The declarations of an inline style: a `;` inside quotes or parentheses does not split. */
+function splitDeclarations(style: string): string[] {
+  const out: string[] = [];
+  let quote = '';
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < style.length; i++) {
+    const c = style[i];
+    if (quote) {
+      if (c === '\\') {
+        i++;
+      } else if (c === quote) {
+        quote = '';
+      }
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === '(') {
+      depth++;
+    } else if (c === ')') {
+      depth = Math.max(0, depth - 1);
+    } else if (c === ';' && depth === 0) {
+      out.push(style.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(style.slice(start));
+  return out;
+}
+
+/**
+ * True for a declaration that a descendant must not keep: `color-scheme` in any case, and any declaration whose
+ * name hides behind a CSS escape (`color\-scheme`, `\63 olor-scheme`) or a comment (`color-scheme/**\/:`). draw.io
+ * writes neither, so a strict drop loses nothing real. The value is not read.
+ */
+function setsColorScheme(declaration: string): boolean {
+  const colon = declaration.indexOf(':');
+  const name = (colon < 0 ? declaration : declaration.slice(0, colon)).trim();
+  return !!name && (/[\\/*]/.test(name) || name.toLowerCase() === 'color-scheme');
+}
+
 /** true when a CSS text references anything that is not a local #id */
 function hasExternalUrl(cssText: string): boolean {
   if (/@import/i.test(cssText)) {
@@ -112,19 +152,21 @@ export function sanitizeSvg(text: string): SanitizeResult {
   }
   // The colour scheme is the panel's: it writes it on the root from the Grafana theme. A descendant must not turn
   // the OS preference back on for its subtree, else a light-dark() paint under it changes with no theme change.
-  // A CSS property name is case-insensitive, so the match is; a selector on the attribute text would not be.
-  const COLOR_SCHEME = /^\s*color-scheme\s*:/i;
   for (const el of Array.from(root.querySelectorAll('[style]'))) {
     const style = el.getAttribute('style') ?? '';
-    if (!/color-scheme/i.test(style)) {
-      continue;
-    }
-    const kept = style
-      .split(';')
-      .filter((declaration) => !COLOR_SCHEME.test(declaration))
-      .join(';');
-    if (kept !== style) {
-      el.setAttribute('style', kept);
+    const declarations = splitDeclarations(style);
+    const kept = declarations.filter((declaration) => !setsColorScheme(declaration));
+    if (kept.length !== declarations.length) {
+      const joined = kept
+        .map((d) => d.trim())
+        .filter(Boolean)
+        .join('; ');
+      if (joined) {
+        el.setAttribute('style', joined);
+      } else {
+        el.removeAttribute('style');
+      }
+      removed.attributes++;
     }
   }
   for (const el of Array.from(root.querySelectorAll('*'))) {
