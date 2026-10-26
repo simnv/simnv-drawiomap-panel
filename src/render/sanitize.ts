@@ -112,16 +112,28 @@ export function sanitizeSvg(text: string): SanitizeResult {
   }
   // The colour scheme is the panel's: it writes it on the root from the Grafana theme. A descendant must not turn
   // the OS preference back on for its subtree, else a light-dark() paint under it changes with no theme change.
-  for (const el of Array.from(root.querySelectorAll('[style*="color-scheme"]'))) {
-    const kept = (el.getAttribute('style') ?? '')
+  // A CSS property name is case-insensitive, so the match is; a selector on the attribute text would not be.
+  const COLOR_SCHEME = /^\s*color-scheme\s*:/i;
+  for (const el of Array.from(root.querySelectorAll('[style]'))) {
+    const style = el.getAttribute('style') ?? '';
+    if (!/color-scheme/i.test(style)) {
+      continue;
+    }
+    const kept = style
       .split(';')
-      .filter((declaration) => !/^\s*color-scheme\s*:/i.test(declaration))
+      .filter((declaration) => !COLOR_SCHEME.test(declaration))
       .join(';');
-    el.setAttribute('style', kept);
+    if (kept !== style) {
+      el.setAttribute('style', kept);
+    }
   }
-  for (const el of Array.from(root.querySelectorAll('[color-scheme]'))) {
-    el.removeAttribute('color-scheme');
-    removed.attributes++;
+  for (const el of Array.from(root.querySelectorAll('*'))) {
+    for (const name of Array.from(el.attributes, (a) => a.name)) {
+      if (name.toLowerCase() === 'color-scheme') {
+        el.removeAttribute(name);
+        removed.attributes++;
+      }
+    }
   }
 
   // Pass 2: DOMPurify.

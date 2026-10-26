@@ -127,6 +127,24 @@ describe('sanitizeSvg: draw.io export', () => {
     expect(r.svg).toContain('light-dark(#000, #fff)');
     expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
   });
+  it('strips the colour scheme of a descendant in any case, with any whitespace, with !important, and as an attribute', () => {
+    const r = sanitizeSvg(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" style="color-scheme: light dark;">` +
+        `<g style="COLOR-SCHEME: light dark; opacity: 0.5"><g style="  Color-Scheme  :  dark  !important ; fill: red">` +
+        `<rect COLOR-SCHEME="dark" style="stroke: blue;color-scheme:light" width="1" height="1" fill="light-dark(transparent, #333)"/>` +
+        `</g></g></svg>`
+    );
+    const root = new DOMParser().parseFromString(r.svg, 'image/svg+xml').documentElement;
+    expect(root.getAttribute('style')).toContain('color-scheme: light dark');
+    for (const el of Array.from(root.querySelectorAll('*'))) {
+      expect(el.getAttribute('style') ?? '').not.toMatch(/color-scheme/i);
+      expect(Array.from(el.attributes).some((a) => a.name.toLowerCase() === 'color-scheme')).toBe(false);
+    }
+    expect(root.querySelector('g')!.getAttribute('style')).toContain('opacity: 0.5');
+    expect(root.querySelector('g g')!.getAttribute('style')).toContain('fill: red');
+    expect(root.querySelector('rect')!.getAttribute('style')).toContain('stroke: blue');
+    expect(sanitizeSvg(r.svg).svg).toBe(r.svg);
+  });
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
     expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(108);
