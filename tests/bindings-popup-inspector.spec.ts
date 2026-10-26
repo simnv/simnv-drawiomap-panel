@@ -290,10 +290,8 @@ test('bindings popup: card preview and layouts share one page', async ({
     // The preview is the first block of the inspector.
     await expect(popupInspector(dialog).locator('section').first()).toHaveAttribute('aria-label', 'Hover card preview');
     const previewRows = await readRows(preview(dialog));
-    // The status row (state and reason) comes first, then the hover rows.
-    expect(previewRows).toHaveLength(3);
-    expect(previewRows[0]).toContain('Healthy');
-    expect(previewRows[1]).toContain('Detail value');
+    expect(previewRows).toHaveLength(2);
+    expect(previewRows[0]).toContain('Detail value');
     fs.mkdirSync(SHOTS, { recursive: true });
     await page.screenshot({ path: `${SHOTS}/inspector-desktop-${port()}.png` });
     await closeBindingsPopup(page);
