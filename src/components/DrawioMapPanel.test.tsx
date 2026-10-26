@@ -2363,6 +2363,63 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
     });
 
+    it('a freshness deadline after the popup opened marks no legend cells, while the legend keeps its entry', async () => {
+      const binding = { queryId: 'q', match: {}, reducer: 'last' } as const;
+      const status: NonNullable<DiagramConfig['overrides'][number]['display']['status']> = {
+        kind: 'mapping',
+        binding,
+        default: { state: 'normal', reason: 'Healthy' },
+        mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+        freshness: { expectedIntervalMs: 100, staleAfterMs: 1000 },
+      };
+      const config: DiagramConfig = {
+        version: 3,
+        queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
+        patterns: [],
+        widgets: [],
+        overrides: ['a', 'b'].map((cellId) => ({ cellId, display: { status } })),
+      };
+      const fresh = toDataFrame({
+        refId: 'Q',
+        fields: [
+          { name: 'Time', type: FieldType.time, values: [Date.now()] },
+          { name: 'Value', type: FieldType.number, values: [1] },
+        ],
+      });
+      const base = props({ id: 61 });
+      const saved: Options = {
+        ...options,
+        config,
+        diagram,
+        legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false },
+      };
+      const view = render(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
+      // the entry of the down state: no cells now and none after the deadline, but a new id list on each render
+      const entry = await waitFor(() => {
+        const found = screen
+          .getAllByTestId('dmap-legend-entry')
+          .find((e) => e.getAttribute('aria-label')!.startsWith('Down, critical'));
+        expect(found).toBeTruthy();
+        return found!;
+      });
+      const root = view.container.querySelector('[data-testid="dmap-stage"] > svg')!;
+      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
+      const panelCell = () => view.container.querySelector('[data-testid="dmap-stage"] [data-cell-id="a"]');
+      expect(panelCell()?.getAttribute('data-dmap-status')).not.toBe('stale');
+      openPopup();
+      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
+      // the deadline passes behind the popup: new patches, new legend blocks, a new id list from the legend
+      view.rerender(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
+      // the cell of the panel stage (not the popup stage) is stale: the view rendered and applied behind the popup
+      await waitFor(() => expect(panelCell()?.getAttribute('data-dmap-status')).toBe('stale'), { timeout: 3000 });
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
+      expect(root.classList.contains('dmap-legend-active')).toBe(false);
+      expect(root.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
+    });
+
     /** One status element bound to the panel query Q, with a freshness policy of 400 ms. */
     const freshnessConfig: DiagramConfig = {
       version: 3,

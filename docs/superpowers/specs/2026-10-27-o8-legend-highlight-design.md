@@ -1,6 +1,7 @@
 # O8: the legend highlight does not render the panel
 
-- Status: draft 2026-10-27.
+- Status: draft 2026-10-27; review round 1 (Codex) applied: R1-1 the paused invariant, R1-2 the hover card
+  exception, R1-3 the bench without the auto refresh.
 - Scope: `src/components/DrawioMapPanel.tsx` (the legend state and the highlight effect), a new
   `src/legend/highlightStore.ts`, their tests, a new bench `scripts/bench/legend-hover.mjs`, `docs/acceptance.md`.
 - Reads: the simplify plan (O8), the consumer team's measurement on a dense sheet of about 300 cells, the step 5 spec
@@ -14,7 +15,9 @@
 1. A pointer or a focus on a legend entry, a tap on an entry, and the same on a linked legend row of the diagram
    (`bindSymbolLegend`), change the classes of the cells and nothing else. The panel view (`DrawioMapPanelView`) does
    not render, so the status band, the chart layer, the card and the corner buttons do not render, and no effect of
-   the view runs again.
+   the view runs again. One exception stays (R1-2): when the pointer goes from a cell with an open hover card (not
+   pinned) to the legend, the `pointermove` handler of the panel closes the card (`setCard(null)`), and that is one
+   render of the view. It is the hover card rule, not the highlight. The tests start with no hover card.
 2. The visible result and the behaviour do not change: the same classes on the same elements, in the same frame
    (one animation frame after the event), the same keyboard, pointer and touch rules, the same pinned card and hover
    card, the same `aria-label` and tab stops. Opening the bindings popup ends the highlight, as now.
@@ -33,9 +36,12 @@
 4. Only one effect has a changed dependency: the highlight effect (`:542-553`). It calls `highlightCells` in the
    next animation frame. The apply pass does not run again (its dependencies do not change).
 
-Browser bench `scripts/bench/legend-hover.mjs` (Chromium, demo dashboard on 13.2, 1600x1000, first panel, 9 legend
-entries and 2 diagram rows, 3 rounds, 300 ms gap; the shared dist of 2026-10-27 00:06, a build of main or of a branch
-with the same panel code):
+Browser bench `scripts/bench/legend-hover.mjs`, first draft (Chromium, demo dashboard on 13.2, 1600x1000, first
+panel, 9 legend entries and 2 diagram rows, 3 rounds, 300 ms gap; the shared dist of 2026-10-27 00:06, a build of
+main or of a branch with the same panel code). This draft counted every commit and every task in the window, also
+the 10 s auto refresh of the demo (R1-3). The bench now runs on a copy of the dashboard with the refresh off and
+counts the commits in which a tracked component rendered; `docs/acceptance.md` has the clean before and after
+numbers.
 
 | Per hover                                           | Entry of the panel legend (27 hovers) | Row of the diagram (6 hovers) |
 | --------------------------------------------------- | ------------------------------------- | ----------------------------- |
@@ -79,12 +85,14 @@ the store also works with `useSyncExternalStore` if a later change needs it.
 
 - `Legend` gets `onHighlight={store.setLegend}`. Its interface does not change.
 - `bindSymbolLegend(root, index, store.setRows)`.
-- The popup: an effect clears the store on each change of `paused`, and the highlight effect does not subscribe
-  while the view is paused (it removes the marks once). So opening the popup ends the highlight, and a hover behind
-  the popup marks nothing, also after the popup closes. Today a state adjustment in the render does the same: a write
-  while paused renders the view once, and `setLegendHits(null)` and `setRowMarks(null)` drop it. The `Legend` keeps
-  its `active` state in both cases, as today. (Added after the first draft: a test showed that a store without this
-  guard marks cells behind the popup.)
+- The popup. The invariant: while the view is paused, the reader paints no marks, whatever the store holds. The
+  highlight effect has `paused` in its dependencies; a paused run removes the marks once and does not subscribe. A
+  freshness deadline still renders the paused view (new `result`, new `legendBlocks`), and the `Legend` keeps its
+  `active` entry and writes a new id list to the store; the paused run of the effect does not read it (R1-1). An
+  effect also clears the store on each change of `paused`, so a write behind the popup is dropped when the popup
+  closes. Today a state adjustment in the render does the same: a write while paused renders the view, and
+  `setLegendHits(null)` and `setRowMarks(null)` drop it. The `Legend` keeps its `active` state in both cases, as
+  today.
 
 ### 3.3 The reader: one effect, no state
 
@@ -148,6 +156,8 @@ Unit, written first (they fail on main):
   call.
 - "legend rows of the diagram": a row hover gives the same classes and renders the view zero times.
 - A pinned card stays pinned and open during a legend hover (and the view does not render).
+- A freshness deadline that passes after the popup opened (the hovered entry has a new id list) marks no cells; it
+  fails with no `paused` guard in the reader.
 - Opening the popup during a legend hover ends the highlight, and a hover behind the popup marks nothing (a
   characterisation test: it passes before and after).
 

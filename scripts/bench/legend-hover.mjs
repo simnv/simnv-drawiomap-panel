@@ -4,10 +4,11 @@
  *
  * It opens the demo dashboard on GRAFANA_URL, opens the colour legend of the first panel of this plugin, and moves
  * the mouse over every legend entry in turn (ROUNDS times, GAP_MS apart), then over every linked legend row of the
- * diagram. A stub of the React DevTools hook counts the React commits and the renders of these components of the
- * first panel: the panel view, the colour legend, the status band and the card. A render is a new hook list (or a
- * new props object) on the fiber of the component. It prints per hover:
- * - the React commits and the component renders,
+ * diagram. It runs on a copy of the dashboard with the auto refresh off (uid `<DASHBOARD>-bench`, written through the
+ * API), so no refresh and no query completes during the hovers. A stub of the React DevTools hook counts the React
+ * commits and the renders of these components of the first panel: the panel view, the colour legend, the status band
+ * and the card. A render is a new hook list (or a new props object) on the fiber of the component. It prints per hover:
+ * - the React commits, the commits in which one of these components rendered, and the component renders,
  * - the time from the pointer event to the class change of the stage root (the highlight is on the screen next frame),
  * - the main-thread task time in the window of the hover (a Chromium trace).
  *
@@ -37,7 +38,7 @@ const browser = await chromium.launch({ headless: process.env.HEADLESS !== '0' }
 const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
 const page = await context.newPage();
 await page.addInitScript(() => {
-  const bench = { commits: 0, renders: {}, tracked: [], hovers: [], current: null };
+  const bench = { commits: 0, ownCommits: 0, renders: {}, tracked: [], hovers: [], current: null };
   window.__dmapLegendBench = bench;
   // The stub of the DevTools hook: React calls onCommitFiberRoot after each commit, also in a production build.
   window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
@@ -86,14 +87,17 @@ await page.addInitScript(() => {
       }
     }
     bench.scan = () => {
+      let rendered = false;
       for (const t of bench.tracked) {
         for (const m of marks(ownerFiber(t.find()))) {
           if (m && typeof m === 'object' && !t.seen.has(m)) {
             t.seen.add(m);
             bench.renders[t.name]++;
+            rendered = true;
           }
         }
       }
+      bench.ownCommits += rendered ? 1 : 0;
     };
     // the class change of the stage root: the highlight effect ran
     const root = panel.querySelector('[data-testid="dmap-stage"] > svg');
@@ -118,7 +122,14 @@ await page.addInitScript(() => {
     );
   };
   bench.start = (kind) => {
-    bench.current = { kind, at: null, painted: null, commits: bench.commits, renders: { ...bench.renders } };
+    bench.current = {
+      kind,
+      at: null,
+      painted: null,
+      commits: bench.commits,
+      ownCommits: bench.ownCommits,
+      renders: { ...bench.renders },
+    };
     performance.mark(`dmap-legend-hover`);
   };
   bench.end = () => {
@@ -128,13 +139,30 @@ await page.addInitScript(() => {
     bench.hovers.push({
       kind: c.kind,
       commits: bench.commits - c.commits,
+      ownCommits: bench.ownCommits - c.ownCommits,
       renders,
       latency: c.at !== null && c.painted !== null ? c.painted - c.at : null,
     });
   };
 });
 
-await page.goto(`${url}/d/${dashboard}?kiosk`, { waitUntil: 'networkidle' });
+// A copy of the dashboard with no auto refresh: the demo refreshes every 10 s, and a refresh in a hover window would
+// count its commits and tasks with the hover. The stack runs with an anonymous admin.
+const source = await page.request.get(`${url}/api/dashboards/uid/${dashboard}`);
+if (!source.ok()) {
+  console.error(`legend-hover: no dashboard ${dashboard} on ${url}`);
+  await browser.close();
+  process.exit(1);
+}
+const copy = { ...(await source.json()).dashboard, id: null, uid: `${dashboard}-bench`, refresh: '' };
+copy.title = `${copy.title} (bench)`;
+const saved = await page.request.post(`${url}/api/dashboards/db`, { data: { dashboard: copy, overwrite: true } });
+if (!saved.ok()) {
+  console.error(`legend-hover: the copy of ${dashboard} was not saved: ${await saved.text()}`);
+  await browser.close();
+  process.exit(1);
+}
+await page.goto(`${url}/d/${copy.uid}?kiosk`, { waitUntil: 'networkidle' });
 const panel = page.getByTestId('dmap-panel').first();
 await page.locator('[data-dmap-status]').first().waitFor({ state: 'attached', timeout: 60_000 });
 // the values and the colours are there: the first request of every binding has settled
@@ -225,6 +253,7 @@ for (const kind of ['entry', 'row']) {
   const latencies = list.map((h) => h.latency).filter((v) => v !== null);
   console.log(`${kind} hovers: ${list.length}`);
   console.log(`  React commits per hover: ${stat(list.map((h) => h.commits))}`);
+  console.log(`  commits with a render of a tracked component, per hover: ${stat(list.map((h) => h.ownCommits))}`);
   console.log(
     `  renders over all hovers: ${Object.keys(list[0].renders)
       .map((name) => `${name} ${sum((h) => h.renders[name])}`)
