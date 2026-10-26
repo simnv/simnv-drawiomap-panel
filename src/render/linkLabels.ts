@@ -41,7 +41,7 @@ import {
 } from './labelPlacement';
 import { maxBodyWidth, statusBorderWidth } from '../binding/color';
 import { fmt, linkSplit, OVERLAY_CLASS } from './overlay';
-import { viewScaleOf } from './zoom';
+import { readViewBox, viewScaleOf } from './zoom';
 
 /*
  * The value labels of the link halves: the only module that touches the DOM for them. One layer, the last child of
@@ -66,6 +66,8 @@ const CONTAIN_EPS = 0.5;
 export interface LinkLabelOptions {
   theme: GrafanaTheme2;
   linkWidth: { min: number; max: number };
+  /** the bounds of the diagram (the base view box of the stage); the live view box of the root when absent */
+  bounds?: { x: number; y: number; w: number; h: number };
 }
 export interface LinkLabelCounts {
   placed: number;
@@ -121,6 +123,8 @@ interface LabelLayout {
   /** `linkWidth.max` of the placement: the widest stroke, in the units of the edge */
   max: number;
   min: number;
+  /** the bounds of the diagram in root units */
+  bounds: Rect;
 }
 
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
@@ -993,7 +997,7 @@ function showText(rec: LabelRecord, text: string | undefined): void {
 
 /** Places one label with its current slot; a placed label takes its box in the grid. */
 function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
-  const leg = inputOf(rec);
+  const leg = inputOf(rec, layout.bounds);
   if (!leg) {
     rec.placement = undefined;
     rec.obstacle = undefined;
@@ -1007,11 +1011,11 @@ function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
 }
 
 /** The leg of a record with its slot size; undefined when the edge has no geometry or the half has no slot yet. */
-function inputOf(rec: LabelRecord): LegInput | undefined {
+function inputOf(rec: LabelRecord, bounds: Rect): LegInput | undefined {
   if (!rec.leg || rec.slot === undefined) {
     return undefined;
   }
-  return { ...rec.leg, size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 } };
+  return { ...rec.leg, bounds, size: { width: rec.slot, height: LINK_LABEL_GEOMETRY.fontSize * 1.25 } };
 }
 
 /** Stores the placement of a record; a placed label takes its box in the grid. */
@@ -1025,6 +1029,12 @@ function hold(layout: LabelLayout, rec: LabelRecord, placement: Placement): bool
   }
   rec.obstacle = undefined;
   return false;
+}
+
+/** The bounds of the diagram: the base view box of the stage, else the view box of the root. */
+function boundsOfStage(root: SVGSVGElement, base: LinkLabelOptions['bounds']): Rect {
+  const vb = base ?? readViewBox(root);
+  return { x: vb.x, y: vb.y, width: vb.w, height: vb.h };
 }
 
 function fullPlacement(
@@ -1054,6 +1064,7 @@ function fullPlacement(
     maskIds: previous?.maskIds ?? new Map(),
     max: opts.linkWidth.max,
     min: opts.linkWidth.min,
+    bounds: boundsOfStage(root, opts.bounds),
   };
   // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
   const legs = new Map<string, EdgeLegs>();
@@ -1088,8 +1099,8 @@ function fullPlacement(
     if (!done.has(rec)) {
       const mate = layout.records.get(`${slot.cellId}:${slot.which === 'a2b' ? 'b2a' : 'a2b'}`);
       const [a, b] = slot.which === 'a2b' ? [rec, mate] : [mate, rec];
-      const legA = a && inputOf(a);
-      const legB = b && inputOf(b);
+      const legA = a && inputOf(a, layout.bounds);
+      const legB = b && inputOf(b, layout.bounds);
       if (a && b && legA && legB && !done.has(mate!)) {
         const [pa, pb] = placeLinkLabels(legA, legB, rec.cellId, layout.grid);
         hold(layout, a, pa);

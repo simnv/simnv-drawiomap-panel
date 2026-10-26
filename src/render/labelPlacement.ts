@@ -36,6 +36,11 @@ export interface LegInput {
   size: { width: number; height: number };
   /** the widest stroke of the edge in root units (`linkWidth.max × geo.unit`) */
   strokeRoot: number;
+  /**
+   * The bounds of the diagram in root units. The last-resort spot at a bend (which has no run to hold the box) must
+   * keep its whole reserved box inside them; the strict ladder does not read them.
+   */
+  bounds?: Rect;
   /** the thinnest stroke in root units (`linkWidth.min × geo.unit`); the width of a half is drawn between the two */
   minRoot?: number;
 }
@@ -455,7 +460,10 @@ function placeOnRuns(
       const shift = offsetOf(side);
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
       const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
-      if (!collides(box, ownPiece, index) && (!atBends || ownsSpot(centre, leg, own, index))) {
+      if (
+        !collides(box, ownPiece, index) &&
+        (!atBends || bendSpotFits(leg, own, index, box, side, anchor, heading.first))
+      ) {
         return {
           centre,
           degrees: heading.degrees,
@@ -482,6 +490,39 @@ function placeOnRuns(
  */
 export const OWN_NEARER = 0.6;
 
+/**
+ * The checks that only a spot at a bend needs: the whole reserved box lies inside the bounds of the diagram (when the
+ * leg knows them: Fit would clip a label that leaves them), and the guard holds at the painted centre of the text for
+ * the thinnest and for the widest drawn stroke, not at the centre of the swept reservation.
+ */
+function bendSpotFits(
+  leg: LegInput,
+  own: string,
+  index: ObstacleIndex,
+  box: OrientedBox,
+  side: LabelSide,
+  anchor: Point,
+  normal: Point
+): boolean {
+  const b = leg.bounds;
+  if (b) {
+    const r = boundsOf(box);
+    if (
+      r.x < b.x - EPS ||
+      r.y < b.y - EPS ||
+      r.x + r.width > b.x + b.width + EPS ||
+      r.y + r.height > b.y + b.height + EPS
+    ) {
+      return false;
+    }
+  }
+  const height = leg.size.height + 2 * LINK_LABEL_GEOMETRY.halo;
+  const minRoot = Math.min(leg.minRoot ?? leg.strokeRoot, leg.strokeRoot);
+  return [minRoot, leg.strokeRoot].every((drawn) =>
+    ownsSpot(drawnCentre({ side, anchor, normal, height, maxRoot: leg.strokeRoot }, drawn), leg, own, index)
+  );
+}
+
 function ownsSpot(centre: Point, leg: LegInput, own: string, index: ObstacleIndex): boolean {
   let ownDistance = Infinity;
   for (let i = 1; i < leg.points.length; i++) {
@@ -503,7 +544,10 @@ function ownsSpot(centre: Point, leg: LegInput, own: string, index: ObstacleInde
  * `box`) always uses the widest stroke, so that a change of the load never makes a label collide; the text stands
  * `normalGap` (or `wideGap`) beyond the edge of the stroke as it is drawn.
  */
-export function drawnCentre(p: Placed, drawnRoot: number): Point {
+export function drawnCentre(
+  p: Pick<Placed, 'side' | 'anchor' | 'normal' | 'height' | 'maxRoot'>,
+  drawnRoot: number
+): Point {
   if (p.side === 0) {
     return p.anchor;
   }

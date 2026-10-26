@@ -653,6 +653,33 @@ describe('the bend spot: the last resort when no straight run holds the box', ()
       const mate = { ...segment({ x: -20, y: -25 }, { x: 60, y: -25 }, 'e', 0), piece: { leg: 'e:b', index: 0 } };
       expect(placed(placeOnLadder(bendy(), 'e', obstacleIndex([...pieces(), mate]), top, true)).side).toBe(1);
     });
+    it('the guard reads the painted centres of the widest and the thinnest stroke, not the reserved centre', () => {
+      // widths 2 to 10: the reserved centre stands 11 off the stroke, the text at the widest stroke 13, at the thinnest 9
+      const wide = () => bendy({ minRoot: 2 });
+      // the neighbour at −34: 11/23 passes at the reserved centre, but 13/21 = 0.62 fails where the text is painted
+      expect(placeOnLadder(wide(), 'e', obstacleIndex([...pieces(), neighbour(-34)]), top, true)).toEqual({
+        dropped: 'short-leg',
+      });
+      // at −36 both painted centres pass (13/23, 9/27)
+      expect(placed(placeOnLadder(wide(), 'e', obstacleIndex([...pieces(), neighbour(-36)]), top, true)).side).toBe(1);
+    });
+  });
+
+  describe('the diagram bounds: the whole reserved box stays inside', () => {
+    const inside = (x: number, y: number, width: number, height: number) => ({ bounds: { x, y, width, height } });
+    it('a spot whose box leaves the bounds is refused, on any edge of the box', () => {
+      const index = obstacleIndex(pieces());
+      // the box stands at y −19 to −7 and x 2.5 to 28.5 for the first candidate
+      expect(placed(placeOnLadder(bendy(inside(-100, -100, 300, 200)), 'e', index, top, true)).side).toBe(1);
+      expect(placeOnLadder(bendy(inside(-100, -10, 300, 200)), 'e', index, top, true)).toEqual({
+        dropped: 'short-leg',
+      });
+      expect(placeOnLadder(bendy(inside(0, -100, 20, 200)), 'e', index, top, true)).toEqual({ dropped: 'short-leg' });
+    });
+    it('the strict pass ignores the bounds', () => {
+      const fit = leg(horizontal(0, 200), { id: 'e:a', bounds: { x: 0, y: -5, width: 10, height: 10 } });
+      expect(placed(placeOnLadder(fit, 'e', obstacleIndex([]), LABEL_SIDES)).side).toBe(0);
+    });
   });
 
   describe('placeLinkLabels: only the last pass uses it', () => {

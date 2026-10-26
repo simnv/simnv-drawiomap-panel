@@ -225,7 +225,10 @@ Bend spot (R6-2). In the last pass only, a half that has no free spot gets one m
 (not on it) whose centre is on a run, while the box may stand over the end of the run, for example beside a bend. The
 short-leg rule does not stop this try. The normal obstacle test still decides, and the spot must pass a guard: the
 distance of the label centre to the stroke of its own leg is at most 0.6 times its distance to the stroke of any other
-link. When the try fails, the first reason stays. The pair passes are not changed.
+link. The guard reads the painted centre of the text, at the thinnest and at the widest drawn stroke (both must
+pass), not the centre of the swept reservation. The whole reserved box must lie inside the bounds of the diagram (the
+base view box of the stage), because a spot without a run could leave it and Fit would clip the text. When the try
+fails, the first reason stays. The pair passes are not changed.
 
 Determinism. The halves are placed in the order (cell id ascending, then `a2b` before `b2a`), not in `PatchMap`
 order, so a full placement is a function of the stage and the set of slots only. The order of the obstacle list

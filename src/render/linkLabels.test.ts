@@ -865,6 +865,23 @@ describe('renderLinkLabels: review cases', () => {
     render(root, index, both);
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
   });
+  describe('the bend spot', () => {
+    // a run of 31 and a jog of 10: no straight run holds the 26 unit box, so only the last resort can place it
+    const bend = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
+      <g data-cell-id="e1"><g><path d="M 20 100 L 51 100 L 51 110" fill="none" stroke="#333" pointer-events="stroke"/></g></g></svg>`;
+    const one = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]);
+    it('places the label beside the bend', () => {
+      const { root, index } = build(bend);
+      expect(render(root, index, one())).toEqual({ placed: 1, dropped: 0, moved: 0 });
+    });
+    it('a label whose box would leave the bounds of the diagram stays dropped', () => {
+      const { root, index } = build(bend);
+      sized(root, 1);
+      renderOverlay(root, index, one(), { theme });
+      const bounds = { x: 0, y: 95, w: 400, h: 10 };
+      expect(renderLinkLabels(root, index, one(), { ...opts, bounds })).toEqual({ placed: 0, dropped: 1, moved: 0 });
+    });
+  });
   it('a plain text cell is an obstacle', () => {
     const text = `<g data-cell-id="t1"><g><text x="100" y="102" font-size="10">a caption</text></g></g>`;
     const { root, index } = build(SVG(text));
