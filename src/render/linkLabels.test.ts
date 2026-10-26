@@ -758,6 +758,47 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(rects).not.toContainEqual({ x: 60, y: 40, width: 280, height: 120 });
     expect(rects).toContainEqual({ x: 100, y: 60, width: 40, height: 50 });
   });
+  describe('the title text of a group', () => {
+    const VERTICAL = (
+      extra: string
+    ) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">${extra}
+      <g data-cell-id="e1"><g><path d="M 100 10 L 100 190" fill="none" stroke="#333" pointer-events="stroke"/></g></g></svg>`;
+    // the leg of the a2b half only: 10 .. 190, its middle at y 100; the title text stands across the link there
+    const title = (id: string) =>
+      `<g data-cell-id="${id}"><g><rect x="20" y="20" width="160" height="160" fill="none" stroke="#999"/></g><g><g font-size="12" text-anchor="middle"><text x="100" y="104">Core group</text></g></g></g>`;
+    const patches = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]);
+    const textBox = { x: 100 - 0.6 * 12 * 5, y: 104 - 12, width: 0.6 * 12 * 10, height: 15 };
+    const overlaps = (root: SVGSVGElement) => {
+      const el = byHalf(root, 'a2b')!;
+      const x = Number(el.getAttribute('x'));
+      const y = Number(el.getAttribute('y'));
+      // the rotated label: 12 along y, 26 .. wide box turned by -90: it spans y +- 13 and x +- 6
+      return (
+        y + 13 > textBox.y &&
+        y - 13 < textBox.y + textBox.height &&
+        x + 6 > textBox.x &&
+        x - 6 < textBox.x + textBox.width
+      );
+    };
+    it('a portograph group title is an obstacle; the frame and the interior stay free', () => {
+      const { root, index } = build(VERTICAL(title('pg-group~core')));
+      expect(index.get('pg-group~core')?.label).toBeTruthy();
+      render(root, index, patches());
+      const rects = stageObstacles(root, index, patches(), 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
+      expect(rects).toContainEqual(textBox);
+      expect(rects).not.toContainEqual({ x: 20, y: 20, width: 160, height: 160 });
+      expect(overlaps(root)).toBe(false);
+      expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-dropped')).toBeNull();
+    });
+    it('a plain draw.io container with a title is the same', () => {
+      const inner = `<g data-cell-id="n3"><g><rect x="30" y="40" width="20" height="20"/></g></g><g data-cell-id="n4"><g><rect x="150" y="140" width="20" height="20"/></g></g>`;
+      const { root, index } = build(VERTICAL(title('box') + inner));
+      render(root, index, patches());
+      const rects = stageObstacles(root, index, patches(), 10).flatMap((o) => (o.kind === 'rect' ? [o.rect] : []));
+      expect(rects).toContainEqual(textBox);
+      expect(overlaps(root)).toBe(false);
+    });
+  });
   it('a plain draw.io container that holds other vertices is a background; the vertices inside stay obstacles', () => {
     const container = `<g data-cell-id="box"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
     const inner = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="50"/></g></g>`;
@@ -823,6 +864,23 @@ describe('renderLinkLabels: review cases', () => {
     ]);
     render(root, index, both);
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
+  });
+  describe('the bend spot', () => {
+    // a run of 31 and a jog of 10: no straight run holds the 26 unit box, so only the last resort can place it
+    const bend = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
+      <g data-cell-id="e1"><g><path d="M 20 100 L 51 100 L 51 110" fill="none" stroke="#333" pointer-events="stroke"/></g></g></svg>`;
+    const one = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]);
+    it('places the label beside the bend', () => {
+      const { root, index } = build(bend);
+      expect(render(root, index, one())).toEqual({ placed: 1, dropped: 0, moved: 0 });
+    });
+    it('a label whose box would leave the bounds of the diagram stays dropped', () => {
+      const { root, index } = build(bend);
+      sized(root, 1);
+      renderOverlay(root, index, one(), { theme });
+      const bounds = { x: 0, y: 95, w: 400, h: 10 };
+      expect(renderLinkLabels(root, index, one(), { ...opts, bounds })).toEqual({ placed: 0, dropped: 1, moved: 0 });
+    });
   });
   it('a plain text cell is an obstacle', () => {
     const text = `<g data-cell-id="t1"><g><text x="100" y="102" font-size="10">a caption</text></g></g>`;

@@ -36,6 +36,11 @@ export interface LegInput {
   size: { width: number; height: number };
   /** the widest stroke of the edge in root units (`linkWidth.max × geo.unit`) */
   strokeRoot: number;
+  /**
+   * The bounds of the diagram in root units. The last-resort spot at a bend (which has no run to hold the box) must
+   * keep its whole reserved box inside them; the strict ladder does not read them.
+   */
+  bounds?: Rect;
   /** the thinnest stroke in root units (`linkWidth.min × geo.unit`); the width of a half is drawn between the two */
   minRoot?: number;
 }
@@ -364,14 +369,37 @@ export function placeHalfLabel(
   leg: LegInput,
   own: string,
   index: ObstacleIndex,
-  sides: readonly LabelSide[] = LABEL_SIDES
+  sides: readonly LabelSide[] = LABEL_SIDES,
+  bendSpot = false
+): Placement {
+  const strict = placeOnRuns(leg, own, index, sides, false);
+  if (!bendSpot || 'centre' in strict) {
+    return strict;
+  }
+  // the last resort: the strict ladder found nothing, so the beside-stroke spots at a bend are tried; when they fail
+  // too, the strict reason stays
+  const relaxed = placeOnRuns(leg, own, index, sides, true);
+  return 'centre' in relaxed ? relaxed : strict;
+}
+
+/**
+ * The ladder over the candidates of `placeHalfLabel`. With `atBends` a candidate needs no whole box on its run: the
+ * centre on a run is enough (the box may overhang the run ends, beside a bend), only beside the stroke, and only
+ * when the label reads as its own half's (`ownsSpot`). The normal obstacle test decides the rest.
+ */
+function placeOnRuns(
+  leg: LegInput,
+  own: string,
+  index: ObstacleIndex,
+  sides: readonly LabelSide[],
+  atBends: boolean
 ): Placement {
   const { halo, normalGap, wideGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
   const w = leg.size.width + 2 * halo;
   const h = leg.size.height + 2 * halo;
   const stops = [0, ...leg.bends, leg.length];
   const runs = stops.slice(1).map((to, i) => ({ from: stops[i], to }));
-  if (Math.max(...runs.map((r) => r.to - r.from)) < w + 2 * endMargin - EPS) {
+  if (!atBends && Math.max(...runs.map((r) => r.to - r.from)) < w + 2 * endMargin - EPS) {
     return { dropped: 'short-leg' };
   }
   // The reservation is the union of the boxes the label can take for any drawn width between `minRoot` and
@@ -405,28 +433,37 @@ export function placeHalfLabel(
   // the pieces of the own edge that lie on the candidate's run (by their index in this leg) are no obstacle
   const arcs = arcLengths(leg.points);
   const candidates = distances.flatMap((d) => {
-    const run = runs.find((r) => d <= r.to + EPS && d >= r.from - EPS);
-    if (!run || d < run.from + endMargin + w / 2 - EPS || d > run.to - endMargin - w / 2 + EPS) {
-      return [];
-    }
-    const a = pointAt(leg.points, run.from);
-    const b = pointAt(leg.points, run.to);
-    const anchor = pointAt(leg.points, d);
-    const ownPiece = (o: Obstacle) =>
-      o.kind === 'segment' &&
-      o.owner === own &&
-      o.piece !== undefined &&
-      o.piece.leg === leg.id &&
-      arcs[o.piece.index] >= run.from - EPS &&
-      arcs[o.piece.index + 1] <= run.to + EPS;
-    return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece }];
+    // at a bend (`atBends`) the centre may lie on any run that holds `d`: a vertex belongs to both of its runs
+    const holding = runs.filter((r) => d <= r.to + EPS && d >= r.from - EPS);
+    return (atBends ? holding : holding.slice(0, 1)).flatMap((run) => {
+      if (!atBends && (d < run.from + endMargin + w / 2 - EPS || d > run.to - endMargin - w / 2 + EPS)) {
+        return [];
+      }
+      const a = pointAt(leg.points, run.from);
+      const b = pointAt(leg.points, run.to);
+      const anchor = pointAt(leg.points, d);
+      const ownPiece = (o: Obstacle) =>
+        o.kind === 'segment' &&
+        o.owner === own &&
+        o.piece !== undefined &&
+        o.piece.leg === leg.id &&
+        arcs[o.piece.index] >= run.from - EPS &&
+        arcs[o.piece.index + 1] <= run.to + EPS;
+      return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece }];
+    });
   });
   for (const side of sides) {
+    if (atBends && side === 0) {
+      continue;
+    }
     for (const { d, anchor, heading, ownPiece } of candidates) {
       const shift = offsetOf(side);
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
       const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
-      if (!collides(box, ownPiece, index)) {
+      if (
+        !collides(box, ownPiece, index) &&
+        (!atBends || bendSpotFits(leg, own, index, box, side, anchor, heading.first))
+      ) {
         return {
           centre,
           degrees: heading.degrees,
@@ -445,11 +482,72 @@ export function placeHalfLabel(
 }
 
 /**
+ * The guard of a spot at a bend: the distance of the label centre to the stroke of its own leg is at most
+ * `OWN_NEARER` times its distance to the stroke of any other link. 0.6 means the own stroke is at least 1.67 times
+ * nearer: with the normal gap and a 10 unit stroke the centre stands about 13 off its stroke, so a neighbour must be
+ * 22 or more away from the centre. A looser factor lets a label sit nearly between two links; a stricter one (0.5)
+ * refuses lanes of 40 units, which are crowded but still readable.
+ */
+export const OWN_NEARER = 0.6;
+
+/**
+ * The checks that only a spot at a bend needs: the whole reserved box lies inside the bounds of the diagram (when the
+ * leg knows them: Fit would clip a label that leaves them), and the guard holds at the painted centre of the text for
+ * the thinnest and for the widest drawn stroke, not at the centre of the swept reservation.
+ */
+function bendSpotFits(
+  leg: LegInput,
+  own: string,
+  index: ObstacleIndex,
+  box: OrientedBox,
+  side: LabelSide,
+  anchor: Point,
+  normal: Point
+): boolean {
+  const b = leg.bounds;
+  if (b) {
+    const r = boundsOf(box);
+    if (
+      r.x < b.x - EPS ||
+      r.y < b.y - EPS ||
+      r.x + r.width > b.x + b.width + EPS ||
+      r.y + r.height > b.y + b.height + EPS
+    ) {
+      return false;
+    }
+  }
+  const height = leg.size.height + 2 * LINK_LABEL_GEOMETRY.halo;
+  const minRoot = Math.min(leg.minRoot ?? leg.strokeRoot, leg.strokeRoot);
+  return [minRoot, leg.strokeRoot].every((drawn) =>
+    ownsSpot(drawnCentre({ side, anchor, normal, height, maxRoot: leg.strokeRoot }, drawn), leg, own, index)
+  );
+}
+
+function ownsSpot(centre: Point, leg: LegInput, own: string, index: ObstacleIndex): boolean {
+  let ownDistance = Infinity;
+  for (let i = 1; i < leg.points.length; i++) {
+    ownDistance = Math.min(ownDistance, pointToSegment(centre, leg.points[i - 1], leg.points[i]));
+  }
+  // a stroke farther than this cannot break the factor
+  const reach = ownDistance / OWN_NEARER;
+  const around: Rect = { x: centre.x - reach, y: centre.y - reach, width: 2 * reach, height: 2 * reach };
+  for (const o of index.near(around)) {
+    if (o.kind === 'segment' && o.owner !== own && pointToSegment(centre, o.a, o.b) < reach - EPS) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * The centre of the text for a stroke drawn `drawnRoot` wide (root units). The reservation of a label (`centre`,
  * `box`) always uses the widest stroke, so that a change of the load never makes a label collide; the text stands
  * `normalGap` (or `wideGap`) beyond the edge of the stroke as it is drawn.
  */
-export function drawnCentre(p: Placed, drawnRoot: number): Point {
+export function drawnCentre(
+  p: Pick<Placed, 'side' | 'anchor' | 'normal' | 'height' | 'maxRoot'>,
+  drawnRoot: number
+): Point {
   if (p.side === 0) {
     return p.anchor;
   }
@@ -488,7 +586,20 @@ export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: Ob
       return result;
     }
   }
-  return pair(LABEL_SIDES);
+  // the last pass: the strict ladder for each half, then the bend spots for a half that found nothing. The strict
+  // result of the other half does not change, so a pair that fits keeps its places.
+  const [first, second] = pair(LABEL_SIDES);
+  const rescue = (leg: LegInput, result: Placement, other: Placement): Placement => {
+    if ('centre' in result) {
+      return result;
+    }
+    const held = hold(other);
+    const found = placeHalfLabel(leg, own, index, LABEL_SIDES, true);
+    drop(held);
+    return 'centre' in found ? found : result;
+  };
+  const rescued = rescue(a, first, second);
+  return [rescued, rescue(b, second, rescued)];
 }
 
 /** The box against the obstacles near it; the pieces of the own run (`ownPiece`) do not count. */

@@ -4,6 +4,7 @@ import {
   boundsOf,
   labelsVisible,
   drawnCentre,
+  LABEL_SIDES,
   LINK_LABEL_GEOMETRY,
   obstacleIndex,
   placeHalfLabel as placeOnLadder,
@@ -594,5 +595,115 @@ describe('placeHalfLabel: sides', () => {
     const l = leg(horizontal(0, 200));
     expect(placed(placeHalfLabel(l, 'e', obstacleIndex([]), [-1])).centre).toEqual({ x: 100, y: OFFSET });
     expect(placeHalfLabel(l, 'e', obstacleIndex([rect(-10, 5, 220, 40)]), [-1])).toEqual({ dropped: 'no-free-spot' });
+  });
+});
+
+describe('the bend spot: the last resort when no straight run holds the box', () => {
+  // a run of 31 and a jog of 10 down: the box (26) plus the end margins (8) needs 34 on one run
+  const jog = [
+    { x: 0, y: 0 },
+    { x: 31, y: 0 },
+    { x: 31, y: 10 },
+  ];
+  const bendy = (over: Partial<LegInput> = {}) => leg(jog, { id: 'e:a', ...over });
+  const pieces = (): Obstacle[] =>
+    jog.slice(1).map((b, i) => ({ ...segment(jog[i], b, 'e'), piece: { leg: 'e:a', index: i } }));
+  const top: readonly LabelSide[] = [1];
+
+  it('the strict ladder drops the leg as short; the last resort places it beside the bend, on the outer side', () => {
+    const index = obstacleIndex(pieces());
+    expect(placeOnLadder(bendy(), 'e', index, top)).toEqual({ dropped: 'short-leg' });
+    const p = placed(placeOnLadder(bendy(), 'e', index, top, true));
+    expect(p.side).toBe(1);
+    expect(p.degrees).toBe(0);
+    expect(p.centre.y).toBe(-OFFSET);
+    // the centre of the label stands on the run, the box overhangs its end
+    expect(p.anchor.x).toBeGreaterThanOrEqual(0);
+    expect(p.anchor.x).toBeLessThanOrEqual(31);
+    expect(p.centre.x + 13).toBeGreaterThan(31 - 4);
+  });
+  it('never puts the label on the stroke, and the normal obstacle test still decides', () => {
+    const index = obstacleIndex([...pieces(), rect(-40, -40, 120, 30)]);
+    expect(placeOnLadder(bendy(), 'e', index, [0], true)).toEqual({ dropped: 'short-leg' });
+    // the top side is covered whole: the reason is the strict one
+    expect(placeOnLadder(bendy(), 'e', index, top, true)).toEqual({ dropped: 'short-leg' });
+  });
+  it('a leg that fits keeps its strict reason and its strict spot', () => {
+    const fit = leg(horizontal(0, 200), { id: 'e:a' });
+    const free = obstacleIndex([]);
+    expect(placeOnLadder(fit, 'e', free, LABEL_SIDES, true)).toEqual(placeOnLadder(fit, 'e', free, LABEL_SIDES));
+    const blocked = obstacleIndex([rect(-10, -60, 220, 120)]);
+    expect(placeOnLadder(fit, 'e', blocked, LABEL_SIDES, true)).toEqual({ dropped: 'no-free-spot' });
+  });
+
+  describe('the guard: the label is nearer to its own stroke than to the stroke of another link', () => {
+    // the centre stands 13 above the own stroke (y = −13); a neighbour at y is 13 + |y| − 26 ... from the centre
+    const neighbour = (y: number) => segment({ x: -20, y }, { x: 60, y }, 'other', 0);
+    it('a parallel link 25 above (12 from the centre) blocks the spot although its clearance is not met', () => {
+      const index = obstacleIndex([...pieces(), neighbour(-25)]);
+      expect(placeOnLadder(bendy(), 'e', index, top, true)).toEqual({ dropped: 'short-leg' });
+    });
+    it('the factor is 0.6: 20 from the centre blocks (13/20 = 0.65), 23 passes (13/23 = 0.57)', () => {
+      expect(placeOnLadder(bendy(), 'e', obstacleIndex([...pieces(), neighbour(-33)]), top, true)).toEqual({
+        dropped: 'short-leg',
+      });
+      expect(placed(placeOnLadder(bendy(), 'e', obstacleIndex([...pieces(), neighbour(-36)]), top, true)).side).toBe(1);
+    });
+    it('a stroke of the same edge does not count as another link', () => {
+      const mate = { ...segment({ x: -20, y: -25 }, { x: 60, y: -25 }, 'e', 0), piece: { leg: 'e:b', index: 0 } };
+      expect(placed(placeOnLadder(bendy(), 'e', obstacleIndex([...pieces(), mate]), top, true)).side).toBe(1);
+    });
+    it('the guard reads the painted centres of the widest and the thinnest stroke, not the reserved centre', () => {
+      // widths 2 to 10: the reserved centre stands 11 off the stroke, the text at the widest stroke 13, at the thinnest 9
+      const wide = () => bendy({ minRoot: 2 });
+      // the neighbour at −34: 11/23 passes at the reserved centre, but 13/21 = 0.62 fails where the text is painted
+      expect(placeOnLadder(wide(), 'e', obstacleIndex([...pieces(), neighbour(-34)]), top, true)).toEqual({
+        dropped: 'short-leg',
+      });
+      // at −36 both painted centres pass (13/23, 9/27)
+      expect(placed(placeOnLadder(wide(), 'e', obstacleIndex([...pieces(), neighbour(-36)]), top, true)).side).toBe(1);
+    });
+  });
+
+  describe('the diagram bounds: the whole reserved box stays inside', () => {
+    const inside = (x: number, y: number, width: number, height: number) => ({ bounds: { x, y, width, height } });
+    it('a spot whose box leaves the bounds is refused, on any edge of the box', () => {
+      const index = obstacleIndex(pieces());
+      // the box stands at y −19 to −7 and x 2.5 to 28.5 for the first candidate
+      expect(placed(placeOnLadder(bendy(inside(-100, -100, 300, 200)), 'e', index, top, true)).side).toBe(1);
+      expect(placeOnLadder(bendy(inside(-100, -10, 300, 200)), 'e', index, top, true)).toEqual({
+        dropped: 'short-leg',
+      });
+      expect(placeOnLadder(bendy(inside(0, -100, 20, 200)), 'e', index, top, true)).toEqual({ dropped: 'short-leg' });
+    });
+    it('the strict pass ignores the bounds', () => {
+      const fit = leg(horizontal(0, 200), { id: 'e:a', bounds: { x: 0, y: -5, width: 10, height: 10 } });
+      expect(placed(placeOnLadder(fit, 'e', obstacleIndex([]), LABEL_SIDES)).side).toBe(0);
+    });
+  });
+
+  describe('placeLinkLabels: only the last pass uses it', () => {
+    const far = leg(horizontal(0, 300, 200), { id: 'e:b' });
+    it('the half that fits keeps its strict place; the half without a run takes the bend spot', () => {
+      const index = obstacleIndex(pieces());
+      const [a, b] = placeLinkLabels(bendy(), far, 'e', index);
+      expect(placed(a).side).toBe(1);
+      // the same place as with the strict ladder alone
+      expect(b).toEqual(placeOnLadder(far, 'e', index, LABEL_SIDES));
+      expect(placed(b).side).toBe(0);
+      expect([...index.near({ x: -100, y: -100, width: 600, height: 600 })]).toHaveLength(2);
+    });
+    it('a pair that fits stays on its strokes', () => {
+      const up = leg(horizontal(0, 200), { id: 'e:a' });
+      const down = leg(horizontal(400, 200), { id: 'e:b' });
+      const [a, b] = placeLinkLabels(up, down, 'e', obstacleIndex([]));
+      expect(placed(a).side).toBe(0);
+      expect(placed(b).side).toBe(0);
+    });
+    it('a half with no free side stays dropped with the strict reason', () => {
+      const index = obstacleIndex([...pieces(), rect(-40, -40, 120, 100)]);
+      const [a] = placeLinkLabels(bendy(), far, 'e', index);
+      expect(a).toEqual({ dropped: 'short-leg' });
+    });
   });
 });

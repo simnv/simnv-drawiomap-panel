@@ -134,10 +134,14 @@ export function DiagramStage({
       patched.current = applyPatches(stage.index, patches, patched.current, undefined, { theme, osDark });
       renderOverlay(root, stage.index, patches, { theme });
       // after the overlay, as in the panel: the preview shows the label mode while the user edits it
-      renderLinkLabels(root, stage.index, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth });
+      renderLinkLabels(root, stage.index, patches, {
+        theme,
+        linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth,
+        bounds: stage.base,
+      });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, patches, theme, osDark, linkWidth]);
+  }, [stage.root, stage.index, stage.base, patches, theme, osDark, linkWidth]);
 
   // Fit the diagram into the pane. A live view (pan or zoom) changes the viewBox only.
   useEffect(() => {
