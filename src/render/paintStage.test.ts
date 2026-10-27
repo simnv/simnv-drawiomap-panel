@@ -50,6 +50,10 @@ describe('paintStage', () => {
     expect(root.querySelectorAll('g.dmap-overlay polyline.dmap-half')).toHaveLength(2);
     expect(root.querySelectorAll('text.dmap-link-label')).toHaveLength(2);
     expect(root.lastElementChild?.classList.contains('dmap-link-labels')).toBe(true);
+    // the labels come after the overlay: their cut reaches the strokes and the arrow heads of the overlay
+    root
+      .querySelectorAll('g.dmap-overlay > *')
+      .forEach((el) => expect(el.getAttribute('mask')).toMatch(/^url\(#dmap-lm-/));
   });
 
   it('changes no cell, overlay or label for the same patches with the applied state it returned', () => {

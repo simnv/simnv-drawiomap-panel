@@ -1,19 +1,13 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import type { GrafanaTheme2 } from '@grafana/data';
 import type { Applied } from '../render/applier';
 import { watchLinkLabelFonts } from '../render/linkLabels';
-import { paintStage } from '../render/paintStage';
+import { type PaintOptions, paintStage } from '../render/paintStage';
 import type { PatchMap } from '../types';
 import { useOsDark } from '../visuals/useOsDark';
 import type { Stage } from './useStage';
 
-export interface StagePaintOptions {
-  theme: GrafanaTheme2;
-  /** The link width range of the panel: the value labels keep `linkWidth.max / 2` clear of the strokes. */
-  linkWidth: { min: number; max: number };
-  /** Only these cells become buttons (the panel). Without it every patched cell is one (the popup stage). */
-  interactive?: Set<string>;
-}
+/** The paint inputs that the caller gives. The hook adds the OS preference and the stage bounds. */
+export type StagePaintOptions = Pick<PaintOptions, 'theme' | 'linkWidth' | 'interactive'>;
 
 /**
  * Paints the patches into the stage once per frame (`paintStage`) and keeps the paint current. The root colour scheme

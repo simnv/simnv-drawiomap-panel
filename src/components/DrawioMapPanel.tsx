@@ -494,8 +494,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
 
   // Apply patches, redraw the overlay and the value labels once per frame.
   useStagePaint(stage, result.patches, { theme, linkWidth: opts.linkWidth, interactive });
-  // After the paint, in the same frame: the cells that open a card get the interactive mark. The overlay and the
-  // labels do not read it.
+  // The cells that open a card get the interactive mark. The applier, the overlay and the labels do not read or write
+  // it, so its place in the frame does not matter.
   useEffect(() => {
     if (!stage.root) {
       return;
