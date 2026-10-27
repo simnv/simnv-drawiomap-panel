@@ -281,10 +281,7 @@ export function BindingEditor({
     },
     [data, reportResults, format, patternResults]
   );
-  // The saved bindings of every cell and the hover rows of the open cell are one group of the popup's owner. The
-  // owner frame holds the widget groups of the popup stage too, subscribed: a widget entry resolves at its anchor cell.
-  // The bind takes no clock. The stage and the preview card show the patches at the current clock; the diagnostics
-  // list reads the bind itself, because no diagnostic holds a stale state.
+  // The stage and the preview card show the patches at the current clock; the diagnostics list reads the bind itself.
   const { plan, resolve, bound, shown, cardContext } = useBoundDiagram({
     metas,
     config: draft.config,

@@ -39,7 +39,10 @@ export interface BoundDiagramInputs {
   openCellId: string | undefined;
   /** While paused the store frames are held: an emission renders nothing. */
   paused: boolean;
-  /** A resolver layer over the saved one, for example the editor preview. A memo of the caller. */
+  /**
+   * A resolver layer over the saved resolver of the diagram, for example the editor preview. A memo of the caller.
+   * A card group of its own reads the saved results only.
+   */
   override?: (saved: BindingResolver, plan: BindingPlan) => BindingResolver;
 }
 
@@ -64,9 +67,20 @@ const NO_DEMANDS: StoreDemand[] = [];
  * own owner in the store. The pause inputs stay with the caller.
  */
 export function useBoundDiagram(inputs: BoundDiagramInputs): BoundDiagram {
-  const { metas, config, service, owner, groups, maxDataPoints, data, bindContext, format, openCellId, paused } =
-    inputs;
-  const { override } = inputs;
+  const {
+    metas,
+    config,
+    service,
+    owner,
+    groups,
+    maxDataPoints,
+    data,
+    bindContext,
+    format,
+    openCellId,
+    paused,
+    override,
+  } = inputs;
   const split = groups.card !== undefined;
   const plan = useMemo(() => resolvePatterns(metas, config), [metas, config]);
   const context = service?.context;
@@ -113,9 +127,8 @@ export function useBoundDiagram(inputs: BoundDiagramInputs): BoundDiagram {
     if (!split || !hoverDemands.length) {
       return resolve;
     }
-    const card = resolverFrom([cardFrame, frame], cardMap, plan, data, format);
-    return override ? override(card, plan) : card;
-  }, [split, hoverDemands.length, resolve, cardFrame, frame, cardMap, plan, data, format, override]);
+    return resolverFrom([cardFrame, frame], cardMap, plan, data, format);
+  }, [split, hoverDemands.length, resolve, cardFrame, frame, cardMap, plan, data, format]);
   // The bind takes no clock: a tick of the freshness clock runs the pass over the patches, never the bind.
   const bound = useMemo(() => bindPlan(plan, resolve, bindContext), [plan, resolve, bindContext]);
   const shown = useStaleStatus(bound);

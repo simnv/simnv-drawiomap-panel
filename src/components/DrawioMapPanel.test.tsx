@@ -621,6 +621,7 @@ describe('DrawioMapPanel hover card', () => {
       const { rect, unmount } = await hoverSetup();
       fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
       await screen.findByRole('tooltip');
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
       await act(async () => {
         await new Promise((done) => setTimeout(done, 50));
       });

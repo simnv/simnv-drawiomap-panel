@@ -2,6 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange, LoadingState, type PanelData } from '@grafana/data';
 import { describe, expect, it, vi } from 'vitest';
 import { bindContextFor } from '../binding/context';
+import type { BindingResolver } from '../binding/engine';
 import type { DiagramConfig, NamedQuery } from '../model/config';
 import type { PanelQueryService } from '../query/panel';
 import { EMPTY_FRAME, matchKeyOf, type Frame, type SnapshotStore } from '../query/store';
@@ -143,5 +144,8 @@ describe('useBoundDiagram', () => {
     );
     expect(override).toHaveBeenCalledWith(expect.any(Function), result.current.plan);
     expect(result.current.resolve('a', binding).state).toBe('loading');
+    // the layer gets the saved resolver over the owner frame
+    const [saved] = override.mock.calls[0] as unknown as [BindingResolver];
+    expect(saved('b', widgetBinding).state).toBe('empty');
   });
 });
