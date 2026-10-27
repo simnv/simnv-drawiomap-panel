@@ -34,7 +34,7 @@ import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/pop
 import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { useStaleStatus } from '../visuals/useSampleStale';
 import { useOsDark } from '../visuals/useOsDark';
-import { demandMap, demandsOf, resolverFrom } from '../query/store';
+import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
 import { useBindings } from '../query/useBindings';
 import { ChartLayer } from '../visuals/ChartLayer';
 import { bandLayout, StatusBand } from './StatusBand';

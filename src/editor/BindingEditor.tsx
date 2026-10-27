@@ -21,7 +21,7 @@ import { cardContextFor } from '../binding/context';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfig, type DisplayConfig, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
-import { demandMap, demandsOf, resolverFrom } from '../query/store';
+import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
 import type { QuerySnapshot } from '../query/types';
 import { useBindings } from '../query/useBindings';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';

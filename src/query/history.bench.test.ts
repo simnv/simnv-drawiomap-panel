@@ -24,6 +24,7 @@ const PASSES = 20;
 type Frames = typeof import('./frames');
 type Engine = typeof import('../binding/engine');
 type Store = typeof import('./store');
+type Resolve = typeof import('../binding/resolve');
 type Boundary = typeof import('./boundary');
 type Reduce = typeof import('./reduce');
 
@@ -85,6 +86,7 @@ describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
   let frames: Frames;
   let engine: Engine;
   let store: Store;
+  let resolveModule: Resolve;
   let boundary: Boundary;
   let reduce: Reduce;
   beforeAll(async () => {
@@ -94,6 +96,7 @@ describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
     frames = await import('./frames');
     engine = await import('../binding/engine');
     store = await import('./store');
+    resolveModule = await import('../binding/resolve');
     boundary = await import('./boundary');
   });
   afterAll(() => {
@@ -176,13 +179,13 @@ describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
       dispose: () => {},
     };
     const data: PanelData = { state: LoadingState.Done, series: [], timeRange };
-    const demands = store.demandsOf(plan, context, 264, 'visible');
+    const demands = resolveModule.demandsOf(plan, context, 264, 'visible');
     expect(demands).toHaveLength(2 * CELLS);
     const snapshots = store.createSnapshotStore(controller);
     snapshots.want('bench', 'visible', demands);
     const frame = snapshots.frame('bench', 'visible');
     expect(frame.size).toBe(2 * CELLS);
-    const resolve = store.resolverFrom([frame], store.demandMap(demands), plan, data, format);
+    const resolve = resolveModule.resolverFrom([frame], resolveModule.demandMap(demands), plan, data, format);
     const pairs = Object.values(plan.cells).flatMap((cell) =>
       cell.bindings.map((binding) => [cell.cellId, binding] as const)
     );
