@@ -3,7 +3,6 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,21 +19,20 @@ import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells, patchAt } from '../interact/hit';
-import { type Applied, INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
-import { setLinkLabelScale, watchLinkLabelFonts } from '../render/linkLabels';
-import { paintStage } from '../render/paintStage';
+import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
+import { setLinkLabelScale } from '../render/linkLabels';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
 import { useStage } from '../stage/useStage';
+import { useStagePaint } from '../stage/useStagePaint';
 import { useHeld } from './useHeld';
 import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
 import { EMPTY_CONFIG, legacyRulesWarning } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { useStaleStatus } from '../visuals/useSampleStale';
-import { useOsDark } from '../visuals/useOsDark';
 import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
 import { useBindings } from '../query/useBindings';
 import { ChartLayer } from '../visuals/ChartLayer';
@@ -290,7 +288,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     setViewport(element);
   }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
-  const patchedRef = useRef<Applied>();
   const interactiveRef = useRef<Marked>();
   const [card, setCard] = useState<CardState | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
@@ -503,34 +500,19 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     };
   }, [open, pinned, close]);
 
-  // draw.io writes color-scheme: light dark on the root, so light-dark() colours follow the OS preference.
-  // Override it with the Grafana theme.
-  const isDark = theme.isDark;
-  useLayoutEffect(() => {
-    const root = containerRef.current?.querySelector<SVGSVGElement>(':scope > svg');
-    if (root) {
-      root.style.colorScheme = isDark ? 'dark' : 'light';
-    }
-  }, [stage.root, isDark]);
-
-  // Apply patches, redraw the overlay and the value labels once per frame. The OS preference is an input of the
-  // applier's colour scheme: a change of it writes every cell again (an element with its own color-scheme follows it).
-  const osDark = useOsDark();
-  const { min: linkMin, max: linkMax } = opts.linkWidth;
+  // Apply patches, redraw the overlay and the value labels once per frame.
+  useStagePaint(stage, result.patches, { theme, linkWidth: opts.linkWidth, interactive });
+  // After the paint, in the same frame: the cells that open a card get the interactive mark. The overlay and the
+  // labels do not read it.
   useEffect(() => {
     if (!stage.root) {
       return;
     }
-    const root = stage.root;
-    const linkWidth = { min: linkMin, max: linkMax };
     const id = requestAnimationFrame(() => {
-      const paint = { theme, osDark, linkWidth, bounds: stage.base, interactive };
-      patchedRef.current = paintStage(root, stage.index, result.patches, patchedRef.current, paint);
-      // the overlay and the labels do not read the interactive mark
       interactiveRef.current = markInteractive(stage.index, interactive, interactiveRef.current);
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, stage.base, result, theme, osDark, interactive, linkMin, linkMax]);
+  }, [stage.root, stage.index, interactive]);
 
   // After the patches (the same frame order): mark the cells of the legend entry under the pointer. The effect runs
   // again for a new stage or new data; a change of the store paints in the next frame with no render. The rows of the
@@ -575,9 +557,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     () => (stage.root ? bindSymbolLegend(stage.root, stage.index, highlight.setRows) : undefined),
     [stage.root, stage.index, highlight]
   );
-
-  // A web font that loads late widens the glyphs: cut the strokes under the labels again.
-  useEffect(() => (stage.root ? watchLinkLabelFonts(stage.root) : undefined), [stage.root]);
 
   // Zoom layout.
   useEffect(() => {
