@@ -18,6 +18,7 @@ import {
 } from '../model/config';
 import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { INVALID_FRESHNESS_TEXT } from './status';
+import { jsonCopy } from '../util/json';
 
 /** The merged display of a cell: the hover of a merged display always has a rows list. */
 export type MergedDisplay = Omit<DisplayConfig, 'hover'> & { hover?: HoverSpec };
@@ -203,7 +204,7 @@ export function mergeDisplay(base: DisplayConfig, patch: DisplayConfig | undefin
     }
   }
   // The schema admits JSON settings only. Clone inherited arrays/records so cells never share mutable settings.
-  return JSON.parse(JSON.stringify(result)) as MergedDisplay;
+  return jsonCopy(result) as MergedDisplay;
 }
 
 /** Who contributes to a merged display: a pattern by its index in the config, or the override of the cell. */

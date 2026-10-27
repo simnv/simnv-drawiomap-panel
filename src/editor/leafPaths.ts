@@ -1,6 +1,6 @@
 import type { DisplayConfig } from '../model/config';
+import { jsonCopy } from '../util/json';
 
-const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -73,7 +73,7 @@ const isEmptyObject = (value: unknown) =>
  */
 export function unsetPath<T extends Partial<DisplayConfig>>(display: T, path: string): T {
   const keys = path.split('.');
-  const next = copy(display) as Record<string, unknown>;
+  const next = jsonCopy(display) as Record<string, unknown>;
   const trail: Array<Record<string, unknown>> = [next];
   for (const key of keys.slice(0, -1)) {
     const child = trail[trail.length - 1][key];
@@ -108,13 +108,13 @@ export function setLeaf<T extends Partial<DisplayConfig>>(display: T, path: stri
     return unsetPath(display, path);
   }
   const keys = path.split('.');
-  const next = JSON.parse(JSON.stringify(display)) as Record<string, unknown>;
+  const next = jsonCopy(display) as Record<string, unknown>;
   let at = next;
   for (const key of keys.slice(0, -1)) {
     const child = at[key];
     at = (isRecord(child) ? child : (at[key] = {})) as Record<string, unknown>;
   }
-  at[keys[keys.length - 1]] = JSON.parse(JSON.stringify(value));
+  at[keys[keys.length - 1]] = jsonCopy(value);
   return next as T;
 }
 

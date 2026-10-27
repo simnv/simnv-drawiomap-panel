@@ -13,6 +13,7 @@ import {
 import type { CellSelector, Diagram } from '../types';
 import { previewPatternImport, type ImportResolution } from './portable';
 import { setLeaf, unsetPath } from './leafPaths';
+import { jsonCopy } from '../util/json';
 export { exportPatternDocument, previewPatternImport } from './portable';
 export { unsetPath, EMPTY_CONFIG };
 export interface BindingDraft {
@@ -58,9 +59,8 @@ export type DraftAction =
   /** Several actions applied in order. The history records one step for the whole batch. */
   | { type: 'batch'; actions: DraftAction[] }
   | { type: 'reset' | 'applied' };
-const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 function changeDisplay(base: Partial<DisplayConfig>, patch: Partial<DisplayConfig>): DisplayConfig {
-  return copy({
+  return jsonCopy({
     ...base,
     ...patch,
     ...(patch.shape ? { shape: { ...base.shape, ...patch.shape } } : {}),
@@ -83,9 +83,9 @@ export function draftPatternIndex(draft: Pick<BindingDraft, 'config' | 'patternI
 }
 export function createDraft(config: DiagramConfig, diagram?: Diagram): BindingDraft {
   // the boundary: after it every item of a list is an object, and the editor reads them as such
-  const { config: clean, removed } = withoutEmptyEntries(copy(config));
+  const { config: clean, removed } = withoutEmptyEntries(jsonCopy(config));
   return {
-    saved: copy(clean),
+    saved: jsonCopy(clean),
     config: clean,
     scope: 'element',
     diagnostics: removed ? [emptyEntriesNote(removed)] : [],
@@ -110,12 +110,12 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     return action.actions.reduce(reduceDraft, draft);
   }
   if (action.type === 'reset') {
-    return { ...draft, config: copy(draft.saved), diagram: draft.savedDiagram, diagnostics: [] };
+    return { ...draft, config: jsonCopy(draft.saved), diagram: draft.savedDiagram, diagnostics: [] };
   }
   if (action.type === 'applied') {
     // The committed config is the normalised one. The draft takes it, so that the draft is not dirty after Apply.
     const saved = commitDraft(draft);
-    return { ...draft, saved, config: copy(saved), savedDiagram: draft.diagram, diagnostics: [] };
+    return { ...draft, saved, config: jsonCopy(saved), savedDiagram: draft.diagram, diagnostics: [] };
   }
   if (action.type === 'diagram') {
     return { ...draft, diagram: action.diagram };
@@ -250,18 +250,21 @@ export function reduceDraft(draft: BindingDraft, action: DraftAction): BindingDr
     config = {
       ...config,
       patterns: config.patterns.some((p) => p.id === action.pattern.id)
-        ? config.patterns.map((p) => (p.id === action.pattern.id ? copy(action.pattern) : p))
-        : [...config.patterns, copy(action.pattern)],
+        ? config.patterns.map((p) => (p.id === action.pattern.id ? jsonCopy(action.pattern) : p))
+        : [...config.patterns, jsonCopy(action.pattern)],
     };
   } else if (action.type === 'selector') {
     config = {
       ...config,
       patterns: config.patterns.map((p, i) =>
-        i === draftPatternIndex(draft) ? { ...p, select: copy(action.select) } : p
+        i === draftPatternIndex(draft) ? { ...p, select: jsonCopy(action.select) } : p
       ),
     };
   } else if (action.type === 'widget') {
-    config = { ...config, widgets: [...config.widgets.filter((w) => w.id !== action.widget.id), copy(action.widget)] };
+    config = {
+      ...config,
+      widgets: [...config.widgets.filter((w) => w.id !== action.widget.id), jsonCopy(action.widget)],
+    };
   } else if (action.type === 'remove-query') {
     config = { ...config, queries: config.queries.filter((q) => q.id !== action.id) };
   } else if (action.type === 'remove-widget') {
