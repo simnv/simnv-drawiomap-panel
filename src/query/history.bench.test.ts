@@ -112,7 +112,7 @@ describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
     // 1. toHistory for every cell
     passes('toHistory, every cell', () => {
       for (const binding of bindings) {
-        frames.toHistory(snapshot, binding, format);
+        frames.historyOf(snapshot, binding, format);
       }
     });
     expect(reduceValues).toHaveBeenCalledTimes(CELLS);
@@ -130,7 +130,7 @@ describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
     });
 
     // 4. historySeries for every cell
-    const models = bindings.map((binding) => frames.toHistory(snapshot, binding, format));
+    const models = bindings.map((binding) => frames.historyOf(snapshot, binding, format));
     passes('historySeries, every cell', () => {
       models.forEach((model, i) => {
         if (model.state === 'ready') {

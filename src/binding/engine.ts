@@ -13,7 +13,7 @@ import {
   type ShapeDisplay,
 } from '../model/config';
 import { inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity';
-import { toHistory, type HistoryModel, type HistoryFormat } from '../query/frames';
+import { historyOf, type HistoryModel, type HistoryFormat } from '../query/frames';
 import type { BindingPlan } from './patterns';
 import type { QuerySnapshot } from '../query/types';
 import { evaluateStatus, isPast, summarizeStatuses, type StatusSummary, type StatusView } from './status';
@@ -66,7 +66,7 @@ export function resolveBinding(
   const resolved = resolveBindingScope(binding, scope);
   return Array.isArray(resolved)
     ? { state: 'unsupported', message: `Unresolved binding metadata: ${resolved.join(', ')}` }
-    : toHistory(snapshot, resolved, format);
+    : historyOf(snapshot, resolved, format);
 }
 export interface BindingDemand {
   /** the cell, or the anchor cell of a chart widget */
