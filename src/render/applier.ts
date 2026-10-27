@@ -2,6 +2,7 @@ import { createTheme, type GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { PlanCellPatch } from '../binding/engine';
 import {
+  alphaOf,
   linkStatusPaint,
   STROKE_TARGET_EXTRA,
   statusBorderWidth,
@@ -134,45 +135,6 @@ function applyShape(entry: CellEntry, patch: CellPatch, index: CellIndex): strin
   return target;
 }
 
-/** The alpha of a CSS colour, 0 to 1. A colour that is not understood, or not a plain colour (url, var), counts as opaque. */
-export function colourAlpha(value: string): number {
-  const v = value.trim().toLowerCase();
-  if (v === 'none' || v === 'transparent') {
-    return 0;
-  }
-  const clamp = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1);
-  const token = (t: string) => {
-    const x = t.trim();
-    if (x === 'none') {
-      return 0;
-    }
-    return clamp(x.endsWith('%') ? parseFloat(x) / 100 : parseFloat(x));
-  };
-  if (v.startsWith('#')) {
-    const hex = v.slice(1);
-    if (!/^[0-9a-f]+$/.test(hex)) {
-      return 1;
-    }
-    if (hex.length === 4) {
-      return parseInt(hex[3] + hex[3], 16) / 255;
-    }
-    return hex.length === 8 ? parseInt(hex.slice(6), 16) / 255 : 1;
-  }
-  const fn = /^[a-z-]+\((.*)\)$/s.exec(v);
-  if (!fn) {
-    return 1;
-  }
-  const body = fn[1];
-  if (body.includes('/')) {
-    return token(body.split('/').pop()!);
-  }
-  if (body.includes(',')) {
-    const parts = body.split(',');
-    return parts.length === 4 ? token(parts[3]) : 1;
-  }
-  return 1;
-}
-
 /** The effective value of a paint property: inline style, then the computed style (CSS rules), then the attribute. */
 function effective(m: SVGElement, prop: string, fallback: string): string {
   const inline = m.style.getPropertyValue(prop).trim();
@@ -193,10 +155,10 @@ function effective(m: SVGElement, prop: string, fallback: string): string {
 
 /** True when the marker paints `prop` (fill or stroke): a colour that is not none or transparent, with some opacity. */
 function paints(m: SVGElement, prop: 'fill' | 'stroke'): boolean {
-  if (colourAlpha(effective(m, prop, prop === 'fill' ? 'black' : 'none')) <= 0) {
+  if (alphaOf(effective(m, prop, prop === 'fill' ? 'black' : 'none')) <= 0) {
     return false;
   }
-  return [`${prop}-opacity`, 'opacity'].every((o) => colourAlpha(effective(m, o, '1')) > 0);
+  return [`${prop}-opacity`, 'opacity'].every((o) => alphaOf(effective(m, o, '1')) > 0);
 }
 
 /**

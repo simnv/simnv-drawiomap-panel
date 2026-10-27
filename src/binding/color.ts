@@ -106,6 +106,45 @@ function channels(value: string): [number, number, number, number] | undefined {
   }
 }
 
+/** The alpha of a CSS colour, 0 to 1. A colour that is not understood, or not a plain colour (url, var), counts as opaque. */
+export function alphaOf(value: string): number {
+  const v = value.trim().toLowerCase();
+  if (v === 'none' || v === 'transparent') {
+    return 0;
+  }
+  const clamp = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1);
+  const token = (t: string) => {
+    const x = t.trim();
+    if (x === 'none') {
+      return 0;
+    }
+    return clamp(x.endsWith('%') ? parseFloat(x) / 100 : parseFloat(x));
+  };
+  if (v.startsWith('#')) {
+    const hex = v.slice(1);
+    if (!/^[0-9a-f]+$/.test(hex)) {
+      return 1;
+    }
+    if (hex.length === 4) {
+      return parseInt(hex[3] + hex[3], 16) / 255;
+    }
+    return hex.length === 8 ? parseInt(hex.slice(6), 16) / 255 : 1;
+  }
+  const fn = /^[a-z-]+\((.*)\)$/s.exec(v);
+  if (!fn) {
+    return 1;
+  }
+  const body = fn[1];
+  if (body.includes('/')) {
+    return token(body.split('/').pop()!);
+  }
+  if (body.includes(',')) {
+    const parts = body.split(',');
+    return parts.length === 4 ? token(parts[3]) : 1;
+  }
+  return 1;
+}
+
 /**
  * The fill of a device with a status: `fill` mixed with the status colour at `STATUS_TINT` (times the alpha of the
  * status colour). Undefined when the fill is not an opaque colour (none, a url, an alpha, a value that does not

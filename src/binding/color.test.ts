@@ -9,7 +9,7 @@ import {
   getFieldColorMode,
   ThresholdsMode,
 } from '@grafana/data';
-import { colorFor, linkStatusPaint, noDataColor, statusColor, statusPaint, tintFill, widthFor } from './color';
+import { alphaOf, colorFor, linkStatusPaint, noDataColor, statusColor, statusPaint, tintFill, widthFor } from './color';
 import type { StatusView } from './status';
 
 const theme = createTheme();
@@ -154,5 +154,39 @@ describe('tintFill', () => {
       expect(tintFill(fill, '#f00'), fill).toBeUndefined();
     }
     expect(tintFill('#ffffff', 'currentColor')).toBeUndefined();
+  });
+});
+
+describe('alphaOf', () => {
+  it.each([
+    ['none', 0],
+    ['transparent', 0],
+    ['rgb(255, 0, 0)', 1],
+    ['rgb(255 0 0)', 1],
+    ['rgba(255, 0, 0, 0)', 0],
+    ['rgba(255, 0, 0, 0.5)', 0.5],
+    ['rgb(255 0 0 / 0)', 0],
+    ['rgb(255 0 0 / 0%)', 0],
+    ['rgb(255 0 0 / 50%)', 0.5],
+    ['rgb(255 0 0 / none)', 0],
+    ['hsl(120, 100%, 50%)', 1],
+    ['hsla(120, 100%, 50%, 0)', 0],
+    ['hsl(120 100% 50% / 0)', 0],
+    ['hsl(120 100% 50% / 1)', 1],
+    ['#f00', 1],
+    ['#ff0000', 1],
+    ['#f000', 0],
+    ['#ff000000', 0],
+    ['#ff0000ff', 1],
+    ['red', 1],
+    ['url(#grad)', 1],
+    ['', 1],
+    ['RGBA(255, 0, 0, 0.5)', 0.5],
+    ['var(--fill)', 1],
+    ['var(--fill, rgba(0, 0, 0, 0))', 1],
+    ['light-dark(#fff, #000)', 1],
+    ['light-dark(rgba(0, 0, 0, 0), white)', 1],
+  ])('reads the alpha of %s as %s', (value, alpha) => {
+    expect(alphaOf(value)).toBeCloseTo(alpha, 5);
   });
 });
