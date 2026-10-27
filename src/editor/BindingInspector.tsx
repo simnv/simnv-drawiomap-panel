@@ -4,7 +4,7 @@ import { displayProvenance, type DisplayOwner, type EffectiveCellBinding } from 
 import { displayName, identityOf } from '../adapter/cellTitle';
 import type { CellMeta } from '../types';
 import { fieldSourceOf } from './fieldSource';
-import { draftPatternIndex, type BindingDraft, type DraftAction } from './draft';
+import { draftPatternIndex, freshId, type BindingDraft, type DraftAction } from './draft';
 import { DisplayFields, newBinding, TextField } from './BindingFields';
 import { validateConfig, type Diagnostic, type DisplayConfig } from '../model/config';
 import { ChartFields } from './ChartFields';
@@ -170,14 +170,11 @@ export function BindingInspector({
           size="sm"
           disabled={!draft.config.queries.length}
           onClick={() => {
-            let n = 1;
-            while (draft.config.widgets.some((w) => w.id === `chart-${n}`)) {
-              n++;
-            }
+            const { id } = freshId(draft.config.widgets, 'chart');
             dispatch({
               type: 'widget',
               widget: {
-                id: `chart-${n}`,
+                id,
                 anchorCellId: draft.cellId!,
                 kind: 'sparkline',
                 label: 'Chart',

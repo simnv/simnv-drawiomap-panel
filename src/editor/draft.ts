@@ -288,3 +288,11 @@ export function commitDraft(draft: BindingDraft): DiagramConfig {
   }
   return result.config;
 }
+/** The first `prefix-n` id that no item has, with its number `n` (for a matching name or refId). */
+export function freshId(items: ReadonlyArray<{ id: string }>, prefix: string): { id: string; n: number } {
+  let n = 1;
+  while (items.some((item) => item.id === `${prefix}-${n}`)) {
+    n++;
+  }
+  return { id: `${prefix}-${n}`, n };
+}
