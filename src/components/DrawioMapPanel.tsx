@@ -8,7 +8,8 @@ import { bindContextFor } from '../binding/context';
 import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
-import { interactiveCells, patchAt } from '../interact/hit';
+import { interactiveCells } from '../interact/hit';
+import { useCardInput, useCardState } from '../interact/useCardState';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import { cellMetas } from '../render/svgStage';
 import type { ViewBox } from '../render/zoom';
@@ -31,7 +32,7 @@ import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
 import { buildLegend } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
-import { bindSymbolLegend, LEGEND_ROW_ATTR } from '../legend/symbolRows';
+import { bindSymbolLegend } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
 
 /** The address of the open edit session of this panel, or an empty string when the panel is not in panel edit. */
@@ -89,23 +90,12 @@ const styles = {
   `,
 };
 
-interface CardState {
-  cellId: string;
-  /** pointer position in panel coordinates */
-  x: number;
-  y: number;
-  pinned: boolean;
-}
-
 /** The store groups of the panel: the visible bindings and the open card. */
 const PANEL_GROUPS: BindGroups = { visible: 'visible', card: 'card' };
 
 /** The sheet goes to document.body: position: fixed does not work below a CSS transform (the Grafana grid item). */
 const portalSheet = (card: React.ReactElement, sheet: boolean) =>
   sheet && typeof document !== 'undefined' ? createPortal(card, document.body) : card;
-
-/** Touch screens and other devices without hover: only a tap opens (and pins) the card. */
-const canHover = () => !(typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
 
 export function DrawioMapPanel(props: PanelProps<Options>) {
   const session = usePanelEditing(props.id);
@@ -225,7 +215,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
   const interactiveRef = useRef<Marked>();
-  const [card, setCard] = useState<CardState | null>(null);
+  const cards = useCardState(paused);
+  const { card, dispatch, cardRef } = cards;
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [wrapperEl, setWrapperEl] = useState<HTMLDivElement | null>(null);
@@ -233,7 +224,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     wrapperRef.current = element;
     setWrapperEl(element);
   }, []);
-  const cardRef = useRef<HTMLDivElement>(null);
   const zoomMode = opts.zoom.mode;
   const zoomPercent = opts.zoom.percent;
   const wheelZoom = opts.zoom.wheel;
@@ -247,7 +237,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   if (viewHash !== hash) {
     setViewHash(hash);
     setView(null);
-    setCard(null);
+    dispatch({ type: 'diagram-changed' });
   }
   // A new panel size or a new zoom option resets the live view to the configured view.
   const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}|${align}|${minScale}`;
@@ -257,12 +247,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     setView(null);
   }
 
-  // Opening the popup closes the card of the panel (state adjustment during render).
-  if (paused && card) {
-    setCard(null);
-  }
   const openBindings = (target: PopupTarget) => {
-    setCard(null);
+    dispatch({ type: 'close' });
     onOpenBindings(target);
   };
 
@@ -314,7 +300,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   const cardPatch = card ? result.patches.get(card.cellId) : undefined;
   if (card && !cardPatch) {
     // the bindings or the diagram changed and the cell has no patch now
-    setCard(null);
+    dispatch({ type: 'stale-cell' });
   }
   const model = useMemo(
     () => (cardPatch ? buildConfiguredCard(cardPatch, cardResolve, cardContext) : undefined),
@@ -357,62 +343,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   const legendRef = useRef<HTMLElement>(null);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
-  const pinned = !!card?.pinned && open;
-
-  // A card opened from the keyboard gives the focus back to its cell when it closes.
-  const opener = useRef<Element | null>(null);
-  const close = useCallback(() => {
-    setCard(null);
-    const el = opener.current as (Element & HTMLOrSVGElement) | null;
-    opener.current = null;
-    if (el?.isConnected) {
-      el.focus({ preventScroll: true });
-    }
-  }, []);
-
-  // The pointer leaves the panel: the hover card closes, a pinned card stays. A native listener: React makes
-  // onPointerLeave from pointerout, and the browser sends no pointerout when the overlay redraw removed the
-  // element under the pointer.
-  useEffect(() => {
-    if (!wrapperEl) {
-      return;
-    }
-    const onLeave = () => setCard((c) => (c?.pinned ? c : null));
-    wrapperEl.addEventListener('pointerleave', onLeave);
-    return () => wrapperEl.removeEventListener('pointerleave', onLeave);
-  }, [wrapperEl]);
-
-  // Esc closes the card. A pointer down outside the panel closes a pinned card.
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    // Capture phase: Esc closes the card only, Grafana does not also leave the panel view.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // a chart with a tooltip hides the tooltip first (ChartHover); the next Esc closes the card
-        if ((e.target as Element | null)?.closest?.('[data-tooltip-open="true"]')) {
-          return;
-        }
-        e.stopPropagation();
-        close();
-      }
-    };
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      // the sheet is in a portal outside the panel
-      if (pinned && !wrapperRef.current?.contains(t) && !cardRef.current?.contains(t)) {
-        opener.current = null;
-        setCard(null);
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    document.addEventListener('pointerdown', onDown, true);
-    return () => {
-      document.removeEventListener('keydown', onKey, true);
-      document.removeEventListener('pointerdown', onDown, true);
-    };
-  }, [open, pinned, close]);
 
   // Apply patches, redraw the overlay and the value labels once per frame.
   useStagePaint(stage, result.patches, { theme, linkWidth: opts.linkWidth, interactive });
@@ -479,12 +409,11 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   );
   useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
 
-  const local = (e: React.MouseEvent) => {
-    const r = wrapperRef.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  };
-  const inCard = (t: EventTarget | null) => t instanceof Node && !!cardRef.current?.contains(t);
   const corner = useRef<HTMLDivElement>(null);
+  // The controls of the panel: a pointer on them does not pan the view and does not change the card.
+  const onControl = (t: EventTarget | null) =>
+    t instanceof Node &&
+    (!!corner.current?.contains(t) || !!bandRef.current?.contains(t) || !!legendRef.current?.contains(t));
   const panZoom = usePanZoom({
     wrapperRef,
     root: stage.root,
@@ -494,11 +423,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     wheel: wheelZoom,
     dragPan,
     align,
-    ignore: (t) =>
-      inCard(t) ||
-      (t instanceof Element && !!t.closest('[data-dmap-widget] a')) ||
-      (t instanceof Node &&
-        (!!corner.current?.contains(t) || !!bandRef.current?.contains(t) || !!legendRef.current?.contains(t))),
+    ignore: (t) => cards.inCard(t) || (t instanceof Element && !!t.closest('[data-dmap-widget] a')) || onControl(t),
   });
 
   // The configured view starts at the top-left corner of a stage that scrolls.
@@ -510,61 +435,18 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     }
   };
 
-  // A click or a tap pins the card of the cell. A click on empty space closes it.
-  const onClick = (e: React.MouseEvent) => {
-    const stageEl = containerRef.current;
-    // a drag that moved the view is not a click
-    if (
-      panZoom.takeClick() ||
-      inCard(e.target) ||
-      corner.current?.contains(e.target as Node) ||
-      bandRef.current?.contains(e.target as Node) ||
-      legendRef.current?.contains(e.target as Node) ||
-      // a tap on a linked legend row of the diagram toggles its highlight and leaves the card alone
-      (e.target instanceof Element && e.target.closest(`[${LEGEND_ROW_ATTR}]`)) ||
-      !stageEl
-    ) {
-      return;
-    }
-    const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
-    opener.current = null;
-    setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: true } : null);
-  };
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const stageEl = containerRef.current;
-    if ((e.key !== 'Enter' && e.key !== ' ') || !stageEl || inCard(e.target) || !(e.target instanceof Element)) {
-      return;
-    }
-    const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
-    if (!patch) {
-      return;
-    }
-    e.preventDefault();
-    const r = wrapperRef.current!.getBoundingClientRect();
-    const b = e.target.getBoundingClientRect();
-    opener.current = e.target;
-    setCard({ cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top, pinned: true });
-  };
-  const moveCard = useRef<(() => void) | null>(null);
-  const pointerRef = useRef<{ x: number; y: number } | null>(null);
-  const onPointerMove = (e: React.PointerEvent) => {
-    // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
-    const stageEl = containerRef.current;
-    if (e.pointerType === 'touch' || !canHover() || pinned || panZoom.busy() || !stageEl) {
-      return;
-    }
-    pointerRef.current = { x: e.clientX, y: e.clientY };
-    const patch = patchAt(e.target, stageEl, result.patches, stage.index, cardable);
-    if (patch && card?.cellId === patch.cellId) {
-      // the same cell: only the card moves, with no render
-      moveCard.current?.();
-      return;
-    }
-    if (!patch && !card) {
-      return;
-    }
-    setCard(patch ? { cellId: patch.cellId, ...local(e), pinned: false } : null);
-  };
+  const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
+    ...cards,
+    open,
+    wrapperRef,
+    wrapperEl,
+    stageRef: containerRef,
+    patches: result.patches,
+    index: stage.index,
+    cardable,
+    onControl,
+    panZoom,
+  });
 
   if (!opts.diagram?.svg) {
     return (
@@ -665,7 +547,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
                 timeZone={timeZone}
                 onClose={close}
                 pointerRef={pointerRef}
-                moveRef={moveCard}
+                moveRef={moveRef}
               />
             </div>,
             width < SHEET_BELOW
