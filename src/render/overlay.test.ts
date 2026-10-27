@@ -471,16 +471,11 @@ describe('arrow tip position', () => {
       ])
     ).toBeGreaterThanOrEqual(2 * ARROW);
   });
-  it('measures the clearance in the units of the overlay when the path is scaled', () => {
-    const { root, index } = build('M 0 0 L 400 0 L 400 400');
-    const line = index.get('e1')!.line!;
-    const along = (d: number) => (d <= 400 ? { x: d, y: 0 } : { x: 400, y: d - 400 });
-    Object.assign(line, {
-      getTotalLength: () => 800,
-      getPointAtLength: along,
-      getCTM: () => ({ a: 0.25, b: 0, c: 0, d: 0.25, e: 0, f: 0 }),
-    });
-    // an engine with getTotalLength has getCTM on every element: the overlay group draws in root units
+  /** The path measured by the engine (getTotalLength) with its own CTM; the overlay group draws in root units. */
+  const drawMeasured = (d: string, length: number, along: (d: number) => { x: number; y: number }, ctm: object) => {
+    const { root, index } = build(d);
+    Object.assign(index.get('e1')!.line!, { getTotalLength: () => length, getPointAtLength: along, getCTM: () => ctm });
+    // an engine with getTotalLength has getCTM on every element
     const proto = SVGElement.prototype as unknown as { getCTM?: () => unknown };
     proto.getCTM = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
     try {
@@ -488,8 +483,23 @@ describe('arrow tip position', () => {
     } finally {
       delete proto.getCTM;
     }
-    // the corner is at (100, 0) in the overlay
-    expect(toBend(tipOf(root, 'a2b'), [[100, 0]])).toBeGreaterThanOrEqual(2 * ARROW - 0.01);
+    return root;
+  };
+  const pointsOf = (root: SVGSVGElement, cls: string) =>
+    Array.from(root.querySelectorAll(`.${cls}`), (el) => el.getAttribute('points')!.split(' '));
+  it('measures the clearance in the units of the overlay when the path is scaled', () => {
+    const along = (d: number) => (d <= 400 ? { x: d, y: 0 } : { x: 400, y: d - 400 });
+    const root = drawMeasured('M 0 0 L 400 0 L 400 400', 800, along, { a: 0.25, b: 0, c: 0, d: 0.25, e: 0, f: 0 });
+    expect(pointsOf(root, 'dmap-half')).toHaveLength(2);
+    expect(pointsOf(root, 'dmap-arrow')).toHaveLength(2);
+    // the corner is at (100, 0) in the overlay; the split is 336 local units, the tip (84, 0) in the overlay
+    const tip = tipOf(root, 'a2b');
+    expect(toBend(tip, [[100, 0]])).toBeGreaterThanOrEqual(2 * ARROW - 0.01);
+    expect(tip).toEqual({ x: 84, y: 0 });
+    expect(tipOf(root, 'b2a')).toEqual({ x: 84, y: 0 });
+    const b2a = root.querySelector('.dmap-half[data-dmap-half="b2a"]')!.getAttribute('points')!.split(' ');
+    expect(b2a[0]).toBe('84,0');
+    expect(b2a[b2a.length - 1]).toBe('100,100');
   });
 });
 
