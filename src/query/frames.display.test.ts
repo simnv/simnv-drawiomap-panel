@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTheme, FieldType, getDisplayProcessor, toDataFrame } from '@grafana/data';
-import { fieldDisplay, toHistory } from './frames';
+import { fieldDisplay, historyOf } from './frames';
 
 describe('fieldDisplay', () => {
   it('uses the display processor of the field, else builds one from the config', () => {
@@ -17,7 +17,7 @@ describe('fieldDisplay', () => {
       ],
     });
     frame.fields[1].display = getDisplayProcessor({ field: frame.fields[1], theme: createTheme() });
-    const model = toHistory(
+    const model = historyOf(
       { state: 'ready', frames: [frame], fetchedAt: 0, fromCache: false } as any,
       { queryId: 'q', match: {}, reducer: 'last' } as any,
       { unit: 'bps' }

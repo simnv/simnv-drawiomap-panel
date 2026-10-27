@@ -1,9 +1,17 @@
 import type { DataFrame, DisplayValue, Field, GrafanaTheme2, ScopedVars, ThresholdsConfig } from '@grafana/data';
-import type { DiagramConfig, LinkLabelMode } from './model/config';
+import type {
+  CellKind,
+  CellSelector,
+  DiagramConfig,
+  LinkLabelMode,
+  Matcher,
+  ReducerName,
+  ShapeTarget,
+} from './model/config';
+
+export type { CellKind, CellSelector, Matcher, ReducerName, ShapeTarget };
 
 /* ---------- cells (from the SVG) ---------- */
-
-export type CellKind = 'node' | 'port' | 'link' | 'link-label' | 'other';
 
 /**
  * The kind of a cell for the hover card (Options.hover.kinds). Portograph structure cells (canvas and layers,
@@ -143,28 +151,8 @@ export const DEFAULT_OPTIONS: Options = {
   legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: true },
 };
 
-/* ---------- selectors ---------- */
-
-/** Exact string, or /regex/ (JS regex between slashes, optional flags). */
-export type Matcher = string;
-
-export interface CellSelector {
-  /** cell ids or pg-ids */
-  ids?: string[];
-  kind?: CellKind | 'any';
-  attrs?: Record<string, Matcher>;
-  label?: Matcher;
-  /** link between two node ids, any direction */
-  between?: [string, string];
-}
-
-export type ReducerName = 'last' | 'mean' | 'max' | 'min';
-
 /** Where the capacity of a link half comes from. The first source that gives a value wins, in this order. */
 export type CapacitySource = 'series' | 'attr' | 'number' | 'fieldMax' | 'none';
-
-/** What the state colour changes: the node icon (default), the whole shape fill, or the shape outline. */
-export type ShapeTarget = 'icon' | 'shape' | 'stroke';
 
 /* ---------- binding output ---------- */
 
@@ -223,8 +211,6 @@ export interface LinkTarget {
 
 export interface CellPatch {
   cellId: string;
-  /** the ids of the patterns that match the cell */
-  ruleNames: string[];
   scope: TemplateScope;
   /** `labelMode`: what the value label of each half shows (`display.link.label.mode`, `none` when absent) */
   link?: { a2b?: HalfState; b2a?: HalfState; labelMode?: LinkLabelMode };
@@ -236,7 +222,6 @@ export interface CellPatch {
   unavailable?: { reason: string; color: string };
   /** the display url after template resolution; dashboard variables are resolved later by replaceVariables */
   urls: LinkTarget[];
-  warnings: string[];
 }
 
 export type PatchMap = Map<string, CellPatch>;

@@ -40,11 +40,11 @@ const half = (s: SeriesInfo, over: Partial<HalfState> = {}): HalfState => ({
 });
 const link = (cellId: string, a2b?: HalfState, b2a?: HalfState): [string, PlanCellPatch] => [
   cellId,
-  { cellId, ruleNames: [], scope: { cell: {} }, urls: [], warnings: [], link: { a2b, b2a } },
+  { cellId, scope: { cell: {} }, urls: [], link: { a2b, b2a } },
 ];
 const node = (cellId: string, shape?: ShapeState, statusView?: StatusView): [string, PlanCellPatch] => [
   cellId,
-  { cellId, ruleNames: [], scope: { cell: {} }, urls: [], warnings: [], shape, statusView },
+  { cellId, scope: { cell: {} }, urls: [], shape, statusView },
 ];
 const status = (state: StatusView['state']): StatusView => ({
   state,

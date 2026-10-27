@@ -11,11 +11,9 @@ const svg = readFileSync(resolve(__dirname, '../../fixtures/authoring.svg'), 'ut
 const NONE: StageSelection = { selected: [], affected: [], highlight: [] };
 const patch = (cellId: string, color: string): CellPatch => ({
   cellId,
-  ruleNames: [],
   scope: { cell: {} },
   shape: { status: 'ok', color, target: 'shape', stepIndex: 0 },
   urls: [],
-  warnings: [],
 });
 const patches = (...list: CellPatch[]): PatchMap => new Map(list.map((p) => [p.cellId, p]));
 

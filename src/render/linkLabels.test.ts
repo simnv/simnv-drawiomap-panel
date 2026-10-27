@@ -52,10 +52,8 @@ const half = (over: Partial<HalfState> = {}): HalfState => ({
 const nodata = (): HalfState => ({ status: 'nodata', color: '#888', width: 2, label: 'no data', stepIndex: -1 });
 const linkPatch = (cellId: string, link: CellPatch['link']): CellPatch => ({
   cellId,
-  ruleNames: ['r'],
   scope: { cell: {} },
   urls: [],
-  warnings: [],
   link,
 });
 const theme = createTheme();
@@ -594,10 +592,8 @@ describe('renderLinkLabels: obstacles', () => {
     };
     const down: PlanCellPatch = {
       cellId: 'n3',
-      ruleNames: ['r'],
       scope: { cell: {} },
       urls: [],
-      warnings: [],
       statusView,
     };
     const before = stageObstacles(root, index, new Map(), 10);
@@ -619,10 +615,8 @@ describe('renderLinkLabels: obstacles', () => {
     const { root, index } = build(SVG(node));
     const patch = {
       cellId: 'n5',
-      ruleNames: ['r'],
       scope: { cell: {} },
       urls: [],
-      warnings: [],
       shape: { color: '#00ff00', target: 'stroke' },
     } as unknown as PlanCellPatch;
     applyPatches(index, new Map([['n5', patch]]), undefined, undefined, { theme, osDark: false });
@@ -642,10 +636,8 @@ describe('renderLinkLabels: obstacles', () => {
     const patch = (state: 'down' | 'normal') =>
       ({
         cellId: 'n6',
-        ruleNames: ['r'],
         scope: { cell: {} },
         urls: [],
-        warnings: [],
         shape: { color: '#00ff00', target: 'stroke' },
         statusView: view(state),
       }) as unknown as PlanCellPatch;

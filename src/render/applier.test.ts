@@ -103,10 +103,8 @@ const shape = (over: Partial<ShapeState> = {}): ShapeState => ({
 const RED = /^(#ff0000|rgb\(255, 0, 0\))$/;
 const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
   cellId,
-  ruleNames: ['r'],
   scope: { cell: {} },
   urls: [],
-  warnings: [],
   ...p,
 });
 

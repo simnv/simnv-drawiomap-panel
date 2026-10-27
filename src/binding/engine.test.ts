@@ -29,7 +29,7 @@ import {
 } from './engine';
 import { resolvePatterns } from './patterns';
 import { displayBindings, type DiagramConfig, type DisplayConfig, type QueryBinding } from '../model/config';
-import { fieldDisplay, toHistory } from '../query/frames';
+import { fieldDisplay, historyOf } from '../query/frames';
 
 const queryBinding: QueryBinding = { queryId: 'health', match: {}, reducer: 'last' };
 const v2Config = (display: DiagramConfig['patterns'][number]['display']): DiagramConfig => ({
@@ -40,7 +40,7 @@ const v2Config = (display: DiagramConfig['patterns'][number]['display']): Diagra
   widgets: [],
 });
 const historyValue = (value: number, sampleAt = 1000) =>
-  toHistory(
+  historyOf(
     {
       state: 'ready',
       fetchedAt: 100000,
@@ -856,7 +856,6 @@ describe('link halves', () => {
   const r = run(linkDisplay, traffic);
   it('colours both halves of a link against the capacity and gives the card text', () => {
     const p = r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
-    expect(p.ruleNames).toEqual(['p']);
     expect(p.link?.a2b).toMatchObject({ status: 'ok', value: 41e6, capacity: 1e8, capacitySource: 'number' });
     expect(p.link?.a2b?.percent).toBeCloseTo(41);
     expect(p.link?.a2b?.stepIndex).toBe(0);
@@ -1261,7 +1260,7 @@ describe('link label mode on the patch', () => {
 
 describe('historySeries', () => {
   const model = () => {
-    const value = toHistory(
+    const value = historyOf(
       {
         state: 'ready',
         fetchedAt: 0,

@@ -18,7 +18,7 @@ describe('cellAt', () => {
   });
 });
 
-const p = (cellId: string): CellPatch => ({ cellId, ruleNames: [], scope: { cell: {} }, urls: [], warnings: [] });
+const p = (cellId: string): CellPatch => ({ cellId, scope: { cell: {} }, urls: [] });
 
 describe('patchAt', () => {
   const host = document.createElement('div');

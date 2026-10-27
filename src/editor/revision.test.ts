@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { baseRevision, hasConflict } from './revision';
-import { EMPTY_CONFIG } from './draft';
+import { EMPTY_CONFIG } from '../model/config';
 
 const diagram = (hash: string) => ({ svg: '<svg/>', xml: '<mxfile/>', hash, updatedAt: '2026-10-23T00:00:00Z' });
 

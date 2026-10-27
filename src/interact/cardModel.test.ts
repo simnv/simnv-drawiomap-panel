@@ -4,7 +4,7 @@ import type { CellPatch, SeriesInfo } from '../types';
 import { buildConfiguredCard, CardContext, chartHeight, opensCard, SPARK_HEIGHT } from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
 import type { QueryBinding } from '../model/config';
-import { type HistoryModel, toHistory } from '../query/frames';
+import { type HistoryModel, historyOf } from '../query/frames';
 import type { StatusView } from '../binding/status';
 
 const theme = createTheme();
@@ -33,10 +33,8 @@ const ctx: CardContext = {
 
 const nodePatch = (over: Partial<CellPatch> = {}): CellPatch => ({
   cellId: 'pg-node~rtr-a',
-  ruleNames: ['node up', 'router cpu'],
   scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: 'rtr-a multi-WAN + PBR' } },
   urls: [{ title: 'node up', url: '/d/node?job=node-rtr-a' }],
-  warnings: [],
   shape: {
     status: 'ok',
     color: '#00ff00',
@@ -135,7 +133,7 @@ describe('configured cards', () => {
     expect(only.rows.map((r) => [r.kind, r.title, r.text])).toEqual([['status', 'down', 'Device down']]);
   });
   it('uses configured rows, preserves formatted affixes and null gaps, and limits histories to explicit history rows', () => {
-    const model = toHistory(
+    const model = historyOf(
       {
         state: 'ready',
         fetchedAt: 9000,
@@ -189,7 +187,7 @@ describe('configured cards', () => {
         ],
       },
     };
-    const model = toHistory(
+    const model = historyOf(
       {
         state: 'ready',
         fetchedAt: 9000,
@@ -261,7 +259,7 @@ describe('combined up/down row', () => {
   const txB: QueryBinding = { queryId: 'tx', match: {}, reducer: 'last' };
   const rxB: QueryBinding = { queryId: 'rx', match: {}, reducer: 'last' };
   const history = (name: string, values: number[], config: Field['config'] = { unit: 'bps' }) =>
-    toHistory(
+    historyOf(
       {
         state: 'ready',
         fetchedAt: 9000,
@@ -615,10 +613,8 @@ describe('combined up/down row', () => {
 describe('opensCard', () => {
   const bare = (over: Partial<PlanCellPatch> = {}): PlanCellPatch => ({
     cellId: 'pg-node~x',
-    ruleNames: [],
     scope: { cell: { key: 'x' } },
     urls: [],
-    warnings: [],
     ...over,
   });
   // a series without data links

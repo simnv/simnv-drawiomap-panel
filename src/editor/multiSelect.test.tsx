@@ -1,6 +1,6 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { EMPTY_CONFIG } from './draft';
+import { EMPTY_CONFIG } from '../model/config';
 import { renderEditor, svgOf } from './editorHarness';
 import { buttonNamed, editorField } from './testUtils';
 

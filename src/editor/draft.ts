@@ -15,7 +15,7 @@ import { previewPatternImport, type ImportResolution } from './portable';
 import { setLeaf, unsetPath } from './leafPaths';
 import { jsonCopy } from '../util/json';
 export { exportPatternDocument, previewPatternImport } from './portable';
-export { unsetPath, EMPTY_CONFIG };
+export { unsetPath };
 export interface BindingDraft {
   saved: DiagramConfig;
   config: DiagramConfig;

@@ -2,9 +2,8 @@ import { Alert, Button, Input, TextArea } from '@grafana/ui';
 import React, { useEffect, useState } from 'react';
 import { CoreApp, DataSourcePluginContextProvider, type DataSourceApi, type PanelData } from '@grafana/data';
 import { getDataSourceSrv } from '@grafana/runtime';
-import { validateConfig, type NamedQuery } from '../model/config';
+import { EMPTY_CONFIG, validateConfig, type NamedQuery } from '../model/config';
 import type { QueryContext } from '../query/types';
-import { EMPTY_CONFIG } from './draft';
 import { EditorField, EditorSection } from './EditorLayout';
 import { jsonCopy } from '../util/json';
 export interface QueryEditorProps {

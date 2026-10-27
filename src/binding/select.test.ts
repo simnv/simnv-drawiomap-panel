@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
-import { compileMatcher, matcherError, selectCells } from './select';
+import type { CellSelector } from '../types';
+import { cellMatches, compileMatcher, matcherError } from './select';
 
 const link = cellMetaFromAttrs(
   'pg-link~a:p1->b:p2',
@@ -17,6 +18,7 @@ const link2 = cellMetaFromAttrs(
 const node = cellMetaFromAttrs('pg-node~a', { 'pg-kind': 'node', 'pg-id': 'a' }, false, 'A');
 const hand = cellMetaFromAttrs('x1', { host: 'h' }, false, 'Hand');
 const cells = [link, link2, node, hand];
+const matching = (sel: CellSelector) => cells.filter((c) => cellMatches(sel, c));
 
 describe('compileMatcher', () => {
   it('matches exact strings and /regex/', () => {
@@ -27,27 +29,27 @@ describe('compileMatcher', () => {
   });
 });
 
-describe('selectCells', () => {
+describe('cellMatches', () => {
   it('by kind', () => {
-    expect(selectCells({ kind: 'link' }, cells).map((c) => c.id)).toEqual([link.id, link2.id]);
-    expect(selectCells({ kind: 'any' }, cells)).toHaveLength(4);
-    expect(selectCells({}, cells)).toHaveLength(4);
+    expect(matching({ kind: 'link' }).map((c) => c.id)).toEqual([link.id, link2.id]);
+    expect(matching({ kind: 'any' })).toHaveLength(4);
+    expect(matching({})).toHaveLength(4);
   });
   it('by ids (cell id or pg-id)', () => {
-    expect(selectCells({ ids: ['a', 'x1'] }, cells).map((c) => c.id)).toEqual([node.id, hand.id]);
-    expect(selectCells({ ids: ['pg-link~a:p1->b:p2'] }, cells)).toEqual([link]);
+    expect(matching({ ids: ['a', 'x1'] }).map((c) => c.id)).toEqual([node.id, hand.id]);
+    expect(matching({ ids: ['pg-link~a:p1->b:p2'] })).toEqual([link]);
   });
   it('by attrs with AND semantics and regex', () => {
-    expect(selectCells({ attrs: { kind: 'wan' } }, cells)).toEqual([link]);
-    expect(selectCells({ attrs: { 'pg-to': '/^b:/' } }, cells)).toEqual([link]);
-    expect(selectCells({ attrs: { kind: 'wan', 'pg-from': 'zzz' } }, cells)).toEqual([]);
+    expect(matching({ attrs: { kind: 'wan' } })).toEqual([link]);
+    expect(matching({ attrs: { 'pg-to': '/^b:/' } })).toEqual([link]);
+    expect(matching({ attrs: { kind: 'wan', 'pg-from': 'zzz' } })).toEqual([]);
   });
   it('by label regex', () => {
-    expect(selectCells({ label: '/metric/' }, cells)).toEqual([link]);
+    expect(matching({ label: '/metric/' })).toEqual([link]);
   });
   it('by between in either direction', () => {
-    expect(selectCells({ between: ['b', 'a'] }, cells)).toEqual([link]);
-    expect(selectCells({ between: ['a', 'c'] }, cells)).toEqual([]);
+    expect(matching({ between: ['b', 'a'] })).toEqual([link]);
+    expect(matching({ between: ['a', 'c'] })).toEqual([]);
   });
 });
 
@@ -61,8 +63,8 @@ describe('compileMatcher review fixes', () => {
     expect(matcherError('/^ok$/i')).toBeUndefined();
     expect(matcherError('plain [')).toBeUndefined();
   });
-  it('finding 1: selectCells skips cells for an invalid regex instead of a crash', () => {
-    expect(selectCells({ label: '/[/' }, cells)).toEqual([]);
+  it('finding 1: cellMatches skips cells for an invalid regex instead of a crash', () => {
+    expect(matching({ label: '/[/' })).toEqual([]);
   });
   it('finding 2: g and y flags are stripped so repeated tests are stable', () => {
     const g = compileMatcher('/router/g');

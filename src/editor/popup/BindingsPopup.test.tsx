@@ -12,7 +12,7 @@ import { buttonNamed, selectStageCell } from '../testUtils';
 import { BindingsPopup } from './BindingsPopup';
 import type { BindingResolver, PlanCellPatch } from '../../binding/engine';
 import type { CardContext } from '../../interact/cardModel';
-import { toHistory } from '../../query/frames';
+import { historyOf } from '../../query/frames';
 import { CardPreview } from './CardPreview';
 
 const service = (): PanelQueryService => ({
@@ -359,10 +359,8 @@ describe('CardPreview component', () => {
   const patch = (hover?: PlanCellPatch['hover']): PlanCellPatch =>
     ({
       cellId: 'pg-node~rtr-a',
-      ruleNames: [],
       scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: 'Router A' } },
       urls: [],
-      warnings: [],
       hover,
     }) as PlanCellPatch;
   const withRows = patch({
@@ -375,7 +373,7 @@ describe('CardPreview component', () => {
   const resolverFor =
     (value: number): BindingResolver =>
     () =>
-      toHistory(
+      historyOf(
         {
           state: 'ready',
           fetchedAt: 1,

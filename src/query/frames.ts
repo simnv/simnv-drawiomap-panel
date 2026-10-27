@@ -200,8 +200,6 @@ export function historyOf(snapshot: QuerySnapshot, binding: QueryBinding, format
   cache.set(key, model);
   return model;
 }
-/** The name the callers and the tests know; the model comes from the cache. */
-export const toHistory = historyOf;
 
 function buildHistory(
   snapshot: Extract<QuerySnapshot, { state: 'ready' }>,

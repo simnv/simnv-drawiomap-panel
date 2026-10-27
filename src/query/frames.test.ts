@@ -1,6 +1,6 @@
 import { createTheme, FieldType, type DataFrame } from '@grafana/data';
 import { describe, expect, it } from 'vitest';
-import { historyOf, toHistory } from './frames';
+import { historyOf } from './frames';
 import type { QueryBinding } from '../model/config';
 import type { QuerySnapshot } from './types';
 const binding: QueryBinding = { queryId: 'cpu', match: { instance: 'router' }, reducer: 'last' };
@@ -19,14 +19,14 @@ const frame = (): DataFrame => ({
 });
 const snapshot = (frames = [frame()]): QuerySnapshot => ({ state: 'ready', frames, fetchedAt: 5000, fromCache: true });
 it('treats a fieldless empty backend frame as missing data rather than an unsupported result type', () => {
-  expect(toHistory(snapshot([{ length: 0, fields: [] }]), binding)).toEqual({
+  expect(historyOf(snapshot([{ length: 0, fields: [] }]), binding)).toEqual({
     state: 'empty',
     fetchedAt: 5000,
     fromCache: true,
   });
 });
 it('preserves numeric samples, null gaps, field configuration and source timestamps independently of cache age', () => {
-  const model = toHistory(snapshot(), binding);
+  const model = historyOf(snapshot(), binding);
   expect(model).toMatchObject({
     state: 'ready',
     timestamps: [1000, 2000, 3000],
@@ -98,36 +98,36 @@ it.each([
 ])('explains unsupported %s', (_, change) => {
   const f = frame();
   change(f);
-  expect(toHistory(snapshot([f]), binding)).toMatchObject({ state: 'unsupported', message: expect.any(String) });
+  expect(historyOf(snapshot([f]), binding)).toMatchObject({ state: 'unsupported', message: expect.any(String) });
 });
 
 it('requires an unambiguous field/label match across all frames', () => {
-  expect(toHistory(snapshot([frame(), frame()]), binding)).toMatchObject({
+  expect(historyOf(snapshot([frame(), frame()]), binding)).toMatchObject({
     state: 'unsupported',
     message: expect.stringContaining('ambiguous'),
   });
   const f = frame();
   f.fields.push({ ...f.fields[1], name: 'Other' });
-  expect(toHistory(snapshot([f]), { ...binding, field: 'Other' })).toMatchObject({
+  expect(historyOf(snapshot([f]), { ...binding, field: 'Other' })).toMatchObject({
     state: 'ready',
     field: { name: 'Other' },
   });
-  expect(toHistory(snapshot(), { ...binding, match: { instance: 'missing' } })).toMatchObject({ state: 'empty' });
-  expect(toHistory(snapshot(), { ...binding, match: { instance: '/rout.*/' } })).toMatchObject({ state: 'ready' });
+  expect(historyOf(snapshot(), { ...binding, match: { instance: 'missing' } })).toMatchObject({ state: 'empty' });
+  expect(historyOf(snapshot(), { ...binding, match: { instance: '/rout.*/' } })).toMatchObject({ state: 'ready' });
 });
 
 it('keeps empty/single-sample/all-null and failure states explicit', () => {
-  expect(toHistory(snapshot([]), binding)).toEqual({ state: 'empty', fetchedAt: 5000, fromCache: true });
+  expect(historyOf(snapshot([]), binding)).toEqual({ state: 'empty', fetchedAt: 5000, fromCache: true });
   const f = frame();
   f.length = 1;
   f.fields[0].values = [1000];
   f.fields[1].values = [7];
-  expect(toHistory(snapshot([f]), binding)).toMatchObject({ state: 'ready', values: [7], timestamps: [1000] });
+  expect(historyOf(snapshot([f]), binding)).toMatchObject({ state: 'ready', values: [7], timestamps: [1000] });
   f.fields[1].values = [null];
-  expect(toHistory(snapshot([f]), binding)).toMatchObject({ state: 'empty' });
+  expect(historyOf(snapshot([f]), binding)).toMatchObject({ state: 'empty' });
   for (const state of ['idle', 'loading', 'error', 'unsupported'] as const) {
     const input = state === 'error' || state === 'unsupported' ? { state, message: 'Safe message' } : { state };
-    expect(toHistory(input, binding)).toEqual(input);
+    expect(historyOf(input, binding)).toEqual(input);
   }
 });
 
@@ -140,7 +140,7 @@ it('retains field display processors and computes reducer values while preservin
     prefix: 'before ',
     suffix: ' after',
   });
-  expect(toHistory(snapshot([f]), { ...binding, reducer: 'mean' })).toMatchObject({
+  expect(historyOf(snapshot([f]), { ...binding, reducer: 'mean' })).toMatchObject({
     latestValue: 3,
     sampleAt: 2000,
     latestDisplayValue: { text: 'native 3', prefix: 'before ', suffix: ' after' },
@@ -156,7 +156,7 @@ describe('the history cache', () => {
     const first = historyOf(s, binding, format);
     expect(historyOf(s, binding, format)).toBe(first);
     expect(historyOf(s, { ...binding }, { theme, timeZone: 'utc' })).toBe(first);
-    expect(toHistory(s, binding, format)).toBe(first);
+    expect(historyOf(s, binding, format)).toBe(first);
     // another binding, reducer, unit, decimals, time zone or theme is another model
     expect(historyOf(s, { ...binding, reducer: 'mean' }, format)).not.toBe(first);
     expect(historyOf(s, { ...binding, match: { instance: '/rout.*/' } }, format)).not.toBe(first);
