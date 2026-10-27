@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { diagramOf, renderEditor, svgOf } from './editorHarness';
 import { buttonNamed, selectStageCell } from './testUtils';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
-import { EMPTY_CONFIG } from './draft';
+import { EMPTY_CONFIG } from '../model/config';
 import type { Diagram } from '../types';
 vi.hoisted(() => {
   if (!window.localStorage) {

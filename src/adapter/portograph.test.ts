@@ -7,11 +7,11 @@ import { resolvePatterns } from '../binding/patterns';
 import {
   commitDraft,
   createDraft,
-  EMPTY_CONFIG,
   exportPatternDocument,
   previewPatternImport,
   reduceDraft,
 } from '../editor/draft';
+import { EMPTY_CONFIG } from '../model/config';
 import { handleMessage, initialState } from '../editor/protocol';
 import {
   applyContract,
