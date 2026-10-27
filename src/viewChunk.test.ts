@@ -1,66 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
-import ts from 'typescript';
+import { existsSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { localImports, SRC } from './importGraph';
 
 // View mode must not load editor code. Webpack puts every static import of module.ts in the main chunk;
 // an import() starts a lazy chunk. This walk follows the static value imports the same way.
-const SRC = __dirname;
 const EDITOR_ONLY = ['editor/draft.ts', 'editor/portable.ts', 'editor/leafPaths.ts'];
-
-function resolveImport(from: string, specifier: string): string | undefined {
-  const base = join(dirname(from), specifier);
-  return [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')].find(
-    (file) => /\.tsx?$/.test(file) && existsSync(file)
-  );
-}
-
-/** True when the compiler drops the declaration: `import type`, `export type` or only `type` specifiers. */
-function typeOnly(node: ts.ImportDeclaration | ts.ExportDeclaration): boolean {
-  if (ts.isExportDeclaration(node)) {
-    return (
-      node.isTypeOnly ||
-      (!!node.exportClause &&
-        ts.isNamedExports(node.exportClause) &&
-        node.exportClause.elements.every((e) => e.isTypeOnly))
-    );
-  }
-  const clause = node.importClause;
-  if (!clause) {
-    return false;
-  }
-  if (clause.phaseModifier === ts.SyntaxKind.TypeKeyword) {
-    return true;
-  }
-  const named = clause.namedBindings;
-  return (
-    !clause.name &&
-    !!named &&
-    ts.isNamedImports(named) &&
-    named.elements.length > 0 &&
-    named.elements.every((e) => e.isTypeOnly)
-  );
-}
-
-function staticImports(file: string): string[] {
-  const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest);
-  const found: string[] = [];
-  for (const node of source.statements) {
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteral(node.moduleSpecifier) &&
-      node.moduleSpecifier.text.startsWith('.') &&
-      !typeOnly(node)
-    ) {
-      const target = resolveImport(file, node.moduleSpecifier.text);
-      if (target) {
-        found.push(target);
-      }
-    }
-  }
-  return found;
-}
 
 /** Each file of the main chunk, with the import chain from module.ts that reaches it. */
 function mainChunk(): Map<string, string[]> {
@@ -68,7 +13,7 @@ function mainChunk(): Map<string, string[]> {
   const chains = new Map<string, string[]>([[entry, [entry]]]);
   const queue = [entry];
   for (let file = queue.shift(); file; file = queue.shift()) {
-    for (const next of staticImports(file)) {
+    for (const next of localImports(file, { types: false })) {
       if (!chains.has(next)) {
         chains.set(next, [...chains.get(file)!, next]);
         queue.push(next);
