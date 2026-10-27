@@ -19,7 +19,7 @@ export type CardAction =
   | { type: 'close' }
   /** The pointer leaves the panel. */
   | { type: 'leave' }
-  /** A pointer down outside the panel and the card. */
+  /** A pointer down outside the panel and the card. The caller sends it only for a pinned card with content. */
   | { type: 'outside' }
   | { type: 'escape' }
   /** The open cell has no patch now: the bindings or the diagram changed. */

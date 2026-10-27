@@ -9,8 +9,8 @@ const canHover = () => !(typeof window.matchMedia === 'function' && window.match
 
 /**
  * The card state of the panel. The bind reads the open cell, so this part comes before the bind; useCardInput adds
- * the events after it. The dispatch goes through a state updater, as a plain setState did: React can skip the render
- * of an action that keeps the state (for example a pointer that leaves the panel with no card).
+ * the events after it. The dispatch is useState with an updater, not useReducer: useReducer gets no eager bail-out,
+ * so an action that keeps the state (a pointer that leaves the panel with no card) would render the view.
  */
 export function useCardState(paused: boolean) {
   const [card, setCard] = useState<CardState | null>(null);
