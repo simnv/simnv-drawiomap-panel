@@ -1,4 +1,5 @@
-import { formattedValueToString, GrafanaTheme2, LinkModel, ScopedVars, ThresholdsConfig } from '@grafana/data';
+import { formattedValueToString, LinkModel } from '@grafana/data';
+import type { CardContext } from '../types';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
@@ -349,13 +350,6 @@ function combinedRow(
     directions,
     domain,
   };
-}
-
-export interface CardContext {
-  theme: GrafanaTheme2;
-  replaceVariables: (text: string, scopedVars?: ScopedVars) => string;
-  /** the panel default thresholds: they apply when a field has none */
-  fieldThresholds?: ThresholdsConfig;
 }
 
 /** Row url: the row template (resolved with the row series labels, encoded), else the display url. */

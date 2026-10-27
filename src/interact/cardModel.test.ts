@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTheme, Field, FieldType, LinkModel, ThresholdsMode } from '@grafana/data';
-import type { CellPatch, SeriesInfo } from '../types';
-import { buildConfiguredCard, CardContext, chartHeight, opensCard, SPARK_HEIGHT } from './cardModel';
+import type { CardContext, CellPatch, SeriesInfo } from '../types';
+import { buildConfiguredCard, chartHeight, opensCard, SPARK_HEIGHT } from './cardModel';
 import type { PlanCellPatch } from '../binding/engine';
 import type { QueryBinding } from '../model/config';
 import { type HistoryModel, historyOf } from '../query/frames';
@@ -113,7 +113,12 @@ describe('configured cards', () => {
     });
     const read = () => ({ state: 'empty' }) as HistoryModel;
     const down = buildConfiguredCard({ ...patch(), statusView: status('warning', 'probe delay ≥ 400 ms') }, read, ctx);
-    expect(down.rows[0]).toMatchObject({ key: 'status', kind: 'status', title: 'warning', text: 'probe delay ≥ 400 ms' });
+    expect(down.rows[0]).toMatchObject({
+      key: 'status',
+      kind: 'status',
+      title: 'warning',
+      text: 'probe delay ≥ 400 ms',
+    });
     // the hover rows follow (the drilldown row is a footer link, not a row)
     expect(down.rows.slice(1).map((r) => r.key)).toEqual(['row-0', 'row-1', 'row-2']);
     for (const state of ['down', 'critical', 'warning', 'stale', 'missing'] as const) {

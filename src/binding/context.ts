@@ -1,6 +1,5 @@
 import { getDisplayProcessor, type GrafanaTheme2, type ScopedVars, type ThresholdsConfig } from '@grafana/data';
-import type { CardContext } from '../interact/cardModel';
-import type { BindContext, SeriesInfo } from '../types';
+import type { BindContext, CardContext, SeriesInfo } from '../types';
 
 export interface ContextInputs {
   theme: GrafanaTheme2;
