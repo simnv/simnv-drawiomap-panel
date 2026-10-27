@@ -1,13 +1,5 @@
 import { createPortal } from 'react-dom';
-import React, {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css, cx } from '@emotion/css';
 import { PanelProps } from '@grafana/data';
 import { IconButton, useTheme2 } from '@grafana/ui';
@@ -20,12 +12,12 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells, patchAt } from '../interact/hit';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
-import { setLinkLabelScale } from '../render/linkLabels';
 import { cellMetas } from '../render/svgStage';
-import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
+import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
 import { useStage } from '../stage/useStage';
+import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
 import { useHeld } from './useHeld';
 import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
@@ -559,22 +551,11 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   );
 
   // Zoom layout.
-  useEffect(() => {
-    if (!stage.root || !stage.base) {
-      return;
-    }
-    const layout = viewBoxFor(
-      { ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align, minScale },
-      stage.base,
-      { width, height: stageHeight },
-      view ?? stage.base
-    );
-    applyLayout(stage.root, layout);
-    setLinkLabelScale(stage.root);
-    if (containerRef.current) {
-      containerRef.current.style.overflow = layout.overflow;
-    }
-  }, [stage.root, stage.base, zoomMode, zoomPercent, align, minScale, width, stageHeight, view]);
+  const zoomLayout = useMemo(
+    () => ({ ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align, minScale }),
+    [zoomMode, zoomPercent, align, minScale]
+  );
+  useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
 
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();

@@ -4,11 +4,11 @@ import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellAt } from '../../interact/hit';
 import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
-import { setLinkLabelScale } from '../../render/linkLabels';
-import { applyLayout, viewBoxFor, type ViewBox } from '../../render/zoom';
+import type { ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../stage/usePanZoom';
 import type { Stage } from '../../stage/useStage';
+import { useStageLayout } from '../../stage/useStageLayout';
 import { useStagePaint } from '../../stage/useStagePaint';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
 import { boxTargets } from './boxTargets';
@@ -111,18 +111,8 @@ export function DiagramStage({
   // The draft patches, the overlay and the value labels: the preview shows the label mode while the user edits it.
   useStagePaint(stage, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth });
 
-  // Fit the diagram into the pane. A live view (pan or zoom) changes the viewBox only.
-  useEffect(() => {
-    if (!stage.root || !stage.base || !size.width || !size.height) {
-      return;
-    }
-    const layout = viewBoxFor(FIT, stage.base, size, view ?? stage.base);
-    applyLayout(stage.root, layout);
-    setLinkLabelScale(stage.root);
-    if (stageRef.current) {
-      stageRef.current.style.overflow = layout.overflow;
-    }
-  }, [stage.root, stage.base, size, view, stageRef]);
+  // Fit the diagram into the pane. A pane with no size yet keeps the layout.
+  useStageLayout(stage, FIT, size.width && size.height ? size : undefined, view, stageRef);
 
   const box = useBoxSelect({
     wrapperRef,
