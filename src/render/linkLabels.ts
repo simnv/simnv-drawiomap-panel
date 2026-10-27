@@ -6,11 +6,10 @@ import {
   applyMatrix,
   bendLengths,
   invert,
-  localMatrix,
-  multiply,
   parsePathPoints,
   pathGeometry,
   polylineLength,
+  relativeMatrix,
   strokeReach,
   scaleOf,
   drawnStrokeWidth,
@@ -344,18 +343,9 @@ function stageFont(root: SVGSVGElement): string {
 
 /* ---------- coordinates ---------- */
 
-/**
- * The matrix from the user space of `el` into root user units: the screen CTMs of both (the outermost svg has one in
- * every engine), the transform attributes in jsdom. Undefined when it cannot be read.
- */
+/** The matrix from the user space of `el` into root user units, through the screen CTMs. Undefined when it cannot be read. */
 function toRoot(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Matrix | undefined {
-  const g = el as SVGGraphicsElement;
-  if (typeof g.getScreenCTM === 'function' && typeof root.getScreenCTM === 'function') {
-    const own = toMatrix(g.getScreenCTM());
-    const base = rootCtm ?? toMatrix(root.getScreenCTM());
-    return own && base && usable(own) && usable(base) ? multiply(invert(base), own) : undefined;
-  }
-  return localMatrix(el, root);
+  return relativeMatrix(el, root, { screen: true, toCtm: rootCtm });
 }
 
 /** The axis-aligned box of `rect` mapped through `m`. */

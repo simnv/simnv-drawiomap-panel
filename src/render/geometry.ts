@@ -34,11 +34,8 @@ export function readChartAnchor(cell: CellEntry, parent: SVGGraphicsElement): Ch
     return undefined;
   }
   try {
-    const source = shape.getCTM();
-    const target = parent.getCTM();
-    const valid = (m: Matrix | null): m is Matrix =>
-      !!m && [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite) && Math.abs(m.a * m.d - m.b * m.c) > 1e-12;
-    if (!valid(source) || !valid(target)) {
+    const matrix = relativeMatrix(shape, parent);
+    if (!matrix) {
       return undefined;
     }
     const bounds = shape.getBBox();
@@ -54,7 +51,7 @@ export function readChartAnchor(cell: CellEntry, parent: SVGGraphicsElement): Ch
       y: bounds.y,
       width: bounds.width,
       height: bounds.height,
-      matrix: multiply(invert(target), source),
+      matrix,
     };
   } catch {
     return undefined;
@@ -402,7 +399,8 @@ function localGeom(line: SVGPathElement): LocalGeom {
 /**
  * Geometry of an edge path expressed in the coordinate system of `target` (the overlay group of the link, a sibling of the path).
  * Browser: getTotalLength/getPointAtLength on the real path, points mapped with
- * target.getCTM()^-1 × line.getCTM(), so transforms on the edge or its ancestors are respected.
+ * target.getCTM()^-1 × line.getCTM() (`relativeMatrix`; the identity when that is not usable), so transforms on
+ * the edge or its ancestors are respected.
  * jsdom: pure parser on the d attribute (M/L exact, curves approximated); identity transform.
  * The path is measured once per element (`localGeom`); the matrices are read on every call.
  */
@@ -418,8 +416,7 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
       matrix: IDENTITY,
     };
   }
-  const targetCTM = typeof target.getCTM === 'function' ? target.getCTM() : null;
-  const M = multiply(invert(toMatrix(targetCTM) ?? IDENTITY), toMatrix(line.getCTM()) ?? IDENTITY);
+  const M = relativeMatrix(line, target) ?? IDENTITY;
   const identity = M.a === 1 && M.b === 0 && M.c === 0 && M.d === 1 && M.e === 0 && M.f === 0;
   const map = (p: Point): Point => (identity ? { x: p.x, y: p.y } : applyMatrix(M, p));
   return {
@@ -470,7 +467,7 @@ function parseTransform(value: string | null): Matrix | undefined {
 }
 
 /** Product of the transform attributes from `el` up to (not including) `stop`. Undefined when one is not resolved. */
-export function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
+function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
   let m = IDENTITY;
   for (let cur: Element | null = el; cur && cur !== stop; cur = cur.parentElement) {
     const t = parseTransform(cur.getAttribute('transform'));
@@ -488,23 +485,36 @@ export function usable(m: Matrix): boolean {
   return [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite) && Number.isFinite(det) && Math.abs(det) >= 1e-9;
 }
 
-/** The matrix that takes the user space of `el` into the user space of `line`. Undefined when it cannot be resolved. */
-function toLineSpace(line: SVGPathElement, el: SVGGraphicsElement): Matrix | undefined {
-  if (typeof el.getCTM === 'function' && typeof line.getCTM === 'function') {
-    const a = el.getCTM();
-    const b = line.getCTM();
-    if (a && b) {
-      return usable(a) && usable(b) ? multiply(invert(b), a) : undefined;
-    }
+/**
+ * The matrix that takes the user space of `from` into the user space of `to`: the CTMs of both (`screen`: the screen
+ * CTMs; `toCtm`: the CTM of `to` that the caller has read already). An engine with no CTM (jsdom) composes the
+ * transform attributes up to the nearest common ancestor. Undefined when a matrix is null, not resolved or not
+ * `usable`.
+ */
+export function relativeMatrix(
+  from: Element,
+  to: Element,
+  opts: { screen?: boolean; toCtm?: Matrix } = {}
+): Matrix | undefined {
+  const own = ctmOf(from, opts.screen);
+  const base = opts.toCtm ?? ctmOf(to, opts.screen);
+  if (own !== undefined && base !== undefined) {
+    return own && base && usable(own) && usable(base) ? multiply(invert(base), own) : undefined;
   }
-  // jsdom has no getCTM: compose the transform attributes up to the nearest common ancestor.
-  let common: Element | null = line.parentElement;
-  while (common && !common.contains(el)) {
+  let common: Element | null = to;
+  while (common && !common.contains(from)) {
     common = common.parentElement;
   }
-  const up = localMatrix(el, common);
-  const down = localMatrix(line, common);
+  const up = localMatrix(from, common);
+  const down = localMatrix(to, common);
   return up && down && usable(up) && usable(down) ? multiply(invert(down), up) : undefined;
+}
+
+/** The CTM (or the screen CTM) of an element: null when the engine gives none, undefined when it has no such API. */
+function ctmOf(el: Element, screen = false): Matrix | null | undefined {
+  const g = el as SVGGraphicsElement;
+  const read = screen ? g.getScreenCTM : g.getCTM;
+  return typeof read === 'function' ? (toMatrix(read.call(g)) ?? null) : undefined;
 }
 
 /**
@@ -519,7 +529,7 @@ export function markerEnd(line: SVGPathElement, marker: SVGGraphicsElement): 'st
   }
   const num = (name: string) => parseFloat(marker.getAttribute(name) ?? '');
   const r = Math.max(num('r') || 0, num('rx') || 0, num('ry') || 0);
-  const m = toLineSpace(line, marker);
+  const m = relativeMatrix(marker, line);
   if (!m) {
     return undefined;
   }

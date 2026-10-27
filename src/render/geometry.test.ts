@@ -8,6 +8,7 @@ import {
   pathGeometry,
   pointAt,
   polylineLength,
+  relativeMatrix,
   slicePolyline,
 } from './geometry';
 
@@ -88,6 +89,54 @@ describe('length, pointAt, slice', () => {
       { x: 100, y: 0 },
       { x: 100, y: 50 },
     ]);
+  });
+});
+
+describe('relativeMatrix', () => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const ident = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  /** svg > g(a) > path, svg > g(b) > circle: the path and the marker of an edge in two groups */
+  const mk = (a = '', b = '') => {
+    const svg = document.createElementNS(NS, 'svg');
+    svg.innerHTML = `<g transform="${a}"><path d="M 0 0 L 10 0"/></g><g transform="${b}"><circle r="2"/></g>`;
+    return { svg, line: svg.querySelector('path')!, marker: svg.querySelector('circle')! };
+  };
+  it('maps through the CTMs: the inverse of the target times the source', () => {
+    const { line, marker } = mk();
+    Object.assign(line, { getCTM: () => ({ ...ident, a: 2, d: 2, e: 10, f: 20 }) });
+    Object.assign(marker, { getCTM: () => ({ ...ident, e: 5 }) });
+    expect(relativeMatrix(marker, line)).toEqual({ a: 0.5, b: 0, c: 0, d: 0.5, e: -2.5, f: -10 });
+  });
+  it('reads the screen CTMs when asked, and takes a CTM of the target that the caller has read', () => {
+    const { svg, line } = mk();
+    const own = vi.fn(() => ({ ...ident, a: 2, d: 2 }));
+    const root = vi.fn(() => ({ ...ident, e: 4 }));
+    Object.assign(line, { getScreenCTM: own, getCTM: () => null });
+    Object.assign(svg, { getScreenCTM: root, getCTM: () => null });
+    expect(relativeMatrix(line, svg, { screen: true })).toEqual({ a: 2, b: 0, c: 0, d: 2, e: -4, f: 0 });
+    root.mockClear();
+    expect(relativeMatrix(line, svg, { screen: true, toCtm: ident })).toEqual({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+    expect(root).not.toHaveBeenCalled();
+  });
+  it('is undefined for a CTM that is null, singular or not finite', () => {
+    for (const bad of [null, { ...ident, a: 0, d: 0 }, { ...ident, a: 1e-6, d: 1e-6 }, { ...ident, e: NaN }]) {
+      const { line, marker } = mk();
+      Object.assign(line, { getCTM: () => ident });
+      Object.assign(marker, { getCTM: () => bad });
+      expect(relativeMatrix(marker, line)).toBeUndefined();
+      expect(relativeMatrix(line, marker)).toBeUndefined();
+    }
+  });
+  it('composes the transform attributes up to the common ancestor when the engine has no CTM (jsdom)', () => {
+    const { svg, line, marker } = mk('translate(10 20) scale(2)', 'translate(5,0)');
+    expect(relativeMatrix(marker, line)).toEqual({ a: 0.5, b: 0, c: 0, d: 0.5, e: -2.5, f: -10 });
+    expect(relativeMatrix(marker, svg)).toEqual({ ...ident, e: 5 });
+  });
+  it('is undefined for a transform attribute that is not resolved or is singular', () => {
+    for (const t of ['rotate(45)', 'scale(0)']) {
+      const { line, marker } = mk('', t);
+      expect(relativeMatrix(marker, line)).toBeUndefined();
+    }
   });
 });
 
