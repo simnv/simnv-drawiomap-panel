@@ -1,5 +1,4 @@
 import type { DataQuery, DataSourceRef } from '@grafana/schema';
-import type { CellSelector } from '../types';
 import { z } from 'zod';
 import { matcherError } from '../binding/select';
 
@@ -19,16 +18,22 @@ export const matcher = z.string().superRefine((m, ctx) => {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
   }
 });
+export type Matcher = z.infer<typeof matcher>;
 export const cellSelector = z
   .object({
+    /** cell ids or pg-ids */
     ids: z.array(z.string()).optional(),
     kind: z.enum(['node', 'port', 'link', 'link-label', 'other', 'any']).optional(),
     attrs: z.record(matcher).optional(),
     label: matcher.optional(),
+    /** link between two node ids, any direction */
     between: z.tuple([z.string(), z.string()]).optional(),
   })
   .strict();
+export type CellSelector = z.infer<typeof cellSelector>;
+export type CellKind = Exclude<NonNullable<CellSelector['kind']>, 'any'>;
 export const reducer = z.enum(['last', 'mean', 'max', 'min']);
+export type ReducerName = z.infer<typeof reducer>;
 const binding = z.object({ queryId: nonempty, match: z.record(matcher), field: nonempty.optional(), reducer }).strict();
 export type QueryBinding = z.infer<typeof binding>;
 
@@ -131,6 +136,8 @@ const shape = z
   })
   .strict();
 export type ShapeDisplay = z.infer<typeof shape>;
+/** What the state colour changes: the node icon (default), the whole shape fill, or the shape outline. */
+export type ShapeTarget = Exclude<NonNullable<ShapeDisplay['target']>, 'none'>;
 
 // ---- hover rows ----
 
