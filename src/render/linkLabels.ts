@@ -1,6 +1,6 @@
 import { formattedValueToString, type GrafanaTheme2 } from '@grafana/data';
 import type { LinkLabelMode } from '../model/config';
-import { hoverKind } from '../interact/hit';
+import { hoverKind } from '../adapter/portograph';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
 import {
   applyMatrix,

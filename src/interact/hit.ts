@@ -1,4 +1,4 @@
-import type { CellEntry, CellIndex, CellPatch, HoverKind, PatchMap } from '../types';
+import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 
 /** Resolve indexed cells even when they have no binding or rendered patch. */
 export function cellAt(target: EventTarget | null, cells: CellIndex): CellEntry | undefined {
@@ -12,32 +12,6 @@ export function cellAt(target: EventTarget | null, cells: CellIndex): CellEntry 
     el = el.parentElement;
   }
   return undefined;
-}
-
-/** The kind of a cell for Options.hover.kinds, see HoverKind. */
-export function hoverKind(cell: Pick<CellEntry, 'meta' | 'shape' | 'line' | 'label'>): HoverKind {
-  const meta = cell.meta;
-  if (meta.kind !== 'other') {
-    return meta.kind;
-  }
-  const id = meta.id;
-  if (id === 'pg-canvas' || id.startsWith('pg-layer~')) {
-    return 'canvas';
-  }
-  if (id.startsWith('pg-group~') || id.startsWith('pg-groupTitle~')) {
-    return 'group';
-  }
-  if (id.startsWith('pg-legend')) {
-    return 'legend';
-  }
-  if (meta.attrs['pg-kind'] !== undefined || id.startsWith('pg-')) {
-    return 'other';
-  }
-  // A plain draw.io diagram. The root and the layers draw nothing of their own.
-  if (!cell.shape && !cell.line && !cell.label) {
-    return 'canvas';
-  }
-  return meta.isEdge ? 'link' : 'node';
 }
 
 /**
