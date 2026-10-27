@@ -1,8 +1,6 @@
 import type { DisplayConfig } from '../model/config';
 import { jsonCopy } from '../util/json';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+import { isRecord } from '../util/record';
 
 /**
  * The leaf paths of a partial display: dotted keys. A leaf is a scalar, `null`, an `undefined` value (a cleared field)
@@ -64,8 +62,7 @@ export function changedLeaves(before: Partial<DisplayConfig> | undefined, after:
 }
 
 /** True for a value that holds nothing: an object without keys (not an array). */
-const isEmptyObject = (value: unknown) =>
-  typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
+const isEmptyObject = (value: unknown) => isRecord(value) && Object.keys(value).length === 0;
 
 /**
  * The display without `path` (dotted keys, no indexes). Objects that become empty go away with it: a `hover` that

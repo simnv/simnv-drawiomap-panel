@@ -28,6 +28,7 @@ import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import { sanitizeSvg } from '../render/sanitize';
 import type { BindContext, CellSelector, Diagram } from '../types';
 import { fnv1a } from '../util/hash';
+import { isRecord } from '../util/record';
 import { buildBindingsList, problemsOf, type BindingsList, type PatternRow, type ProblemEntry } from './bindingsModel';
 import { commitDraft, createDraft, draftPatternIndex, isDirty } from './draft';
 import { draftQueryService } from './draftContext';
@@ -46,8 +47,6 @@ import type { BaseRevision } from './revision';
 
 /** The panel data points that a binding preview asks for; the panel card asks for the same number. */
 const MAX_DATA_POINTS = 264;
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 /** The merge of a raw override display over the plan of its cell; the raw display alone when the merge cannot read it. */
 function rawMerge(base: DisplayConfig, raw: Record<string, unknown>): MergedDisplay {
   try {
