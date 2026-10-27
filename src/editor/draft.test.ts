@@ -5,6 +5,7 @@ import {
   commitDraft,
   createDraft,
   draftPatternIndex,
+  freshId,
   isDirty,
   reduceDraft,
   unsetPath,
@@ -738,5 +739,16 @@ describe('items stay byte for byte', () => {
     expect(next.scope).toBe('element');
     expect(next.patternId).toBeUndefined();
     expect(reduceDraft(base, { type: 'remove-pattern', index: 5 })).toBe(base);
+  });
+});
+
+describe('freshId', () => {
+  it('gives the first prefix-n that no item has', () => {
+    expect(freshId([], 'query')).toEqual({ id: 'query-1', n: 1 });
+    expect(freshId([{ id: 'query-1' }, { id: 'query-3' }], 'query')).toEqual({ id: 'query-2', n: 2 });
+    expect(freshId([{ id: 'pattern-2' }, { id: 'pattern-1' }], 'pattern')).toEqual({ id: 'pattern-3', n: 3 });
+  });
+  it('ignores the ids of another prefix', () => {
+    expect(freshId([{ id: 'panel-1' }, { id: 'chart-1' }], 'query')).toEqual({ id: 'query-1', n: 1 });
   });
 });

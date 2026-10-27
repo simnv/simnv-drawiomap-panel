@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffLeaves, getLeaf, leafPaths, setLeaf, unsetPath } from './leafPaths';
+import { changedLeaves, diffLeaves, getLeaf, leafPaths, setLeaf, unsetPath } from './leafPaths';
 
 describe('leafPaths', () => {
   it('lists scalar leaves with dotted paths', () => {
@@ -74,5 +74,27 @@ describe('diffLeaves', () => {
     expect(diffLeaves(before, after).map((op) => op.path)).toEqual(['hover.rows']);
     const status = (reason: string) => ({ status: { kind: 'mapping', default: { state: 'normal', reason } } }) as never;
     expect(diffLeaves(status('a'), status('b')).map((op) => op.path)).toEqual(['status']);
+  });
+});
+
+describe('changedLeaves', () => {
+  it('lists the changed leaf paths in the order of the leaves, the old display first', () => {
+    const before = { label: 'a', shape: { text: true }, url: 'u' } as never;
+    const after = { tooltip: 't', shape: { text: false }, label: 'a' } as never;
+    expect(changedLeaves(before, after)).toEqual(['shape.text', 'url', 'tooltip']);
+  });
+  it('goes into a health rule and a binding: one edited field is one changed leaf', () => {
+    const status = (reason: string) => ({ status: { kind: 'mapping', default: { state: 'normal', reason } } }) as never;
+    expect(changedLeaves(status('a'), status('b'))).toEqual(['status.default.reason']);
+    const shape = (field: string) => ({ shape: { binding: { query: 'q', field } } }) as never;
+    expect(changedLeaves(shape('a'), shape('b'))).toEqual(['shape.binding.field']);
+  });
+  it('treats an array as one leaf and a missing display as empty', () => {
+    const rows = (label: string) => ({ hover: { rows: [{ kind: 'metadata', label, path: 'p' }] } }) as never;
+    expect(changedLeaves(rows('a'), rows('b'))).toEqual(['hover.rows']);
+    expect(changedLeaves(undefined, { label: 'a' })).toEqual(['label']);
+    expect(changedLeaves({ label: 'a' }, undefined)).toEqual(['label']);
+    expect(changedLeaves(undefined, undefined)).toEqual([]);
+    expect(changedLeaves(rows('a'), rows('a'))).toEqual([]);
   });
 });

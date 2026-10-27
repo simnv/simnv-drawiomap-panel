@@ -7,7 +7,7 @@ import type { buildConfiguredCard } from '../../interact/cardModel';
 import type { Diagnostic } from '../../model/config';
 import type { CellIndex } from '../../types';
 import { BindingInspector } from '../BindingInspector';
-import type { BindingDraft, DraftAction } from '../draft';
+import { freshId, type BindingDraft, type DraftAction } from '../draft';
 import { EditorSection, getEditorStyles } from '../EditorLayout';
 import { CardPreview, type CardPreviewProps } from './CardPreview';
 import { MultiSelectionPane, type MultiSelectionProps } from './MultiSelectionPane';
@@ -134,11 +134,7 @@ function CellBody({
           variant="secondary"
           size="sm"
           onClick={() => {
-            let n = 1;
-            while (draft.config.patterns.some((p) => p.id === `pattern-${n}`)) {
-              n++;
-            }
-            const id = `pattern-${n}`;
+            const { id, n } = freshId(draft.config.patterns, 'pattern');
             dispatch({
               type: 'pattern',
               pattern: { id, name: `Pattern ${n}`, select: { ids: [draft.cellId!] }, display: {} },

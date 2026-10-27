@@ -28,8 +28,9 @@ import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import { sanitizeSvg } from '../render/sanitize';
 import type { BindContext, CellSelector, Diagram } from '../types';
 import { fnv1a } from '../util/hash';
+import { isRecord } from '../util/record';
 import { buildBindingsList, problemsOf, type BindingsList, type PatternRow, type ProblemEntry } from './bindingsModel';
-import { commitDraft, createDraft, draftPatternIndex, isDirty } from './draft';
+import { commitDraft, createDraft, draftPatternIndex, freshId, isDirty } from './draft';
 import { draftQueryService } from './draftContext';
 import { DrawioModal } from './DrawioModal';
 import { createHistory, reduceHistory } from './history';
@@ -46,8 +47,6 @@ import type { BaseRevision } from './revision';
 
 /** The panel data points that a binding preview asks for; the panel card asks for the same number. */
 const MAX_DATA_POINTS = 264;
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 /** The merge of a raw override display over the plan of its cell; the raw display alone when the merge cannot read it. */
 function rawMerge(base: DisplayConfig, raw: Record<string, unknown>): MergedDisplay {
   try {
@@ -421,11 +420,7 @@ export function BindingEditor({
   };
   // A new pattern from the selection: one step in the history. The pattern opens in the pattern scope.
   const createPatternFrom = (select: CellSelector) => {
-    let n = 1;
-    while (draft.config.patterns.some((p) => p.id === `pattern-${n}`)) {
-      n++;
-    }
-    const id = `pattern-${n}`;
+    const { id, n } = freshId(draft.config.patterns, 'pattern');
     const first = metas.find((cell) => cellMatches(select, cell))?.id ?? selectedIds[selectedIds.length - 1];
     dispatch({
       type: 'batch',
@@ -548,11 +543,7 @@ export function BindingEditor({
 
   // ---- list actions ----
   const addQuery = () => {
-    let n = 1;
-    while (draft.config.queries.some((q) => q.id === `query-${n}`)) {
-      n++;
-    }
-    const id = `query-${n}`;
+    const { id, n } = freshId(draft.config.queries, 'query');
     dispatch({
       type: 'query',
       query: { id, name: `Query ${n}`, source: { kind: 'datasource', target: { refId: `DM${n}` }, parameters: {} } },
@@ -561,11 +552,7 @@ export function BindingEditor({
   };
   const addPanelQuery = () => {
     const target = data.request?.targets[0];
-    let n = 1;
-    while (draft.config.queries.some((q) => q.id === `panel-${n}`)) {
-      n++;
-    }
-    const id = `panel-${n}`;
+    const { id } = freshId(draft.config.queries, 'panel');
     dispatch({
       type: 'query',
       query: {

@@ -6,6 +6,7 @@ import { validateConfig, type NamedQuery } from '../model/config';
 import type { QueryContext } from '../query/types';
 import { EMPTY_CONFIG } from './draft';
 import { EditorField, EditorSection } from './EditorLayout';
+import { jsonCopy } from '../util/json';
 export interface QueryEditorProps {
   query: NamedQuery;
   context: QueryContext;
@@ -67,7 +68,7 @@ export function QueryEditor({ query, context, data, onChange, onPreview, onValid
       source: {
         kind: 'datasource',
         datasource: ref?.uid ? { uid: ref.uid, ...(ref.type ? { type: ref.type } : {}) } : undefined,
-        target: JSON.parse(JSON.stringify(target)),
+        target: jsonCopy(target),
         parameters: {},
       },
     });

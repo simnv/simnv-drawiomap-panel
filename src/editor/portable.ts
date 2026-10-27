@@ -7,6 +7,7 @@ import {
   type DiagramConfig,
   type QueryDatasourceRef,
 } from '../model/config';
+import { jsonCopy } from '../util/json';
 
 export interface PatternDocument {
   kind: 'drawiomap-patterns';
@@ -31,7 +32,6 @@ export interface PatternImportPreview {
   overrides: Array<{ cellId: string; applies: boolean; conflict: boolean }>;
   anchors: Array<{ cellId: string; applies: boolean }>;
 }
-const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const isLists = (value: unknown): value is Record<'queries' | 'patterns' | 'overrides' | 'widgets', unknown[]> =>
   !!value &&
   typeof value === 'object' &&
@@ -101,7 +101,7 @@ export function previewPatternImport(
     preview.notes.push(emptyEntriesNote(source.removed));
   }
   const incoming = result.config;
-  const config = withoutEmptyEntries(copy(destination)).config;
+  const config = withoutEmptyEntries(jsonCopy(destination)).config;
   incoming.queries = incoming.queries.map((q) =>
     q.source.kind === 'datasource'
       ? { ...q, source: { ...q.source, datasource: q.source.datasource ?? refOf(incoming.defaultDatasource) } }

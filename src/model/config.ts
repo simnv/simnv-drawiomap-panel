@@ -2,6 +2,7 @@ import type { DataQuery, DataSourceRef } from '@grafana/schema';
 import type { CellSelector } from '../types';
 import { z } from 'zod';
 import { matcherError } from '../binding/select';
+import { isRecord } from '../util/record';
 
 export interface Diagnostic {
   code: string;
@@ -353,9 +354,6 @@ export interface ValidatedConfig {
   unusableQueries: Map<string, string>;
   diagnostics: Diagnostic[];
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
 
 /**
  * A copy of a parsed item in the key order of the saved JSON. zod orders keys by the schema; a form that writes the
