@@ -12,7 +12,7 @@ import { interactiveCells, patchAt } from '../interact/hit';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import { cellMetas } from '../render/svgStage';
 import type { ViewBox } from '../render/zoom';
-import { DEFAULT_OPTIONS, Options, type CellPatch, type LegendCorner } from '../types';
+import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
 import { useStage } from '../stage/useStage';
 import { useStageLayout } from '../stage/useStageLayout';
@@ -264,15 +264,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   const timeRange = useHeld(props.timeRange, paused);
   const theme = useTheme2();
   const { queryService } = props;
-  const opts = {
-    ...DEFAULT_OPTIONS,
-    ...options,
-    zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
-    linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
-    summary: { ...DEFAULT_OPTIONS.summary!, ...options.summary },
-    hover: { ...DEFAULT_OPTIONS.hover!, ...options.hover },
-    legend: { ...DEFAULT_OPTIONS.legend!, ...options.legend },
-  };
+  const opts = withDefaults(options);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
   const attachStage = useCallback((element: HTMLDivElement | null) => {

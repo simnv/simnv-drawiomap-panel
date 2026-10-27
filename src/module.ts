@@ -119,7 +119,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
           'The cells that open a hover or pinned card. A cell opens a card only when the card has rows or links.',
         category: ['View'],
         // the builder types defaultValue as one option value; a multi-select stores an array
-        defaultValue: DEFAULT_OPTIONS.hover!.kinds as unknown as HoverKind,
+        defaultValue: DEFAULT_OPTIONS.hover.kinds as unknown as HoverKind,
         settings: {
           options: [
             { value: 'node', label: 'Node' },
@@ -139,7 +139,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         description:
           'The band above the diagram shows one row for each status cause. More causes go into a "+N more" row. 0 hides the band.',
         category: ['View'],
-        defaultValue: DEFAULT_OPTIONS.summary!.maxRows,
+        defaultValue: DEFAULT_OPTIONS.summary.maxRows,
         settings: { min: 0, integer: true },
       })
       .addBooleanSwitch({
@@ -147,13 +147,13 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         name: 'Show legend',
         description: 'The colours of the bound cells and their thresholds, from the field config and the status rules.',
         category: ['Legend'],
-        defaultValue: DEFAULT_OPTIONS.legend!.show,
+        defaultValue: DEFAULT_OPTIONS.legend.show,
       })
       .addRadio({
         path: 'legend.corner',
         name: 'Corner',
         category: ['Legend'],
-        defaultValue: DEFAULT_OPTIONS.legend!.corner,
+        defaultValue: DEFAULT_OPTIONS.legend.corner,
         settings: {
           options: [
             { value: 'top-left', label: 'Top left' },
@@ -169,7 +169,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         name: 'Maximum scales',
         description: 'More colour scales go into a "+N more" line.',
         category: ['Legend'],
-        defaultValue: DEFAULT_OPTIONS.legend!.maxBlocks,
+        defaultValue: DEFAULT_OPTIONS.legend.maxBlocks,
         settings: { min: 1, integer: true },
         showIf: (o) => o.legend?.show !== false,
       })
@@ -178,7 +178,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         name: 'Start collapsed',
         description: 'The legend starts as a small chip. Click the chip to open it. Drag it to move it.',
         category: ['Legend'],
-        defaultValue: DEFAULT_OPTIONS.legend!.collapsed,
+        defaultValue: DEFAULT_OPTIONS.legend.collapsed,
         showIf: (o) => o.legend?.show !== false,
       })
   );

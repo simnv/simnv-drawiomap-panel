@@ -143,13 +143,36 @@ export interface LegendOptions {
   collapsed?: boolean;
 }
 
-export const DEFAULT_OPTIONS: Options = {
+/** The options after the defaults: the panel reads these. Internal, never saved. */
+export interface ResolvedOptions extends Options {
+  summary: { maxRows: number };
+  hover: { kinds: HoverKind[] };
+  legend: LegendOptions;
+}
+
+export const DEFAULT_OPTIONS: ResolvedOptions = {
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
   hover: { kinds: ['node', 'link', 'port', 'other'] },
   legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: true },
 };
+
+/**
+ * The saved options with the defaults below them, one level deep. Old saved options can have no summary, hover or
+ * legend, and a group can have only some of its keys: the defaults fill the rest. Other keys go through unchanged.
+ */
+export function withDefaults(options: Options): ResolvedOptions {
+  return {
+    ...DEFAULT_OPTIONS,
+    ...options,
+    zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
+    linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
+    summary: { ...DEFAULT_OPTIONS.summary, ...options.summary },
+    hover: { ...DEFAULT_OPTIONS.hover, ...options.hover },
+    legend: { ...DEFAULT_OPTIONS.legend, ...options.legend },
+  };
+}
 
 /** Where the capacity of a link half comes from. The first source that gives a value wins, in this order. */
 export type CapacitySource = 'series' | 'attr' | 'number' | 'fieldMax' | 'none';
