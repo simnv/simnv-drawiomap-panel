@@ -1,8 +1,8 @@
 import { createPortal } from 'react-dom';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { css, cx } from '@emotion/css';
+import { css } from '@emotion/css';
 import { PanelProps } from '@grafana/data';
-import { IconButton, useTheme2 } from '@grafana/ui';
+import { useTheme2 } from '@grafana/ui';
 import { locationService } from '@grafana/runtime';
 import { bindContextFor } from '../binding/context';
 import { buildConfiguredCard, opensCard } from '../interact/cardModel';
@@ -27,15 +27,12 @@ import { MAX_DATA_POINTS } from '../query/types';
 import { ChartLayer } from '../visuals/ChartLayer';
 import { bandLayout, StatusBand } from './StatusBand';
 import { legendCorners } from './legendCorners';
+import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
 import { buildLegend } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
 import { bindSymbolLegend, LEGEND_ROW_ATTR } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
-
-/** Heights in px of the items in the top-left row. */
-const RESET_SIZE = 32;
-const BADGE_HEIGHT = 20;
 
 /** The address of the open edit session of this panel, or an empty string when the panel is not in panel edit. */
 function usePanelEditing(id: number) {
@@ -89,47 +86,6 @@ const styles = {
     justify-content: center;
     height: 100%;
     opacity: 0.7;
-  `,
-  // The top-left stack: the reset button and the warning badge in one row.
-  // The top-right corner is free: Grafana puts its panel menu button there.
-  corner: css`
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    max-width: calc(100% - 8px);
-    /* above the legend: in a tiny panel the legend may cover the corner, but the reset button stays clickable */
-    z-index: 2;
-    /* The empty space beside the row is part of the diagram: only the row and the legend catch the pointer. */
-    pointer-events: none;
-  `,
-  cornerRow: css`
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    pointer-events: auto;
-  `,
-  // 32 px: a touch target for a finger
-  reset: css`
-    margin: 0;
-    min-width: 32px;
-    min-height: 32px;
-    border-radius: 4px;
-  `,
-  badge: css`
-    font-size: 11px;
-    padding: 1px 6px;
-    border-radius: 3px;
-    z-index: 1;
-  `,
-  // In panel edit the badge is a button: reset the browser button look, keep the size of the badge.
-  badgeButton: css`
-    border: 0;
-    margin: 0;
-    font-family: inherit;
-    line-height: inherit;
-    cursor: pointer;
   `,
 };
 
@@ -619,8 +575,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
-  const rowHeight = panZoom.zoomed || editing ? RESET_SIZE : warnings.length ? BADGE_HEIGHT : 0;
-  const corners = legendCorners(band.height, rowHeight, width);
+  const corners = legendCorners(band.height, cornerRowHeight(panZoom.zoomed || editing, warnings.length), width);
   // a saved corner that this version does not know
   const legendCorner: LegendCorner = corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
   const legend = legendOptions.show ? (
@@ -680,74 +635,18 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
-      <div
+      <CornerControls
         ref={corner}
-        className={styles.corner}
-        style={{ left: 4, top: band.height + 4, maxHeight: `calc(100% - ${band.height + 8}px)` }}
-        data-testid="dmap-corner"
-      >
-        {panZoom.zoomed || warnings.length || editing ? (
-          <div className={styles.cornerRow}>
-            {panZoom.zoomed ? (
-              <IconButton
-                name="search-minus"
-                size="lg"
-                tooltip="Reset zoom"
-                tooltipPlacement="right"
-                className={styles.reset}
-                style={{
-                  background: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.medium}`,
-                }}
-                data-testid="dmap-reset-zoom"
-                onClick={resetView}
-              />
-            ) : null}
-            {warnings.length ? (
-              editing ? (
-                <button
-                  type="button"
-                  className={cx(styles.badge, styles.badgeButton)}
-                  style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
-                  title={warnings.join('\n')}
-                  data-testid="dmap-warning-badge"
-                  onClick={() =>
-                    openBindings(
-                      result.diagnostics[0] ? { kind: 'problem', path: result.diagnostics[0].path } : { kind: 'none' }
-                    )
-                  }
-                >
-                  {warnings.length} warning{warnings.length > 1 ? 's' : ''}
-                </button>
-              ) : (
-                <div
-                  className={styles.badge}
-                  style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
-                  title={warnings.join('\n')}
-                  data-testid="dmap-warning-badge"
-                >
-                  {warnings.length} warning{warnings.length > 1 ? 's' : ''}
-                </div>
-              )
-            ) : null}
-            {editing ? (
-              <IconButton
-                name="link"
-                size="lg"
-                tooltip="Edit bindings"
-                tooltipPlacement="right"
-                className={styles.reset}
-                style={{
-                  background: theme.colors.background.primary,
-                  border: `1px solid ${theme.colors.border.medium}`,
-                }}
-                data-testid="dmap-edit-bindings"
-                onClick={() => openBindings({ kind: 'none' })}
-              />
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+        bandHeight={band.height}
+        zoomed={panZoom.zoomed}
+        editing={editing}
+        warnings={warnings}
+        onReset={resetView}
+        onWarnings={() =>
+          openBindings(result.diagnostics[0] ? { kind: 'problem', path: result.diagnostics[0].path } : { kind: 'none' })
+        }
+        onEditBindings={() => openBindings({ kind: 'none' })}
+      />
       {legend}
       {open && model && card
         ? portalSheet(
