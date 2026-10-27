@@ -8,7 +8,7 @@ import {
   type ThresholdsConfig,
   ThresholdsMode,
 } from '@grafana/data';
-import type { StatusView } from './status';
+import { statusLevel, type StatusView } from './status';
 import type { HalfState } from '../types';
 
 export interface ColorResult {
@@ -25,9 +25,10 @@ export function noDataColor(theme: GrafanaTheme2): string {
  * warning and stale, the no-data grey for missing. The elements, the status band and the legend share it.
  */
 export function statusColor(status: Pick<StatusView, 'state'>, theme: GrafanaTheme2): string {
-  return status.state === 'critical' || status.state === 'down'
+  const level = statusLevel(status.state);
+  return level === 'critical'
     ? theme.visualization.getColorByName('red')
-    : status.state === 'warning' || status.state === 'stale'
+    : level === 'warning'
       ? theme.visualization.getColorByName('orange')
       : noDataColor(theme);
 }
@@ -38,9 +39,10 @@ export function statusColor(status: Pick<StatusView, 'state'>, theme: GrafanaThe
  * `statusColor`.
  */
 export function statusTextColor(status: Pick<StatusView, 'state'>, theme: GrafanaTheme2): string {
-  return status.state === 'critical' || status.state === 'down'
+  const level = statusLevel(status.state);
+  return level === 'critical'
     ? theme.colors.error.text
-    : status.state === 'warning' || status.state === 'stale'
+    : level === 'warning'
       ? theme.colors.warning.text
       : theme.colors.text.secondary;
 }
@@ -88,7 +90,7 @@ export function maxBodyWidth(width: number): number {
 
 /** The status colours of a theme as one string: a palette with other colours must paint every element again. */
 export function statusPalette(theme: GrafanaTheme2): string {
-  return (['down', 'warning', 'missing'] as const).map((state) => statusColor({ state }, theme)).join('|');
+  return (['critical', 'warning', 'missing'] as const).map((state) => statusColor({ state }, theme)).join('|');
 }
 
 /** The channels of a CSS colour: red, green, blue (0 to 255) and alpha (0 to 1); undefined when it does not parse. */
