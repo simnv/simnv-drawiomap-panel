@@ -22,7 +22,7 @@ import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfig, type DisplayConfig, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
 import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
-import type { QuerySnapshot } from '../query/types';
+import { MAX_DATA_POINTS, type QuerySnapshot } from '../query/types';
 import { useBindings } from '../query/useBindings';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import { sanitizeSvg } from '../render/sanitize';
@@ -45,8 +45,6 @@ import { PopupLayout, type PopupTab } from './popup/PopupLayout';
 import type { PopupTarget } from './popup/popupBus';
 import type { BaseRevision } from './revision';
 
-/** The panel data points that a binding preview asks for; the panel card asks for the same number. */
-const MAX_DATA_POINTS = 264;
 /** The merge of a raw override display over the plan of its cell; the raw display alone when the merge cannot read it. */
 function rawMerge(base: DisplayConfig, raw: Record<string, unknown>): MergedDisplay {
   try {

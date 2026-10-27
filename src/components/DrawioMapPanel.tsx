@@ -26,6 +26,7 @@ import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/pop
 import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { useStaleStatus } from '../visuals/useSampleStale';
 import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
+import { MAX_DATA_POINTS } from '../query/types';
 import { useBindings } from '../query/useBindings';
 import { ChartLayer } from '../visuals/ChartLayer';
 import { bandLayout, StatusBand } from './StatusBand';
@@ -340,7 +341,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   // The visible bindings and the rows of the open card are two groups of the store with one owner. A hover over a
   // new cell changes the card frame only: the resolver of the diagram, the bind and the patches do not run again.
   const queryContext = queryService?.context;
-  const maxDataPoints = Math.max(1, Math.min(264, width - 16));
+  const maxDataPoints = Math.max(1, Math.min(MAX_DATA_POINTS, width - 16));
   const visibleDemands = useMemo(
     () => demandsOf(plan, queryContext, maxDataPoints, 'visible'),
     [plan, queryContext, maxDataPoints]
