@@ -3,10 +3,10 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellAt } from '../../interact/hit';
-import { applyPatches, type Applied } from '../../render/applier';
+import type { Applied } from '../../render/applier';
 import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
-import { renderLinkLabels, setLinkLabelScale, watchLinkLabelFonts } from '../../render/linkLabels';
-import { renderOverlay } from '../../render/overlay';
+import { setLinkLabelScale, watchLinkLabelFonts } from '../../render/linkLabels';
+import { paintStage } from '../../render/paintStage';
 import { applyLayout, viewBoxFor, type ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../stage/usePanZoom';
@@ -131,11 +131,10 @@ export function DiagramStage({
       return;
     }
     const id = requestAnimationFrame(() => {
-      patched.current = applyPatches(stage.index, patches, patched.current, undefined, { theme, osDark });
-      renderOverlay(root, stage.index, patches, { theme });
-      // after the overlay, as in the panel: the preview shows the label mode while the user edits it
-      renderLinkLabels(root, stage.index, patches, {
+      // the preview shows the label mode while the user edits it
+      patched.current = paintStage(root, stage.index, patches, patched.current, {
         theme,
+        osDark,
         linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth,
         bounds: stage.base,
       });

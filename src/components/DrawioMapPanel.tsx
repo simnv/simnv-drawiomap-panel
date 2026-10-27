@@ -20,9 +20,9 @@ import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells, patchAt } from '../interact/hit';
-import { applyPatches, type Applied, INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
-import { renderLinkLabels, setLinkLabelScale, watchLinkLabelFonts } from '../render/linkLabels';
-import { renderOverlay } from '../render/overlay';
+import { type Applied, INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
+import { setLinkLabelScale, watchLinkLabelFonts } from '../render/linkLabels';
+import { paintStage } from '../render/paintStage';
 import { cellMetas } from '../render/svgStage';
 import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, type CellPatch, type LegendCorner } from '../types';
@@ -524,12 +524,10 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     const root = stage.root;
     const linkWidth = { min: linkMin, max: linkMax };
     const id = requestAnimationFrame(() => {
-      const ctx = { theme, osDark };
-      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive, ctx);
+      const paint = { theme, osDark, linkWidth, bounds: stage.base, interactive };
+      patchedRef.current = paintStage(root, stage.index, result.patches, patchedRef.current, paint);
+      // the overlay and the labels do not read the interactive mark
       interactiveRef.current = markInteractive(stage.index, interactive, interactiveRef.current);
-      renderOverlay(root, stage.index, result.patches, { theme });
-      // after the overlay: its arrow heads are obstacles of the labels
-      renderLinkLabels(root, stage.index, result.patches, { theme, linkWidth, bounds: stage.base });
     });
     return () => cancelAnimationFrame(id);
   }, [stage.root, stage.index, stage.base, result, theme, osDark, interactive, linkMin, linkMax]);
