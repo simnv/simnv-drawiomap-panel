@@ -3,16 +3,14 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellAt } from '../../interact/hit';
-import { applyPatches, type Applied } from '../../render/applier';
 import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
-import { renderLinkLabels, setLinkLabelScale, watchLinkLabelFonts } from '../../render/linkLabels';
-import { renderOverlay } from '../../render/overlay';
-import { applyLayout, viewBoxFor, type ViewBox } from '../../render/zoom';
+import type { ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../stage/usePanZoom';
 import type { Stage } from '../../stage/useStage';
+import { useStageLayout } from '../../stage/useStageLayout';
+import { useStagePaint } from '../../stage/useStagePaint';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
-import { useOsDark } from '../../visuals/useOsDark';
 import { boxTargets } from './boxTargets';
 import { useBoxSelect } from './useBoxSelect';
 
@@ -83,7 +81,6 @@ export function DiagramStage({
   );
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState<ViewBox | null>(null);
-  const patched = useRef<Applied>();
 
   // A new diagram starts at the fitted view.
   const [viewRoot, setViewRoot] = useState(stage.root);
@@ -111,53 +108,11 @@ export function DiagramStage({
     return () => observer.disconnect();
   }, []);
 
-  // The colour scheme of the svg follows the Grafana theme, not the system preference. The effect sets it on the root
-  // object itself: the editor attaches a new root to the container after this effect, so a lookup in the container would
-  // find the old one.
-  const isDark = theme.isDark;
-  useLayoutEffect(() => {
-    const root = stage.root;
-    if (root) {
-      root.style.setProperty('color-scheme', isDark ? 'dark' : 'light');
-    }
-  }, [stage.root, isDark]);
+  // The draft patches, the overlay and the value labels: the preview shows the label mode while the user edits it.
+  useStagePaint(stage, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth });
 
-  // Apply the draft patches and redraw the overlay in one frame. The OS preference is an input of the applier's
-  // colour scheme, as in the panel.
-  const osDark = useOsDark();
-  useEffect(() => {
-    const root = stage.root;
-    if (!root) {
-      return;
-    }
-    const id = requestAnimationFrame(() => {
-      patched.current = applyPatches(stage.index, patches, patched.current, undefined, { theme, osDark });
-      renderOverlay(root, stage.index, patches, { theme });
-      // after the overlay, as in the panel: the preview shows the label mode while the user edits it
-      renderLinkLabels(root, stage.index, patches, {
-        theme,
-        linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth,
-        bounds: stage.base,
-      });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, stage.base, patches, theme, osDark, linkWidth]);
-
-  // A web font that loads late widens the glyphs: cut the strokes under the labels again.
-  useEffect(() => (stage.root ? watchLinkLabelFonts(stage.root) : undefined), [stage.root]);
-
-  // Fit the diagram into the pane. A live view (pan or zoom) changes the viewBox only.
-  useEffect(() => {
-    if (!stage.root || !stage.base || !size.width || !size.height) {
-      return;
-    }
-    const layout = viewBoxFor(FIT, stage.base, size, view ?? stage.base);
-    applyLayout(stage.root, layout);
-    setLinkLabelScale(stage.root);
-    if (stageRef.current) {
-      stageRef.current.style.overflow = layout.overflow;
-    }
-  }, [stage.root, stage.base, size, view, stageRef]);
+  // Fit the diagram into the pane. A pane with no size yet keeps the layout.
+  useStageLayout(stage, FIT, size.width && size.height ? size : undefined, view, stageRef);
 
   const box = useBoxSelect({
     wrapperRef,
@@ -200,6 +155,7 @@ export function DiagramStage({
     return () => index.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
   }, [stage.index]);
 
+  const isDark = theme.isDark;
   const pick = (target: EventTarget | null, shift: boolean) => {
     const cell = cellAt(target, stage.index);
     if (cell) {

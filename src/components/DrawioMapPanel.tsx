@@ -1,14 +1,5 @@
 import { createPortal } from 'react-dom';
-import React, {
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css, cx } from '@emotion/css';
 import { PanelProps } from '@grafana/data';
 import { IconButton, useTheme2 } from '@grafana/ui';
@@ -20,21 +11,20 @@ import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells, patchAt } from '../interact/hit';
-import { applyPatches, type Applied, INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
-import { renderLinkLabels, setLinkLabelScale, watchLinkLabelFonts } from '../render/linkLabels';
-import { renderOverlay } from '../render/overlay';
+import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import { cellMetas } from '../render/svgStage';
-import { applyLayout, viewBoxFor, ViewBox } from '../render/zoom';
+import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
 import { useStage } from '../stage/useStage';
+import { useStageLayout } from '../stage/useStageLayout';
+import { useStagePaint } from '../stage/useStagePaint';
 import { useHeld } from './useHeld';
 import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
 import { EMPTY_CONFIG, legacyRulesWarning } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { useStaleStatus } from '../visuals/useSampleStale';
-import { useOsDark } from '../visuals/useOsDark';
 import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
 import { useBindings } from '../query/useBindings';
 import { ChartLayer } from '../visuals/ChartLayer';
@@ -290,7 +280,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     setViewport(element);
   }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
-  const patchedRef = useRef<Applied>();
   const interactiveRef = useRef<Marked>();
   const [card, setCard] = useState<CardState | null>(null);
   const [view, setView] = useState<ViewBox | null>(null);
@@ -503,36 +492,19 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     };
   }, [open, pinned, close]);
 
-  // draw.io writes color-scheme: light dark on the root, so light-dark() colours follow the OS preference.
-  // Override it with the Grafana theme.
-  const isDark = theme.isDark;
-  useLayoutEffect(() => {
-    const root = containerRef.current?.querySelector<SVGSVGElement>(':scope > svg');
-    if (root) {
-      root.style.colorScheme = isDark ? 'dark' : 'light';
-    }
-  }, [stage.root, isDark]);
-
-  // Apply patches, redraw the overlay and the value labels once per frame. The OS preference is an input of the
-  // applier's colour scheme: a change of it writes every cell again (an element with its own color-scheme follows it).
-  const osDark = useOsDark();
-  const { min: linkMin, max: linkMax } = opts.linkWidth;
+  // Apply patches, redraw the overlay and the value labels once per frame.
+  useStagePaint(stage, result.patches, { theme, linkWidth: opts.linkWidth, interactive });
+  // The cells that open a card get the interactive mark. The applier, the overlay and the labels do not read or write
+  // it, so its place in the frame does not matter.
   useEffect(() => {
     if (!stage.root) {
       return;
     }
-    const root = stage.root;
-    const linkWidth = { min: linkMin, max: linkMax };
     const id = requestAnimationFrame(() => {
-      const ctx = { theme, osDark };
-      patchedRef.current = applyPatches(stage.index, result.patches, patchedRef.current, interactive, ctx);
       interactiveRef.current = markInteractive(stage.index, interactive, interactiveRef.current);
-      renderOverlay(root, stage.index, result.patches, { theme });
-      // after the overlay: its arrow heads are obstacles of the labels
-      renderLinkLabels(root, stage.index, result.patches, { theme, linkWidth, bounds: stage.base });
     });
     return () => cancelAnimationFrame(id);
-  }, [stage.root, stage.index, stage.base, result, theme, osDark, interactive, linkMin, linkMax]);
+  }, [stage.root, stage.index, interactive]);
 
   // After the patches (the same frame order): mark the cells of the legend entry under the pointer. The effect runs
   // again for a new stage or new data; a change of the store paints in the next frame with no render. The rows of the
@@ -578,26 +550,12 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     [stage.root, stage.index, highlight]
   );
 
-  // A web font that loads late widens the glyphs: cut the strokes under the labels again.
-  useEffect(() => (stage.root ? watchLinkLabelFonts(stage.root) : undefined), [stage.root]);
-
   // Zoom layout.
-  useEffect(() => {
-    if (!stage.root || !stage.base) {
-      return;
-    }
-    const layout = viewBoxFor(
-      { ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align, minScale },
-      stage.base,
-      { width, height: stageHeight },
-      view ?? stage.base
-    );
-    applyLayout(stage.root, layout);
-    setLinkLabelScale(stage.root);
-    if (containerRef.current) {
-      containerRef.current.style.overflow = layout.overflow;
-    }
-  }, [stage.root, stage.base, zoomMode, zoomPercent, align, minScale, width, stageHeight, view]);
+  const zoomLayout = useMemo(
+    () => ({ ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align, minScale }),
+    [zoomMode, zoomPercent, align, minScale]
+  );
+  useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
 
   const local = (e: React.MouseEvent) => {
     const r = wrapperRef.current!.getBoundingClientRect();

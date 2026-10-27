@@ -2223,6 +2223,29 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(elements().every((el, i) => el.isSameNode(before[i]))).toBe(true);
     });
 
+    it('makes a fixed number of DOM mutations in the stage over four refreshes of the demo diagram', async () => {
+      const base = props({ id: 61 });
+      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      let count = 0;
+      const observer = new MutationObserver((records) => (count += records.length));
+      observer.observe(screen.getByTestId('dmap-stage'), {
+        subtree: true,
+        attributes: true,
+        childList: true,
+        characterData: true,
+      });
+      for (const value of [95e6, 5e6, 5e6, 99e6]) {
+        view.rerender(<DrawioMapPanel {...base} data={seriesWith(value)} />);
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+      }
+      count += observer.takeRecords().length;
+      observer.disconnect();
+      expect(count).toBe(51);
+    });
+
     it('does no per-refresh work for the panel behind and renders the latest data once on close', async () => {
       const base = props({ id: 61 });
       const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
