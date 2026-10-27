@@ -5,7 +5,7 @@ import { colorManipulator, createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { noDataColor, statusColor, tintFill } from '../binding/color';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
-import { applyPatches, colourAlpha, INTERACTIVE_ATTR, markInteractive } from './applier';
+import { applyPatches, INTERACTIVE_ATTR, markInteractive } from './applier';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
@@ -611,35 +611,6 @@ describe('end markers: which shapes count and how they are painted', () => {
   });
 });
 
-describe('colourAlpha', () => {
-  it.each([
-    ['none', 0],
-    ['transparent', 0],
-    ['rgb(255, 0, 0)', 1],
-    ['rgb(255 0 0)', 1],
-    ['rgba(255, 0, 0, 0)', 0],
-    ['rgba(255, 0, 0, 0.5)', 0.5],
-    ['rgb(255 0 0 / 0)', 0],
-    ['rgb(255 0 0 / 0%)', 0],
-    ['rgb(255 0 0 / 50%)', 0.5],
-    ['rgb(255 0 0 / none)', 0],
-    ['hsl(120, 100%, 50%)', 1],
-    ['hsla(120, 100%, 50%, 0)', 0],
-    ['hsl(120 100% 50% / 0)', 0],
-    ['hsl(120 100% 50% / 1)', 1],
-    ['#f00', 1],
-    ['#ff0000', 1],
-    ['#f000', 0],
-    ['#ff000000', 0],
-    ['#ff0000ff', 1],
-    ['red', 1],
-    ['url(#grad)', 1],
-    ['', 1],
-  ])('reads the alpha of %s as %s', (value, alpha) => {
-    expect(colourAlpha(value)).toBeCloseTo(alpha, 5);
-  });
-});
-
 describe('end markers: unusable geometry and cost', () => {
   const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><g data-cell-id="e"><g><path d="M 10 30 L 200 30" fill="none" stroke="#333" pointer-events="stroke"/><circle cx="10" cy="30" r="4" fill="#333"/></g></g></svg>`;
   const withCtm = (fn: () => SVGMatrix | null, run: () => void) => {
@@ -656,13 +627,22 @@ describe('end markers: unusable geometry and cost', () => {
     for (const m of [
       { ...ident, a: 0, d: 0 },
       { ...ident, e: NaN },
-      { ...ident, a: 1e-6, d: 1e-6 },
+      { ...ident, d: 1e-12 },
     ] as SVGMatrix[]) {
       withCtm(
         () => m,
         () => expect(buildCellIndex(mountSvg(document.createElement('div'), SVG)).get('e')!.ends).toHaveLength(0)
       );
     }
+  });
+  it('keeps a marker when it and its line share a small uniform scale: the matrix between them is the identity', () => {
+    withCtm(
+      () => ({ ...ident, a: 1e-6, d: 1e-6 }) as SVGMatrix,
+      () =>
+        expect(buildCellIndex(mountSvg(document.createElement('div'), SVG)).get('e')!.ends).toEqual([
+          expect.objectContaining({ end: 'start' }),
+        ])
+    );
   });
   it('computes the end once at index time and never asks for a matrix while painting', () => {
     const getCTM = vi.fn(() => ident);

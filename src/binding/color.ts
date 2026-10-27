@@ -8,7 +8,7 @@ import {
   type ThresholdsConfig,
   ThresholdsMode,
 } from '@grafana/data';
-import type { StatusView } from './status';
+import { statusLevel, type StatusView } from './status';
 import type { HalfState } from '../types';
 
 export interface ColorResult {
@@ -25,9 +25,10 @@ export function noDataColor(theme: GrafanaTheme2): string {
  * warning and stale, the no-data grey for missing. The elements, the status band and the legend share it.
  */
 export function statusColor(status: Pick<StatusView, 'state'>, theme: GrafanaTheme2): string {
-  return status.state === 'critical' || status.state === 'down'
+  const level = statusLevel(status.state);
+  return level === 'critical'
     ? theme.visualization.getColorByName('red')
-    : status.state === 'warning' || status.state === 'stale'
+    : level === 'warning'
       ? theme.visualization.getColorByName('orange')
       : noDataColor(theme);
 }
@@ -38,9 +39,10 @@ export function statusColor(status: Pick<StatusView, 'state'>, theme: GrafanaThe
  * `statusColor`.
  */
 export function statusTextColor(status: Pick<StatusView, 'state'>, theme: GrafanaTheme2): string {
-  return status.state === 'critical' || status.state === 'down'
+  const level = statusLevel(status.state);
+  return level === 'critical'
     ? theme.colors.error.text
-    : status.state === 'warning' || status.state === 'stale'
+    : level === 'warning'
       ? theme.colors.warning.text
       : theme.colors.text.secondary;
 }
@@ -88,7 +90,7 @@ export function maxBodyWidth(width: number): number {
 
 /** The status colours of a theme as one string: a palette with other colours must paint every element again. */
 export function statusPalette(theme: GrafanaTheme2): string {
-  return (['down', 'warning', 'missing'] as const).map((state) => statusColor({ state }, theme)).join('|');
+  return (['critical', 'warning', 'missing'] as const).map((state) => statusColor({ state }, theme)).join('|');
 }
 
 /** The channels of a CSS colour: red, green, blue (0 to 255) and alpha (0 to 1); undefined when it does not parse. */
@@ -104,6 +106,45 @@ function channels(value: string): [number, number, number, number] | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** The alpha of a CSS colour, 0 to 1. A colour that is not understood, or not a plain colour (url, var), counts as opaque. */
+export function alphaOf(value: string): number {
+  const v = value.trim().toLowerCase();
+  if (v === 'none' || v === 'transparent') {
+    return 0;
+  }
+  const clamp = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1);
+  const token = (t: string) => {
+    const x = t.trim();
+    if (x === 'none') {
+      return 0;
+    }
+    return clamp(x.endsWith('%') ? parseFloat(x) / 100 : parseFloat(x));
+  };
+  if (v.startsWith('#')) {
+    const hex = v.slice(1);
+    if (!/^[0-9a-f]+$/.test(hex)) {
+      return 1;
+    }
+    if (hex.length === 4) {
+      return parseInt(hex[3] + hex[3], 16) / 255;
+    }
+    return hex.length === 8 ? parseInt(hex.slice(6), 16) / 255 : 1;
+  }
+  const fn = /^[a-z-]+\((.*)\)$/s.exec(v);
+  if (!fn) {
+    return 1;
+  }
+  const body = fn[1];
+  if (body.includes('/')) {
+    return token(body.split('/').pop()!);
+  }
+  if (body.includes(',')) {
+    const parts = body.split(',');
+    return parts.length === 4 ? token(parts[3]) : 1;
+  }
+  return 1;
 }
 
 /**

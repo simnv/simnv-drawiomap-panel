@@ -12,7 +12,7 @@ import {
   type ValueMapping,
 } from '@grafana/data';
 import type { PlanCellPatch } from '../binding/engine';
-import type { StatusView } from '../binding/status';
+import { statusLevel, type StatusLevel, type StatusView } from '../binding/status';
 import { noDataColor, statusColor } from '../binding/color';
 import type { HalfState, SeriesInfo, ShapeState } from '../types';
 
@@ -195,10 +195,10 @@ function entryOf(block: LegendBlock, item: Item): LegendEntry | undefined {
   return step?.color === item.color ? step : block.entries.find((e) => e.color === item.color);
 }
 
-const STATUS_ENTRIES: Array<{ key: string; label: string; states: Array<StatusView['state']> }> = [
-  { key: 'critical', label: 'Down, critical', states: ['down', 'critical'] },
-  { key: 'warning', label: 'Warning, stale', states: ['warning', 'stale'] },
-  { key: 'missing', label: 'Missing', states: ['missing'] },
+const STATUS_ENTRIES: Array<{ key: StatusLevel; label: string }> = [
+  { key: 'critical', label: 'Down, critical' },
+  { key: 'warning', label: 'Warning, stale' },
+  { key: 'missing', label: 'Missing' },
 ];
 
 /**
@@ -283,11 +283,11 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
     out.push({
       key: 'status',
       title: 'Status',
-      entries: STATUS_ENTRIES.map(({ key, label, states }) => ({
+      entries: STATUS_ENTRIES.map(({ key, label }) => ({
         key,
         label,
-        color: statusColor({ state: states[0] } as StatusView, ctx.theme),
-        cellIds: statuses.filter((s) => states.includes(s.state)).map((s) => s.cellId),
+        color: statusColor({ state: key }, ctx.theme),
+        cellIds: statuses.filter((s) => statusLevel(s.state) === key).map((s) => s.cellId),
       })),
       cellIds,
     });

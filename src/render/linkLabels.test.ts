@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@grafana/data';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { StatusView } from '../binding/status';
@@ -10,6 +10,7 @@ import { buildCellIndex } from './svgStage';
 import { renderOverlay } from './overlay';
 import { applyPatches } from './applier';
 import {
+  haloColour,
   LINK_LABEL_CLASS,
   LINK_LABEL_LAYER_CLASS,
   renderLinkLabels,
@@ -950,6 +951,39 @@ describe('renderLinkLabels: the halo colour', () => {
     expect(colour('rgba(29, 45, 61, 0.5)')).toBe(theme.colors.background.canvas);
     expect(colour('rgba(0, 0, 0, 0)')).toBe(theme.colors.background.canvas);
     expect(colour('rgb(0 0 0 / 0.5)')).toBe(theme.colors.background.canvas);
+  });
+  it('keeps only an opaque rgb colour as the computed style gives it', () => {
+    const { root } = build();
+    const halo = (backgroundColor: string) => {
+      const spy = vi.spyOn(globalThis, 'getComputedStyle').mockReturnValue({ backgroundColor } as CSSStyleDeclaration);
+      try {
+        return haloColour(root, theme);
+      } finally {
+        spy.mockRestore();
+      }
+    };
+    for (const opaque of [
+      'rgb(29, 45, 61)',
+      'rgb(29 45 61)',
+      'rgba(29, 45, 61, 1)',
+      'rgb(29 45 61 / 100%)',
+      'RGB(0, 0, 0)',
+    ]) {
+      expect(halo(opaque)).toBe(opaque);
+    }
+    for (const other of [
+      'rgba(29, 45, 61, 0.5)',
+      'rgb(29 45 61 / 50%)',
+      'transparent',
+      '',
+      '#1d2d3d',
+      'black',
+      'var(--bg)',
+      'light-dark(#fff, #000)',
+      'hsl(0, 0%, 0%)',
+    ]) {
+      expect(halo(other)).toBe(theme.colors.background.canvas);
+    }
   });
   it('is read again on a theme change', () => {
     const { root, index } = bare();

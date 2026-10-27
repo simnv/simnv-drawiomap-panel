@@ -6,11 +6,10 @@ import {
   applyMatrix,
   bendLengths,
   invert,
-  localMatrix,
-  multiply,
   parsePathPoints,
   pathGeometry,
   polylineLength,
+  relativeMatrix,
   strokeReach,
   scaleOf,
   drawnStrokeWidth,
@@ -39,7 +38,7 @@ import {
   type Placement,
   type Rect,
 } from './labelPlacement';
-import { maxBodyWidth, statusBorderWidth } from '../binding/color';
+import { alphaOf, maxBodyWidth, statusBorderWidth } from '../binding/color';
 import { fmt, linkSplit, OVERLAY_CLASS } from './overlay';
 import { readViewBox, viewScaleOf } from './zoom';
 
@@ -345,17 +344,11 @@ function stageFont(root: SVGSVGElement): string {
 /* ---------- coordinates ---------- */
 
 /**
- * The matrix from the user space of `el` into root user units: the screen CTMs of both (the outermost svg has one in
- * every engine), the transform attributes in jsdom. Undefined when it cannot be read.
+ * The matrix from the user space of `el` into root user units: the screen CTMs of both, the transform attributes in
+ * jsdom. Undefined when it cannot be read.
  */
 function toRoot(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Matrix | undefined {
-  const g = el as SVGGraphicsElement;
-  if (typeof g.getScreenCTM === 'function' && typeof root.getScreenCTM === 'function') {
-    const own = toMatrix(g.getScreenCTM());
-    const base = rootCtm ?? toMatrix(root.getScreenCTM());
-    return own && base && usable(own) && usable(base) ? multiply(invert(base), own) : undefined;
-  }
-  return localMatrix(el, root);
+  return relativeMatrix(el, root, { screen: true, toCtm: rootCtm });
 }
 
 /** The axis-aligned box of `rect` mapped through `m`. */
@@ -749,20 +742,12 @@ export function haloColour(root: SVGSVGElement, theme: GrafanaTheme2): string {
   return opaqueColour(value) ?? theme.colors.background.canvas;
 }
 
-/**
- * The colour when it is opaque, else undefined. `rgb(r, g, b)` and `rgb(r g b)` have alpha 1; `rgba(r, g, b, a)` and
- * `rgb(r g b / a)` have the alpha a (a number or a percent); `transparent`, an empty value and anything that is not
- * an rgb colour (for example a keyword) give undefined.
- */
+/** An rgb colour as a computed style writes it: `rgb(r, g, b)`, `rgb(r g b)`, `rgba(r, g, b, a)` or `rgb(r g b / a)`. */
+const RGB = /^rgba?\(\s*[\d.]+(?:\s*,\s*|\s+)[\d.]+(?:\s*,\s*|\s+)[\d.]+(?:\s*[,/]\s*[\d.]+%?)?\s*\)$/i;
+
+/** The colour when it is an rgb colour with alpha 1, else undefined: `transparent`, an empty value, a keyword. */
 function opaqueColour(value: string): string | undefined {
-  const m = /^rgba?\(\s*([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/i.exec(
-    value
-  );
-  if (!m) {
-    return undefined;
-  }
-  const alpha = m[4] === undefined ? 1 : m[5] ? Number(m[4]) / 100 : Number(m[4]);
-  return alpha === 1 ? value : undefined;
+  return RGB.test(value) && alphaOf(value) === 1 ? value : undefined;
 }
 
 function paint(rec: LabelRecord, theme: GrafanaTheme2, halo: string): void {

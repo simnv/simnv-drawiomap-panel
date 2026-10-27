@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StatusRule } from '../model/config';
-import { evaluateStatus, summarizeStatuses } from './status';
+import { evaluateStatus, statusLevel, summarizeStatuses } from './status';
 
 const health: StatusRule = {
   kind: 'mapping',
@@ -147,5 +147,16 @@ describe('summarizeStatuses', () => {
       { cellId: 'c', status: down('Two') },
     ]);
     expect(summary.map((s) => s.reason)).toEqual(['Two', 'One']);
+  });
+});
+
+describe('statusLevel', () => {
+  it('groups the states into the levels that the paint, the text and the legend show', () => {
+    expect(statusLevel('down')).toBe('critical');
+    expect(statusLevel('critical')).toBe('critical');
+    expect(statusLevel('warning')).toBe('warning');
+    expect(statusLevel('stale')).toBe('warning');
+    expect(statusLevel('missing')).toBe('missing');
+    expect(statusLevel('normal')).toBe('normal');
   });
 });

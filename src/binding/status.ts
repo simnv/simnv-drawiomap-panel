@@ -112,6 +112,18 @@ export function evaluateStatus(rule: StatusRule, values: ResolvedValue[]): Evalu
   return { view: view(condition.state, condition.reason, conditionKey), stale };
 }
 
+/** The level a state shows as: the paint, the status text and the legend tell only these apart. */
+export type StatusLevel = 'critical' | 'warning' | 'missing' | 'normal';
+
+/** Down and critical are critical, warning and stale are warning; missing and normal stay as they are. */
+export function statusLevel(state: StatusView['state']): StatusLevel {
+  return state === 'down' || state === 'critical'
+    ? 'critical'
+    : state === 'warning' || state === 'stale'
+      ? 'warning'
+      : state;
+}
+
 /** Most severe first. The summary band and its row order use it. */
 export const STATUS_SEVERITY: Record<StatusView['state'], number> = {
   down: 0,

@@ -9,7 +9,18 @@ import {
   getFieldColorMode,
   ThresholdsMode,
 } from '@grafana/data';
-import { colorFor, linkStatusPaint, noDataColor, statusColor, statusPaint, tintFill, widthFor } from './color';
+import {
+  alphaOf,
+  colorFor,
+  linkStatusPaint,
+  noDataColor,
+  statusColor,
+  statusPaint,
+  statusPalette,
+  statusTextColor,
+  tintFill,
+  widthFor,
+} from './color';
 import type { StatusView } from './status';
 
 const theme = createTheme();
@@ -120,6 +131,22 @@ describe('status colours', () => {
       statusColor(view('down'), createTheme({ colors: { mode: 'dark' } }))
     );
   });
+  it('a normal state takes the no-data grey when asked for its colour', () => {
+    expect(statusColor(view('normal'), theme)).toBe(noDataColor(theme));
+  });
+  it('the text colour is the semantic text colour of the level: error, warning, else secondary', () => {
+    for (const t of [createTheme({ colors: { mode: 'light' } }), createTheme({ colors: { mode: 'dark' } })]) {
+      expect(statusTextColor(view('down'), t)).toBe(t.colors.error.text);
+      expect(statusTextColor(view('critical'), t)).toBe(t.colors.error.text);
+      expect(statusTextColor(view('warning'), t)).toBe(t.colors.warning.text);
+      expect(statusTextColor(view('stale'), t)).toBe(t.colors.warning.text);
+      expect(statusTextColor(view('missing'), t)).toBe(t.colors.text.secondary);
+      expect(statusTextColor(view('normal'), t)).toBe(t.colors.text.secondary);
+    }
+  });
+  it('the palette is the colours of the three levels', () => {
+    expect(statusPalette(theme)).toBe([named('red'), named('orange'), noDataColor(theme)].join('|'));
+  });
   it('statusPaint is a colour for a state that is not normal, else undefined', () => {
     expect(statusPaint(view('down'), theme)).toBe(named('red'));
     expect(statusPaint(view('missing'), theme)).toBe(noDataColor(theme));
@@ -154,5 +181,39 @@ describe('tintFill', () => {
       expect(tintFill(fill, '#f00'), fill).toBeUndefined();
     }
     expect(tintFill('#ffffff', 'currentColor')).toBeUndefined();
+  });
+});
+
+describe('alphaOf', () => {
+  it.each([
+    ['none', 0],
+    ['transparent', 0],
+    ['rgb(255, 0, 0)', 1],
+    ['rgb(255 0 0)', 1],
+    ['rgba(255, 0, 0, 0)', 0],
+    ['rgba(255, 0, 0, 0.5)', 0.5],
+    ['rgb(255 0 0 / 0)', 0],
+    ['rgb(255 0 0 / 0%)', 0],
+    ['rgb(255 0 0 / 50%)', 0.5],
+    ['rgb(255 0 0 / none)', 0],
+    ['hsl(120, 100%, 50%)', 1],
+    ['hsla(120, 100%, 50%, 0)', 0],
+    ['hsl(120 100% 50% / 0)', 0],
+    ['hsl(120 100% 50% / 1)', 1],
+    ['#f00', 1],
+    ['#ff0000', 1],
+    ['#f000', 0],
+    ['#ff000000', 0],
+    ['#ff0000ff', 1],
+    ['red', 1],
+    ['url(#grad)', 1],
+    ['', 1],
+    ['RGBA(255, 0, 0, 0.5)', 0.5],
+    ['var(--fill)', 1],
+    ['var(--fill, rgba(0, 0, 0, 0))', 1],
+    ['light-dark(#fff, #000)', 1],
+    ['light-dark(rgba(0, 0, 0, 0), white)', 1],
+  ])('reads the alpha of %s as %s', (value, alpha) => {
+    expect(alphaOf(value)).toBeCloseTo(alpha, 5);
   });
 });
