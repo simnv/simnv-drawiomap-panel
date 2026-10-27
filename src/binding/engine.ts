@@ -2,16 +2,9 @@ import { type DisplayValue, type Field, formattedValueToString } from '@grafana/
 import type { BindContext, CellPatch, HalfState, SeriesInfo, ShapeTarget, TemplateScope } from '../types';
 import { colorFor, noDataColor, widthFor } from './color';
 import { resolveTemplate, shield } from './template';
-import { toBitsPerSecond } from './units';
 import { isAllowedUrl } from './url';
-import {
-  rowBindings,
-  type Diagnostic,
-  type HoverSpec,
-  type QueryBinding,
-  type ShapeDisplay,
-} from '../model/config';
-import { inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity';
+import { rowBindings, type Diagnostic, type HoverSpec, type QueryBinding, type ShapeDisplay } from '../model/config';
+import { bitsWithNote, inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity';
 import { historyOf, type HistoryModel, type HistoryFormat } from '../query/frames';
 import type { BindingPlan } from './patterns';
 import type { QuerySnapshot } from '../query/types';
@@ -448,13 +441,11 @@ const capacityField = (field: Field): Field => ({
   config: { ...field.config, decimals: undefined },
 });
 
-const unitNote = (unit: string) => `unit "${unit}" is not a data rate, the raw value is used as bit/s`;
-
 /** A value in the unit of its field, in bit/s. */
 function bitsOf(value: number, s: SeriesInfo, notes: string[]): number {
-  const rate = toBitsPerSecond(value, s.field.config?.unit);
-  if (rate.unknownUnit) {
-    notes.push(unitNote(rate.unknownUnit));
+  const rate = bitsWithNote(value, s.field.config?.unit);
+  if (rate.note) {
+    notes.push(rate.note);
   }
   return rate.bits;
 }

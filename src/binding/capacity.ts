@@ -5,6 +5,14 @@ import type { HistoryModel } from '../query/frames';
 import { resolveTemplate } from './template';
 import { toBitsPerSecond } from './units';
 
+/** A value in the unit of its field, in bit/s. A unit that is not a data rate keeps the raw value and gives a note. */
+export function bitsWithNote(value: number, unit: string | undefined): { bits: number; note?: string } {
+  const rate = toBitsPerSecond(value, unit);
+  return rate.unknownUnit
+    ? { bits: rate.bits, note: `unit "${rate.unknownUnit}" is not a data rate, the raw value is used as bit/s` }
+    : { bits: rate.bits };
+}
+
 /**
  * The one resolution of a capacity: a link direction and a card direction both use it. The chain stops at the first
  * source that gives an amount; a source that fails reports where and the chain continues.
@@ -63,13 +71,9 @@ export function resolveCapacity(req: CapacityRequest): ResolvedCapacity {
     if (!(model.latestValue > 0)) {
       return fail('unresolved-metadata', path, `Capacity series value ${model.latestValue} is not positive.`);
     }
-    const rate = toBitsPerSecond(model.latestValue, model.field.config?.unit);
-    if (rate.unknownUnit) {
-      diagnostics.push({
-        code: 'unit-not-rate',
-        path,
-        message: `unit "${rate.unknownUnit}" is not a data rate, the raw value is used as bit/s`,
-      });
+    const rate = bitsWithNote(model.latestValue, model.field.config?.unit);
+    if (rate.note) {
+      diagnostics.push({ code: 'unit-not-rate', path, message: rate.note });
     }
     return rate.bits;
   };
