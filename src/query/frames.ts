@@ -10,7 +10,7 @@ import {
   type GrafanaTheme2,
 } from '@grafana/data';
 import { compileMatcher } from '../model/matcher';
-import { reduceValues } from '../binding/reduce';
+import { reduceValues } from './reduce';
 import type { QueryBinding } from '../model/config';
 import { stable } from './boundary';
 import type { QuerySnapshot } from './types';

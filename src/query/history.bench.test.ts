@@ -25,7 +25,7 @@ type Frames = typeof import('./frames');
 type Engine = typeof import('../binding/engine');
 type Store = typeof import('./store');
 type Boundary = typeof import('./boundary');
-type Reduce = typeof import('../binding/reduce');
+type Reduce = typeof import('./reduce');
 
 const cellId = (i: number) => `c${i}`;
 const series = (i: number): DataFrame => {
@@ -89,15 +89,15 @@ describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
   let reduce: Reduce;
   beforeAll(async () => {
     vi.resetModules();
-    vi.doMock('../binding/reduce', { spy: true });
-    reduce = await import('../binding/reduce');
+    vi.doMock('./reduce', { spy: true });
+    reduce = await import('./reduce');
     frames = await import('./frames');
     engine = await import('../binding/engine');
     store = await import('./store');
     boundary = await import('./boundary');
   });
   afterAll(() => {
-    vi.doUnmock('../binding/reduce');
+    vi.doUnmock('./reduce');
     vi.resetModules();
   });
 
