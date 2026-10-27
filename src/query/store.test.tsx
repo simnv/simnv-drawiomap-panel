@@ -156,6 +156,112 @@ describe('demandsOf', () => {
     };
     expect(demandsOf(planOf(cfg), context(1), 100, 'visible')).toEqual([]);
   });
+
+  // One binding object per place: the plan keeps a binding for a cell by identity (`cell.bindings`).
+  const on = (queryId: string): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
+  const cellOf = (cellId: string, display: object, bindings: QueryBinding[]) => ({
+    cellId,
+    scope: { cell: { key: cellId } },
+    bindings,
+    display,
+  });
+  const planWith = (cells: Array<ReturnType<typeof cellOf>>, widgets: object[] = []): BindingPlan =>
+    ({
+      cells: Object.fromEntries(cells.map((cell) => [cell.cellId, cell])),
+      widgets,
+      diagnostics: [],
+      config: { ...config(), queries: [...config().queries, query('extra', 'extra')] },
+    }) as unknown as BindingPlan;
+  const pairs = (list: StoreDemand[]) => list.map((d) => [d.cellId, d.query.id]);
+
+  it('keeps the plan order and the query, scope and context objects of the plan', () => {
+    const [speed, health, extra, shape] = [on('speed'), on('health'), on('extra'), on('health')];
+    const plan = planWith([
+      cellOf('b', { status: { binding: extra }, link: { a2b: { binding: speed, capacityBinding: health } } }, [
+        speed,
+        health,
+        extra,
+      ]),
+      cellOf('a', { shape: { binding: shape } }, [shape]),
+    ]);
+    const list = demandsOf(plan, context(1), 100, 'visible');
+    expect(pairs(list)).toEqual([
+      ['b', 'speed'],
+      ['b', 'health'],
+      ['b', 'extra'],
+      ['a', 'health'],
+    ]);
+    expect(list[0].query).toBe(plan.config.queries[1]);
+    expect(list[0].scope).toBe(plan.cells.b.scope);
+    expect(list[3].scope).toBe(plan.cells.a.scope);
+    expect(list[0].context).toBe(context(1));
+  });
+
+  it('demands the capacity bindings: of a link half, of the link, of a card row; a capacity alone too', () => {
+    const [ua, ca, cap] = [on('health'), on('speed'), on('extra')];
+    const halves = planWith([
+      cellOf('l', { link: { a2b: { binding: ua, capacityBinding: ca }, capacityBinding: cap } }, [ua, ca, cap]),
+    ]);
+    expect(pairs(demandsOf(halves, context(1), 100, 'visible'))).toEqual([
+      ['l', 'health'],
+      ['l', 'speed'],
+      ['l', 'extra'],
+    ]);
+    const only = on('speed');
+    const capacityOnly = planWith([cellOf('l', { link: { capacityBinding: only } }, [only])]);
+    expect(pairs(demandsOf(capacityOnly, context(1), 100, 'visible'))).toEqual([['l', 'speed']]);
+    const rowCapacity = on('speed');
+    const row = { kind: 'value', label: 'Speed', binding: rowCapacity };
+    const card = planWith([cellOf('n', { hover: { rows: [row] } }, [rowCapacity])]);
+    expect(pairs(demandsOf(card, context(1), 100, 'hover', 'n'))).toEqual([['n', 'speed']]);
+    expect(demandsOf(card, context(1), 100, 'visible')).toEqual([]);
+  });
+
+  it('skips a disabled cell or section and a binding that the plan did not keep for the cell', () => {
+    const [shape, status, link, row, dropped] = [on('health'), on('speed'), on('extra'), on('health'), on('speed')];
+    const display = {
+      shape: { binding: shape },
+      status: { binding: status },
+      link: { capacityBinding: link },
+      hover: { rows: [{ kind: 'value', label: 'Value', binding: row }] },
+    };
+    const bindings = [shape, status, link, row];
+    const visible = (cell: ReturnType<typeof cellOf>) => pairs(demandsOf(planWith([cell]), context(1), 100, 'visible'));
+    const hover = (cell: ReturnType<typeof cellOf>) =>
+      pairs(demandsOf(planWith([cell]), context(1), 100, 'hover', cell.cellId));
+    expect(visible(cellOf('c', display, bindings))).toEqual([
+      ['c', 'extra'],
+      ['c', 'health'],
+      ['c', 'speed'],
+    ]);
+    expect(visible(cellOf('c', { ...display, enabled: false }, bindings))).toEqual([]);
+    expect(hover(cellOf('c', { ...display, enabled: false }, bindings))).toEqual([]);
+    expect(visible(cellOf('c', { ...display, link: { enabled: false, capacityBinding: link } }, bindings))).toEqual([
+      ['c', 'health'],
+      ['c', 'speed'],
+    ]);
+    expect(visible(cellOf('c', { ...display, shape: { enabled: false, binding: shape } }, bindings))).toEqual([
+      ['c', 'extra'],
+      ['c', 'speed'],
+    ]);
+    expect(visible(cellOf('c', { ...display, status: { enabled: false, binding: status } }, bindings))).toEqual([
+      ['c', 'extra'],
+      ['c', 'health'],
+    ]);
+    expect(hover(cellOf('c', display, bindings))).toEqual([['c', 'health']]);
+    expect(hover(cellOf('c', { ...display, hover: { ...display.hover, enabled: false } }, bindings))).toEqual([]);
+    expect(visible(cellOf('c', { shape: { binding: dropped } }, []))).toEqual([]);
+    expect(hover(cellOf('c', { hover: { rows: [{ kind: 'value', label: 'V', binding: dropped }] } }, []))).toEqual([]);
+  });
+
+  it('gives no hover demand for a missing or closed card, and none for a cell that is not in the plan', () => {
+    const plan = planOf(config());
+    expect(demandsOf(plan, context(1), 100, 'hover', 'nowhere')).toEqual([]);
+    expect(demandsOf(plan, context(1), 100, 'hover')).toEqual([]);
+    // the widget anchor is not a cell of the plan: no scope, no demand
+    const lost = planWith([], [{ widget, anchorCellId: 'gone', scope, index: 0 }]);
+    expect(demandsOf(lost, context(1), 100, 'widget')).toEqual([]);
+  });
 });
 
 describe('the store keeps the last result during a refresh', () => {
