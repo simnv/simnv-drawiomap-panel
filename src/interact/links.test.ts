@@ -19,7 +19,6 @@ const patch: CellPatch = {
   ruleNames: ['links'],
   scope: { cell: { 'pg-id': 'x' }, from: { node: 'a', port: 'p' }, to: { node: 'b', port: 'q' } },
   urls: [{ title: 'links', url: '/d/iface?var-job=node-a&from=${__from}' }],
-  warnings: [],
   link: {
     a2b: {
       status: 'ok',

@@ -15,7 +15,6 @@ const patch = (cellId: string, color: string): CellPatch => ({
   scope: { cell: {} },
   shape: { status: 'ok', color, target: 'shape', stepIndex: 0 },
   urls: [],
-  warnings: [],
 });
 const patches = (...list: CellPatch[]): PatchMap => new Map(list.map((p) => [p.cellId, p]));
 

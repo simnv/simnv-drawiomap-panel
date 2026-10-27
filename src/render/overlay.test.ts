@@ -68,7 +68,6 @@ const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
   ruleNames: ['r'],
   scope: { cell: {} },
   urls: [],
-  warnings: [],
   ...p,
 });
 const opts = { theme: createTheme() };

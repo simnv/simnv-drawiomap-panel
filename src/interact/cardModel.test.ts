@@ -36,7 +36,6 @@ const nodePatch = (over: Partial<CellPatch> = {}): CellPatch => ({
   ruleNames: ['node up', 'router cpu'],
   scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: 'rtr-a multi-WAN + PBR' } },
   urls: [{ title: 'node up', url: '/d/node?job=node-rtr-a' }],
-  warnings: [],
   shape: {
     status: 'ok',
     color: '#00ff00',
@@ -618,7 +617,6 @@ describe('opensCard', () => {
     ruleNames: [],
     scope: { cell: { key: 'x' } },
     urls: [],
-    warnings: [],
     ...over,
   });
   // a series without data links

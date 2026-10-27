@@ -215,7 +215,6 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       scope: cell.scope,
       ruleNames: cell.patternIds,
       urls: [],
-      warnings: [],
     };
     if (cell.unavailable !== undefined) {
       // nothing binds: the cell is grey with the reason, and the status band counts it

@@ -236,7 +236,6 @@ export interface CellPatch {
   unavailable?: { reason: string; color: string };
   /** the display url after template resolution; dashboard variables are resolved later by replaceVariables */
   urls: LinkTarget[];
-  warnings: string[];
 }
 
 export type PatchMap = Map<string, CellPatch>;

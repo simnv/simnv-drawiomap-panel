@@ -55,7 +55,6 @@ const linkPatch = (cellId: string, link: CellPatch['link']): CellPatch => ({
   ruleNames: ['r'],
   scope: { cell: {} },
   urls: [],
-  warnings: [],
   link,
 });
 const theme = createTheme();
@@ -597,7 +596,6 @@ describe('renderLinkLabels: obstacles', () => {
       ruleNames: ['r'],
       scope: { cell: {} },
       urls: [],
-      warnings: [],
       statusView,
     };
     const before = stageObstacles(root, index, new Map(), 10);
@@ -622,7 +620,6 @@ describe('renderLinkLabels: obstacles', () => {
       ruleNames: ['r'],
       scope: { cell: {} },
       urls: [],
-      warnings: [],
       shape: { color: '#00ff00', target: 'stroke' },
     } as unknown as PlanCellPatch;
     applyPatches(index, new Map([['n5', patch]]), undefined, undefined, { theme, osDark: false });
@@ -645,7 +642,6 @@ describe('renderLinkLabels: obstacles', () => {
         ruleNames: ['r'],
         scope: { cell: {} },
         urls: [],
-        warnings: [],
         shape: { color: '#00ff00', target: 'stroke' },
         statusView: view(state),
       }) as unknown as PlanCellPatch;
