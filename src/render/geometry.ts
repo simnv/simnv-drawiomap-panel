@@ -399,8 +399,8 @@ function localGeom(line: SVGPathElement): LocalGeom {
 /**
  * Geometry of an edge path expressed in the coordinate system of `target` (the overlay group of the link, a sibling of the path).
  * Browser: getTotalLength/getPointAtLength on the real path, points mapped with
- * target.getCTM()^-1 × line.getCTM() (`relativeMatrix`; the identity when that is not usable), so transforms on
- * the edge or its ancestors are respected.
+ * target.getCTM()^-1 × line.getCTM() (`relativeMatrix`; a path with scale(0) collapses to one point; the identity
+ * when the CTM of the target is not usable), so transforms on the edge or its ancestors are respected.
  * jsdom: pure parser on the d attribute (M/L exact, curves approximated); identity transform.
  * The path is measured once per element (`localGeom`); the matrices are read on every call.
  */
@@ -416,7 +416,7 @@ export function pathGeometry(line: SVGPathElement, target: SVGGraphicsElement): 
       matrix: IDENTITY,
     };
   }
-  const M = relativeMatrix(line, target) ?? IDENTITY;
+  const M = relativeMatrix(line, target, { singular: true }) ?? IDENTITY;
   const identity = M.a === 1 && M.b === 0 && M.c === 0 && M.d === 1 && M.e === 0 && M.f === 0;
   const map = (p: Point): Point => (identity ? { x: p.x, y: p.y } : applyMatrix(M, p));
   return {
@@ -479,35 +479,48 @@ export function localMatrix(el: Element, stop: Element | null): Matrix | undefin
   return m;
 }
 
-/** True for a matrix that can be inverted: finite entries and a determinant that is not near zero. */
+/** True for a matrix with finite entries. */
+function finite(m: Matrix): boolean {
+  return [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite);
+}
+
+/**
+ * True for a matrix that can be inverted: finite entries and a determinant that is not near zero for the scale of the
+ * matrix. A small uniform scale (1e-5) is usable; scale(0) and scale(1, 1e-12) are not.
+ */
 export function usable(m: Matrix): boolean {
   const det = m.a * m.d - m.b * m.c;
-  return [m.a, m.b, m.c, m.d, m.e, m.f].every(Number.isFinite) && Number.isFinite(det) && Math.abs(det) >= 1e-9;
+  const s = Math.max(Math.abs(m.a), Math.abs(m.b), Math.abs(m.c), Math.abs(m.d));
+  return finite(m) && Number.isFinite(det) && det !== 0 && Math.abs(det) >= 1e-9 * s * s;
 }
 
 /**
  * The matrix that takes the user space of `from` into the user space of `to`: the CTMs of both (`screen`: the screen
  * CTMs; `toCtm`: the CTM of `to` that the caller has read already). An engine with no CTM (jsdom) composes the
- * transform attributes up to the nearest common ancestor. Undefined when a matrix is null, not resolved or not
- * `usable`.
+ * transform attributes up to the nearest common ancestor. Undefined when a matrix is null, not resolved or not finite,
+ * when the matrix of `to` is not `usable`, and when the result is not `usable`. `singular` keeps a result that is not
+ * invertible: a `from` with scale(0) maps every point to one point.
  */
 export function relativeMatrix(
   from: Element,
   to: Element,
-  opts: { screen?: boolean; toCtm?: Matrix } = {}
+  opts: { screen?: boolean; toCtm?: Matrix; singular?: boolean } = {}
 ): Matrix | undefined {
-  const own = ctmOf(from, opts.screen);
-  const base = opts.toCtm ?? ctmOf(to, opts.screen);
-  if (own !== undefined && base !== undefined) {
-    return own && base && usable(own) && usable(base) ? multiply(invert(base), own) : undefined;
+  let own = ctmOf(from, opts.screen);
+  let base = opts.toCtm ?? ctmOf(to, opts.screen);
+  if (own === undefined || base === undefined) {
+    let common: Element | null = to;
+    while (common && !common.contains(from)) {
+      common = common.parentElement;
+    }
+    own = localMatrix(from, common);
+    base = localMatrix(to, common);
   }
-  let common: Element | null = to;
-  while (common && !common.contains(from)) {
-    common = common.parentElement;
+  if (!own || !base || !finite(own) || !usable(base)) {
+    return undefined;
   }
-  const up = localMatrix(from, common);
-  const down = localMatrix(to, common);
-  return up && down && usable(up) && usable(down) ? multiply(invert(down), up) : undefined;
+  const m = multiply(invert(base), own);
+  return opts.singular ? (finite(m) ? m : undefined) : usable(m) ? m : undefined;
 }
 
 /** The CTM (or the screen CTM) of an element: null when the engine gives none, undefined when it has no such API. */

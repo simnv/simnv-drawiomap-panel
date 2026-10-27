@@ -119,13 +119,28 @@ describe('relativeMatrix', () => {
     expect(root).not.toHaveBeenCalled();
   });
   it('is undefined for a CTM that is null, singular or not finite', () => {
-    for (const bad of [null, { ...ident, a: 0, d: 0 }, { ...ident, a: 1e-6, d: 1e-6 }, { ...ident, e: NaN }]) {
+    for (const bad of [null, { ...ident, a: 0, d: 0 }, { ...ident, d: 1e-12 }, { ...ident, e: NaN }]) {
       const { line, marker } = mk();
       Object.assign(line, { getCTM: () => ident });
       Object.assign(marker, { getCTM: () => bad });
       expect(relativeMatrix(marker, line)).toBeUndefined();
       expect(relativeMatrix(line, marker)).toBeUndefined();
     }
+  });
+  it('takes a small uniform scale: it is not singular', () => {
+    const { line, marker } = mk();
+    Object.assign(line, { getCTM: () => ident });
+    Object.assign(marker, { getCTM: () => ({ ...ident, a: 1e-6, d: 1e-6 }) });
+    expect(relativeMatrix(marker, line)).toEqual({ ...ident, a: 1e-6, d: 1e-6 });
+    expect(relativeMatrix(line, marker)).toEqual({ ...ident, a: 1e6, d: 1e6 });
+  });
+  it('keeps a source that collapses (scale(0)) only when asked: `singular`', () => {
+    const { line, marker } = mk();
+    const zero = { ...ident, a: 0, d: 0 };
+    Object.assign(line, { getCTM: () => ident });
+    Object.assign(marker, { getCTM: () => zero });
+    expect(relativeMatrix(marker, line, { singular: true })).toEqual(zero);
+    expect(relativeMatrix(line, marker, { singular: true })).toBeUndefined();
   });
   it('composes the transform attributes up to the common ancestor when the engine has no CTM (jsdom)', () => {
     const { svg, line, marker } = mk('translate(10 20) scale(2)', 'translate(5,0)');
@@ -181,6 +196,20 @@ describe('pathGeometry', () => {
     expect(poly.length).toBeGreaterThan(10);
     expect(poly[0]).toEqual({ x: 5, y: 2.5 });
     expect(poly[poly.length - 1]).toEqual({ x: 55, y: 27.5 });
+  });
+  it('collapses a path with its own scale(0) to one point and keeps a small scale (the target is the identity)', () => {
+    const { g, p } = mk();
+    Object.assign(g, { getCTM: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) });
+    for (const s of [0, 1e-5]) {
+      Object.assign(p, {
+        getTotalLength: () => 150,
+        getPointAtLength: (d: number) => (d <= 100 ? { x: d, y: 0 } : { x: 100, y: d - 100 }),
+        getCTM: () => ({ a: s, b: 0, c: 0, d: s, e: 0, f: 0 }),
+      });
+      const poly = pathGeometry(p, g).polyline(0, 150);
+      expect(poly[poly.length - 1].x).toBeCloseTo(100 * s, 12);
+      expect(poly[poly.length - 1].y).toBeCloseTo(50 * s, 12);
+    }
   });
   it('keeps only the own transform of the path for a sibling target in a scaled group', () => {
     const { g, p } = mk();

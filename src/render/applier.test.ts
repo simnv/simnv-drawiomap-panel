@@ -629,13 +629,22 @@ describe('end markers: unusable geometry and cost', () => {
     for (const m of [
       { ...ident, a: 0, d: 0 },
       { ...ident, e: NaN },
-      { ...ident, a: 1e-6, d: 1e-6 },
+      { ...ident, d: 1e-12 },
     ] as SVGMatrix[]) {
       withCtm(
         () => m,
         () => expect(buildCellIndex(mountSvg(document.createElement('div'), SVG)).get('e')!.ends).toHaveLength(0)
       );
     }
+  });
+  it('keeps a marker when it and its line share a small uniform scale: the matrix between them is the identity', () => {
+    withCtm(
+      () => ({ ...ident, a: 1e-6, d: 1e-6 }) as SVGMatrix,
+      () =>
+        expect(buildCellIndex(mountSvg(document.createElement('div'), SVG)).get('e')!.ends).toEqual([
+          expect.objectContaining({ end: 'start' }),
+        ])
+    );
   });
   it('computes the end once at index time and never asks for a matrix while painting', () => {
     const getCTM = vi.fn(() => ident);

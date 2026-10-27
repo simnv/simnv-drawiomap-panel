@@ -501,6 +501,12 @@ describe('arrow tip position', () => {
     expect(b2a[0]).toBe('84,0');
     expect(b2a[b2a.length - 1]).toBe('100,100');
   });
+  it('draws a path with its own scale(0) collapsed to one point, not at its local size', () => {
+    const root = drawMeasured('M 0 0 L 200 0', 200, (d) => ({ x: d, y: 0 }), { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 });
+    for (const pts of pointsOf(root, 'dmap-half')) {
+      expect(new Set(pts)).toEqual(new Set(['0,0']));
+    }
+  });
 });
 
 describe('linkSplit', () => {

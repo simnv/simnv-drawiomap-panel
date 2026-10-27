@@ -378,6 +378,19 @@ describe('ChartLayer', () => {
     expect(readChartAnchor(s.cells.get('chart')!, parent)).toBeUndefined();
     s.host.remove();
   });
+  it('keeps the anchor when the rect and its parent share a small scale: the matrix between them is a translation', () => {
+    const s = setup();
+    const parent = s.rect.parentElement as unknown as SVGGraphicsElement;
+    Object.assign(parent, { getCTM: () => ({ ...identity, a: 1e-5, d: 1e-5, e: 3, f: 4 }) });
+    Object.assign(s.rect, { getCTM: () => ({ ...identity, a: 1e-5, d: 1e-5, e: 3 + 12e-5, f: 4 + 5e-5 }) });
+    const m = readChartAnchor(s.cells.get('chart')!, parent)?.matrix;
+    expect(m).toBeDefined();
+    const want = { a: 1, b: 0, c: 0, d: 1, e: 12, f: 5 };
+    for (const k of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
+      expect(m![k]).toBeCloseTo(want[k], 6);
+    }
+    s.host.remove();
+  });
   it('does not demand a hidden region and reacts when its ancestor becomes visible', async () => {
     const s = setup();
     s.host.style.display = 'none';
