@@ -65,7 +65,6 @@ const half = (over: Partial<HalfState> = {}): HalfState => ({
 });
 const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
   cellId,
-  ruleNames: ['r'],
   scope: { cell: {} },
   urls: [],
   ...p,

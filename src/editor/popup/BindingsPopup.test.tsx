@@ -359,7 +359,6 @@ describe('CardPreview component', () => {
   const patch = (hover?: PlanCellPatch['hover']): PlanCellPatch =>
     ({
       cellId: 'pg-node~rtr-a',
-      ruleNames: [],
       scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: 'Router A' } },
       urls: [],
       hover,

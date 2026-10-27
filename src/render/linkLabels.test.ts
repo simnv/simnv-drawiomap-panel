@@ -52,7 +52,6 @@ const half = (over: Partial<HalfState> = {}): HalfState => ({
 const nodata = (): HalfState => ({ status: 'nodata', color: '#888', width: 2, label: 'no data', stepIndex: -1 });
 const linkPatch = (cellId: string, link: CellPatch['link']): CellPatch => ({
   cellId,
-  ruleNames: ['r'],
   scope: { cell: {} },
   urls: [],
   link,
@@ -593,7 +592,6 @@ describe('renderLinkLabels: obstacles', () => {
     };
     const down: PlanCellPatch = {
       cellId: 'n3',
-      ruleNames: ['r'],
       scope: { cell: {} },
       urls: [],
       statusView,
@@ -617,7 +615,6 @@ describe('renderLinkLabels: obstacles', () => {
     const { root, index } = build(SVG(node));
     const patch = {
       cellId: 'n5',
-      ruleNames: ['r'],
       scope: { cell: {} },
       urls: [],
       shape: { color: '#00ff00', target: 'stroke' },
@@ -639,7 +636,6 @@ describe('renderLinkLabels: obstacles', () => {
     const patch = (state: 'down' | 'normal') =>
       ({
         cellId: 'n6',
-        ruleNames: ['r'],
         scope: { cell: {} },
         urls: [],
         shape: { color: '#00ff00', target: 'stroke' },

@@ -856,7 +856,6 @@ describe('link halves', () => {
   const r = run(linkDisplay, traffic);
   it('colours both halves of a link against the capacity and gives the card text', () => {
     const p = r.patches.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
-    expect(p.ruleNames).toEqual(['p']);
     expect(p.link?.a2b).toMatchObject({ status: 'ok', value: 41e6, capacity: 1e8, capacitySource: 'number' });
     expect(p.link?.a2b?.percent).toBeCloseTo(41);
     expect(p.link?.a2b?.stepIndex).toBe(0);

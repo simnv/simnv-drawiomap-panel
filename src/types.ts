@@ -223,8 +223,6 @@ export interface LinkTarget {
 
 export interface CellPatch {
   cellId: string;
-  /** the ids of the patterns that match the cell */
-  ruleNames: string[];
   scope: TemplateScope;
   /** `labelMode`: what the value label of each half shows (`display.link.label.mode`, `none` when absent) */
   link?: { a2b?: HalfState; b2a?: HalfState; labelMode?: LinkLabelMode };

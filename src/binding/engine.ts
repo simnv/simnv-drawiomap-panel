@@ -213,7 +213,6 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
     const patch: PlanCellPatch = {
       cellId: cell.cellId,
       scope: cell.scope,
-      ruleNames: cell.patternIds,
       urls: [],
     };
     if (cell.unavailable !== undefined) {

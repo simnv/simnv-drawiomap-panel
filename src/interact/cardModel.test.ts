@@ -33,7 +33,6 @@ const ctx: CardContext = {
 
 const nodePatch = (over: Partial<CellPatch> = {}): CellPatch => ({
   cellId: 'pg-node~rtr-a',
-  ruleNames: ['node up', 'router cpu'],
   scope: { cell: { 'pg-id': 'rtr-a', key: 'rtr-a', label: 'rtr-a multi-WAN + PBR' } },
   urls: [{ title: 'node up', url: '/d/node?job=node-rtr-a' }],
   shape: {
@@ -614,7 +613,6 @@ describe('combined up/down row', () => {
 describe('opensCard', () => {
   const bare = (over: Partial<PlanCellPatch> = {}): PlanCellPatch => ({
     cellId: 'pg-node~x',
-    ruleNames: [],
     scope: { cell: { key: 'x' } },
     urls: [],
     ...over,
