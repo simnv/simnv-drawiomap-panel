@@ -82,7 +82,3 @@ export function cellMatches(sel: CellSelector, c: CellMeta): boolean {
   }
   return true;
 }
-
-export function selectCells(sel: CellSelector, cells: CellMeta[]): CellMeta[] {
-  return cells.filter((c) => cellMatches(sel, c));
-}
