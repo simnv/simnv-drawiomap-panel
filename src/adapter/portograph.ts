@@ -2,7 +2,7 @@
  * The only module that knows the portograph draw.io binding contract (schema PG_SCHEMA).
  * See docs/research/portograph-contract.md. Adjust here when the contract changes.
  */
-import type { CellKind, CellMeta, Endpoint, TemplateScope } from '../types';
+import type { CellEntry, CellKind, CellMeta, Endpoint, HoverKind, TemplateScope } from '../types';
 import type { Diagnostic } from '../model/config';
 import { scopeTitle } from './cellTitle';
 
@@ -39,6 +39,32 @@ export const PG_KINDS: Record<string, CellKind> = {
   link: 'link',
   'link-label': 'link-label',
 };
+
+/** The kind of a cell for Options.hover.kinds, see HoverKind. */
+export function hoverKind(cell: Pick<CellEntry, 'meta' | 'shape' | 'line' | 'label'>): HoverKind {
+  const meta = cell.meta;
+  if (meta.kind !== 'other') {
+    return meta.kind;
+  }
+  const id = meta.id;
+  if (id === 'pg-canvas' || id.startsWith('pg-layer~')) {
+    return 'canvas';
+  }
+  if (id.startsWith('pg-group~') || id.startsWith('pg-groupTitle~')) {
+    return 'group';
+  }
+  if (id.startsWith('pg-legend')) {
+    return 'legend';
+  }
+  if (meta.attrs['pg-kind'] !== undefined || id.startsWith('pg-')) {
+    return 'other';
+  }
+  // A plain draw.io diagram. The root and the layers draw nothing of their own.
+  if (!cell.shape && !cell.line && !cell.label) {
+    return 'canvas';
+  }
+  return meta.isEdge ? 'link' : 'node';
+}
 
 /** "node", "node:port" or "node:port#n". */
 export function parseEndpoint(raw: string): Endpoint {

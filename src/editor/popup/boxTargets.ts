@@ -1,4 +1,4 @@
-import { hoverKind } from '../../interact/hit';
+import { hoverKind } from '../../adapter/portograph';
 import type { CellEntry, CellIndex } from '../../types';
 
 /** The structure cells never join a band: the canvas, the layers, the groups and the legend cover many elements. */

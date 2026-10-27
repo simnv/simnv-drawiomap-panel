@@ -1,4 +1,5 @@
-import { formattedValueToString, GrafanaTheme2, LinkModel, ScopedVars, ThresholdsConfig } from '@grafana/data';
+import { formattedValueToString, LinkModel } from '@grafana/data';
+import type { CardContext } from '../types';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
 import { buildScopedVars, primaryOf, Primary, resolveLinks } from './links';
@@ -6,15 +7,17 @@ import {
   halfState,
   historySeries,
   metricProblem,
-  type BindingDemand,
   type BindingResolver,
   type HalfContext,
   type PlanCellPatch,
 } from '../binding/engine';
+import type { BindingDemand } from '../binding/resolve';
 import { inFieldUnit, resolveCapacity, type CapacityDiagnostic } from '../binding/capacity';
 import { INVALID_FRESHNESS_TEXT, type StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import {
+  cellPath,
+  diagnosticKey,
   invalidBounds,
   invalidFreshness,
   rowBindings,
@@ -121,7 +124,7 @@ export function buildConfiguredCard(
       if (href === undefined) {
         card.diagnostics.push({
           code: 'invalid-url',
-          path: `cells.${patch.cellId}.hover.rows[${i}].url`,
+          path: cellPath(patch.cellId, `hover.rows[${i}].url`),
           message: 'Drilldown URL must use http, https or a relative path.',
         });
       } else if (!card.links.some((l) => l.href === href)) {
@@ -206,7 +209,7 @@ function readBinding(
   const model = resolve(patch.cellId, binding);
   const problem = metricProblem(model, binding);
   if (problem) {
-    diagnostics.push({ ...problem, path: `cells.${patch.cellId}.${path}` });
+    diagnostics.push({ ...problem, path: cellPath(patch.cellId, path) });
   }
   if (model.state !== 'ready' || unit === undefined) {
     return model;
@@ -261,10 +264,10 @@ function combinedRow(
   // The row capacity sources are resolved once per direction: one report of each problem, one read of each series.
   const reported = new Set<string>();
   const report = (d: CapacityDiagnostic) => {
-    const key = `${d.code}|${d.path}|${d.message}`;
+    const key = diagnosticKey(d);
     if (!reported.has(key)) {
       reported.add(key);
-      card.diagnostics.push({ ...d, path: `cells.${patch.cellId}.${d.path}` });
+      card.diagnostics.push({ ...d, path: cellPath(patch.cellId, d.path) });
     }
   };
   const reads = new Map<string, HistoryModel>();
@@ -276,7 +279,7 @@ function combinedRow(
     if (seen) {
       return seen;
     }
-    // the demand names the place in the row, as collectBindingDemands does: `series[j].capacityBinding`
+    // the demand names the place in the row, as hoverDemands does: `series[j].capacityBinding`
     card.demands.push({
       cellId: patch.cellId,
       binding,
@@ -349,13 +352,6 @@ function combinedRow(
     directions,
     domain,
   };
-}
-
-export interface CardContext {
-  theme: GrafanaTheme2;
-  replaceVariables: (text: string, scopedVars?: ScopedVars) => string;
-  /** the panel default thresholds: they apply when a field has none */
-  fieldThresholds?: ThresholdsConfig;
 }
 
 /** Row url: the row template (resolved with the row series labels, encoded), else the display url. */

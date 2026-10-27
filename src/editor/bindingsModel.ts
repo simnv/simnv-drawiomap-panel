@@ -1,4 +1,6 @@
 import {
+  cellPath,
+  diagnosticKey,
   displayBindings,
   EMPTY_CONFIG,
   type Diagnostic,
@@ -87,7 +89,7 @@ const queryIdsOf = (display: Partial<DisplayConfig>) =>
 function cellOfPath(path: string, ids: string[]): { cellId: string; rest: string } | undefined {
   let found: { cellId: string; rest: string } | undefined;
   for (const id of ids) {
-    const prefix = `cells.${id}.`;
+    const prefix = cellPath(id, '');
     if (path.startsWith(prefix) && (!found || id.length > found.cellId.length)) {
       found = { cellId: id, rest: path.slice(prefix.length) };
     }
@@ -281,7 +283,7 @@ export function buildBindingsList(
   const general: RowProblem[] = [];
   const seen = new Set<string>();
   const add = (row: BindingRow | undefined, problem: RowProblem) => {
-    const id = `${row?.key ?? 'general'}|${problem.code}|${problem.path}|${problem.cellId ?? ''}|${problem.message}`;
+    const id = `${row?.key ?? 'general'}|${diagnosticKey(problem)}|${problem.cellId ?? ''}`;
     if (!seen.has(id)) {
       seen.add(id);
       (row ? row.problems : general).push(problem);
@@ -429,7 +431,7 @@ export function problemsOf(list: BindingsList): ProblemEntry[] {
   const seen = new Set<string>();
   const entries: ProblemEntry[] = [];
   const add = (row: BindingRow | undefined, problem: RowProblem) => {
-    const key = [problem.code, problem.path, problem.cellId ?? '', problem.message].join('|');
+    const key = `${diagnosticKey(problem)}|${problem.cellId ?? ''}`;
     if (!seen.has(key)) {
       seen.add(key);
       entries.push({ key, row, problem });

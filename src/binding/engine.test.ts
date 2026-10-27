@@ -19,7 +19,6 @@ import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { BindContext, CellMeta } from '../types';
 import {
   bindPlan,
-  collectBindingDemands,
   historySeries,
   staleStatuses,
   percentText,
@@ -28,6 +27,7 @@ import {
   widgetDiagnostics,
 } from './engine';
 import { resolvePatterns } from './patterns';
+import { hoverDemands, visibleDemands } from './resolve';
 import { displayBindings, type DiagramConfig, type DisplayConfig, type QueryBinding } from '../model/config';
 import { fieldDisplay, historyOf } from '../query/frames';
 
@@ -186,15 +186,11 @@ describe('bindPlan', () => {
     });
     const plan = resolvePatterns([cells[3], cells[4]], config);
     expect(plan.diagnostics).toEqual([]);
-    expect(collectBindingDemands(plan).map((d) => [d.cellId, d.binding.queryId, d.role])).toEqual([
+    expect(visibleDemands(plan).map((d) => [d.cellId, d.binding.queryId, d.role])).toEqual([
       [cells[3].id, 'health', 'visible'],
       [cells[4].id, 'health', 'visible'],
     ]);
-    expect(
-      collectBindingDemands(plan, cells[3].id)
-        .filter((d) => d.role === 'hover')
-        .map((d) => [d.cellId, d.binding.queryId, d.rowIndex])
-    ).toEqual([
+    expect(hoverDemands(plan, cells[3].id).map((d) => [d.cellId, d.binding.queryId, d.rowIndex])).toEqual([
       [cells[3].id, 'extra', 0],
       [cells[3].id, 'extra', 1],
     ]);
@@ -237,11 +233,7 @@ describe('bindPlan', () => {
     }
     const plan = resolvePatterns([cells[3]], config);
     expect(plan.diagnostics).toEqual([]);
-    expect(
-      collectBindingDemands(plan, cells[3].id)
-        .filter((d) => d.role === 'hover')
-        .map((d) => [d.binding.queryId, d.rowIndex, d.path])
-    ).toEqual([
+    expect(hoverDemands(plan, cells[3].id).map((d) => [d.binding.queryId, d.rowIndex, d.path])).toEqual([
       ['tx', 0, 'series[0].binding'],
       ['rx', 0, 'series[1].binding'],
       ['speed', 0, 'series[0].capacityBinding'],
@@ -423,7 +415,7 @@ describe('bindPlan', () => {
     };
     const plan = resolvePatterns([cells[3]], config);
     expect(plan.diagnostics).toContainEqual(expect.objectContaining({ code: 'missing-parameter-path' }));
-    expect(collectBindingDemands(plan, cells[3].id)).toEqual([]);
+    expect([...visibleDemands(plan), ...hoverDemands(plan, cells[3].id)]).toEqual([]);
     const result = bindPlan(
       plan,
       () => {
@@ -504,7 +496,7 @@ describe('one capacity per direction', () => {
     config.queries.push(...ids.map((id) => ({ id, name: id, source: { kind: 'panel' as const, refId: id } })));
     const plan = resolvePatterns([link], config);
     expect(plan.diagnostics).toEqual([]);
-    expect(collectBindingDemands(plan).map((d) => [d.binding.queryId, d.role])).toEqual([
+    expect(visibleDemands(plan).map((d) => [d.binding.queryId, d.role])).toEqual([
       ['ua', 'visible'],
       ['ca', 'visible'],
       ['ub', 'visible'],

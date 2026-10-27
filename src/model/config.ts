@@ -1,6 +1,6 @@
 import type { DataQuery, DataSourceRef } from '@grafana/schema';
 import { z } from 'zod';
-import { matcherError } from '../binding/select';
+import { matcherError } from './matcher';
 import { isRecord } from '../util/record';
 
 export interface Diagnostic {
@@ -8,6 +8,13 @@ export interface Diagnostic {
   path: string;
   message: string;
 }
+
+/** The diagnostic path of a place in the display of one cell: "cells.<id>.<display path>". */
+export const cellPath = (cellId: string, path: string): string => `cells.${cellId}.${path}`;
+/** Two diagnostics with the same key say the same thing at the same place: a list shows one of them. */
+export const diagnosticKey = (d: Diagnostic): string => `${d.code}|${d.path}|${d.message}`;
+/** Path `a` is `b` or lies below it (a nested key or an array index). The one test of "below" for paths. */
+export const pathRelated = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
 
 // ---- shared ----
 

@@ -2,17 +2,17 @@ import { type DisplayValue, type Field, formattedValueToString } from '@grafana/
 import type { BindContext, CellPatch, HalfState, SeriesInfo, ShapeTarget, TemplateScope } from '../types';
 import { colorFor, noDataColor, widthFor } from './color';
 import { resolveTemplate, shield } from './template';
-import { toBitsPerSecond } from './units';
 import { isAllowedUrl } from './url';
 import {
+  cellPath,
+  pathRelated,
   rowBindings,
-  rowCapacityBindings,
   type Diagnostic,
   type HoverSpec,
   type QueryBinding,
   type ShapeDisplay,
 } from '../model/config';
-import { inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity';
+import { bitsWithNote, inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity';
 import { historyOf, type HistoryModel, type HistoryFormat } from '../query/frames';
 import type { BindingPlan } from './patterns';
 import type { QuerySnapshot } from '../query/types';
@@ -67,59 +67,6 @@ export function resolveBinding(
   return Array.isArray(resolved)
     ? { state: 'unsupported', message: `Unresolved binding metadata: ${resolved.join(', ')}` }
     : historyOf(snapshot, resolved, format);
-}
-export interface BindingDemand {
-  /** the cell, or the anchor cell of a chart widget */
-  cellId: string;
-  binding: QueryBinding;
-  role: 'visible' | 'hover' | 'widget';
-  rowIndex?: number;
-  /** the path of the binding in its row: `binding`, `capacityBinding`, `series[j].binding`, `series[j].capacityBinding` */
-  path?: string;
-}
-/**
- * Describes visible data, the open card's rows and the chart widgets at their anchor cells; does not register or
- * execute queries.
- */
-export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
-  const demands: BindingDemand[] = [];
-  for (const cell of Object.values(plan.cells)) {
-    const d = cell.display;
-    if (d.enabled === false) {
-      continue;
-    }
-    const visible = [
-      ...(d.link?.enabled === false
-        ? []
-        : [
-            d.link?.a2b?.binding,
-            d.link?.a2b?.capacityBinding,
-            d.link?.b2a?.binding,
-            d.link?.b2a?.capacityBinding,
-            d.link?.capacityBinding,
-          ]),
-      d.shape?.enabled === false ? undefined : d.shape?.binding,
-      d.status?.enabled === false ? undefined : d.status?.binding,
-    ];
-    for (const binding of visible) {
-      if (binding && cell.bindings.includes(binding)) {
-        demands.push({ cellId: cell.cellId, binding, role: 'visible' });
-      }
-    }
-    if (cell.cellId === openCellId && d.hover?.enabled !== false) {
-      d.hover?.rows.forEach((row, rowIndex) => {
-        [...rowBindings(row), ...rowCapacityBindings(row)].forEach(({ binding, path }) => {
-          if (cell.bindings.includes(binding)) {
-            demands.push({ cellId: cell.cellId, binding, role: 'hover', rowIndex, path });
-          }
-        });
-      });
-    }
-  }
-  for (const entry of plan.widgets) {
-    demands.push({ cellId: entry.anchorCellId, binding: entry.widget.binding, role: 'widget' });
-  }
-  return demands;
 }
 /** The one place that words a metric that did not resolve: no match, an ambiguous match, an error. */
 export function metricProblem(
@@ -250,7 +197,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       const problem = metricProblem(model, binding);
       if (problem) {
         const { message } = problem;
-        result.diagnostics.push({ ...problem, path: `cells.${cell.cellId}.${path}` });
+        result.diagnostics.push({ ...problem, path: cellPath(cell.cellId, path) });
         patch.statusView ??= {
           state: 'missing',
           reason: message,
@@ -266,8 +213,8 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       if (cell.bindings.includes(binding)) {
         return undefined;
       }
-      const prefix = `cells.${cell.cellId}.${path}`;
-      const reported = plan.diagnostics.find((d) => d.path === prefix || d.path.startsWith(`${prefix}.`));
+      const prefix = cellPath(cell.cellId, path);
+      const reported = plan.diagnostics.find((d) => pathRelated(d.path, prefix));
       return reported?.message ?? 'The binding cannot run for this element.';
     };
     const missingView = (reason: string, binding: QueryBinding, path: string): StatusView => ({
@@ -313,13 +260,13 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
           read: (b, at) => (cell.bindings.includes(b) ? read(b, at) : undefined),
         });
         for (const d of cap.diagnostics) {
-          result.diagnostics.push({ ...d, path: `cells.${cell.cellId}.${d.path}` });
+          result.diagnostics.push({ ...d, path: cellPath(cell.cellId, d.path) });
         }
         const h = halfState(model, binding, cap, ctx);
         for (const note of new Set(h.notes)) {
           result.diagnostics.push({
             code: 'unit-not-rate',
-            path: `cells.${cell.cellId}.${path}.binding`,
+            path: cellPath(cell.cellId, `${path}.binding`),
             message: note,
           });
         }
@@ -379,7 +326,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
             };
             result.diagnostics.push({
               code: 'unresolved-metadata',
-              path: `cells.${cell.cellId}.label`,
+              path: cellPath(cell.cellId, 'label'),
               message: `Unresolved ${[...new Set(label.unresolved)].join(', ')}`,
             });
           } else {
@@ -442,7 +389,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       } else {
         result.diagnostics.push({
           code: url.unresolved.length ? 'unresolved-metadata' : 'invalid-url',
-          path: `cells.${cell.cellId}.url`,
+          path: cellPath(cell.cellId, 'url'),
           message: url.unresolved.length
             ? `Unresolved ${url.unresolved.join(', ')}`
             : 'URL must use http, https or a relative path.',
@@ -502,13 +449,11 @@ const capacityField = (field: Field): Field => ({
   config: { ...field.config, decimals: undefined },
 });
 
-const unitNote = (unit: string) => `unit "${unit}" is not a data rate, the raw value is used as bit/s`;
-
 /** A value in the unit of its field, in bit/s. */
 function bitsOf(value: number, s: SeriesInfo, notes: string[]): number {
-  const rate = toBitsPerSecond(value, s.field.config?.unit);
-  if (rate.unknownUnit) {
-    notes.push(unitNote(rate.unknownUnit));
+  const rate = bitsWithNote(value, s.field.config?.unit);
+  if (rate.note) {
+    notes.push(rate.note);
   }
   return rate.bits;
 }

@@ -47,8 +47,8 @@ vi.mock('../binding/engine', async (importOriginal) => {
     },
   };
 });
-vi.mock('./useStage', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./useStage')>();
+vi.mock('../stage/useStage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../stage/useStage')>();
   return {
     ...actual,
     useStage: (...args: Parameters<typeof actual.useStage>) => {
