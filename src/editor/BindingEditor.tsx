@@ -13,17 +13,15 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2, PanelData } from '@grafana/data';
 import { Alert, Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
-import { bindPlan, widgetDiagnostics } from '../binding/engine';
-import { mergeDisplay, resolvePatterns, type MergedDisplay } from '../binding/patterns';
+import { widgetDiagnostics, type BindingResolver } from '../binding/engine';
+import { mergeDisplay, type BindingPlan, type MergedDisplay } from '../binding/patterns';
 import { cellMatches } from '../binding/select';
 import { useStage } from '../stage/useStage';
-import { cardContextFor } from '../binding/context';
+import { useBoundDiagram, type BindGroups } from '../stage/useBoundDiagram';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfig, type DisplayConfig, type NamedQuery } from '../model/config';
 import { PanelQueryContext } from '../query/panel';
-import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
-import type { QuerySnapshot } from '../query/types';
-import { useBindings } from '../query/useBindings';
+import { MAX_DATA_POINTS, type QuerySnapshot } from '../query/types';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import { sanitizeSvg } from '../render/sanitize';
 import type { BindContext, CellSelector, Diagram } from '../types';
@@ -36,7 +34,6 @@ import { DrawioModal } from './DrawioModal';
 import { createHistory, reduceHistory } from './history';
 import { previewPattern, type PatternPreview } from './patternPreview';
 import { createPreviewResolver, type QueryPreview } from './preview';
-import { useStaleStatus } from '../visuals/useSampleStale';
 import { DiagramStage } from './popup/DiagramStage';
 import { InspectorPane, type InspectorSelection } from './popup/InspectorPane';
 import type { QueryUser } from './popup/QueryPane';
@@ -45,8 +42,6 @@ import { PopupLayout, type PopupTab } from './popup/PopupLayout';
 import type { PopupTarget } from './popup/popupBus';
 import type { BaseRevision } from './revision';
 
-/** The panel data points that a binding preview asks for; the panel card asks for the same number. */
-const MAX_DATA_POINTS = 264;
 /** The merge of a raw override display over the plan of its cell; the raw display alone when the merge cannot read it. */
 function rawMerge(base: DisplayConfig, raw: Record<string, unknown>): MergedDisplay {
   try {
@@ -56,6 +51,8 @@ function rawMerge(base: DisplayConfig, raw: Record<string, unknown>): MergedDisp
   }
 }
 const NO_RESULTS: QueryPreview[] = [];
+/** The store group of the popup: the saved bindings and the hover rows of the open cell. */
+const POPUP_GROUPS: BindGroups = { visible: 'bindings' };
 
 export interface BindingEditorProps {
   /** The saved config that the draft starts from. */
@@ -204,7 +201,6 @@ export function BindingEditor({
     [previewKey]
   );
 
-  const plan = useMemo(() => resolvePatterns(metas, draft.config), [metas, draft.config]);
   // The saved document, item by item: the list and the inspector read the items that parse and the skipped ones.
   const validated = useMemo(() => validateConfig(draft.config), [draft.config]);
   // The exact pattern of the draft, by index: duplicate pattern IDs must not widen the scope to another pattern.
@@ -248,18 +244,6 @@ export function BindingEditor({
     };
   }, [patternKey]);
 
-  // The saved bindings of every cell and the hover rows of the open cell are one group of the popup's owner. The
-  // owner frame holds the widget groups of the popup stage too, subscribed: a widget entry resolves at its anchor cell.
-  const visibleDemands = useMemo(() => demandsOf(plan, context, MAX_DATA_POINTS, 'visible'), [plan, context]);
-  const hoverDemands = useMemo(
-    () => demandsOf(plan, context, MAX_DATA_POINTS, 'hover', draft.cellId),
-    [plan, context, draft.cellId]
-  );
-  const widgetDemands = useMemo(() => demandsOf(plan, context, MAX_DATA_POINTS, 'widget'), [plan, context]);
-  const bindingDemands = useMemo(() => [...visibleDemands, ...hoverDemands], [visibleDemands, hoverDemands]);
-  const ownerFrame = useBindings(service, owner, 'bindings', bindingDemands, false, 'owner');
-  const identities = useMemo(() => demandMap(bindingDemands, widgetDemands), [bindingDemands, widgetDemands]);
-
   const localPreview: QueryPreview | undefined = useMemo(
     () =>
       query && context && previewState?.key === previewKey
@@ -273,45 +257,46 @@ export function BindingEditor({
     const explicit = localPreview ? [localPreview] : [];
     return previewAction === 'query' ? [...explicit, ...patternResults] : [...patternResults, ...explicit];
   }, [localPreview, previewAction, patternResults]);
-  const savedResolve = useMemo(
-    () => resolverFrom([ownerFrame], identities, plan, data, format),
-    [ownerFrame, identities, plan, data, format]
-  );
   // The inspector reports the requested outcome, including pending and failed requests.
   // Resolve each candidate separately so display's terminal-result ranking cannot skip it.
-  const resolve: typeof savedResolve = useMemo(() => {
-    const reportResolvers = reportResults.map((result) => ({
-      result,
-      resolve: createPreviewResolver(plan, plan.config, data, result, format),
-    }));
-    return (cellId, binding) => {
-      for (const entry of reportResolvers) {
-        // A batch outcome belongs to its requested scope, even for an unparameterized query.
-        if (patternResults.includes(entry.result) && entry.result.cellId !== cellId) {
-          continue;
+  const previewLayer = useCallback(
+    (saved: BindingResolver, plan: BindingPlan): BindingResolver => {
+      const reportResolvers = reportResults.map((result) => ({
+        result,
+        resolve: createPreviewResolver(plan, plan.config, data, result, format),
+      }));
+      return (cellId, binding) => {
+        for (const entry of reportResolvers) {
+          // A batch outcome belongs to its requested scope, even for an unparameterized query.
+          if (patternResults.includes(entry.result) && entry.result.cellId !== cellId) {
+            continue;
+          }
+          const model = entry.resolve(cellId, binding);
+          if (model.state !== 'idle') {
+            return model;
+          }
         }
-        const model = entry.resolve(cellId, binding);
-        if (model.state !== 'idle') {
-          return model;
-        }
-      }
-      return savedResolve(cellId, binding);
-    };
-  }, [savedResolve, data, reportResults, plan, format, patternResults]);
-  // The bind takes no clock. The stage and the preview card show the patches at the current clock; the diagnostics
-  // list reads the bind itself, because no diagnostic holds a stale state.
-  const bound = useMemo(() => bindPlan(plan, resolve, bindContext), [plan, resolve, bindContext]);
-  const shown = useStaleStatus(bound);
-  const cardPatch = draft.cellId ? shown.patches.get(draft.cellId) : undefined;
-  const cardContext = useMemo(
-    () =>
-      cardContextFor({
-        theme,
-        replaceVariables: bindContext.replaceVariables,
-        fieldThresholds: bindContext.fieldThresholds,
-      }),
-    [theme, bindContext.replaceVariables, bindContext.fieldThresholds]
+        return saved(cellId, binding);
+      };
+    },
+    [data, reportResults, format, patternResults]
   );
+  // The stage and the preview card show the patches at the current clock; the diagnostics list reads the bind itself.
+  const { plan, resolve, bound, shown, cardContext } = useBoundDiagram({
+    metas,
+    config: draft.config,
+    service,
+    owner,
+    groups: POPUP_GROUPS,
+    maxDataPoints: MAX_DATA_POINTS,
+    data,
+    bindContext,
+    format,
+    openCellId: draft.cellId,
+    paused: false,
+    override: previewLayer,
+  });
+  const cardPatch = draft.cellId ? shown.patches.get(draft.cellId) : undefined;
   // Built from the preview inputs only: a highlight or a selection change must not rebuild the card.
   const hoverPreview = useMemo(
     () =>

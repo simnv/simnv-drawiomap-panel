@@ -12,6 +12,8 @@ export interface QueryContext {
   generation: number;
   defaultDatasource?: DataSourceRef;
 }
+/** The data points a diagram query asks for at most. The panel, its card and the binding previews use this number. */
+export const MAX_DATA_POINTS = 264;
 export interface QueryDemand {
   consumerId: string;
   query: NamedQuery;

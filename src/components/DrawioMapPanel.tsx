@@ -4,9 +4,7 @@ import { css, cx } from '@emotion/css';
 import { PanelProps } from '@grafana/data';
 import { IconButton, useTheme2 } from '@grafana/ui';
 import { locationService } from '@grafana/runtime';
-import { bindPlan } from '../binding/engine';
-import { bindContextFor, cardContextFor } from '../binding/context';
-import { resolvePatterns } from '../binding/patterns';
+import { bindContextFor } from '../binding/context';
 import { buildConfiguredCard, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
@@ -19,14 +17,13 @@ import { usePanZoom } from '../stage/usePanZoom';
 import { useStage } from '../stage/useStage';
 import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
+import { useBoundDiagram, type BindGroups } from '../stage/useBoundDiagram';
 import { useHeld } from './useHeld';
 import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
 import { EMPTY_CONFIG, legacyRulesWarning } from '../model/config';
 import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
-import { useStaleStatus } from '../visuals/useSampleStale';
-import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
-import { useBindings } from '../query/useBindings';
+import { MAX_DATA_POINTS } from '../query/types';
 import { ChartLayer } from '../visuals/ChartLayer';
 import { bandLayout, StatusBand } from './StatusBand';
 import { Legend } from '../legend/Legend';
@@ -147,6 +144,9 @@ interface CardState {
   y: number;
   pinned: boolean;
 }
+
+/** The store groups of the panel: the visible bindings and the open card. */
+const PANEL_GROUPS: BindGroups = { visible: 'visible', card: 'card' };
 
 /** The sheet goes to document.body: position: fixed does not work below a CSS transform (the Grafana grid item). */
 const portalSheet = (card: React.ReactElement, sheet: boolean) =>
@@ -333,41 +333,23 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       }),
     [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, opts.linkWidth.min, opts.linkWidth.max]
   );
-  const plan = useMemo(
-    () => resolvePatterns(cellMetas(stage.index), opts.config ?? EMPTY_CONFIG),
-    [stage.index, opts.config]
-  );
+  const metas = useMemo(() => cellMetas(stage.index), [stage.index]);
+  const format = useMemo(() => ({ theme, timeZone }), [theme, timeZone]);
   // The visible bindings and the rows of the open card are two groups of the store with one owner. A hover over a
   // new cell changes the card frame only: the resolver of the diagram, the bind and the patches do not run again.
-  const queryContext = queryService?.context;
-  const maxDataPoints = Math.max(1, Math.min(264, width - 16));
-  const visibleDemands = useMemo(
-    () => demandsOf(plan, queryContext, maxDataPoints, 'visible'),
-    [plan, queryContext, maxDataPoints]
-  );
-  const visible = useBindings(queryService, `panel:${id}`, 'visible', visibleDemands, paused);
-  const openCellId = card?.cellId;
-  const cardDemands = useMemo(
-    () => demandsOf(plan, queryContext, maxDataPoints, 'hover', openCellId),
-    [plan, queryContext, maxDataPoints, openCellId]
-  );
-  const cardFrame = useBindings(queryService, `panel:${id}`, 'card', cardDemands, paused);
-  const format = useMemo(() => ({ theme, timeZone }), [theme, timeZone]);
-  const visibleMap = useMemo(() => demandMap(visibleDemands), [visibleDemands]);
-  const resolve = useMemo(
-    () => resolverFrom([visible], visibleMap, plan, data, format),
-    [visible, visibleMap, plan, data, format]
-  );
-  // The card reads its own entries first, then the visible ones: a row that reads the query of the link has its data
-  // on the first render, before the card group watches.
-  const cardMap = useMemo(() => demandMap(cardDemands, visibleDemands), [cardDemands, visibleDemands]);
-  const cardResolve = useMemo(
-    () => (cardDemands.length ? resolverFrom([cardFrame, visible], cardMap, plan, data, format) : resolve),
-    [cardDemands.length, cardFrame, visible, cardMap, plan, data, format, resolve]
-  );
-  // The bind takes no clock: a tick of the freshness clock runs the pass over the patches, never the bind.
-  const bound = useMemo(() => bindPlan(plan, resolve, bindingContext), [plan, resolve, bindingContext]);
-  const shown = useStaleStatus(bound);
+  const { plan, cardResolve, bound, shown, cardContext } = useBoundDiagram({
+    metas,
+    config: opts.config ?? EMPTY_CONFIG,
+    service: queryService,
+    owner: `panel:${id}`,
+    groups: PANEL_GROUPS,
+    maxDataPoints: Math.max(1, Math.min(MAX_DATA_POINTS, width - 16)),
+    data,
+    bindContext: bindingContext,
+    format,
+    openCellId: card?.cellId,
+    paused,
+  });
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
@@ -390,10 +372,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     // the bindings or the diagram changed and the cell has no patch now
     setCard(null);
   }
-  const cardContext = useMemo(
-    () => cardContextFor({ theme, replaceVariables, fieldThresholds: fieldConfig.defaults.thresholds }),
-    [theme, replaceVariables, fieldConfig.defaults.thresholds]
-  );
   const model = useMemo(
     () => (cardPatch ? buildConfiguredCard(cardPatch, cardResolve, cardContext) : undefined),
     [cardPatch, cardResolve, cardContext]
