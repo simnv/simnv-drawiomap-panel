@@ -41,24 +41,36 @@ function typeOnly(node: ts.ImportDeclaration | ts.ExportDeclaration): boolean {
 }
 
 /**
- * The local files that the import and export declarations of `file` name. A lazy `import()` is not a declaration:
- * it starts a chunk. With `types: false` a declaration that the compiler drops does not count.
+ * The local files that `file` imports. With `types: false` a declaration that the compiler drops does not count.
+ * A lazy `import('./x')` is not a declaration: it starts a chunk. It counts only with `dynamic: true`.
  */
-export function localImports(file: string, { types }: { types: boolean }): string[] {
+export function localImports(file: string, { types, dynamic }: { types: boolean; dynamic: boolean }): string[] {
   const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest);
   const found: string[] = [];
-  for (const node of source.statements) {
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteral(node.moduleSpecifier) &&
-      node.moduleSpecifier.text.startsWith('.') &&
-      (types || !typeOnly(node))
-    ) {
-      const target = resolveImport(file, node.moduleSpecifier.text);
+  const add = (specifier: ts.Expression | undefined) => {
+    if (specifier && ts.isStringLiteralLike(specifier) && specifier.text.startsWith('.')) {
+      const target = resolveImport(file, specifier.text);
       if (target) {
         found.push(target);
       }
+    }
+  };
+  const visit = (node: ts.Node) => {
+    if (
+      dynamic &&
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments.length > 0
+    ) {
+      add(node.arguments[0]);
+    }
+    ts.forEachChild(node, visit);
+  };
+  for (const node of source.statements) {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && (types || !typeOnly(node))) {
+      add(node.moduleSpecifier);
+    } else if (dynamic) {
+      visit(node);
     }
   }
   return found;

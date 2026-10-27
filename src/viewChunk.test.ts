@@ -13,7 +13,7 @@ function mainChunk(): Map<string, string[]> {
   const chains = new Map<string, string[]>([[entry, [entry]]]);
   const queue = [entry];
   for (let file = queue.shift(); file; file = queue.shift()) {
-    for (const next of localImports(file, { types: false })) {
+    for (const next of localImports(file, { types: false, dynamic: false })) {
       if (!chains.has(next)) {
         chains.set(next, [...chains.get(file)!, next]);
         queue.push(next);
