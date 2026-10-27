@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FieldType, type Field } from '@grafana/data';
+import { createTheme, FieldType, type Field } from '@grafana/data';
 import type { TemplateScope } from '../types';
 import type { QueryBinding } from '../model/config';
 import type { HistoryModel } from '../query/frames';
-import { inFieldUnit, resolveCapacity, type CapacityRequest } from './capacity';
+import { bitsWithNote, inFieldUnit, resolveCapacity, type CapacityRequest } from './capacity';
+import { halfState, type HalfContext } from './engine';
 
 const binding = (queryId: string): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
 const field = (unit?: string, max?: number): Field =>
@@ -163,5 +164,29 @@ describe('inFieldUnit', () => {
   });
   it('without a field the amount is as it is', () => {
     expect(inFieldUnit(42, undefined)).toBe(42);
+  });
+});
+
+describe('the note of a unit that is not a data rate', () => {
+  it('bitsWithNote converts a rate unit, and keeps the raw value of another unit with the note', () => {
+    expect(bitsWithNote(2, 'Bps')).toEqual({ bits: 16 });
+    expect(bitsWithNote(2, undefined)).toEqual({ bits: 2 });
+    expect(bitsWithNote(2, 'm3')).toEqual({
+      bits: 2,
+      note: 'unit "m3" is not a data rate, the raw value is used as bit/s',
+    });
+  });
+  it('has the same words for the capacity chain and for the value of a link half', () => {
+    const read = readers({ s: series(4.1, 'm3') });
+    const [diagnostic] = resolveCapacity(base({ own: { capacityBinding: binding('s') }, read })).diagnostics;
+    const ctx: HalfContext = {
+      theme: createTheme(),
+      display: (_, value) => ({ text: String(value), numeric: value }),
+      linkWidth: { min: 1, max: 4 },
+    };
+    const { state, notes } = halfState(series(2.05, 'm3'), binding('v'), { amount: 4.1, source: 'series' }, ctx);
+    expect(state.percent).toBeCloseTo(50);
+    expect(diagnostic.message).toBe('unit "m3" is not a data rate, the raw value is used as bit/s');
+    expect(notes).toEqual([diagnostic.message]);
   });
 });

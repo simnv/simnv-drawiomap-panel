@@ -1,5 +1,5 @@
-import { ownersOfPath, pathRelated, type DisplayOwner, type DisplayProvenance } from '../binding/patterns';
-import type { DiagramConfig, DisplayConfig } from '../model/config';
+import { ownersOfPath, type DisplayOwner, type DisplayProvenance } from '../binding/patterns';
+import { pathRelated, type DiagramConfig, type DisplayConfig } from '../model/config';
 import { valueAtPath } from './leafPaths';
 
 export { valueAtPath };

@@ -237,6 +237,9 @@ export interface BindContext {
   linkWidth: { min: number; max: number };
 }
 
+/** The inputs of the hover card: the part of the bind inputs that the card reads. */
+export type CardContext = Pick<BindContext, 'theme' | 'replaceVariables' | 'fieldThresholds'>;
+
 /* ---------- editor ---------- */
 
 export interface DrawioModalProps {

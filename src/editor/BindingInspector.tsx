@@ -6,7 +6,7 @@ import type { CellMeta } from '../types';
 import { fieldSourceOf } from './fieldSource';
 import { draftPatternIndex, freshId, type BindingDraft, type DraftAction } from './draft';
 import { DisplayFields, newBinding, TextField } from './BindingFields';
-import { validateConfig, type Diagnostic, type DisplayConfig } from '../model/config';
+import { diagnosticKey, pathRelated, validateConfig, type Diagnostic, type DisplayConfig } from '../model/config';
 import { ChartFields } from './ChartFields';
 import { EditorField, EditorSection } from './EditorLayout';
 
@@ -61,9 +61,8 @@ export function BindingInspector({
     // the editor collects the same diagnostic from the validation and from the plan: each one once
     const seen = new Set<string>();
     const problems = diagnostics.filter((d) => {
-      const key = `${d.code}|${d.path}|${d.message}`;
-      const own = d.path === prefix || d.path.startsWith(`${prefix}.`);
-      return own && !seen.has(key) && !!seen.add(key);
+      const key = diagnosticKey(d);
+      return pathRelated(d.path, prefix) && !seen.has(key) && !!seen.add(key);
     });
     return (
       <section aria-label="Element bindings">

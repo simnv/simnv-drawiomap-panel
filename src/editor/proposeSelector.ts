@@ -1,4 +1,5 @@
 import { cellMatches } from '../binding/select';
+import { escapeRegex, isRegexMatcher } from '../model/matcher';
 import type { CellMeta, CellSelector } from '../types';
 
 export interface Proposal {
@@ -15,12 +16,9 @@ export interface Proposal {
 const IDENTITY_ATTRS = new Set(['pg-id', 'id', 'label', 'pg-schema']);
 /** The shortest common label prefix that makes a label selector. */
 const MIN_PREFIX = 3;
-/** A matcher string that starts and ends with a slash is a regular expression, so it cannot stand for itself. */
-const REGEX_LIKE = /^\/(.+)\/([a-z]*)$/;
 
-export const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-/** The matcher that matches this value and no other. */
-const exact = (value: string) => (REGEX_LIKE.test(value) ? `/^${escapeRegex(value)}$/` : value);
+/** The matcher that matches this value and no other. A value that reads as a regex cannot stand for itself. */
+const exact = (value: string) => (isRegexMatcher(value) ? `/^${escapeRegex(value)}$/` : value);
 
 const commonPrefix = (texts: string[]) => {
   let prefix = texts[0] ?? '';

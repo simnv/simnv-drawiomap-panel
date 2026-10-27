@@ -3,7 +3,8 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
 import type { BindingResolver, PlanCellPatch } from '../../binding/engine';
-import { buildConfiguredCard, type CardContext } from '../../interact/cardModel';
+import { buildConfiguredCard } from '../../interact/cardModel';
+import type { CardContext } from '../../types';
 import { Card } from '../../interact/Card';
 
 export interface CardPreviewProps {

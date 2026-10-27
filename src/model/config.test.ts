@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { DataQuery } from '@grafana/schema';
 import {
+  cellPath,
+  diagnosticKey,
   displayBindings,
   emptyEntriesNote,
+  pathRelated,
   rowCapacityBindings,
   validateConfig,
   withoutEmptyEntries,
@@ -650,5 +653,27 @@ describe('validateConfig: link label', () => {
       expect(skippedOf(result, 'patterns')).toEqual([0]);
       expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'invalid-config' }));
     }
+  });
+});
+
+describe('diagnostic paths', () => {
+  it('cellPath names a place in the display of one cell', () => {
+    expect(cellPath('pg-link~a:wan->b:lan', 'link.a2b.binding')).toBe('cells.pg-link~a:wan->b:lan.link.a2b.binding');
+    expect(cellPath('n1', '')).toBe('cells.n1.');
+  });
+  it('diagnosticKey is the same for the same code, path and message only', () => {
+    const d = { code: 'unit-not-rate', path: 'cells.n1.link.a2b.binding', message: 'm' };
+    expect(diagnosticKey({ ...d })).toBe(diagnosticKey(d));
+    expect(new Set([d, { ...d, code: 'x' }, { ...d, path: 'p' }, { ...d, message: 'x' }].map(diagnosticKey)).size).toBe(
+      4
+    );
+  });
+  it('pathRelated is true for the path itself, a nested key and an array index below it', () => {
+    expect(pathRelated('display.link', 'display.link')).toBe(true);
+    expect(pathRelated('display.link.a2b', 'display.link')).toBe(true);
+    expect(pathRelated('hover.rows[0]', 'hover.rows')).toBe(true);
+    expect(pathRelated('display.linkWidth', 'display.link')).toBe(false);
+    expect(pathRelated('patterns[10]', 'patterns[1]')).toBe(false);
+    expect(pathRelated('display', 'display.link')).toBe(false);
   });
 });

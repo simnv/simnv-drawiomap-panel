@@ -4,13 +4,7 @@ import { resolve } from 'node:path';
 import { sanitizeSvg } from '../render/sanitize';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { resolvePatterns } from '../binding/patterns';
-import {
-  commitDraft,
-  createDraft,
-  exportPatternDocument,
-  previewPatternImport,
-  reduceDraft,
-} from '../editor/draft';
+import { commitDraft, createDraft, exportPatternDocument, previewPatternImport, reduceDraft } from '../editor/draft';
 import { EMPTY_CONFIG } from '../model/config';
 import { handleMessage, initialState } from '../editor/protocol';
 import {
@@ -20,6 +14,7 @@ import {
   cellIdentityDiagnostics,
   cellScope,
   contractWarning,
+  hoverKind,
   nodeIcons,
   nodeParts,
   parseEndpoint,
@@ -372,5 +367,35 @@ describe('contractWarning', () => {
     );
     // pg-schema on another cell does not count.
     expect(contractWarning('<svg><g data-cell-id="7" data-meta-pg-schema="3"></g></svg>')).toBeUndefined();
+  });
+});
+
+describe('hoverKind', () => {
+  const drawn = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  const meta = (id: string, attrs: Record<string, string> = {}, isEdge = false) => ({
+    meta: cellMetaFromAttrs(id, attrs, isEdge),
+    shape: drawn,
+  });
+  it('uses the portograph kind of nodes, links, ports and link labels', () => {
+    expect(hoverKind(meta('n', { 'pg-kind': 'node' }))).toBe('node');
+    expect(hoverKind(meta('l', { 'pg-kind': 'link' }, true))).toBe('link');
+    expect(hoverKind(meta('p', { 'pg-kind': 'port' }))).toBe('port');
+    expect(hoverKind(meta('t', { 'pg-kind': 'link-label' }))).toBe('link-label');
+  });
+  it('knows the portograph canvas, layers, groups, group titles and legend cells', () => {
+    expect(hoverKind(meta('pg-canvas'))).toBe('canvas');
+    expect(hoverKind(meta('pg-layer~diagram'))).toBe('canvas');
+    expect(hoverKind(meta('pg-group~core'))).toBe('group');
+    expect(hoverKind(meta('pg-groupTitle~core'))).toBe('group');
+    expect(hoverKind(meta('pg-legend'))).toBe('legend');
+    expect(hoverKind(meta('pg-legendRow~1'))).toBe('legend');
+    expect(hoverKind(meta('pg-overlayMark~x'))).toBe('other');
+    expect(hoverKind(meta('chart-1', { 'pg-kind': 'other' }))).toBe('other');
+  });
+  it('treats cells of a plain draw.io diagram as nodes (vertices) and links (edges)', () => {
+    expect(hoverKind(meta('box'))).toBe('node');
+    expect(hoverKind(meta('edge-ab', {}, true))).toBe('link');
+    // the root and the layers draw nothing of their own
+    expect(hoverKind({ meta: cellMetaFromAttrs('1', {}, false) })).toBe('canvas');
   });
 });

@@ -9,8 +9,8 @@ import {
   type Field,
   type GrafanaTheme2,
 } from '@grafana/data';
-import { compileMatcher } from '../binding/select';
-import { reduceValues } from '../binding/reduce';
+import { compileMatcher } from '../model/matcher';
+import { reduceValues } from './reduce';
 import type { QueryBinding } from '../model/config';
 import { stable } from './boundary';
 import type { QuerySnapshot } from './types';

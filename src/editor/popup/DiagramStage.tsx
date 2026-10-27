@@ -9,8 +9,8 @@ import { renderLinkLabels, setLinkLabelScale, watchLinkLabelFonts } from '../../
 import { renderOverlay } from '../../render/overlay';
 import { applyLayout, viewBoxFor, type ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
-import { usePanZoom } from '../../components/usePanZoom';
-import type { Stage } from '../../components/useStage';
+import { usePanZoom } from '../../stage/usePanZoom';
+import type { Stage } from '../../stage/useStage';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
 import { useOsDark } from '../../visuals/useOsDark';
 import { boxTargets } from './boxTargets';

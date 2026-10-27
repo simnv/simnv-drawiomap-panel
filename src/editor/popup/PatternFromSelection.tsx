@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, RadioButtonGroup, Select, TextArea } from '@grafana/ui';
-import { matcherError } from '../../binding/select';
+import { matcherError } from '../../model/matcher';
 import type { CellMeta, CellSelector } from '../../types';
 import { EditorField, EditorSection } from '../EditorLayout';
 import { TextField } from '../BindingFields';

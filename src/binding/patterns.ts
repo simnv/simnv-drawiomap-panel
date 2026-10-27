@@ -1,10 +1,12 @@
 import type { CellMeta, TemplateScope } from '../types';
 import { cellMatches } from './select';
 import {
+  cellPath,
   displayBindings,
   EMPTY_CONFIG,
   invalidBounds,
   invalidFreshness,
+  pathRelated,
   unknownQueryMessage,
   validateConfig,
   type DiagramConfig,
@@ -235,7 +237,7 @@ export function mergeCell(
     (owner: DisplayOwner): Track =>
     (path, clear) => {
       for (const key of Array.from(provenance.keys())) {
-        if (key === path || key.startsWith(`${path}.`) || key.startsWith(`${path}[`)) {
+        if (pathRelated(key, path)) {
           provenance.delete(key);
         }
       }
@@ -258,9 +260,6 @@ export function displayProvenance(config: DiagramConfig, cell: CellMeta): Displa
   mergeCell(config, cell, provenance);
   return provenance;
 }
-
-/** Path `a` is `b` or lies below it (a nested key or an array index). The one test of "below" for provenance paths. */
-export const pathRelated = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
 
 /**
  * The owners behind a path: those of the path itself, of anything below it, or of an array above it. A path with no
@@ -429,7 +428,7 @@ export function resolvePatterns(cells: CellMeta[], input: unknown): BindingPlan 
     const reason = unavailable.get(cell.id);
     const bindings =
       reason === undefined
-        ? activeBindings(display).filter(({ binding, path }) => usable(binding, scope, `cells.${cell.id}.${path}`))
+        ? activeBindings(display).filter(({ binding, path }) => usable(binding, scope, cellPath(cell.id, path)))
         : [];
     plan.cells[cell.id] = {
       cellId: cell.id,

@@ -1,11 +1,6 @@
-import type { PanelData } from '@grafana/data';
-import { collectBindingDemands, resolveBinding, type BindingDemand, type BindingResolver } from '../binding/engine';
-import type { BindingPlan } from '../binding/patterns';
 import type { NamedQuery } from '../model/config';
 import type { TemplateScope } from '../types';
 import { stable } from './boundary';
-import type { HistoryFormat } from './frames';
-import { panelSnapshot } from './panelSnapshot';
 import { settled, type QueryContext, type QueryController, type QuerySnapshot } from './types';
 
 /** What one consumer wants from one query at one cell. */
@@ -50,7 +45,6 @@ export interface SnapshotStore {
   dispose(): void;
 }
 
-const IDLE: QuerySnapshot = { state: 'idle' };
 /** The snapshot of an entry before its first result, and of a demand without an entry. */
 export const LOADING: QuerySnapshot = { state: 'loading' };
 /** The frame of a hook without a store. */
@@ -66,63 +60,6 @@ export const pairKey = (cellId: string, queryId: string): string => `${cellId}\u
  */
 export const entryKey = (owner: string, group: string, cellId: string, queryId: string): string =>
   [owner, group, cellId, queryId].map(encodeURIComponent).join(':');
-
-/**
- * The demands of one role of a plan: one per `(cellId, queryId)` pair, with the match key. A panel-source query is
- * not a demand: the resolver reads it from the panel data.
- */
-export function demandsOf(
-  plan: BindingPlan,
-  context: QueryContext | undefined,
-  maxDataPoints: number,
-  role: BindingDemand['role'],
-  openCellId?: string
-): StoreDemand[] {
-  if (!context) {
-    return [];
-  }
-  const queries = new Map(plan.config.queries.map((query) => [query.id, query] as const));
-  const seen = new Set<string>();
-  const demands: StoreDemand[] = [];
-  for (const demand of collectBindingDemands(plan, openCellId)) {
-    if (demand.role !== role) {
-      continue;
-    }
-    const pair = pairKey(demand.cellId, demand.binding.queryId);
-    if (seen.has(pair)) {
-      continue;
-    }
-    const query = queries.get(demand.binding.queryId);
-    const scope = plan.cells[demand.cellId]?.scope;
-    if (!query || query.source.kind === 'panel' || !scope) {
-      continue;
-    }
-    seen.add(pair);
-    demands.push({
-      cellId: demand.cellId,
-      query,
-      scope,
-      context,
-      maxDataPoints,
-      matchKey: matchKeyOf(query, scope, context),
-    });
-  }
-  return demands;
-}
-
-/** The demands by pair key, the first of a pair winning: the identities a resolver can be asked for. */
-export function demandMap(...lists: StoreDemand[][]): Map<string, StoreDemand> {
-  const map = new Map<string, StoreDemand>();
-  for (const list of lists) {
-    for (const demand of list) {
-      const pair = pairKey(demand.cellId, demand.query.id);
-      if (!map.has(pair)) {
-        map.set(pair, demand);
-      }
-    }
-  }
-  return map;
-}
 
 const keptCopies = new WeakMap<QuerySnapshot, QuerySnapshot>();
 /** A settled result as a kept one: `fromCache: true`, one copy per result so the history cache still hits. */
@@ -152,39 +89,6 @@ export function shownSnapshot(shown: Shown, demand: StoreDemand): QuerySnapshot 
   return shown.generation === demand.context.generation && shown.maxDataPoints === demand.maxDataPoints
     ? shown.snapshot
     : asKept(shown.snapshot);
-}
-
-/**
- * The resolver of `bindPlan` and of the card over the frames of a render: a Map lookup per `(cellId, queryId)`,
- * then the history cache. `demands` holds every identity the resolver can be asked for.
- */
-export function resolverFrom(
-  frames: Frame[],
-  demands: Map<string, StoreDemand>,
-  plan: BindingPlan,
-  data: PanelData,
-  format: HistoryFormat
-): BindingResolver {
-  const queries = new Map(plan.config.queries.map((query) => [query.id, query] as const));
-  return (cellId, binding) => {
-    const query = queries.get(binding.queryId);
-    const scope = plan.cells[cellId]?.scope;
-    if (!query || !scope) {
-      return { state: 'unsupported', message: 'The query or element is unavailable.' };
-    }
-    if (query.source.kind === 'panel') {
-      return resolveBinding(panelSnapshot(data, query.source.refId), binding, scope, format);
-    }
-    const demand = demands.get(pairKey(cellId, binding.queryId));
-    let shown: Shown | undefined;
-    for (const frame of frames) {
-      shown = frame.get(cellId, binding.queryId);
-      if (shown) {
-        break;
-      }
-    }
-    return resolveBinding(demand && shown ? shownSnapshot(shown, demand) : IDLE, binding, scope, format);
-  };
 }
 
 interface Entry {

@@ -4,14 +4,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { describe, expect, it, vi } from 'vitest';
 import { createQueryController } from '../../query/controller';
 import { PanelQueryContext, type PanelQueryService } from '../../query/panel';
-import { DEFAULT_OPTIONS, type Options } from '../../types';
+import { DEFAULT_OPTIONS, type CardContext, type Options } from '../../types';
 import type { DiagramConfig, QueryBinding } from '../../model/config';
 import { nativeQuery } from '../../fixtures/authoring-config';
 import { diagramOf, svgOf } from '../editorHarness';
 import { buttonNamed, selectStageCell } from '../testUtils';
 import { BindingsPopup } from './BindingsPopup';
 import type { BindingResolver, PlanCellPatch } from '../../binding/engine';
-import type { CardContext } from '../../interact/cardModel';
 import { historyOf } from '../../query/frames';
 import { CardPreview } from './CardPreview';
 

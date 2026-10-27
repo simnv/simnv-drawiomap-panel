@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DiagramStage, type StageSelection } from './DiagramStage';
-import { useStage } from '../../components/useStage';
+import { useStage } from '../../stage/useStage';
 import type { CellPatch, PatchMap } from '../../types';
 
 const svg = readFileSync(resolve(__dirname, '../../fixtures/authoring.svg'), 'utf8');

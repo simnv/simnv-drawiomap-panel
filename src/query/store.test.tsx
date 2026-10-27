@@ -3,17 +3,8 @@ import { FieldType, getDefaultTimeRange, LoadingState, type DataFrame, type Pane
 import { describe, expect, it, vi } from 'vitest';
 import { createQueryController } from './controller';
 import { testQueryService } from './testService';
-import {
-  asKept,
-  createSnapshotStore,
-  demandMap,
-  demandsOf,
-  EMPTY_FRAME,
-  matchKeyOf,
-  resolverFrom,
-  shownSnapshot,
-  type StoreDemand,
-} from './store';
+import { asKept, createSnapshotStore, EMPTY_FRAME, matchKeyOf, shownSnapshot, type StoreDemand } from './store';
+import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
 import { useBindings } from './useBindings';
 import type { BindingPlan } from '../binding/patterns';
 import type { DiagramConfig, NamedQuery, QueryBinding, Widget } from '../model/config';
@@ -134,29 +125,6 @@ function setup() {
   };
   return { execute, controller, store, emit, states };
 }
-
-describe('demandsOf', () => {
-  it('gives one demand per (cell, query) pair of a role, with the match key', () => {
-    expect(demands('visible').map((d) => [d.cellId, d.query.id])).toEqual([['router', 'health']]);
-    // the value and the capacity of one combined row and a value row: two pairs, not three places
-    expect(demands('hover', { open: 'router' }).map((d) => [d.cellId, d.query.id])).toEqual([
-      ['router', 'health'],
-      ['router', 'speed'],
-    ]);
-    expect(demands('widget').map((d) => [d.cellId, d.query.id])).toEqual([['router', 'health']]);
-    const [d] = demands('visible');
-    expect(d.matchKey).toBe(matchKeyOf(query(), scope, context(1)));
-    expect(d.maxDataPoints).toBe(100);
-    expect(demandsOf(planOf(config()), undefined, 100, 'visible')).toEqual([]);
-  });
-  it('skips a panel-source query: the resolver reads it from the panel data', () => {
-    const cfg: DiagramConfig = {
-      ...config(),
-      queries: [{ id: 'health', name: 'H', source: { kind: 'panel', refId: 'A' } }],
-    };
-    expect(demandsOf(planOf(cfg), context(1), 100, 'visible')).toEqual([]);
-  });
-});
 
 describe('the store keeps the last result during a refresh', () => {
   it('shows loading on the first load', () => {
