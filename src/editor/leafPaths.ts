@@ -52,13 +52,10 @@ export function valueAtPath(display: unknown, path: string): unknown {
 
 /**
  * The leaves whose value differs between two displays. A leaf that only one display has counts as different. An
- * edit of one field of a binding changes one leaf, although the editor writes the whole binding.
+ * edit of one field of a binding changes one leaf, although the editor writes the whole binding: no path is a unit.
  */
 export function changedLeaves(before: Partial<DisplayConfig> | undefined, after: Partial<DisplayConfig> | undefined) {
-  const paths = new Set([...leafPaths(before ?? {}), ...leafPaths(after ?? {})]);
-  return Array.from(paths).filter(
-    (path) => JSON.stringify(valueAtPath(before, path)) !== JSON.stringify(valueAtPath(after, path))
-  );
+  return diffLeaves(before, after, []).map((op) => op.path);
 }
 
 /** True for a value that holds nothing: an object without keys (not an array). */
