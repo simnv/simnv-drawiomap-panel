@@ -1,6 +1,6 @@
 import type { DataQuery, DataSourceRef } from '@grafana/schema';
 import { z } from 'zod';
-import { matcherError } from '../binding/select';
+import { matcherError } from './matcher';
 import { isRecord } from '../util/record';
 
 export interface Diagnostic {

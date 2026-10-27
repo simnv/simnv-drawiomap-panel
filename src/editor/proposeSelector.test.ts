@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { cellMatches } from '../binding/select';
 import { buildCellIndex, cellMetas, mountSvg } from '../render/svgStage';
 import type { CellMeta } from '../types';
-import { escapeRegex, proposeSelector } from './proposeSelector';
+import { proposeSelector } from './proposeSelector';
 
 const demo = cellMetas(
   buildCellIndex(
@@ -62,7 +62,6 @@ describe('proposeSelector', () => {
     expect(proposals.map((p) => p.kind)).toEqual(['attrs', 'label', 'ids']);
     const special = [meta('a', {}, 'rtr.(1)'), meta('b', {}, 'rtr.(2)')];
     expect(proposeSelector(special, special).find((p) => p.kind === 'label')!.select.label).toBe('/^rtr\\.\\(/');
-    expect(escapeRegex('a/b+c')).toBe('a\\/b\\+c');
     const short = [meta('a', {}, 'ab1'), meta('b', {}, 'ab2')];
     expect(proposeSelector(short, short).some((p) => p.kind === 'label')).toBe(false);
   });

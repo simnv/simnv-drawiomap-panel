@@ -9,7 +9,7 @@ import {
   type Field,
   type GrafanaTheme2,
 } from '@grafana/data';
-import { compileMatcher } from '../binding/select';
+import { compileMatcher } from '../model/matcher';
 import { reduceValues } from '../binding/reduce';
 import type { QueryBinding } from '../model/config';
 import { stable } from './boundary';
