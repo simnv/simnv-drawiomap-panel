@@ -480,7 +480,14 @@ describe('arrow tip position', () => {
       getPointAtLength: along,
       getCTM: () => ({ a: 0.25, b: 0, c: 0, d: 0.25, e: 0, f: 0 }),
     });
-    renderOverlay(root, index, new Map([['e1', patch('e1', { link: both })]]), opts);
+    // an engine with getTotalLength has getCTM on every element: the overlay group draws in root units
+    const proto = SVGElement.prototype as unknown as { getCTM?: () => unknown };
+    proto.getCTM = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+    try {
+      renderOverlay(root, index, new Map([['e1', patch('e1', { link: both })]]), opts);
+    } finally {
+      delete proto.getCTM;
+    }
     // the corner is at (100, 0) in the overlay
     expect(toBend(tipOf(root, 'a2b'), [[100, 0]])).toBeGreaterThanOrEqual(2 * ARROW - 0.01);
   });

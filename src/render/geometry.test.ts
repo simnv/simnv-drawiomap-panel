@@ -275,6 +275,8 @@ describe('pathGeometry bends', () => {
       getPointAtLength: (d: number) => ({ x: d, y: 0 }),
       getCTM: () => ({ a: 0.25, b: 0, c: 0, d: 0.25, e: 0, f: 0 }),
     });
+    // an engine with getTotalLength has getCTM on every element
+    Object.assign(g, { getCTM: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) });
     expect(pathGeometry(p, g).unit).toBeCloseTo(0.25);
     expect(pathGeometry(make('M 0 0 L 1 0').p, make('M 0 0 L 1 0').g).unit).toBe(1);
   });
