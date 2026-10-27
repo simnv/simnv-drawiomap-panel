@@ -16,7 +16,7 @@ import { cellIdentityDiagnostics, cellScope } from '../adapter/portograph';
 import { bindPlan, widgetDiagnostics } from '../binding/engine';
 import { mergeDisplay, resolvePatterns, type MergedDisplay } from '../binding/patterns';
 import { cellMatches } from '../binding/select';
-import { useStage } from '../components/useStage';
+import { useStage } from '../stage/useStage';
 import { cardContextFor } from '../binding/context';
 import { buildConfiguredCard } from '../interact/cardModel';
 import { validateConfig, type DiagramConfig, type DisplayConfig, type NamedQuery } from '../model/config';
