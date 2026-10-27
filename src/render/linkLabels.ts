@@ -343,7 +343,10 @@ function stageFont(root: SVGSVGElement): string {
 
 /* ---------- coordinates ---------- */
 
-/** The matrix from the user space of `el` into root user units, through the screen CTMs. Undefined when it cannot be read. */
+/**
+ * The matrix from the user space of `el` into root user units: the screen CTMs of both, the transform attributes in
+ * jsdom. Undefined when it cannot be read.
+ */
 function toRoot(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Matrix | undefined {
   return relativeMatrix(el, root, { screen: true, toCtm: rootCtm });
 }

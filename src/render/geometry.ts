@@ -467,7 +467,7 @@ function parseTransform(value: string | null): Matrix | undefined {
 }
 
 /** Product of the transform attributes from `el` up to (not including) `stop`. Undefined when one is not resolved. */
-function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
+export function localMatrix(el: Element, stop: Element | null): Matrix | undefined {
   let m = IDENTITY;
   for (let cur: Element | null = el; cur && cur !== stop; cur = cur.parentElement) {
     const t = parseTransform(cur.getAttribute('transform'));
