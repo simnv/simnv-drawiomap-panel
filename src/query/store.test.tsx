@@ -254,6 +254,35 @@ describe('demandsOf', () => {
     expect(hover(cellOf('c', { hover: { rows: [{ kind: 'value', label: 'V', binding: dropped }] } }, []))).toEqual([]);
   });
 
+  it('reads only the open cell when the card changes, however many cells the plan has', () => {
+    const cells = Array.from({ length: 200 }, (_, i) => {
+      const b = on('health');
+      return cellOf(`c${i}`, { shape: { binding: b }, hover: { rows: [{ kind: 'value', label: 'V', binding: b }] } }, [
+        b,
+      ]);
+    });
+    const plan = planWith(cells);
+    const visited = new Set<string>();
+    const counted: BindingPlan = {
+      ...plan,
+      cells: new Proxy(plan.cells, {
+        get: (target, key) => {
+          visited.add(String(key));
+          return Reflect.get(target, key);
+        },
+        ownKeys: (target) => {
+          visited.add('every cell');
+          return Reflect.ownKeys(target);
+        },
+      }),
+    };
+    for (const open of ['c7', 'c150']) {
+      visited.clear();
+      expect(pairs(demandsOf(counted, context(1), 100, 'hover', open))).toEqual([[open, 'health']]);
+      expect([...visited]).toEqual([open]);
+    }
+  });
+
   it('gives no hover demand for a missing or closed card, and none for a cell that is not in the plan', () => {
     const plan = planOf(config());
     expect(demandsOf(plan, context(1), 100, 'hover', 'nowhere')).toEqual([]);

@@ -1,5 +1,6 @@
 import type { PanelData } from '@grafana/data';
-import { collectBindingDemands, resolveBinding, type BindingDemand, type BindingResolver } from '../binding/engine';
+import { resolveBinding, type BindingResolver } from '../binding/engine';
+import { hoverDemands, visibleDemands, widgetDemands, type BindingDemand } from '../binding/resolve';
 import type { BindingPlan } from '../binding/patterns';
 import type { NamedQuery } from '../model/config';
 import type { TemplateScope } from '../types';
@@ -84,10 +85,15 @@ export function demandsOf(
   const queries = new Map(plan.config.queries.map((query) => [query.id, query] as const));
   const seen = new Set<string>();
   const demands: StoreDemand[] = [];
-  for (const demand of collectBindingDemands(plan, openCellId)) {
-    if (demand.role !== role) {
-      continue;
-    }
+  const selected =
+    role === 'visible'
+      ? visibleDemands(plan)
+      : role === 'widget'
+        ? widgetDemands(plan)
+        : openCellId === undefined
+          ? []
+          : hoverDemands(plan, openCellId);
+  for (const demand of selected) {
     const pair = pairKey(demand.cellId, demand.binding.queryId);
     if (seen.has(pair)) {
       continue;

@@ -6,7 +6,6 @@ import { toBitsPerSecond } from './units';
 import { isAllowedUrl } from './url';
 import {
   rowBindings,
-  rowCapacityBindings,
   type Diagnostic,
   type HoverSpec,
   type QueryBinding,
@@ -67,59 +66,6 @@ export function resolveBinding(
   return Array.isArray(resolved)
     ? { state: 'unsupported', message: `Unresolved binding metadata: ${resolved.join(', ')}` }
     : historyOf(snapshot, resolved, format);
-}
-export interface BindingDemand {
-  /** the cell, or the anchor cell of a chart widget */
-  cellId: string;
-  binding: QueryBinding;
-  role: 'visible' | 'hover' | 'widget';
-  rowIndex?: number;
-  /** the path of the binding in its row: `binding`, `capacityBinding`, `series[j].binding`, `series[j].capacityBinding` */
-  path?: string;
-}
-/**
- * Describes visible data, the open card's rows and the chart widgets at their anchor cells; does not register or
- * execute queries.
- */
-export function collectBindingDemands(plan: BindingPlan, openCellId?: string): BindingDemand[] {
-  const demands: BindingDemand[] = [];
-  for (const cell of Object.values(plan.cells)) {
-    const d = cell.display;
-    if (d.enabled === false) {
-      continue;
-    }
-    const visible = [
-      ...(d.link?.enabled === false
-        ? []
-        : [
-            d.link?.a2b?.binding,
-            d.link?.a2b?.capacityBinding,
-            d.link?.b2a?.binding,
-            d.link?.b2a?.capacityBinding,
-            d.link?.capacityBinding,
-          ]),
-      d.shape?.enabled === false ? undefined : d.shape?.binding,
-      d.status?.enabled === false ? undefined : d.status?.binding,
-    ];
-    for (const binding of visible) {
-      if (binding && cell.bindings.includes(binding)) {
-        demands.push({ cellId: cell.cellId, binding, role: 'visible' });
-      }
-    }
-    if (cell.cellId === openCellId && d.hover?.enabled !== false) {
-      d.hover?.rows.forEach((row, rowIndex) => {
-        [...rowBindings(row), ...rowCapacityBindings(row)].forEach(({ binding, path }) => {
-          if (cell.bindings.includes(binding)) {
-            demands.push({ cellId: cell.cellId, binding, role: 'hover', rowIndex, path });
-          }
-        });
-      });
-    }
-  }
-  for (const entry of plan.widgets) {
-    demands.push({ cellId: entry.anchorCellId, binding: entry.widget.binding, role: 'widget' });
-  }
-  return demands;
 }
 /** The one place that words a metric that did not resolve: no match, an ambiguous match, an error. */
 export function metricProblem(

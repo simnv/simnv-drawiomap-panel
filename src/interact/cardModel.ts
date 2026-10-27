@@ -6,11 +6,11 @@ import {
   halfState,
   historySeries,
   metricProblem,
-  type BindingDemand,
   type BindingResolver,
   type HalfContext,
   type PlanCellPatch,
 } from '../binding/engine';
+import type { BindingDemand } from '../binding/resolve';
 import { inFieldUnit, resolveCapacity, type CapacityDiagnostic } from '../binding/capacity';
 import { INVALID_FRESHNESS_TEXT, type StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
@@ -276,7 +276,7 @@ function combinedRow(
     if (seen) {
       return seen;
     }
-    // the demand names the place in the row, as collectBindingDemands does: `series[j].capacityBinding`
+    // the demand names the place in the row, as hoverDemands does: `series[j].capacityBinding`
     card.demands.push({
       cellId: patch.cellId,
       binding,
