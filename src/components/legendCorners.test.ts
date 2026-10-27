@@ -1,0 +1,32 @@
+import { describe, expect, it } from 'vitest';
+import { SHEET_BELOW } from '../interact/Card';
+import { legendCorners } from './legendCorners';
+
+describe('legendCorners', () => {
+  it('places the four corners of a wide panel', () => {
+    expect(legendCorners(0, 0, 800)).toEqual({
+      'top-left': { left: 4, top: 4 },
+      // below the area of the Grafana panel menu button
+      'top-right': { right: 4, top: 32 },
+      'bottom-left': { left: 4, bottom: 4 },
+      'bottom-right': { right: 4, bottom: 4 },
+    });
+  });
+
+  it('puts the top-left legend below the band and the row of the reset button and the badge', () => {
+    expect(legendCorners(40, 20, 800)['top-left']).toEqual({ left: 4, top: 40 + 4 + 20 + 4 });
+    expect(legendCorners(40, 0, 800)['top-left']).toEqual({ left: 4, top: 44 });
+  });
+
+  it('a wide panel keeps the top-right legend below the menu area or the band, not below the row', () => {
+    expect(legendCorners(0, 32, 800)['top-right']).toEqual({ right: 4, top: 32 });
+    expect(legendCorners(60, 32, 800)['top-right']).toEqual({ right: 4, top: 64 });
+  });
+
+  it('a narrow panel puts the top-right legend below the row, when the row shows', () => {
+    const narrow = SHEET_BELOW - 1;
+    expect(legendCorners(10, 32, narrow)['top-right']).toEqual({ right: 4, top: 10 + 4 + 32 + 4 });
+    expect(legendCorners(10, 0, narrow)['top-right']).toEqual({ right: 4, top: 32 });
+    expect(legendCorners(10, 32, SHEET_BELOW)['top-right']).toEqual({ right: 4, top: 32 });
+  });
+});
