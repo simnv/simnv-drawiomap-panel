@@ -82,6 +82,10 @@ describe('view chunk', () => {
   it('reaches the components from module.ts', () => {
     expect(mainChunk().has('components/DrawioMapPanel.tsx')).toBe(true);
   });
+  it('names editor-only modules that exist', () => {
+    // a renamed module would make the next check pass for no reason
+    expect(EDITOR_ONLY.filter((file) => !existsSync(join(SRC, file)))).toEqual([]);
+  });
   it('holds no editor-only module', () => {
     const chunk = mainChunk();
     expect(EDITOR_ONLY.filter((file) => chunk.has(file)).map((file) => chunk.get(file)!.join(' > '))).toEqual([]);
