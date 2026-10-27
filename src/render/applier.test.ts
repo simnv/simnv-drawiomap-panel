@@ -637,6 +637,11 @@ describe('colourAlpha', () => {
     ['red', 1],
     ['url(#grad)', 1],
     ['', 1],
+    ['RGBA(255, 0, 0, 0.5)', 0.5],
+    ['var(--fill)', 1],
+    ['var(--fill, rgba(0, 0, 0, 0))', 1],
+    ['light-dark(#fff, #000)', 1],
+    ['light-dark(rgba(0, 0, 0, 0), white)', 1],
   ])('reads the alpha of %s as %s', (value, alpha) => {
     expect(colourAlpha(value)).toBeCloseTo(alpha, 5);
   });
