@@ -9,6 +9,13 @@ export interface Diagnostic {
   message: string;
 }
 
+/** The diagnostic path of a place in the display of one cell: "cells.<id>.<display path>". */
+export const cellPath = (cellId: string, path: string): string => `cells.${cellId}.${path}`;
+/** Two diagnostics with the same key say the same thing at the same place: a list shows one of them. */
+export const diagnosticKey = (d: Diagnostic): string => `${d.code}|${d.path}|${d.message}`;
+/** Path `a` is `b` or lies below it (a nested key or an array index). The one test of "below" for paths. */
+export const pathRelated = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || a.startsWith(`${b}[`);
+
 // ---- shared ----
 
 const nonempty = z.string().refine((value) => value.trim().length > 0, 'Must not be blank.');

@@ -16,6 +16,8 @@ import { inFieldUnit, resolveCapacity, type CapacityDiagnostic } from '../bindin
 import { INVALID_FRESHNESS_TEXT, type StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import {
+  cellPath,
+  diagnosticKey,
   invalidBounds,
   invalidFreshness,
   rowBindings,
@@ -122,7 +124,7 @@ export function buildConfiguredCard(
       if (href === undefined) {
         card.diagnostics.push({
           code: 'invalid-url',
-          path: `cells.${patch.cellId}.hover.rows[${i}].url`,
+          path: cellPath(patch.cellId, `hover.rows[${i}].url`),
           message: 'Drilldown URL must use http, https or a relative path.',
         });
       } else if (!card.links.some((l) => l.href === href)) {
@@ -207,7 +209,7 @@ function readBinding(
   const model = resolve(patch.cellId, binding);
   const problem = metricProblem(model, binding);
   if (problem) {
-    diagnostics.push({ ...problem, path: `cells.${patch.cellId}.${path}` });
+    diagnostics.push({ ...problem, path: cellPath(patch.cellId, path) });
   }
   if (model.state !== 'ready' || unit === undefined) {
     return model;
@@ -262,10 +264,10 @@ function combinedRow(
   // The row capacity sources are resolved once per direction: one report of each problem, one read of each series.
   const reported = new Set<string>();
   const report = (d: CapacityDiagnostic) => {
-    const key = `${d.code}|${d.path}|${d.message}`;
+    const key = diagnosticKey(d);
     if (!reported.has(key)) {
       reported.add(key);
-      card.diagnostics.push({ ...d, path: `cells.${patch.cellId}.${d.path}` });
+      card.diagnostics.push({ ...d, path: cellPath(patch.cellId, d.path) });
     }
   };
   const reads = new Map<string, HistoryModel>();

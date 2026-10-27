@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Button } from '@grafana/ui';
-import { pathRelated, type BindingPlan } from '../../binding/patterns';
-import type { DiagramConfig, DisplayConfig } from '../../model/config';
+import type { BindingPlan } from '../../binding/patterns';
+import { pathRelated, type DiagramConfig, type DisplayConfig } from '../../model/config';
 import { DisplayFields } from '../BindingFields';
 import type { DraftAction } from '../draft';
 import { EditorSection, type FieldSourceView } from '../EditorLayout';

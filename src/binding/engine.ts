@@ -3,7 +3,15 @@ import type { BindContext, CellPatch, HalfState, SeriesInfo, ShapeTarget, Templa
 import { colorFor, noDataColor, widthFor } from './color';
 import { resolveTemplate, shield } from './template';
 import { isAllowedUrl } from './url';
-import { rowBindings, type Diagnostic, type HoverSpec, type QueryBinding, type ShapeDisplay } from '../model/config';
+import {
+  cellPath,
+  pathRelated,
+  rowBindings,
+  type Diagnostic,
+  type HoverSpec,
+  type QueryBinding,
+  type ShapeDisplay,
+} from '../model/config';
 import { bitsWithNote, inFieldUnit, resolveCapacity, type ResolvedCapacity } from './capacity';
 import { historyOf, type HistoryModel, type HistoryFormat } from '../query/frames';
 import type { BindingPlan } from './patterns';
@@ -189,7 +197,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       const problem = metricProblem(model, binding);
       if (problem) {
         const { message } = problem;
-        result.diagnostics.push({ ...problem, path: `cells.${cell.cellId}.${path}` });
+        result.diagnostics.push({ ...problem, path: cellPath(cell.cellId, path) });
         patch.statusView ??= {
           state: 'missing',
           reason: message,
@@ -205,8 +213,8 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       if (cell.bindings.includes(binding)) {
         return undefined;
       }
-      const prefix = `cells.${cell.cellId}.${path}`;
-      const reported = plan.diagnostics.find((d) => d.path === prefix || d.path.startsWith(`${prefix}.`));
+      const prefix = cellPath(cell.cellId, path);
+      const reported = plan.diagnostics.find((d) => pathRelated(d.path, prefix));
       return reported?.message ?? 'The binding cannot run for this element.';
     };
     const missingView = (reason: string, binding: QueryBinding, path: string): StatusView => ({
@@ -252,13 +260,13 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
           read: (b, at) => (cell.bindings.includes(b) ? read(b, at) : undefined),
         });
         for (const d of cap.diagnostics) {
-          result.diagnostics.push({ ...d, path: `cells.${cell.cellId}.${d.path}` });
+          result.diagnostics.push({ ...d, path: cellPath(cell.cellId, d.path) });
         }
         const h = halfState(model, binding, cap, ctx);
         for (const note of new Set(h.notes)) {
           result.diagnostics.push({
             code: 'unit-not-rate',
-            path: `cells.${cell.cellId}.${path}.binding`,
+            path: cellPath(cell.cellId, `${path}.binding`),
             message: note,
           });
         }
@@ -318,7 +326,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
             };
             result.diagnostics.push({
               code: 'unresolved-metadata',
-              path: `cells.${cell.cellId}.label`,
+              path: cellPath(cell.cellId, 'label'),
               message: `Unresolved ${[...new Set(label.unresolved)].join(', ')}`,
             });
           } else {
@@ -381,7 +389,7 @@ export function bindPlan(plan: BindingPlan, resolve: BindingResolver, ctx: BindC
       } else {
         result.diagnostics.push({
           code: url.unresolved.length ? 'unresolved-metadata' : 'invalid-url',
-          path: `cells.${cell.cellId}.url`,
+          path: cellPath(cell.cellId, 'url'),
           message: url.unresolved.length
             ? `Unresolved ${url.unresolved.join(', ')}`
             : 'URL must use http, https or a relative path.',
