@@ -237,7 +237,7 @@ export function mergeCell(
     (owner: DisplayOwner): Track =>
     (path, clear) => {
       for (const key of Array.from(provenance.keys())) {
-        if (key === path || key.startsWith(`${path}.`) || key.startsWith(`${path}[`)) {
+        if (pathRelated(key, path)) {
           provenance.delete(key);
         }
       }

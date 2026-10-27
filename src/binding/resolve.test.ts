@@ -219,6 +219,8 @@ describe('demandsOf', () => {
     const plan = planOf(config());
     expect(demandsOf(plan, ctx, 100, 'hover', 'nowhere')).toEqual([]);
     expect(demandsOf(plan, ctx, 100, 'hover')).toEqual([]);
+    // a plan made in a test is a plain object: an inherited key is no cell
+    expect(demandsOf(plan, ctx, 100, 'hover', 'constructor')).toEqual([]);
     // the widget anchor is not a cell of the plan: no scope, no demand
     const lost = planWith([], [{ widget, anchorCellId: 'gone', scope, index: 0 }]);
     expect(demandsOf(lost, ctx, 100, 'widget')).toEqual([]);

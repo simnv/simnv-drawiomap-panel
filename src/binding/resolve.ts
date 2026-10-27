@@ -53,7 +53,8 @@ export function visibleDemands(plan: BindingPlan): BindingDemand[] {
 
 /** The bindings of the card rows of one cell. It reads that cell only: a card change costs no walk of the plan. */
 export function hoverDemands(plan: BindingPlan, cellId: string): BindingDemand[] {
-  const cell = plan.cells[cellId] as EffectiveCellBinding | undefined;
+  // an own key only: a plan made in a test is a plain object, and an id like `constructor` must not read Object
+  const cell = Object.hasOwn(plan.cells, cellId) ? plan.cells[cellId] : undefined;
   const hover = cell?.display.hover;
   if (!cell || !hover || hover.enabled === false) {
     return [];
