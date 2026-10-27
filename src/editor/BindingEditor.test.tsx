@@ -26,6 +26,18 @@ vi.hoisted(() => {
   window.matchMedia =
     window.matchMedia ?? ((() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as never);
 });
+/** The binds of the editor: a pin of the bind pipeline cost. */
+const work = vi.hoisted(() => ({ binds: 0 }));
+vi.mock('../binding/engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../binding/engine')>();
+  return {
+    ...actual,
+    bindPlan: (...args: Parameters<typeof actual.bindPlan>) => {
+      work.binds++;
+      return actual.bindPlan(...args);
+    },
+  };
+});
 vi.mock('@grafana/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/runtime')>()),
   getDataSourceSrv: () => ({ get: async () => ({ components: {} }), getInstanceSettings: () => undefined }),
@@ -633,6 +645,77 @@ describe('binding inspector', () => {
     selectStageCell('device-2');
     await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
     expect(execute.mock.calls[1][0].request.scopedVars.dm_device.value).toBe('device-2');
+    controller.dispose();
+  });
+  it('pins the binds of an open element, its hover result and an explicit query preview', async () => {
+    const execute = vi.fn((_request, emit) => {
+      emit({
+        state: 'ready',
+        frames: [
+          toDataFrame({
+            fields: [
+              { name: 'Time', type: FieldType.time, values: [1] },
+              { name: 'Value', type: FieldType.number, values: [7] },
+            ],
+          }),
+        ],
+        fetchedAt: 1,
+        fromCache: false,
+      });
+      return () => {};
+    });
+    const controller = createQueryController(execute);
+    const nativeConfig: DiagramConfig = {
+      ...config,
+      queries: [
+        {
+          id: 'q',
+          name: 'Q',
+          source: {
+            kind: 'datasource',
+            datasource: { uid: 'ds' },
+            target: { refId: 'D', ...{ expr: '$dm_device' } },
+            parameters: { dm_device: 'cell.key' },
+          },
+        },
+      ],
+      patterns: [
+        {
+          ...config.patterns[0],
+          display: {
+            hover: { rows: [{ kind: 'value', label: 'V', binding: { queryId: 'q', match: {}, reducer: 'last' } }] },
+          },
+        },
+      ],
+    };
+    const settle = () => act(async () => new Promise((done) => setTimeout(done, 20)));
+    const view = renderEditor({
+      config: nativeConfig,
+      svg: svgOf('device-1', 'device-2'),
+      data: { state: LoadingState.Done, series: [], timeRange: queryContext.timeRange },
+      service: testQueryService(controller, queryContext),
+    });
+    await settle();
+    let from = work.binds;
+    const since = () => {
+      const binds = work.binds - from;
+      from = work.binds;
+      return binds;
+    };
+    selectStageCell('device-1');
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+    await settle();
+    const open = since();
+    openQueryRow('Q');
+    await screen.findByText(/No supported native query editor/);
+    await settle();
+    const pane = since();
+    fireEvent.click(buttonNamed('Preview query'));
+    await waitFor(() => expect(editorField('Query preview result').textContent).toContain('Value'));
+    await settle();
+    const preview = since();
+    expect({ open, pane, preview }).toEqual({ open: 2, pane: 0, preview: 1 });
+    view.unmount();
     controller.dispose();
   });
   it('shows a failed nonrepresentative eager match before Apply', () => {

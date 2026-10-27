@@ -617,6 +617,22 @@ describe('DrawioMapPanel hover card', () => {
       expect(work.applied.length).toBe(applied);
       unmount();
     });
+    it('pins the view renders of a hover over two cells in turn', async () => {
+      const { rect, unmount } = await hoverSetup();
+      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await screen.findByRole('tooltip');
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 50));
+      });
+      const renders = work.viewRenders;
+      fireEvent.pointerMove(rect('b'), { pointerType: 'mouse', clientX: 60, clientY: 10 });
+      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 50));
+      });
+      expect(work.viewRenders - renders).toBe(2);
+      unmount();
+    });
     it('pointer moves inside one cell render the panel at most once', async () => {
       const { rect, unmount } = await hoverSetup();
       fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
@@ -2315,6 +2331,45 @@ describe('DrawioMapPanel bindings popup', () => {
       // The popup and the panel share the cached request: the panel needs no more than one request per query scope.
       expect(panelRequests() - before).toBeLessThanOrEqual(2);
       expect(work.viewRenders - renders).toBeLessThanOrEqual(6);
+    });
+
+    it('pins the view renders and the binds of a refresh, of paused refreshes and of the close', async () => {
+      const frameDone = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+      const base = props({ id: 61 });
+      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+      await frameDone();
+      const mark = () => ({ renders: work.viewRenders, binds: work.binds });
+      const since = (from: { renders: number; binds: number }) => ({
+        renders: work.viewRenders - from.renders,
+        binds: work.binds - from.binds,
+      });
+      let from = mark();
+      view.rerender(<DrawioMapPanel {...base} data={seriesWith(95e6)} />);
+      await frameDone();
+      await frameDone();
+      const refresh = since(from);
+      openPopup();
+      await screen.findByTestId('dmap-popup-stage');
+      await frameDone();
+      from = mark();
+      for (const value of [5e6, 99e6]) {
+        view.rerender(<DrawioMapPanel {...base} data={seriesWith(value)} />);
+        await frameDone();
+      }
+      const paused = since(from);
+      from = mark();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
+      await frameDone();
+      await frameDone();
+      const close = since(from);
+      expect({ refresh, paused, close }).toEqual({
+        refresh: { renders: 1, binds: 1 },
+        // the popup binds the new data; the panel view behind it renders nothing
+        paused: { renders: 0, binds: 2 },
+        close: { renders: 1, binds: 1 },
+      });
     });
 
     it('keeps the paint of a controller emission away from the panel until close, then shows the latest result', async () => {
