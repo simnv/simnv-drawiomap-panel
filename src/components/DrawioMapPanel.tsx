@@ -26,17 +26,13 @@ import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { MAX_DATA_POINTS } from '../query/types';
 import { ChartLayer } from '../visuals/ChartLayer';
 import { bandLayout, StatusBand } from './StatusBand';
+import { legendCorners } from './legendCorners';
 import { Legend } from '../legend/Legend';
 import { buildLegend } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
 import { bindSymbolLegend, LEGEND_ROW_ATTR } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
 
-/**
- * Height in px that the top-right corner keeps free for the Grafana panel menu button. A panel without a title
- * has a hover header: its menu button is 24 px high, 3 px below the top edge of the panel.
- */
-const MENU_CLEARANCE = 32;
 /** Heights in px of the items in the top-left row. */
 const RESET_SIZE = 32;
 const BADGE_HEIGHT = 20;
@@ -623,18 +619,9 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
-  // The start place of the legend (the user can drag it): the top-left legend is below the reset button and the
-  // warning badge. The top-right legend starts below the area of the Grafana panel menu button.
-  // On a narrow panel the open legend can reach the left side: it goes below the row of the reset button and the badge.
   const rowHeight = panZoom.zoomed || editing ? RESET_SIZE : warnings.length ? BADGE_HEIGHT : 0;
-  const topRightLegendTop =
-    width < SHEET_BELOW && rowHeight ? band.height + 4 + rowHeight + 4 : Math.max(band.height + 4, MENU_CLEARANCE);
-  const corners: Partial<Record<LegendCorner, React.CSSProperties>> = {
-    'top-left': { left: 4, top: band.height + 4 + (rowHeight ? rowHeight + 4 : 0) },
-    'top-right': { right: 4, top: topRightLegendTop },
-    'bottom-left': { left: 4, bottom: 4 },
-    'bottom-right': { right: 4, bottom: 4 },
-  };
+  const corners = legendCorners(band.height, rowHeight, width);
+  // a saved corner that this version does not know
   const legendCorner: LegendCorner = corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
   const legend = legendOptions.show ? (
     <Legend
