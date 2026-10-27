@@ -802,6 +802,24 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toBeTruthy();
   });
+  it('leaving the panel keeps a pinned card', async () => {
+    const { half, wrapper } = await setup();
+    fireEvent.click(half(linkId));
+    await screen.findByRole('dialog');
+    act(() => {
+      wrapper.dispatchEvent(new Event('pointerleave'));
+    });
+    expect(card()!.getAttribute('data-pinned')).toBe('true');
+  });
+  it('a new diagram closes a pinned card, also when the cell is still there', async () => {
+    const p = props();
+    const { half, rerender } = await setup(p);
+    fireEvent.click(half(linkId));
+    await screen.findByRole('dialog');
+    const diagram = { ...options.diagram!, hash: 'another-diagram' };
+    rerender(<DrawioMapPanel {...p} options={{ ...options, diagram }} />);
+    expect(card()).toBeNull();
+  });
   it('a pinned card stays open through a data refresh and shows the new value', async () => {
     const p = withCpu();
     const { cell, rerender } = await setup(p);
