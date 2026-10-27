@@ -171,10 +171,10 @@ describe('buildLegend', () => {
       ctx
     );
     expect(blocks.map((b) => b.title)).toEqual(['Status', undefined]);
-    expect(blocks[0].entries.map((e) => [e.label, e.color, e.cellIds])).toEqual([
-      ['Down, critical', theme.visualization.getColorByName('red'), ['n1']],
-      ['Warning, stale', theme.visualization.getColorByName('orange'), ['n2']],
-      ['Missing', theme.colors.text.disabled, []],
+    expect(blocks[0].entries.map((e) => [e.key, e.label, e.color, e.cellIds])).toEqual([
+      ['critical', 'Down, critical', theme.visualization.getColorByName('red'), ['n1']],
+      ['warning', 'Warning, stale', theme.visualization.getColorByName('orange'), ['n2']],
+      ['missing', 'Missing', theme.colors.text.disabled, []],
     ]);
     expect(blocks[0].cellIds).toEqual(['n1', 'n2', 'n3']);
     expect(blocks[1].entries).toEqual([

@@ -9,7 +9,18 @@ import {
   getFieldColorMode,
   ThresholdsMode,
 } from '@grafana/data';
-import { alphaOf, colorFor, linkStatusPaint, noDataColor, statusColor, statusPaint, tintFill, widthFor } from './color';
+import {
+  alphaOf,
+  colorFor,
+  linkStatusPaint,
+  noDataColor,
+  statusColor,
+  statusPaint,
+  statusPalette,
+  statusTextColor,
+  tintFill,
+  widthFor,
+} from './color';
 import type { StatusView } from './status';
 
 const theme = createTheme();
@@ -119,6 +130,22 @@ describe('status colours', () => {
     expect(statusColor(view('down'), createTheme({ colors: { mode: 'light' } }))).not.toBe(
       statusColor(view('down'), createTheme({ colors: { mode: 'dark' } }))
     );
+  });
+  it('a normal state takes the no-data grey when asked for its colour', () => {
+    expect(statusColor(view('normal'), theme)).toBe(noDataColor(theme));
+  });
+  it('the text colour is the semantic text colour of the level: error, warning, else secondary', () => {
+    for (const t of [createTheme({ colors: { mode: 'light' } }), createTheme({ colors: { mode: 'dark' } })]) {
+      expect(statusTextColor(view('down'), t)).toBe(t.colors.error.text);
+      expect(statusTextColor(view('critical'), t)).toBe(t.colors.error.text);
+      expect(statusTextColor(view('warning'), t)).toBe(t.colors.warning.text);
+      expect(statusTextColor(view('stale'), t)).toBe(t.colors.warning.text);
+      expect(statusTextColor(view('missing'), t)).toBe(t.colors.text.secondary);
+      expect(statusTextColor(view('normal'), t)).toBe(t.colors.text.secondary);
+    }
+  });
+  it('the palette is the colours of the three levels', () => {
+    expect(statusPalette(theme)).toBe([named('red'), named('orange'), noDataColor(theme)].join('|'));
   });
   it('statusPaint is a colour for a state that is not normal, else undefined', () => {
     expect(statusPaint(view('down'), theme)).toBe(named('red'));
