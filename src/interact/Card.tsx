@@ -9,7 +9,7 @@ import React, {
   useState,
 } from 'react';
 import { css, cx } from '@emotion/css';
-import { FieldType, getDefaultTimeRange, getFieldSeriesColor, type GrafanaTheme2, type TimeRange } from '@grafana/data';
+import { getDefaultTimeRange, getFieldSeriesColor, type GrafanaTheme2, type TimeRange } from '@grafana/data';
 import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { statusTextColor } from '../binding/color';
 import {
@@ -19,13 +19,12 @@ import {
   type ConfiguredCardModel,
   type ConfiguredCardRow,
 } from './cardModel';
-import { historyChart, SparklineView, type ChartLine, type HistoryChart } from '../visuals/SparklineView';
+import { historyChart, lineHistory, SparklineView, type HistoryChart } from '../visuals/SparklineView';
 import { MirrorSparkline } from '../visuals/MirrorSparkline';
 import { ChartHover, type HoverSeries } from '../visuals/ChartHover';
 import { placeTooltip } from '../visuals/tooltipPlace';
 import { useClock } from '../visuals/useSampleStale';
 import { isPast } from '../binding/status';
-import type { HistoryModel } from '../query/frames';
 
 /** Panels narrower than this show the pinned or hover card as a sheet at the bottom of the viewport. */
 export const SHEET_BELOW = 480;
@@ -157,6 +156,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   `,
+  // missing data is grey, never the colour of a value (CODING_STANDARDS.md, "State and data")
+  empty: css`
+    color: ${theme.colors.text.secondary};
+  `,
   // keeps the two spaces between the directions of a combined row
   pre: css`
     white-space: pre;
@@ -184,19 +187,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
 });
 
 const NO_DEADLINES: readonly number[] = [];
-
-/** A line as the history of the chart tooltip: the tooltip reads the times and the values. */
-function lineHistory(line: ChartLine): HistoryModel {
-  return {
-    state: 'ready',
-    field: { name: line.label, type: FieldType.number, config: {}, values: line.values },
-    timeField: { name: 'Time', type: FieldType.time, config: {}, values: line.times },
-    timestamps: line.times,
-    values: line.values,
-    fetchedAt: 0,
-    fromCache: false,
-  };
-}
 
 /** Memoised: the card re-renders on each pointer move, the rows change only with the data. */
 const Row = memo(function Row({
@@ -236,7 +226,7 @@ const Row = memo(function Row({
       return directions.map((d) => ({ name: d.label, color: d.color, history: d.history }));
     }
     if (lines) {
-      return lines.map((l) => ({ name: l.label, color: l.color, history: lineHistory(l), format }));
+      return lines.map((l) => ({ name: l.label, color: l.color, history: lineHistory(l), format, noData: l.noData }));
     }
     if (!history) {
       return [];
@@ -255,7 +245,14 @@ const Row = memo(function Row({
         >
           {row.title}
         </span>
-        <span className={cx(styles.value, directions && styles.pre)} data-testid="dmap-card-value">
+        <span
+          className={cx(
+            styles.value,
+            directions && styles.pre,
+            (row.state === 'empty' || lines?.every((l) => l.noData)) && styles.empty
+          )}
+          data-testid="dmap-card-value"
+        >
           {directions
             ? directions.map((d, j) => (
                 <React.Fragment key={d.direction}>
@@ -291,10 +288,11 @@ const Row = memo(function Row({
             timeZone={timeZone}
             width={width}
             label={row.title}
+            more={row.more}
           >
             <SparklineView
               chart={chart}
-              config={history?.state === 'ready' ? history.field.config : undefined}
+              config={row.config ?? (history?.state === 'ready' ? history.field.config : undefined)}
               width={width}
               height={chartH}
               timeRange={timeRange}

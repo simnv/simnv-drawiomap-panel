@@ -561,3 +561,29 @@ describe('the status row', () => {
     ).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+it('shows the all-null v4 history value in grey', () => {
+  const model: ConfiguredCardModel = {
+    title: 'AP 1',
+    links: [],
+    demands: [],
+    diagnostics: [],
+    rows: [
+      {
+        key: 'cpu',
+        kind: 'history',
+        title: 'CPU',
+        text: 'No data',
+        state: 'ready',
+        lines: [{ label: 'CPU', color: 'blue', times: [0, 1], values: [null, null], noData: true }],
+        domain: [0, 1],
+      },
+    ],
+  };
+  render(<Card model={model} pinned x={20} y={20} width={800} height={600} onClose={() => {}} />);
+  const expected = document.createElement('span');
+  expected.style.color = createTheme().colors.text.secondary;
+  document.body.append(expected);
+  expect(getComputedStyle(screen.getByTestId('dmap-card-value')).color).toBe(getComputedStyle(expected).color);
+  expected.remove();
+});

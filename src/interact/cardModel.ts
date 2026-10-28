@@ -1,4 +1,12 @@
-import { formattedValueToString, getFieldDisplayName, type GrafanaTheme2, LinkModel } from '@grafana/data';
+import {
+  formattedValueToString,
+  getFieldDisplayName,
+  type DisplayValue,
+  type Field,
+  type FieldConfig,
+  type GrafanaTheme2,
+  LinkModel,
+} from '@grafana/data';
 import type { CardContext } from '../types';
 import { resolveTemplate } from '../binding/template';
 import { isAllowedUrl } from '../binding/url';
@@ -38,8 +46,9 @@ import { defaultReduce } from '../binding/units';
 import type { Use } from '../binding/uses';
 import { reduceAcross, unitFactors } from '../query/reduce';
 import type { QuerySnapshot, Series } from '../query/snapshot';
-import type { RowV4 } from '../model/v4';
-import { alignedSamples } from '../visuals/hoverSample';
+import type { ChartV4, RowV4 } from '../model/v4';
+import type { UsePath } from '../binding/report';
+import { NO_DATA_ROW } from '../visuals/hoverSample';
 import type { ChartLine } from '../visuals/SparklineView';
 
 export interface ConfiguredCardRow {
@@ -73,6 +82,10 @@ export interface ConfiguredCardRow {
   staleAfter?: number;
   /** v4: formats a value of a line, with the display processor of the first series and the row unit and decimals */
   format?: (value: number) => string;
+  /** v4: the field config of the first series with the row unit and decimals; the chart reads its unit and Min/Max */
+  config?: FieldConfig;
+  /** v4: the reduced value of a `value` row, for the bar gauge of a chart region */
+  display?: DisplayValue;
 }
 
 /** Height in px of the chart of a single-direction history row. */
@@ -215,7 +228,7 @@ function stateText(model: HistoryModel): string {
       ? model.message
       : model.state === 'idle' || model.state === 'loading'
         ? 'Loading data'
-        : 'No data';
+        : NO_DATA_ROW;
 }
 
 /** Resolves one hover binding, reports a missing or failed metric, and applies the unit of the row. */
@@ -431,8 +444,6 @@ export function opensCard(patch: PlanCellPatch, ctx: CardContext): boolean {
 
 /** The most lines of one history chart; the other series give "+N more" (spec 3.7, D9). */
 export const MAX_LINES = 8;
-/** The value text of a row or a tooltip line with no data (spec 3.6). */
-const NO_DATA_ROW = 'no data';
 
 /** A v4 history row: up to MAX_LINES lines in one Y range, then "+N more". */
 export interface HistoryRowV4 extends ConfiguredCardRow {
@@ -454,10 +465,10 @@ export interface CardModelV4 {
 /** The inputs of the bind give the class of the cell (its freshness), the frames (the line labels) and the range. */
 export type CardContextV4 = CardContext & Pick<BindInputV4, 'index' | 'validated' | 'data'>;
 
-/** Line i takes colour i of the Grafana classic palette (spec 3.7). */
+/** Eight distinct hues from the Grafana classic palette, in stable line order. */
 function lineColor(theme: GrafanaTheme2, i: number): string {
   const palette = theme.visualization.palette;
-  return theme.visualization.getColorByName(palette[i % palette.length]);
+  return theme.visualization.getColorByName(palette[[0, 1, 2, 3, 4, 5, 26, 30][i % MAX_LINES] % palette.length]);
 }
 
 const hasValue = (values: ReadonlyArray<number | null>) => values.some((v) => v !== null && Number.isFinite(v));
@@ -485,6 +496,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
   if (!patch) {
     return card;
   }
+  const reader = readerOf(cellId, bound, ctx);
   for (const u of patch.urls) {
     card.links.push({ title: u.title ?? defaultUrlTitle(u.url, title), href: u.url, target: '_blank', origin: patch });
   }
@@ -502,6 +514,80 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
       stale: false,
     });
   }
+  slots.forEach((slot, i) => {
+    const key = `row-${i}`;
+    if (slot.kind === 'metadata') {
+      card.rows.push({
+        key,
+        kind: slot.kind,
+        title: slot.label ?? '',
+        text: slot.text ?? '',
+        state: 'ready',
+        stale: false,
+      });
+      return;
+    }
+    if (slot.kind === 'drilldown') {
+      // a drilldown is a footer link, as in v3
+      const href = slot.url ?? '';
+      if (href && !card.links.some((l) => l.href === href)) {
+        card.links.push({ title: slot.label ?? defaultUrlTitle(href, title), href, target: '_blank', origin: patch });
+      }
+      return;
+    }
+    const row = queryRowV4(key, slot.kind, slot.path, reader, ctx);
+    if (row) {
+      card.rows.push(row);
+    }
+  });
+  return card;
+}
+
+/**
+ * The chart region of a cell (spec 3.9): the `chart` of its effective class, built with the rules of a card row. A
+ * `history` chart draws up to MAX_LINES lines, a `value` chart gives the reduced value for a bar gauge, an `updown`
+ * chart gives its two directions. Undefined when the cell has no use at the path of the chart.
+ */
+export function chartRowV4(
+  use: { cellId: string; chart: ChartV4; path: UsePath },
+  bound: BindResultV4,
+  ctx: CardContextV4
+): CardRowV4 | undefined {
+  return queryRowV4('chart', use.chart.kind, use.path, readerOf(use.cellId, bound, ctx), ctx);
+}
+
+/** The row of a query use: `history`, `value` or `updown` (two uses, `<path>.a2b` and `<path>.b2a`). */
+function queryRowV4(
+  key: string,
+  kind: 'history' | 'value' | 'updown',
+  path: UsePath,
+  reader: UseReader,
+  ctx: CardContextV4
+): CardRowV4 | undefined {
+  if (kind === 'updown') {
+    const a2b = reader.dataOf(`${path}.a2b`);
+    const b2a = reader.dataOf(`${path}.b2a`);
+    return a2b && b2a ? updownRow(key, [a2b, b2a], reader.at, ctx, reader.staleOf([a2b, b2a])) : undefined;
+  }
+  const d = reader.dataOf(path);
+  if (!d) {
+    return undefined;
+  }
+  return kind === 'history'
+    ? historyRowV4(key, d, ctx, reader.staleOf([d]))
+    : valueRowV4(key, d, ctx, reader.staleOf([d]));
+}
+
+/** The data of the uses of one cell, and the stale check of a row (spec 3.5 step 6). */
+interface UseReader {
+  /** the `at` attribute of the cell: which end the key names (spec 3.8.2) */
+  at?: string;
+  dataOf(path: string): UseData | undefined;
+  staleOf(data: UseData[]): { stale: boolean; staleAfter?: number };
+}
+
+function readerOf(cellId: string, bound: BindResultV4, ctx: CardContextV4): UseReader {
+  const meta = ctx.index.get(cellId)?.meta;
   const config = ctx.validated.parsed.config;
   const bind = meta?.attrs.bind;
   const cls = bind === undefined ? undefined : ctx.validated.classes.get(bind);
@@ -551,45 +637,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
     }
     return staleAfter === undefined ? { stale } : { stale, staleAfter };
   };
-
-  slots.forEach((slot, i) => {
-    const key = `row-${i}`;
-    if (slot.kind === 'metadata') {
-      card.rows.push({
-        key,
-        kind: slot.kind,
-        title: slot.label ?? '',
-        text: slot.text ?? '',
-        state: 'ready',
-        stale: false,
-      });
-      return;
-    }
-    if (slot.kind === 'drilldown') {
-      // a drilldown is a footer link, as in v3
-      const href = slot.url ?? '';
-      if (href && !card.links.some((l) => l.href === href)) {
-        card.links.push({ title: slot.label ?? defaultUrlTitle(href, title), href, target: '_blank', origin: patch });
-      }
-      return;
-    }
-    if (slot.kind === 'updown') {
-      const a2b = dataOf(`${slot.path}.a2b`);
-      const b2a = dataOf(`${slot.path}.b2a`);
-      if (a2b && b2a) {
-        card.rows.push(updownRow(key, [a2b, b2a], meta?.attrs.at, ctx, staleOf([a2b, b2a])));
-      }
-      return;
-    }
-    const d = dataOf(slot.path);
-    if (!d) {
-      return;
-    }
-    card.rows.push(
-      slot.kind === 'history' ? historyRowV4(key, d, ctx, staleOf([d])) : valueRowV4(key, d, ctx, staleOf([d]))
-    );
-  });
-  return card;
+  return { at: meta?.attrs.at, dataOf, staleOf };
 }
 
 /** The fields of a row that format and bound a value: the `show` fields, `reduce`, `min` and `max`. */
@@ -617,27 +665,28 @@ function noSeries(d: UseData): { text: string; state: HistoryModel['state'] } | 
 }
 
 /** The value text of a use: the display processor of the first series, with the row unit and decimals (spec 3.7). */
-function formatOf(first: Series, row: RowFields, ctx: CardContext): (value: number) => string {
-  const display = fieldDisplay(shownField(first.field, row), ctx.theme);
+function formatOf(shown: Field, ctx: CardContext): (value: number) => string {
+  const display = fieldDisplay(shown, ctx.theme);
   return (value) => formattedValueToString(display(value));
 }
 
-/** The default title of a query row: the display name of its one series, else the display name of the refId. */
+/**
+ * The title of a query row: the row label, else the display name in the field config, else the refId. It does not
+ * read the series labels, so the title stays the same when the count of series changes; the lines carry them.
+ */
 function rowTitle(d: UseData, row: RowFields): string {
-  if (row.label !== undefined) {
-    return row.label;
-  }
-  const first = d.series[0];
-  if (d.series.length === 1) {
-    return lineLabel(d, first);
-  }
-  return first?.field.config.displayName ?? d.use.refId;
+  return row.label ?? d.series[0]?.field.config.displayName ?? d.use.refId;
 }
 
 /** The label of a line: the display name of the field (spec 3.7). */
 function lineLabel(d: UseData, s: Series): string {
   const frames = d.snapshot.state === 'ready' ? d.snapshot.frames : [];
-  return getFieldDisplayName(s.field, frames[s.frameIndex], frames);
+  const keys = Object.keys(s.labels)
+    .filter((key) => d.series.slice(0, MAX_LINES).some((other) => other.labels[key] !== s.labels[key]))
+    .sort();
+  return keys.length
+    ? `{${keys.map((key) => `${key}=${JSON.stringify(s.labels[key])}`).join(', ')}}`
+    : getFieldDisplayName(s.field, frames[s.frameIndex], frames);
 }
 
 function historyRowV4(
@@ -677,7 +726,7 @@ function historyRowV4(
       unit: shown.config.unit,
     }
   );
-  const format = formatOf(first, row, ctx);
+  const format = formatOf(shown, ctx);
   // one line: its last value, as a v3 history row; N lines: the tooltip gives the values
   const last = lines.length === 1 ? lastValue(lines[0].values) : undefined;
   return {
@@ -688,6 +737,7 @@ function historyRowV4(
     more: d.series.length - lines.length,
     domain,
     format,
+    config: shown.config,
   };
 }
 
@@ -718,7 +768,9 @@ function valueRowV4(
   if ('mismatch' in reduced || reduced.value === null) {
     return { ...base, text: NO_DATA_ROW, state: 'empty' };
   }
-  return { ...base, text: formatOf(first, row, ctx)(reduced.value), state: 'ready' };
+  const shown = shownField(first.field, row);
+  const display = fieldDisplay(shown, ctx.theme)(reduced.value);
+  return { ...base, text: formattedValueToString(display), state: 'ready', display, config: shown.config };
 }
 
 /**
@@ -736,6 +788,34 @@ function updownRow(
   const row = (data[0].use.row ?? {}) as RowFields & { up?: string; down?: string };
   const feeds = linkFeeds(at, 'up', 'down');
   const byDirection = { [feeds.a2b]: data[0], [feeds.b2a]: data[1] } as Record<'up' | 'down', UseData>;
+  const allSeries = data.flatMap((d) => d.series);
+  const units = unitFactors(allSeries);
+  if ('mismatch' in units) {
+    return {
+      key,
+      kind: 'updown',
+      title: row.label ?? `${row.up ?? ''} / ${row.down ?? ''}`,
+      text: 'Mixed units',
+      state: 'unsupported',
+      ...stale,
+    };
+  }
+  let offset = 0;
+  for (const direction of ['up', 'down'] as const) {
+    const d = byDirection[direction];
+    offset = d === data[0] ? 0 : data[0].series.length;
+    byDirection[direction] = {
+      ...d,
+      series: d.series.map((s) => {
+        const factor = units.factors[offset++];
+        return {
+          ...s,
+          field: { ...s.field, config: { ...s.field.config, unit: units.unit }, display: undefined },
+          values: s.values.map((v) => (v === null ? null : v * factor)),
+        };
+      }),
+    };
+  }
   const halves = halfContext(ctx);
   const directions = (['up', 'down'] as const).map((direction): DirectionRowModel => {
     const d = byDirection[direction];
@@ -769,39 +849,6 @@ function updownRow(
     directions,
     domain: [-top, top],
     ...stale,
-  };
-}
-
-/** One row of the pinned tooltip of a history row: the line label and colour, and its value at the hovered time. */
-export interface LineTooltipRow {
-  label: string;
-  color: string;
-  value: string;
-}
-
-/**
- * The pinned tooltip of a history row (spec 3.7): all drawn lines at the sample time nearest to `time`, then
- * "+N more". A line with no finite value shows "no data"; a gap of a line shows "–", as the v3 tooltip.
- */
-export function lineTooltipV4(
-  row: Pick<HistoryRowV4, 'lines' | 'more' | 'format'>,
-  time: number
-): { time: number; list: LineTooltipRow[]; more: number } | undefined {
-  const picked = alignedSamples(
-    row.lines.map((l) => ({ timestamps: l.times, values: l.values })),
-    time
-  );
-  if (!picked) {
-    return undefined;
-  }
-  const format = row.format ?? String;
-  return {
-    time: picked.time,
-    list: row.lines.map((l, i) => {
-      const v = picked.values[i];
-      return { label: l.label, color: l.color, value: l.noData ? NO_DATA_ROW : v === null ? '–' : format(v) };
-    }),
-    more: row.more,
   };
 }
 

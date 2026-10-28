@@ -179,6 +179,41 @@ describe('Card: a history row with N lines', () => {
     fireEvent.pointerMove(hover, { clientX: 100, clientY: 5, pointerType: 'mouse' });
     vi.unstubAllGlobals();
     expect(screen.getByTestId('series-table').textContent).toBe('s0=2 clients;s1=4 clients');
+    expect(screen.getByTestId('dmap-chart-more').textContent).toBe('+1 more');
+  });
+
+  it('shows "No data" in the pinned tooltip for a line with no finite value', () => {
+    const lines = [line('s0', '#111111', [1, 2]), line('s1', '#222222', [null, null])];
+    render(
+      <Card
+        model={cardOf(row({ lines, more: 0 }))}
+        pinned
+        x={0}
+        y={0}
+        width={800}
+        height={600}
+        timeRange={{ from: dateTime(1000), to: dateTime(2000), raw: { from: dateTime(1000), to: dateTime(2000) } }}
+      />
+    );
+    const hover = screen.getByTestId('dmap-chart-hover');
+    hover.getBoundingClientRect = () =>
+      ({ left: 0, width: 100, top: 0, height: 40, right: 100, bottom: 40 }) as DOMRect;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    fireEvent.pointerMove(hover, { clientX: 100, clientY: 5, pointerType: 'mouse' });
+    vi.unstubAllGlobals();
+    expect(screen.getByTestId('series-table').textContent).toBe('s0=2 clients;s1=No data');
+    expect(screen.queryByTestId('dmap-chart-more')).toBeNull();
+  });
+
+  it('gives the field config of the row to the sparkline', () => {
+    sparkline.mockClear();
+    render(
+      <Card model={cardOf(row({ config: { unit: 'percent', decimals: 1 } }))} pinned={false} width={800} height={600} />
+    );
+    expect(calls()[0].config).toMatchObject({ unit: 'percent', decimals: 1 });
   });
 
   it('shows "Stale data" for a stale row, and turns stale at the deadline with no new data', () => {

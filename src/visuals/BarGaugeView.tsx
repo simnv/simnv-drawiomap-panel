@@ -12,17 +12,21 @@ export function BarGaugeView({
   height,
   sampleAt,
   freshness,
+  stale,
 }: {
   value: DisplayValue;
   field: FieldConfig;
   width: number;
   height: number;
+  /** v3: the sample time and the freshness policy give the stale state */
   sampleAt?: number;
   freshness?: FreshnessPolicy;
+  /** v4: the stale state of the chart (spec 3.5 step 6) */
+  stale?: boolean;
 }) {
   const theme = useTheme2();
-  const stale = useSampleStale(sampleAt, freshness);
-  const hint = stale ? <span role="status">Stale data</span> : null;
+  const expired = useSampleStale(sampleAt, freshness);
+  const hint = stale || expired ? <span role="status">Stale data</span> : null;
   const bounded = Number.isFinite(field.min) && Number.isFinite(field.max) && field.max! > field.min!;
   if (!bounded) {
     return (

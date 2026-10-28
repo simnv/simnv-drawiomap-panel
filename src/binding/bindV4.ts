@@ -448,6 +448,22 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       results.set(use.path, result);
     }
 
+    // An updown chart shares one numeric scale across both uses.
+    for (const use of uses.filter((u) => u.row?.kind === 'updown' && u.path.endsWith('.a2b'))) {
+      const partner = results.get(use.path.replace(/\.a2b$/, '.b2a'));
+      const first = results.get(use.path)!;
+      if (!partner || first.problem || partner.problem || !first.series.length || !partner.series.length) {
+        continue;
+      }
+      const units = reduceAcross([...first.series, ...partner.series], 'sum');
+      if ('mismatch' in units) {
+        report.cell(
+          { kind: 'unit-mismatch', cls, use: use.path.replace(/\.a2b$/, ''), units: units.mismatch },
+          meta.id
+        );
+      }
+    }
+
     const patch: PatchV4 = { cellId: meta.id, scope: { cell: meta.attrs }, urls: [] };
     const statusUse = uses.find((u) => u.kind === 'status');
     let status: StatusV4 | undefined;

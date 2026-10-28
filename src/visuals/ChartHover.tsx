@@ -10,7 +10,7 @@ import {
 } from '@grafana/data';
 import { Portal, SeriesTable, useStyles2, useTheme2 } from '@grafana/ui';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
-import { alignedSamples, nearestIndex, sampleTimes, timeAt } from './hoverSample';
+import { alignedSamples, nearestIndex, sampleTimes, timeAt, tooltipRows } from './hoverSample';
 import { placeTooltip } from './tooltipPlace';
 
 /** One series of the tooltip. */
@@ -20,6 +20,8 @@ export interface HoverSeries {
   history: HistoryModel;
   /** the formatter of the row, when the field alone does not give it */
   format?: (value: number) => string;
+  /** a line with no finite value: the tooltip shows "No data" for it (spec 3.7) */
+  noData?: boolean;
 }
 
 export interface ChartHoverProps {
@@ -31,6 +33,8 @@ export interface ChartHoverProps {
   /** Width of the chart in px when it is narrower than the row: the pointer maps over the chart, not the row. */
   width?: number;
   label?: string;
+  /** the series after the drawn lines: the tooltip ends with "+N more" (spec 3.7) */
+  more?: number;
   children: React.ReactNode;
 }
 
@@ -71,6 +75,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     box-shadow: ${theme.shadows.z2};
     border-radius: ${theme.shape.radius.default};
     z-index: ${theme.zIndex.tooltip};
+  `,
+  more: css`
+    color: ${theme.colors.text.secondary};
+    font-size: ${theme.typography.bodySmall.fontSize};
   `,
 });
 
@@ -215,7 +223,7 @@ interface Hover {
  * Keyboard: the chart is focusable, Left and Right move the sample, Escape hides the tooltip, Enter follows
  * the row link.
  */
-export function ChartHover({ enabled, series, timeRange, timeZone, width, label, children }: ChartHoverProps) {
+export function ChartHover({ enabled, series, timeRange, timeZone, width, label, more, children }: ChartHoverProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const ref = useRef<HTMLDivElement>(null);
@@ -266,25 +274,22 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
     if (!enabled || !hover) {
       return undefined;
     }
-    const picked = alignedSamples(ready, hover.time);
-    if (!picked) {
-      return undefined;
-    }
-    return {
-      time: picked.time,
-      list: ready.map(({ s }, i) => ({
-        color: s.color,
-        label: s.name,
-        value: formatSample(
-          (s.history as Extract<HistoryModel, { state: 'ready' }>).field,
-          picked.values[i],
-          theme,
-          timeZone,
-          s.format
-        ),
-      })),
-    };
-  }, [enabled, hover, ready, theme, timeZone]);
+    return tooltipRows(
+      ready.map(({ s, timestamps, values }) => {
+        const field = (s.history as Extract<HistoryModel, { state: 'ready' }>).field;
+        return {
+          label: s.name,
+          color: s.color,
+          times: timestamps,
+          values,
+          noData: s.noData,
+          format: (value: number) => formatSample(field, value, theme, timeZone, s.format),
+        };
+      }),
+      hover.time,
+      more
+    );
+  }, [enabled, hover, ready, theme, timeZone, more]);
 
   if (!enabled) {
     return <>{children}</>;
@@ -405,6 +410,11 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
                 timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
                 series={rows.list}
               />
+              {rows.more ? (
+                <div className={styles.more} data-testid="dmap-chart-more">
+                  +{rows.more} more
+                </div>
+              ) : null}
             </TooltipBox>
           </Portal>
         </>
