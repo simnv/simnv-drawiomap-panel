@@ -196,6 +196,21 @@ function entryOf(block: LegendBlock, item: Item): LegendEntry | undefined {
   return step?.color === item.color ? step : block.entries.find((e) => e.color === item.color);
 }
 
+/**
+ * The entry of a v4 status cell: the mapping with its text and colour, else the first threshold step with its
+ * colour, else the first entry with its colour. A v4 status has no step index and no value, and a mapping can have
+ * the colour of a step. Limit: a mapping with a colour and no text, and with the colour of a step, loses its cells to
+ * the step.
+ */
+function entryOfV4(block: LegendBlock, item: Item): LegendEntry | undefined {
+  const isMapping = (e: LegendEntry) => e.key.startsWith('map-');
+  return (
+    block.entries.find((e) => isMapping(e) && e.color === item.color && e.label === item.text) ??
+    block.entries.find((e) => !isMapping(e) && e.color === item.color) ??
+    block.entries.find((e) => e.color === item.color)
+  );
+}
+
 const STATUS_ENTRIES: Array<{ key: StatusLevel; label: string }> = [
   { key: 'critical', label: 'Down, critical' },
   { key: 'warning', label: 'Warning, stale' },
@@ -321,23 +336,27 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
 }
 
 /** The state entries of the v4 legend, in this order. They have the theme colours of the painter. */
-const STATE_ENTRIES_V4: Array<{ key: 'stale' | 'missing'; label: string }> = [
+const STATE_ENTRIES_V4: Array<{ key: 'down' | 'stale' | 'missing'; label: string }> = [
+  { key: 'down', label: 'Down, no data' },
   { key: 'stale', label: 'Stale' },
   { key: 'missing', label: 'No data' },
 ];
 
 /**
  * The v4 legend (spec 3.4). First one block for each status refId in use, in the order of first use. The title is
- * the display name of the field of the refId. The entries are its value mappings and then its threshold steps, each
- * with its exact colour and text and the cells that show it. `fields` gives the field of each status refId; a refId
- * with no field has no block. Then one block with a `stale` and a `missing` entry, each only when cells have that
- * state: a link half with no data is `missing`, and so is a missing status that the painter paints grey. Then the
- * link load scale of the link halves. A v3 status is not in this legend.
+ * the display name of the field of the refId: `displayName`, else `displayNameFromDS` of its config, else the query
+ * name, else the refId. A name from the series labels names one series, not the refId, so it is not used. The
+ * entries are its value mappings and then its threshold steps, each with its exact colour and text and the cells
+ * that show it. `fields` gives the field of each status refId; a refId with no field has no block. Then one `State`
+ * block with a `down`, a `stale` and a `missing` entry, each only when cells have that state: `down` is a down status
+ * with no value (`missing: down`), which the painter paints in the theme red; a link half with no data is `missing`,
+ * and so is a missing status that the painter paints grey. Then the link load scale of the link halves. A v3 status
+ * is not in this legend.
  */
 export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx: LegendContext): LegendBlock[] {
   const statusItems = new Map<string, Item[]>();
   const links: Item[] = [];
-  const states: Record<(typeof STATE_ENTRIES_V4)[number]['key'], string[]> = { stale: [], missing: [] };
+  const states: Record<(typeof STATE_ENTRIES_V4)[number]['key'], string[]> = { down: [], stale: [], missing: [] };
   for (const patch of patches.values()) {
     addItem(links, states.missing, patch.cellId, 'link', patch.link?.a2b);
     addItem(links, states.missing, patch.cellId, 'link', patch.link?.b2a);
@@ -349,6 +368,11 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
       if (view.state === 'stale' || linkStatusPaint(patch, ctx.theme) !== undefined) {
         push(states[view.state], patch.cellId);
       }
+      continue;
+    }
+    if (view.state === 'down' && !view.color) {
+      // `missing: down` with no value: the painter paints the theme red
+      push(states.down, patch.cellId);
       continue;
     }
     const field = fields.get(view.refId);
@@ -373,9 +397,10 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
       continue;
     }
     const { auto, gradient } = scale;
+    const config = items[0].field.config;
     const block: LegendBlock = {
       key: `status:${refId}`,
-      title: items[0].field.config.displayName ?? ctx.queryName?.(refId) ?? refId,
+      title: config.displayName ?? config.displayNameFromDS ?? ctx.queryName?.(refId) ?? refId,
       entries: scale.entries,
       ...(gradient
         ? { gradient: auto ? { ...gradient, min: auto.format(auto.min), max: auto.format(auto.max) } : gradient }
@@ -384,7 +409,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     };
     for (const item of items) {
       push(block.cellIds, item.cellId);
-      const entry = entryOf(block, item);
+      const entry = entryOfV4(block, item);
       if (entry) {
         push(entry.cellIds, item.cellId);
       }
@@ -400,7 +425,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
   if (entries.length) {
     const cellIds: string[] = [];
     entries.forEach((e) => e.cellIds.forEach((id) => push(cellIds, id)));
-    out.push({ key: 'state', entries, cellIds });
+    out.push({ key: 'state', title: 'State', entries, cellIds });
   }
   return [...out, ...scaleBlocks(links, ctx)];
 }

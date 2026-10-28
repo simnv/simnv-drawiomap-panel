@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createTheme, type Field, type FieldConfig, FieldType, MappingType, ThresholdsMode } from '@grafana/data';
+import {
+  createTheme,
+  type Field,
+  FieldColorModeId,
+  type FieldConfig,
+  FieldType,
+  MappingType,
+  ThresholdsMode,
+} from '@grafana/data';
 import { noDataColor, statusColor } from '../binding/color';
 import type { StatusView } from '../binding/status';
 import type { CellPatch, HalfState, PatchMap, SeriesInfo, StatusV4Fields } from '../types';
@@ -124,7 +132,7 @@ describe('buildLegendV4', () => {
       cell('e2', undefined, { a2b: half({ status: 'nodata', color: noDataColor(theme), stepIndex: -1 }) }),
     ]);
     const blocks = buildLegendV4(patches, fields, ctx);
-    expect(blocks.map((b) => b.title ?? b.key)).toEqual(['scrape_up', 'state', 'Link load %']);
+    expect(blocks.map((b) => b.title ?? b.key)).toEqual(['scrape_up', 'State', 'Link load %']);
     expect(blocks[1].entries.map((e) => [e.key, e.cellIds])).toEqual([['missing', ['e2']]]);
     expect(blocks[2].entries.map((e) => [e.label, e.cellIds])).toEqual([
       ['< 80%', ['e1']],
@@ -146,6 +154,61 @@ describe('buildLegendV4', () => {
     const a2b: HalfState = { status: 'ok', color: named('green'), width: 2, label: '', stepIndex: 0, series: s };
     const withHalves: PatchMap = new Map([cell('e1', status('scrape_up', 'missing'), { a2b })]);
     expect(buildLegendV4(withHalves, fields, ctx).map((b) => b.key)).not.toContain('state');
+  });
+
+  it('puts a value with a step colour on the step, not on a mapping of the same colour', () => {
+    const red = [{ type: MappingType.ValueToText as const, options: { '0': { text: 'Offline', color: 'red' } } }];
+    const own = new Map([['cpu', field({ unit: 'percent', mappings: red, thresholds })]]);
+    const patches: PatchMap = new Map([
+      cell('n1', status('cpu', 'critical', named('red'), '93%')),
+      cell('n2', status('cpu', 'critical', named('red'), 'Offline')),
+    ]);
+    expect(buildLegendV4(patches, own, ctx)[0].entries.map((e) => [e.label, e.cellIds])).toEqual([
+      ['Offline', ['n2']],
+      ['< 80%', []],
+      ['≥ 80%', ['n1']],
+    ]);
+  });
+
+  it('adds a down entry for a down status with no value, in the theme red that the painter uses', () => {
+    const down: Status = { ...status('scrape_up', 'down'), reason: 'No data' };
+    const patches: PatchMap = new Map([offline('n1'), cell('n2', down), cell('n3', status('cpu', 'stale'))]);
+    const blocks = buildLegendV4(patches, fields, ctx);
+    expect(blocks.map((b) => b.key)).toEqual(['status:scrape_up', 'state']);
+    expect(blocks[0].cellIds).toEqual(['n1']);
+    expect(blocks[1].entries.map((e) => [e.key, e.label, e.color, e.cellIds])).toEqual([
+      ['down', 'Down, no data', statusColor({ state: 'down' }, theme), ['n2']],
+      ['stale', 'Stale', statusColor({ state: 'stale' }, theme), ['n3']],
+    ]);
+  });
+
+  it('gives the state block a title', () => {
+    const blocks = buildLegendV4(new Map([cell('n1', status('cpu', 'stale'))]), fields, ctx);
+    expect(blocks.map((b) => [b.key, b.title])).toEqual([['state', 'State']]);
+  });
+
+  it('gives the display name from the data source as the title when the config has no display name', () => {
+    const own = new Map([['cpu', field({ displayNameFromDS: 'CPU from DS', thresholds })]]);
+    const patches: PatchMap = new Map([cell('n1', status('cpu', 'normal', named('green'), '12'))]);
+    expect(buildLegendV4(patches, own, { theme, queryName: () => 'Query' })[0].title).toBe('CPU from DS');
+  });
+
+  it('gives a refId with a continuous colour scheme a gradient over its range', () => {
+    const own = new Map([
+      ['temp', field({ color: { mode: FieldColorModeId.ContinuousGrYlRd }, min: 0, max: 100, unit: 'percent' })],
+    ]);
+    const patches: PatchMap = new Map([cell('n1', status('temp', 'normal', named('green'), '12%'))]);
+    const [block] = buildLegendV4(patches, own, ctx);
+    expect(block.gradient).toMatchObject({ min: '0%', max: '100%' });
+    expect(block.cellIds).toEqual(['n1']);
+  });
+
+  it('gives a continuous colour scheme with no min and max the range of the field values', () => {
+    const own = new Map([
+      ['temp', { ...field({ color: { mode: FieldColorModeId.ContinuousGrYlRd }, unit: 'percent' }), values: [10, 50] }],
+    ]);
+    const patches: PatchMap = new Map([cell('n1', status('temp', 'normal', named('green'), '12%'))]);
+    expect(buildLegendV4(patches, own, ctx)[0].gradient).toMatchObject({ min: '10%', max: '50%' });
   });
 
   it('ignores a v3 status and a refId with no field', () => {

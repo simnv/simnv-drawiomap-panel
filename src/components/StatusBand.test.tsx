@@ -115,4 +115,25 @@ describe('StatusBand with v4 rows', () => {
     expect(row.getAttribute('data-dmap-state')).toBe('down');
     expect(row.getAttribute('data-dmap-count')).toBe('2');
   });
+  it('counts the cells of the hidden rows in the toggle text', () => {
+    const rows = bandRowsV4(
+      patchesOf([
+        ['n1', v4('a', 'down', 'Offline')],
+        ['n2', v4('d', 'critical', '97%')],
+        ['n3', v4('d', 'critical', '97%')],
+        ['n4', v4('e', 'warning', '81%')],
+        ['n5', v4('f', 'warning', 'High')],
+      ])
+    );
+    render(
+      <StatusBand
+        summaries={[]}
+        rowsV4={rows}
+        layout={bandLayout(rows.length, 2, false, 600)}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    expect(screen.getByRole('button').textContent).toBe('+3 more (4 cells)');
+  });
 });

@@ -58,20 +58,21 @@ export interface BandRowV4 {
 }
 
 /**
- * The rows of the v4 band (spec 3.4): one row for each state, text and refId of the cells that are not normal. The
- * row text is `<text> · <refId>: <n> cells`. A status with no value text ("–") gives its reason as the text. The order
- * is worst first, then the most cells first. A v3 status gives no row.
+ * The rows of the v4 band (spec 3.4): one row for each severity, text and refId of the cells that are not normal.
+ * The row text is `<text> · <refId>: <n> cells`. A status with no value text ("–") gives its reason as the text.
+ * The order is worst first, then the most cells first. A v3 status gives no row.
  */
 export function bandRowsV4(patches: PatchMap): BandRowV4[] {
   const groups = new Map<string, { label: string; refId: string; severity: StatusView['state']; cellIds: string[] }>();
   for (const { cellId, statusView: status } of patches.values()) {
-    if (status?.severity === undefined || status.state === 'normal') {
+    const severity = status?.severity;
+    if (!status || severity === undefined || severity === 'normal') {
       continue;
     }
     const label = status.text && status.text !== NO_DATA_TEXT ? status.text : status.reason;
     const refId = status.refId ?? '';
-    const key = JSON.stringify([status.state, label, refId]);
-    const group = groups.get(key) ?? { label, refId, severity: status.state, cellIds: [] };
+    const key = JSON.stringify([severity, label, refId]);
+    const group = groups.get(key) ?? { label, refId, severity, cellIds: [] };
     groups.set(key, group);
     if (!group.cellIds.includes(cellId)) {
       group.cellIds.push(cellId);
