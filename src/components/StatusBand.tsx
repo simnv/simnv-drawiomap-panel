@@ -2,8 +2,10 @@ import React from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
-import type { StatusSummary } from '../binding/status';
+import { STATUS_SEVERITY, type StatusSummary, type StatusView } from '../binding/status';
+import { NO_DATA_TEXT } from '../binding/statusV4';
 import { statusColor } from '../binding/color';
+import type { PatchMap } from '../types';
 
 /** Height of one band row in px. The panel computes the band height from it before it renders. */
 export const BAND_ROW = 20;
@@ -44,6 +46,47 @@ export function bandLayout(count: number, maxRows: number, expanded: boolean, pa
 }
 
 const plural = (n: number) => `${n} element${n === 1 ? '' : 's'}`;
+const cells = (n: number) => `${n} cell${n === 1 ? '' : 's'}`;
+const marker = (state: StatusView['state']) => (state === 'missing' || state === 'stale' ? '?' : '!');
+
+/** One row of the v4 band (spec 3.4). `text` is the full row text. */
+export interface BandRowV4 {
+  text: string;
+  refId: string;
+  count: number;
+  severity: StatusView['state'];
+}
+
+/**
+ * The rows of the v4 band (spec 3.4): one row for each severity, text and refId of the cells that are not normal.
+ * The row text is `<text> · <refId>: <n> cells`. A status with no value text ("–") gives its reason as the text.
+ * The order is worst first, then the most cells first. A v3 status gives no row.
+ */
+export function bandRowsV4(patches: PatchMap): BandRowV4[] {
+  const groups = new Map<string, { label: string; refId: string; severity: StatusView['state']; cellIds: string[] }>();
+  for (const { cellId, statusView: status } of patches.values()) {
+    const severity = status?.severity;
+    if (!status || severity === undefined || severity === 'normal') {
+      continue;
+    }
+    const label = status.text && status.text !== NO_DATA_TEXT ? status.text : status.reason;
+    const refId = status.refId ?? '';
+    const key = JSON.stringify([severity, label, refId]);
+    const group = groups.get(key) ?? { label, refId, severity, cellIds: [] };
+    groups.set(key, group);
+    if (!group.cellIds.includes(cellId)) {
+      group.cellIds.push(cellId);
+    }
+  }
+  return [...groups.values()]
+    .sort((a, b) => STATUS_SEVERITY[a.severity] - STATUS_SEVERITY[b.severity] || b.cellIds.length - a.cellIds.length)
+    .map(({ label, refId, severity, cellIds }) => ({
+      text: `${label} · ${refId}: ${cells(cellIds.length)}`,
+      refId,
+      count: cellIds.length,
+      severity,
+    }));
+}
 
 const getStyles = (theme: GrafanaTheme2) => ({
   band: css`
@@ -100,14 +143,19 @@ const getStyles = (theme: GrafanaTheme2) => ({
 
 interface Props {
   summaries: StatusSummary[];
+  /** the v4 rows (`bandRowsV4`); when set, the band shows them and not the v3 summaries */
+  rowsV4?: BandRowV4[];
   layout: BandLayout;
   expanded: boolean;
   onToggle: () => void;
 }
 
-/** One row per cause of the elements that are not normal: state, reason and the number of elements. */
+/**
+ * One row per cause of the elements that are not normal: state, reason and the number of elements. With `rowsV4`,
+ * one row per v4 band row: the marker in the theme colour of its severity and the row text.
+ */
 export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBand(
-  { summaries, layout, expanded, onToggle },
+  { summaries, rowsV4, layout, expanded, onToggle },
   ref
 ) {
   const styles = useStyles2(getStyles);
@@ -115,7 +163,10 @@ export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBa
   if (!layout.height) {
     return null;
   }
-  const hiddenCells = summaries.slice(layout.causes).reduce((n, s) => n + s.cellIds.length, 0);
+  const unit = rowsV4 ? cells : plural;
+  const hiddenCells = rowsV4
+    ? rowsV4.slice(layout.causes).reduce((n, r) => n + r.count, 0)
+    : summaries.slice(layout.causes).reduce((n, s) => n + s.cellIds.length, 0);
   return (
     <section
       ref={ref}
@@ -125,32 +176,47 @@ export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBa
       data-testid="dmap-status-band"
     >
       <ul className={styles.list}>
-        {summaries.slice(0, layout.causes).map((s) => {
-          const text = `${s.state}: ${s.reason} (${plural(s.cellIds.length)})`;
-          return (
-            <li
-              key={`${s.state}\n${s.reason}`}
-              className={`${styles.row} dmap-status-summary`}
-              title={text}
-              data-dmap-state={s.state}
-              data-dmap-count={s.cellIds.length}
-            >
-              <span className={styles.state} style={{ color: statusColor(s, theme) }}>
-                {s.state === 'missing' || s.state === 'stale' ? '?' : '!'} {s.state}
-              </span>
-              <span className={styles.reason}>{s.reason}</span>
-              <span className={styles.count}>{plural(s.cellIds.length)}</span>
-            </li>
-          );
-        })}
+        {rowsV4
+          ? rowsV4.slice(0, layout.causes).map((r) => (
+              <li
+                key={`${r.severity}\n${r.text}`}
+                className={`${styles.row} dmap-status-summary`}
+                title={r.text}
+                data-dmap-state={r.severity}
+                data-dmap-count={r.count}
+              >
+                <span className={styles.state} style={{ color: statusColor({ state: r.severity }, theme) }}>
+                  {marker(r.severity)}
+                </span>
+                <span className={styles.reason}>{r.text}</span>
+              </li>
+            ))
+          : summaries.slice(0, layout.causes).map((s) => {
+              const text = `${s.state}: ${s.reason} (${plural(s.cellIds.length)})`;
+              return (
+                <li
+                  key={`${s.state}\n${s.reason}`}
+                  className={`${styles.row} dmap-status-summary`}
+                  title={text}
+                  data-dmap-state={s.state}
+                  data-dmap-count={s.cellIds.length}
+                >
+                  <span className={styles.state} style={{ color: statusColor(s, theme) }}>
+                    {marker(s.state)} {s.state}
+                  </span>
+                  <span className={styles.reason}>{s.reason}</span>
+                  <span className={styles.count}>{plural(s.cellIds.length)}</span>
+                </li>
+              );
+            })}
         {layout.toggle ? (
           <li className={styles.row}>
             <button type="button" className={styles.more} aria-expanded={expanded} onClick={onToggle}>
               {expanded
                 ? 'Show less'
                 : layout.causes
-                  ? `+${layout.hidden} more (${plural(hiddenCells)})`
-                  : `${layout.hidden} causes (${plural(hiddenCells)})`}
+                  ? `+${layout.hidden} more (${unit(hiddenCells)})`
+                  : `${layout.hidden} causes (${unit(hiddenCells)})`}
             </button>
           </li>
         ) : null}

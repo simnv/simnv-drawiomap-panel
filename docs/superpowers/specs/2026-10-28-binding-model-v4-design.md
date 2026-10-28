@@ -31,6 +31,8 @@ Changes since review round 3 (revision 4):
 | A17 (O4) | amendment | `${name:format}` with a Grafana variable format is a dashboard variable; `${name}` with no format stays a required cell attribute (A5); bare `$var` stays a dashboard variable. The URL order keeps an explicit format and gives `percentencode` only to a bare ordinary variable. `${job:queryparam}` is no longer rejected. O4 closed. | 2.4, 3.3, 6.2, 9 (P1 acceptance 4, 14), 10.1, 10.2 |
 | R8 | major | The acceptance expectation follows the retained `yDomain`: `min: auto` with lines at 49 and 51 gives 47.45 to 52.55, because the helper keeps a span of at least 10 % of the top. The helper does not change. | 3.7, 9 (P1 acceptance 9) |
 | N1 | major | Only a positively identified v3 deployment (`options.config.version` below 4) is exempt when `options.build` is missing. A v4 panel with no usable base stops `pull` and the deploy gate; nothing replaces `.cells.yml`, and nothing deploys. | 7.3.5, 7.4, 9 (P2 acceptance 2, 9), 10.3 |
+| P1-10 review 4 | minor | A band row of a cell with no value (text `–`) shows the status reason in place of the text, for example `No data · cpu: 1 cell`. A row `– · cpu: 1 cell` gives no cause. | 3.4 |
+| P1-10 review 2 | minor | The legend has a `down` entry ("Down, no data") before `stale` and `missing`, when cells have a down status with no value (`missing: down`). The painter paints such a cell in the theme red, and no value mapping or step explains that colour. | 3.4 |
 
 Changes since review round 2 (revision 3). Amendments:
 
@@ -546,13 +548,14 @@ For each series of the status use, the display processor of its field gives `{te
   `applyKey`: it reads each patch field that a write reads, in the status part `state`, `severity`, `color`, `text`,
   `refId` and `reason`. A unit test changes each such field alone and expects a new key.
 - **Text.** The hover card and the status band show `text`. The band row is `<text> · <refId>: <n> cells`; today it
-  is `state: reason` (`src/components/StatusBand.tsx:129`). The band lists the rows that are not normal, worst
-  first.
+  is `state: reason` (`src/components/StatusBand.tsx:129`). A cell with no value (text `–`) gives its `reason` in
+  place of the text. The band lists the rows that are not normal, worst first.
 - **Legend.** One block per status refId in use. The block title is the display name of the refId. The entries are
   the value mappings of its field config (`mappingEntries`, `src/legend/model.ts:137`) and then its threshold steps,
   each with its exact colour and text, and with the cells that show it. Today the legend collects only the state
   (`src/legend/model.ts:233-239`) and adds one fixed status block (:280-291); that code is rewritten. A `stale` and a
-  `missing` entry follow when cells have that state.
+  `missing` entry follow when cells have that state. Before them, a `down` entry in the theme red follows when cells
+  have a down status with no value (`missing: down`).
 - **Links.** A link class can set `status`, for example a port state. `linkStatusPaint` keeps its rule: a `missing`
   status on a link with halves paints nothing, because each half shows its own state (`src/binding/color.ts:55-71`).
 
