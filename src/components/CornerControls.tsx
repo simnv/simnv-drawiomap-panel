@@ -1,5 +1,5 @@
 import React, { forwardRef } from 'react';
-import { css, cx } from '@emotion/css';
+import { css } from '@emotion/css';
 import { IconButton, useTheme2 } from '@grafana/ui';
 
 /** Heights in px of the items in the top-left row. */
@@ -44,31 +44,19 @@ const styles = {
     border-radius: 3px;
     z-index: 1;
   `,
-  // In panel edit the badge is a button: reset the browser button look, keep the size of the badge.
-  badgeButton: css`
-    border: 0;
-    margin: 0;
-    font-family: inherit;
-    line-height: inherit;
-    cursor: pointer;
-  `,
 };
 
 interface Props {
   bandHeight: number;
   /** The live view differs from the configured view: the reset button shows. */
   zoomed: boolean;
-  /** Panel edit: the badge is a button that opens the bindings, and the edit button shows. */
-  editing: boolean;
   warnings: string[];
   onReset: () => void;
-  onWarnings: () => void;
-  onEditBindings: () => void;
 }
 
-/** The top-left row of the panel: the reset button, the warning badge and, in panel edit, the edit button. */
+/** The top-left row holds the reset button and the warning badge. */
 export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerControls(
-  { bandHeight, zoomed, editing, warnings, onReset, onWarnings, onEditBindings },
+  { bandHeight, zoomed, warnings, onReset },
   ref
 ) {
   const theme = useTheme2();
@@ -76,7 +64,6 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
     background: theme.colors.background.primary,
     border: `1px solid ${theme.colors.border.medium}`,
   };
-  const Badge = editing ? 'button' : 'div';
   return (
     <div
       ref={ref}
@@ -84,7 +71,7 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
       style={{ left: 4, top: bandHeight + 4, maxHeight: `calc(100% - ${bandHeight + 8}px)` }}
       data-testid="dmap-corner"
     >
-      {zoomed || warnings.length || editing ? (
+      {zoomed || warnings.length ? (
         <div className={styles.cornerRow}>
           {zoomed ? (
             <IconButton
@@ -99,28 +86,14 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             />
           ) : null}
           {warnings.length ? (
-            <Badge
-              type={editing ? 'button' : undefined}
-              className={cx(styles.badge, editing && styles.badgeButton)}
+            <div
+              className={styles.badge}
               style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
               title={warnings.join('\n')}
               data-testid="dmap-warning-badge"
-              onClick={editing ? onWarnings : undefined}
             >
               {warnings.length} warning{warnings.length > 1 ? 's' : ''}
-            </Badge>
-          ) : null}
-          {editing ? (
-            <IconButton
-              name="link"
-              size="lg"
-              tooltip="Edit bindings"
-              tooltipPlacement="right"
-              className={styles.reset}
-              style={buttonStyle}
-              data-testid="dmap-edit-bindings"
-              onClick={onEditBindings}
-            />
+            </div>
           ) : null}
         </div>
       ) : null}

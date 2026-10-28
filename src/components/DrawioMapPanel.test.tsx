@@ -1,5 +1,3 @@
-import { chooseOption, editorField, openQueryRow, selectStageCell } from '../editor/testUtils';
-import { currentAddress, requestOpen } from '../editor/popup/popupBus';
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -25,7 +23,7 @@ import type { DiagramConfig } from '../model/config';
 import { Observable } from 'rxjs';
 import { clearQuerySessions } from '../query/session';
 const nativeQuery = vi.hoisted(() => vi.fn());
-/** Calls of the panel work that a refresh must not repeat while the popup is open: the applier and the view renders. */
+/** Count the binds, patch applications and view renders of the panel. */
 const work = vi.hoisted(() => ({ applied: [] as unknown[], binds: 0, viewRenders: 0, panelStage: 'dmap-stage' }));
 vi.mock('../render/applier', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../render/applier')>();
@@ -71,11 +69,6 @@ vi.mock('@grafana/runtime', async (importOriginal) => ({
     getInstanceSettings: () => undefined,
   }),
 }));
-// The popup loads in a lazy chunk in production. Tests use it at once, so a click opens it in the same act.
-vi.mock('./LazyBindingsPopup', async () => {
-  const popup = await import('../editor/popup');
-  return { LazyBindingsPopup: (p: React.ComponentProps<typeof popup.default>) => <popup.default {...p} /> };
-});
 vi.mock('@grafana/ui', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/ui')>()),
   Sparkline: (props: { width: number; height: number }) => (
@@ -99,19 +92,6 @@ vi.hoisted(() => {
   window.matchMedia =
     window.matchMedia ?? ((() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as never);
 });
-
-/** Open the bindings popup with its corner button, as a user does. Do nothing when it is open. */
-function openPopup() {
-  if (!screen.queryByTestId('dmap-bindings-popup')) {
-    fireEvent.click(screen.getByTestId('dmap-edit-bindings'));
-  }
-}
-
-/** Select a cell in the stage of the popup. */
-function selectElement(id: string) {
-  openPopup();
-  selectStageCell(id);
-}
 
 const svg = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8');
 
@@ -257,6 +237,33 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
 }
 
 describe('DrawioMapPanel', () => {
+  it.each([null, 1])('has no bindings editor when editPanel is %s', async (editPanel) => {
+    locationService.partial({ editPanel });
+    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
+    render(<DrawioMapPanel {...props({ options: { ...options, rules: [{ name: 'old' }] } })} />);
+    const badge = await screen.findByTestId('dmap-warning-badge');
+    expect(screen.queryByRole('button', { name: 'Edit bindings' })).toBeNull();
+    expect(screen.queryByTestId('dmap-edit-bindings')).toBeNull();
+    const count = badge.textContent;
+    fireEvent.click(badge);
+    expect(badge.textContent).toBe(count);
+    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps the warning count and opens nothing when the badge is clicked in edit mode', async () => {
+    locationService.partial({ editPanel: 1 });
+    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
+    render(<DrawioMapPanel {...props({ options: { ...options, rules: [{ name: 'old' }] } })} />);
+    const badge = await screen.findByTestId('dmap-warning-badge');
+    const count = badge.textContent;
+    expect(count).toMatch(/\d+ warnings?/);
+    fireEvent.click(badge);
+    expect(badge.textContent).toBe(count);
+    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('attaches only configured chart portals after the stage mounts and keeps query errors inside that widget', async () => {
     const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
     const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
@@ -1057,23 +1064,15 @@ describe('DrawioMapPanel live zoom', () => {
     expect(corner.style.right).toBe('');
   });
 
-  it('in panel edit the corner holds the reset button, the badge button and the edit button in that order; in view the badge is no button', async () => {
+  it.each([null, 1])('keeps reset before the warning badge when editPanel is %s', async (editPanel) => {
+    locationService.partial({ editPanel });
+    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
     const view = await setup(withWarning());
     wheel(view.wrapper, { deltaY: -10, ctrlKey: true });
-    await screen.findByRole('button', { name: 'Reset zoom' });
-    expect(screen.getByTestId('dmap-warning-badge').tagName).toBe('DIV');
-    expect(screen.queryByTestId('dmap-edit-bindings')).toBeNull();
-    view.unmount();
-    locationService.partial({ editPanel: 1 });
-    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
-    const edit = await setup(withWarning());
-    wheel(edit.wrapper, { deltaY: -10, ctrlKey: true });
     const reset = await screen.findByRole('button', { name: 'Reset zoom' });
     const badge = screen.getByTestId('dmap-warning-badge');
-    const open = screen.getByTestId('dmap-edit-bindings');
-    expect(badge.tagName).toBe('BUTTON');
+    expect(badge.tagName).toBe('DIV');
     expect(reset.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(badge.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
@@ -1193,7 +1192,7 @@ describe('DrawioMapPanel live zoom', () => {
   });
 });
 
-describe('saved chart results in authoring previews', () => {
+describe('saved chart results in hover cards', () => {
   let restoreGeometry: () => void;
   const receivers: Array<(value: number) => void> = [];
   const release = vi.fn();
@@ -1293,51 +1292,6 @@ describe('saved chart results in authoring previews', () => {
       return { x: 0, y: 0, left: 0, top: 0, right: w, bottom: 200, width: w, height: 200, toJSON: () => ({}) };
     });
   }
-  it('individual preview keeps ordinary demand fallback with only a saved error, loading or unsupported result', async () => {
-    for (const state of ['error', 'loading', 'unsupported'] as const) {
-      nativeQuery.mockClear();
-      clearQuerySessions();
-      const p = fixture();
-      nativeQuery.mockImplementation(
-        (request) =>
-          new Observable((observer) => {
-            observer.next(
-              request.maxDataPoints === 264
-                ? { data: [frame('D', {}, [84])] }
-                : {
-                    state:
-                      state === 'error'
-                        ? LoadingState.Error
-                        : state === 'loading'
-                          ? LoadingState.Loading
-                          : state === 'unsupported'
-                            ? LoadingState.Streaming
-                            : LoadingState.Done,
-                    data: [],
-                  }
-            );
-            return release;
-          })
-      );
-      const { unmount } = render(<DrawioMapPanel {...p} />);
-      const diagnostic =
-        state === 'error'
-          ? 'Datasource query failed'
-          : state === 'loading'
-            ? 'Loading'
-            : state === 'unsupported'
-              ? 'Streaming and partial'
-              : 'No data';
-      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain(diagnostic));
-      selectElement('chart');
-      openQueryRow('Chart data');
-      fireEvent.click(screen.getByRole('button', { name: 'Preview query' }));
-      await waitFor(() => expect(editorField('Query preview result').textContent).toContain('ready'));
-      // the explicit preview asks at the resolution of the popup's own entries (264), not the widget's
-      expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual([400, 264]);
-      unmount();
-    }
-  });
   // A result is shared only between identical requests, by the controller: the same query, scope, context and
   // resolution. A widget of another width is another request; nothing reuses a result of another resolution.
   it.each([
@@ -1865,786 +1819,174 @@ describe('DrawioMapPanel colour legend', () => {
       expect(root.classList.contains('dmap-legend-active')).toBe(true);
       expect(hits(container)).toEqual(before);
     });
-
-    it('opening the bindings popup ends the highlight; a hover behind it marks nothing', async () => {
-      locationService.partial({ editPanel: 1 });
-      onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
-      const { entry, root } = await settled();
-      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
-      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
-      openPopup();
-      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
-      expect(root.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
-      // a hover behind the popup marks nothing
-      fireEvent.pointerLeave(entry, { pointerType: 'mouse' });
-      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
-      await frame();
-      await frame();
-      expect(root.classList.contains('dmap-legend-active')).toBe(false);
-    });
   });
 });
 
-describe('DrawioMapPanel bindings popup', () => {
+describe('DrawioMapPanel refresh and freshness', () => {
   const small =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/><text>A</text></g><g data-cell-id="b"><rect x="50" width="40" height="30"/><text>B</text></g></svg>';
   const diagram = { xml: '<mxfile/>', svg: small, hash: 'popup-panel', updatedAt: '' };
-  const metric = (id = 'q'): DiagramConfig['queries'][number] => ({
-    id,
-    name: 'Metric',
-    source: { kind: 'datasource', target: { refId: 'D' }, parameters: { dm_key: 'cell.key' } },
+  /** Count the applier calls on the panel stage. */
+  const panelApplies = () =>
+    work.applied.filter((index) =>
+      (index as Map<string, { group: Element }>).values().next().value?.group.closest('[data-testid="dmap-stage"]')
+    ).length;
+  const halves = (root: Element) =>
+    Array.from(root.querySelectorAll('polyline.dmap-half'))
+      .map((el) => el.outerHTML)
+      .join('\n');
+  const seriesWith = (value: number) => {
+    const base = props({ id: 61 });
+    return {
+      ...base.data,
+      series: [frame('A', { job: 'node-isp-a', device: 'pppoe' }, [value]), ...base.data.series.slice(1)],
+    };
+  };
+
+  it('an OS colour scheme change runs the applier once more with the same picture; the listener goes on unmount', async () => {
+    const listeners = new Set<() => void>();
+    const media = {
+      matches: false,
+      media: '(prefers-color-scheme: dark)',
+      addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+      removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+    };
+    vi.stubGlobal('matchMedia', () => media);
+    try {
+      const base = props({ id: 61 });
+      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const panel = screen.getByTestId('dmap-panel');
+      const picture = halves(panel);
+      const applies = panelApplies();
+      expect(listeners.size).toBeGreaterThan(0);
+      media.matches = true;
+      act(() => listeners.forEach((cb) => cb()));
+      await waitFor(() => expect(panelApplies()).toBe(applies + 1));
+      expect(halves(panel)).toBe(picture);
+      view.unmount();
+      expect(listeners.size).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
-  const labelled = (): DiagramConfig => ({
+
+  it('a data refresh with equal values keeps the overlay elements; a changed value updates them in place', async () => {
+    const base = props({ id: 61 });
+    const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+    await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const panel = screen.getByTestId('dmap-panel');
+    const elements = () => Array.from(panel.querySelectorAll('polyline.dmap-half, polygon.dmap-arrow'));
+    const before = elements();
+    const picture = halves(panel);
+    // the same values in a new data object: the same elements, the same picture
+    view.rerender(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(elements().every((el, i) => el.isSameNode(before[i]))).toBe(true);
+    expect(halves(panel)).toBe(picture);
+    // a new value: the same elements with a new stroke
+    view.rerender(<DrawioMapPanel {...base} data={seriesWith(95e6)} />);
+    await waitFor(() => expect(halves(panel)).not.toBe(picture));
+    expect(elements().every((el, i) => el.isSameNode(before[i]))).toBe(true);
+  });
+
+  it('makes a fixed number of DOM mutations in the stage over four refreshes of the demo diagram', async () => {
+    const base = props({ id: 61 });
+    const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
+    await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    let count = 0;
+    const observer = new MutationObserver((records) => (count += records.length));
+    observer.observe(screen.getByTestId('dmap-stage'), {
+      subtree: true,
+      attributes: true,
+      childList: true,
+      characterData: true,
+    });
+    for (const value of [95e6, 5e6, 5e6, 99e6]) {
+      view.rerender(<DrawioMapPanel {...base} data={seriesWith(value)} />);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    count += observer.takeRecords().length;
+    observer.disconnect();
+    // three width changes: each also rewrites the points of the half and of its head (the head grows with the width)
+    expect(count).toBe(57);
+  });
+
+  /** One status element bound to the panel query Q, with a freshness policy of 400 ms. */
+  const freshnessConfig: DiagramConfig = {
     version: 3,
-    defaultDatasource: { uid: 'native' },
+    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
+    patterns: [],
     widgets: [],
-    overrides: [],
-    queries: [metric()],
-    patterns: [
+    overrides: [
       {
-        id: 'p',
-        name: 'Devices',
-        select: { ids: ['a', 'b'] },
+        cellId: 'a',
         display: {
-          label: 'Saved ${value}',
-          shape: { text: true, binding: { queryId: 'q', match: {}, reducer: 'last' } },
+          status: {
+            kind: 'mapping',
+            binding: { queryId: 'q', match: {}, reducer: 'last' },
+            default: { state: 'normal', reason: 'Healthy' },
+            mappings: [{ value: 0, state: 'down', reason: 'Down' }],
+            freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
+          },
         },
       },
     ],
-  });
-  /** A panel that keeps the saved options, as the dashboard does. */
-  function renderSaved(config: DiagramConfig, id = 61, shown = diagram) {
-    const save = vi.fn();
-    function SavedPanel() {
-      const [saved, setSaved] = React.useState<Options>({ ...options, config, diagram: shown });
-      return (
-        <DrawioMapPanel
-          {...props({ id })}
-          options={saved}
-          onOptionsChange={(next) => {
-            save(next);
-            setSaved(next);
-          }}
-        />
-      );
-    }
-    return { save, ...render(<SavedPanel />) };
-  }
-  const stageText = (cell: string) =>
-    screen.getByTestId('dmap-popup-stage').querySelector(`[data-cell-id="${cell}"] text`)?.textContent;
-  beforeEach(() => {
-    nativeQuery.mockReset().mockImplementation(
-      (request) =>
-        new Observable((observer) => {
-          observer.next({ data: [frame('D', {}, [request.scopedVars.dm_key?.value === 'a' ? 11 : 22])] });
-          return () => {};
-        })
-    );
-    sourceLookups.mockReset();
-    locationService.partial({ editPanel: 61 });
-  });
-  afterEach(() => {
-    act(() => locationService.partial({ editPanel: null }));
-  });
-
-  it('opens from the corner button, saves through Apply and closes when the panel editor closes', async () => {
-    const { save } = renderSaved(labelled());
-    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
-    selectElement('a');
-    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'a bindings' }));
-    fireEvent.change(editorField('Label template'), { target: { value: 'Draft ${value}' } });
-    expect(save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
-    expect(save.mock.calls[0][0].config.overrides).toContainEqual({
-      cellId: 'a',
-      display: { label: 'Draft ${value}' },
+  };
+  const sampleAt = (at: number, value = 1) =>
+    toDataFrame({
+      refId: 'Q',
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [at] },
+        { name: 'Value', type: FieldType.number, values: [value] },
+      ],
     });
-    act(() => locationService.partial({ editPanel: null }));
-    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
-  });
+  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
 
-  it('keeps the panel at the saved paint while the draft changes, and restores the popup on Cancel', async () => {
-    const view = renderSaved(labelled());
-    const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
-    await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
-    selectElement('a');
-    await waitFor(() => expect(stageText('a')).toBe('Saved 11'));
-    fireEvent.change(editorField('Label template'), { target: { value: 'Draft ${value}' } });
-    await waitFor(() => expect(stageText('a')).toBe('Draft 11'));
-    expect(panelLabel()).toBe('Saved 11');
-    expect(view.save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    await waitFor(() => expect(stageText('a')).toBe('Saved 11'));
-    expect(panelLabel()).toBe('Saved 11');
-  });
-
-  it('holds the panel and the popup subscriptions at once, and a reopened popup fills from the cache', async () => {
-    renderSaved(labelled());
-    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
-    openPopup();
-    await waitFor(() => expect(stageText('a')).toBe('Saved 11'));
-    expect(stageText('b')).toBe('Saved 22');
-    const calls = nativeQuery.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
-    openPopup();
-    await waitFor(() => expect(stageText('a')).toBe('Saved 11'));
-    expect(nativeQuery.mock.calls.length).toBe(calls);
-  });
-
-  it('sends a draft default datasource to the popup demands and not to the panel', async () => {
-    const config = labelled();
-    renderSaved(config);
-    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
-    expect(sourceLookups.mock.calls.every(([ref]) => ref?.uid === 'native')).toBe(true);
-    openPopup();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Default datasource UID' }), { target: { value: 'other' } });
-    await waitFor(() => expect(sourceLookups.mock.calls.some(([ref]) => ref?.uid === 'other')).toBe(true));
-    const other = sourceLookups.mock.calls.filter(([ref]) => ref?.uid === 'other').length;
-    // The panel keeps its saved datasource: a cancel sends no further lookup for the draft one.
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    expect(sourceLookups.mock.calls.filter(([ref]) => ref?.uid === 'other').length).toBe(other);
-  });
-  it('runs an edited native target for the popup only, keeps the panel watch alive, and the panel runs it after Apply', async () => {
-    const release = vi.fn();
-    nativeQuery.mockReset().mockImplementation(
-      (request) =>
-        new Observable((observer) => {
-          observer.next({ data: [frame('D', {}, [request.targets[0].expr === 'changed' ? 84 : 42])] });
-          return release;
-        })
+  it('a panel-source data update with a fresh status sample binds once: the clock causes no bind', async () => {
+    const base = props({ id: 62 });
+    const saved = { ...options, config: freshnessConfig, diagram };
+    const view = render(
+      <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now())] }} />
     );
-    const view = renderSaved(labelled());
-    const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
-    await waitFor(() => expect(panelLabel()).toBe('Saved 42'));
-    openPopup();
-    openQueryRow('Metric');
-    fireEvent.change(editorField('Native target JSON'), {
-      target: { value: JSON.stringify({ refId: 'D', expr: 'changed' }) },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
-    selectElement('a');
-    await waitFor(() => expect(stageText('a')).toBe('Saved 84'));
-    expect(panelLabel()).toBe('Saved 42');
-    expect(view.save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
-    // The panel behind stays paused until the popup closes.
-    expect(view.save).toHaveBeenCalledTimes(1);
-    expect(panelLabel()).toBe('Saved 42');
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(panelLabel()).toBe('Saved 84'));
-    expect(nativeQuery.mock.calls.filter(([request]) => request.targets[0].expr === 'changed').length).toBeGreaterThan(
-      0
-    );
-  });
-
-  it('ignores a late result of an obsolete context in the popup stage and follows the new context', async () => {
-    const receivers: Array<{ range: number; receive: (value: number) => void }> = [];
-    nativeQuery.mockReset().mockImplementation(
-      (request) =>
-        new Observable((observer) => {
-          const receive = (value: number) => observer.next({ data: [frame('D', {}, [value])] });
-          receivers.push({ range: Number(request.range.from.valueOf()), receive });
-          receive(request.range.from.valueOf() === 1000 ? 84 : 42);
-          return () => {};
-        })
-    );
-    const config = labelled();
-    const p = props({ id: 61 });
-    const saved = { ...options, config, diagram };
-    const view = render(<DrawioMapPanel {...p} options={saved} />);
-    openPopup();
-    await waitFor(() => expect(stageText('a')).toBe('Saved 42'));
-    const old = receivers.slice();
+    await waitFor(() => expect(view.container.querySelector('[data-cell-id="a"]')).toBeTruthy());
+    await nextFrame();
+    const binds = work.binds;
     view.rerender(
-      <DrawioMapPanel {...p} options={saved} timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }} />
+      <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now(), 2)] }} />
     );
-    await waitFor(() => expect(stageText('a')).toBe('Saved 84'));
-    act(() => old.forEach((entry) => entry.receive(999)));
-    expect(stageText('a')).toBe('Saved 84');
+    await nextFrame();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(work.binds - binds).toBe(1);
   });
 
-  it('releases every query demand of the panel and of the popup on unmount', async () => {
-    const release = vi.fn();
-    nativeQuery.mockReset().mockImplementation(
-      () =>
-        new Observable((observer) => {
-          observer.next({ data: [frame('D', {}, [42])] });
-          return release;
-        })
+  it('a status sample that is already stale on arrival shows stale in the first applier call', async () => {
+    const base = props({ id: 63 });
+    const saved = { ...options, config: freshnessConfig, diagram };
+    // the first sample is far in the future: the clock of the panel is read at mount and no deadline moves it
+    const view = render(
+      <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() + 1e6)] }} />
     );
-    const view = renderSaved(labelled());
-    openPopup();
-    await waitFor(() => expect(stageText('a')).toBe('Saved 42'));
-    const started = nativeQuery.mock.calls.length;
-    expect(started).toBeGreaterThan(0);
-    view.unmount();
-    expect(release).toHaveBeenCalledTimes(started);
-  });
-  it('closes the popup and drops its draft when the panel editor address changes, and listens at the new address', async () => {
-    renderSaved(labelled());
-    openPopup();
-    selectElement('a');
-    fireEvent.change(editorField('Label template'), { target: { value: 'Dirty ${value}' } });
-    expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
-    // the same panel id in the editor of another dashboard
-    act(() => locationService.push('/d/another-dashboard/x?editPanel=61'));
-    await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
-    act(() => {
-      expect(requestOpen(currentAddress(), { kind: 'none' })).toBe(true);
-    });
-    await screen.findByTestId('dmap-bindings-popup');
-    // the draft of the old session is gone
-    selectElement('a');
-    expect((editorField('Label template') as HTMLInputElement).value).toBe('Saved ${value}');
-  });
-
-  it('drops the prepared result of a removed chart before the next explicit preview', async () => {
-    const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
-    const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
-    Object.defineProperties(SVGElement.prototype, {
-      getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
-      getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
-    });
-    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: 400,
-      bottom: 200,
-      width: 400,
-      height: 200,
-      toJSON: () => ({}),
-    });
-    onTestFinished(() => {
-      rect.mockRestore();
-      for (const [key, descriptor] of [
-        ['getCTM', ctm],
-        ['getBBox', bbox],
-      ] as const) {
-        if (descriptor) {
-          Object.defineProperty(SVGElement.prototype, key, descriptor);
-        } else {
-          Reflect.deleteProperty(SVGElement.prototype, key);
-        }
-      }
-    });
-    nativeQuery.mockReset().mockImplementation(
-      () =>
-        new Observable((observer) => {
-          observer.next({ data: [frame('D', {}, [42])] });
-          return () => {};
-        })
+    const status = () => screen.queryByTestId('dmap-status-band')?.textContent ?? '';
+    const cell = () => view.container.querySelector('[data-cell-id="a"]');
+    await waitFor(() => expect(cell()).toBeTruthy());
+    await nextFrame();
+    expect(status()).not.toContain('stale');
+    const applies = panelApplies();
+    // 450 ms later a sample arrives whose deadline lies between the clock read at mount and now: the pass with
+    // the stored clock would call it fresh, the correction runs before the applier's animation frame
+    await new Promise((r) => setTimeout(r, 450));
+    view.rerender(
+      <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 401)] }} />
     );
-    const config: DiagramConfig = {
-      version: 3,
-      overrides: [],
-      queries: [
-        {
-          id: 'q',
-          name: 'Chart data',
-          source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
-        },
-      ],
-      patterns: [
-        {
-          id: 'p',
-          name: 'Chart region',
-          select: { ids: ['chart'] },
-          display: {
-            hover: {
-              rows: [{ kind: 'value', label: 'Metric', binding: { queryId: 'q', match: {}, reducer: 'last' } }],
-            },
-          },
-        },
-      ],
-      widgets: [
-        {
-          id: 'w',
-          anchorCellId: 'chart',
-          kind: 'sparkline',
-          label: 'CPU chart',
-          binding: { queryId: 'q', match: {}, reducer: 'last' },
-        },
-      ],
-    };
-    const chartSvg =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart"><rect width="180" height="70"/></g></svg>';
-    renderSaved(config, 61, { xml: '', svg: chartSvg, hash: 'drop-chart', updatedAt: '' });
-    openPopup();
-    const stage = () => within(screen.getByTestId('dmap-popup-stage'));
-    await waitFor(() => expect(stage().getByTestId('dmap-widget').textContent).toContain('42'));
-    // delete the chart in the draft: its watch is released and its prepared result goes away
-    fireEvent.click(screen.getByRole('button', { name: 'Delete widget CPU chart' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(stage().queryByTestId('dmap-widget')).toBeNull());
-    const before = nativeQuery.mock.calls.length;
-    selectElement('chart');
-    chooseOption('Edit scope', 'All elements matching this pattern');
-    fireEvent.click(screen.getByRole('button', { name: 'Preview all pattern matches' }));
-    await waitFor(() => expect(editorField('Pattern preview progress').textContent).toContain('1 / 1'));
-    // the preview asks for its own result at its own resolution; nothing of the removed chart answers it
-    const asked = nativeQuery.mock.calls.slice(before).map(([request]) => request.maxDataPoints);
-    expect(asked).toContain(264);
-    expect(editorField('Affected metric resolution').textContent).toContain('chart: resolved');
-  });
-
-  describe('pause behind', () => {
-    /** The applier calls on the stage of the panel (the popup stage also applies patches). */
-    const panelApplies = () =>
-      work.applied.filter((index) =>
-        (index as Map<string, { group: Element }>).values().next().value?.group.closest('[data-testid="dmap-stage"]')
-      ).length;
-    const halves = (root: Element) =>
-      Array.from(root.querySelectorAll('polyline.dmap-half'))
-        .map((el) => el.outerHTML)
-        .join('\n');
-    const seriesWith = (value: number) => {
-      const base = props({ id: 61 });
-      return {
-        ...base.data,
-        series: [frame('A', { job: 'node-isp-a', device: 'pppoe' }, [value]), ...base.data.series.slice(1)],
-      };
-    };
-
-    it('an OS colour scheme change runs the applier once more with the same picture; the listener goes on unmount', async () => {
-      const listeners = new Set<() => void>();
-      const media = {
-        matches: false,
-        media: '(prefers-color-scheme: dark)',
-        addEventListener: (_: string, cb: () => void) => listeners.add(cb),
-        removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
-      };
-      vi.stubGlobal('matchMedia', () => media);
-      try {
-        const base = props({ id: 61 });
-        const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
-        await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
-        await new Promise((r) => requestAnimationFrame(() => r(null)));
-        const panel = screen.getByTestId('dmap-panel');
-        const picture = halves(panel);
-        const applies = panelApplies();
-        expect(listeners.size).toBeGreaterThan(0);
-        media.matches = true;
-        act(() => listeners.forEach((cb) => cb()));
-        await waitFor(() => expect(panelApplies()).toBe(applies + 1));
-        expect(halves(panel)).toBe(picture);
-        view.unmount();
-        expect(listeners.size).toBe(0);
-      } finally {
-        vi.unstubAllGlobals();
-      }
-    });
-
-    it('a data refresh with equal values keeps the overlay elements; a changed value updates them in place', async () => {
-      const base = props({ id: 61 });
-      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
-      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      const panel = screen.getByTestId('dmap-panel');
-      const elements = () => Array.from(panel.querySelectorAll('polyline.dmap-half, polygon.dmap-arrow'));
-      const before = elements();
-      const picture = halves(panel);
-      // the same values in a new data object: the same elements, the same picture
-      view.rerender(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      expect(elements().every((el, i) => el.isSameNode(before[i]))).toBe(true);
-      expect(halves(panel)).toBe(picture);
-      // a new value: the same elements with a new stroke
-      view.rerender(<DrawioMapPanel {...base} data={seriesWith(95e6)} />);
-      await waitFor(() => expect(halves(panel)).not.toBe(picture));
-      expect(elements().every((el, i) => el.isSameNode(before[i]))).toBe(true);
-    });
-
-    it('makes a fixed number of DOM mutations in the stage over four refreshes of the demo diagram', async () => {
-      const base = props({ id: 61 });
-      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
-      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      let count = 0;
-      const observer = new MutationObserver((records) => (count += records.length));
-      observer.observe(screen.getByTestId('dmap-stage'), {
-        subtree: true,
-        attributes: true,
-        childList: true,
-        characterData: true,
-      });
-      for (const value of [95e6, 5e6, 5e6, 99e6]) {
-        view.rerender(<DrawioMapPanel {...base} data={seriesWith(value)} />);
-        await new Promise((r) => requestAnimationFrame(() => r(null)));
-        await new Promise((r) => requestAnimationFrame(() => r(null)));
-      }
-      count += observer.takeRecords().length;
-      observer.disconnect();
-      // three width changes: each also rewrites the points of the half and of its head (the head grows with the width)
-      expect(count).toBe(57);
-    });
-
-    it('does no per-refresh work for the panel behind and renders the latest data once on close', async () => {
-      const base = props({ id: 61 });
-      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
-      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      openPopup();
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      const panel = screen.getByTestId('dmap-panel');
-      const before = {
-        halves: halves(panel),
-        patched: panel.getAttribute('data-dmap-patched'),
-        applies: panelApplies(),
-        renders: work.viewRenders,
-      };
-      for (const value of [95e6, 5e6, 99e6]) {
-        view.rerender(<DrawioMapPanel {...base} data={seriesWith(value)} />);
-        await new Promise((r) => requestAnimationFrame(() => r(null)));
-      }
-      expect(halves(panel)).toBe(before.halves);
-      expect(panel.getAttribute('data-dmap-patched')).toBe(before.patched);
-      expect(panelApplies()).toBe(before.applies);
-      // The view is not rendered at all while it is paused: no loop, no per-refresh render.
-      expect(work.viewRenders).toBe(before.renders);
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(halves(screen.getByTestId('dmap-panel'))).not.toBe(before.halves));
-      expect(panelApplies()).toBe(before.applies + 1);
-      expect(work.viewRenders - before.renders).toBeLessThanOrEqual(3);
-    });
-
-    it('a refresh that changes the request id and the time range renders nothing while paused, and the latest result shows once after close', async () => {
-      nativeQuery.mockReset().mockImplementation(
-        (request) =>
-          new Observable((observer) => {
-            observer.next({ data: [frame('D', {}, [request.range.from.valueOf() === 1000 ? 84 : 11])] });
-            return () => {};
-          })
-      );
-      const p = props({ id: 61 });
-      const saved = { ...options, config: labelled(), diagram };
-      const view = render(<DrawioMapPanel {...p} options={saved} />);
-      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
-      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
-      openPopup();
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      const renders = work.viewRenders;
-      const applies = panelApplies();
-      const panelRequests = () =>
-        nativeQuery.mock.calls.filter(([request]) => request.range.from.valueOf() === 1000).length;
-      for (const requestId of ['r2', 'r3']) {
-        view.rerender(
-          <DrawioMapPanel
-            {...p}
-            options={saved}
-            data={{ ...p.data, request: { ...p.data.request, requestId } as never }}
-            timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }}
-          />
-        );
-        await new Promise((r) => requestAnimationFrame(() => r(null)));
-      }
-      // The popup runs its own requests for the new context. The panel view renders nothing and draws nothing.
-      expect(work.viewRenders).toBe(renders);
-      expect(panelApplies()).toBe(applies);
-      expect(panelLabel()).toBe('Saved 11');
-      const before = panelRequests();
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(panelLabel()).toBe('Saved 84'));
-      // The popup and the panel share the cached request: the panel needs no more than one request per query scope.
-      expect(panelRequests() - before).toBeLessThanOrEqual(2);
-      expect(work.viewRenders - renders).toBeLessThanOrEqual(6);
-    });
-
-    it('pins the view renders and the binds of a refresh, of paused refreshes and of the close', async () => {
-      const frameDone = () => new Promise((r) => requestAnimationFrame(() => r(null)));
-      const base = props({ id: 61 });
-      const view = render(<DrawioMapPanel {...base} data={seriesWith(10e6)} />);
-      await waitFor(() => expect(view.container.querySelectorAll('polyline.dmap-half').length).toBeGreaterThan(0));
-      await frameDone();
-      const mark = () => ({ renders: work.viewRenders, binds: work.binds });
-      const since = (from: { renders: number; binds: number }) => ({
-        renders: work.viewRenders - from.renders,
-        binds: work.binds - from.binds,
-      });
-      let from = mark();
-      view.rerender(<DrawioMapPanel {...base} data={seriesWith(95e6)} />);
-      await frameDone();
-      await frameDone();
-      const refresh = since(from);
-      openPopup();
-      await screen.findByTestId('dmap-popup-stage');
-      await frameDone();
-      from = mark();
-      for (const value of [5e6, 99e6]) {
-        view.rerender(<DrawioMapPanel {...base} data={seriesWith(value)} />);
-        await frameDone();
-      }
-      const paused = since(from);
-      from = mark();
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
-      await frameDone();
-      await frameDone();
-      const close = since(from);
-      expect({ refresh, paused, close }).toEqual({
-        refresh: { renders: 1, binds: 1 },
-        // the popup binds the new data; the panel view behind it renders nothing
-        paused: { renders: 0, binds: 2 },
-        close: { renders: 1, binds: 1 },
-      });
-    });
-
-    it('keeps the paint of a controller emission away from the panel until close, then shows the latest result', async () => {
-      const receivers: Array<(value: number) => void> = [];
-      nativeQuery.mockReset().mockImplementation(
-        () =>
-          new Observable((observer) => {
-            const receive = (value: number) => observer.next({ data: [frame('D', {}, [value])] });
-            receivers.push(receive);
-            receive(11);
-            return () => {};
-          })
-      );
-      const view = renderSaved(labelled());
-      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
-      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
-      openPopup();
-      const applies = panelApplies();
-      act(() => receivers.forEach((receive) => receive(77)));
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      expect(panelLabel()).toBe('Saved 11');
-      expect(panelApplies()).toBe(applies);
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(panelLabel()).toBe('Saved 77'));
-    });
-
-    it('lets a freshness deadline mark the status stale while paused, with one applier call', async () => {
-      const binding = { queryId: 'q', match: {}, reducer: 'last' } as const;
-      const config: DiagramConfig = {
-        version: 3,
-        queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
-        patterns: [],
-        widgets: [],
-        overrides: [
-          {
-            cellId: 'a',
-            display: {
-              status: {
-                kind: 'mapping',
-                binding,
-                default: { state: 'normal', reason: 'Healthy' },
-                mappings: [{ value: 0, state: 'down', reason: 'Down' }],
-                freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
-              },
-            },
-          },
-        ],
-      };
-      const fresh = toDataFrame({
-        refId: 'Q',
-        fields: [
-          { name: 'Time', type: FieldType.time, values: [Date.now()] },
-          { name: 'Value', type: FieldType.number, values: [1] },
-        ],
-      });
-      const base = props({ id: 61 });
-      const saved = { ...options, config, diagram };
-      const view = render(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
-      const status = () => screen.queryByTestId('dmap-status-band')?.textContent ?? '';
-      await waitFor(() => expect(view.container.querySelector('[data-cell-id="a"]')).toBeTruthy());
-      expect(status()).not.toContain('stale');
-      openPopup();
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      const applies = panelApplies();
-      view.rerender(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
-      await waitFor(() => expect(status()).toContain('stale'), { timeout: 2000 });
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      expect(panelApplies()).toBe(applies + 1);
-      expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
-    });
-
-    it('a freshness deadline after the popup opened marks no legend cells, while the legend keeps its entry', async () => {
-      const binding = { queryId: 'q', match: {}, reducer: 'last' } as const;
-      const status: NonNullable<DiagramConfig['overrides'][number]['display']['status']> = {
-        kind: 'mapping',
-        binding,
-        default: { state: 'normal', reason: 'Healthy' },
-        mappings: [{ value: 0, state: 'down', reason: 'Down' }],
-        freshness: { expectedIntervalMs: 100, staleAfterMs: 1000 },
-      };
-      const config: DiagramConfig = {
-        version: 3,
-        queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
-        patterns: [],
-        widgets: [],
-        overrides: ['a', 'b'].map((cellId) => ({ cellId, display: { status } })),
-      };
-      const fresh = toDataFrame({
-        refId: 'Q',
-        fields: [
-          { name: 'Time', type: FieldType.time, values: [Date.now()] },
-          { name: 'Value', type: FieldType.number, values: [1] },
-        ],
-      });
-      const base = props({ id: 61 });
-      const saved: Options = {
-        ...options,
-        config,
-        diagram,
-        legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false },
-      };
-      const view = render(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
-      // the entry of the down state: no cells now and none after the deadline, but a new id list on each render
-      const entry = await waitFor(() => {
-        const found = screen
-          .getAllByTestId('dmap-legend-entry')
-          .find((e) => e.getAttribute('aria-label')!.startsWith('Down, critical'));
-        expect(found).toBeTruthy();
-        return found!;
-      });
-      const root = view.container.querySelector('[data-testid="dmap-stage"] > svg')!;
-      fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
-      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
-      const panelCell = () => view.container.querySelector('[data-testid="dmap-stage"] [data-cell-id="a"]');
-      expect(panelCell()?.getAttribute('data-dmap-status')).not.toBe('stale');
-      openPopup();
-      await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
-      // the deadline passes behind the popup: new patches, new legend blocks, a new id list from the legend
-      view.rerender(<DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [fresh] }} />);
-      // the cell of the panel stage (not the popup stage) is stale: the view rendered and applied behind the popup
-      await waitFor(() => expect(panelCell()?.getAttribute('data-dmap-status')).toBe('stale'), { timeout: 3000 });
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      expect(screen.getByTestId('dmap-bindings-popup')).toBeTruthy();
-      expect(root.classList.contains('dmap-legend-active')).toBe(false);
-      expect(root.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
-    });
-
-    /** One status element bound to the panel query Q, with a freshness policy of 400 ms. */
-    const freshnessConfig: DiagramConfig = {
-      version: 3,
-      queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
-      patterns: [],
-      widgets: [],
-      overrides: [
-        {
-          cellId: 'a',
-          display: {
-            status: {
-              kind: 'mapping',
-              binding: { queryId: 'q', match: {}, reducer: 'last' },
-              default: { state: 'normal', reason: 'Healthy' },
-              mappings: [{ value: 0, state: 'down', reason: 'Down' }],
-              freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
-            },
-          },
-        },
-      ],
-    };
-    const sampleAt = (at: number, value = 1) =>
-      toDataFrame({
-        refId: 'Q',
-        fields: [
-          { name: 'Time', type: FieldType.time, values: [at] },
-          { name: 'Value', type: FieldType.number, values: [value] },
-        ],
-      });
-    const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
-
-    it('a panel-source data update with a fresh status sample binds once: the clock causes no bind', async () => {
-      const base = props({ id: 62 });
-      const saved = { ...options, config: freshnessConfig, diagram };
-      const view = render(
-        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now())] }} />
-      );
-      await waitFor(() => expect(view.container.querySelector('[data-cell-id="a"]')).toBeTruthy());
-      await nextFrame();
-      const binds = work.binds;
-      view.rerender(
-        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now(), 2)] }} />
-      );
-      await nextFrame();
-      await new Promise((r) => setTimeout(r, 30));
-      expect(work.binds - binds).toBe(1);
-    });
-
-    it('a status sample that is already stale on arrival shows stale in the first applier call', async () => {
-      const base = props({ id: 63 });
-      const saved = { ...options, config: freshnessConfig, diagram };
-      // the first sample is far in the future: the clock of the panel is read at mount and no deadline moves it
-      const view = render(
-        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() + 1e6)] }} />
-      );
-      const status = () => screen.queryByTestId('dmap-status-band')?.textContent ?? '';
-      const cell = () => view.container.querySelector('[data-cell-id="a"]');
-      await waitFor(() => expect(cell()).toBeTruthy());
-      await nextFrame();
-      expect(status()).not.toContain('stale');
-      const applies = panelApplies();
-      // 450 ms later a sample arrives whose deadline lies between the clock read at mount and now: the pass with
-      // the stored clock would call it fresh, the correction runs before the applier's animation frame
-      await new Promise((r) => setTimeout(r, 450));
-      view.rerender(
-        <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 401)] }} />
-      );
-      await nextFrame();
-      expect(status()).toContain('stale');
-      expect(cell()?.getAttribute('data-dmap-status')).toBe('stale');
-      expect(panelApplies()).toBe(applies + 1);
-    });
-
-    it('Apply while open changes the panel on close only', async () => {
-      const view = renderSaved(labelled());
-      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
-      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
-      selectElement('a');
-      fireEvent.change(editorField('Label template'), { target: { value: 'Draft ${value}' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Apply bindings' }));
-      expect(view.save).toHaveBeenCalledTimes(1);
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      expect(panelLabel()).toBe('Saved 11');
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(panelLabel()).toBe('Draft 11'));
-    });
-
-    it('closes a pinned card when the popup opens', async () => {
-      const view = render(<DrawioMapPanel {...props({ id: 61 })} />);
-      await waitFor(() => expect(view.container.querySelector('polyline.dmap-half')).not.toBeNull());
-      const half = view.container.querySelector(
-        'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~isp-a:pppoe->rtr-a:wan1"]'
-      )!;
-      fireEvent.click(half, { clientX: 50, clientY: 40 });
-      await screen.findByTestId('dmap-card');
-      openPopup();
-      await waitFor(() => expect(screen.queryByTestId('dmap-card')).toBeNull());
-    });
-
-    it('leaves the panel consumers attached when the popup closes during a loading preview', async () => {
-      const receivers: Array<(value: number) => void> = [];
-      nativeQuery.mockReset().mockImplementation(
-        () =>
-          new Observable((observer) => {
-            receivers.push((value) => observer.next({ data: [frame('D', {}, [value])] }));
-            if (receivers.length <= 2) {
-              observer.next({ data: [frame('D', {}, [11])] });
-            }
-            return () => {};
-          })
-      );
-      const view = renderSaved(labelled());
-      const panelLabel = () => view.container.querySelector('[data-cell-id="a"] text')?.textContent;
-      await waitFor(() => expect(panelLabel()).toBe('Saved 11'));
-      openPopup();
-      openQueryRow('Metric');
-      fireEvent.change(editorField('Native target JSON'), {
-        target: { value: JSON.stringify({ refId: 'D', expr: 'slow' }) },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Import native target' }));
-      selectElement('a');
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'Discard and close' }));
-      await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
-      // The first two requests belong to the panel. A later value on them still reaches the panel.
-      act(() => receivers.slice(0, 2).forEach((receive) => receive(55)));
-      await waitFor(() => expect(panelLabel()).toBe('Saved 55'));
-    });
+    await nextFrame();
+    expect(status()).toContain('stale');
+    expect(cell()?.getAttribute('data-dmap-status')).toBe('stale');
+    expect(panelApplies()).toBe(applies + 1);
   });
 });
