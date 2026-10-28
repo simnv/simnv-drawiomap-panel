@@ -13,8 +13,8 @@ import {
 } from '@grafana/data';
 import type { PlanCellPatch } from '../binding/engine';
 import { statusLevel, type StatusLevel, type StatusView } from '../binding/status';
-import { noDataColor, statusColor } from '../binding/color';
-import type { HalfState, SeriesInfo, ShapeState } from '../types';
+import { linkStatusPaint, noDataColor, statusColor } from '../binding/color';
+import type { HalfState, PatchMap, ShapeState } from '../types';
 
 /** One colour of a scale: a swatch and its threshold or mapping text. */
 export interface LegendEntry {
@@ -54,7 +54,8 @@ export interface LegendContext {
 interface Item {
   cellId: string;
   kind: 'link' | 'node';
-  series: SeriesInfo;
+  field: Field;
+  refId?: string;
   color: string;
   stepIndex: number;
   percent?: number;
@@ -125,7 +126,7 @@ function unitSymbol(unit: string | undefined): string {
 /** The scale of one coloured value, without its cells. Undefined: the colour does not depend on the value. */
 function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
   const { theme } = ctx;
-  const field = item.series.field;
+  const field = item.field;
   const config = field.config ?? {};
   const thresholds = config.thresholds ?? ctx.fieldThresholds;
   const steps = thresholds?.steps ?? [];
@@ -174,11 +175,11 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
     // one colour per series (classic palette): no value scale
     return undefined;
   }
-  const name = ctx.queryName?.(item.series.refId ?? '') ?? (item.kind === 'link' ? 'Link' : 'Node');
+  const name = ctx.queryName?.(item.refId ?? '') ?? (item.kind === 'link' ? 'Link' : 'Node');
   const symbol = unitSymbol(config.unit);
   const title = capacity ? 'Link load %' : (config.displayName ?? (symbol ? `${name} ${symbol}` : name));
   const key = JSON.stringify([entries.map((e) => [e.label, e.color]), gradient]);
-  const source = ctx.queryName?.(item.series.refId ?? '') ?? item.series.refId ?? '';
+  const source = ctx.queryName?.(item.refId ?? '') ?? item.refId ?? '';
   return { key, title, titles: [title], sources: source ? [source] : [], entries, gradient, auto, cellIds: [] };
 }
 
@@ -202,42 +203,39 @@ const STATUS_ENTRIES: Array<{ key: StatusLevel; label: string }> = [
 ];
 
 /**
- * The colour legend of the bound cells: one block for each distinct colour scale (the field Color scheme,
- * Thresholds and Value mappings, incl. overrides), then the status markers, then the no data colour.
- * Identical scales merge into one block.
+ * Adds the coloured value of a link half or a shape to `items`. A state with no data adds its cell to `nodata`. A
+ * shape that colours nothing adds nothing.
  */
-export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendContext): LegendBlock[] {
-  const items: Item[] = [];
-  const nodata: string[] = [];
-  const statuses: Array<{ cellId: string; state: StatusView['state'] }> = [];
-  const add = (cellId: string, kind: Item['kind'], state: HalfState | ShapeState | undefined) => {
-    if (!state || ('target' in state && state.target === 'none')) {
-      return;
-    }
-    if (state.status !== 'ok' || !state.series) {
-      push(nodata, cellId);
-      return;
-    }
-    const percent = 'percent' in state ? state.percent : undefined;
-    items.push({
-      cellId,
-      kind,
-      series: state.series,
-      color: state.color,
-      stepIndex: state.stepIndex,
-      percent,
-      value: state.value,
-      text: state.display?.text,
-    });
-  };
-  for (const patch of patches.values()) {
-    add(patch.cellId, 'link', patch.link?.a2b);
-    add(patch.cellId, 'link', patch.link?.b2a);
-    add(patch.cellId, 'node', patch.shape);
-    if (patch.statusView) {
-      statuses.push({ cellId: patch.cellId, state: patch.statusView.state });
-    }
+function addItem(
+  items: Item[],
+  nodata: string[],
+  cellId: string,
+  kind: Item['kind'],
+  state: HalfState | ShapeState | undefined
+) {
+  if (!state || ('target' in state && state.target === 'none')) {
+    return;
   }
+  if (state.status !== 'ok' || !state.series) {
+    push(nodata, cellId);
+    return;
+  }
+  const percent = 'percent' in state ? state.percent : undefined;
+  items.push({
+    cellId,
+    kind,
+    field: state.series.field,
+    refId: state.series.refId,
+    color: state.color,
+    stepIndex: state.stepIndex,
+    percent,
+    value: state.value,
+    text: state.display?.text,
+  });
+}
+
+/** One block for each distinct colour scale of the items. Identical scales merge into one block. */
+function scaleBlocks(items: Item[], ctx: LegendContext): LegendBlock[] {
   const blocks = new Map<string, Draft>();
   for (const item of items) {
     const scale = scaleOf(item, ctx);
@@ -270,13 +268,33 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
   for (const d of shared) {
     d.title = `${d.title} (${d.sources.join(', ')})`;
   }
-  const out: LegendBlock[] = drafts.map(({ key, title, entries, gradient, cellIds }) => ({
+  return drafts.map(({ key, title, entries, gradient, cellIds }) => ({
     key,
     title,
     entries,
     ...(gradient ? { gradient } : {}),
     cellIds,
   }));
+}
+
+/**
+ * The colour legend of the bound cells: one block for each distinct colour scale (the field Color scheme,
+ * Thresholds and Value mappings, incl. overrides), then the status markers, then the no data colour.
+ * Identical scales merge into one block.
+ */
+export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendContext): LegendBlock[] {
+  const items: Item[] = [];
+  const nodata: string[] = [];
+  const statuses: Array<{ cellId: string; state: StatusView['state'] }> = [];
+  for (const patch of patches.values()) {
+    addItem(items, nodata, patch.cellId, 'link', patch.link?.a2b);
+    addItem(items, nodata, patch.cellId, 'link', patch.link?.b2a);
+    addItem(items, nodata, patch.cellId, 'node', patch.shape);
+    if (patch.statusView) {
+      statuses.push({ cellId: patch.cellId, state: patch.statusView.state });
+    }
+  }
+  const out = scaleBlocks(items, ctx);
   if (statuses.length) {
     const cellIds: string[] = [];
     statuses.forEach((s) => push(cellIds, s.cellId));
@@ -300,6 +318,91 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
     });
   }
   return out;
+}
+
+/** The state entries of the v4 legend, in this order. They have the theme colours of the painter. */
+const STATE_ENTRIES_V4: Array<{ key: 'stale' | 'missing'; label: string }> = [
+  { key: 'stale', label: 'Stale' },
+  { key: 'missing', label: 'No data' },
+];
+
+/**
+ * The v4 legend (spec 3.4). First one block for each status refId in use, in the order of first use. The title is
+ * the display name of the field of the refId. The entries are its value mappings and then its threshold steps, each
+ * with its exact colour and text and the cells that show it. `fields` gives the field of each status refId; a refId
+ * with no field has no block. Then one block with a `stale` and a `missing` entry, each only when cells have that
+ * state: a link half with no data is `missing`, and so is a missing status that the painter paints grey. Then the
+ * link load scale of the link halves. A v3 status is not in this legend.
+ */
+export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx: LegendContext): LegendBlock[] {
+  const statusItems = new Map<string, Item[]>();
+  const links: Item[] = [];
+  const states: Record<(typeof STATE_ENTRIES_V4)[number]['key'], string[]> = { stale: [], missing: [] };
+  for (const patch of patches.values()) {
+    addItem(links, states.missing, patch.cellId, 'link', patch.link?.a2b);
+    addItem(links, states.missing, patch.cellId, 'link', patch.link?.b2a);
+    const view = patch.statusView;
+    if (view?.severity === undefined || !view.refId) {
+      continue;
+    }
+    if (view.state === 'stale' || view.state === 'missing') {
+      if (view.state === 'stale' || linkStatusPaint(patch, ctx.theme) !== undefined) {
+        push(states[view.state], patch.cellId);
+      }
+      continue;
+    }
+    const field = fields.get(view.refId);
+    if (field) {
+      const items = statusItems.get(view.refId) ?? [];
+      statusItems.set(view.refId, items);
+      items.push({
+        cellId: patch.cellId,
+        kind: 'node',
+        field,
+        refId: view.refId,
+        color: view.color ?? '',
+        stepIndex: -1,
+        text: view.text,
+      });
+    }
+  }
+  const out: LegendBlock[] = [];
+  for (const [refId, items] of statusItems) {
+    const scale = scaleOf(items[0], ctx);
+    if (!scale) {
+      continue;
+    }
+    const { auto, gradient } = scale;
+    const block: LegendBlock = {
+      key: `status:${refId}`,
+      title: items[0].field.config.displayName ?? ctx.queryName?.(refId) ?? refId,
+      entries: scale.entries,
+      ...(gradient
+        ? { gradient: auto ? { ...gradient, min: auto.format(auto.min), max: auto.format(auto.max) } : gradient }
+        : {}),
+      cellIds: [],
+    };
+    for (const item of items) {
+      push(block.cellIds, item.cellId);
+      const entry = entryOf(block, item);
+      if (entry) {
+        push(entry.cellIds, item.cellId);
+      }
+    }
+    out.push(block);
+  }
+  const entries = STATE_ENTRIES_V4.filter(({ key }) => states[key].length).map(({ key, label }) => ({
+    key,
+    label,
+    color: statusColor({ state: key }, ctx.theme),
+    cellIds: states[key],
+  }));
+  if (entries.length) {
+    const cellIds: string[] = [];
+    entries.forEach((e) => e.cellIds.forEach((id) => push(cellIds, id)));
+    out.push({ key: 'state', entries, cellIds });
+  }
+  return [...out, ...scaleBlocks(links, ctx)];
 }
 
 /** The swatch of the collapsed legend chip: the colours of the first scale, low to high. */
