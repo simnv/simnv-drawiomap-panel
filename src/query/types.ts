@@ -1,4 +1,5 @@
-import type { DataFrame, DataQueryRequest, PanelData, ScopedVars, TimeRange } from '@grafana/data';
+import type { QuerySnapshot } from './snapshot';
+import type { DataQueryRequest, PanelData, ScopedVars, TimeRange } from '@grafana/data';
 import type { DataSourceRef } from '@grafana/schema';
 import type { NamedQuery } from '../model/config';
 import type { TemplateScope } from '../types';
@@ -21,11 +22,7 @@ export interface QueryDemand {
   context: QueryContext;
   maxDataPoints: number;
 }
-export type QuerySnapshot =
-  | { state: 'idle' | 'loading' }
-  | { state: 'ready'; frames: DataFrame[]; fetchedAt: number; fromCache: boolean }
-  | { state: 'empty'; fetchedAt: number; fromCache: boolean }
-  | { state: 'error' | 'unsupported'; message: string };
+export type { QuerySnapshot } from './snapshot';
 export interface ResolvedQueryRequest {
   datasource: DataSourceRef;
   request: DataQueryRequest;
