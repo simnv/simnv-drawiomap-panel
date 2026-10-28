@@ -1,10 +1,8 @@
-import { FieldType, formattedValueToString, LoadingState, type Field, type PanelData } from '@grafana/data';
+import { formattedValueToString, type Field, type PanelData } from '@grafana/data';
 import type { QueryBinding } from '../model/config';
 import type { RowV4 } from '../model/v4';
 import type { validateConfig } from '../model/validate';
-import type { HistoryModel } from '../query/frames';
-import { panelSnapshot } from '../query/panelSnapshot';
-import { alignUpdown, reduceAcross } from '../query/reduce';
+import { reduceAcross } from '../query/reduce';
 import { equalityKey, indexSeries } from '../query/seriesIndex';
 import type { QuerySnapshot, Series } from '../query/snapshot';
 import type { BindContext, CapacitySource, CellIndex, CellMeta, HalfState, SeriesInfo, StatusV4Fields } from '../types';
@@ -19,6 +17,7 @@ import { createRegexCache, parseMatchBlock, resolveBlock, type ParseResult } fro
 import type { ReportEntry, UsePath } from './report';
 import type { StatusView } from './status';
 import { NO_DATA_TEXT, statusOfUse, type StatusV4 } from './statusV4';
+import { directionHistory, isInstant, shownField, snapshotV4 } from './rowData';
 import { resolveTemplateV4, type TemplateScopeV4 } from './template';
 import { defaultReduce } from './units';
 import { fieldPath, LINK_FIELDS, listUses, type Use } from './uses';
@@ -71,7 +70,6 @@ export const INVALID_BINDING = 'Binding is not valid';
 /** The most label sets of one `orphan-series` entry (spec 4). */
 const ORPHAN_CAP = 50;
 
-const LOADING: QuerySnapshot = { state: 'loading' };
 const NO_TARGET: QuerySnapshot = { state: 'empty', fetchedAt: 0, fromCache: false };
 
 /** The status of the painter, the band and the legend from a v4 status. */
@@ -186,24 +184,6 @@ interface UseResult {
   mixed?: boolean;
 }
 
-/** The value fields of a row, a text or a chart that format a value. */
-type Show = { unit?: string; decimals?: number };
-
-/** The field with the `unit` and `decimals` of a use: a new display processor reads them (spec 3.7 "Format"). */
-function shownField(field: Field, show: Show): Field {
-  if (show.unit === undefined && show.decimals === undefined) {
-    return field;
-  }
-  const config = { ...field.config };
-  if (show.unit !== undefined) {
-    config.unit = show.unit;
-  }
-  if (show.decimals !== undefined) {
-    config.decimals = show.decimals;
-  }
-  return { ...field, config, display: undefined };
-}
-
 function seriesInfo(series: Series, field: Field = series.field): SeriesInfo {
   return {
     refId: series.refId,
@@ -236,19 +216,6 @@ function expectsOne(use: Use, eff: ResolvedClass): { reduce?: string } | undefin
   }
 }
 
-/** A target with `instant` and no `range` is never stale (spec 3.5 step 3). */
-function isInstant(data: PanelData, refId: string): boolean {
-  const target = data.request?.targets.find((t) => t.refId === refId) as
-    { instant?: unknown; range?: unknown } | undefined;
-  return target?.instant === true && target.range !== true;
-}
-
-/** A refId whose frames have not arrived yet (A18): the first load, a refresh, a stream. */
-const isLoading = (data: PanelData) =>
-  data.state === LoadingState.Loading ||
-  data.state === LoadingState.NotStarted ||
-  data.state === LoadingState.Streaming;
-
 /**
  * The v4 bind (spec 3.2 steps 3–12, 3.6–3.8, 4). It groups the cells by `bind`, lists the uses of each cell from its
  * effective class, selects the series of each use, and gives the patches, the series of each use, the match report
@@ -268,7 +235,6 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   const deadlines = new Set<number>();
   const regexCache = createRegexCache();
   const targets = data.request ? new Set(data.request.targets.map((t) => t.refId)) : undefined;
-  const loading = isLoading(data);
   const queries = new Map<string, Query>();
   const blocks = new Map<string, Block>();
   let endContext: EndContext | undefined;
@@ -300,10 +266,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     if (found) {
       return found;
     }
-    let snapshot = panelSnapshot(data, refId);
-    if (snapshot.state === 'empty' && loading) {
-      snapshot = LOADING; // A18: no frame yet is not "no series"
-    }
+    const snapshot = snapshotV4(data, refId);
     found = { snapshot, series: [], selected: new Set() };
     if (snapshot.state === 'error' || snapshot.state === 'unsupported') {
       const errors = data.errors ?? [];
@@ -647,36 +610,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       };
     }
     const binding: QueryBinding = { queryId: refId, match: {}, reducer: 'last' };
-    return halfState(historyModel(r), binding, cap, ctx).state;
-  }
-
-  /** The history of a direction: one series as it is, N series reduced at each timestamp (spec 3.7). */
-  function historyModel(r: UseResult): HistoryModel {
-    if (r.snapshot.state !== 'ready' || !r.series.length) {
-      return r.snapshot.state === 'ready'
-        ? { state: 'empty', fetchedAt: r.snapshot.fetchedAt, fromCache: false }
-        : r.snapshot;
-    }
-    const first = r.series[0];
-    const how = defaultReduce(first.field.config.unit);
-    const reduced = reduceAcross(r.series, how);
-    const latest = 'mismatch' in reduced || reduced.value === null ? undefined : reduced.value;
-    const aligned = alignUpdown(r.series, how);
-    let last = aligned.values.length - 1;
-    while (last >= 0 && aligned.values[last] === null) {
-      last--;
-    }
-    return {
-      state: 'ready',
-      field: { ...first.field, values: aligned.values } as Field<number | null>,
-      timeField: { name: 'Time', type: FieldType.time, config: {}, values: aligned.times },
-      timestamps: aligned.times,
-      values: aligned.values,
-      latestValue: latest,
-      sampleAt: last >= 0 ? aligned.times[last] : undefined,
-      fetchedAt: r.snapshot.fetchedAt,
-      fromCache: r.snapshot.fromCache,
-    };
+    return halfState(directionHistory(r), binding, cap, ctx).state;
   }
 
   /**
