@@ -76,6 +76,12 @@ describe('resolveTemplateV4', () => {
     expect(resolveTemplateV4('[${labels.site}]', scope).text).toBe('[]');
   });
 
+  it('reads no label from the prototype of the labels object', () => {
+    expect(resolveTemplateV4('[${labels.constructor}][${labels.toString}]', scope).text).toBe('[][]');
+    const own: TemplateScopeV4 = { attr: attrs({}), labels: { constructor: 'a', toString: 'b' } };
+    expect(resolveTemplateV4('${labels.constructor} ${labels.toString}', own).text).toBe('a b');
+  });
+
   it('leaves the dashboard variable forms and the bad ${ forms as they are', () => {
     const t = '$job $__url_time_range ${job:csv} ${__from:date:iso} ${job.x:csv} ${} ${a b';
     expect(resolveTemplateV4(t, scope)).toEqual({ text: t, missing: [], unresolved: [] });
@@ -150,6 +156,12 @@ describe('formatBareVariables', () => {
   it('reads a bare name as replaceVariables does, also with a digit first', () => {
     expect(formatBareVariables('/d/x?a=$1x&b=$_y&c=$5')).toBe(
       '/d/x?a=${1x:percentencode}&b=${_y:percentencode}&c=${5:percentencode}'
+    );
+  });
+
+  it('keeps a complete ${name:format} as it is, also with a $ in the format', () => {
+    expect(formatBareVariables('/d/x?t=${__from:date:YYYY[$USD]MM}&j=$job')).toBe(
+      '/d/x?t=${__from:date:YYYY[$USD]MM}&j=${job:percentencode}'
     );
   });
 

@@ -11,6 +11,17 @@ export const shield = (v: string): string => v.replaceAll('$', DOLLAR);
 /** Puts the "$" of the substituted values back, after replaceVariables. */
 export const unshield = (v: string): string => v.replaceAll(DOLLAR, '$');
 
+/** A mark that no variable syntax of replaceVariables reads: no `\w`, no `{`, no `[`. */
+const BREAK = '\uE001';
+/**
+ * The v4 `encode` of a value that goes through replaceVariables afterwards: a BREAK after each "$" and "[" of the
+ * value, so that no `$name`, `${name}` or `[[name]]` starts in it, and a BREAK at each end, so that the text around
+ * the placeholder cannot join the value into one (`$si${key}`, `[[${key}]]`). See unshieldV4.
+ */
+export const shieldV4 = (v: string): string => `${BREAK}${v.replace(/[$[]/g, (c) => c + BREAK)}${BREAK}`;
+/** Removes the marks of shieldV4, after replaceVariables. A U+E001 that the text has of its own goes too. */
+export const unshieldV4 = (v: string): string => v.replaceAll(BREAK, '');
+
 export interface ResolveResult {
   text: string;
   unresolved: string[];
@@ -71,8 +82,11 @@ const NAME = '[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*)*';
 const SCOPE_PLACEHOLDER = new RegExp(`^(?:(from|to|labels)\\.(${NAME})|(${NAME}))$`);
 /** `${<name>:<format>}`: a dashboard variable with a Grafana variable format (A17). The panel does not check the id. */
 const VARIABLE_PLACEHOLDER = /^[A-Za-z_]\w*:.+$/;
-/** A dashboard variable with no format, as replaceVariables reads it: `$<name>` or the old form `[[<name>]]`. */
-const BARE_VARIABLE = /\$(\w+)|\[\[(\w+?)\]\]/g;
+/**
+ * A dashboard variable with no format, as replaceVariables reads it: `$<name>` or the old form `[[<name>]]`. The first
+ * branch takes a complete `${…}`, so that a `$` in its format (`${__from:date:YYYY[$USD]MM}`) is not read.
+ */
+const BARE_VARIABLE = /\$\{[^}]*\}|\$(\w+)|\[\[(\w+?)\]\]/g;
 
 export const BAD_PLACEHOLDER_MESSAGE =
   'write ${attr} for a cell attribute, $var or ${var:format} for a dashboard variable';
@@ -144,7 +158,8 @@ export function resolveTemplateV4(
           unresolved.add(`labels.${p.name}`);
           return whole;
         }
-        return encode(scope.labels[p.name] ?? '');
+        // a label that the series does not have is "", also a name of the prototype (constructor, toString)
+        return encode(Object.hasOwn(scope.labels, p.name) ? scope.labels[p.name] : '');
       default: {
         const v = p.kind === 'attr' ? scope.attr(p.name) : scope[p.kind]?.(p.name);
         if (v === undefined) {
@@ -174,7 +189,7 @@ export function missingAttrHint(attr: string): string | undefined {
  */
 export function formatBareVariables(url: string): string {
   return url.replace(BARE_VARIABLE, (whole, bare: string | undefined, old: string | undefined) => {
-    const name = bare ?? old ?? '';
-    return name.startsWith('__') ? whole : `\${${name}:percentencode}`;
+    const name = bare ?? old;
+    return name === undefined || name.startsWith('__') ? whole : `\${${name}:percentencode}`;
   });
 }

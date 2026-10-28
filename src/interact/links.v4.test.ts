@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { shield, type TemplateScopeV4 } from '../binding/template';
+import { shieldV4, type TemplateScopeV4 } from '../binding/template';
 import { resolveTitleV4, resolveUrlV4 } from './links';
 
 const attrs = (o: Record<string, string>) => (n: string) => o[n];
@@ -50,7 +50,7 @@ describe('resolveUrlV4', () => {
   it('substitutes ${job} from the cell and leaves ${job:queryparam} to Grafana', () => {
     const spy = echo();
     resolveUrlV4('/d/host?var-node=${job}&${job:queryparam}', cell({ job: 'cell-a' }), spy);
-    expect(spy.mock.calls[0][0]).toBe('/d/host?var-node=cell-a&${job:queryparam}');
+    expect(spy.mock.calls[0][0]).toBe(`/d/host?var-node=${shieldV4('cell-a')}&\${job:queryparam}`);
   });
 
   it('keeps a value of a dashboard variable from changing the query structure', () => {
@@ -75,8 +75,24 @@ describe('resolveUrlV4', () => {
   it('does not let a $ before a placeholder join the cell value into a dashboard variable', () => {
     const spy = echo();
     expect(resolveUrlV4('/d/x?a=$${key}', cell({ key: 'site' }), spy)).toBe('/d/x?a=$site');
-    expect(spy.mock.calls[0][0]).toBe(`/d/x?a=${shield('$')}site`);
+    expect(spy.mock.calls[0][0]).toBe(`/d/x?a=$${shieldV4('site')}`);
     expect(resolveUrlV4('/d/x?a=$${job:csv}', cell({}), grafana)).toBe('/d/x?a=$a,b');
+  });
+
+  it('does not let the text around a placeholder join the cell value into a dashboard variable', () => {
+    const spy = echo();
+    // $si stays the variable si: the cell value te does not join it into $site
+    expect(resolveUrlV4('/d/x?v=[[${key}]]&w=$si${key}', cell({ key: 'te' }), spy)).toBe(
+      '/d/x?v=[[te]]&w=${si:percentencode}te'
+    );
+    expect(spy.mock.calls[0][0]).toBe(`/d/x?v=[[${shieldV4('te')}]]&w=\${si:percentencode}${shieldV4('te')}`);
+    expect(resolveUrlV4('/d/x?v=[[${key}]]', cell({ key: 'site' }), grafana)).toBe('/d/x?v=[[site]]');
+  });
+
+  it('keeps the old form [[name]] of the URL template a dashboard variable', () => {
+    expect(resolveUrlV4('/d/x?k=${key}&v=[[site]]', cell({ key: 'a' }), grafana)).toBe(
+      '/d/x?k=a&v=a%26var-site%3Db%23x'
+    );
   });
 
   it('encodes the edge ends, the labels and the value', () => {
@@ -119,23 +135,52 @@ describe('resolveUrlV4', () => {
   });
 });
 
+/** The variable syntax of replaceVariables (scenes VARIABLE_REGEX), with one variable site = S. */
+function legacy(s: string): string {
+  return s.replace(
+    /\$(\w+)|\[\[(\w+?)(?::(\w+))?\]\]|\$\{(\w+)(?:\.([^:^}]+))?(?::([^}]+))?\}/g,
+    (whole, a, b, _f, c) => ((a ?? b ?? c) === 'site' ? 'S' : whole)
+  );
+}
+
 describe('resolveTitleV4', () => {
   it('gets no format step and no encoding', () => {
     const spy = echo();
     expect(resolveTitleV4('Open ${key} $job ${job:csv}', cell({ key: 'a&b' }), spy)).toBe('Open a&b $job ${job:csv}');
-    expect(spy.mock.calls[0][0]).toBe('Open a&b $job ${job:csv}');
+    expect(spy.mock.calls[0][0]).toBe(`Open ${shieldV4('a&b')} $job \${job:csv}`);
   });
 
   it('shields a $ in a cell value from Grafana and gives it back after', () => {
     const spy = vi.fn(grafana);
     expect(resolveTitleV4('Open ${key}', cell({ key: '$job ${site:csv}' }), spy)).toBe('Open $job ${site:csv}');
-    expect(spy.mock.calls[0][0]).toBe(`Open ${shield('$job ${site:csv}')}`);
+    expect(spy.mock.calls[0][0]).toBe(`Open ${shieldV4('$job ${site:csv}')}`);
   });
 
   it('does not let a $ before a placeholder join the cell value into a dashboard variable', () => {
     const spy = echo();
     expect(resolveTitleV4('Cost $${key}', cell({ key: '{site}' }), spy)).toBe('Cost ${site}');
-    expect(spy.mock.calls[0][0]).toBe(shield('Cost ${site}'));
+    expect(spy.mock.calls[0][0]).toBe(`Cost $${shieldV4('{site}')}`);
+  });
+
+  it('keeps the old form [[name]] in a cell value as text', () => {
+    const spy = vi.fn(legacy);
+    expect(resolveTitleV4('Open ${key}', cell({ key: '[[site]]' }), spy)).toBe('Open [[site]]');
+  });
+
+  it('does not let the text around a placeholder join the cell value into a dashboard variable', () => {
+    const spy = vi.fn(legacy);
+    expect(resolveTitleV4('Open [[${key}]] $si${key}', cell({ key: 'te' }), spy)).toBe('Open [[te]] $site');
+    expect(resolveTitleV4('Open [[${key}]]', cell({ key: 'site' }), spy)).toBe('Open [[site]]');
+  });
+
+  it('keeps the old form [[name]] of the title template a dashboard variable', () => {
+    expect(resolveTitleV4('Open ${key} [[site]] $site', cell({ key: 'a' }), legacy)).toBe('Open a S S');
+  });
+
+  it('reads no label from the prototype of the labels object', () => {
+    const scope: TemplateScopeV4 = { attr: attrs({}), labels: { job: 'node' } };
+    expect(resolveTitleV4('Open [${labels.constructor}][${labels.toString}]', scope, echo())).toBe('Open [][]');
+    expect(resolveUrlV4('/d/x?c=${labels.constructor}', scope, echo())).toBe('/d/x?c=');
   });
 
   it('gives null for a missing attribute, an unresolved placeholder or a schema error', () => {
