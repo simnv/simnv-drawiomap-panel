@@ -9,6 +9,7 @@ import { applyKey, applyPatches, INTERACTIVE_ATTR, markInteractive } from './app
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
+import { renderOverlay } from './overlay';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 import type { StatusV4 } from '../binding/statusV4';
@@ -1048,4 +1049,35 @@ describe('applyKey and the v4 status (Astra R1)', () => {
     expect({ fill: n3.style.fill, stroke: n3.style.stroke, width: n3.style.strokeWidth }).toEqual(original);
     expect(index.get('n3')!.group.getAttribute('data-dmap-status')).toBe('normal');
   });
+  it.each(['light', 'dark'] as const)(
+    'paints normal v4 link statuses on halves, heads and dots; transparent and missing restore halves (%s)',
+    (mode) => {
+      const theme = createTheme({ colors: { mode } });
+      const ctx = { theme, osDark: mode === 'dark' };
+      const id = 'pg-link~dot-a-b';
+      const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/bare-end-dot.svg'), 'utf8');
+      const root = mountSvg(document.createElement('div'), sanitizeSvg(raw).svg);
+      const index = buildCellIndex(root);
+      const ends = index.get(id)!.ends!.map((end) => end.el as SVGElement);
+      const magenta = theme.visualization.getColorByName('magenta');
+      const halfColors = ['#ff8800', '#0000ff'];
+      const link = { a2b: ok({ color: halfColors[0] }), b2a: ok({ color: halfColors[1] }) };
+      const rounds: Array<{ status: Partial<StatusV4>; colors: string[] }> = [
+        { status: { color: magenta, text: 'Offline' }, colors: [magenta, magenta] },
+        { status: { color: GREEN }, colors: [GREEN, GREEN] },
+        { status: { color: 'transparent' }, colors: halfColors },
+        { status: { color: magenta, text: 'Offline' }, colors: [magenta, magenta] },
+        { status: { state: 'missing', severity: 'missing', text: '–' }, colors: halfColors },
+      ];
+      let prev: ReturnType<typeof applyPatches> | undefined;
+      for (const { status, colors } of rounds) {
+        const patches = new Map([[id, { ...v4(status), cellId: id, link }]]);
+        prev = applyPatches(index, patches, prev, undefined, ctx);
+        renderOverlay(root, index, patches, { theme, maxWidth: 10 });
+        expect(Array.from(root.querySelectorAll('.dmap-half'), (el) => el.getAttribute('stroke'))).toEqual(colors);
+        expect(Array.from(root.querySelectorAll('.dmap-arrow'), (el) => el.getAttribute('fill'))).toEqual(colors);
+        ends.forEach((end, i) => expectColour(end.style.fill, colors[i]));
+      }
+    }
+  );
 });
