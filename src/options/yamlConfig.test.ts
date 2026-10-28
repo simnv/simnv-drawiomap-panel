@@ -199,6 +199,52 @@ describe('the YAML config writer', () => {
 });
 
 describe('the YAML config reader', () => {
+  it.each(['.inf', '-.inf', '.NaN', '1e999', '!!float .inf'])(
+    'rejects the non-finite value %s before it can become JSON null',
+    (value) => {
+      const result = readYaml(
+        `version: 4\nclasses:\n  demo:\n    rows:\n      - kind: value\n        query: A\n        decimals: ${value}\n`
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors).toContainEqual({ line: 7, message: expect.stringMatching(/JSON/i) });
+        expect(result.doc.getIn(['classes', 'demo', 'rows', 0, 'decimals'], true)).toBeDefined();
+      }
+    }
+  );
+
+  it.each([
+    ['set', 'version: 4\nclasses:\n  demo: !!set {a: null}\n', 3],
+    ['ordered map', 'version: 4\nclasses:\n  demo: !!omap [a: 1]\n', 3],
+    ['binary', 'version: 4\nclasses:\n  demo: !!binary SGVsbG8=\n', 3],
+    ['timestamp', 'version: 4\nclasses:\n  demo: !!timestamp 2026-10-29\n', 3],
+    ['YAML 1.1 timestamp', '%YAML 1.1\n---\nversion: 4\nclasses:\n  demo: 2026-10-29\n', 5],
+  ])('rejects a non-JSON %s and keeps its source document', (_name, text, line) => {
+    const result = readYaml(text);
+    expect(result.ok).toBe(false);
+    expect(result.doc.contents).not.toBeNull();
+    if (!result.ok) {
+      expect(result.errors).toContainEqual({ line, message: expect.stringMatching(/JSON/i) });
+    }
+  });
+
+  it('preserves JSON values, quoted YAML special values and standard scalar tags', () => {
+    const result = readYaml(
+      'finite: [0, -3, 1.25, 1e3]\nquoted: [".inf", ".NaN", "2026-10-29"]\n' +
+        'tagged: [!!str .inf, !!int 42, !!float 1.5, !!bool true, !!null null]\nempty: null\n'
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({
+        finite: [0, -3, 1.25, 1000],
+        quoted: ['.inf', '.NaN', '2026-10-29'],
+        tagged: ['.inf', 42, 1.5, true, null],
+        empty: null,
+      });
+      expect(JSON.parse(JSON.stringify(result.value))).toEqual(result.value);
+    }
+  });
+
   it.each([
     ['duplicate key', 'version: 4\nclasses: {}\nversion: 4\n', 3, /unique/i],
     ['nested duplicate key', 'classes:\n  node:\n    status: up\n    status: down\n', 4, /unique/i],

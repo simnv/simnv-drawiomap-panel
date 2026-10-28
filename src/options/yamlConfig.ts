@@ -1,4 +1,4 @@
-import { CST, Document, LineCounter, Parser, parseDocument } from 'yaml';
+import { CST, Document, isNode, isScalar, LineCounter, Parser, parseDocument, visit } from 'yaml';
 
 type Context =
   'root' | 'classes' | 'overrides' | 'class' | 'override' | 'rows' | 'row' | 'text' | 'chart' | 'capacity' | 'other';
@@ -113,5 +113,25 @@ export function readYaml(text: string): ReadResult {
       });
     }
   }
+
+  visit(doc, (_key, node) => {
+    if (!isNode(node)) {
+      return;
+    }
+    // These collection tags produce Set and Map. Other non-JSON types are scalar values.
+    const nonJsonCollection = node.tag === 'tag:yaml.org,2002:set' || node.tag === 'tag:yaml.org,2002:omap';
+    const value: unknown = isScalar(node) ? node.value : null;
+    const jsonScalar =
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value));
+    if (nonJsonCollection || !jsonScalar) {
+      errors.push({
+        line: lineCounter.linePos(node.range?.[0] ?? 0).line,
+        message: 'YAML values must be JSON-compatible: use finite numbers, strings, booleans, null, arrays or objects.',
+      });
+    }
+  });
   return errors.length ? { ok: false, errors, doc } : { ok: true, value: doc.toJS({ maxAliasCount: 0 }), doc };
 }
