@@ -164,8 +164,9 @@ test('link arrows stand away from the bends of the link path and stand out of th
   )) {
     expect(result.bends).toBe(2);
     expect(result.arrowSize).toBeGreaterThan(0);
-    // the split keeps the longest head (16 at the panel's linkWidth.max 10) plus one thin head (8) to the bends
-    expect(result.nearest).toBeGreaterThanOrEqual(16 + 8 - 0.01);
+    // the split keeps the longest head to the bends, at least 16 (the head is 12 long at the panel's linkWidth.max 10)
+    expect(result.nearest).toBeGreaterThanOrEqual(16 - 0.01);
+    expect(result.nearest).toBeGreaterThanOrEqual(result.arrowSize - 0.01);
     // each head is at least twice as wide as the drawn stroke of its half, at any load
     expect(result.width).toBeGreaterThan(0);
     expect(result.base).toBeGreaterThanOrEqual(2 * result.width - 0.01);

@@ -43,11 +43,15 @@ export interface LegInput {
   bounds?: Rect;
   /** the thinnest stroke in root units (`linkWidth.min × geo.unit`); the width of a half is drawn between the two */
   minRoot?: number;
+  /** the base of the widest arrow head of the edge in root units: the sides ±3 stand beyond its wings */
+  headRoot?: number;
 }
 
 export type Obstacle =
-  /** a cell body, a pill, a chip, a dot, an arrowhead, the room of a status marker or a placed label */
+  /** a cell body, a pill, a chip, a dot, an arrowhead of draw.io, the room of a status marker or a placed label */
   | { kind: 'rect'; rect: Rect; clearance: number }
+  /** a convex polygon (the reserved arrowhead of an overlay half); no clearance */
+  | { kind: 'polygon'; points: Point[] }
   /** a piece of a drawn edge; `owner` is the cell id of the edge, `piece` its place in a leg polyline, when known */
   | { kind: 'segment'; a: Point; b: Point; clearance: number; owner: string; piece?: { leg: string; index: number } };
 
@@ -69,7 +73,10 @@ export interface Placed {
   side: LabelSide;
   /** the height of the text box (with the halo); `box` is taller: it holds the box for every drawn width */
   height: number;
-  /** the widest stroke in root units: the wide gap counts from its edge, whatever the drawn width */
+  /**
+   * The width the wide gap counts from, in root units, whatever the drawn width: the widest stroke for the sides ±2,
+   * the base of the widest arrow head for ±3.
+   */
   maxRoot: number;
   /** the point of the leg the box stands at, and the unit vector of the top side: `drawnCentre` needs them */
   anchor: Point;
@@ -78,10 +85,18 @@ export interface Placed {
 /**
  * Where a label stands: 0 on the own stroke; 1 beside it on the top side (the side the tops of the letters face,
  * `runHeading().first`) and −1 on the bottom side, the near edge of the box `normalGap` beyond the stroke edge; 2 and
- * −2 are the same sides with `wideGap`, for a stroke with a wide chip or pill beside it.
+ * −2 are the same sides with `wideGap`, for a stroke with a wide chip or pill beside it; 3 and −3 (`HEAD_SIDES`)
+ * stand `wideGap` beyond the wings of the widest arrow head, the last try on a link so short that every spot beside
+ * the stroke meets a head.
  */
-export type LabelSide = 0 | 1 | -1 | 2 | -2;
+export type LabelSide = 0 | 1 | -1 | 2 | -2 | 3 | -3;
 export const LABEL_SIDES: readonly LabelSide[] = [0, 1, -1, 2, -2];
+/** The sides beyond the heads: tried after every other spot, the bend spots too, so no other label moves for them. */
+export const HEAD_SIDES: readonly LabelSide[] = [3, -3];
+
+/** The width the gap of a side counts from: the widest stroke, or for ±3 the base of the widest head. */
+const gapBase = (leg: LegInput, side: LabelSide): number =>
+  Math.abs(side) === 3 ? Math.max(leg.headRoot ?? 0, leg.strokeRoot) : leg.strokeRoot;
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
 
 export const LINK_LABEL_GEOMETRY = {
@@ -175,6 +190,9 @@ export function obstacleBounds(o: Obstacle): Rect {
   if (o.kind === 'rect') {
     return grow(o.rect, o.clearance);
   }
+  if (o.kind === 'polygon') {
+    return aabbOf(o.points)!;
+  }
   const x = Math.min(o.a.x, o.b.x);
   const y = Math.min(o.a.y, o.b.y);
   return grow({ x, y, width: Math.abs(o.a.x - o.b.x), height: Math.abs(o.a.y - o.b.y) }, o.clearance);
@@ -249,29 +267,40 @@ const project = (pts: Point[], ax: Point) => {
   return { min, max };
 };
 
-/** The oriented box against an axis-aligned rect: a separating-axis test on the four axes. Touching is free. */
-function overlapsRect(corners: Point[], box: OrientedBox, rect: Rect): boolean {
-  const rc = [
-    { x: rect.x, y: rect.y },
-    { x: rect.x + rect.width, y: rect.y },
-    { x: rect.x + rect.width, y: rect.y + rect.height },
-    { x: rect.x, y: rect.y + rect.height },
-  ];
+/**
+ * The oriented box against a convex polygon: a separating-axis test on the axes of the box and the edge normals of
+ * the polygon. Touching is free.
+ */
+function overlapsConvex(corners: Point[], box: OrientedBox, polygon: Point[]): boolean {
   const r = (box.degrees * Math.PI) / 180;
   const axes: Point[] = [
-    { x: 1, y: 0 },
-    { x: 0, y: 1 },
     { x: Math.cos(r), y: Math.sin(r) },
     { x: -Math.sin(r), y: Math.cos(r) },
   ];
+  polygon.forEach((p, i) => {
+    const q = polygon[(i + 1) % polygon.length];
+    axes.push({ x: p.y - q.y, y: q.x - p.x });
+  });
   for (const ax of axes) {
     const a = project(corners, ax);
-    const b = project(rc, ax);
-    if (a.max <= b.min + EPS || b.max <= a.min + EPS) {
+    const b = project(polygon, ax);
+    // the normals of the polygon are not unit length: the tolerance scales with them
+    const eps = EPS * Math.hypot(ax.x, ax.y);
+    if (a.max <= b.min + eps || b.max <= a.min + eps) {
       return false;
     }
   }
   return true;
+}
+
+/** The oriented box against an axis-aligned rect. Touching is free. */
+function overlapsRect(corners: Point[], box: OrientedBox, rect: Rect): boolean {
+  return overlapsConvex(corners, box, [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height },
+  ]);
 }
 
 /** The distance from a point to the rect [−hw, hw] × [−hh, hh]; 0 inside. */
@@ -376,10 +405,20 @@ export function placeHalfLabel(
   if (!bendSpot || 'centre' in strict) {
     return strict;
   }
-  // the last resort: the strict ladder found nothing, so the beside-stroke spots at a bend are tried; when they fail
-  // too, the strict reason stays
-  const relaxed = placeOnRuns(leg, own, index, sides, true);
-  return 'centre' in relaxed ? relaxed : strict;
+  // the last resort: the strict ladder found nothing, so the beside-stroke spots at a bend are tried, then the spots
+  // beyond the wings of the widest head (strict, then at a bend); when they fail too, the strict reason stays
+  const beyond = HEAD_SIDES.filter((side) => !sides.includes(side));
+  for (const [ladder, atBends] of [
+    [sides, true],
+    [beyond, false],
+    [beyond, true],
+  ] as const) {
+    const found = ladder.length ? placeOnRuns(leg, own, index, ladder, atBends) : strict;
+    if ('centre' in found) {
+      return found;
+    }
+  }
+  return strict;
 }
 
 /**
@@ -411,9 +450,11 @@ function placeOnRuns(
   // stroke for every drawn width: its text does not move with the load.
   const offsetOf = (side: LabelSide) =>
     Math.sign(side) *
-    (Math.abs(side) === 2 ? wideGap + leg.strokeRoot / 2 + h / 2 : normalGap + (minRoot + leg.strokeRoot) / 4 + h / 2);
+    (Math.abs(side) >= 2
+      ? wideGap + gapBase(leg, side) / 2 + h / 2
+      : normalGap + (minRoot + leg.strokeRoot) / 4 + h / 2);
   const sweptHeight = (side: LabelSide) =>
-    side === 0 ? Math.max(h, leg.strokeRoot + 2) : Math.abs(side) === 2 ? h : h + (leg.strokeRoot - minRoot) / 2;
+    side === 0 ? Math.max(h, leg.strokeRoot + 2) : Math.abs(side) >= 2 ? h : h + (leg.strokeRoot - minRoot) / 2;
   const d0 = leg.length / 2;
   // the distances from the middle, the lower one first at each step; the same list serves both sides
   const distances: number[] = [d0];
@@ -453,7 +494,8 @@ function placeOnRuns(
     });
   });
   for (const side of sides) {
-    if (atBends && side === 0) {
+    // on the stroke there is nothing to try at a bend; beside the heads only when a head is wider than the stroke
+    if ((atBends && side === 0) || (Math.abs(side) === 3 && !((leg.headRoot ?? 0) > leg.strokeRoot))) {
       continue;
     }
     for (const { d, anchor, heading, ownPiece } of candidates) {
@@ -471,7 +513,7 @@ function placeOnRuns(
           along: d,
           side,
           height: h,
-          maxRoot: leg.strokeRoot,
+          maxRoot: gapBase(leg, side),
           anchor,
           normal: heading.first,
         };
@@ -519,7 +561,7 @@ function bendSpotFits(
   const height = leg.size.height + 2 * LINK_LABEL_GEOMETRY.halo;
   const minRoot = Math.min(leg.minRoot ?? leg.strokeRoot, leg.strokeRoot);
   return [minRoot, leg.strokeRoot].every((drawn) =>
-    ownsSpot(drawnCentre({ side, anchor, normal, height, maxRoot: leg.strokeRoot }, drawn), leg, own, index)
+    ownsSpot(drawnCentre({ side, anchor, normal, height, maxRoot: gapBase(leg, side) }, drawn), leg, own, index)
   );
 }
 
@@ -552,7 +594,7 @@ export function drawnCentre(
     return p.anchor;
   }
   const { normalGap, wideGap } = LINK_LABEL_GEOMETRY;
-  const wide = Math.abs(p.side) === 2;
+  const wide = Math.abs(p.side) >= 2;
   const shift = Math.sign(p.side) * ((wide ? wideGap : normalGap) + (wide ? p.maxRoot : drawnRoot) / 2 + p.height / 2);
   return { x: p.anchor.x + p.normal.x * shift, y: p.anchor.y + p.normal.y * shift };
 }
@@ -608,6 +650,10 @@ function collides(box: OrientedBox, ownPiece: (o: Obstacle) => boolean, index: O
   for (const o of index.near(boundsOf(box))) {
     if (o.kind === 'rect') {
       if (overlapsRect(corners, box, grow(o.rect, o.clearance))) {
+        return true;
+      }
+    } else if (o.kind === 'polygon') {
+      if (overlapsConvex(corners, box, o.points)) {
         return true;
       }
     } else if (!ownPiece(o) && segmentHits(box, o.a, o.b, o.clearance)) {

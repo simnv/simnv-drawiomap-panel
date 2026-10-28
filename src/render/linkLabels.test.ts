@@ -179,7 +179,7 @@ describe('renderLinkLabels: the refresh path', () => {
     const thin = head.getAttribute('points');
     expect(render(root, index, two({ width: 10 }, { width: 10 }))).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(head.getAttribute('points')).not.toBe(thin);
-    expect(head.getAttribute('points')).toBe('200,100 184,88 184,112');
+    expect(head.getAttribute('points')).toBe('200,100 188,88 188,112');
     expect([a.getAttribute('transform'), a.getAttribute('data-dmap-placed-at')]).toEqual(before);
     // the frame is the box of the edge path with the margin, not the box of the overlay that the wider head grew
     expect(maskOf(root)).toBe(mask);
@@ -596,13 +596,28 @@ describe('renderLinkLabels: obstacles', () => {
       ['e1', linkPatch('e1', { a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
     ]);
     render(root, index, patches);
-    // the drawn heads are 8 by 8; the reserved ones 16 long and 24 wide (linkWidth.max 10), both tips at x = 200
+    // the drawn heads are 8 by 8; the reserved ones 12 long and 24 wide (linkWidth.max 10), both tips at x = 200
     expect(root.querySelector('.dmap-arrow[data-dmap-half="a2b"]')!.getAttribute('points')).toBe(
       '200,100 192,96 192,104'
     );
-    const rects = stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o] : []));
-    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 184, y: 88, width: 16, height: 24 }, clearance: 0 });
-    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 200, y: 88, width: 16, height: 24 }, clearance: 0 });
+    // the triangle itself, not its box: a label beside the stroke may stand next to the narrow end
+    const heads = stageObstacles(root, index, patches, 10).filter((o) => o.kind === 'polygon');
+    expect(heads).toContainEqual({
+      kind: 'polygon',
+      points: [
+        { x: 200, y: 100 },
+        { x: 188, y: 88 },
+        { x: 188, y: 112 },
+      ],
+    });
+    expect(heads).toContainEqual({
+      kind: 'polygon',
+      points: [
+        { x: 200, y: 100 },
+        { x: 212, y: 112 },
+        { x: 212, y: 88 },
+      ],
+    });
   });
   it('a plain draw.io node is an obstacle: the label slides towards the end of the link', () => {
     const node = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="50"/></g></g>`;
@@ -778,6 +793,20 @@ describe('renderLinkLabels: backgrounds', () => {
     const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
     const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'value' })]]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
+  });
+  it('a link of 36 units keeps both labels beyond the wings of the widest heads', () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+      <g data-cell-id="e1"><g><path d="M 200 82 L 200 118" fill="none" pointer-events="stroke"/></g></g></svg>`;
+    const { root, index } = build(svg);
+    const patches: PatchMap = new Map([
+      ['e1', linkPatch('e1', { a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
+    ]);
+    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    // one side holds both, as the pair prefers
+    expect([byHalf(root, 'a2b')!, byHalf(root, 'b2a')!].map((t) => t.getAttribute('data-dmap-side'))).toEqual([
+      'top-head',
+      'top-head',
+    ]);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
@@ -1135,12 +1164,12 @@ describe('renderLinkLabels: coordinates', () => {
     Object.assign(index.get('e2')!.line!, { getScreenCTM: () => scale2 });
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(renderLinkLabels(root, index, patches, opts)).toEqual({ placed: 2, dropped: 0, moved: 0 });
-    // the split: the overlay moves it from the corner (path-local 100) to 76 on the first run, root x = 152 (not 168)
+    // the split: the overlay moves it from the corner (path-local 100) to 84 on the first run, root x = 168 (not 184)
     const a = byHalf(root, 'a2b')!;
-    expect(a.getAttribute('x')).toBe('76');
+    expect(a.getAttribute('x')).toBe('84');
     expect(a.getAttribute('y')).toBe('0');
     const b = byHalf(root, 'b2a')!;
-    expect(b.getAttribute('transform')).toBe('rotate(-90 200 64)');
+    expect(b.getAttribute('transform')).toBe('rotate(-90 200 96)');
     // a 3-unit stroke in the scaled group: a 6-unit stroke in root units, a 3-unit clearance
     const obstacles = stageObstacles(root, index, patches, 10);
     expect(obstacles).toContainEqual({
@@ -1153,7 +1182,7 @@ describe('renderLinkLabels: coordinates', () => {
     expect(obstacles).toContainEqual({
       kind: 'segment',
       a: { x: 0, y: 0 },
-      b: { x: 152, y: 0 },
+      b: { x: 168, y: 0 },
       clearance: 10,
       owner: 'e1',
       piece: { leg: 'e1:a2b', index: 0 },

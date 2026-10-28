@@ -301,6 +301,48 @@ describe('placeHalfLabel: collisions', () => {
   });
 });
 
+describe('placeHalfLabel: arrow heads', () => {
+  /** a reserved head: the tip on the leg, the base `length` back towards `back`, `base` wide */
+  const head = (tip: Point, back: 1 | -1, length: number, base: number): Obstacle => ({
+    kind: 'polygon',
+    points: [tip, { x: tip.x + back * length, y: tip.y - base / 2 }, { x: tip.x + back * length, y: tip.y + base / 2 }],
+  });
+  it('a convex polygon blocks only where the box meets it, not its bounding box', () => {
+    // the top box at the middle spans x 37..63, y -19..-7; the triangle stays above its hypotenuse there
+    const triangle: Obstacle = {
+      kind: 'polygon',
+      points: [
+        { x: 20, y: -40 },
+        { x: 60, y: -40 },
+        { x: 20, y: -8 },
+      ],
+    };
+    expect(placed(placeHalfLabel(leg(horizontal(0, 100)), 'e1', obstacleIndex([triangle]), [1])).along).toBe(50);
+    // its bounding box covers the spot
+    expect(
+      placed(placeHalfLabel(leg(horizontal(0, 100)), 'e1', obstacleIndex([rect(20, -40, 40, 32)]), [1])).along
+    ).not.toBe(50);
+  });
+  it('a short leg whose beside spots all meet the widest heads stands beyond their wings (side 3)', () => {
+    // a leg of 18 to the split at x = 18, too short for a whole box: only the last resort (the bend spot) places it.
+    // The heads at max are 12 long and 24 wide on both sides of the split.
+    const heads = obstacleIndex([head({ x: 18, y: 0 }, -1, 12, 24), head({ x: 18, y: 0 }, 1, 12, 24)]);
+    const p = placed(placeOnLadder(leg(horizontal(0, 18), { headRoot: 24 }), 'e1', heads, LABEL_SIDES, true));
+    expect(p.side).toBe(3);
+    // the near edge of the box stands the wide gap (4) beyond the wing (12): the centre 4 + 12 + 6 = 22 off the line
+    expect(p.centre.y).toBeCloseTo(-22);
+    expect(p.maxRoot).toBe(24);
+    expect(drawnCentre(p, 2)).toEqual(p.centre);
+  });
+  it('without a head wider than the stroke there is no side 3: the same short leg is dropped', () => {
+    const heads = obstacleIndex([head({ x: 18, y: 0 }, -1, 12, 24), head({ x: 18, y: 0 }, 1, 12, 24)]);
+    expect('centre' in placeOnLadder(leg(horizontal(0, 18)), 'e1', heads, LABEL_SIDES, true)).toBe(false);
+    expect('centre' in placeOnLadder(leg(horizontal(0, 18), { headRoot: 10 }), 'e1', heads, LABEL_SIDES, true)).toBe(
+      false
+    );
+  });
+});
+
 describe('obstacleIndex', () => {
   const items: Obstacle[] = [
     rect(10, 10, 20, 20),
