@@ -69,10 +69,10 @@ const DOLLAR_BRACE = /\$\{([^}]*)(\})?/g;
 /** A cell attribute name, with "-" (spec 3.3). A dot reads as part of the name, so `${cell.key}` is one attribute. */
 const NAME = '[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*)*';
 const SCOPE_PLACEHOLDER = new RegExp(`^(?:(from|to|labels)\\.(${NAME})|(${NAME}))$`);
-/** `${<name>:<format>}`: a dashboard variable with a Grafana variable format (A17). The format id is not checked. */
+/** `${<name>:<format>}`: a dashboard variable with a Grafana variable format (A17). The panel does not check the id. */
 const VARIABLE_PLACEHOLDER = /^[A-Za-z_]\w*:.+$/;
-/** A bare dashboard variable `$<name>`, as replaceVariables reads it. */
-const BARE_VARIABLE = /\$([A-Za-z_]\w*)/g;
+/** A dashboard variable with no format, as replaceVariables reads it: `$<name>` or the old form `[[<name>]]`. */
+const BARE_VARIABLE = /\$(\w+)|\[\[(\w+?)\]\]/g;
 
 export const BAD_PLACEHOLDER_MESSAGE =
   'write ${attr} for a cell attribute, $var or ${var:format} for a dashboard variable';
@@ -115,8 +115,8 @@ export function checkTemplate(text: string, place: 'url' | 'title' | 'metadata')
 /**
  * Replaces the placeholders of the v4 scope (spec 3.3). `missing` holds the attributes that the cell or an edge end
  * does not have (`port`, `from.key`): the `missing-attr` entries. `unresolved` holds `labels.x` and `value` when the
- * scope has no single status series: the `template-unresolved` entries. A placeholder that is not replaced stays as
- * it is. A dashboard variable (`$var`, `$__name`, `${var:format}`) and a bad `${` stay as they are.
+ * scope has no single status series: the `template-unresolved` entries. The function keeps a placeholder that it
+ * does not replace, a dashboard variable (`$var`, `$__name`, `${var:format}`) and a bad `${` as they are.
  * `encode` applies to each substituted value only. A label that the one status series does not have gives "", as in
  * PromQL.
  */
@@ -168,11 +168,13 @@ export function missingAttrHint(attr: string): string | undefined {
 
 /**
  * Step 2 of the URL order (spec 3.3): writes each bare ordinary dashboard variable `$<name>` as
- * `${<name>:percentencode}`, so that its value cannot change the query structure. A `$__<name>` stays raw
- * (`$__url_time_range` gives `from=…&to=…`), and a `${<name>:<format>}` keeps its format.
+ * `${<name>:percentencode}`, so that its value cannot change the query structure. The old form `[[<name>]]` gets the
+ * same change. A `$__<name>` stays raw (`$__url_time_range` gives `from=…&to=…`), and a `${<name>:<format>}` keeps
+ * its format.
  */
 export function formatBareVariables(url: string): string {
-  return url.replace(BARE_VARIABLE, (whole, name: string) =>
-    name.startsWith('__') ? whole : `\${${name}:percentencode}`
-  );
+  return url.replace(BARE_VARIABLE, (whole, bare: string | undefined, old: string | undefined) => {
+    const name = bare ?? old ?? '';
+    return name.startsWith('__') ? whole : `\${${name}:percentencode}`;
+  });
 }

@@ -8,7 +8,10 @@ const cell = (o: Record<string, string>): TemplateScopeV4 => ({ attr: attrs(o) }
 /** A replaceVariables that gives back its input, so that a test can read the text that reaches Grafana. */
 const echo = () => vi.fn((s: string) => s);
 
-/** A small model of the Grafana formats, for a multi-value variable job = [a, b] and a single-value site. */
+/**
+ * A small model of the Grafana formats (scenes formatRegistry), for a multi-value variable job = [a, b] and a
+ * single-value site. percentencode gives a multi value as an encoded glob {a,b}.
+ */
 const VARIABLES: Record<string, string[]> = { job: ['a', 'b'], site: ['a&var-site=b#x'] };
 function grafana(s: string): string {
   return s
@@ -20,7 +23,7 @@ function grafana(s: string): string {
       }
       switch (format) {
         case 'percentencode':
-          return encodeURIComponent(v.join(','));
+          return encodeURIComponent(v.length > 1 ? `{${v.join(',')}}` : v[0]);
         case 'queryparam':
           return v.map((x) => `var-${name}=${encodeURIComponent(x)}`).join('&');
         case 'csv':
@@ -52,7 +55,8 @@ describe('resolveUrlV4', () => {
 
   it('keeps a value of a dashboard variable from changing the query structure', () => {
     expect(resolveUrlV4('/d/host?var-site=$site', cell({}), grafana)).toBe('/d/host?var-site=a%26var-site%3Db%23x');
-    expect(resolveUrlV4('/d/host?var-job=$job', cell({}), grafana)).toBe('/d/host?var-job=a%2Cb');
+    expect(resolveUrlV4('/d/host?var-job=$job', cell({}), grafana)).toBe('/d/host?var-job=%7Ba%2Cb%7D');
+    expect(resolveUrlV4('/d/host?var-site=[[site]]', cell({}), grafana)).toBe('/d/host?var-site=a%26var-site%3Db%23x');
     expect(resolveUrlV4('/d/host?${job:queryparam}&$__url_time_range', cell({}), grafana)).toBe(
       '/d/host?var-job=a&var-job=b&from=1&to=2'
     );
@@ -66,6 +70,13 @@ describe('resolveUrlV4', () => {
     expect(sent).not.toContain('${site');
     expect(out).toBe(`/d/x?k=${encodeURIComponent('a$b ${site:csv}')}`);
     expect(resolveUrlV4('/d/x?k=${key}', cell({ key: '${site:csv}' }), grafana)).toBe('/d/x?k=%24%7Bsite%3Acsv%7D');
+  });
+
+  it('does not let a $ before a placeholder join the cell value into a dashboard variable', () => {
+    const spy = echo();
+    expect(resolveUrlV4('/d/x?a=$${key}', cell({ key: 'site' }), spy)).toBe('/d/x?a=$site');
+    expect(spy.mock.calls[0][0]).toBe(`/d/x?a=${shield('$')}site`);
+    expect(resolveUrlV4('/d/x?a=$${job:csv}', cell({}), grafana)).toBe('/d/x?a=$a,b');
   });
 
   it('encodes the edge ends, the labels and the value', () => {
@@ -119,6 +130,12 @@ describe('resolveTitleV4', () => {
     const spy = vi.fn(grafana);
     expect(resolveTitleV4('Open ${key}', cell({ key: '$job ${site:csv}' }), spy)).toBe('Open $job ${site:csv}');
     expect(spy.mock.calls[0][0]).toBe(`Open ${shield('$job ${site:csv}')}`);
+  });
+
+  it('does not let a $ before a placeholder join the cell value into a dashboard variable', () => {
+    const spy = echo();
+    expect(resolveTitleV4('Cost $${key}', cell({ key: '{site}' }), spy)).toBe('Cost ${site}');
+    expect(spy.mock.calls[0][0]).toBe(shield('Cost ${site}'));
   });
 
   it('gives null for a missing attribute, an unresolved placeholder or a schema error', () => {

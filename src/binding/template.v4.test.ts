@@ -141,6 +141,18 @@ describe('formatBareVariables', () => {
     expect(formatBareVariables(url)).toBe(url);
   });
 
+  it('gives the old form [[name]] the format percentencode and keeps [[__name]] and [[name:format]]', () => {
+    expect(formatBareVariables('/d/x?a=[[job]]&[[__url_time_range]]&b=[[job:csv]]')).toBe(
+      '/d/x?a=${job:percentencode}&[[__url_time_range]]&b=[[job:csv]]'
+    );
+  });
+
+  it('reads a bare name as replaceVariables does, also with a digit first', () => {
+    expect(formatBareVariables('/d/x?a=$1x&b=$_y&c=$5')).toBe(
+      '/d/x?a=${1x:percentencode}&b=${_y:percentencode}&c=${5:percentencode}'
+    );
+  });
+
   it('does not change a shielded $', () => {
     expect(formatBareVariables(`/d/x?a=${shield('$job')}`)).toBe(`/d/x?a=${shield('$job')}`);
   });

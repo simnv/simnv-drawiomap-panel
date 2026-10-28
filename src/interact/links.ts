@@ -96,9 +96,12 @@ export function resolveLinks(
   return out;
 }
 
+const DOLLAR_BEFORE_PLACEHOLDER = /\$(?=\$\{)/g;
+
 /**
- * Step 1 of the URL and title order: the scope placeholders. Null when the text has a schema error or a placeholder
- * that the cell cannot fill: the item is not shown.
+ * Step 1 of the URL and title order: the scope placeholders. A `$` just before a `${` gets the shield too, so that it
+ * cannot join a substituted value into a dashboard variable (`$${key}` with key=job is not `$job`). Null when the
+ * text has a schema error or a placeholder that the cell cannot fill: the panel does not show the item.
  */
 function substituteV4(
   text: string,
@@ -109,14 +112,14 @@ function substituteV4(
   if (checkTemplate(text, place).length > 0) {
     return null;
   }
-  const r = resolveTemplateV4(text, scope, encode);
+  const r = resolveTemplateV4(text.replace(DOLLAR_BEFORE_PLACEHOLDER, shield('$')), scope, encode);
   return r.missing.length > 0 || r.unresolved.length > 0 ? null : r.text;
 }
 
 /**
  * The URL order of spec 3.3 (A17): the scope placeholders with shield(encodeURIComponent(value)), the bare dashboard
  * variables as ${name:percentencode}, replaceVariables, unshield, then isAllowedUrl on the final text.
- * Null when the URL is not shown.
+ * Null when the panel does not show the URL.
  */
 export function resolveUrlV4(
   url: string,
@@ -133,7 +136,7 @@ export function resolveUrlV4(
 
 /**
  * A title (urlTitle, a drilldown label) is text: the scope placeholders with shield(value), replaceVariables, then
- * unshield. No encoding and no format step. Null when the title is not shown.
+ * unshield. No encoding and no format step. Null when the panel does not show the title.
  */
 export function resolveTitleV4(
   title: string,
