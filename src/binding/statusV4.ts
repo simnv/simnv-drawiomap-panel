@@ -26,15 +26,17 @@ export interface StatusOptions {
   /** `down`: zero series of a ready query is a proven outage */
   missing: 'nodata' | 'down';
   theme: GrafanaTheme2;
+  /** the dashboard time zone, for a field with no display processor of Grafana */
+  timeZone?: string;
 }
 
 /** The status of one series from its last finite value; undefined when it has no finite value. */
-function valueStatus(series: Series, { refId, theme }: StatusOptions): StatusV4 | undefined {
+function valueStatus(series: Series, { refId, theme, timeZone }: StatusOptions): StatusV4 | undefined {
   const value = reduceValues(series.values, 'last');
   if (value === undefined) {
     return undefined;
   }
-  const display = (series.field.display ?? fieldDisplay(series.field, theme))(value);
+  const display = fieldDisplay(series.field, theme, timeZone)(value);
   const severity = severityOf({ text: display.text, color: display.color ?? '' }, theme);
   return { state: severity, severity, color: display.color, text: formattedValueToString(display), refId };
 }
@@ -44,6 +46,8 @@ function valueStatus(series: Series, { refId, theme }: StatusOptions): StatusV4 
  * of spec 3.7. A failed query, a first load and a series with no finite value are `missing` and never `down`:
  * `missing: down` applies only to zero series of a ready query. With N series the worst state wins; between two of
  * one rank, the first in the order wins. When a series with no value is the worst, the reason gives the coverage.
+ * The caller handles a refId that no target has ("Unknown query", `unknown-ref`) before this: the snapshot of such a
+ * refId is `empty`, and `missing: down` must not apply to it.
  */
 export function statusOfUse(snapshot: QuerySnapshot, series: Series[], opts: StatusOptions): StatusV4 {
   const noValue = (reason: string, state: 'missing' | 'down' = 'missing'): StatusV4 => ({

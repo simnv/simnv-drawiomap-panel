@@ -81,9 +81,10 @@ export function statusPaintV4(status: Pick<StatusView, 'state'> & StatusV4Fields
 }
 
 /**
- * The status colour of a link's stroke. A status that paints (`statusPaint`) wins over the binding colour of the halves. One
+ * The status colour of a link's stroke. A status that is not normal wins over the binding colour of the halves. One
  * exception: a missing status on a link with halves paints nothing, because each half shows its own state already
  * (the half with no data is grey; the other keeps the colour of its value). A link without halves takes the grey.
+ * A normal status never covers the halves; on a link without halves, a normal v4 status paints its colour.
  */
 export function linkStatusPaint(
   patch: {
@@ -93,7 +94,7 @@ export function linkStatusPaint(
   theme: GrafanaTheme2
 ): string | undefined {
   const halves = !!(patch.link?.a2b || patch.link?.b2a);
-  if (halves && patch.statusView?.state === 'missing') {
+  if (halves && (patch.statusView?.state === 'missing' || patch.statusView?.state === 'normal')) {
     return undefined;
   }
   return statusPaint(patch.statusView, theme);

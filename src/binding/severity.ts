@@ -36,7 +36,8 @@ function shadesOf(theme: GrafanaTheme2): Shade[] {
  * The severity of a value display `{text, color}`. A text `down` (any case) gives `down`. Else the colour gives it:
  * a named colour or a resolved colour (hex, rgb) goes to the nearest shade of the named hues of the theme, and its
  * hue gives the severity: red is critical, orange and yellow are warning, the others are normal. A transparent colour
- * or a colour that does not parse is normal.
+ * or a colour that does not parse is normal. The parse reads hex, `rgb()` and `hsl()` with commas, Grafana colour
+ * names and CSS colour names: the forms that the display processor of Grafana gives.
  */
 export function severityOf(display: { text: string; color: string }, theme: GrafanaTheme2): Severity {
   if (display.text.toLowerCase() === 'down') {

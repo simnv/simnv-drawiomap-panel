@@ -226,7 +226,8 @@ function tintedFill(shape: SVGElement, status: string): string | undefined {
 }
 
 /**
- * A device whose status is not normal: a border in the status colour, wider than the stroke the shape had
+ * A device whose status paints (`statusPaint`: a v3 status that is not normal, or a v4 status with an opaque value
+ * colour, normal included): a border in the status colour, wider than the stroke the shape had
  * (`width`, read before the shape binding wrote its own), and a light tint of the fill it shows now. It runs after
  * `applyShape`, so the border wins over a `stroke` target and the tint goes over a `shape` target. A bitmap device
  * (an `<image>`) takes no fill and no stroke: the overlay draws its border (`renderOverlay`).
