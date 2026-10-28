@@ -39,8 +39,10 @@ export function reduceValues(
 
 export type AcrossReduce = 'sum' | 'max' | 'mean';
 
-/** Resolve all conversion factors before a reduce or a shared chart. */
-function unitFactors(series: Series[]): { unit: string | undefined; factors: number[] } | { mismatch: string[] } {
+/** Resolve all conversion factors before a reduce or a shared chart (spec 3.7 "Units"). */
+export function unitFactors(
+  series: Series[]
+): { unit: string | undefined; factors: number[] } | { mismatch: string[] } {
   const units = series.map((item) => item.field.config.unit);
   const unit = units[0];
   if (units.every((value) => value === unit)) {
