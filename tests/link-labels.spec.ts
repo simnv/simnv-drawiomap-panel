@@ -382,7 +382,7 @@ test('a link too short for a spot beside its stroke keeps both labels beyond the
   for (const half of ['a2b', 'b2a'] as const) {
     await expect(label(panel, 'edge-ab', half)).toHaveAttribute('data-dmap-side', /^(top|bottom)-head$/);
   }
-  // no label stands on an arrow head of the link, nor on the place of a head at its widest
+  // no label stands on a drawn arrow head of the link (the unit tests pin the reserved heads at linkWidth.max)
   const placed = await boxes(panel.locator('text.dmap-link-label[data-dmap-cell="edge-ab"]'));
   const heads = await boxes(panel.locator('polygon.dmap-arrow[data-dmap-cell="edge-ab"]'));
   expect(placed).toHaveLength(2);
