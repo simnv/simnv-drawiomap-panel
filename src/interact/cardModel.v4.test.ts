@@ -17,7 +17,8 @@ import { bindContextFor } from '../binding/context';
 import { bindV4 } from '../binding/bindV4';
 import { validateConfig } from '../model/validate';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
-import { buildCardV4, lineTooltipV4, MAX_LINES, type CardContextV4, type HistoryRowV4 } from './cardModel';
+import { tooltipRows } from '../visuals/hoverSample';
+import { buildCardV4, MAX_LINES, type CardContextV4, type HistoryRowV4 } from './cardModel';
 
 const theme = createTheme();
 const bindCtx = bindContextFor({ theme, replaceVariables: (s) => s, timeZone: 'utc', linkWidth: { min: 2, max: 10 } });
@@ -87,6 +88,14 @@ const historyRow = (model: ReturnType<typeof card>, i = 0) => {
   return row as HistoryRowV4;
 };
 
+/** The pinned tooltip of a history row, as `ChartHover` builds it from the lines of the row. */
+const lineTooltip = (row: HistoryRowV4, time: number) =>
+  tooltipRows(
+    row.lines.map((l) => ({ ...l, format: row.format })),
+    time,
+    row.more
+  );
+
 const clients = (rows: unknown[], extra: Record<string, unknown> = {}) => ({
   ap: { match: { key: 'job' }, rows, ...extra },
 });
@@ -112,7 +121,7 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     expect(pairs(b)).toEqual(pairs(a));
   });
 
-  it('keeps the slot of a series with no finite value and shows "no data" for it in the tooltip model', () => {
+  it('keeps the slot of a series with no finite value and shows "No data" for it in the tooltip model', () => {
     const frames = [
       frame('clients', { job: 'ap-1', ssid: 'a' }, [1, 2, 3]),
       frame('clients', { job: 'ap-1', ssid: 'b' }, [null, null, null]),
@@ -124,11 +133,11 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
       ['{job="ap-1", ssid="b"}', palette(1), true],
       ['{job="ap-1", ssid="c"}', palette(2), false],
     ]);
-    expect(lineTooltipV4(row, 120_000)).toEqual({
+    expect(lineTooltip(row, 120_000)).toEqual({
       time: 120_000,
       list: [
         { label: '{job="ap-1", ssid="a"}', color: palette(0), value: '3' },
-        { label: '{job="ap-1", ssid="b"}', color: palette(1), value: 'no data' },
+        { label: '{job="ap-1", ssid="b"}', color: palette(1), value: 'No data' },
         { label: '{job="ap-1", ssid="c"}', color: palette(2), value: '6' },
       ],
       more: 0,
@@ -198,7 +207,7 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
 
   it('the pinned tooltip model lists all drawn lines at the hovered time, then "+N more"', () => {
     const row = historyRow(card(clients([{ kind: 'history', query: 'clients' }]), ssidFrames(10)));
-    const tip = lineTooltipV4(row, 61_000)!;
+    const tip = lineTooltip(row, 61_000)!;
     expect(tip.time).toBe(60_000);
     expect(tip.list.map((r) => r.value)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
     expect(tip.list.map((r) => r.color)).toEqual(row.lines.map((l) => l.color));
@@ -229,7 +238,7 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     expect(fresh.rows.map((r) => r.stale)).toEqual([false, false]);
   });
 
-  it('shows "no data" for a row with zero series, and keeps the rows in the order of the class', () => {
+  it('shows "No data" for a row with zero series, and keeps the rows in the order of the class', () => {
     const model = card(
       clients([
         { kind: 'metadata', label: 'Key', text: '${key}' },
@@ -241,10 +250,27 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     expect(model.title).toBe('AP 1');
     expect(model.rows.map((r) => [r.kind, r.title, r.text])).toEqual([
       ['metadata', 'Key', 'ap-1'],
-      ['history', 'clients', 'no data'],
+      ['history', 'clients', 'No data'],
     ]);
     expect(historyRow(model).lines).toEqual([]);
     expect(model.links.map((l) => [l.title, l.href])).toEqual([['Open', '/d/ap?var-ap=ap-1']]);
+  });
+
+  it('keeps one row title for one series and for N series: the label, else the refId', () => {
+    const cfg = clients([{ kind: 'history', query: 'clients' }]);
+    expect(historyRow(card(cfg, ssidFrames(1))).title).toBe('clients');
+    expect(historyRow(card(cfg, ssidFrames(3))).title).toBe('clients');
+    const named = [frame('clients', { job: 'ap-1' }, [1, 2, 3], { displayName: 'Clients' })];
+    expect(historyRow(card(cfg, named)).title).toBe('Clients');
+    expect(historyRow(card(clients([{ kind: 'history', query: 'clients', label: 'Users' }]), named)).title).toBe(
+      'Users'
+    );
+  });
+
+  it('gives the field config of the first series, with the row unit, to the chart', () => {
+    const frames = [frame('temp', { job: 'ap-1' }, [40, 41, 42], { unit: 'percent', max: 100 })];
+    const row = historyRow(card(clients([{ kind: 'history', query: 'temp', unit: 'celsius' }]), frames));
+    expect(row.config).toMatchObject({ unit: 'celsius', max: 100 });
   });
 
   it('a status that is not normal comes first, with its reason', () => {

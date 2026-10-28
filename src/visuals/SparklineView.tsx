@@ -14,6 +14,7 @@ import type { FreshnessPolicy } from '../model/config';
 import { useSampleStale } from './useSampleStale';
 import type { HistoryModel } from '../query/frames';
 import { yDomain, type LowerBound } from './domain';
+import { NO_DATA_ROW } from './hoverSample';
 
 /** One line of a history chart (spec 3.7 "N lines"). A line with no finite value keeps its slot and draws nothing. */
 export interface ChartLine {
@@ -42,7 +43,7 @@ export interface SparklineLinesProps extends ViewProps {
   chart: HistoryChart;
   /** the value text after the label, when `showValue` is on */
   value?: string;
-  /** the field config of the first series: the Grafana sparkline reads its unit and decimals */
+  /** the field config of the first series, with the row unit and decimals: the Grafana sparkline reads them */
   config?: FieldConfig;
 }
 
@@ -64,7 +65,7 @@ export function notReadyText(model: Exclude<HistoryModel, { state: 'ready' }>): 
   return model.state === 'idle' || model.state === 'loading'
     ? 'Loading…'
     : model.state === 'empty'
-      ? 'No data'
+      ? NO_DATA_ROW
       : 'message' in model
         ? model.message
         : 'Loading…';
@@ -105,7 +106,10 @@ export function historyChart(
 const finiteCount = (values: ReadonlyArray<number | null>) =>
   values.reduce<number>((n, v) => (v !== null && Number.isFinite(v) ? n + 1 : n), 0);
 
-/** Prepared history only. This adapter never starts queries. */
+/**
+ * Prepared history only. This adapter never starts queries. N lines are N Grafana sparklines stacked in one box with
+ * one Y range: a card row with 8 lines has 8 uPlot canvases. They draw as one chart.
+ */
 export function SparklineView(props: SparklineViewProps) {
   const theme = useTheme2();
   const v3 = 'model' in props ? props : undefined;
@@ -175,7 +179,7 @@ export function SparklineView(props: SparklineViewProps) {
           ))}
         </div>
       ) : (
-        <span role="status">{anyValue ? 'One sample' : 'No data'}</span>
+        <span role="status">{anyValue ? 'One sample' : NO_DATA_ROW}</span>
       )}
     </div>
   );

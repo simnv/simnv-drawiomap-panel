@@ -157,6 +157,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   `,
+  // missing data is grey, never the colour of a value (CODING_STANDARDS.md, "State and data")
+  empty: css`
+    color: ${theme.colors.text.secondary};
+  `,
   // keeps the two spaces between the directions of a combined row
   pre: css`
     white-space: pre;
@@ -236,7 +240,7 @@ const Row = memo(function Row({
       return directions.map((d) => ({ name: d.label, color: d.color, history: d.history }));
     }
     if (lines) {
-      return lines.map((l) => ({ name: l.label, color: l.color, history: lineHistory(l), format }));
+      return lines.map((l) => ({ name: l.label, color: l.color, history: lineHistory(l), format, noData: l.noData }));
     }
     if (!history) {
       return [];
@@ -255,7 +259,10 @@ const Row = memo(function Row({
         >
           {row.title}
         </span>
-        <span className={cx(styles.value, directions && styles.pre)} data-testid="dmap-card-value">
+        <span
+          className={cx(styles.value, directions && styles.pre, row.state === 'empty' && styles.empty)}
+          data-testid="dmap-card-value"
+        >
           {directions
             ? directions.map((d, j) => (
                 <React.Fragment key={d.direction}>
@@ -291,10 +298,11 @@ const Row = memo(function Row({
             timeZone={timeZone}
             width={width}
             label={row.title}
+            more={row.more}
           >
             <SparklineView
               chart={chart}
-              config={history?.state === 'ready' ? history.field.config : undefined}
+              config={row.config ?? (history?.state === 'ready' ? history.field.config : undefined)}
               width={width}
               height={chartH}
               timeRange={timeRange}

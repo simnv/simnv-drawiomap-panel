@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
 import type { BindingPlan } from '../binding/patterns';
 import { resolveBinding } from '../binding/engine';
@@ -10,18 +11,49 @@ import { LOADING, matchKeyOf, shownSnapshot, type StoreDemand } from '../query/s
 import type { QuerySnapshot } from '../query/types';
 import { useBindings } from '../query/useBindings';
 import { readChartAnchor, type ChartAnchor } from '../render/geometry';
-import type { CellIndex } from '../types';
+import type { CellEntry, CellIndex } from '../types';
+import type { BindResultV4 } from '../binding/bindV4';
+import type { UsePath } from '../binding/report';
+import { isPast } from '../binding/status';
+import { chartRowV4, staleDeadline, type CardContextV4, type CardRowV4 } from '../interact/cardModel';
+import type { ChartV4 } from '../model/v4';
 import { SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
+import { MirrorSparkline } from './MirrorSparkline';
+import { useClock } from './useSampleStale';
 
-export interface ChartLayerProps {
+/** The diagram that the regions sit on: each region fills the box of its cell. */
+interface StageProps {
   root?: SVGSVGElement;
   cells: CellIndex;
+  viewport: HTMLElement | null;
+  revision?: unknown;
+}
+
+/** One chart region of a v4 cell (spec 3.9): the `chart` of its effective class and the YAML path of the chart. */
+export interface ChartUse {
+  cellId: string;
+  chart: ChartV4;
+  /** `classes.<class>.chart` or `overrides.<id>.chart`; an `updown` chart reads the uses `<path>.a2b` and `.b2a` */
+  path: UsePath;
+}
+
+/**
+ * The v4 input: the chart uses of the bind (spec 3.2 step 4 and 11). A region reads the series of its uses from the
+ * bind and builds with the rules of a card row; it runs no query of its own.
+ */
+export interface ChartLayerProps extends StageProps {
+  charts: ChartUse[];
+  bound: BindResultV4;
+  /** the theme, the panel data and the classes of the bind */
+  ctx: CardContextV4;
+}
+
+/** The v3 input: the widgets of the binding plan, each with its own query. It goes with the v3 runtime (P1-13c). */
+export interface ChartLayerV3Props extends StageProps {
   plan: BindingPlan;
   /** The query service: the widgets are consumers of its store. */
   service: PanelQueryService;
-  viewport: HTMLElement | null;
-  revision?: unknown;
   /** Namespace of the consumer ids, for example `panel:3` or `popup:3`. */
   owner: string;
   replaceVariables?: (value: string) => string;
@@ -29,7 +61,26 @@ export interface ChartLayerProps {
   paused?: boolean;
 }
 
+/** The chart regions of the bind: one for each cell whose effective class has a `chart` (spec 3.9). */
+export function chartUsesV4(bound: BindResultV4): ChartUse[] {
+  const charts: ChartUse[] = [];
+  for (const [cellId, uses] of bound.uses) {
+    // an `updown` chart has two uses, `<path>.a2b` and `<path>.b2a`: the first gives the chart
+    const use = uses.find((u) => u.kind === 'chart');
+    if (!use?.row || use.row.kind === 'metadata' || use.row.kind === 'drilldown') {
+      continue;
+    }
+    const chart = use.row;
+    const path = chart.kind === 'updown' ? use.path.replace(/\.a2b$/, '') : use.path;
+    charts.push({ cellId, chart, path });
+  }
+  return charts;
+}
+
 const NO_DEMANDS: StoreDemand[] = [];
+const NO_DEADLINES: readonly number[] = [];
+/** Height in px of the title line above a bar gauge or an updown chart, and of the value line of a sparkline. */
+const TITLE_HEIGHT = 22;
 
 /** Check the painted element against the panel and every clipping ancestor. */
 function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
@@ -65,42 +116,26 @@ function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
   return right > left && bottom > top;
 }
 
-function Region({
-  entry,
-  ...props
-}: ChartLayerProps & {
-  entry: BindingPlan['widgets'][number];
-}) {
-  const { root, cells, viewport, service, plan, revision, replaceVariables, owner } = props;
-  const paused = !!props.paused;
-  const { context } = service;
-  const { widget, scope } = entry;
-  const cell = cells.get(entry.anchorCellId);
-  const theme = useTheme2();
+interface RegionGeometry {
+  anchor: ChartAnchor;
+  visible: boolean;
+  /** the width of the cell on the screen, in px */
+  resolution: number;
+}
+
+/**
+ * The region of a cell: a `foreignObject` after the shape of the cell with the box and the transform of the shape,
+ * and whether the shape shows on the screen. `mark` and `id` name the region in the DOM (`data-dmap-widget`).
+ */
+function useRegion(
+  { root, viewport, revision }: StageProps,
+  cell: CellEntry | undefined,
+  mark: string,
+  id: string
+): { portal?: SVGForeignObjectElement; geometry?: RegionGeometry } {
   const updateRef = useRef<() => void>();
   const [portal, setPortal] = useState<SVGForeignObjectElement>();
-  const [geometry, setGeometry] = useState<{ anchor: ChartAnchor; visible: boolean; resolution: number }>();
-  const query = plan.config.queries.find((q) => q.id === widget.binding.queryId);
-  const resolution = geometry?.resolution;
-  // The one demand of the widget, at its anchor cell and its own resolution: a consumer of the store like a binding.
-  // An unavailable widget shows its reason and runs no query; a clipped one releases its entry.
-  const demands = useMemo(
-    () =>
-      query && resolution !== undefined && geometry?.visible && !entry.unavailable
-        ? [
-            {
-              cellId: entry.anchorCellId,
-              query,
-              scope,
-              context,
-              maxDataPoints: resolution,
-              matchKey: matchKeyOf(query, scope, context),
-            },
-          ]
-        : NO_DEMANDS,
-    [query, resolution, geometry?.visible, entry.unavailable, entry.anchorCellId, scope, context]
-  );
-  const frame = useBindings(service, owner, `widget:${widget.id}`, demands, paused);
+  const [geometry, setGeometry] = useState<RegionGeometry>();
 
   useLayoutEffect(() => {
     const shape = cell?.shape;
@@ -110,7 +145,7 @@ function Region({
     }
     const region = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
     let intersecting = typeof IntersectionObserver === 'undefined';
-    region.setAttribute('data-dmap-widget', widget.id);
+    region.setAttribute(mark, id);
     region.style.overflow = 'hidden';
     region.style.pointerEvents = 'none';
     shape.after(region);
@@ -178,11 +213,48 @@ function Region({
       updateRef.current = undefined;
       region.remove();
     };
-  }, [root, cell, viewport, widget.id]);
+  }, [root, cell, viewport, mark, id]);
 
   useLayoutEffect(() => {
     updateRef.current?.();
   }, [revision]);
+  return { portal, geometry };
+}
+
+function Region({
+  entry,
+  ...props
+}: ChartLayerV3Props & {
+  entry: BindingPlan['widgets'][number];
+}) {
+  const { cells, service, plan, replaceVariables, owner } = props;
+  const paused = !!props.paused;
+  const { context } = service;
+  const { widget, scope } = entry;
+  const cell = cells.get(entry.anchorCellId);
+  const theme = useTheme2();
+  const { portal, geometry } = useRegion(props, cell, 'data-dmap-widget', widget.id);
+  const query = plan.config.queries.find((q) => q.id === widget.binding.queryId);
+  const resolution = geometry?.resolution;
+  // The one demand of the widget, at its anchor cell and its own resolution: a consumer of the store like a binding.
+  // An unavailable widget shows its reason and runs no query; a clipped one releases its entry.
+  const demands = useMemo(
+    () =>
+      query && resolution !== undefined && geometry?.visible && !entry.unavailable
+        ? [
+            {
+              cellId: entry.anchorCellId,
+              query,
+              scope,
+              context,
+              maxDataPoints: resolution,
+              matchKey: matchKeyOf(query, scope, context),
+            },
+          ]
+        : NO_DEMANDS,
+    [query, resolution, geometry?.visible, entry.unavailable, entry.anchorCellId, scope, context]
+  );
+  const frame = useBindings(service, owner, `widget:${widget.id}`, demands, paused);
 
   if (!geometry) {
     return (
@@ -243,18 +315,7 @@ function Region({
     <div
       data-testid="dmap-widget"
       aria-label={widget.label}
-      style={{
-        width,
-        height,
-        overflow: 'hidden',
-        fontSize: 12,
-        fontFamily: theme.typography.fontFamily,
-        lineHeight: 'normal',
-        color: theme.colors.text.primary,
-        background: theme.colors.background.primary,
-        position: 'relative',
-        visibility: geometry.visible ? 'visible' : 'hidden',
-      }}
+      style={{ ...regionStyle(theme, width, height), visibility: geometry.visible ? 'visible' : 'hidden' }}
     >
       {widget.kind === 'bar' && model.state === 'ready' && model.latestDisplayValue ? (
         <>
@@ -263,7 +324,7 @@ function Region({
             value={model.latestDisplayValue}
             field={{ ...model.field.config, min: widget.min === 'auto' ? undefined : widget.min, max: widget.max }}
             width={width}
-            height={Math.max(1, height - 22)}
+            height={Math.max(1, height - TITLE_HEIGHT)}
             sampleAt={model.sampleAt}
             freshness={widget.freshness}
           />
@@ -303,7 +364,135 @@ function Region({
   );
 }
 
-export function ChartLayer(props: ChartLayerProps) {
+/** The look of a region: the font of the theme over the background of the panel. */
+function regionStyle(theme: GrafanaTheme2, width: number, height: number): React.CSSProperties {
+  return {
+    width,
+    height,
+    overflow: 'hidden',
+    fontSize: 12,
+    fontFamily: theme.typography.fontFamily,
+    lineHeight: 'normal',
+    color: theme.colors.text.primary,
+    background: theme.colors.background.primary,
+    position: 'relative',
+  };
+}
+
+/** The body of a v4 region: the chart of its kind, or why it has no data (spec 3.6). */
+function ChartBody({
+  row,
+  width,
+  height,
+  timeRange,
+  stale,
+}: {
+  row: CardRowV4;
+  width: number;
+  height: number;
+  timeRange: TimeRange;
+  stale: boolean;
+}) {
+  const theme = useTheme2();
+  const hint = stale ? <span role="status">Stale data</span> : null;
+  if (row.kind === 'history' && row.state === 'ready' && row.lines && row.domain) {
+    const more = row.more ? `+${row.more} more` : '';
+    return (
+      <SparklineView
+        chart={{ lines: row.lines, domain: row.domain }}
+        config={row.config}
+        width={width}
+        height={height}
+        timeRange={timeRange}
+        label={row.title}
+        value={[row.text, more].filter(Boolean).join(' ')}
+        stale={stale}
+      />
+    );
+  }
+  if (row.kind === 'value' && row.display) {
+    return (
+      <>
+        <div>{row.title}</div>
+        <BarGaugeView
+          value={row.display}
+          field={row.config ?? {}}
+          width={width}
+          height={Math.max(1, height - TITLE_HEIGHT)}
+          stale={stale}
+        />
+      </>
+    );
+  }
+  if (row.kind === 'updown' && row.state === 'ready' && row.directions && row.domain) {
+    return (
+      <>
+        <div>
+          {row.title} <span data-testid="dmap-chart-value">{row.text}</span>
+        </div>
+        {hint}
+        <MirrorSparkline
+          directions={row.directions}
+          domain={row.domain}
+          width={width}
+          height={Math.max(1, height - TITLE_HEIGHT)}
+          timeRange={timeRange}
+          label={row.title}
+        />
+      </>
+    );
+  }
+  // missing data is grey, never the colour of a value
+  return (
+    <div role="status" style={{ color: theme.colors.text.secondary }}>
+      {row.title}: {row.text}
+    </div>
+  );
+}
+
+/** A v4 chart region: the `chart` of the class of the cell, in the box of the cell (spec 3.9). */
+function RegionV4({ use, ...props }: ChartLayerProps & { use: ChartUse }) {
+  const { cells, bound, ctx } = props;
+  const theme = useTheme2();
+  const { portal, geometry } = useRegion(props, cells.get(use.cellId), 'data-dmap-chart', use.cellId);
+  // the chart builds on each bind (spec 3.2 step 11)
+  const row = useMemo(() => chartRowV4(use, bound, ctx), [use, bound, ctx]);
+  const deadline = row ? staleDeadline(row) : undefined;
+  const now = useClock(deadline === undefined ? NO_DEADLINES : [deadline]);
+  if (!row) {
+    return null;
+  }
+  if (!geometry) {
+    return (
+      <span role="status" data-dmap-chart-error={use.cellId}>
+        {row.title} needs a rectangle with a valid transform.
+      </span>
+    );
+  }
+  if (!portal || !geometry.visible) {
+    return null;
+  }
+  const { width, height } = geometry.anchor;
+  const stale = row.stale === true || (deadline !== undefined && isPast(deadline, now));
+  return createPortal(
+    <div data-testid="dmap-chart" aria-label={row.title} style={regionStyle(theme, width, height)}>
+      <ChartBody row={row} width={width} height={height} timeRange={ctx.data.timeRange} stale={stale} />
+    </div>,
+    portal
+  );
+}
+
+/** The chart regions over the diagram: the v4 chart uses, or the v3 widgets through the shim until P1-13c. */
+export function ChartLayer(props: ChartLayerProps | ChartLayerV3Props) {
+  if ('charts' in props) {
+    return (
+      <>
+        {props.charts.map((use) => (
+          <RegionV4 key={use.cellId} {...props} use={use} />
+        ))}
+      </>
+    );
+  }
   return (
     <>
       {props.plan.widgets.map((entry) => (

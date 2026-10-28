@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createTheme, FieldType, getDefaultTimeRange, toDataFrame } from '@grafana/data';
-import { ChartLayer as OwnedChartLayer, type ChartLayerProps } from './ChartLayer';
+import { ChartLayer as OwnedChartLayer, type ChartLayerV3Props } from './ChartLayer';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { readChartAnchor } from '../render/geometry';
 import { createQueryController } from '../query/controller';
@@ -11,7 +11,7 @@ import type { BindingPlan } from '../binding/patterns';
 import type { QueryController, QueryContext, QueryExecutor } from '../query/types';
 import type { NamedQuery, Widget } from '../model/config';
 
-type TestProps = Omit<ChartLayerProps, 'owner' | 'service'> & {
+type TestProps = Omit<ChartLayerV3Props, 'owner' | 'service'> & {
   owner?: string;
   queries: NamedQuery[];
   controller: QueryController;
