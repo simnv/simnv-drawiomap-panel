@@ -4,16 +4,21 @@ import { classChain, type ClassV4, type OverrideV4, type ParsedConfig, type RowV
 export type ResolvedRow = RowV4 & { origin: string };
 /**
  * A class after `extends` (spec 2.3). `chain` starts at the root and ends with the class. `abstract`: the class has
- * no `match` (A7).
+ * no `match` (A7). `origins` holds, for each field other than `rows`, the YAML path of the class or the override that
+ * sets it (`classes.device.status`, `overrides.<cellId>.url`).
  */
 export type ResolvedClass = Omit<ClassV4, 'rows'> & {
   name: string;
   chain: string[];
   rows: ResolvedRow[];
   abstract: boolean;
+  origins: Record<string, string>;
 };
 
-/** Apply one layer of the chain: the rows append with their origin, each other field that the layer sets replaces. */
+/**
+ * Apply one layer of the chain: the rows append with their origin, each other field that the layer sets replaces,
+ * with the path of the layer as its origin.
+ */
 function applyLayer(base: ResolvedClass, layer: ClassV4 | OverrideV4, prefix: string): ResolvedClass {
   const { rows = [], ...fields } = layer;
   const set = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as OverrideV4;
@@ -21,6 +26,7 @@ function applyLayer(base: ResolvedClass, layer: ClassV4 | OverrideV4, prefix: st
     ...base,
     ...set,
     rows: [...base.rows, ...rows.map((row, i) => ({ ...row, origin: `${prefix}.rows[${i}]` }))],
+    origins: { ...base.origins, ...Object.fromEntries(Object.keys(set).map((key) => [key, `${prefix}.${key}`])) },
   };
   next.abstract = next.match === undefined;
   return next;
@@ -38,7 +44,7 @@ export function resolveClasses(parsed: ParsedConfig): Map<string, ResolvedClass>
     if (!found || 'error' in found) {
       continue;
     }
-    const root: ResolvedClass = { name, chain: found.chain, rows: [], abstract: true };
+    const root: ResolvedClass = { name, chain: found.chain, rows: [], abstract: true, origins: {} };
     resolved.set(
       name,
       found.chain.reduce((cls, link) => applyLayer(cls, classes[link], `classes.${link}`), root)
