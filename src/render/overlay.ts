@@ -5,21 +5,37 @@ import type { PlanCellPatch } from '../binding/engine';
 import { linkStatusPaint, statusBorderWidth, statusPaint } from '../binding/color';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
-/** the length of an arrow head of a half, in the units of the edge */
+/** the length and the base of the arrow head of a thin half, in the units of the edge */
 export const ARROW_SIZE = 8;
 const NS = 'http://www.w3.org/2000/svg';
 
 export interface OverlayOptions {
   theme: GrafanaTheme2;
-  arrowSize?: number;
+  /** `linkWidth.max`: the widest drawn half. The split and the reserved heads are fixed for it. */
+  maxWidth: number;
 }
 
 /**
- * The arc length (in the units of `geo.length`) where the two halves of a link meet: the middle of the path, moved
- * onto one straight run so that both arrow heads stand clear of the bends. The label layer reads the same split.
+ * The length and the base of the arrow head of a half drawn `width` units wide (at most `maxWidth`): `ARROW_SIZE` for
+ * a thin half, else 4 + 2 × width, so that each wing stands at least 3 units beyond the stroke edge at every width.
  */
-export function linkSplit(geo: PathGeom, arrowSize = ARROW_SIZE): number {
-  return arrowAnchor(geo.bends, geo.length, geo.length / 2, (2 * arrowSize) / geo.unit);
+export function headSize(width: number, maxWidth: number): number {
+  return Math.max(ARROW_SIZE, ARROW_SIZE / 2 + 2 * Math.min(width, maxWidth));
+}
+
+/**
+ * The free path that an arrow tip keeps to the bends on each side, in the units of the overlay: the widest head plus
+ * `ARROW_SIZE`. It reads `maxWidth`, not the drawn width, so a width change on a refresh never moves a tip.
+ */
+const tipClearance = (maxWidth: number) => headSize(maxWidth, maxWidth) + ARROW_SIZE;
+
+/**
+ * The arc length (in the units of `geo.length`) where the two halves of a link meet: the middle of the path, moved
+ * onto one straight run so that both arrow heads, at their widest, stand clear of the bends. The label layer reads
+ * the same split.
+ */
+export function linkSplit(geo: PathGeom, maxWidth: number): number {
+  return arrowAnchor(geo.bends, geo.length, geo.length / 2, tipClearance(maxWidth) / geo.unit);
 }
 
 /**
@@ -63,11 +79,25 @@ function el<K extends keyof SVGElementTagNameMap>(
 export const fmt = (n: number) => String(Math.round(n * 100) / 100);
 const pointsAttr = (pts: Point[]) => pts.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(' ');
 
-/** The elements of one drawn half, with the key of the state they show. */
+/**
+ * Where a half lies on its path (arc lengths in the units of `geo.length`): its run `from` to `to` and the tip of its
+ * head, which points to `to` when `forward`. The points of the half and the head follow from it and the drawn width.
+ */
+interface HalfPlace {
+  geo: PathGeom;
+  from: number;
+  to: number;
+  tip: number;
+  forward: boolean;
+  maxWidth: number;
+}
+/** The elements of one drawn half, with the key of the state they show and the width their points are drawn for. */
 interface HalfDrawn {
   line: SVGPolylineElement;
   arrow: SVGPolygonElement;
   key: string;
+  width: number;
+  place: HalfPlace;
 }
 /** The overlay of one link: its layer, the set of halves it was built for, and the elements of each half. */
 interface LinkDrawn {
@@ -84,7 +114,7 @@ interface BorderDrawn {
 /** What `renderOverlay` left under one root. The elements live across refreshes; the keys say what they show. */
 interface OverlayState {
   index: CellIndex;
-  arrowSize: number;
+  maxWidth: number;
   links: Map<string, LinkDrawn>;
   borders: Map<string, BorderDrawn>;
 }
@@ -149,17 +179,52 @@ function drawnHalves(patch: PlanCellPatch, theme: GrafanaTheme2): { a2b?: HalfSt
   };
 }
 
+/** The triangle of a head `size` long and `size` wide at its base, with its tip at arc length `place.tip`. */
+function headTriangle(place: HalfPlace, size: number): Point[] {
+  const tip = place.geo.pointAt(place.tip);
+  const ang = place.forward ? tip.angle : tip.angle + Math.PI;
+  const s = size;
+  return [
+    { x: tip.x, y: tip.y },
+    { x: tip.x - s * Math.cos(ang) + (s / 2) * Math.sin(ang), y: tip.y - s * Math.sin(ang) - (s / 2) * Math.cos(ang) },
+    { x: tip.x - s * Math.cos(ang) - (s / 2) * Math.sin(ang), y: tip.y - s * Math.sin(ang) + (s / 2) * Math.cos(ang) },
+  ];
+}
+
+/**
+ * The points of a half and of its head at a drawn width. A butt-capped stroke that runs to the tip sticks out of the
+ * narrow end of the triangle, so the stroke stops at the middle of the head, where the triangle is wider than the
+ * stroke. Only the end that holds the tip is cut: a one-way tip that stands back from the port keeps the full stroke.
+ */
+function halfPoints(place: HalfPlace, width: number): { line: Point[]; head: Point[] } {
+  const { geo, from, to, tip, forward } = place;
+  const size = headSize(width, place.maxWidth);
+  const cut = size / 2 / geo.unit;
+  const atEnd = Math.abs((forward ? to : from) - tip) < 1e-6;
+  const [a, b] = !atEnd ? [from, to] : forward ? [from, Math.max(from, to - cut)] : [Math.min(to, from + cut), to];
+  return { line: geo.polyline(a, b), head: headTriangle(place, size) };
+}
+
+/** The reserved head of each drawn head: the triangle at `maxWidth`, with the same tip and direction. */
+const reserved = new WeakMap<Element, Point[]>();
+
+/**
+ * The head at the widest width that the arrow head `arrow` can grow to, in the user space of the overlay layer (the
+ * space of the polygon). The label placement reserves it, so a width change on a refresh never puts a head under a
+ * label. Undefined for an element that the overlay did not draw.
+ */
+export function reservedHead(arrow: Element): Point[] | undefined {
+  return reserved.get(arrow);
+}
+
 function drawHalf(
   layer: SVGGElement,
   cellId: string,
   which: 'a2b' | 'b2a',
-  geo: PathGeom,
-  pts: Point[],
-  state: HalfState,
-  arrowAt: number,
-  forward: boolean,
-  o: Required<OverlayOptions>
+  place: HalfPlace,
+  state: HalfState
 ): HalfDrawn {
+  const pts = halfPoints(place, state.width);
   const line = layer.appendChild(
     el('polyline', {
       class: 'dmap-half',
@@ -167,7 +232,7 @@ function drawHalf(
       'data-dmap-half': which,
       'data-dmap-status': state.status,
       'data-dmap-step': state.stepIndex,
-      points: pointsAttr(pts),
+      points: pointsAttr(pts.line),
       fill: 'none',
       stroke: state.color,
       'stroke-width': state.width,
@@ -176,28 +241,24 @@ function drawHalf(
       'pointer-events': 'stroke',
     })
   );
-  const tip = geo.pointAt(arrowAt);
-  const ang = forward ? tip.angle : tip.angle + Math.PI;
-  const s = o.arrowSize;
-  const tri: Point[] = [
-    { x: tip.x, y: tip.y },
-    { x: tip.x - s * Math.cos(ang) + (s / 2) * Math.sin(ang), y: tip.y - s * Math.sin(ang) - (s / 2) * Math.cos(ang) },
-    { x: tip.x - s * Math.cos(ang) - (s / 2) * Math.sin(ang), y: tip.y - s * Math.sin(ang) + (s / 2) * Math.cos(ang) },
-  ];
   const arrow = layer.appendChild(
     el('polygon', {
       class: 'dmap-arrow',
       'data-dmap-cell': cellId,
       'data-dmap-half': which,
-      points: pointsAttr(tri),
+      points: pointsAttr(pts.head),
       fill: state.color,
       'pointer-events': 'none',
     })
   );
-  return { line, arrow, key: halfKey(state) };
+  reserved.set(arrow, headTriangle(place, headSize(place.maxWidth, place.maxWidth)));
+  return { line, arrow, key: halfKey(state), width: state.width, place };
 }
 
-/** Writes a new state into the elements of a drawn half; the points stay (the geometry did not change). */
+/**
+ * Writes a new state into the elements of a drawn half. The path did not change; a new width redraws the points of
+ * the half and its head (the head grows with the width), in the same elements.
+ */
 function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   const key = halfKey(state);
   if (drawn.key === key) {
@@ -209,12 +270,18 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   drawn.line.setAttribute('stroke', state.color);
   drawn.line.setAttribute('stroke-width', String(state.width));
   drawn.arrow.setAttribute('fill', state.color);
+  if (drawn.width !== state.width) {
+    drawn.width = state.width;
+    const pts = halfPoints(drawn.place, state.width);
+    drawn.line.setAttribute('points', pointsAttr(pts.line));
+    drawn.arrow.setAttribute('points', pointsAttr(pts.head));
+  }
 }
 
 function drawLink(
   entry: CellEntry,
   link: { a2b?: HalfState; b2a?: HalfState },
-  o: Required<OverlayOptions>
+  maxWidth: number
 ): LinkDrawn | undefined {
   if (!entry.line || (!link.a2b && !link.b2a)) {
     return undefined;
@@ -229,18 +296,24 @@ function drawLink(
   }
   const id = entry.meta.id;
   const drawn: LinkDrawn = { layer, combo: comboOf(link) };
-  // An arrow stands on one straight run, away from the bends: the triangle must not stick out past a corner.
-  const clear = (2 * o.arrowSize) / geo.unit;
+  // An arrow stands on one straight run, away from the bends: the widest triangle must not stick out past a corner.
+  const clear = tipClearance(maxWidth) / geo.unit;
+  const place = (from: number, to: number, tip: number, forward: boolean): HalfPlace => ({
+    geo,
+    from,
+    to,
+    tip,
+    forward,
+    maxWidth,
+  });
   if (link.a2b && link.b2a) {
-    const mid = linkSplit(geo, o.arrowSize);
-    drawn.a2b = drawHalf(layer, id, 'a2b', geo, geo.polyline(0, mid), link.a2b, mid, true, o);
-    drawn.b2a = drawHalf(layer, id, 'b2a', geo, geo.polyline(mid, L), link.b2a, mid, false, o);
+    const mid = linkSplit(geo, maxWidth);
+    drawn.a2b = drawHalf(layer, id, 'a2b', place(0, mid, mid, true), link.a2b);
+    drawn.b2a = drawHalf(layer, id, 'b2a', place(mid, L, mid, false), link.b2a);
   } else if (link.a2b) {
-    const at = arrowAnchor(geo.bends, L, L, clear);
-    drawn.a2b = drawHalf(layer, id, 'a2b', geo, geo.polyline(0, L), link.a2b, at, true, o);
+    drawn.a2b = drawHalf(layer, id, 'a2b', place(0, L, arrowAnchor(geo.bends, L, L, clear), true), link.a2b);
   } else if (link.b2a) {
-    const at = arrowAnchor(geo.bends, L, 0, clear);
-    drawn.b2a = drawHalf(layer, id, 'b2a', geo, geo.polyline(0, L), link.b2a, at, false, o);
+    drawn.b2a = drawHalf(layer, id, 'b2a', place(0, L, arrowAnchor(geo.bends, L, 0, clear), false), link.b2a);
   }
   return drawn;
 }
@@ -251,15 +324,15 @@ const comboOf = (link: { a2b?: HalfState; b2a?: HalfState }) => `${link.a2b ? 'a
 /**
  * Draws the overlay of the patches under `root` and keeps it across calls. A link whose set of halves did not change
  * keeps its elements; a changed state (a binding colour, a width, the status paint) is written into them. The layers
- * are built again only for a new index or arrow size (a new stage), when a half appears or goes, or when a layer
- * left the DOM.
+ * are built again only for a new index or max width (a new stage, a new split), when a half appears or goes, or when
+ * a layer left the DOM.
  */
 export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: PatchMap, opts: OverlayOptions): void {
-  const o: Required<OverlayOptions> = { arrowSize: ARROW_SIZE, ...opts };
+  const { maxWidth } = opts;
   let state = states.get(root);
-  if (!state || state.index !== index || state.arrowSize !== o.arrowSize) {
+  if (!state || state.index !== index || state.maxWidth !== maxWidth) {
     root.querySelectorAll(`g.${OVERLAY_CLASS}, .${STATUS_BORDER_CLASS}`).forEach((g) => g.remove());
-    state = { index, arrowSize: o.arrowSize, links: new Map(), borders: new Map() };
+    state = { index, maxWidth, links: new Map(), borders: new Map() };
     states.set(root, state);
   }
   const liveLinks = new Set<string>();
@@ -282,7 +355,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
     }
     drawn?.layer.remove();
     state.links.delete(id);
-    const next = drawLink(entry, link, o);
+    const next = drawLink(entry, link, maxWidth);
     if (next) {
       state.links.set(id, next);
     }

@@ -329,6 +329,7 @@ describe('the paint of the panel and the popup stage', () => {
       await frame();
     }
     const counts = { panel: panel(), popup: popup() };
-    expect(counts).toEqual({ panel: 94, popup: 110 });
+    // the width change of a2b also rewrites the points of the half and of its head (the head grows with the width)
+    expect(counts).toEqual({ panel: 96, popup: 112 });
   });
 });

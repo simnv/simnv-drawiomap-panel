@@ -117,7 +117,9 @@ for (const [theme, osScheme, dark] of [
   );
 }
 
-test('link arrows stand away from the bends of the link path', async ({ gotoDashboardPage }) => {
+test('link arrows stand away from the bends of the link path and stand out of their stroke', async ({
+  gotoDashboardPage,
+}) => {
   // edge-ab of the hand-drawn panel has a 30 px jog exactly at the arc-length middle of the path.
   const dashboardPage = await gotoDashboardPage({
     uid: 'drawiomap-demo',
@@ -137,6 +139,11 @@ test('link arrows stand away from the bends of the link path', async ({ gotoDash
     const tri = (el.getAttribute('points') || '').split(' ').map((p) => p.split(',').map(Number));
     const [tip, b1, b2] = tri;
     const arrowSize = Math.hypot(tip[0] - (b1[0] + b2[0]) / 2, tip[1] - (b1[1] + b2[1]) / 2);
+    const base = Math.hypot(b1[0] - b2[0], b1[1] - b2[1]);
+    const half = svg.querySelector(
+      `.dmap-half[data-dmap-cell="edge-ab"][data-dmap-half="${el.getAttribute('data-dmap-half')}"]`
+    );
+    const width = Number(half?.getAttribute('stroke-width'));
     // only the vertices that are bends: both neighbours leave the straight line
     const bends = vertices.filter((v, i) => {
       if (i === 0 || i === vertices.length - 1) {
@@ -147,11 +154,17 @@ test('link arrows stand away from the bends of the link path', async ({ gotoDash
     });
     return {
       arrowSize,
+      base,
+      width,
       bends: bends.length,
       nearest: Math.min(...bends.map((v) => Math.hypot(v[0] - tip[0], v[1] - tip[1]))),
     };
   });
   expect(result.bends).toBe(2);
   expect(result.arrowSize).toBeGreaterThan(0);
-  expect(result.nearest).toBeGreaterThanOrEqual(2 * result.arrowSize - 0.01);
+  // the tip keeps the widest head (linkWidth.max) plus one thin head (8) to the bends: at least this head plus 8
+  expect(result.nearest).toBeGreaterThanOrEqual(result.arrowSize + 8 - 0.01);
+  // the head is at least twice as wide as the drawn stroke of its half, at any load
+  expect(result.width).toBeGreaterThan(0);
+  expect(result.base).toBeGreaterThanOrEqual(2 * result.width - 0.01);
 });

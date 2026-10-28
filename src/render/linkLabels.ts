@@ -39,7 +39,7 @@ import {
   type Rect,
 } from './labelPlacement';
 import { alphaOf, maxBodyWidth, statusBorderWidth } from '../binding/color';
-import { fmt, linkSplit, OVERLAY_CLASS } from './overlay';
+import { fmt, linkSplit, OVERLAY_CLASS, reservedHead } from './overlay';
 import { readViewBox, viewScaleOf } from './zoom';
 
 /*
@@ -623,7 +623,17 @@ export function stageObstacles(
       rect(entry.group);
     }
   }
-  root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => rect(a));
+  // the head of a half grows with its width: the obstacle is the head at linkWidth.max, so a refresh needs no new one
+  root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => {
+    const head = reservedHead(a);
+    const m = head && toRoot(a, root);
+    const box = m ? aabbOf(head.map((p) => applyMatrix(m, p))) : undefined;
+    if (box) {
+      out.push({ kind: 'rect', rect: box, clearance: 0 });
+    } else {
+      rect(a);
+    }
+  });
   return out;
 }
 
@@ -700,7 +710,7 @@ function edgeLegs(
   if (halves.a2b && halves.b2a) {
     // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
     // then the point in the path's own space, into root units through the same matrix as the vertices
-    const mid = linkSplit(pathGeometry(line, line.parentNode as SVGGraphicsElement));
+    const mid = linkSplit(pathGeometry(line, line.parentNode as SVGGraphicsElement), max);
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
@@ -894,9 +904,12 @@ function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
       continue;
     }
     const back = invert(m);
-    // the white rect covers the strokes of the link with a margin; everything it covers is kept except the slots
+    // the white rect covers the strokes of the link with a margin; everything it covers is kept except the slots.
+    // The box is the one of the edge path, not of the overlay: a head that grows on a refresh changes the box of the
+    // overlay, not of the path, and the margin holds the widest head.
     const margin = 3 * layout.max * scaleOf(m) + 20;
-    const box = rootBox(space, root);
+    const line = layout.index.get(cell)?.line;
+    const box = (line && rootBox(line, root)) ?? rootBox(space, root);
     const area = box
       ? mapRect(
           { x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin },

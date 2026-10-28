@@ -31,7 +31,7 @@ export function paintStage(
 ): Applied {
   const { theme, osDark, linkWidth, bounds, interactive } = opts;
   const applied = applyPatches(index, patches, previous, interactive, { theme, osDark });
-  renderOverlay(root, index, patches, { theme });
+  renderOverlay(root, index, patches, { theme, maxWidth: linkWidth.max });
   renderLinkLabels(root, index, patches, { theme, linkWidth, bounds });
   return applied;
 }
