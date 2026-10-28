@@ -1,4 +1,4 @@
-import type { ClassV4, OverrideV4, ParsedConfig, RowV4 } from '../model/v4';
+import { classChain, type ClassV4, type OverrideV4, type ParsedConfig, type RowV4 } from '../model/v4';
 
 /** A row with the YAML path of the class or the override that declares it (`classes.device.rows[0]`). */
 export type ResolvedRow = RowV4 & { origin: string };
@@ -27,24 +27,21 @@ function applyLayer(base: ResolvedClass, layer: ClassV4 | OverrideV4, prefix: st
 }
 
 /**
- * Resolve `extends` for each valid class (spec 2.3, 3.2 step 2). The parse already checked the chains (2.5 step 3),
- * so the map holds no class of `parsed.invalidClasses`.
+ * Resolve `extends` for each valid class (spec 2.3, 3.2 step 2). The map holds no class of `parsed.invalidClasses`
+ * and no class with a chain error.
  */
 export function resolveClasses(parsed: ParsedConfig): Map<string, ResolvedClass> {
   const resolved = new Map<string, ResolvedClass>();
   const classes = parsed.config?.classes ?? {};
   for (const name of Object.keys(classes)) {
-    if (parsed.invalidClasses.has(name)) {
+    const found = parsed.invalidClasses.has(name) ? null : classChain(name, classes, parsed.invalidClasses);
+    if (!found || 'error' in found) {
       continue;
     }
-    const chain = [name];
-    for (let parent = classes[name].extends; parent !== undefined; parent = classes[parent].extends) {
-      chain.unshift(parent);
-    }
-    const root: ResolvedClass = { name, chain, rows: [], abstract: true };
+    const root: ResolvedClass = { name, chain: found.chain, rows: [], abstract: true };
     resolved.set(
       name,
-      chain.reduce((cls, link) => applyLayer(cls, classes[link], `classes.${link}`), root)
+      found.chain.reduce((cls, link) => applyLayer(cls, classes[link], `classes.${link}`), root)
     );
   }
   return resolved;

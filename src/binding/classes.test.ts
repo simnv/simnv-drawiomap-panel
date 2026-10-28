@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { boilerPilot, netL2Pilot } from '../fixtures/pilots-v4';
-import { parseConfig } from '../model/v4';
+import { checkChains, parseConfig } from '../model/v4';
 import { effectiveClass, resolveClasses } from './classes';
 
 const resolve = (classes: Record<string, unknown>) => {
@@ -128,6 +128,44 @@ describe('resolveClasses (S2.3, S3.2 step 2)', () => {
     expect([...resolved.keys()]).toEqual(['other']);
   });
 
+  it('gives class-unknown-parent for a parent with the name of a prototype key', () => {
+    const { parsed, resolved } = resolve({
+      a: { extends: 'constructor', match: { key: 'job' } },
+      b: { extends: 'toString', match: { key: 'job' } },
+    });
+    expect(parsed.report).toEqual([
+      { kind: 'class-unknown-parent', cls: 'a' },
+      { kind: 'class-unknown-parent', cls: 'b' },
+    ]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('carries a class made invalid after the parse down its chain when checkChains runs again', () => {
+    const parsed = parseConfig({
+      version: 4,
+      classes: {
+        base: { match: { key: 'job' } },
+        child: { extends: 'base' },
+        grandchild: { extends: 'child' },
+        cyc: { extends: 'cyc' },
+        belowCyc: { extends: 'cyc' },
+      },
+    });
+    const late = { kind: 'schema', path: 'classes.base.match.key', message: 'a later check' } as const;
+    parsed.invalidClasses.set('base', [late]);
+    parsed.report.push(late);
+    expect([...resolveClasses(parsed).keys()]).toEqual([]);
+    checkChains(parsed);
+    checkChains(parsed);
+    expect(parsed.report).toEqual([
+      { kind: 'class-cycle', cls: 'cyc' },
+      { kind: 'class-cycle', cls: 'belowCyc' },
+      late,
+      { kind: 'class-invalid-parent', cls: 'child' },
+      { kind: 'class-invalid-parent', cls: 'grandchild' },
+    ]);
+  });
+
   it('marks a class with no match after extends as abstract (A7)', () => {
     const resolved = resolveClasses(parseConfig(netL2Pilot()));
     expect(resolved.get('device')?.abstract).toBe(true);
@@ -175,7 +213,7 @@ describe('effectiveClass (S2.3 overrides, D6)', () => {
       'overrides.pg-link~p-a1-15.rows[0]',
     ]);
     expect(eff.rows[2]).toMatchObject({ kind: 'metadata', label: 'Note', text: 'second uplink' });
-    expect(cls.rows).toHaveLength(2);
+    expect(cls).toEqual(lan());
   });
 
   it('replaces the other fields as a whole', () => {

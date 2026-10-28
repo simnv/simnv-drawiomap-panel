@@ -6,8 +6,14 @@ export type MatchV4 = Record<string, string | string[]>;
 
 // ---- the schema (spec 2.2) ----
 
+/** zod drops a record key `__proto__` with no issue. This check makes it an error, so no name goes silently. */
+const notProto = (key: string) => key !== '__proto__';
+const PROTO_MESSAGE = 'The name __proto__ is not allowed.';
 /** A class name or a cell attribute name. Portograph allows the same set for meta keys, incl. "-". */
-const ident = z.string().regex(/^[A-Za-z_][A-Za-z0-9_-]*$/, 'Use a letter or _ first, then letters, digits, _ or -.');
+const ident = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_-]*$/, 'Use a letter or _ first, then letters, digits, _ or -.')
+  .refine(notProto, PROTO_MESSAGE);
 /** A Grafana refId of a panel target. The match report flags a refId that no target has. */
 const refId = z.string().min(1);
 /** A text with ${attr}, ${from.attr}, ${to.attr}, ${labels.x}, ${value}; in a URL also $var and ${var:format} (3.3). */
@@ -104,7 +110,7 @@ export const envelopeSchema = z
     version: z.literal(4),
     freshness: freshness.default('3x'), // D11, the panel default
     classes: z.record(ident, z.unknown()),
-    overrides: z.record(z.string().min(1), z.unknown()).default({}), // key: the draw.io cell id
+    overrides: z.record(z.string().min(1).refine(notProto, PROTO_MESSAGE), z.unknown()).default({}), // key: the draw.io cell id
   })
   .strict();
 export const classSchema = klass;
@@ -133,9 +139,13 @@ export type LinkLabelMode = NonNullable<ClassV4['linkLabel']>;
 // ---- the parse (spec 2.5) ----
 
 export interface ParsedConfig {
-  /** The envelope and the items that parsed. null when the envelope did not parse or the version is old. */
+  /**
+   * The envelope and the items that passed their schema. `classes` holds a class with a chain error too: read
+   * `invalidClasses` for the valid state. Both records have no prototype. null when the envelope did not parse or
+   * the version is old.
+   */
   config: ConfigV4 | null;
-  /** Each invalid class with its entries: `schema` entries, or the chain entry of step 3. */
+  /** Each invalid class with its entries: its `schema` entries, or the chain entry of step 3. */
   invalidClasses: Map<string, ReportEntry[]>;
   /** Each invalid override, by cell id, with its `schema` entries. */
   invalidOverrides: Map<string, ReportEntry[]>;
@@ -144,6 +154,9 @@ export interface ParsedConfig {
 }
 
 type ChainKind = 'class-cycle' | 'class-unknown-parent' | 'class-invalid-parent';
+const CHAIN_KINDS: readonly string[] = ['class-cycle', 'class-unknown-parent', 'class-invalid-parent'];
+const isChainEntry = (entry: ReportEntry): entry is Extract<ReportEntry, { kind: ChainKind }> =>
+  CHAIN_KINDS.includes(entry.kind);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -171,29 +184,54 @@ function schemaEntries(error: z.ZodError, prefix: ReadonlyArray<string | number>
 }
 
 /**
- * The error of the class chain (step 3), or null for a valid chain. The class gets the entry of the first problem
- * up its chain: a cycle, a parent that no class has, or a parent that did not parse.
+ * The chain of one class from the root to the class (spec 2.3), or the error of the first problem up the chain
+ * (2.5 step 3): a cycle, a parent that no class has, or an invalid parent. Below a parent with a chain error, the
+ * class gets the same error.
  */
-function chainError(name: string, classes: Record<string, ClassV4>, invalid: Map<string, unknown>): ChainKind | null {
-  const seen = new Set<string>([name]);
+export function classChain(
+  name: string,
+  classes: Readonly<Record<string, ClassV4>>,
+  invalidClasses: ReadonlyMap<string, ReportEntry[]>
+): { chain: string[] } | { error: ChainKind } {
+  const chain = [name];
   for (let parent = classes[name].extends; parent !== undefined; parent = classes[parent].extends) {
-    if (seen.has(parent)) {
-      return 'class-cycle';
+    if (chain.includes(parent)) {
+      return { error: 'class-cycle' };
     }
-    if (invalid.has(parent)) {
-      return 'class-invalid-parent';
+    const entries = invalidClasses.get(parent);
+    if (entries) {
+      return { error: entries.find(isChainEntry)?.kind ?? 'class-invalid-parent' };
     }
     if (!Object.hasOwn(classes, parent)) {
-      return 'class-unknown-parent';
+      return { error: 'class-unknown-parent' };
     }
-    seen.add(parent);
+    chain.unshift(parent);
   }
-  return null;
+  return { chain };
+}
+
+/**
+ * Spec 2.5 step 3: add a chain entry for each valid class whose chain has an error. parseConfig runs it. Run it again
+ * after a later check makes more classes invalid (the matchers of 2.4); a class that is invalid already stays as it is.
+ */
+export function checkChains(parsed: ParsedConfig): void {
+  const classes = parsed.config?.classes ?? {};
+  for (const name of Object.keys(classes)) {
+    if (parsed.invalidClasses.has(name)) {
+      continue;
+    }
+    const chain = classChain(name, classes, parsed.invalidClasses);
+    if ('error' in chain) {
+      const entry: ReportEntry = { kind: chain.error, cls: name };
+      parsed.invalidClasses.set(name, [entry]);
+      parsed.report.push(entry);
+    }
+  }
 }
 
 /**
  * Parse a v4 config (spec 2.5): the envelope first, then each class and each override on its own, then the class
- * chain. An item that fails is invalid; the other items apply. The input does not change.
+ * chains. An item that fails is invalid; the other items apply. The input does not change.
  */
 export function parseConfig(raw: unknown): ParsedConfig {
   const result: ParsedConfig = { config: null, invalidClasses: new Map(), invalidOverrides: new Map(), report: [] };
@@ -206,7 +244,8 @@ export function parseConfig(raw: unknown): ParsedConfig {
     result.report.push(...schemaEntries(envelope.error, []));
     return result;
   }
-  const config: ConfigV4 = { ...envelope.data, classes: {}, overrides: {} };
+  // no prototype: a cell with bind="constructor" or the id "toString" finds nothing
+  const config: ConfigV4 = { ...envelope.data, classes: Object.create(null), overrides: Object.create(null) };
   const invalid = (target: Map<string, ReportEntry[]>, name: string, entries: ReportEntry[]) => {
     target.set(name, entries);
     result.report.push(...entries);
@@ -219,13 +258,6 @@ export function parseConfig(raw: unknown): ParsedConfig {
       invalid(result.invalidClasses, name, schemaEntries(parsed.error, ['classes', name]));
     }
   }
-  const schemaInvalid = new Map(result.invalidClasses);
-  for (const name of Object.keys(config.classes)) {
-    const kind = chainError(name, config.classes, schemaInvalid);
-    if (kind) {
-      invalid(result.invalidClasses, name, [{ kind, cls: name }]);
-    }
-  }
   for (const [cellId, item] of Object.entries(envelope.data.overrides)) {
     const parsed = overrideSchema.safeParse(item);
     if (parsed.success) {
@@ -235,5 +267,6 @@ export function parseConfig(raw: unknown): ParsedConfig {
     }
   }
   result.config = config;
+  checkChains(result);
   return result;
 }

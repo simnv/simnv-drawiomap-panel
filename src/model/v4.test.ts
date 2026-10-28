@@ -129,6 +129,38 @@ describe('parseConfig (S2.5)', () => {
     expect(parseConfig(raw).report).toEqual([]);
   });
 
+  it('rejects the name __proto__, which zod would drop with no issue', () => {
+    const classKey = parseConfig(JSON.parse('{"version": 4, "classes": {"__proto__": {}}}'));
+    expect(classKey.config).toBeNull();
+    expect(classKey.report).toEqual([{ kind: 'schema', path: 'classes.__proto__', message: expect.any(String) }]);
+    const overrideKey = parseConfig(JSON.parse('{"version": 4, "classes": {}, "overrides": {"__proto__": {}}}'));
+    expect(overrideKey.report).toEqual([{ kind: 'schema', path: 'overrides.__proto__', message: expect.any(String) }]);
+    const matchKey = parseConfig(
+      JSON.parse('{"version": 4, "classes": {"a": {"match": {"key": "job", "__proto__": "x"}}}}')
+    );
+    expect(schemaEntries(matchKey.invalidClasses.get('a')).map((e) => e.path)).toEqual(['classes.a.match.__proto__']);
+  });
+
+  it('gives records with no prototype, so a prototype key finds nothing', () => {
+    const { config } = parseConfig(netL2Pilot());
+    expect(config?.classes.constructor).toBeUndefined();
+    expect(config?.classes.toString).toBeUndefined();
+    expect(config?.overrides.hasOwnProperty).toBeUndefined();
+  });
+
+  it('gives the entries in the order of the steps: items, then the chain', () => {
+    const parsed = parseConfig({
+      version: 4,
+      classes: { bad: { colour: 'red' }, child: { extends: 'bad' } },
+      overrides: { o: { colour: 'red' } },
+    });
+    expect(parsed.report).toEqual([
+      { kind: 'schema', path: 'classes.bad.colour', message: expect.any(String) },
+      { kind: 'schema', path: 'overrides.o.colour', message: expect.any(String) },
+      { kind: 'class-invalid-parent', cls: 'child' },
+    ]);
+  });
+
   it('does not change its input', () => {
     const raw = netL2Pilot();
     const copy = structuredClone(raw);
