@@ -24,7 +24,8 @@ as a short widening of the stroke, not as an arrow.
    `8 + 2e` and the length `8 + e`. At `w ≤ 2` it is 8 by 8, as today. At `w = 10` it is 24 wide and 16 long. The
    base is 4× to 2.4× the stroke over the range 2 to 10; each wing stands `(w + 4) / 2 ≥ 3` units beyond the stroke
    edge.
-   The length grows at half the rate of the base: the head takes path from the value label of its half (section 3),
+   The length grows at half the rate of the base: the head takes path from the value label of its half (decision 3,
+   and `docs/superpowers/specs/2026-10-25-link-value-labels-design.md`),
    and a short link would lose its label. A first version with a square head (`4 + 2w` long) dropped the a2b value
    label of the 104-unit WAN link of the demo L3 sheet at `linkWidth.max` 10; the e2e `link-labels.spec.ts` caught it.
    The flatter head of a wide half (half angle 37° at `w = 10`, 27° at `w ≤ 2`) is still a plain arrow.
@@ -36,9 +37,11 @@ as a short widening of the stroke, not as an arrow.
    port) keeps the full stroke, as today.
 3. All geometry that the label placement reads is fixed for `linkWidth.max`, not for the drawn width, so a width
    change on a refresh moves no label:
-   - The split and the tip of a one-way half keep the longest head plus 8 of free path to the bends on each side
-     (today `2 × 8 = 16`; for `max = 10` it is `16 + 8 = 24`). The triangle at the widest width never crosses a
-     bend. `linkSplit` takes the max width, and the label legs call it with the same value as the overlay.
+   - The split keeps the longest head plus 8 of free path to the bends on each side (today `2 × 8 = 16`; for
+     `max = 10` it is `16 + 8 = 24`), so two heads that meet stand clear of a corner. The tip of a one-way half keeps
+     the longest head only (16 for `max = 10`, as today), so a tip stays at a port behind the usual 20-unit draw.io
+     jetty. The triangle at the widest width never crosses a bend. `linkSplit` takes the max width, and the label
+     legs call it with the same value as the overlay.
    - The obstacle of a head is the box of the head at `linkWidth.max` (the same tip and direction, the size of the
      widest head), not the drawn polygon. The overlay keeps the reserved triangle of each head; the label module
      reads it through `reservedHead`.

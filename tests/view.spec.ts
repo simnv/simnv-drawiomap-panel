@@ -128,43 +128,46 @@ test('link arrows stand away from the bends of the link path and stand out of th
   const panel = await dashboardPage.getPanelByTitle('hand-drawn');
   const arrows = panel.locator.locator('polygon.dmap-arrow[data-dmap-cell="edge-ab"]');
   await expect(arrows).toHaveCount(2);
-  const result = await arrows.first().evaluate((el) => {
-    const svg = (el as SVGElement).ownerSVGElement!;
-    const path = svg.querySelector('[data-cell-id="edge-ab"] path[pointer-events="stroke"]') as SVGPathElement;
-    const nums = (path.getAttribute('d') || '').match(/-?\d*\.?\d+/g)!.map(Number);
-    const vertices: Array<[number, number]> = [];
-    for (let i = 0; i + 1 < nums.length; i += 2) {
-      vertices.push([nums[i], nums[i + 1]]);
-    }
-    const tri = (el.getAttribute('points') || '').split(' ').map((p) => p.split(',').map(Number));
-    const [tip, b1, b2] = tri;
-    const arrowSize = Math.hypot(tip[0] - (b1[0] + b2[0]) / 2, tip[1] - (b1[1] + b2[1]) / 2);
-    const base = Math.hypot(b1[0] - b2[0], b1[1] - b2[1]);
-    const half = svg.querySelector(
-      `.dmap-half[data-dmap-cell="edge-ab"][data-dmap-half="${el.getAttribute('data-dmap-half')}"]`
-    );
-    const width = Number(half?.getAttribute('stroke-width'));
-    // only the vertices that are bends: both neighbours leave the straight line
-    const bends = vertices.filter((v, i) => {
-      if (i === 0 || i === vertices.length - 1) {
-        return false;
+  for (const result of await arrows.evaluateAll((els) =>
+    els.map((el) => {
+      const svg = (el as SVGElement).ownerSVGElement!;
+      const path = svg.querySelector('[data-cell-id="edge-ab"] path[pointer-events="stroke"]') as SVGPathElement;
+      const nums = (path.getAttribute('d') || '').match(/-?\d*\.?\d+/g)!.map(Number);
+      const vertices: Array<[number, number]> = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        vertices.push([nums[i], nums[i + 1]]);
       }
-      const [p, n] = [vertices[i - 1], vertices[i + 1]];
-      return (v[0] - p[0]) * (n[1] - v[1]) - (v[1] - p[1]) * (n[0] - v[0]) !== 0;
-    });
-    return {
-      arrowSize,
-      base,
-      width,
-      bends: bends.length,
-      nearest: Math.min(...bends.map((v) => Math.hypot(v[0] - tip[0], v[1] - tip[1]))),
-    };
-  });
-  expect(result.bends).toBe(2);
-  expect(result.arrowSize).toBeGreaterThan(0);
-  // the tip keeps the widest head (linkWidth.max) plus one thin head (8) to the bends: at least this head plus 8
-  expect(result.nearest).toBeGreaterThanOrEqual(result.arrowSize + 8 - 0.01);
-  // the head is at least twice as wide as the drawn stroke of its half, at any load
-  expect(result.width).toBeGreaterThan(0);
-  expect(result.base).toBeGreaterThanOrEqual(2 * result.width - 0.01);
+      const tri = (el.getAttribute('points') || '').split(' ').map((p) => p.split(',').map(Number));
+      const [tip, b1, b2] = tri;
+      const arrowSize = Math.hypot(tip[0] - (b1[0] + b2[0]) / 2, tip[1] - (b1[1] + b2[1]) / 2);
+      const base = Math.hypot(b1[0] - b2[0], b1[1] - b2[1]);
+      const half = svg.querySelector(
+        `.dmap-half[data-dmap-cell="edge-ab"][data-dmap-half="${el.getAttribute('data-dmap-half')}"]`
+      );
+      const width = Number(half?.getAttribute('stroke-width'));
+      // only the vertices that are bends: both neighbours leave the straight line
+      const bends = vertices.filter((v, i) => {
+        if (i === 0 || i === vertices.length - 1) {
+          return false;
+        }
+        const [p, n] = [vertices[i - 1], vertices[i + 1]];
+        return (v[0] - p[0]) * (n[1] - v[1]) - (v[1] - p[1]) * (n[0] - v[0]) !== 0;
+      });
+      return {
+        arrowSize,
+        base,
+        width,
+        bends: bends.length,
+        nearest: Math.min(...bends.map((v) => Math.hypot(v[0] - tip[0], v[1] - tip[1]))),
+      };
+    })
+  )) {
+    expect(result.bends).toBe(2);
+    expect(result.arrowSize).toBeGreaterThan(0);
+    // the split keeps the longest head (16 at the panel's linkWidth.max 10) plus one thin head (8) to the bends
+    expect(result.nearest).toBeGreaterThanOrEqual(16 + 8 - 0.01);
+    // each head is at least twice as wide as the drawn stroke of its half, at any load
+    expect(result.width).toBeGreaterThan(0);
+    expect(result.base).toBeGreaterThanOrEqual(2 * result.width - 0.01);
+  }
 });

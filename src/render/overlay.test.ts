@@ -392,8 +392,10 @@ describe('renderOverlay keeps its elements across refreshes', () => {
 });
 
 describe('arrow tip position', () => {
-  /** the free path to the bends: the longest head (16 at max 10) plus one thin head */
+  /** the free path from the split to the bends: the longest head (16 at max 10) plus one thin head */
   const CLEAR = 24;
+  /** the free path from the tip of a one-way half to the bends: the longest head */
+  const PORT_CLEAR = 16;
   const tipOf = (root: SVGSVGElement, which: 'a2b' | 'b2a') => {
     const [x, y] = root
       .querySelector(`.dmap-arrow[data-dmap-half="${which}"]`)!
@@ -465,14 +467,18 @@ describe('arrow tip position', () => {
         [100, 50],
         [100, 0],
       ])
-    ).toBeGreaterThanOrEqual(CLEAR);
+    ).toBeGreaterThanOrEqual(PORT_CLEAR);
     const b2a = tipOf(draw('M 0 0 L 6 0 L 6 50 L 106 50', { b2a: half() }), 'b2a');
     expect(
       toBend(b2a, [
         [6, 0],
         [6, 50],
       ])
-    ).toBeGreaterThanOrEqual(CLEAR);
+    ).toBeGreaterThanOrEqual(PORT_CLEAR);
+  });
+  it('keeps the tip of a single direction at the port behind a 20-unit jetty: the longest head fits on it', () => {
+    expect(tipOf(draw('M 0 0 L 100 0 L 100 20', { a2b: half() }), 'a2b')).toEqual({ x: 100, y: 20 });
+    expect(tipOf(draw('M 0 0 L 20 0 L 20 100', { b2a: half() }), 'b2a')).toEqual({ x: 0, y: 0 });
   });
   /** The path measured by the engine (getTotalLength) with its own CTM; the overlay group draws in root units. */
   const drawMeasured = (d: string, length: number, along: (d: number) => { x: number; y: number }, ctm: object) => {

@@ -34,10 +34,17 @@ export function headSize(width: number, maxWidth: number): HeadSize {
 }
 
 /**
- * The free path that an arrow tip keeps to the bends on each side, in the units of the overlay: the longest head plus
- * `ARROW_SIZE`. It reads `maxWidth`, not the drawn width, so a width change on a refresh never moves a tip.
+ * The free path that the split keeps to the bends on each side, in the units of the overlay: the longest head plus
+ * `ARROW_SIZE`, so that two heads that meet stand clear of a corner. It reads `maxWidth`, not the drawn width, so a
+ * width change on a refresh never moves a tip.
  */
-const tipClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length + ARROW_SIZE;
+const splitClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length + ARROW_SIZE;
+
+/**
+ * The free path that the tip of a one-way half keeps to the bends: the longest head only (16 at `maxWidth` 10, as the
+ * old fixed `2 × ARROW_SIZE`), so a tip stays at a port behind the usual 20-unit draw.io jetty.
+ */
+const portClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length;
 
 /**
  * The arc length (in the units of `geo.length`) where the two halves of a link meet: the middle of the path, moved
@@ -45,7 +52,7 @@ const tipClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length +
  * the same split.
  */
 export function linkSplit(geo: PathGeom, maxWidth: number): number {
-  return arrowAnchor(geo.bends, geo.length, geo.length / 2, tipClearance(maxWidth) / geo.unit);
+  return arrowAnchor(geo.bends, geo.length, geo.length / 2, splitClearance(maxWidth) / geo.unit);
 }
 
 /**
@@ -309,7 +316,7 @@ function drawLink(
   const id = entry.meta.id;
   const drawn: LinkDrawn = { layer, combo: comboOf(link) };
   // An arrow stands on one straight run, away from the bends: the widest triangle must not stick out past a corner.
-  const clear = tipClearance(maxWidth) / geo.unit;
+  const clear = portClearance(maxWidth) / geo.unit;
   const place = (from: number, to: number, tip: number, forward: boolean): HalfPlace => ({
     geo,
     from,

@@ -623,19 +623,19 @@ The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button
 
 In the **View** group of the panel options:
 
-| Option               | Meaning                                                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                       |
-| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                  |
-| Zoom: Original       | The diagram has its original size.                                                                                                                                              |
-| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                               |
-| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                  |
-| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally. |
-| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                 |
-| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                    |
-| Link width min, max  | The range of the link width in pixels. The width grows with the load. The arrow head grows with the width: 8 by 8 units up to a 2-unit half; above, each unit of width adds 2 to its base and 1 to its length (24 wide and 16 long at 10).      |
-| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                    |
-| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                           |
+| Option               | Meaning                                                                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                                                                                  |
+| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                                                                             |
+| Zoom: Original       | The diagram has its original size.                                                                                                                                                                                                         |
+| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                                                                                          |
+| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                                                                             |
+| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally.                                                            |
+| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                                                                            |
+| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                                                                               |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load. The arrow head grows with the width: 8 by 8 units up to a 2-unit half; above, each unit of width adds 2 to its base and 1 to its length (24 wide and 16 long at 10). |
+| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                                                                               |
+| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                                                                                      |
 
 ### Live zoom
 
