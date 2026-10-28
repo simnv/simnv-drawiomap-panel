@@ -5,12 +5,14 @@ import { colorManipulator, createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { noDataColor, statusColor, tintFill } from '../binding/color';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
-import { applyPatches, INTERACTIVE_ATTR, markInteractive } from './applier';
+import { applyKey, applyPatches, INTERACTIVE_ATTR, markInteractive } from './applier';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
+import { renderOverlay } from './overlay';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
+import type { StatusV4 } from '../binding/statusV4';
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30" fill="#fff" style="fill: light-dark(#fff, #111); stroke: #000;"/></g><g><text><tspan>rtr-a</tspan></text></g></g>
@@ -980,4 +982,102 @@ describe('applyPatches status paint', () => {
     expectColour(rect(index, 'n3').style.stroke, statusColor({ state: 'down' }, dark));
     expect(statusColor({ state: 'down' }, dark)).not.toBe(red);
   });
+});
+
+describe('applyKey and the v4 status (Astra R1)', () => {
+  const theme = createTheme({ colors: { mode: 'light' } });
+  const ctx = { theme, osDark: false };
+  const GREEN = '#73bf69';
+  const BLUE = '#0000ff';
+  /** a v4 status on the v3 patch type: the cut-over (P1-13c) drops the v3 fields */
+  const v4 = (over: Partial<StatusV4> = {}): CellPatch => ({
+    ...patch('n3', {}),
+    statusView: {
+      queryIds: ['up'],
+      conditionKey: '',
+      coverage: { available: 1, expected: 1 },
+      state: 'normal',
+      severity: 'normal',
+      color: GREEN,
+      text: 'Up',
+      refId: 'up',
+      reason: '',
+      ...over,
+    },
+  });
+  const expectColour = (actual: string, expected: string) =>
+    expect([expected.toLowerCase(), colorManipulator.asRgbString(expected)]).toContain(actual.toLowerCase());
+
+  it.each([
+    ['state', { state: 'critical' }],
+    ['severity', { severity: 'critical' }],
+    ['color', { color: BLUE }],
+    ['text', { text: 'Online' }],
+    ['refId', { refId: 'scrape_up' }],
+    ['reason', { reason: '1 of 2 series have no value' }],
+  ] as const)('a change of %s alone gives a new key', (_, over) => {
+    expect(applyKey(v4(over), true)).not.toBe(applyKey(v4(), true));
+  });
+  it('a v3 status keeps its key: state and reason', () => {
+    const view: StatusView = {
+      state: 'down',
+      reason: 'Device down',
+      conditionKey: 'health',
+      queryIds: ['up'],
+      coverage: { available: 1, expected: 1 },
+    };
+    const p: PlanCellPatch = { ...patch('n3', {}), statusView: view };
+    expect(applyKey(p, true)).toBe(applyKey({ ...p, statusView: { ...view, conditionKey: 'other' } }, true));
+    expect(applyKey(p, true)).not.toBe(applyKey({ ...p, statusView: { ...view, reason: 'Other' } }, true));
+  });
+  it('repaints green → blue with the same state and text; blue → transparent removes the paint', () => {
+    const index = build();
+    const n3 = index.get('n3')!.shape as SVGElement;
+    const original = { fill: n3.style.fill, stroke: n3.style.stroke, width: n3.style.strokeWidth };
+    let prev = applyPatches(index, new Map([['n3', v4()]]), undefined, undefined, ctx);
+    expectColour(n3.style.stroke, GREEN);
+    prev = applyPatches(index, new Map([['n3', v4({ color: BLUE })]]), prev, undefined, ctx);
+    expectColour(n3.style.stroke, BLUE);
+    expectColour(n3.style.fill, tintFill('#d5e8d4', BLUE)!);
+    applyPatches(
+      index,
+      new Map([['n3', v4({ color: theme.visualization.getColorByName('transparent') })]]),
+      prev,
+      undefined,
+      ctx
+    );
+    expect({ fill: n3.style.fill, stroke: n3.style.stroke, width: n3.style.strokeWidth }).toEqual(original);
+    expect(index.get('n3')!.group.getAttribute('data-dmap-status')).toBe('normal');
+  });
+  it.each(['light', 'dark'] as const)(
+    'paints normal v4 link statuses on halves, heads and dots; transparent and missing restore halves (%s)',
+    (mode) => {
+      const theme = createTheme({ colors: { mode } });
+      const ctx = { theme, osDark: mode === 'dark' };
+      const id = 'pg-link~dot-a-b';
+      const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/bare-end-dot.svg'), 'utf8');
+      const root = mountSvg(document.createElement('div'), sanitizeSvg(raw).svg);
+      const index = buildCellIndex(root);
+      const ends = index.get(id)!.ends!.map((end) => end.el as SVGElement);
+      const magenta = theme.visualization.getColorByName('magenta');
+      const halfColors = ['#ff8800', '#0000ff'];
+      const link = { a2b: ok({ color: halfColors[0] }), b2a: ok({ color: halfColors[1] }) };
+      const rounds: Array<{ status: Partial<StatusV4>; colors: string[] }> = [
+        { status: { color: magenta, text: 'Offline' }, colors: [magenta, magenta] },
+        { status: { color: GREEN }, colors: [GREEN, GREEN] },
+        { status: { color: 'transparent' }, colors: halfColors },
+        { status: { color: magenta, text: 'Offline' }, colors: [magenta, magenta] },
+        { status: { state: 'missing', severity: 'missing', text: '–' }, colors: halfColors },
+      ];
+      let prev: ReturnType<typeof applyPatches> | undefined;
+      for (const { status, colors } of rounds) {
+        const patches = new Map([[id, { ...v4(status), cellId: id, link }]]);
+        prev = applyPatches(index, patches, prev, undefined, ctx);
+        renderOverlay(root, index, patches, { theme, maxWidth: 10 });
+        expect(Array.from(root.querySelectorAll('.dmap-half'), (el) => el.getAttribute('stroke'))).toEqual(colors);
+        expect(Array.from(root.querySelectorAll('.dmap-arrow'), (el) => el.getAttribute('fill'))).toEqual(colors);
+        ends.forEach((end, i) => expectColour(end.style.fill, colors[i]));
+      }
+    }
+  );
 });
