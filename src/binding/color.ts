@@ -9,7 +9,10 @@ import {
   ThresholdsMode,
 } from '@grafana/data';
 import { statusLevel, type StatusView } from './status';
-import type { HalfState } from '../types';
+import type { HalfState, StatusV4Fields } from '../types';
+
+/** A CSS colour that the painter writes on a cell. */
+export type Paint = string;
 
 export interface ColorResult {
   color: string;
@@ -47,18 +50,46 @@ export function statusTextColor(status: Pick<StatusView, 'state'>, theme: Grafan
       : theme.colors.text.secondary;
 }
 
-/** The colour a status paints its element with: a state that is not normal. A normal status paints nothing. */
-export function statusPaint(status: Pick<StatusView, 'state'> | undefined, theme: GrafanaTheme2): string | undefined {
+/**
+ * The colour a status paints its element with. A v4 status (it has a `severity`) paints as `statusPaintV4`. A v3
+ * status paints a state that is not normal; a normal status paints nothing.
+ */
+export function statusPaint(
+  status: (Pick<StatusView, 'state'> & StatusV4Fields) | undefined,
+  theme: GrafanaTheme2
+): string | undefined {
+  if (status?.severity !== undefined) {
+    return statusPaintV4(status, theme) ?? undefined;
+  }
   return status && status.state !== 'normal' ? statusColor(status, theme) : undefined;
 }
 
 /**
- * The status colour of a link's stroke. A status that is not normal wins over the binding colour of the halves. One
+ * The colour a v4 status paints its cell with (spec 3.4): the exact colour of the value for each value state, normal
+ * included. The theme colours stay for stale (orange) and missing (grey), and give the red of a down with no value
+ * (`missing: down`). Null when the cell keeps its drawn colour: a transparent value colour, or a normal status with no
+ * colour.
+ */
+export function statusPaintV4(status: Pick<StatusView, 'state'> & StatusV4Fields, theme: GrafanaTheme2): Paint | null {
+  if (status.state === 'missing' || status.state === 'stale') {
+    return statusColor(status, theme);
+  }
+  if (!status.color) {
+    return status.state === 'normal' ? null : statusColor(status, theme);
+  }
+  return alphaOf(status.color) > 0 ? status.color : null;
+}
+
+/**
+ * The status colour of a link's stroke. A status that paints (`statusPaint`) wins over the binding colour of the halves. One
  * exception: a missing status on a link with halves paints nothing, because each half shows its own state already
  * (the half with no data is grey; the other keeps the colour of its value). A link without halves takes the grey.
  */
 export function linkStatusPaint(
-  patch: { link?: { a2b?: HalfState; b2a?: HalfState }; statusView?: Pick<StatusView, 'state'> },
+  patch: {
+    link?: { a2b?: HalfState; b2a?: HalfState };
+    statusView?: Pick<StatusView, 'state'> & StatusV4Fields;
+  },
   theme: GrafanaTheme2
 ): string | undefined {
   const halves = !!(patch.link?.a2b || patch.link?.b2a);
@@ -94,7 +125,7 @@ export function statusPalette(theme: GrafanaTheme2): string {
 }
 
 /** The channels of a CSS colour: red, green, blue (0 to 255) and alpha (0 to 1); undefined when it does not parse. */
-function channels(value: string): [number, number, number, number] | undefined {
+export function colorChannels(value: string): [number, number, number, number] | undefined {
   try {
     const c = colorManipulator.decomposeColor(value.trim());
     const rgb = c.type.startsWith('hsl') ? colorManipulator.decomposeColor(colorManipulator.hslToRgb(c)) : c;
@@ -153,8 +184,8 @@ export function alphaOf(value: string): number {
  * parse) or the status colour does not parse: the border alone shows the status then.
  */
 export function tintFill(fill: string, status: string): string | undefined {
-  const base = channels(fill);
-  const over = channels(status);
+  const base = colorChannels(fill);
+  const over = colorChannels(status);
   if (!base || !over || base[3] < 1) {
     return undefined;
   }

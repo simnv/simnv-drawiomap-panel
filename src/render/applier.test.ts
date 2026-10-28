@@ -5,12 +5,13 @@ import { colorManipulator, createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { noDataColor, statusColor, tintFill } from '../binding/color';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
-import { applyPatches, INTERACTIVE_ATTR, markInteractive } from './applier';
+import { applyKey, applyPatches, INTERACTIVE_ATTR, markInteractive } from './applier';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
 import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
+import type { StatusV4 } from '../binding/statusV4';
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30" fill="#fff" style="fill: light-dark(#fff, #111); stroke: #000;"/></g><g><text><tspan>rtr-a</tspan></text></g></g>
@@ -979,5 +980,72 @@ describe('applyPatches status paint', () => {
     expect(observer.takeRecords().length).toBeGreaterThan(0);
     expectColour(rect(index, 'n3').style.stroke, statusColor({ state: 'down' }, dark));
     expect(statusColor({ state: 'down' }, dark)).not.toBe(red);
+  });
+});
+
+describe('applyKey and the v4 status (Astra R1)', () => {
+  const theme = createTheme({ colors: { mode: 'light' } });
+  const ctx = { theme, osDark: false };
+  const GREEN = '#73bf69';
+  const BLUE = '#0000ff';
+  /** a v4 status on the v3 patch type: the cut-over (P1-13c) drops the v3 fields */
+  const v4 = (over: Partial<StatusV4> = {}): CellPatch => ({
+    ...patch('n3', {}),
+    statusView: {
+      queryIds: ['up'],
+      conditionKey: '',
+      coverage: { available: 1, expected: 1 },
+      state: 'normal',
+      severity: 'normal',
+      color: GREEN,
+      text: 'Up',
+      refId: 'up',
+      reason: '',
+      ...over,
+    },
+  });
+  const expectColour = (actual: string, expected: string) =>
+    expect([expected.toLowerCase(), colorManipulator.asRgbString(expected)]).toContain(actual.toLowerCase());
+
+  it.each([
+    ['state', { state: 'critical' }],
+    ['severity', { severity: 'critical' }],
+    ['color', { color: BLUE }],
+    ['text', { text: 'Online' }],
+    ['refId', { refId: 'scrape_up' }],
+    ['reason', { reason: '1 of 2 series have no value' }],
+  ] as const)('a change of %s alone gives a new key', (_, over) => {
+    expect(applyKey(v4(over), true)).not.toBe(applyKey(v4(), true));
+  });
+  it('a v3 status keeps its key: state and reason', () => {
+    const view: StatusView = {
+      state: 'down',
+      reason: 'Device down',
+      conditionKey: 'health',
+      queryIds: ['up'],
+      coverage: { available: 1, expected: 1 },
+    };
+    const p: PlanCellPatch = { ...patch('n3', {}), statusView: view };
+    expect(applyKey(p, true)).toBe(applyKey({ ...p, statusView: { ...view, conditionKey: 'other' } }, true));
+    expect(applyKey(p, true)).not.toBe(applyKey({ ...p, statusView: { ...view, reason: 'Other' } }, true));
+  });
+  it('repaints green → blue with the same state and text; blue → transparent removes the paint', () => {
+    const index = build();
+    const n3 = index.get('n3')!.shape as SVGElement;
+    const original = { fill: n3.style.fill, stroke: n3.style.stroke, width: n3.style.strokeWidth };
+    let prev = applyPatches(index, new Map([['n3', v4()]]), undefined, undefined, ctx);
+    expectColour(n3.style.stroke, GREEN);
+    prev = applyPatches(index, new Map([['n3', v4({ color: BLUE })]]), prev, undefined, ctx);
+    expectColour(n3.style.stroke, BLUE);
+    expectColour(n3.style.fill, tintFill('#d5e8d4', BLUE)!);
+    applyPatches(
+      index,
+      new Map([['n3', v4({ color: theme.visualization.getColorByName('transparent') })]]),
+      prev,
+      undefined,
+      ctx
+    );
+    expect({ fill: n3.style.fill, stroke: n3.style.stroke, width: n3.style.strokeWidth }).toEqual(original);
+    expect(index.get('n3')!.group.getAttribute('data-dmap-status')).toBe('normal');
   });
 });

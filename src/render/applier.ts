@@ -377,9 +377,10 @@ const sameScheme = (a: ColourScheme, b: ColourScheme) =>
 /**
  * The fields of a patch that the writes above read, as one string. Two patches with the same key draw the same
  * picture, so a cell whose key did not change is not touched on a refresh. The cell label of `aria-label` comes
- * from the entry, constant per index.
+ * from the entry, constant per index. The status part holds each status field that a write reads, of a v3 and of a
+ * v4 status: a new colour with the same state and text paints the cell again (spec 3.4).
  */
-export function applyKey(patch: PlanCellPatch, interactive: boolean): string {
+export function applyKey(patch: CellPatch, interactive: boolean): string {
   const half = (h: HalfState | undefined) => (h ? [h.status, h.color, h.width, h.stepIndex] : null);
   const s = patch.shape;
   const u = patch.unavailable;
@@ -389,7 +390,7 @@ export function applyKey(patch: PlanCellPatch, interactive: boolean): string {
     s ? [s.status, s.stepIndex, s.target, s.color, s.text ?? null] : null,
     u ? [u.color, u.reason] : null,
     l ? [half(l.a2b), half(l.b2a)] : null,
-    v ? [v.state, v.reason] : null,
+    v ? [v.state, v.severity ?? null, v.color ?? null, v.text ?? null, v.refId ?? null, v.reason ?? null] : null,
     interactive,
   ]);
 }

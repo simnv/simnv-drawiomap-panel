@@ -8,6 +8,7 @@ import type {
   ReducerName,
   ShapeTarget,
 } from './model/config';
+import type { StatusView } from './binding/status';
 
 export type { CellKind, CellSelector, Matcher, ReducerName, ShapeTarget };
 
@@ -232,6 +233,19 @@ export interface LinkTarget {
   url: string;
 }
 
+/**
+ * The fields of a v4 status (spec 3.4, `StatusV4`) on the status of a patch. A v3 status has none of them. A status
+ * with a `severity` paints with the exact colour of its value (`statusPaint`).
+ */
+export interface StatusV4Fields {
+  /** the rank for the worst of N, the status band and the legend */
+  severity?: StatusView['state'];
+  /** the display colour of the value; a transparent colour keeps the drawn colour */
+  color?: string;
+  text?: string;
+  refId?: string;
+}
+
 export interface CellPatch {
   cellId: string;
   scope: TemplateScope;
@@ -245,6 +259,7 @@ export interface CellPatch {
   unavailable?: { reason: string; color: string };
   /** the display url after template resolution; dashboard variables are resolved later by replaceVariables */
   urls: LinkTarget[];
+  statusView?: StatusView & StatusV4Fields;
 }
 
 export type PatchMap = Map<string, CellPatch>;
