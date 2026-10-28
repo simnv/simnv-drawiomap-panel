@@ -179,7 +179,7 @@ describe('renderLinkLabels: the refresh path', () => {
     const thin = head.getAttribute('points');
     expect(render(root, index, two({ width: 10 }, { width: 10 }))).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(head.getAttribute('points')).not.toBe(thin);
-    expect(head.getAttribute('points')).toBe('200,100 176,88 176,112');
+    expect(head.getAttribute('points')).toBe('200,100 184,88 184,112');
     expect([a.getAttribute('transform'), a.getAttribute('data-dmap-placed-at')]).toEqual(before);
     // the frame is the box of the edge path with the margin, not the box of the overlay that the wider head grew
     expect(maskOf(root)).toBe(mask);
@@ -596,13 +596,13 @@ describe('renderLinkLabels: obstacles', () => {
       ['e1', linkPatch('e1', { a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
     ]);
     render(root, index, patches);
-    // the drawn heads are 8 long; the reserved ones 24 (linkWidth.max 10), both tips at the split x = 200
+    // the drawn heads are 8 by 8; the reserved ones 16 long and 24 wide (linkWidth.max 10), both tips at x = 200
     expect(root.querySelector('.dmap-arrow[data-dmap-half="a2b"]')!.getAttribute('points')).toBe(
       '200,100 192,96 192,104'
     );
     const rects = stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o] : []));
-    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 176, y: 88, width: 24, height: 24 }, clearance: 0 });
-    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 200, y: 88, width: 24, height: 24 }, clearance: 0 });
+    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 184, y: 88, width: 16, height: 24 }, clearance: 0 });
+    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 200, y: 88, width: 16, height: 24 }, clearance: 0 });
   });
   it('a plain draw.io node is an obstacle: the label slides towards the end of the link', () => {
     const node = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="50"/></g></g>`;
@@ -771,8 +771,13 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
     // the vertical WAN link: the labels read bottom to top, on the stroke
     expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
-    // on its stroke, clear of the reserved head at the split (the head of a half at linkWidth.max)
-    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(178.37, 0);
+    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
+  });
+  it('the short WAN link (104 units) keeps both value labels beside the reserved heads of the widest halves', () => {
+    const { root, index } = build(readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8'));
+    const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+    const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'value' })]]);
+    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
@@ -1130,9 +1135,9 @@ describe('renderLinkLabels: coordinates', () => {
     Object.assign(index.get('e2')!.line!, { getScreenCTM: () => scale2 });
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(renderLinkLabels(root, index, patches, opts)).toEqual({ placed: 2, dropped: 0, moved: 0 });
-    // the split: the overlay moves it from the corner (path-local 100) to 68 on the first run, root x = 136 (not 168)
+    // the split: the overlay moves it from the corner (path-local 100) to 76 on the first run, root x = 152 (not 168)
     const a = byHalf(root, 'a2b')!;
-    expect(a.getAttribute('x')).toBe('68');
+    expect(a.getAttribute('x')).toBe('76');
     expect(a.getAttribute('y')).toBe('0');
     const b = byHalf(root, 'b2a')!;
     expect(b.getAttribute('transform')).toBe('rotate(-90 200 64)');
@@ -1148,7 +1153,7 @@ describe('renderLinkLabels: coordinates', () => {
     expect(obstacles).toContainEqual({
       kind: 'segment',
       a: { x: 0, y: 0 },
-      b: { x: 136, y: 0 },
+      b: { x: 152, y: 0 },
       clearance: 10,
       owner: 'e1',
       piece: { leg: 'e1:a2b', index: 0 },

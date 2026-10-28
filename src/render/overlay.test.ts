@@ -196,11 +196,12 @@ describe('renderOverlay', () => {
     renderOverlay(root, index, new Map([['e1', patch('e1', { link: { a2b: half(), b2a: unbound } })]]), opts);
     expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(2);
     const a2b = root.querySelector('polyline.dmap-half[data-dmap-half="a2b"]')!;
-    // the split is 32 before the corner (the widest head and a thin one); each stroke stops at the middle of its head
-    expect(a2b.getAttribute('points')).toBe('0,0 62,0');
+    // the split is the middle (75): the corner is 25 away, more than the longest head and a thin one (24); each
+    // stroke stops at the middle of its head (10 long for a half 4 wide, 8 for one 2 wide)
+    expect(a2b.getAttribute('points')).toBe('0,0 70,0');
     expect(a2b.getAttribute('stroke')).toBe('#00ff00');
     const b2a = root.querySelector('polyline.dmap-half[data-dmap-half="b2a"]')!;
-    expect(b2a.getAttribute('points')).toBe('72,0 100,0 100,50');
+    expect(b2a.getAttribute('points')).toBe('79,0 100,0 100,50');
     expect(b2a.getAttribute('stroke')).toBe('#808080');
     expect(b2a.getAttribute('data-dmap-status')).toBe('unbound');
   });
@@ -217,13 +218,13 @@ describe('renderOverlay', () => {
     expect(halves).toHaveLength(2);
     const a2b = root.querySelector('polyline.dmap-half[data-dmap-half="a2b"]')!;
     expect(a2b.getAttribute('data-dmap-cell')).toBe('e1');
-    expect(a2b.getAttribute('points')).toBe('0,0 62,0');
+    expect(a2b.getAttribute('points')).toBe('0,0 70,0');
     expect(a2b.getAttribute('stroke')).toBe('#00ff00');
     expect(a2b.getAttribute('stroke-width')).toBe('4');
     expect(a2b.getAttribute('data-dmap-step')).toBe('0');
     expect(a2b.getAttribute('data-dmap-status')).toBe('ok');
     const b2a = root.querySelector('polyline.dmap-half[data-dmap-half="b2a"]')!;
-    expect(b2a.getAttribute('points')).toBe('74,0 100,0 100,50');
+    expect(b2a.getAttribute('points')).toBe('80,0 100,0 100,50');
     expect(b2a.getAttribute('data-dmap-step')).toBe('2');
     expect(root.querySelectorAll('polygon.dmap-arrow')).toHaveLength(2);
     // the values show in the hover card only
@@ -236,7 +237,7 @@ describe('renderOverlay', () => {
     expect(halves).toHaveLength(1);
     expect(halves[0].getAttribute('data-dmap-half')).toBe('b2a');
     // the stroke stops under the middle of the head at the port of A
-    expect(halves[0].getAttribute('points')).toBe('6,0 100,0 100,50');
+    expect(halves[0].getAttribute('points')).toBe('5,0 100,0 100,50');
   });
   it('draws nothing for a shape patch (no canvas sparklines)', () => {
     const { root, index } = build();
@@ -342,7 +343,7 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     const after = strokes(root, 'e1');
     expect(after).toHaveLength(2);
     expect(after.some((el) => e1.includes(el))).toBe(false);
-    expect(after[0].getAttribute('points')).toBe('0,0 100,0 100,44');
+    expect(after[0].getAttribute('points')).toBe('0,0 100,0 100,45');
     expect(same(e2, strokes(root, 'e2'))).toBe(true);
     expect(root.querySelectorAll('g.dmap-overlay')).toHaveLength(2);
   });
@@ -391,8 +392,8 @@ describe('renderOverlay keeps its elements across refreshes', () => {
 });
 
 describe('arrow tip position', () => {
-  /** the free path to the bends: the widest head (24 at max 10) plus one thin head */
-  const CLEAR = 32;
+  /** the free path to the bends: the longest head (16 at max 10) plus one thin head */
+  const CLEAR = 24;
   const tipOf = (root: SVGSVGElement, which: 'a2b' | 'b2a') => {
     const [x, y] = root
       .querySelector(`.dmap-arrow[data-dmap-half="${which}"]`)!
@@ -418,12 +419,12 @@ describe('arrow tip position', () => {
     const tip = tipOf(root, 'a2b');
     expect(tipOf(root, 'b2a')).toEqual(tip);
     expect(toBend(tip, [[100, 0]])).toBeGreaterThanOrEqual(CLEAR);
-    expect(tip).toEqual({ x: 68, y: 0 });
+    expect(tip).toEqual({ x: 76, y: 0 });
     const a2b = root.querySelector('.dmap-half[data-dmap-half="a2b"]')!.getAttribute('points')!.split(' ');
     const b2a = root.querySelector('.dmap-half[data-dmap-half="b2a"]')!.getAttribute('points')!.split(' ');
-    // each stroke stops at the middle of its head (12 for a half 4 wide), on both sides of the tip
-    expect(a2b[a2b.length - 1]).toBe('62,0');
-    expect(b2a[0]).toBe('74,0');
+    // each stroke stops at the middle of its head (10 long for a half 4 wide), on both sides of the tip
+    expect(a2b[a2b.length - 1]).toBe('71,0');
+    expect(b2a[0]).toBe('81,0');
     expect(a2b[0]).toBe('0,0');
     expect(b2a[b2a.length - 1]).toBe('100,100');
   });
@@ -494,14 +495,14 @@ describe('arrow tip position', () => {
     const root = drawMeasured('M 0 0 L 400 0 L 400 400', 800, along, { a: 0.25, b: 0, c: 0, d: 0.25, e: 0, f: 0 });
     expect(pointsOf(root, 'dmap-half')).toHaveLength(2);
     expect(pointsOf(root, 'dmap-arrow')).toHaveLength(2);
-    // the corner is at (100, 0) in the overlay; the split is 272 local units, the tip (68, 0) in the overlay
+    // the corner is at (100, 0) in the overlay; the split is 304 local units, the tip (76, 0) in the overlay
     const tip = tipOf(root, 'a2b');
     expect(toBend(tip, [[100, 0]])).toBeGreaterThanOrEqual(CLEAR - 0.01);
-    expect(tip).toEqual({ x: 68, y: 0 });
-    expect(tipOf(root, 'b2a')).toEqual({ x: 68, y: 0 });
-    // the cut under the head is in the units of the overlay too: 6 there, 24 local units
+    expect(tip).toEqual({ x: 76, y: 0 });
+    expect(tipOf(root, 'b2a')).toEqual({ x: 76, y: 0 });
+    // the cut under the head is in the units of the overlay too: 5 there, 20 local units
     const b2a = root.querySelector('.dmap-half[data-dmap-half="b2a"]')!.getAttribute('points')!.split(' ');
-    expect(b2a[0]).toBe('74,0');
+    expect(b2a[0]).toBe('81,0');
     expect(b2a[b2a.length - 1]).toBe('100,100');
   });
   it('draws a path with its own scale(0) collapsed to one point, not at its local size', () => {
@@ -513,16 +514,16 @@ describe('arrow tip position', () => {
 });
 
 describe('linkSplit', () => {
-  it('the split is the middle of a straight path, and moves off a corner by the widest head plus one thin head', () => {
+  it('the split is the middle of a straight path, and moves off a corner by the longest head plus one thin head', () => {
     const geo = { length: 200, bends: [], unit: 1, matrix: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 } };
     expect(linkSplit({ ...geo, pointAt: () => ({ x: 0, y: 0, angle: 0 }), polyline: () => [] }, 10)).toBe(100);
     const bent = { ...geo, bends: [100], pointAt: () => ({ x: 0, y: 0, angle: 0 }), polyline: () => [] };
     // thin links only (max 2): 8 + 8, as before the heads grew
     expect(linkSplit(bent, 2)).toBe(84);
-    // max 10: the widest head is 24, so 24 + 8
-    expect(linkSplit(bent, 10)).toBe(68);
-    // the clearance is in the units of the path: a path drawn at 0.8 of its size keeps 40 of its own units
-    expect(linkSplit({ ...bent, unit: 0.8 }, 10)).toBe(60);
+    // max 10: the longest head is 16, so 16 + 8
+    expect(linkSplit(bent, 10)).toBe(76);
+    // the clearance is in the units of the path: a path drawn at half size keeps 48 of its own units
+    expect(linkSplit({ ...bent, unit: 0.5 }, 10)).toBe(52);
   });
 });
 
@@ -550,23 +551,25 @@ describe('the arrow head grows with the drawn width', () => {
     return { root, index };
   };
 
-  it('is 8 for a thin half, 4 + 2 x width above, and at most the head of the widest half', () => {
-    expect(headSize(1, 10)).toBe(8);
-    expect(headSize(2, 10)).toBe(8);
-    expect(headSize(5.36, 10)).toBeCloseTo(14.72);
-    expect(headSize(10, 10)).toBe(24);
-    expect(headSize(14, 10)).toBe(24);
+  it('is 8 by 8 for a thin half; above, each unit of width adds 2 to the base and 1 to the length', () => {
+    expect(headSize(1, 10)).toEqual({ length: 8, base: 8 });
+    expect(headSize(2, 10)).toEqual({ length: 8, base: 8 });
+    expect(headSize(5.36, 10).length).toBeCloseTo(11.36);
+    expect(headSize(5.36, 10).base).toBeCloseTo(14.72);
+    expect(headSize(10, 10)).toEqual({ length: 16, base: 24 });
+    // never more than the head of the widest half
+    expect(headSize(14, 10)).toEqual({ length: 16, base: 24 });
   });
-  it('is at least twice as wide as its stroke at every width from 2 to 10', () => {
+  it('has a base at least twice as wide as its stroke at every width from 2 to 10', () => {
     for (let w = 2; w <= 10; w += 0.5) {
-      expect(headSize(w, 10) / w).toBeGreaterThanOrEqual(2);
+      expect(headSize(w, 10).base / w).toBeGreaterThanOrEqual(2);
     }
   });
   it('a wide half has a wide head; the stroke stops at the middle of the head, so the tip stays sharp', () => {
     const { root } = draw('M 0 0 L 200 0', { a2b: half({ width: 10 }), b2a: half({ width: 2 }) });
-    expect(sizeOf(head(root, 'a2b'))).toEqual({ length: 24, base: 24 });
+    expect(sizeOf(head(root, 'a2b'))).toEqual({ length: 16, base: 24 });
     expect(pts(head(root, 'a2b'))[0]).toEqual([100, 0]);
-    expect(line(root, 'a2b').getAttribute('points')).toBe('0,0 88,0');
+    expect(line(root, 'a2b').getAttribute('points')).toBe('0,0 92,0');
     // the thin half keeps the head of today
     expect(sizeOf(head(root, 'b2a'))).toEqual({ length: 8, base: 8 });
     expect(pts(head(root, 'b2a'))[0]).toEqual([100, 0]);
@@ -574,9 +577,9 @@ describe('the arrow head grows with the drawn width', () => {
   });
   it('a one-way half cuts its stroke at the port end only; a tip back from the port keeps the full stroke', () => {
     const atPort = draw('M 0 0 L 100 0 L 100 50', { a2b: half({ width: 10 }) }).root;
-    expect(line(atPort, 'a2b').getAttribute('points')).toBe('0,0 100,0 100,38');
+    expect(line(atPort, 'a2b').getAttribute('points')).toBe('0,0 100,0 100,42');
     const back = draw('M 0 0 L 100 0 L 100 50', { b2a: half({ width: 10 }) }).root;
-    expect(line(back, 'b2a').getAttribute('points')).toBe('12,0 100,0 100,50');
+    expect(line(back, 'b2a').getAttribute('points')).toBe('8,0 100,0 100,50');
     // the last run (6) is shorter than the clearance: the tip stands back from the port, on the long run
     const pulled = draw('M 0 0 L 100 0 L 100 50 L 106 50', { a2b: half({ width: 10 }) }).root;
     expect(line(pulled, 'a2b').getAttribute('points')).toBe('0,0 100,0 100,50 106,50');
@@ -587,8 +590,8 @@ describe('the arrow head grows with the drawn width', () => {
     const reserve = reservedHead(h);
     expect(reserve?.map((p) => [p.x, p.y])).toEqual([
       [100, 0],
-      [76, -12],
-      [76, 12],
+      [84, -12],
+      [84, 12],
     ]);
     renderOverlay(
       root,
@@ -598,9 +601,9 @@ describe('the arrow head grows with the drawn width', () => {
     );
     expect(line(root, 'a2b')).toBe(a);
     expect(head(root, 'a2b')).toBe(h);
-    expect(sizeOf(h)).toEqual({ length: 24, base: 24 });
+    expect(sizeOf(h)).toEqual({ length: 16, base: 24 });
     expect(pts(h)[0]).toEqual([100, 0]);
-    expect(a.getAttribute('points')).toBe('0,0 88,0');
+    expect(a.getAttribute('points')).toBe('0,0 92,0');
     expect(reservedHead(h)).toBe(reserve);
     // and back to thin
     renderOverlay(
@@ -619,6 +622,6 @@ describe('the arrow head grows with the drawn width', () => {
     expect(pts(before)[0]).toEqual([84, 0]);
     renderOverlay(root, index, new Map([['e1', patch('e1', { link })]]), opts);
     expect(head(root, 'a2b')).not.toBe(before);
-    expect(pts(head(root, 'a2b'))[0]).toEqual([68, 0]);
+    expect(pts(head(root, 'a2b'))[0]).toEqual([76, 0]);
   });
 });

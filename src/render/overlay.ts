@@ -7,6 +7,8 @@ import { linkStatusPaint, statusBorderWidth, statusPaint } from '../binding/colo
 export const OVERLAY_CLASS = 'dmap-overlay';
 /** the length and the base of the arrow head of a thin half, in the units of the edge */
 export const ARROW_SIZE = 8;
+/** the widest half that keeps the head of `ARROW_SIZE` */
+const THIN = 2;
 const NS = 'http://www.w3.org/2000/svg';
 
 export interface OverlayOptions {
@@ -15,19 +17,27 @@ export interface OverlayOptions {
   maxWidth: number;
 }
 
-/**
- * The length and the base of the arrow head of a half drawn `width` units wide (at most `maxWidth`): `ARROW_SIZE` for
- * a thin half, else 4 + 2 × width, so that each wing stands at least 3 units beyond the stroke edge at every width.
- */
-export function headSize(width: number, maxWidth: number): number {
-  return Math.max(ARROW_SIZE, ARROW_SIZE / 2 + 2 * Math.min(width, maxWidth));
+/** The size of an arrow head: its length along the path and the width of its base. */
+export interface HeadSize {
+  length: number;
+  base: number;
 }
 
 /**
- * The free path that an arrow tip keeps to the bends on each side, in the units of the overlay: the widest head plus
+ * The arrow head of a half drawn `width` units wide (at most `maxWidth`). A thin half keeps the head of `ARROW_SIZE`.
+ * Above, each unit of width adds 2 to the base and 1 to the length: the base stays at least twice the stroke (each
+ * wing at least 3 units beyond the stroke edge), and the head takes little of a short half from its value label.
+ */
+export function headSize(width: number, maxWidth: number): HeadSize {
+  const extra = Math.max(0, Math.min(width, maxWidth) - THIN);
+  return { length: ARROW_SIZE + extra, base: ARROW_SIZE + 2 * extra };
+}
+
+/**
+ * The free path that an arrow tip keeps to the bends on each side, in the units of the overlay: the longest head plus
  * `ARROW_SIZE`. It reads `maxWidth`, not the drawn width, so a width change on a refresh never moves a tip.
  */
-const tipClearance = (maxWidth: number) => headSize(maxWidth, maxWidth) + ARROW_SIZE;
+const tipClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length + ARROW_SIZE;
 
 /**
  * The arc length (in the units of `geo.length`) where the two halves of a link meet: the middle of the path, moved
@@ -179,27 +189,29 @@ function drawnHalves(patch: PlanCellPatch, theme: GrafanaTheme2): { a2b?: HalfSt
   };
 }
 
-/** The triangle of a head `size` long and `size` wide at its base, with its tip at arc length `place.tip`. */
-function headTriangle(place: HalfPlace, size: number): Point[] {
+/** The triangle of a head of `size`, with its tip at arc length `place.tip`. */
+function headTriangle(place: HalfPlace, size: HeadSize): Point[] {
   const tip = place.geo.pointAt(place.tip);
   const ang = place.forward ? tip.angle : tip.angle + Math.PI;
-  const s = size;
+  const s = size.length;
+  const h = size.base / 2;
   return [
     { x: tip.x, y: tip.y },
-    { x: tip.x - s * Math.cos(ang) + (s / 2) * Math.sin(ang), y: tip.y - s * Math.sin(ang) - (s / 2) * Math.cos(ang) },
-    { x: tip.x - s * Math.cos(ang) - (s / 2) * Math.sin(ang), y: tip.y - s * Math.sin(ang) + (s / 2) * Math.cos(ang) },
+    { x: tip.x - s * Math.cos(ang) + h * Math.sin(ang), y: tip.y - s * Math.sin(ang) - h * Math.cos(ang) },
+    { x: tip.x - s * Math.cos(ang) - h * Math.sin(ang), y: tip.y - s * Math.sin(ang) + h * Math.cos(ang) },
   ];
 }
 
 /**
  * The points of a half and of its head at a drawn width. A butt-capped stroke that runs to the tip sticks out of the
- * narrow end of the triangle, so the stroke stops at the middle of the head, where the triangle is wider than the
- * stroke. Only the end that holds the tip is cut: a one-way tip that stands back from the port keeps the full stroke.
+ * narrow end of the triangle, so the stroke stops at the middle of the head, where the triangle is half its base wide
+ * (1 unit beyond the stroke edge on each side, or more). Only the end that holds the tip is cut: a one-way tip that
+ * stands back from the port keeps the full stroke.
  */
 function halfPoints(place: HalfPlace, width: number): { line: Point[]; head: Point[] } {
   const { geo, from, to, tip, forward } = place;
   const size = headSize(width, place.maxWidth);
-  const cut = size / 2 / geo.unit;
+  const cut = size.length / 2 / geo.unit;
   const atEnd = Math.abs((forward ? to : from) - tip) < 1e-6;
   const [a, b] = !atEnd ? [from, to] : forward ? [from, Math.max(from, to - cut)] : [Math.min(to, from + cut), to];
   return { line: geo.polyline(a, b), head: headTriangle(place, size) };

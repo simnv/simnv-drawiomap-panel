@@ -633,7 +633,7 @@ In the **View** group of the panel options:
 | Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally. |
 | Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                 |
 | Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                    |
-| Link width min, max  | The range of the link width in pixels. The width grows with the load. The arrow head grows with the width: 8 units up to a 2-unit half, then 4 + 2 × the width (24 at 10).      |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load. The arrow head grows with the width: 8 by 8 units up to a 2-unit half; above, each unit of width adds 2 to its base and 1 to its length (24 wide and 16 long at 10).      |
 | Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                    |
 | Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                           |
 

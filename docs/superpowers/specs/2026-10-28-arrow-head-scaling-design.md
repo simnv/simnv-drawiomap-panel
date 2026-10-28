@@ -20,20 +20,25 @@ as a short widening of the stroke, not as an arrow.
 
 ## 2. Decisions
 
-1. The head size (its length and its base) is `headSize(w) = max(8, 4 + 2w)` for a half drawn `w` units wide, with
-   `w` clamped to `linkWidth.max`. At `w ≤ 2` it is 8, as today. At the default range (2 to 10) the head is 8 to
-   24 units, 4× to 2.4× the stroke; each wing stands `(w + 4) / 2 ≥ 3` units beyond the stroke edge.
-2. The stroke of a half stops at the middle of its head (`headSize / 2` before the tip). There each side of the
-   triangle stands `headSize / 4 = w / 2 + 1` units from the path, 1 unit beyond the stroke edge, so the tip stays
-   sharp. For
-   a thin half (8-unit head, 2-unit stroke) the change is less than one pixel at the tip; the look stays.
+1. For a half drawn `w` units wide (clamped to `linkWidth.max`), with `e = max(0, w − 2)`, the head has the base
+   `8 + 2e` and the length `8 + e`. At `w ≤ 2` it is 8 by 8, as today. At `w = 10` it is 24 wide and 16 long. The
+   base is 4× to 2.4× the stroke over the range 2 to 10; each wing stands `(w + 4) / 2 ≥ 3` units beyond the stroke
+   edge.
+   The length grows at half the rate of the base: the head takes path from the value label of its half (section 3),
+   and a short link would lose its label. A first version with a square head (`4 + 2w` long) dropped the a2b value
+   label of the 104-unit WAN link of the demo L3 sheet at `linkWidth.max` 10; the e2e `link-labels.spec.ts` caught it.
+   The flatter head of a wide half (half angle 37° at `w = 10`, 27° at `w ≤ 2`) is still a plain arrow.
+2. The stroke of a half stops at the middle of its head (half the head length before the tip). There each side of
+   the triangle stands a quarter of the base, `w / 2 + 1`, from the path: 1 unit beyond the stroke edge, so the tip
+   stays sharp. For a thin half (8-unit head, 2-unit stroke) the change is less than one pixel at the tip; the look
+   stays.
    A one-way half trims only the end that holds its tip; a tip that stands back from the port (a bend near the
    port) keeps the full stroke, as today.
 3. All geometry that the label placement reads is fixed for `linkWidth.max`, not for the drawn width, so a width
    change on a refresh moves no label:
-   - The split and the tip of a one-way half keep `headSize(max) + 8` free path to the bends on each side (today
-     `2 × 8 = 16`; for `max = 10` it is 32). The triangle at the widest width never crosses a bend. `linkSplit` takes
-     the max width, and the label legs call it with the same value as the overlay.
+   - The split and the tip of a one-way half keep the longest head plus 8 of free path to the bends on each side
+     (today `2 × 8 = 16`; for `max = 10` it is `16 + 8 = 24`). The triangle at the widest width never crosses a
+     bend. `linkSplit` takes the max width, and the label legs call it with the same value as the overlay.
    - The obstacle of a head is the box of the head at `linkWidth.max` (the same tip and direction, the size of the
      widest head), not the drawn polygon. The overlay keeps the reserved triangle of each head; the label module
      reads it through `reservedHead`.
