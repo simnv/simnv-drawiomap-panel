@@ -2,6 +2,8 @@ import { createRegexCache, parseMatchBlock, resolveBlock } from './binding/match
 import type { Use } from './binding/uses';
 import { chartRowV4 } from './interact/cardModel';
 
+export { attrOf } from './binding/cellAttrs';
+export { edgeEnds, endAttr } from './binding/edgeEnds';
 export { validateConfig } from './model/validate';
 export { bindV4 as bind } from './binding/bindV4';
 export { buildCellIndex, cellMetas, mountSvg } from './render/svgStage';

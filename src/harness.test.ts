@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { netL2Pilot } from './fixtures/pilots-v4';
 
 const names = [
+  'attrOf',
   'bind',
   'buildCard',
   'buildCellIndex',
   'buildLegend',
   'cellMetas',
   'compileMatcher',
+  'edgeEnds',
+  'endAttr',
   'fnv1a',
   'historyOf',
   'mountSvg',
@@ -51,6 +54,41 @@ async function pilot(data = panelData()) {
 describe('the consumer harness', () => {
   it('exports exactly the pinned names', async () => {
     expect(Object.keys(await import('./harness')).sort()).toEqual(names);
+  });
+
+  it('resolves cell and endpoint attributes through the shared resolver', async () => {
+    const { attrOf, edgeEnds, endAttr, buildCellIndex, mountSvg } = await import('./harness');
+    const index = buildCellIndex(
+      mountSvg(
+        document.createElement('div'),
+        `<svg xmlns="http://www.w3.org/2000/svg">
+      <g data-cell-id="node" data-meta-key="host-a"/>
+      <g data-cell-id="port" data-meta-port="1"/>
+      <g data-cell-id="link" data-meta-key="link-a"/>
+    </svg>`
+      )
+    );
+    const xml = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="node" parent="1"/><mxCell id="port" parent="node"/>
+      <mxCell id="link" parent="1" edge="1" source="port" target="node"/>
+    </root></mxGraphModel>`;
+    let reads = 0;
+    const context = { index, ...edgeEnds(xml, index) };
+    const attrs = attrOf(() => {
+      reads++;
+      return context;
+    })(index.get('link')!.meta);
+    expect(attrs('id')).toBe('link');
+    expect(attrs('key')).toBe('link-a');
+    expect(attrs('missing')).toBeUndefined();
+    expect(attrs('constructor')).toBeUndefined();
+    expect(reads).toBe(0);
+    expect(attrs('from.id')).toBe('port');
+    expect(attrs('from.port')).toBe('1');
+    expect(attrs('from.key')).toBe('host-a');
+    expect(attrs('to.key')).toBe('host-a');
+    expect(attrs('to.missing')).toBeUndefined();
+    expect(endAttr('link', 'from', 'key', context)).toBe(attrs('from.key'));
   });
 
   it('validates and binds the network pilot with empty panel data without a schema entry', async () => {
