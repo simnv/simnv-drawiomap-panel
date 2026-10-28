@@ -18,10 +18,17 @@ export interface ParsedBlock {
 type CompiledRegex = { ok: true; regex: RegExp } | { ok: false; message: string };
 export type RegexCache = Map<string, CompiledRegex>;
 
-type ParseResult = { ok: true; block: ParsedBlock } | { ok: false; errors: Array<{ path: string; message: string }> };
-type ResolvedMatcher = { label: string; op: Operator; value: string };
-type ResolveResult =
-  | { ok: true; test: (labels: Labels) => boolean; equality?: Map<string, string>; resolved: ResolvedMatcher[] }
+export type ParseResult =
+  { ok: true; block: ParsedBlock } | { ok: false; errors: Array<{ path: string; message: string }> };
+export type ResolvedMatcher = { label: string; op: Operator; value: string };
+export type ResolveResult =
+  | {
+      ok: true;
+      test: (labels: Labels) => boolean;
+      /** A label-tuple prefilter only; always run test after lookup. */
+      equality?: Map<string, string>;
+      resolved: ResolvedMatcher[];
+    }
   | { ok: false; kind: 'missing-attr'; attr: string }
   | { ok: false; kind: 'matcher-error'; text: string; message: string };
 
@@ -139,29 +146,41 @@ function compileRegex(value: string): CompiledRegex {
       // Keep RE2 whitespace and dot semantics: https://github.com/google/re2/wiki/Syntax.
       if (escaped === 's') {
         rewritten += inClass ? '\\t\\n\\f\\r ' : '[\\t\\n\\f\\r ]';
-        continue;
-      }
-      if (escaped === 'S') {
+      } else if (escaped === 'S') {
         if (inClass) {
           return dialectError('\\S in a character class');
         }
         rewritten += '[^\\t\\n\\f\\r ]';
-        continue;
-      }
-      const code = escaped.charCodeAt(0);
-      const punctuation =
-        (code >= 33 && code <= 47) ||
-        (code >= 58 && code <= 64) ||
-        (code >= 91 && code <= 96) ||
-        (code >= 123 && code <= 126);
-      if (punctuation && !'^$\\.*+?()[]{}|/'.includes(escaped)) {
-        rewritten += `\\x${code.toString(16).padStart(2, '0')}`;
       } else {
-        rewritten += `\\${escaped}`;
+        const code = escaped.charCodeAt(0);
+        const punctuation =
+          (code >= 33 && code <= 47) ||
+          (code >= 58 && code <= 64) ||
+          (code >= 91 && code <= 96) ||
+          (code >= 123 && code <= 126);
+        if (punctuation && !'^$\\.*+?()[]{}|/'.includes(escaped)) {
+          rewritten += `\\x${code.toString(16).padStart(2, '0')}`;
+        } else {
+          rewritten += `\\${escaped}`;
+        }
+      }
+      if (
+        inClass &&
+        'sdDwW'.includes(escaped) &&
+        body[i + 1] === '-' &&
+        body[i + 2] !== ']' &&
+        body[i + 2] !== undefined
+      ) {
+        // RE2 treats a hyphen after a class escape as a literal.
+        rewritten += '\\x2d';
+        i++;
       }
       continue;
     }
-    if (char === '[') {
+    if (char === '[' && !inClass) {
+      if (body[i + 1] === ']' || (body[i + 1] === '^' && body[i + 2] === ']')) {
+        return dialectError('[]');
+      }
       inClass = true;
     } else if (char === ']') {
       inClass = false;
