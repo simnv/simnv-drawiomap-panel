@@ -2,10 +2,10 @@
 
 - Status: accepted 2026-10-28.
 - Request: the consumer team's owner, 2026-10-28. On a busy link the head of a half is about as wide as its stroke and
-  disappears into it, so the direction is hidden exactly when the load is high. Live example: the demo hand-drawn panel on their smoke sheet,
-  `edge-ab` a2b at 42 % of 100 Mb/s is drawn 5.36 units wide, and its head is invisible.
+  disappears into it, so the direction is hidden exactly when the load is high. Live example: the demo hand-drawn panel on
+  their smoke sheet, `edge-ab` a2b at 42 % of 100 Mb/s is drawn 5.36 units wide, and its head is invisible.
 - Scope: `src/render/overlay.ts` (the head, the stroke under it, the split), `src/render/linkLabels.ts` (the head
-  obstacle, the legs, the mask area), `src/render/paintStage.ts` (passes `linkWidth.max`), their tests,
+  obstacle, the split of the legs, the mask area), `src/render/paintStage.ts` (passes `linkWidth.max`), their tests,
   `tests/view.spec.ts`, `README.md`, `CHANGELOG.md`, `docs/acceptance.md`.
 - Reads: `docs/superpowers/specs/2026-10-25-link-value-labels-design.md` (the arrowheads are obstacles, read once per
   placement), `docs/superpowers/specs/2026-10-26-simplify-step5-patch-diff-design.md` (the overlay keeps its elements
@@ -23,8 +23,9 @@ as a short widening of the stroke, not as an arrow.
 1. The head size (its length and its base) is `headSize(w) = max(8, 4 + 2w)` for a half drawn `w` units wide, with
    `w` clamped to `linkWidth.max`. At `w ≤ 2` it is 8, as today. At the default range (2 to 10) the head is 8 to
    24 units, 4× to 2.4× the stroke; each wing stands `(w + 4) / 2 ≥ 3` units beyond the stroke edge.
-2. The stroke of a half stops at the middle of its head (`headSize / 2` before the tip). There the triangle is
-   `headSize / 2 = w / 2 + 1` units wide on each side of the path, wider than the stroke, so the tip stays sharp. For
+2. The stroke of a half stops at the middle of its head (`headSize / 2` before the tip). There each side of the
+   triangle stands `headSize / 4 = w / 2 + 1` units from the path, 1 unit beyond the stroke edge, so the tip stays
+   sharp. For
    a thin half (8-unit head, 2-unit stroke) the change is less than one pixel at the tip; the look stays.
    A one-way half trims only the end that holds its tip; a tip that stands back from the port (a bend near the
    port) keeps the full stroke, as today.
@@ -36,9 +37,10 @@ as a short widening of the stroke, not as an arrow.
    - The obstacle of a head is the box of the head at `linkWidth.max` (the same tip and direction, the size of the
      widest head), not the drawn polygon. The overlay keeps the reserved triangle of each head; the label module
      reads it through `reservedHead`.
-   - The white rect of the mask covers the legs of the link (the root polyline of the path) with the margin
-     `3 × max + 20`, not the current box of the overlay group. The group box changes when a head grows; the legs do
-     not, so the mask key and the mask stay across refreshes.
+   - The white rect of the mask covers the box of the edge path with the margin `3 × max + 20`, not the current box
+     of the overlay group. The group box changes when a head grows; the path box does not (a curve counts with its
+     bulge, as `getBBox` gives it), so the mask frame stays across refreshes. The black slots still follow the drawn
+     width, as before.
 4. A width change rewrites the `points` of the half and of its head in place (same elements, same mask). A change
    of colour, status or step only writes those attributes, as today.
 5. A new `linkWidth.max` rebuilds the overlay (the split moves) and places the labels again (already part of the
