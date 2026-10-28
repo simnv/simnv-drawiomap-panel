@@ -25,26 +25,21 @@ export interface HeadSize {
 
 /**
  * The arrow head of a half drawn `width` units wide (at most `maxWidth`). A thin half keeps the head of `ARROW_SIZE`.
- * Above, each unit of width adds 2 to the base and 1 to the length: the base stays at least twice the stroke (each
+ * Above, each unit of width adds 2 to the base and 0.5 to the length: the base stays at least twice the stroke (each
  * wing at least 3 units beyond the stroke edge), and the head takes little of a short half from its value label.
  */
 export function headSize(width: number, maxWidth: number): HeadSize {
   const extra = Math.max(0, Math.min(width, maxWidth) - THIN);
-  return { length: ARROW_SIZE + extra, base: ARROW_SIZE + 2 * extra };
+  return { length: ARROW_SIZE + extra / 2, base: ARROW_SIZE + 2 * extra };
 }
 
 /**
- * The free path that the split keeps to the bends on each side, in the units of the overlay: the longest head plus
- * `ARROW_SIZE`, so that two heads that meet stand clear of a corner. It reads `maxWidth`, not the drawn width, so a
+ * The free path that an arrow tip keeps to the bends on each side, in the units of the overlay: the longest head, at
+ * least `2 × ARROW_SIZE` (the clearance before the heads grew, so a link up to `maxWidth` 10 keeps its split and a
+ * one-way tip stays at a port behind the usual 20-unit draw.io jetty). It reads `maxWidth`, not the drawn width, so a
  * width change on a refresh never moves a tip.
  */
-const splitClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length + ARROW_SIZE;
-
-/**
- * The free path that the tip of a one-way half keeps to the bends: the longest head only (16 at `maxWidth` 10, as the
- * old fixed `2 × ARROW_SIZE`), so a tip stays at a port behind the usual 20-unit draw.io jetty.
- */
-const portClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length;
+const tipClearance = (maxWidth: number) => Math.max(2 * ARROW_SIZE, headSize(maxWidth, maxWidth).length);
 
 /**
  * The arc length (in the units of `geo.length`) where the two halves of a link meet: the middle of the path, moved
@@ -52,7 +47,7 @@ const portClearance = (maxWidth: number) => headSize(maxWidth, maxWidth).length;
  * the same split.
  */
 export function linkSplit(geo: PathGeom, maxWidth: number): number {
-  return arrowAnchor(geo.bends, geo.length, geo.length / 2, splitClearance(maxWidth) / geo.unit);
+  return arrowAnchor(geo.bends, geo.length, geo.length / 2, tipClearance(maxWidth) / geo.unit);
 }
 
 /**
@@ -197,7 +192,7 @@ function drawnHalves(patch: PlanCellPatch, theme: GrafanaTheme2): { a2b?: HalfSt
 }
 
 /** The triangle of a head of `size`, with its tip at arc length `place.tip`. */
-function headTriangle(place: HalfPlace, size: HeadSize): Point[] {
+function headTriangle(place: HalfPlace, size: HeadSize): [Point, Point, Point] {
   const tip = place.geo.pointAt(place.tip);
   const ang = place.forward ? tip.angle : tip.angle + Math.PI;
   const s = size.length;
@@ -225,14 +220,14 @@ function halfPoints(place: HalfPlace, width: number): { line: Point[]; head: Poi
 }
 
 /** The reserved head of each drawn head: the triangle at `maxWidth`, with the same tip and direction. */
-const reserved = new WeakMap<Element, Point[]>();
+const reserved = new WeakMap<Element, [Point, Point, Point]>();
 
 /**
  * The head at the widest width that the arrow head `arrow` can grow to, in the user space of the overlay layer (the
  * space of the polygon). The label placement reserves it, so a width change on a refresh never puts a head under a
  * label. Undefined for an element that the overlay did not draw.
  */
-export function reservedHead(arrow: Element): Point[] | undefined {
+export function reservedHead(arrow: Element): [Point, Point, Point] | undefined {
   return reserved.get(arrow);
 }
 
@@ -316,7 +311,7 @@ function drawLink(
   const id = entry.meta.id;
   const drawn: LinkDrawn = { layer, combo: comboOf(link) };
   // An arrow stands on one straight run, away from the bends: the widest triangle must not stick out past a corner.
-  const clear = portClearance(maxWidth) / geo.unit;
+  const clear = tipClearance(maxWidth) / geo.unit;
   const place = (from: number, to: number, tip: number, forward: boolean): HalfPlace => ({
     geo,
     from,

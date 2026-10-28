@@ -39,7 +39,7 @@ import {
   type Rect,
 } from './labelPlacement';
 import { alphaOf, maxBodyWidth, statusBorderWidth } from '../binding/color';
-import { fmt, linkSplit, OVERLAY_CLASS, reservedHead } from './overlay';
+import { fmt, headSize, linkSplit, OVERLAY_CLASS, reservedHead } from './overlay';
 import { readViewBox, viewScaleOf } from './zoom';
 
 /*
@@ -623,13 +623,14 @@ export function stageObstacles(
       rect(entry.group);
     }
   }
-  // the head of a half grows with its width: the obstacle is the head at linkWidth.max, so a refresh needs no new one
+  // the head of a half grows with its width: the obstacle is the triangle of the head at linkWidth.max (not its box:
+  // a label beside the stroke may stand next to the narrow end), so a refresh needs no new one
   root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => {
     const head = reservedHead(a);
     const m = head && toRoot(a, root);
-    const box = m ? aabbOf(head.map((p) => applyMatrix(m, p))) : undefined;
-    if (box) {
-      out.push({ kind: 'rect', rect: box, clearance: 0 });
+    if (head && m) {
+      const [tip, left, right] = head.map((p) => applyMatrix(m, p));
+      out.push({ kind: 'polygon', points: [tip, left, right] });
     } else {
       rect(a);
     }
@@ -675,13 +676,14 @@ function nearestOnPolyline(pts: Point[], p: Point): { at: number; point: Point }
   return { at: best.at, point: best.point };
 }
 
-const legOf = (id: string, points: Point[], strokeRoot: number, minRoot = strokeRoot): Leg => ({
+const legOf = (id: string, points: Point[], strokeRoot: number, minRoot: number, headRoot: number): Leg => ({
   id,
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
   strokeRoot,
   minRoot,
+  headRoot,
 });
 
 /**
@@ -707,6 +709,8 @@ function edgeLegs(
   }
   const strokeRoot = max * scaleOf(m);
   const minRoot = Math.min(min, max) * scaleOf(m);
+  // the base of the widest arrow head, through the same scale as the widest stroke
+  const headRoot = headSize(max, max).base * scaleOf(m);
   if (halves.a2b && halves.b2a) {
     // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
     // then the point in the path's own space, into root units through the same matrix as the vertices
@@ -714,13 +718,13 @@ function edgeLegs(
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
-      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot),
-      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot),
+      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot, headRoot),
+      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot, headRoot),
     };
   }
   return halves.a2b
-    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot) }
-    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot) };
+    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot, headRoot) }
+    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot, headRoot) };
 }
 
 /* ---------- the layer and its elements ---------- */
@@ -792,7 +796,15 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
 
 /** The corner radius of the cut a label on its stroke makes in the line. */
 const GAP_RADIUS = 2;
-const SIDE_NAMES = { '0': 'line', '1': 'top', '-1': 'bottom', '2': 'top-wide', '-2': 'bottom-wide' } as const;
+const SIDE_NAMES = {
+  '0': 'line',
+  '1': 'top',
+  '-1': 'bottom',
+  '2': 'top-wide',
+  '-2': 'bottom-wide',
+  '3': 'top-head',
+  '-3': 'bottom-head',
+} as const;
 function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   const el = ensureElement(layout, rec);
   el.setAttribute('data-dmap-side', SIDE_NAMES[placed.side]);

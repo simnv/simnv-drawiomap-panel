@@ -359,3 +359,40 @@ test('an HTML edge label (a 100% foreignObject) does not drop the labels and no 
     }
   }
 });
+
+test('a link too short for a spot beside its stroke keeps both labels beyond the wings of the widest heads', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const prom = await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' });
+  const datasource = { uid: prom.uid, type: prom.type };
+  // edge-ab of the hand-drawn diagram as a straight link of 36 units in the empty middle of the sheet
+  const shortSvg = handSvg.replace('M 120 30 L 220 30 L 220 60 L 320 60', 'M 200 110 L 236 110');
+  expect(shortSvg).not.toBe(handSvg);
+  const uid = await createDiagram(handDrawnConfig('W', 'percent'), {
+    panels: [{ config: handDrawnConfig('W', 'percent'), svg: shortSvg, title: 'labels short' }],
+    targets: demoTargets(datasource),
+    fieldConfig,
+    height: 12,
+    options: { linkWidth: { min: 2, max: 10 } },
+  });
+  const dashboardPage = await gotoDashboardPage({ uid });
+  const panel = (await dashboardPage.getPanelByTitle('labels short')).locator;
+  for (const half of ['a2b', 'b2a'] as const) {
+    await expect(label(panel, 'edge-ab', half)).toHaveAttribute('data-dmap-side', /^(top|bottom)-head$/);
+  }
+  // no label stands on a drawn arrow head of the link (the unit tests pin the reserved heads at linkWidth.max)
+  const placed = await boxes(panel.locator('text.dmap-link-label[data-dmap-cell="edge-ab"]'));
+  const heads = await boxes(panel.locator('polygon.dmap-arrow[data-dmap-cell="edge-ab"]'));
+  expect(placed).toHaveLength(2);
+  expect(heads).toHaveLength(2);
+  for (const box of placed) {
+    for (const head of heads) {
+      expect(intersects(box, head), JSON.stringify({ box, head })).toBe(false);
+    }
+  }
+  if (SHOTS) {
+    await panel.screenshot({ path: `${SHOTS}/link-labels-short-link.png` });
+  }
+});

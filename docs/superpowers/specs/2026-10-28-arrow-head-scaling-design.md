@@ -21,14 +21,15 @@ as a short widening of the stroke, not as an arrow.
 ## 2. Decisions
 
 1. For a half drawn `w` units wide (clamped to `linkWidth.max`), with `e = max(0, w − 2)`, the head has the base
-   `8 + 2e` and the length `8 + e`. At `w ≤ 2` it is 8 by 8, as today. At `w = 10` it is 24 wide and 16 long. The
-   base is 4× to 2.4× the stroke over the range 2 to 10; each wing stands `(w + 4) / 2 ≥ 3` units beyond the stroke
-   edge.
-   The length grows at half the rate of the base: the head takes path from the value label of its half (decision 3,
-   and `docs/superpowers/specs/2026-10-25-link-value-labels-design.md`),
-   and a short link would lose its label. A first version with a square head (`4 + 2w` long) dropped the a2b value
-   label of the 104-unit WAN link of the demo L3 sheet at `linkWidth.max` 10; the e2e `link-labels.spec.ts` caught it.
-   The flatter head of a wide half (half angle 37° at `w = 10`, 27° at `w ≤ 2`) is still a plain arrow.
+   `8 + 2e` and the length `8 + e / 2`. At `w ≤ 2` it is 8 by 8, as today. At `w = 10` it is 24 wide and 12 long
+   (a right angle at the tip). The base is 4× to 2.4× the stroke over the range 2 to 10; each wing stands
+   `(w + 4) / 2 ≥ 3` units beyond the stroke edge.
+   The length grows at a quarter of the rate of the base: along the path the head takes room from the value label of
+   its half (decision 3, and `docs/superpowers/specs/2026-10-25-link-value-labels-design.md`), and a short link
+   would lose its label or push it off the line. Two earlier versions were too long. A square head (`4 + 2w` long)
+   dropped the a2b value label of the 104-unit WAN link of the demo L3 sheet at `linkWidth.max` 10 (the e2e
+   `link-labels.spec.ts` caught it). A head `8 + e` long (16 at max 10) moved the on-stroke labels of four
+   129-px links of a consumer team sheet beside the stroke (their label probe caught it, revision 2 below).
 2. The stroke of a half stops at the middle of its head (half the head length before the tip). There each side of
    the triangle stands a quarter of the base, `w / 2 + 1`, from the path: 1 unit beyond the stroke edge, so the tip
    stays sharp. For a thin half (8-unit head, 2-unit stroke) the change is less than one pixel at the tip; the look
@@ -37,14 +38,21 @@ as a short widening of the stroke, not as an arrow.
    port) keeps the full stroke, as today.
 3. All geometry that the label placement reads is fixed for `linkWidth.max`, not for the drawn width, so a width
    change on a refresh moves no label:
-   - The split keeps the longest head plus 8 of free path to the bends on each side (today `2 × 8 = 16`; for
-     `max = 10` it is `16 + 8 = 24`), so two heads that meet stand clear of a corner. The tip of a one-way half keeps
-     the longest head only (16 for `max = 10`, as today), so a tip stays at a port behind the usual 20-unit draw.io
-     jetty. The triangle at the widest width never crosses a bend. `linkSplit` takes the max width, and the label
-     legs call it with the same value as the overlay.
-   - The obstacle of a head is the box of the head at `linkWidth.max` (the same tip and direction, the size of the
-     widest head), not the drawn polygon. The overlay keeps the reserved triangle of each head; the label module
-     reads it through `reservedHead`.
+   - The split and the tip of a one-way half keep the longest head to the bends, at least `2 × 8 = 16` (the
+     clearance before the heads grew). Up to `max = 10` the split and the tips stand where they stood; a tip stays
+     at a port behind the usual 20-unit draw.io jetty. The triangle at the widest width never crosses a bend.
+     `linkSplit` takes the max width, and the label legs call it with the same value as the overlay.
+   - The obstacle of a head is the triangle of the head at `linkWidth.max` (the same tip and direction, the size of
+     the widest head), not the drawn polygon and not its box: a convex `polygon` obstacle that the placement tests
+     with a separating-axis test against the turned label box. A label beside the stroke may stand next to the
+     narrow end of a head. The overlay keeps the reserved triangle of each head; the label module reads it through
+     `reservedHead`.
+   - A link so short that every spot beside its stroke meets a widest head (a 36-unit link of a consumer team
+     sheet: two "<1%" labels beside the stroke at the split) gets one more pair of sides, ±3
+     (`top-head`, `bottom-head`): the near edge of the box stands the wide gap beyond the wing of the widest head
+     (`headRoot = base(max)`). It is the last rung of the ladder of a label, after the bend spots (only a label whose
+     mate holds ±3 tries that side first), so within one link every label that has a place on the lower rungs keeps
+     it. A label on ±3 is an obstacle for the links placed after it, as a label on a bend spot is.
    - The white rect of the mask covers the box of the edge path with the margin `3 × max + 20`, not the current box
      of the overlay group. The group box changes when a head grows; the path box does not (a curve counts with its
      bulge, as `getBBox` gives it), so the mask frame stays across refreshes. The black slots still follow the drawn
@@ -56,7 +64,18 @@ as a short widening of the stroke, not as an arrow.
 6. The end dots and arrows that draw.io draws stay as drawn: their size is in the diagram, and the reservation
    reads them as obstacles as before.
 
-## 3. Out of scope
+## 3. Revision 2 (2026-10-28, the consumer team's label probe)
+
+The first push (`ceea077`) used a head `8 + e` long, a split clearance of the longest head plus 8 and the box of the
+head as the obstacle. On the consumer team's sheets it moved the labels of four short links off the line and dropped
+both labels of a 36-unit link. Revision 2 shortens the head (`8 + e / 2`), restores the clearance of 16, makes the
+obstacle the triangle and adds the sides ±3. A local replay of both sheets in jsdom (every link with two thin
+percent-labelled halves, `linkWidth` 2 to 10) gives the label places of the commit before the heads grew, except:
+the labels of those four links stay on the line one step (4 units) farther from the split, and the two labels of the 36-unit link
+stand beside the heads instead of at the wide gap beside the stroke (7 units farther out: the centre 22 off the
+line instead of 15).
+
+## 4. Out of scope
 
 - An option for the head size. The size follows the width; nothing to tune.
 - The `--ge-adaptive-bg` fallback of the sanitiser and the demo fixture fix (a separate change).
