@@ -6,10 +6,11 @@ import { reduceAcross } from '../query/reduce';
 import { equalityKey, indexSeries } from '../query/seriesIndex';
 import type { QuerySnapshot, Series } from '../query/snapshot';
 import type { BindContext, CapacitySource, CellIndex, CellMeta, HalfState, SeriesInfo, StatusV4Fields } from '../types';
+import { attrOf as cellAttrs } from './cellAttrs';
 import { capacityV4 } from './capacity';
 import { effectiveClass, type ResolvedClass } from './classes';
 import { noDataColor } from './color';
-import { edgeEnds, endAttr, type EndContext } from './edgeEnds';
+import { edgeEnds, type EndContext } from './edgeEnds';
 import { halfState } from './engine';
 import { cadenceOf, freshnessMs, staleCheck, type FreshnessPatch } from './freshness';
 import { linkFeeds } from './linkFeeds';
@@ -248,18 +249,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
     return endContext;
   };
-  const attrOf =
-    (meta: CellMeta) =>
-    (name: string): string | undefined => {
-      if (name.startsWith('from.') || name.startsWith('to.')) {
-        const dot = name.indexOf('.');
-        return endAttr(meta.id, name.slice(0, dot) as 'from' | 'to', name.slice(dot + 1), ends());
-      }
-      if (name === 'id') {
-        return meta.id;
-      }
-      return Object.hasOwn(meta.attrs, name) ? meta.attrs[name] : undefined;
-    };
+  const attrOf = cellAttrs(ends);
 
   const query = (refId: string): Query => {
     let found = queries.get(refId);
