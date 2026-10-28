@@ -35,6 +35,27 @@ it('sorts canonical label strings by code unit, then frame and field order', () 
   expect(series[2].field).toBe(frames[0].fields[1]);
 });
 
+it.each([false, true])('keeps distinct labels with the same canonical string separate, reversed=%s', (reversed) => {
+  const frames = [frame({ a: 'x', b: 'y' }, [0], [1]), frame({ 'a="x",b': 'y' }, [0], [9])];
+  if (reversed) {
+    frames.reverse();
+  }
+  const { series, report } = indexSeries(frames, 'rate');
+  expect(series).toHaveLength(2);
+  expect(series.map((s) => [s.labels, s.times, s.values])).toEqual(
+    frames.map((f) => [f.fields[1].labels, [0], f.fields[1].values])
+  );
+  expect(report).toEqual([]);
+});
+
+it('merges equal labels regardless of their key order', () => {
+  const frames = [frame({ a: 'x', b: 'y' }, [0], [1]), frame({ b: 'y', a: 'x' }, [60000], [9])];
+  expect(indexSeries(frames, 'rate')).toMatchObject({
+    series: [{ labels: { a: 'x', b: 'y' }, times: [0, 60000], values: [1, 9] }],
+    report: [],
+  });
+});
+
 it('uses only the first numeric field and reports many-fields once per refId', () => {
   const frames = [frame({ key: 'node-a' }), frame({ key: 'node-b' })];
   for (const f of frames) {

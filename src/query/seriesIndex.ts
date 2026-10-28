@@ -47,7 +47,12 @@ export function indexSeries(frames: DataFrame[], refId: string): { series: Serie
     const field = frame.fields[fieldIndex];
     const labels = field.labels ?? {};
     const canonical = canonicalLabels(labels);
-    const key = JSON.stringify([canonical, field.name]);
+    const key = JSON.stringify([
+      Object.keys(labels)
+        .sort()
+        .map((name) => [name, labels[name]]),
+      field.name,
+    ]);
     let entry = merged.get(key);
     if (!entry) {
       entry = {
