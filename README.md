@@ -209,18 +209,18 @@ A row of kind `combined` shows the two directions of one subject (a port, a link
 }
 ```
 
-| Key                  | Meaning                                                                                                                                                        |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `series`             | One or two entries. Each direction (`up`, `down`) can occur once. A `combined` row has `series`; a `history` row has `binding`.                              |
-| `series[].direction` | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).                                                    |
-| `series[].label`     | The text before the value. The default is `↑` or `↓`.                                                                                                          |
-| `series[].capacity`  | Optional. The capacity of this direction: a number in the unit of the values, or a template in bit/s. It comes before the row `capacity` for this direction.    |
-| `series[].capacityBinding` | Optional. A query binding whose latest value is the capacity of this direction, read through the unit of its field. It comes before `series[].capacity`. |
-| `capacity`           | Optional. A number in the unit of the values, or a template in bit/s (see below). For both directions. The default is the field config **Max** of each series. |
-| `capacityBinding`    | Optional. A query binding for the capacity of both directions, as `series[].capacityBinding`. It comes before the row `capacity`.                              |
-| `max`                | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.                                                      |
-| `height`             | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                                                                    |
-| `unit`, `url`        | As for other rows. `min` applies only to a row with one direction.                                                                                             |
+| Key                        | Meaning                                                                                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `series`                   | One or two entries. Each direction (`up`, `down`) can occur once. A `combined` row has `series`; a `history` row has `binding`.                                |
+| `series[].direction`       | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).                                                    |
+| `series[].label`           | The text before the value. The default is `↑` or `↓`.                                                                                                          |
+| `series[].capacity`        | Optional. The capacity of this direction: a number in the unit of the values, or a template in bit/s. It comes before the row `capacity` for this direction.   |
+| `series[].capacityBinding` | Optional. A query binding whose latest value is the capacity of this direction, read through the unit of its field. It comes before `series[].capacity`.       |
+| `capacity`                 | Optional. A number in the unit of the values, or a template in bit/s (see below). For both directions. The default is the field config **Max** of each series. |
+| `capacityBinding`          | Optional. A query binding for the capacity of both directions, as `series[].capacityBinding`. It comes before the row `capacity`.                              |
+| `max`                      | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.                                                      |
+| `height`                   | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                                                                    |
+| `unit`, `url`              | As for other rows. `min` applies only to a row with one direction.                                                                                             |
 
 With both directions, up is above a thin zero line and down is mirrored below it (drawn as negative values). The range is symmetric, from -M to M, so the zero line is in the middle. The two directions share one scale. A row with one direction stays positive and goes from 0 (or its `min`) to M.
 
@@ -333,19 +333,19 @@ Version 1 of the plugin bound cells with the `rules` option: a YAML list of rule
 
 The table gives the version 3 field of each rule field. `src/fixtures/demo-config.ts` is the version 3 form of the former demo rules.
 
-| Version 1 rule                                         | Version 3 pattern (`display`)                                                                                                                                        |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `select`                                               | `select`, unchanged (see [Cell selectors](#cell-selectors-select))                                                                                                   |
+| Version 1 rule                                         | Version 3 pattern (`display`)                                                                                                                                          |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `select`                                               | `select`, unchanged (see [Cell selectors](#cell-selectors-select))                                                                                                     |
 | `link.a2b`, `link.b2a` (`refId`, `match`)              | `link.a2b.binding`, `link.b2a.binding`: `{ queryId, match, reducer }`. The `queryId` names a query of the config; a panel query is `source: { kind: 'panel', refId }`. |
-| `link.capacity` as a series selector                   | `link.capacityBinding`                                                                                                                                               |
-| `link.capacity` as a number or a template              | `link.capacity`, unchanged                                                                                                                                           |
-| `link.card.title`                                      | `hover.title`                                                                                                                                                        |
-| `link.card.url` and the two direction rows             | one `hover.rows` row of kind `combined` with `series: [{ binding, direction: 'up' }, { binding, direction: 'down' }]`, its `capacity` and its `url`                  |
-| `shape.series`, `shape.target`, `shape.text`, `label`  | `shape.binding`, `shape.target`, `shape.text`, `label`. `fill: true` is `target: shape`; `stroke: true` is `target: stroke`.                                         |
-| `shape.card` rows (`title`, `unit`, `decimals`, `url`) | `hover.rows` value or history rows (`label`, `unit`, `url`). `decimals` has no equivalent.                                                                           |
-| `reducer`                                              | the `reducer` of each binding                                                                                                                                        |
-| `url`, `urlTitle`                                      | `url`, `urlTitle`, unchanged                                                                                                                                         |
-| `thresholds`, `shape.sparkline`                        | removed before version 2: the field config gives the colours, the hover card shows the histories                                                                     |
+| `link.capacity` as a series selector                   | `link.capacityBinding`                                                                                                                                                 |
+| `link.capacity` as a number or a template              | `link.capacity`, unchanged                                                                                                                                             |
+| `link.card.title`                                      | `hover.title`                                                                                                                                                          |
+| `link.card.url` and the two direction rows             | one `hover.rows` row of kind `combined` with `series: [{ binding, direction: 'up' }, { binding, direction: 'down' }]`, its `capacity` and its `url`                    |
+| `shape.series`, `shape.target`, `shape.text`, `label`  | `shape.binding`, `shape.target`, `shape.text`, `label`. `fill: true` is `target: shape`; `stroke: true` is `target: stroke`.                                           |
+| `shape.card` rows (`title`, `unit`, `decimals`, `url`) | `hover.rows` value or history rows (`label`, `unit`, `url`). `decimals` has no equivalent.                                                                             |
+| `reducer`                                              | the `reducer` of each binding                                                                                                                                          |
+| `url`, `urlTitle`                                      | `url`, `urlTitle`, unchanged                                                                                                                                           |
+| `thresholds`, `shape.sparkline`                        | removed before version 2: the field config gives the colours, the hover card shows the histories                                                                       |
 
 ### Cell selectors (`select`)
 
@@ -413,11 +413,11 @@ The overlay attribute `data-dmap-step` is the index of the active threshold step
 
 `display.shape` of a pattern binds a node to one series. With a `target` it colours the node by the value, with the field config of that series (value mappings, thresholds, Color scheme):
 
-| Key       | Meaning                                                                                                                                                                                     |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `binding` | The series: `{ queryId, match, field, reducer }`.                                                                                                                                           |
+| Key       | Meaning                                                                                                                                                                                                                                                                                        |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `binding` | The series: `{ queryId, match, field, reducer }`.                                                                                                                                                                                                                                              |
 | `target`  | What the colour changes: `icon`, `shape` (the fill of the whole shape) or `stroke` (the outline). Without `target` (or with `none`) the colour changes nothing: the value then feeds the card, the legend and `text` only. Without an icon, or with a bitmap icon, `icon` colours the outline. |
-| `text`    | `true` writes the value into the node label. The `label` template of the display formats it; the default is `${value}`. |
+| `text`    | `true` writes the value into the node label. The `label` template of the display formats it; the default is `${value}`.                                                                                                                                                                        |
 
 A missing series gives a grey "no data" state (and the text `no data` with `text`). A `label` template that does not resolve gives `unbound`. The health rule (`display.status`) is separate: it paints an abnormal device with a border and a tint in the colour of its state, over the shape colour (see [Status paint](#status-paint)).
 
@@ -511,12 +511,12 @@ In `display.link` of a pattern, each direction is an object: `a2b` goes from the
 }
 ```
 
-| Key                                        | Meaning                                                                                                                   |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `a2b.binding`, `b2a.binding`               | The value series of the direction. A direction without a binding shows nothing; an override may set only a capacity.      |
-| `a2b.capacity`, `b2a.capacity`             | A positive number in bit/s, or a template, for one direction.                                                             |
-| `a2b.capacityBinding`, `b2a.capacityBinding` | A query binding for one direction. It is read like `capacityBinding`: the field unit converts the value to bit/s.       |
-| `capacityBinding`, `capacity`              | Shared by both directions.                                                                                                |
+| Key                                          | Meaning                                                                                                              |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `a2b.binding`, `b2a.binding`                 | The value series of the direction. A direction without a binding shows nothing; an override may set only a capacity. |
+| `a2b.capacity`, `b2a.capacity`               | A positive number in bit/s, or a template, for one direction.                                                        |
+| `a2b.capacityBinding`, `b2a.capacityBinding` | A query binding for one direction. It is read like `capacityBinding`: the field unit converts the value to bit/s.    |
+| `capacityBinding`, `capacity`                | Shared by both directions.                                                                                           |
 
 The order for each direction is: its `capacityBinding`, its `capacity`, the link `capacityBinding`, the link `capacity`, the field **Max**, no percent. A source that fails (no data, not positive, not a number) falls to the next one and reports where, for example `unresolved-metadata` at `cells.<id>.link.a2b.capacity`. A later pattern or an override merges each direction field by field: it can replace a capacity and keep the binding of an earlier pattern. The legend title stays **Link load %**.
 
@@ -532,15 +532,15 @@ Each link half can show its load as a small text beside the stroke, in the middl
 { "select": { "kind": "link" }, "display": { "link": { "label": { "mode": "percent" } } } }
 ```
 
-| Mode      | Half with a capacity                   | Half without a capacity | No data, or an unavailable direction |
-| --------- | -------------------------------------- | ----------------------- | ------------------------------------ |
-| `percent` | the percent of its capacity, `41%`     | the value, `3.1 Mb/s`   | no label                             |
-| `value`   | the value in the unit of its field     | the value               | no label                             |
-| `none`    | no label (the default when absent)     | no label                | no label                             |
+| Mode      | Half with a capacity               | Half without a capacity | No data, or an unavailable direction |
+| --------- | ---------------------------------- | ----------------------- | ------------------------------------ |
+| `percent` | the percent of its capacity, `41%` | the value, `3.1 Mb/s`   | no label                             |
+| `value`   | the value in the unit of its field | the value               | no label                             |
+| `none`    | no label (the default when absent) | no label                | no label                             |
 
 `label` merges as one leaf, like `capacity`: a later pattern or an override replaces the mode, and an override with `{ "mode": "none" }` switches one link off. There is no panel option: a pattern that selects `{ "kind": "link" }` is the sheet-wide default, in the same document as the bindings. The bindings popup has the field **Link label** in the Link section.
 
-Placement: the label stands first on its own stroke, in the middle of its half. The stroke stops under the text: the panel cuts the stroke of the link (its halves and arrow heads) with an SVG mask, a hole as long as the text (plus 1.5 units on each end) and as wide as the drawn width plus 1 unit on each side. The cut shows whatever lies behind the stroke, so it needs no colour and it is the same in every theme; no box is drawn. When the stroke is not free on the whole half, the label stands beside it, with the near edge of its box 2 units beyond the stroke edge at its widest (`linkWidth.max`); a chip or a pill that is wider than the stroke can need 4 units, and the label takes 4 then. A label has a thin halo (1 unit outside the glyphs, behind them) in the background colour of the diagram: the computed `background-color` of the svg root, resolved for the colour scheme of the panel, else the canvas colour of the Grafana theme when the diagram has no background. The stroke of its own half is cut under it. The frame line of a group is not an obstacle: the halo keeps the text readable over it. The top side is the side the tops of the letters face: above a horizontal edge, to the left of a vertical one (the text reads bottom to top), and on a diagonal edge the side of the text top (the text is never upside down). Both halves of a link stand in one place: first both on their strokes, then both on the top side, then both on the bottom side, and only when no single place holds both, each half takes its own. A label moves along its half, away from the arrow heads first, when a node, a plain text cell, the text of an edge (its own value text or an edge label cell, also of the edge that the label belongs to), a port pill, a portograph label chip, an end dot, an arrow head, another edge (or a crossing run of its own edge) or another label is in its way; only the stroke of its own half is not in its way, never the text of its edge. As a last resort, a half that fits nowhere can stand beside a bend, with its centre on a straight run and the box over the end of the run, if the label is clearly nearer to its own stroke than to any other link. It is dropped when its half is too short or every spot is taken. Backgrounds are not in the way: the portograph canvas and groups (but the title text of a group or container is), and in a plain draw.io diagram a vertex whose body holds two or more other vertices (a container or a swimlane; a device with one badge inside stays in the way). The placement runs once per diagram: a data refresh changes the text only. A percent label keeps one slot from `<1%` to `>999%`; a value label can move when its text grows past a 4-unit step, and only that label moves.
+Placement: the label stands first on its own stroke, in the middle of its half. The stroke stops under the text: the panel cuts the stroke of the link (its halves and arrow heads) with an SVG mask, a hole as long as the text (plus 1.5 units on each end) and as wide as the drawn width plus 1 unit on each side. The cut shows whatever lies behind the stroke, so it needs no colour and it is the same in every theme; no box is drawn. When the stroke is not free on the whole half, the label stands beside it, with the near edge of its box 2 units beyond the stroke edge at its widest (`linkWidth.max`); a chip or a pill that is wider than the stroke can need 4 units, and the label takes 4 then. A label has a thin halo (1 unit outside the glyphs, behind them) in the background colour of the diagram: the computed `background-color` of the svg root, resolved for the colour scheme of the panel, else the canvas colour of the Grafana theme when the diagram has no background. The stroke of its own half is cut under it. The frame line of a group is not an obstacle: the halo keeps the text readable over it. The top side is the side the tops of the letters face: above a horizontal edge, to the left of a vertical one (the text reads bottom to top), and on a diagonal edge the side of the text top (the text is never upside down). Both halves of a link stand in one place: first both on their strokes, then both on the top side, then both on the bottom side, and only when no single place holds both, each half takes its own. A label moves along its half, away from the arrow heads first, when a node, a plain text cell, the text of an edge (its own value text or an edge label cell, also of the edge that the label belongs to), a port pill, a portograph label chip, an end dot, an arrow head (at the size it has at `linkWidth.max`, so a wider half on a refresh never grows its head under a label), another edge (or a crossing run of its own edge) or another label is in its way; only the stroke of its own half is not in its way, never the text of its edge. As a last resort, a half that fits nowhere can stand beside a bend, with its centre on a straight run and the box over the end of the run, if the label is clearly nearer to its own stroke than to any other link. It is dropped when its half is too short or every spot is taken. Backgrounds are not in the way: the portograph canvas and groups (but the title text of a group or container is), and in a plain draw.io diagram a vertex whose body holds two or more other vertices (a container or a swimlane; a device with one badge inside stays in the way). The placement runs once per diagram: a data refresh changes the text only. A percent label keeps one slot from `<1%` to `>999%`; a value label can move when its text grows past a 4-unit step, and only that label moves.
 
 On a phone or a small panel the labels hide when a glyph would be smaller than 7 CSS px (a 1900 px sheet fitted into a 390 px screen), and show again after a pinch. A **Minimum scale** of 1.3 or more shows them at load. A tap on a label opens the card of its link.
 
@@ -623,19 +623,19 @@ The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button
 
 In the **View** group of the panel options:
 
-| Option               | Meaning                                                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                       |
-| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                  |
-| Zoom: Original       | The diagram has its original size.                                                                                                                                              |
-| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                               |
-| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                  |
-| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally. |
-| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                 |
-| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                    |
-| Link width min, max  | The range of the link width in pixels. The width grows with the load.                                                                                                           |
-| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                    |
-| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                           |
+| Option               | Meaning                                                                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                                                                                  |
+| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                                                                             |
+| Zoom: Original       | The diagram has its original size.                                                                                                                                                                                                         |
+| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                                                                                          |
+| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                                                                             |
+| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally.                                                            |
+| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                                                                            |
+| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                                                                               |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load. The arrow head grows with the width: 8 by 8 units up to a 2-unit half; above, each unit of width adds 2 to its base and 1 to its length (24 wide and 16 long at 10). |
+| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                                                                               |
+| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                                                                                      |
 
 ### Live zoom
 

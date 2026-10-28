@@ -84,7 +84,7 @@ function render(root: SVGSVGElement, index: CellIndex, patches: PatchMap, o = op
   if (!root.getBoundingClientRect().width) {
     sized(root, 1);
   }
-  renderOverlay(root, index, patches, { theme: o.theme });
+  renderOverlay(root, index, patches, { theme: o.theme, maxWidth: o.linkWidth.max });
   return renderLinkLabels(root, index, patches, o);
 }
 
@@ -167,6 +167,24 @@ describe('renderLinkLabels: the refresh path', () => {
     b: Partial<HalfState> = {},
     mode: 'percent' | 'value' = 'percent'
   ): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(a), b2a: half(b), labelMode: mode })]]);
+  it('a half that gets wide grows its head on a refresh; no label moves and the mask keeps its frame', () => {
+    const { root, index } = build();
+    render(root, index, two({ width: 2 }, { width: 2 }));
+    const a = byHalf(root, 'a2b')!;
+    const before = [a.getAttribute('transform'), a.getAttribute('data-dmap-placed-at')];
+    const mask = maskOf(root)!;
+    const frame = () => ['x', 'y', 'width', 'height'].map((k) => mask.getAttribute(k));
+    const area = frame();
+    const head = root.querySelector('.dmap-arrow[data-dmap-half="a2b"]')!;
+    const thin = head.getAttribute('points');
+    expect(render(root, index, two({ width: 10 }, { width: 10 }))).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    expect(head.getAttribute('points')).not.toBe(thin);
+    expect(head.getAttribute('points')).toBe('200,100 184,88 184,112');
+    expect([a.getAttribute('transform'), a.getAttribute('data-dmap-placed-at')]).toEqual(before);
+    // the frame is the box of the edge path with the margin, not the box of the overlay that the wider head grew
+    expect(maskOf(root)).toBe(mask);
+    expect(frame()).toEqual(area);
+  });
   it('a second call with new values changes the texts only: same elements, same transforms, no stamp', () => {
     const { root, index } = build();
     render(root, index, two());
@@ -572,6 +590,20 @@ describe('renderLinkLabels: the cut follows its label', () => {
 });
 
 describe('renderLinkLabels: obstacles', () => {
+  it('the obstacle of an arrow head is the head of the widest half, also while the half is thin', () => {
+    const { root, index } = build();
+    const patches: PatchMap = new Map([
+      ['e1', linkPatch('e1', { a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
+    ]);
+    render(root, index, patches);
+    // the drawn heads are 8 by 8; the reserved ones 16 long and 24 wide (linkWidth.max 10), both tips at x = 200
+    expect(root.querySelector('.dmap-arrow[data-dmap-half="a2b"]')!.getAttribute('points')).toBe(
+      '200,100 192,96 192,104'
+    );
+    const rects = stageObstacles(root, index, patches, 10).flatMap((o) => (o.kind === 'rect' ? [o] : []));
+    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 184, y: 88, width: 16, height: 24 }, clearance: 0 });
+    expect(rects).toContainEqual({ kind: 'rect', rect: { x: 200, y: 88, width: 16, height: 24 }, clearance: 0 });
+  });
   it('a plain draw.io node is an obstacle: the label slides towards the end of the link', () => {
     const node = `<g data-cell-id="n3"><g><rect x="100" y="60" width="40" height="50"/></g></g>`;
     const { root, index } = build(SVG(node));
@@ -741,6 +773,12 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
     expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
   });
+  it('the short WAN link (104 units) keeps both value labels beside the reserved heads of the widest halves', () => {
+    const { root, index } = build(readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8'));
+    const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+    const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'value' })]]);
+    expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
+  });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
     const title = `<g data-cell-id="pg-groupTitle~wan"><g><rect x="100" y="60" width="40" height="50"/><text x="104" y="74">wan</text></g></g>`;
@@ -871,7 +909,7 @@ describe('renderLinkLabels: review cases', () => {
     it('a label whose box would leave the bounds of the diagram stays dropped', () => {
       const { root, index } = build(bend);
       sized(root, 1);
-      renderOverlay(root, index, one(), { theme });
+      renderOverlay(root, index, one(), { theme, maxWidth: opts.linkWidth.max });
       const bounds = { x: 0, y: 95, w: 400, h: 10 };
       expect(renderLinkLabels(root, index, one(), { ...opts, bounds })).toEqual({ placed: 0, dropped: 1, moved: 0 });
     });
@@ -1097,12 +1135,12 @@ describe('renderLinkLabels: coordinates', () => {
     Object.assign(index.get('e2')!.line!, { getScreenCTM: () => scale2 });
     const patches: PatchMap = new Map([['e1', linkPatch('e1', { a2b: half(), b2a: half(), labelMode: 'percent' })]]);
     expect(renderLinkLabels(root, index, patches, opts)).toEqual({ placed: 2, dropped: 0, moved: 0 });
-    // the split: the overlay moves it from the corner (path-local 100) to 84 on the first run, root x = 168 (not 184)
+    // the split: the overlay moves it from the corner (path-local 100) to 76 on the first run, root x = 152 (not 168)
     const a = byHalf(root, 'a2b')!;
-    expect(a.getAttribute('x')).toBe('84');
+    expect(a.getAttribute('x')).toBe('76');
     expect(a.getAttribute('y')).toBe('0');
     const b = byHalf(root, 'b2a')!;
-    expect(b.getAttribute('transform')).toBe('rotate(-90 200 96)');
+    expect(b.getAttribute('transform')).toBe('rotate(-90 200 64)');
     // a 3-unit stroke in the scaled group: a 6-unit stroke in root units, a 3-unit clearance
     const obstacles = stageObstacles(root, index, patches, 10);
     expect(obstacles).toContainEqual({
@@ -1115,7 +1153,7 @@ describe('renderLinkLabels: coordinates', () => {
     expect(obstacles).toContainEqual({
       kind: 'segment',
       a: { x: 0, y: 0 },
-      b: { x: 168, y: 0 },
+      b: { x: 152, y: 0 },
       clearance: 10,
       owner: 'e1',
       piece: { leg: 'e1:a2b', index: 0 },

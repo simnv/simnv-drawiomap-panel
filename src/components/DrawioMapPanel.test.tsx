@@ -2278,7 +2278,8 @@ describe('DrawioMapPanel bindings popup', () => {
       }
       count += observer.takeRecords().length;
       observer.disconnect();
-      expect(count).toBe(51);
+      // three width changes: each also rewrites the points of the half and of its head (the head grows with the width)
+      expect(count).toBe(57);
     });
 
     it('does no per-refresh work for the panel behind and renders the latest data once on close', async () => {
