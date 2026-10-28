@@ -21,7 +21,7 @@ import type { StatusView } from './status';
 import { NO_DATA_TEXT, statusOfUse, type StatusV4 } from './statusV4';
 import { resolveTemplateV4, type TemplateScopeV4 } from './template';
 import { defaultReduce } from './units';
-import { LINK_FIELDS, listUses, type Use } from './uses';
+import { fieldPath, LINK_FIELDS, listUses, type Use } from './uses';
 import { resolveTitleV4, resolveUrlV4 } from '../interact/links';
 
 /**
@@ -395,10 +395,14 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     });
   };
 
-  // 3.2 step 3: group the cells by `bind`
+  // 3.2 step 3: group the cells by `bind`. A cell with an invalid override does not bind, but its class has a cell.
   const cellsOf = new Map<string, CellMeta[]>();
+  const withCells = new Set<string>();
   for (const { meta } of index.values()) {
     const bind = meta.attrs.bind;
+    if (bind !== undefined) {
+      withCells.add(bind);
+    }
     if (parsed.invalidOverrides.has(meta.id)) {
       unavailable(meta, INVALID_BINDING);
     } else if (bind === undefined) {
@@ -423,7 +427,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
   }
   for (const [name, cls] of classes) {
-    if (!cls.abstract && !cellsOf.has(name)) {
+    if (!cls.abstract && !withCells.has(name)) {
       report.once({ kind: 'class-no-cells', cls: name });
     }
   }
@@ -526,9 +530,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     const cls = eff.name;
     const count = result.series.length;
     if (count === 0) {
-      if (use.kind !== 'capacity') {
-        report.cell({ kind: 'no-series', cls, use: use.path }, cellId);
-      }
+      report.cell({ kind: 'no-series', cls, use: use.path }, cellId);
       return;
     }
     if (count > 1 && use.kind !== 'status' && use.kind !== 'capacity') {
@@ -696,10 +698,9 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       text === undefined ? undefined : resolves(text, path) ? resolveTitleV4(text, scope, ctx.replaceVariables) : null;
     const url = (text: string, path: string): string | null =>
       resolves(text, path) ? resolveUrlV4(text, scope, ctx.replaceVariables) : null;
-    const at = `classes.${cls}`;
     if (eff.url !== undefined) {
-      const href = url(eff.url, `${at}.url`);
-      const label = title(eff.urlTitle, `${at}.urlTitle`);
+      const href = url(eff.url, fieldPath(eff, 'url'));
+      const label = title(eff.urlTitle, fieldPath(eff, 'urlTitle'));
       if (href !== null) {
         patch.urls.push(typeof label === 'string' ? { url: href, title: label } : { url: href });
       }

@@ -57,6 +57,46 @@ describe('listUses', () => {
     expect(extra).toMatchObject({ kind: 'row', path: 'overrides.n1.rows[0]', match: { key: 'name' } });
   });
 
+  it('an inherited scalar use has the path of the class that declares the field', () => {
+    const { classes } = classesOf({
+      version: 4,
+      classes: {
+        base: {
+          status: 'up',
+          text: { query: 'temp' },
+          chart: { kind: 'history', query: 'cpu' },
+          up: 'tx',
+          capacity: { a2b: 'up_speed', b2a: 'down_speed' },
+        },
+        port: { extends: 'base', match: { key: 'name' }, down: 'rx' },
+      },
+    });
+    const uses = listUses(edge({ bind: 'port', key: 'x' }), classes.get('port')!);
+    expect(uses.map((u) => [u.kind, u.path])).toEqual([
+      ['status', 'classes.base.status'],
+      ['text', 'classes.base.text'],
+      ['chart', 'classes.base.chart'],
+      ['up', 'classes.base.up'],
+      ['down', 'classes.port.down'],
+      ['capacity', 'classes.base.capacity.a2b'],
+      ['capacity', 'classes.base.capacity.b2a'],
+    ]);
+  });
+
+  it('an override scalar field has its overrides.<id>.<field> path', () => {
+    const { classes, parsed } = classesOf({
+      version: 4,
+      classes: { host: { match: { key: 'job' }, status: 'up', text: { query: 'temp' } } },
+      overrides: { n1: { status: 'extra' } },
+    });
+    const cls = effectiveClass(classes.get('host')!, parsed.config!.overrides.n1, 'n1');
+    const uses = listUses(node({ bind: 'host', key: 'a' }), cls);
+    expect(uses.map((u) => [u.kind, u.refId, u.path])).toEqual([
+      ['status', 'extra', 'overrides.n1.status'],
+      ['text', 'temp', 'classes.host.text'],
+    ]);
+  });
+
   it('a link class lists the up, down and capacity uses on an edge', () => {
     const { classes } = classesOf(netL2Pilot());
     const uses = listUses(edge({ bind: 'lan', name: 'sw-a', port: '3' }), classes.get('lan')!);

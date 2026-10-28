@@ -211,6 +211,24 @@ describe('bindV4: the report kinds of spec 4', () => {
     expect(entries(r.report, 'no-series')).toEqual([]);
   });
 
+  it('unknown-ref: the path is the field that declares the refId, in the override or the parent class', () => {
+    const r = run(
+      hostConfig(
+        { base: { status: 'gone' }, host: { extends: 'base', match: { key: 'job' } }, sw: HOST },
+        { b: { status: 'extra' } }
+      ),
+      [
+        ['a', { bind: 'host', key: 'a' }],
+        ['b', { bind: 'sw', key: 'b' }],
+      ],
+      [frame('up', { job: 'b' })]
+    );
+    expect(entries(r.report, 'unknown-ref')).toEqual([
+      { kind: 'unknown-ref', cls: 'host', path: 'classes.base.status', refId: 'gone' },
+      { kind: 'unknown-ref', cls: 'sw', path: 'overrides.b.status', refId: 'extra' },
+    ]);
+  });
+
   it('no-series: the cells whose use selects zero series of a ready query', () => {
     const r = run(
       hostConfig({ host: { ...HOST, missing: 'down' } }),
@@ -335,6 +353,27 @@ describe('bindV4: the report kinds of spec 4', () => {
     expect(patch(r, 'l').link?.a2b).toMatchObject({ capacity: 1e9, percent: 50, capacitySource: 'attr' });
   });
 
+  it('no-series: a capacity use per direction that selects zero series; the fallback to cap stays', () => {
+    const r = run(
+      hostConfig({ lan: { ...LINK, capacity: { a2b: 'up_speed', b2a: 'down_speed' } } }),
+      [link({ cap: '1G' })],
+      [
+        frame('tx', { name: 'sw-a' }, [5e8], { unit: 'bps' }),
+        frame('rx', { name: 'sw-a' }, [1e8], { unit: 'bps' }),
+        frame('up_speed', { name: 'sw-a' }, [2e9], { unit: 'bps' }),
+        frame('down_speed', { name: 'sw-b' }, [2e9], { unit: 'bps' }),
+      ]
+    );
+    expect(entries(r.report, 'no-series')).toEqual([
+      { kind: 'no-series', cls: 'lan', use: 'classes.lan.capacity.b2a', cellIds: ['l'] },
+    ]);
+    expect(entries(r.report, 'capacity-fallback')).toEqual([
+      { kind: 'capacity-fallback', cls: 'lan', reason: 'no series', cellIds: ['l'] },
+    ]);
+    expect(patch(r, 'l').link?.a2b).toMatchObject({ capacity: 2e9, capacitySource: 'series' });
+    expect(patch(r, 'l').link?.b2a).toMatchObject({ capacity: 1e9, capacitySource: 'attr' });
+  });
+
   it('bad-cap: a cap that does not parse gives no capacity', () => {
     const r = run(
       hostConfig({ lan: { match: { key: 'name' }, up: 'tx' } }),
@@ -410,6 +449,27 @@ describe('bindV4: the engine', () => {
     );
     expect(patch(r, 'a').statusView).toMatchObject({ state: 'missing', reason: 'Binding is not valid' });
     expect(patch(r, 'b').statusView).toMatchObject({ state: 'normal' });
+  });
+
+  it('a class whose only cell has an invalid override still has cells: no class-no-cells', () => {
+    const r = run(
+      hostConfig({ host: HOST }, { a: { status: 'up', colour: 'red' } }),
+      [['a', { bind: 'host', key: 'a' }]],
+      [frame('up', { job: 'a' })]
+    );
+    expect(patch(r, 'a').statusView).toMatchObject({ state: 'missing', reason: 'Binding is not valid' });
+    expect(entries(r.report, 'class-no-cells')).toEqual([]);
+  });
+
+  it('a template of an override field reports its override path', () => {
+    const r = run(
+      hostConfig({ host: HOST }, { a: { url: '/d/host?var-role=${role}' } }),
+      [['a', { bind: 'host', key: 'a' }]],
+      [frame('up', { job: 'a' })]
+    );
+    expect(entries(r.report, 'missing-attr')).toEqual([
+      { kind: 'missing-attr', cls: 'host', path: 'overrides.a.url', attr: 'role', cellIds: ['a'] },
+    ]);
   });
 
   it('an override that adds a query enters the series index (P1.5)', () => {
