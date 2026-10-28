@@ -7,6 +7,26 @@ draw.io 32.4.1. Stack: `docker compose` from this repository, started with
 Every result below is real output from this run. `npm run ci:local` passed end to end (exit 0): it runs the same steps as CI
 (`.woodpecker/build.yaml`, `.woodpecker/e2e.yaml`).
 
+## Binding model v4: bench
+
+P0-1, 2026-10-29. The v3 runtime source matches `main` at `a9967089e6d1f5b747f6b2a6cc0f06e64c0e34ff`.
+The fixture has 300 cells and 1000 distinct series, with one sample per series and seed 42.
+Each cell matches one series by `job`; 700 series have no cell.
+The fixture builder has no v3 type. `benchV3Config` adds one v3 pattern per cell.
+
+| Engine        | CPU model    | Runs per process | Process medians                 | Median of the three medians |
+| ------------- | ------------ | ---------------- | ------------------------------- | --------------------------- |
+| v3 `bindPlan` | Apple M5 Pro | 20               | 16.310 ms, 16.396 ms, 16.373 ms | **16.373 ms**               |
+
+Command, run three times: `npx vitest run src/binding/bind.v3.bench.test.ts --maxWorkers=1`.
+Each process passed: `Test Files 1 passed (1)`, `Tests 1 passed (1)`.
+The test checks the value of each cell after each measured pass.
+
+The timer covers `bindPlan` and the lazy v3 resolver in jsdom, with a new panel data identity per refresh.
+It includes the frame copy, the frame index, series selection, value display and patch creation.
+Fixture creation, SVG indexing, pattern resolution, resolver creation and assertions are outside the timer.
+This is a unit bench. It does not measure browser paint or a dashboard refresh.
+
 ## E2E suites by Grafana version
 
 The Playwright projects are `matrix` (the tests on surfaces that differ between Grafana versions) and `plugin` (the plugin's own DOM).
