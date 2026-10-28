@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { staleStatuses, type PlanBindResult } from '../binding/engine';
 import { isPast } from '../binding/status';
 import type { FreshnessPolicy } from '../model/config';
+import type { FreshnessPatchMap } from '../binding/freshness';
 
 /** The largest delay a timer takes; a longer wait wakes up and sets the timer again. */
 const MAX_TIMER_MS = 2147483647;
@@ -69,4 +70,25 @@ export function useSampleStale(sampleAt: number | undefined, freshness?: Freshne
 export function useStaleStatus(result: PlanBindResult): PlanBindResult {
   const now = useClock(result.deadlines);
   return useMemo(() => staleStatuses(result, now), [result, now]);
+}
+
+/** Apply v4 status deadlines with the same clock as v3. Keep the bind patches unchanged. */
+export function useStaleStatusV4<S>(patches: FreshnessPatchMap<S>): FreshnessPatchMap<S> {
+  const deadlines = useMemo(
+    () => [...patches.values()].flatMap((patch) => (patch.staleStatusV4 ? [patch.staleStatusV4.after] : [])),
+    [patches]
+  );
+  const now = useClock(deadlines);
+  return useMemo(() => {
+    let shown = patches;
+    for (const [id, patch] of patches) {
+      if (patch.staleStatusV4 && isPast(patch.staleStatusV4.after, now)) {
+        if (shown === patches) {
+          shown = new Map(patches);
+        }
+        shown.set(id, { ...patch, statusV4: patch.staleStatusV4.status });
+      }
+    }
+    return shown;
+  }, [patches, now]);
 }
