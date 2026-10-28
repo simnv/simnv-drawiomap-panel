@@ -17,7 +17,8 @@ import type { UsePath } from '../binding/report';
 import { isPast } from '../binding/status';
 import { chartRowV4, staleDeadline, type CardContextV4, type CardRowV4 } from '../interact/cardModel';
 import type { ChartV4 } from '../model/v4';
-import { SparklineView } from './SparklineView';
+import { ChartHover } from './ChartHover';
+import { lineHistory, SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
 import { MirrorSparkline } from './MirrorSparkline';
 import { useClock } from './useSampleStale';
@@ -386,7 +387,9 @@ function ChartBody({
   height,
   timeRange,
   stale,
+  timeZone,
 }: {
+  timeZone?: string;
   row: CardRowV4;
   width: number;
   height: number;
@@ -398,16 +401,32 @@ function ChartBody({
   if (row.kind === 'history' && row.state === 'ready' && row.lines && row.domain) {
     const more = row.more ? `+${row.more} more` : '';
     return (
-      <SparklineView
-        chart={{ lines: row.lines, domain: row.domain }}
-        config={row.config}
-        width={width}
-        height={height}
+      <ChartHover
+        enabled
+        series={row.lines.map((l) => ({
+          name: l.label,
+          color: l.color,
+          history: lineHistory(l),
+          format: row.format,
+          noData: l.noData,
+        }))}
         timeRange={timeRange}
+        timeZone={timeZone}
+        width={width}
         label={row.title}
-        value={[row.text, more].filter(Boolean).join(' ')}
-        stale={stale}
-      />
+        more={row.more}
+      >
+        <SparklineView
+          chart={{ lines: row.lines, domain: row.domain }}
+          config={row.config}
+          width={width}
+          height={height}
+          timeRange={timeRange}
+          label={row.title}
+          value={[row.text, more].filter(Boolean).join(' ')}
+          stale={stale}
+        />
+      </ChartHover>
     );
   }
   if (row.kind === 'value' && row.display) {
@@ -431,14 +450,23 @@ function ChartBody({
           {row.title} <span data-testid="dmap-chart-value">{row.text}</span>
         </div>
         {hint}
-        <MirrorSparkline
-          directions={row.directions}
-          domain={row.domain}
-          width={width}
-          height={Math.max(1, height - TITLE_HEIGHT)}
+        <ChartHover
+          enabled
+          series={row.directions.map((d) => ({ name: d.label, color: d.color, history: d.history }))}
           timeRange={timeRange}
+          timeZone={timeZone}
+          width={width}
           label={row.title}
-        />
+        >
+          <MirrorSparkline
+            directions={row.directions}
+            domain={row.domain}
+            width={width}
+            height={Math.max(1, height - TITLE_HEIGHT)}
+            timeRange={timeRange}
+            label={row.title}
+          />
+        </ChartHover>
       </>
     );
   }
@@ -475,8 +503,19 @@ function RegionV4({ use, ...props }: ChartLayerProps & { use: ChartUse }) {
   const { width, height } = geometry.anchor;
   const stale = row.stale === true || (deadline !== undefined && isPast(deadline, now));
   return createPortal(
-    <div data-testid="dmap-chart" aria-label={row.title} style={regionStyle(theme, width, height)}>
-      <ChartBody row={row} width={width} height={height} timeRange={ctx.data.timeRange} stale={stale} />
+    <div
+      data-testid="dmap-chart"
+      aria-label={row.title}
+      style={{ ...regionStyle(theme, width, height), pointerEvents: 'auto' }}
+    >
+      <ChartBody
+        row={row}
+        width={width}
+        height={height}
+        timeRange={ctx.data.timeRange}
+        timeZone={ctx.data.request?.timezone}
+        stale={stale}
+      />
     </div>,
     portal
   );

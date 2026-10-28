@@ -465,10 +465,10 @@ export interface CardModelV4 {
 /** The inputs of the bind give the class of the cell (its freshness), the frames (the line labels) and the range. */
 export type CardContextV4 = CardContext & Pick<BindInputV4, 'index' | 'validated' | 'data'>;
 
-/** Line i takes colour i of the Grafana classic palette (spec 3.7). */
+/** Eight distinct hues from the Grafana classic palette, in stable line order. */
 function lineColor(theme: GrafanaTheme2, i: number): string {
   const palette = theme.visualization.palette;
-  return theme.visualization.getColorByName(palette[i % palette.length]);
+  return theme.visualization.getColorByName(palette[[0, 1, 2, 3, 4, 5, 26, 30][i % MAX_LINES] % palette.length]);
 }
 
 const hasValue = (values: ReadonlyArray<number | null>) => values.some((v) => v !== null && Number.isFinite(v));
@@ -681,7 +681,12 @@ function rowTitle(d: UseData, row: RowFields): string {
 /** The label of a line: the display name of the field (spec 3.7). */
 function lineLabel(d: UseData, s: Series): string {
   const frames = d.snapshot.state === 'ready' ? d.snapshot.frames : [];
-  return getFieldDisplayName(s.field, frames[s.frameIndex], frames);
+  const keys = Object.keys(s.labels)
+    .filter((key) => d.series.slice(0, MAX_LINES).some((other) => other.labels[key] !== s.labels[key]))
+    .sort();
+  return keys.length
+    ? `{${keys.map((key) => `${key}=${JSON.stringify(s.labels[key])}`).join(', ')}}`
+    : getFieldDisplayName(s.field, frames[s.frameIndex], frames);
 }
 
 function historyRowV4(
@@ -783,6 +788,34 @@ function updownRow(
   const row = (data[0].use.row ?? {}) as RowFields & { up?: string; down?: string };
   const feeds = linkFeeds(at, 'up', 'down');
   const byDirection = { [feeds.a2b]: data[0], [feeds.b2a]: data[1] } as Record<'up' | 'down', UseData>;
+  const allSeries = data.flatMap((d) => d.series);
+  const units = unitFactors(allSeries);
+  if ('mismatch' in units) {
+    return {
+      key,
+      kind: 'updown',
+      title: row.label ?? `${row.up ?? ''} / ${row.down ?? ''}`,
+      text: 'Mixed units',
+      state: 'unsupported',
+      ...stale,
+    };
+  }
+  let offset = 0;
+  for (const direction of ['up', 'down'] as const) {
+    const d = byDirection[direction];
+    offset = d === data[0] ? 0 : data[0].series.length;
+    byDirection[direction] = {
+      ...d,
+      series: d.series.map((s) => {
+        const factor = units.factors[offset++];
+        return {
+          ...s,
+          field: { ...s.field, config: { ...s.field.config, unit: units.unit }, display: undefined },
+          values: s.values.map((v) => (v === null ? null : v * factor)),
+        };
+      }),
+    };
+  }
   const halves = halfContext(ctx);
   const directions = (['up', 'down'] as const).map((direction): DirectionRowModel => {
     const d = byDirection[direction];

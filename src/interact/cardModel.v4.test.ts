@@ -23,7 +23,8 @@ import { buildCardV4, MAX_LINES, type CardContextV4, type HistoryRowV4 } from '.
 const theme = createTheme();
 const bindCtx = bindContextFor({ theme, replaceVariables: (s) => s, timeZone: 'utc', linkWidth: { min: 2, max: 10 } });
 const T = [0, 60_000, 120_000];
-const palette = (i: number) => theme.visualization.getColorByName(theme.visualization.palette[i]);
+const palette = (i: number) =>
+  theme.visualization.getColorByName(theme.visualization.palette[[0, 1, 2, 3, 4, 5, 26, 30][i]]);
 
 type Cell = [id: string, attrs: Record<string, string>, isEdge?: boolean];
 
@@ -108,7 +109,7 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     expect(MAX_LINES).toBe(8);
     expect(row.lines).toHaveLength(8);
     expect(row.more).toBe(1);
-    expect(row.lines.map((l) => l.label)).toEqual(Array.from({ length: 8 }, (_, i) => `{job="ap-1", ssid="s${i}"}`));
+    expect(row.lines.map((l) => l.label)).toEqual(Array.from({ length: 8 }, (_, i) => `{ssid="s${i}"}`));
     expect(row.lines.map((l) => l.color)).toEqual(Array.from({ length: 8 }, (_, i) => palette(i)));
   });
 
@@ -129,16 +130,16 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     ];
     const row = historyRow(card(clients([{ kind: 'history', query: 'clients' }]), frames));
     expect(row.lines.map((l) => [l.label, l.color, l.noData])).toEqual([
-      ['{job="ap-1", ssid="a"}', palette(0), false],
-      ['{job="ap-1", ssid="b"}', palette(1), true],
-      ['{job="ap-1", ssid="c"}', palette(2), false],
+      ['{ssid="a"}', palette(0), false],
+      ['{ssid="b"}', palette(1), true],
+      ['{ssid="c"}', palette(2), false],
     ]);
     expect(lineTooltip(row, 120_000)).toEqual({
       time: 120_000,
       list: [
-        { label: '{job="ap-1", ssid="a"}', color: palette(0), value: '3' },
-        { label: '{job="ap-1", ssid="b"}', color: palette(1), value: 'No data' },
-        { label: '{job="ap-1", ssid="c"}', color: palette(2), value: '6' },
+        { label: '{ssid="a"}', color: palette(0), value: '3' },
+        { label: '{ssid="b"}', color: palette(1), value: 'No data' },
+        { label: '{ssid="c"}', color: palette(2), value: '6' },
       ],
       more: 0,
     });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CoreApp,
@@ -25,6 +25,17 @@ import { chartRowV4, type CardContextV4, type HistoryRowV4 } from '../interact/c
 const { sparkline } = vi.hoisted(() => ({ sparkline: vi.fn((_props: any) => <canvas data-testid="sparkline" />) }));
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
+  useStyles2: (fn: any) => fn(createTheme()),
+  Portal: ({ children }: any) => <div>{children}</div>,
+  SeriesTable: ({ series }: any) => (
+    <div>
+      {series.map((s: any, i: number) => (
+        <p key={i} data-testid="hover-row">
+          {s.label}={s.value}
+        </p>
+      ))}
+    </div>
+  ),
   Sparkline: sparkline,
   BarGauge: (props: { field: { min?: number; max?: number }; value: { numeric: number; text: string } }) => (
     <div data-testid="bar-props">
@@ -36,7 +47,8 @@ vi.mock('@grafana/ui', () => ({
 const theme = createTheme();
 const bindCtx = bindContextFor({ theme, replaceVariables: (s) => s, timeZone: 'utc', linkWidth: { min: 2, max: 10 } });
 const T = [0, 60_000, 120_000];
-const palette = (i: number) => theme.visualization.getColorByName(theme.visualization.palette[i]);
+const palette = (i: number) =>
+  theme.visualization.getColorByName(theme.visualization.palette[[0, 1, 2, 3, 4, 5, 26, 30][i]]);
 const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 
 function frame(
@@ -69,7 +81,7 @@ function panelData(series: DataFrame[], refIds: string[], state = LoadingState.D
     app: CoreApp.Dashboard,
     startTime: 120_000,
     range: timeRange,
-    timezone: 'utc',
+    timezone: 'browser',
     scopedVars: {},
     interval: '1m',
     intervalMs: 60_000,
@@ -284,5 +296,90 @@ describe('the hover sample of a chart region', () => {
     expect(tip.list.map((r) => r.value)).toEqual(['1', 'No data', '3', '4', '5', '6', '7', '8']);
     expect(tip.list.map((r) => r.color)).toEqual(row.lines.map((l) => l.color));
     expect(tip.more).toBe(1);
+  });
+});
+
+describe('review regressions', () => {
+  it('opens the rendered region tooltip with eight rows, no data and more', () => {
+    const frames = cpuFrames(9);
+    frames[1] = frame('cpu', { job: 'ap-1', core: 'c1' }, [null, null, null]);
+    const s = setup({ chart: { kind: 'history', query: 'cpu' } }, frames);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const hover = screen.getByTestId('dmap-chart-hover');
+    expect((hover.closest('[data-testid="dmap-chart"]') as HTMLElement).style.pointerEvents).toBe('auto');
+    fireEvent.keyDown(hover, { key: 'ArrowRight' });
+    const tip = within(screen.getByTestId('dmap-chart-tooltip'));
+    expect(tip.getAllByTestId('hover-row').map((e) => e.textContent)).toEqual([
+      '{core="c0"}=2',
+      '{core="c1"}=No data',
+      '{core="c2"}=4',
+      '{core="c3"}=5',
+      '{core="c4"}=6',
+      '{core="c5"}=7',
+      '{core="c6"}=8',
+      '{core="c7"}=9',
+    ]);
+    expect(tip.getByText('+1 more')).toBeTruthy();
+  });
+
+  it('normalizes updown directions before plotting and opens their tooltip', () => {
+    const s = setup({ chart: { kind: 'updown', up: 'tx', down: 'rx' } }, [
+      frame('tx', { job: 'ap-1' }, [1, 1], { unit: 'Mbits' }),
+      frame('rx', { job: 'ap-1' }, [1000, 1000], { unit: 'Kbits' }),
+    ]);
+    const row = chartRowV4(s.charts[0], s.bound, s.ctx)!;
+    expect(row.directions!.map((d) => d.history.state === 'ready' && d.history.values)).toEqual([
+      [1, 1],
+      [1, 1],
+    ]);
+    expect(row.domain).toEqual([-1.1, 1.1]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    fireEvent.keyDown(screen.getByTestId('dmap-chart-hover'), { key: 'ArrowRight' });
+    expect(
+      within(screen.getByTestId('dmap-chart-tooltip'))
+        .getAllByTestId('hover-row')
+        .map((e) => e.textContent)
+    ).toEqual(['↑=1 Mb/s', '↓=1 Mb/s']);
+  });
+
+  it('shows and reports mixed units across updown directions', () => {
+    const s = setup({ chart: { kind: 'updown', up: 'tx', down: 'rx' } }, [
+      frame('tx', { job: 'ap-1' }, [1, 1], { unit: 'percent' }),
+      frame('rx', { job: 'ap-1' }, [2, 2], { unit: 'bps' }),
+    ]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    expect(screen.getByRole('status').textContent).toContain('Mixed units');
+    expect(s.bound.report.some((e) => e.kind === 'unit-mismatch')).toBe(true);
+  });
+
+  it('shows all-null history value and status in the secondary text colour', () => {
+    const s = setup({ chart: { kind: 'history', query: 'cpu' } }, [frame('cpu', { job: 'ap-1' }, [null, null])]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const expected = document.createElement('span');
+    expected.style.color = theme.colors.text.secondary;
+    for (const el of screen.getAllByText('No data')) {
+      expect(el.style.color).toBe(expected.style.color);
+    }
+  });
+
+  it('falls back to the display name when no label differs', () => {
+    const s = setup({ chart: { kind: 'history', query: 'cpu' } }, [
+      frame('cpu', { job: 'ap-1' }, [1, 2], { displayName: 'CPU usage' }),
+    ]);
+    expect((chartRowV4(s.charts[0], s.bound, s.ctx) as HistoryRowV4).lines[0].label).toBe('CPU usage');
+  });
+
+  it('uses eight distinct palette hue slots', () => {
+    const s = setup({ chart: { kind: 'history', query: 'cpu' } }, cpuFrames(9));
+    const row = chartRowV4(s.charts[0], s.bound, s.ctx) as HistoryRowV4;
+    expect(row.lines.map((l) => l.color)).toEqual(Array.from({ length: 8 }, (_, i) => palette(i)));
   });
 });

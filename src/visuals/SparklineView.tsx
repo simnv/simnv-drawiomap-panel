@@ -150,7 +150,7 @@ export function SparklineView(props: SparklineViewProps) {
       <div>
         {showValue ? (
           <>
-            {label} <span>{value}</span>
+            {label} <span style={!anyValue ? { color: theme.colors.text.secondary } : undefined}>{value}</span>
           </>
         ) : null}
       </div>
@@ -179,7 +179,9 @@ export function SparklineView(props: SparklineViewProps) {
           ))}
         </div>
       ) : (
-        <span role="status">{anyValue ? 'One sample' : NO_DATA_ROW}</span>
+        <span role="status" style={!anyValue ? { color: theme.colors.text.secondary } : undefined}>
+          {anyValue ? 'One sample' : NO_DATA_ROW}
+        </span>
       )}
     </div>
   );
@@ -197,5 +199,18 @@ function valueFieldOf(line: ChartLine, config: FieldConfig, min: number, max: nu
     config,
     values: line.values,
     state: { range: { min, max, delta: max - min } },
+  };
+}
+
+/** A prepared line as the history read by the shared chart tooltip. */
+export function lineHistory(line: ChartLine): HistoryModel {
+  return {
+    state: 'ready',
+    field: { name: line.label, type: FieldType.number, config: {}, values: line.values },
+    timeField: { name: 'Time', type: FieldType.time, config: {}, values: line.times },
+    timestamps: line.times,
+    values: line.values,
+    fetchedAt: 0,
+    fromCache: false,
   };
 }
