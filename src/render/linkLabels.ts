@@ -629,7 +629,8 @@ export function stageObstacles(
     const head = reservedHead(a);
     const m = head && toRoot(a, root);
     if (head && m) {
-      out.push({ kind: 'polygon', points: head.map((p) => applyMatrix(m, p)) });
+      const [tip, left, right] = head.map((p) => applyMatrix(m, p));
+      out.push({ kind: 'polygon', points: [tip, left, right] });
     } else {
       rect(a);
     }

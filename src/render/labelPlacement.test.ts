@@ -323,6 +323,26 @@ describe('placeHalfLabel: arrow heads', () => {
       placed(placeHalfLabel(leg(horizontal(0, 100)), 'e1', obstacleIndex([rect(20, -40, 40, 32)]), [1])).along
     ).not.toBe(50);
   });
+  it('a rect of no height (a line) across the anchor still blocks the box', () => {
+    // the top box at the middle spans x 37..63, y -19..-7: the line at y = -13 crosses it
+    expect(
+      placed(placeHalfLabel(leg(horizontal(0, 100)), 'e1', obstacleIndex([rect(45, -13, 10, 0)]), [1])).along
+    ).not.toBe(50);
+  });
+  it('a polygon collapsed to a point blocks the box that holds the point, and no other', () => {
+    const point = (x: number, y: number): Obstacle => ({
+      kind: 'polygon',
+      points: [
+        { x, y },
+        { x, y },
+        { x, y },
+      ],
+    });
+    expect(placed(placeHalfLabel(leg(horizontal(0, 100)), 'e1', obstacleIndex([point(50, -13)]), [1])).along).not.toBe(
+      50
+    );
+    expect(placed(placeHalfLabel(leg(horizontal(0, 100)), 'e1', obstacleIndex([point(50, -40)]), [1])).along).toBe(50);
+  });
   it('a short leg whose beside spots all meet the widest heads stands beyond their wings (side 3)', () => {
     // a leg of 18 to the split at x = 18, too short for a whole box: only the last resort (the bend spot) places it.
     // The heads at max are 12 long and 24 wide on both sides of the split.

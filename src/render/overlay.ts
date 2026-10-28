@@ -25,7 +25,7 @@ export interface HeadSize {
 
 /**
  * The arrow head of a half drawn `width` units wide (at most `maxWidth`). A thin half keeps the head of `ARROW_SIZE`.
- * Above, each unit of width adds 2 to the base and 1 to the length: the base stays at least twice the stroke (each
+ * Above, each unit of width adds 2 to the base and 0.5 to the length: the base stays at least twice the stroke (each
  * wing at least 3 units beyond the stroke edge), and the head takes little of a short half from its value label.
  */
 export function headSize(width: number, maxWidth: number): HeadSize {
@@ -192,7 +192,7 @@ function drawnHalves(patch: PlanCellPatch, theme: GrafanaTheme2): { a2b?: HalfSt
 }
 
 /** The triangle of a head of `size`, with its tip at arc length `place.tip`. */
-function headTriangle(place: HalfPlace, size: HeadSize): Point[] {
+function headTriangle(place: HalfPlace, size: HeadSize): [Point, Point, Point] {
   const tip = place.geo.pointAt(place.tip);
   const ang = place.forward ? tip.angle : tip.angle + Math.PI;
   const s = size.length;
@@ -220,14 +220,14 @@ function halfPoints(place: HalfPlace, width: number): { line: Point[]; head: Poi
 }
 
 /** The reserved head of each drawn head: the triangle at `maxWidth`, with the same tip and direction. */
-const reserved = new WeakMap<Element, Point[]>();
+const reserved = new WeakMap<Element, [Point, Point, Point]>();
 
 /**
  * The head at the widest width that the arrow head `arrow` can grow to, in the user space of the overlay layer (the
  * space of the polygon). The label placement reserves it, so a width change on a refresh never puts a head under a
  * label. Undefined for an element that the overlay did not draw.
  */
-export function reservedHead(arrow: Element): Point[] | undefined {
+export function reservedHead(arrow: Element): [Point, Point, Point] | undefined {
   return reserved.get(arrow);
 }
 

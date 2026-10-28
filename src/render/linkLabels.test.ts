@@ -807,6 +807,9 @@ describe('renderLinkLabels: backgrounds', () => {
       'top-head',
       'top-head',
     ]);
+    // left of the vertical link at x = 200: the wide gap (4) beyond the wing of the widest head (12) and half the box
+    // height (6, the 10-unit slot and the halo), 22 off the line
+    expect(byHalf(root, 'a2b')!.getAttribute('transform')).toMatch(/^rotate\(-90 178 /);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;

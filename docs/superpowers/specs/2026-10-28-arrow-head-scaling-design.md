@@ -50,8 +50,9 @@ as a short widening of the stroke, not as an arrow.
    - A link so short that every spot beside its stroke meets a widest head (a 36-unit link of a consumer team
      sheet: two "<1%" labels beside the stroke at the split) gets one more pair of sides, ±3
      (`top-head`, `bottom-head`): the near edge of the box stands the wide gap beyond the wing of the widest head
-     (`headRoot = base(max)`). It is the last rung of the ladder, so every label that has a place on the lower rungs
-     keeps it.
+     (`headRoot = base(max)`). It is the last rung of the ladder of a label, after the bend spots (only a label whose
+     mate holds ±3 tries that side first), so within one link every label that has a place on the lower rungs keeps
+     it. A label on ±3 is an obstacle for the links placed after it, as a label on a bend spot is.
    - The white rect of the mask covers the box of the edge path with the margin `3 × max + 20`, not the current box
      of the overlay group. The group box changes when a head grows; the path box does not (a curve counts with its
      bulge, as `getBBox` gives it), so the mask frame stays across refreshes. The black slots still follow the drawn
@@ -71,7 +72,8 @@ both labels of a 36-unit link. Revision 2 shortens the head (`8 + e / 2`), resto
 obstacle the triangle and adds the sides ±3. A local replay of both sheets in jsdom (every link with two thin
 percent-labelled halves, `linkWidth` 2 to 10) gives the label places of the commit before the heads grew, except:
 the labels of those four links stay on the line one step (4 units) farther from the split, and the two labels of the 36-unit link
-stand beside the heads (7 units farther out) instead of beside the stroke.
+stand beside the heads instead of at the wide gap beside the stroke (7 units farther out: the centre 22 off the
+line instead of 15).
 
 ## 4. Out of scope
 

@@ -50,8 +50,8 @@ export interface LegInput {
 export type Obstacle =
   /** a cell body, a pill, a chip, a dot, an arrowhead of draw.io, the room of a status marker or a placed label */
   | { kind: 'rect'; rect: Rect; clearance: number }
-  /** a convex polygon (the reserved arrowhead of an overlay half); no clearance */
-  | { kind: 'polygon'; points: Point[] }
+  /** a convex polygon (the reserved arrowhead of an overlay half: a triangle); no clearance */
+  | { kind: 'polygon'; points: [Point, Point, Point] }
   /** a piece of a drawn edge; `owner` is the cell id of the edge, `piece` its place in a leg polyline, when known */
   | { kind: 'segment'; a: Point; b: Point; clearance: number; owner: string; piece?: { leg: string; index: number } };
 
@@ -91,7 +91,10 @@ export interface Placed {
  */
 export type LabelSide = 0 | 1 | -1 | 2 | -2 | 3 | -3;
 export const LABEL_SIDES: readonly LabelSide[] = [0, 1, -1, 2, -2];
-/** The sides beyond the heads: tried after every other spot, the bend spots too, so no other label moves for them. */
+/**
+ * The sides beyond the heads: tried after every other spot of the label, the bend spots too (a label whose mate holds
+ * one of them tries that side first, as it does for any side of the mate).
+ */
 export const HEAD_SIDES: readonly LabelSide[] = [3, -3];
 
 /** The width the gap of a side counts from: the widest stroke, or for ±3 the base of the widest head. */
@@ -284,8 +287,13 @@ function overlapsConvex(corners: Point[], box: OrientedBox, polygon: Point[]): b
   for (const ax of axes) {
     const a = project(corners, ax);
     const b = project(polygon, ax);
-    // the normals of the polygon are not unit length: the tolerance scales with them
-    const eps = EPS * Math.hypot(ax.x, ax.y);
+    // the normals of the polygon are not unit length: the tolerance scales with them. A zero-length edge (a collapsed
+    // polygon) has no axis to separate on.
+    const length = Math.hypot(ax.x, ax.y);
+    if (length === 0) {
+      continue;
+    }
+    const eps = EPS * length;
     if (a.max <= b.min + eps || b.max <= a.min + eps) {
       return false;
     }
@@ -293,14 +301,32 @@ function overlapsConvex(corners: Point[], box: OrientedBox, polygon: Point[]): b
   return true;
 }
 
-/** The oriented box against an axis-aligned rect. Touching is free. */
+/**
+ * The oriented box against an axis-aligned rect: a separating-axis test on the four axes. Touching is free. A rect of
+ * no width or height (a line) is still tested on x and y, so it blocks a box that it crosses.
+ */
 function overlapsRect(corners: Point[], box: OrientedBox, rect: Rect): boolean {
-  return overlapsConvex(corners, box, [
+  const rc = [
     { x: rect.x, y: rect.y },
     { x: rect.x + rect.width, y: rect.y },
     { x: rect.x + rect.width, y: rect.y + rect.height },
     { x: rect.x, y: rect.y + rect.height },
-  ]);
+  ];
+  const r = (box.degrees * Math.PI) / 180;
+  const axes: Point[] = [
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: Math.cos(r), y: Math.sin(r) },
+    { x: -Math.sin(r), y: Math.cos(r) },
+  ];
+  for (const ax of axes) {
+    const a = project(corners, ax);
+    const b = project(rc, ax);
+    if (a.max <= b.min + EPS || b.max <= a.min + EPS) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** The distance from a point to the rect [−hw, hw] × [−hh, hh]; 0 inside. */
@@ -494,7 +520,8 @@ function placeOnRuns(
     });
   });
   for (const side of sides) {
-    // on the stroke there is nothing to try at a bend; beside the heads only when a head is wider than the stroke
+    // on the stroke there is nothing to try at a bend; beside the heads only for a leg that knows a head wider than
+    // its stroke
     if ((atBends && side === 0) || (Math.abs(side) === 3 && !((leg.headRoot ?? 0) > leg.strokeRoot))) {
       continue;
     }
