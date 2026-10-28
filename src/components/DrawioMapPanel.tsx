@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { PanelProps } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
@@ -19,11 +19,8 @@ import { useStage } from '../stage/useStage';
 import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
 import { useBoundDiagram, type BindGroups } from '../stage/useBoundDiagram';
-import { useHeld } from './useHeld';
 import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
 import { EMPTY_CONFIG, legacyRulesWarning } from '../model/config';
-import { currentAddress, subscribe, type PopupTarget } from '../editor/popup/popupBus';
-import { LazyBindingsPopup } from './LazyBindingsPopup';
 import { MAX_DATA_POINTS } from '../query/types';
 import { ChartLayer } from '../visuals/ChartLayer';
 import { bandLayout, StatusBand } from './StatusBand';
@@ -34,21 +31,6 @@ import { buildLegend } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
 import { bindSymbolLegend } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
-
-/** The address of the open edit session of this panel, or an empty string when the panel is not in panel edit. */
-function usePanelEditing(id: number) {
-  const subscribe = useCallback((notify: () => void) => {
-    const sub = locationService?.getLocationObservable().subscribe(notify);
-    return () => sub?.unsubscribe();
-  }, []);
-  // The snapshot holds the pathname too: the same panel id on another dashboard is another edit session.
-  const snapshot = useSyncExternalStore(
-    subscribe,
-    () => `${locationService?.getLocation().pathname ?? ''}\n${locationService?.getSearchObject().editPanel ?? ''}`
-  );
-  const [pathname, editPanel] = snapshot.split('\n');
-  return editPanel === String(id) ? `${pathname}\n${editPanel}` : '';
-}
 
 const styles = {
   // The status band and the stage stack: the band never covers the diagram.
@@ -65,8 +47,7 @@ const styles = {
     & > svg {
       display: block;
     }
-    /* Only the cells that open a card show the hand cursor. Grafana gives it to every role="button", and in panel
-       edit mode the binding editor makes every cell a role="button": the other cells take the parent cursor. */
+    /* Only cells that open a card show the hand cursor. Other cells keep the parent cursor. */
     & [data-cell-id][role='button']:not([${INTERACTIVE_ATTR}]) {
       cursor: inherit;
     }
@@ -98,41 +79,6 @@ const portalSheet = (card: React.ReactElement, sheet: boolean) =>
   sheet && typeof document !== 'undefined' ? createPortal(card, document.body) : card;
 
 export function DrawioMapPanel(props: PanelProps<Options>) {
-  const session = usePanelEditing(props.id);
-  const editing = session !== '';
-  const [popup, setPopup] = useState<PopupTarget | null>(null);
-  // The element that opened the popup gets the focus back on close. The chunk loader and the dialog mount later and
-  // would see another active element, so the panel records it at the click.
-  const opener = useRef<HTMLElement | null>(null);
-  const openPopup = useCallback((target: PopupTarget) => {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setPopup(target);
-  }, []);
-  // The popup lives as long as the edit session of this panel: leaving panel edit (navigation, "Back to dashboard",
-  // browser back) or unmounting drops it with its draft, also while its chunk still loads.
-  // A change of the address (another dashboard, another panel id) is a new session too: the draft is dropped.
-  const [wasSession, setWasSession] = useState(session);
-  if (wasSession !== session) {
-    setWasSession(session);
-    setPopup(null);
-  }
-  // The "Edit bindings" button of the options pane asks for the popup through the addressed bus.
-  useEffect(() => {
-    if (!editing) {
-      return;
-    }
-    return subscribe(currentAddress(), openPopup);
-    // The session is the address: a new one subscribes again.
-  }, [session, editing, openPopup]);
-  const closePopup = useCallback(() => {
-    setPopup(null);
-    const target = opener.current;
-    window.requestAnimationFrame(() => {
-      if (target?.isConnected) {
-        target.focus();
-      }
-    });
-  }, []);
   // The query session follows the panel on its dashboard: the panel editor, a lazy scroll and a layout change mount
   // a new component for the same panel, and it must not run every diagram query again.
   const querySession = `${locationService?.getLocation().pathname ?? ''}#${props.id}`;
@@ -147,63 +93,23 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
     >
       {/* Sandbox hosts do not provide a definite percentage-height containing block. */}
       <div style={{ width: props.width, height: props.height }}>
-        <PanelBody {...props} editing={editing} paused={!!popup} onOpenBindings={openPopup} />
+        <PanelBody {...props} />
       </div>
-      {editing && popup ? (
-        <LazyBindingsPopup
-          id={props.id}
-          target={popup}
-          options={props.options}
-          data={props.data}
-          timeZone={props.timeZone}
-          fieldConfig={props.fieldConfig}
-          replaceVariables={props.replaceVariables}
-          onOptionsChange={props.onOptionsChange}
-          onClose={closePopup}
-        />
-      ) : null}
     </PanelQueryProvider>
   );
 }
 
-interface BodyProps extends PanelProps<Options> {
-  /** The panel is open in the panel editor. */
-  editing: boolean;
-  /**
-   * The bindings popup is open: the view keeps its last render and does no per-refresh work. Each input is held
-   * apart (ref-based, no state write in render). The clock runs on: a freshness deadline still re-binds once.
-   */
-  paused: boolean;
-  onOpenBindings: (target: PopupTarget) => void;
-}
-
-/**
- * Reads the query context outside of the paused view: a new context (a refresh changes the request id or the time
- * range) renders only this small component, and the view gets the held service. The view never reads the context.
- */
-function PanelBody(props: BodyProps) {
-  const queryService = useHeld(useContext(PanelQueryContext), props.paused);
+function PanelBody(props: PanelProps<Options>) {
+  const queryService = useContext(PanelQueryContext);
   return <DrawioMapPanelView {...props} queryService={queryService} />;
 }
 
-interface ViewProps extends BodyProps {
-  /** The query service of the panel; held by the parent while the panel is paused. */
+interface ViewProps extends PanelProps<Options> {
   queryService: PanelQueryService | undefined;
 }
 
-/** While the popup is open and the panel is paused, a new props object of the dashboard does not render the view. */
-const bothPaused = (a: ViewProps, b: ViewProps) => a.paused && b.paused;
-
-const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewProps) {
-  const { id, editing, paused, onOpenBindings } = props;
-  const options = useHeld(props.options, paused);
-  const data = useHeld(props.data, paused);
-  const width = useHeld(props.width, paused);
-  const height = useHeld(props.height, paused);
-  const fieldConfig = useHeld(props.fieldConfig, paused);
-  const replaceVariables = useHeld(props.replaceVariables, paused);
-  const timeZone = useHeld(props.timeZone, paused);
-  const timeRange = useHeld(props.timeRange, paused);
+function DrawioMapPanelView(props: ViewProps) {
+  const { id, options, data, width, height, fieldConfig, replaceVariables, timeZone, timeRange } = props;
   const theme = useTheme2();
   const { queryService } = props;
   const opts = withDefaults(options);
@@ -215,7 +121,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
   const interactiveRef = useRef<Marked>();
-  const cards = useCardState(paused);
+  const cards = useCardState(false);
   const { card, dispatch, cardRef } = cards;
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -247,11 +153,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     setView(null);
   }
 
-  const openBindings = (target: PopupTarget) => {
-    dispatch({ type: 'close' });
-    onOpenBindings(target);
-  };
-
   const bindingContext = useMemo(
     () =>
       bindContextFor({
@@ -278,7 +179,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
     bindContext: bindingContext,
     format,
     openCellId: card?.cellId,
-    paused,
+    paused: false,
   });
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
@@ -338,8 +239,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   // symbol). They are not state: a hover writes the store, and only the highlight effect below reads it, so a hover
   // does not render the view.
   const [highlight] = useState(createHighlightStore);
-  // Opening the popup ends the legend highlight, and a hover behind the popup marks nothing, also after it closes.
-  useEffect(() => highlight.clear(), [paused, highlight]);
   const legendRef = useRef<HTMLElement>(null);
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
@@ -367,10 +266,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
       return;
     }
     const root = stage.root;
-    if (paused) {
-      const id = requestAnimationFrame(() => highlightCells(root, stage.index, [], null));
-      return () => cancelAnimationFrame(id);
-    }
     let frame: number | undefined;
     const paint = () => {
       if (frame !== undefined) {
@@ -394,7 +289,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         cancelAnimationFrame(frame);
       }
     };
-  }, [stage.root, stage.index, legendMembers, hasBlocks, result, highlight, paused]);
+  }, [stage.root, stage.index, legendMembers, hasBlocks, result, highlight]);
 
   // The legend rows of the diagram: a row with a symbol marks the nodes of that symbol.
   useEffect(
@@ -457,7 +352,7 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
-  const corners = legendCorners(band.height, cornerRowHeight(panZoom.zoomed || editing, warnings.length), width);
+  const corners = legendCorners(band.height, cornerRowHeight(panZoom.zoomed, warnings.length), width);
   // a saved corner that this version does not know
   const legendCorner: LegendCorner = corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
   const legend = legendOptions.show ? (
@@ -513,7 +408,6 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
           owner={`panel:${id}`}
           revision={`${viewKey}|${stageHeight}${JSON.stringify(view)}`}
           replaceVariables={replaceVariables}
-          paused={paused}
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
@@ -521,13 +415,8 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         ref={corner}
         bandHeight={band.height}
         zoomed={panZoom.zoomed}
-        editing={editing}
         warnings={warnings}
         onReset={resetView}
-        onWarnings={() =>
-          openBindings(result.diagnostics[0] ? { kind: 'problem', path: result.diagnostics[0].path } : { kind: 'none' })
-        }
-        onEditBindings={() => openBindings({ kind: 'none' })}
       />
       {legend}
       {open && model && card
@@ -555,4 +444,4 @@ const DrawioMapPanelView = React.memo(function DrawioMapPanelView(props: ViewPro
         : null}
     </div>
   );
-}, bothPaused);
+}
