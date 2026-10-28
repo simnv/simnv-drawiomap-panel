@@ -9,8 +9,8 @@ const schemaEntries = (entries: ReportEntry[] | undefined) => (entries ?? []).fi
 
 describe('parseConfig (S2.5)', () => {
   it.each([
-    ['net-l2-dm', netL2Pilot],
-    ['boiler-enclosure', boilerPilot],
+    ['demo-network', netL2Pilot],
+    ['demo-enclosure', boilerPilot],
   ])('parses the pilot %s with no report entry', (_name, pilot) => {
     const raw = pilot();
     const parsed = parseConfig(raw);

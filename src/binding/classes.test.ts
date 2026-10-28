@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { boilerPilot, netL2Pilot } from '../fixtures/pilots-v4';
-import { checkChains, parseConfig } from '../model/v4';
-import { effectiveClass, resolveClasses } from './classes';
+import { checkChains, parseConfig, OverrideV4 } from '../model/v4';
+import { effectiveClass, resolveClasses, ResolvedClass } from './classes';
 
 const resolve = (classes: Record<string, unknown>) => {
   const parsed = parseConfig({ version: 4, classes });
@@ -195,6 +195,12 @@ describe('resolveClasses (S2.3, S3.2 step 2)', () => {
 
 describe('effectiveClass (S2.3 overrides, D6)', () => {
   const lan = () => resolveClasses(parseConfig(netL2Pilot())).get('lan')!;
+
+  it('requires the cell ID in its public signature', () => {
+    expectTypeOf(effectiveClass).toEqualTypeOf<
+      (cls: ResolvedClass, override: OverrideV4 | undefined, cellId: string) => ResolvedClass
+    >();
+  });
 
   it('returns the class when there is no override', () => {
     expect(effectiveClass(lan(), undefined, 'c1')).toEqual(lan());

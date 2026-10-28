@@ -3,7 +3,7 @@
  * returns a new object, so a test can change its copy.
  */
 
-/** net-l2-dm: nodes, links, direction and capacity (spec 8.1). */
+/** demo-network: nodes, links, direction and capacity (spec 8.1). */
 export function netL2Pilot() {
   return {
     version: 4,
@@ -63,7 +63,7 @@ export function netL2Pilot() {
   };
 }
 
-/** boiler-enclosure: bound cells, key and port, text on the cell, N lines (spec 8.2). */
+/** demo-enclosure: bound cells, key and port, text on the cell, N lines (spec 8.2). */
 export function boilerPilot() {
   return {
     version: 4,
