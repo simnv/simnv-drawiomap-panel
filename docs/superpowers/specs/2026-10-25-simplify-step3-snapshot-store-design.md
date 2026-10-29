@@ -1,6 +1,6 @@
 # Simplify step 3: one snapshot store, a history cache, a cheaper card
 
-- Status: draft 2026-10-25, revised after two reviews (section 10) and the user decision on the card (keep uPlot,
+- Status: superseded by the binding model v4 (`2026-10-28-binding-model-v4-design.md`), 2026-10-29. Draft 2026-10-25, revised after two reviews (section 10) and the user decision on the card (keep uPlot,
   defer it). Design only; no code in this change.
 - Scope: a new `src/query/store.ts`, `src/query/frames.ts` (the history cache, O4), `src/binding/engine.ts`
   (`historySeries`), `src/binding/reduce.ts`, `src/query/panel.tsx` (the service gains the store),

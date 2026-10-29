@@ -10,7 +10,7 @@ Read this file when you review a diff. Each rule needs judgement. Mechanical rul
 
 ## One concept, one function
 
-- Each concept has one shared function. All callers use it. Examples: `yDomain` and `combinedTop` (`src/visuals/domain.ts`) for chart ranges; `resolveCapacity` and `inFieldUnit` (`src/binding/capacity.ts`) for every capacity, and `halfState` (`src/binding/engine.ts`) for the state of a link half and of a card direction. A diff that computes the same thing a second time inline is a finding.
+- Each concept has one shared function. All callers use it. Examples: `yDomain` and `combinedTop` (`src/visuals/domain.ts`) for chart ranges; `capacityV4` and `inFieldUnit` (`src/binding/capacity.ts`) for every capacity, and `halfState` (`src/binding/engine.ts`) for the state of a link half and of a card direction. A diff that computes the same thing a second time inline is a finding.
 - Binding, template, reduction and range logic is pure and has unit tests next to it. Components only show the result.
 
 ## State and data
@@ -38,5 +38,5 @@ Read this file when you review a diff. Each rule needs judgement. Mechanical rul
 
 ## Docs
 
-- A change to an option updates its README section in the same diff.
+- A change to an option updates its README section in the same diff. A change to a field of the config (`src/model/v4.ts`), to the matcher, to a template or to a report entry updates the README section "Bindings (v4)" in the same diff.
 - A change to a decision in the spec adds a row to the "Superseded decisions" table or an ADR.

@@ -7,8 +7,8 @@ A Grafana panel plugin (`simnv-drawiomap-panel`). It shows a draw.io diagram as 
 ## What it does
 
 - It colours each link by traffic, for each direction. Each half of the link has its colour and an arrow. The canvas shows no value labels.
-- Explicit health rules paint abnormal devices and links in the colour of their state (red, orange, grey); the hover card and the status band say the reason. A shape binding colours the node icon, the whole shape or its outline by the value, with the colours of the field config.
-- Configured hover values and histories load when the card opens. A click or tap pins the card. Explicit chart rectangles show selected trends or bounded bar gauges.
+- A cell gets its colour and its text from a status query, with the colours and the value mappings of the field config. The hover card and the status band say the reason. A healthy value can keep the drawn colour (`transparent`).
+- Classes in the panel options bind the cells to the panel queries: values and histories in the hover card (a click or tap pins it), and chart rectangles with trends or bar gauges.
 - The real draw.io editor opens in a modal.
 
 View mode loads no draw.io code. The panel stores the diagram XML and the SVG that draw.io exported. The panel shows the SVG and writes colours into it.
@@ -57,324 +57,345 @@ Open the panel editor and go to **Diagram**. There are three ways to add a diagr
 The panel uses these cell attributes to find cells:
 
 - Portograph diagrams use the `pg-*` attributes (`pg-id`, `pg-kind`, `pg-from`, `pg-to`). The contract is in `docs/research/portograph-contract.md`.
-- For a hand-drawn diagram, a cell has its draw.io `id` and its label text. See `handDrawnConfig` in `src/fixtures/demo-config.ts`.
+- For a hand-drawn diagram, a cell has its draw.io `id`, its label text and the attributes that you add (see [Cell attributes](#cell-attributes)). See `handDrawnConfigV4` in `src/fixtures/demo-config.ts`.
 
-Only page 1 of a multi-page diagram is shown. The panel shows a warning.
+Only page 1 of a multi-page diagram is shown, and only page 1 is bound. The panel shows a warning.
 
-## Bindings, queries and chart regions
+## Bindings (v4)
 
-Bindings are edited in the **bindings popup**, a large dialog of the panel editor. The popup is available only while the panel editor is open. The dashboard view has no editor code: it never loads the popup.
+A binding joins a cell of the diagram to the series of the panel queries. The config has **classes**. A class says what its cells show: a status, a text, hover rows, a chart, and for a link the two directions and the capacity. A cell joins a class with its attribute `bind`. Its other attributes (`key`, `port`, and so on) tell which series belong to the cell.
 
-Open it in one of three ways: the link button in the top-left corner of the panel (**Edit bindings**), the warning badge (it opens the first problem), or the **Edit bindings** button in the Diagram options. The popup has three panes. Drag the handles between them to resize; the sizes are kept for the next time.
+The config is version 4. This is the first panel version that reads it. A config of version 3 or older binds nothing (see [Old configs](#old-configs)).
 
-- **List** (left): **Filter bindings** matches a name, a cell ID or label, or a query ID. **Problems only** hides the rows without a problem. The groups are Problems, Patterns, Overrides, Widgets and Queries, each with a count. A row shows its selector kind, the queries it uses, the number of matched cells and the number of problems. Use the arrow at the start of a row to read its problems. Override and widget rows have a delete button with a confirmation; the deletion goes into the draft. The footer holds **Add named query**, **Add eager panel reference**, **Default datasource UID** and the portable patterns.
-- **Diagram** (centre): a live copy of the diagram with the draft bindings and the data of the panel. Pan and zoom as in the panel. Click an element to select it. **Shift**-click adds or removes elements, **Shift**-drag draws a selection box (see [Select several elements](#select-several-elements)). Pointing at a list row marks its cells.
-- **Inspector** (right): the selected element, pattern, override, chart region or query. For an element it starts with a live **Hover card preview**: the card that the panel shows for the element, built from the draft and the panel data. It updates on each data refresh and on each edit. An element without hover rows shows "No card for this element".
+The queries are the targets of the panel. A class names a target by its **refId** (`A`, `up`, `lan_tx`). The panel runs no query of its own.
 
-![The bindings popup with a selected element](docs/images/bindings-popup.png)
-
-Work in this order:
-
-1. Select an element in the diagram, or a row in the list. The inspector focuses its heading and shows identity, matching patterns and element overrides.
-2. Select **This element** or **All elements matching this pattern**. Use **Preview all pattern matches** to check every affected element and its shape, link, status, hover and chart bindings. Progress and per-match failures appear before Apply.
-3. Select a query row to edit it. Native datasource editors retain native targets; **Preview query** checks an individual query for the selected element. Other native parameter values remain unvalidated until **Preview all pattern matches**.
-4. Configure health, directional links and hover rows. Use explicit health mappings or opt-in thresholds. Zero traffic alone does not mean failure.
-5. Select a rectangle and choose **Assign chart region**. Choose a trend or a bar gauge with meaningful minimum and maximum bounds.
-6. Select **Apply** to keep the popup open, or **Apply and close**. Then save the Grafana dashboard. **Discard** restores the saved bindings and geometry in the open popup. **Cancel** closes the popup without an Apply. The buttons sit in the top row of the popup: **Undo** and **Redo** on the left; **Edit geometry in draw.io**, **Cancel**, **Discard**, **Apply** and **Apply and close** on the right. On a phone (a viewport narrower than 640 px or lower than 480 px) the popup is a full-screen sheet that respects the safe areas of the screen. The panes scroll inside the sheet and the buttons stay in view.
-
-The popup edits a draft. The panel behind it keeps the saved bindings and shows the draft only after Apply or, with Apply while the popup is open, only after the popup closes (see [The panel while the popup is open](#the-panel-while-the-popup-is-open)). Close the popup with **Cancel**, the close button or **Esc**. When the draft has changes, the popup asks **Discard changes?** first; choose **Discard and close** to drop the draft or **Keep editing**. **Esc** closes only the innermost layer: an open menu, a datasource dialog, the draw.io editor or the question. If another editor saves the panel while the popup is open, a warning appears and Apply stops. Choose **Overwrite** to save your draft, or **Reload saved** to start again from the saved bindings. Leaving the panel editor closes the popup and drops its draft.
-
-A warning icon marks a row with problems: an invalid config, an unknown query, an unresolved metadata template, no metric for a query, a pattern that matches no cell, and an override or chart whose cell no longer exists in the diagram. Each message shows the config path. An item that does not parse (an unknown key, a wrong type) is a **problem row**: it keeps its place in the list, matches nothing, and its inspector shows the problems and a delete button, not the form. The other items still apply. The panel shows the cells that a skipped pattern or override touched as **unavailable**: grey, with the reason in the status band and in the card, so a cell never shows a merge that nobody configured. A binding whose query is unknown, skipped or cannot run leaves its link direction grey ("unavailable"), its hover row unsupported and its chart region with the reason; the other direction and the other rows still bind. A shape or status binding that cannot run leaves the shape grey and puts the cell in the **missing** state with the reason. An unavailable cell stays grey also when an override disables it. A message for one cell is shown under the pattern or override whose value is the effective one after the merge. A problem of a named query is shown under every row that uses it. A problem with no owner row is shown in **General**; **Problems only** keeps it. A pattern ID that is used twice is flagged on every pattern with it. Select a row to open it. An override or widget selects its cell. A pattern selects its first matched cell with the scope **All elements matching this pattern**, so you can fix its selector. A row whose cell no longer exists only shows its problems; delete it or restore the cell. A panel with saved rules of version 1 shows a note above an empty list: the panel ignores them (see [Rules of version 1](#rules-of-version-1)).
-
-Draw.io owns geometry and stable cell IDs. The inspector owns queries, formatting, rules and chart behavior. **Edit geometry in draw.io** opens the editor on top of the popup; a save changes the diagram of the popup, and Apply commits it with the bindings. Deleted chart anchors remain diagnostic until repaired or explicitly removed. Duplicate physical IDs are rejected; copied semantic `pg-id` values must be repaired.
-
-**Export patterns** copies a versioned document with referenced queries, charts and overrides. **Preview pattern import** reports conflicts, datasource context and anchor applicability. Choose Replace or New identity explicitly. Import stages a draft; Apply activates it. Native datasource UIDs stay explicit across panels.
-
-The third demo panel, **Sanitized authoring topology**, has fictional repeated routers, a directional link and one standalone chart. Its Prometheus and TestData queries use synthetic data only.
-
-### Undo and redo
-
-The draft has a history. **Undo** and **Redo** in the toolbar, **Ctrl/Cmd+Z**, **Shift+Ctrl/Cmd+Z** and **Ctrl+Y** step through it. A step is one edit of the bindings, a query change, a deletion or a geometry save from draw.io. Typing in one field is one step; a pause of about one second, a selection of another element or an edit of another field starts a new step. In a text field, a text area and the datasource code editor, **Ctrl/Cmd+Z** keeps its normal meaning and undoes the typing there. With another dialog open (for example the Prometheus metrics explorer), the keys do nothing to the draft. **Apply** and **Discard** clear the history; the toolbar buttons and the keys then stop until the next edit. The history keeps the last 200 steps and the last 5 geometry saves.
-
-### Field sources
-
-Each field of the inspector shows where its effective value comes from (the controls of one metric binding, such as query, result field, reducer and matchers, share one chip on the metric section): **Pattern** and the pattern name, **Override** (the element override), or **Default** (nothing sets it). When the edited owner sets the value itself, a small button resets it: **Reset ... to pattern** for an element, **Reset ... to default** in the scope of a pattern. The reset removes the value from the override (or the pattern) so that the value of the pattern (or the default) applies again. An override that holds nothing any more is removed. Hover rows and the health rule are one unit each: a reset inside a hover row resets all **hover rows** at once, and a reset inside the health rule resets the whole **health rule**. The **Effective binding preview** shows the result.
-
-### Narrow screens
-
-Below 1000 px of popup width (a browser window narrower than about 1050 px) the three panes become the tabs **List**, **Diagram** and **Inspector**. One pane shows at a time. A click on an element in the diagram, or on a list row, opens the **Inspector** tab. The selection, the zoom of the diagram and the open editors stay when you change tabs.
-
-### Select several elements
-
-In the diagram, **Shift**-click an element to add it to the selection, or to remove it when it is selected. A click without **Shift** selects that element alone. The last element you pick is the primary one; it has a gap in its outline. With two or more elements selected, the inspector shows the heading "N elements" with the list of IDs, **Create pattern from selection** and **Bulk edit**. With one element left, it shows the sections of that element again.
-
-**Shift**-drag on the diagram (mouse or pen) draws a selection box. The box adds every element that it touches to the selection. A node counts with its ports and icon, a link counts with its label; the canvas, layers, groups and the legend never join. You can release the pointer outside the diagram: the box is cut to the diagram. **Esc** during the drag cancels the box and selects nothing; the popup stays open. The click that ends a drag does not select anything. A plain drag still pans, a touch drag always pans, and a **Shift**-click without a drag still toggles.
-
-### Create a pattern from a selection
-
-With two or more elements selected, **Create pattern from selection** proposes a selector that matches them. It builds three kinds of proposal and shows the best one in editable fields: **Proposed kind**, **Proposed element IDs**, **Proposed attributes** (one `key=value` per line) and **Proposed label regex**.
-
-- **Attributes**: the kind (when all elements share it) and the attributes that are equal in all selected elements. The identity attributes (`pg-id`, `id`, `label`, `pg-schema`) never count. The editor drops attributes one by one, the most common first, while the selector still matches no more extra elements.
-- **Label**: the kind and a label regex that starts with the common label prefix, when the prefix has three characters or more.
-- **Element IDs**: the selected IDs. It is the fallback and always comes last.
-
-A proposal that misses a selected element is dropped. The attribute and label proposals rank together by their extra elements, fewest first; on a tie the attributes come first. The IDs always come last, even when they match fewer extra elements. Switch with the **Proposal** buttons. The line "matches N, extra M, missed K" counts what the shown selector matches. On the diagram, an element that the selector matches without being selected has a dashed warning outline (`extra`), and a selected element that it misses has a double error outline (`missed`). Both update with each edit of the fields. **Create pattern** adds one pattern with an empty display, opens it in the pattern scope, and is one step for **Undo**. Edit the pattern like any other.
-
-### Bulk edit
-
-With two or more elements selected, **Bulk edit** shows the fields of the display with the values that all selected elements share (the effective values after patterns and overrides). A field where the elements differ is empty and carries the chip **Mixed**. A change writes only that field, as a leaf, to the override of each selected element. Nothing else changes: the other fields of an override stay, the fields that an element inherits from a pattern stay inherited (an element without an override gets one that holds the new field alone), and the pattern is not touched. Clearing a field removes it from the overrides. It cannot hide a value that an element inherits from a pattern.
-
-Hover rows, the health rule and each metric binding (query, result field, reducer and matchers) are one unit each. They are editable in bulk only when all selected elements have equal ones; then a change writes the whole unit to each override. When they differ, even in one matcher, the section shows **Mixed, edit per element** and no fields. A mixed field has a **Clear** button that removes the field from the override of every selected element; a mixed value that you leave alone is never written. **Remove overrides of the selection** removes the overrides of all selected elements. A bulk change, and the removal, are one step for **Undo**; typing into one field joins one step.
-
-### The panel while the popup is open
-
-While the popup is open, the panel behind it does no work for dashboard refreshes: it keeps its last picture, and it does not run its bindings again, draw its overlay again or read new data. The dashboard keeps running its own queries. **Apply** writes the options at once, but the panel shows them only when the popup closes. When the popup closes, the panel renders once with the latest data and options. A result that arrived for the panel's queries in the meantime shows then. A result of a query that you changed is dropped. The clock keeps running: when a sample passes its freshness limit while the popup is open, the status of the panel behind turns stale, because stale data must never look fresh. Opening the popup closes the pinned card and the legend highlight of the panel.
-
-### Delete a query
-
-Select a query row, then **Delete query**. The query pane also shows a table with the first 20 rows of the first frame of **Preview query**, and a **Used by** list of the patterns, overrides and charts that use the query; select an entry to open it. A query that is used asks **Delete query?** first. The bindings that use it stay and report an unknown query until you pick another. **Undo** brings the query back.
-
-### Demand, cache and sample freshness
-
-Saved visible bindings and displayed chart regions execute while the panel editor is open. The popup also runs its draft bindings for its own diagram; it shares equal requests with the panel through the panel cache. Edited native queries run for the popup stage only, never for the panel behind it. Full pattern and individual query previews request at the resolution of the card, so they share the requests of the popup's own bindings, and they release completed subscriptions. Their results use the existing entry, sample and byte limits; exhausted limits appear as failures. Edits, selection, import, Discard, Apply and dashboard context changes discard obsolete preview results. Full pattern preview never starts background refresh. Hover-only scalar values and histories request nothing before display. A reopening reuses the panel cache. A named eager panel reference still runs through Grafana's Queries tab. Convert it to a native definition and manually remove its eager copy there; keep the warning until removal is verified.
-
-Results are shared between identical requests only: the same query, element parameters, default datasource, dashboard context and pixel resolution. The panel keeps the results of its visible bindings, its open card and its chart regions in one store; each entry watches its own request, and the controller runs one request for identical entries. A hover row of the same query at the same element as a visible binding adds no request. A chart region whose query is also bound at another width is a second request; give the region the width of the card when the count matters. Saved updates reach the open card. Closing the card releases its entries. While a new result loads after a refresh or a zoom, an entry shows its last result as cached; a changed query under the same id shows loading, never the old result. Completed previews retain their one-shot report; saved charts still display later monitoring failures.
-
-The hover card renders in two steps: the texts and empty chart boxes of the final height first, the charts right after. A pinned card and the preview card of the popup have their charts at once.
-
-The cache is panel-local. Its key includes datasource, native target, element parameters, dashboard variables/range, generation and pixel resolution. A result is reused at any age while its generation is current: the key holds the frozen absolute range, so the same query would return the same data. A dashboard refresh, a time range change or a variable change starts a new generation and runs the active demand again. A generation is never reused: a return to an earlier variable value or range fetches again. The cache and the generation belong to the panel on its dashboard, not to one mount of the panel: when Grafana mounts the panel again (the panel editor, a lazy panel that scrolls back into view), the diagram queries do not run again. An unmounted panel keeps them for one minute. It retains at most 64 entries, 100,000 values and 8 MiB, evicting inactive least-recently-used entries. Execution admits four concurrent requests and 64 queued requests. One result is limited to 100,000 values and 8 MiB. Errors are not cached. Closing, switching or unmounting releases demand; obsolete results cannot replace the current card. Datasource cancellation does not guarantee cancellation of server work.
-
-Sample freshness is independent of cache age. Enable it with an expected cadence and a stale-after interval. Health, scalar hover rows and charts transition when sample age crosses that interval, even without another response. Missing, zero, down, stale and incomplete coverage have distinct explanations. No cadence is inferred from the chart step. Dashboard refresh/context changes refresh active demand; inactive cards do not refresh.
-
-### Sparkline Y range
-
-All sparklines use the same Y range: card rows and chart regions. A series without negative values starts at 0, so a small change on a flat series (for example PoE power) does not look like a big climb. The top is the largest value, the capacity, or 100 for the `percent` unit (1 for `percentunit`), whichever is largest. A series with negative values uses its own min and max. A combined up/down row has its own range rule, see [Combined up/down row](#combined-updown-row).
-
-Each bound uses the first source that has a value:
-
-1. `min` and `max` of the hover row or the chart region (numbers).
-2. **Min** and **Max** of the Grafana field config.
-3. The default above.
-
-The bounds are soft: the range always holds all values. To use the data range instead of the zero baseline, set `"min": "auto"`. The span is then at least 10% of the largest value, centred on the data:
-
-```json
-{
-  "kind": "history",
-  "label": "PoE power",
-  "binding": { "queryId": "poe", "match": { "port": "${cell.key}" }, "reducer": "last" },
-  "min": "auto"
-}
+```yaml
+version: 4
+freshness: 3x
+classes:
+  node-up:
+    match:
+      key: job
+    status: up
+    rows:
+      - kind: history
+        label: load 1m
+        query: load
+    url: /d/drawiomap-demo?var-job=${key}
+  lan-speed:
+    match:
+      key: job
+      port: device
+    up: lan_tx
+    down: lan_rx
+    capacity: speed
+    linkLabel: percent
+    rows:
+      - kind: updown
+        label: Traffic
+        up: lan_tx
+        down: lan_rx
+overrides:
+  pg-node~proxy-b:
+    match:
+      key: job="${key}-no-data"
 ```
 
-A chart region takes the same keys:
+A cell with `bind=node-up` and `key=node-rtr-a` shows the series of the target `up` that have the label `job="node-rtr-a"`. A link with `bind=lan-speed`, `key=node-rtr-a` and `port=br-lan` takes the series of the targets `lan_tx` and `lan_rx` that have `job="node-rtr-a"` and `device="br-lan"`. `src/fixtures/demo-config.ts` holds the full demo config; the demo dashboard uses it.
 
-```json
-{
-  "id": "poe-chart",
-  "anchorCellId": "chart-1",
-  "kind": "sparkline",
-  "label": "PoE power",
-  "binding": { "queryId": "poe", "match": {}, "reducer": "last" },
-  "min": "auto",
-  "max": 30
-}
-```
+### Edit the config
 
-The inspector has the fields **Hover row N minimum**, **Hover row N maximum** and **Chart minimum**. Type a number or `auto`.
+The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores the config as JSON in the dashboard. The editor shows the same data as YAML in a fixed key order.
 
-### Combined up/down row
+- A YAML comment is not kept. The editor writes the config from the data on each load.
+- An error shows as a marker on its line. A YAML syntax error and an error in the top level (`version`, `freshness`, `classes`, `overrides`) stop the save: the editor keeps your text and stores nothing. An error inside one class or one override does not stop the save. The panel shows the cells of that class or override as **unavailable**: grey, with the reason "Binding is not valid".
+- The editor loads in a separate chunk. View mode and the dashboard do not load the YAML parser.
+- The option `build` of the panel JSON is never read by the panel. A generator can write it. The editor keeps it.
 
-A row of kind `combined` shows the two directions of one subject (a port, a link) in one chart. It has a `series` list instead of a `binding`:
+### Cell attributes
 
-```json
-{
-  "kind": "combined",
-  "label": "Traffic",
-  "unit": "bps",
-  "capacity": 100000000,
-  "url": "/d/iface?var-device=${cell.key}",
-  "series": [
-    {
-      "binding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-      "direction": "up",
-      "label": "↑"
-    },
-    {
-      "binding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-      "direction": "down",
-      "label": "↓"
-    }
-  ]
-}
-```
+A cell has attributes: the `data-meta-*` attributes of the exported SVG, written by draw.io, or by portograph from the `meta` of a node. The panel reads page 1 only.
 
-| Key                        | Meaning                                                                                                                                                        |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `series`                   | One or two entries. Each direction (`up`, `down`) can occur once. A `combined` row has `series`; a `history` row has `binding`.                                |
-| `series[].direction`       | `up`: the traffic that leaves the subject (transmit, tx). `down`: the traffic that enters it (receive, rx).                                                    |
-| `series[].label`           | The text before the value. The default is `↑` or `↓`.                                                                                                          |
-| `series[].capacity`        | Optional. The capacity of this direction: a number in the unit of the values, or a template in bit/s. It comes before the row `capacity` for this direction.   |
-| `series[].capacityBinding` | Optional. A query binding whose latest value is the capacity of this direction, read through the unit of its field. It comes before `series[].capacity`.       |
-| `capacity`                 | Optional. A number in the unit of the values, or a template in bit/s (see below). For both directions. The default is the field config **Max** of each series. |
-| `capacityBinding`          | Optional. A query binding for the capacity of both directions, as `series[].capacityBinding`. It comes before the row `capacity`.                              |
-| `max`                      | The half range M (see below): `"auto"` (the default), `"capacity"` or a number in the unit of the values.                                                      |
-| `height`                   | Optional. The height of the chart in px, from 16 to 400. See [Chart height](#chart-height).                                                                    |
-| `unit`, `url`              | As for other rows. `min` applies only to a row with one direction.                                                                                             |
+| Attribute | Use                                                                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bind`    | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                              |
+| `key`     | The main identity of the cell, for example a host name or an interface name. The class `match` and the templates read it.                  |
+| `port`    | A second identity, for example the interface of a host. Use any other name for a third one.                                                |
+| `at`      | A link only. `at=target` tells that `key` and `port` name the target end of the link. Else they name the source end (see [Links](#links)). |
+| `cap`     | A link only. The capacity when the class has no `capacity` series: `1G`, or `50M/10M` for a→b/b→a (see [Capacity](#capacity)).             |
+| `id`      | The draw.io cell id. Read it as `${id}`.                                                                                                   |
+| `label`   | The label of the cell. Read it as `${label}`.                                                                                              |
+| other     | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                           |
 
-With both directions, up is above a thin zero line and down is mirrored below it (drawn as negative values). The range is symmetric, from -M to M, so the zero line is in the middle. The two directions share one scale. A row with one direction stays positive and goes from 0 (or its `min`) to M.
+The panel has no form for cell attributes in this version. Two ways set them:
 
-| `max`               | M                                                                                                                  |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `"auto"` or not set | The largest absolute value of the two directions over the time range × 1.1. The data fills about 90% of each half. |
-| `"capacity"`        | The capacity, or the largest absolute value when it is larger. Without a capacity, as `"auto"`.                    |
-| a number            | That number. A larger value still fits: M is then the largest absolute value.                                      |
+- The generator or the `meta` of the portograph source writes them.
+- You set them in draw.io with **Edit Data** (Ctrl+M) in the embedded editor: **Diagram → Open editor**, select the cell, press Ctrl+M, add the attribute, then **Save**.
 
-The capacity gives only the percent text and the colours; it does not change the range, unless `max` is `"capacity"`. Thus 12 Mb/s on a 1 Gb/s link fills the chart. When all values are 0, M is 1% of the capacity, or 1 when the capacity is not known.
+A dashboard that a generator wrote is **generator-owned**. The generator writes its classes, its overrides and its attributes again at each build. A hand edit of them in the panel is lost at the next deploy, unless the generator reads it back first (its `pull` step). Change a generated panel in the generator source.
 
-```json
-{ "kind": "combined", "label": "Traffic", "capacity": 1000000000, "max": "auto", "series": [] }
-{ "kind": "combined", "label": "Traffic", "capacity": 1000000000, "max": "capacity", "series": [] }
-{ "kind": "combined", "label": "Traffic", "max": 50000000, "series": [] }
-```
+**Page 1 only.** A diagram with several pages shows page 1, and v4 binds page 1 only. A cell on another page stays unbound. A diagram whose page is compressed gives no ends for ordinary links (`no-edge-ends`): open it in draw.io once and save it.
 
-In these examples, `series` is shortened; use the two entries of the example above.
+### Classes
 
-The value text shows both current values, formatted with the field display processor, and the capacity in the unit of the values, for example `↑ 10 Mb/s · 10% of 100 Mb/s  ↓ 41 Mb/s · 41% of 100 Mb/s`. The percent and the capacity show only when the capacity is known. Each direction has its own colour, from the field config and thresholds of its own value, as a link half. With a capacity, the threshold steps are percent. The arrows in the value text have the colour of their line. A direction without data shows `No data` and no line; the other direction stays. A click on the row opens its `url`.
+A class is a map. Every field is optional.
 
-#### Template capacity
+| Field        | Meaning                                                                                                                                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extends`    | The name of one parent class. See [Extends and overrides](#extends-and-overrides).                                                                                                                       |
+| `match`      | Which series belong to a cell: a map from a cell attribute to a series label. See [Match](#match). A class with no `match` is **abstract**: a base for other classes. A cell that binds it gets no data. |
+| `status`     | The refId whose value gives the colour and the text of the cell (see [Status, colour and text](#status-colour-and-text)).                                                                                |
+| `missing`    | `nodata` (the default, grey) or `down`. What a cell shows when the status query is ready and has no series for the cell.                                                                                 |
+| `text`       | `{ query, match, reduce, label, unit, decimals }`. Writes the formatted value on the cell. `query` is a refId.                                                                                           |
+| `rows`       | The rows of the hover card (see [Rows](#rows)).                                                                                                                                                          |
+| `chart`      | A chart in the box of the cell (see [Chart regions](#chart-regions)).                                                                                                                                    |
+| `freshness`  | When a result is stale: `5m`, or `3x` for three times the cadence of the query. The top-level `freshness` is the default; the panel default is `3x`.                                                     |
+| `url`        | The main link of the card. A template. `urlTitle` is its title.                                                                                                                                          |
+| `up`, `down` | A link only. The refIds of the transmit and the receive counter.                                                                                                                                         |
+| `capacity`   | A link only. A refId of the port speed, or `{ a2b, b2a }` for one refId for each direction.                                                                                                              |
+| `linkLabel`  | A link only. `none` (the default), `value` or `percent` (see [Link value labels](#link-value-labels)).                                                                                                   |
 
-The row `capacity` can be a template. It resolves against the cell scope when the card opens, so one pattern fits many links. The value is in bit/s and must resolve to a finite number above 0.
+`up`, `down`, `capacity` and `linkLabel` on a class whose cells are not links give one `unused-field` entry.
 
-```json
-{ "kind": "combined", "label": "Traffic", "capacity": "${cell.capacity_a2b_bps}", "max": "capacity", "series": [] }
-```
+### Extends and overrides
 
-On a port, use for example `"${cell.capacity_bps}"`. The panel converts the bit/s to the unit of the values (for example `Bps`), so the percent is correct. A number stays in the unit of the values.
+`extends` names one parent. The chain resolves from the root. `rows` append: the rows of the parent come first. Each other field replaces the field of the parent as a whole, so `match`, `chart` and `capacity` are each one field. A cycle, an unknown parent and a parent that is not valid make the class invalid, and the classes below it.
 
-The order for each direction is: its `series[].capacityBinding`, its `series[].capacity` (a number, or a resolved template), the row `capacityBinding`, the row `capacity`, the field config **Max** of its series, then no percent. It is the chain of a link half (`src/binding/capacity.ts`), the same code. A source that fails falls through to the next one and reports where: a template that does not resolve, or does not give a positive number, adds the diagnostic `unresolved-metadata` at `cells.<id>.hover.rows[<i>].capacity` (or `.series[<j>].capacity`), and the direction takes the next source. With `"max": "capacity"`, the range uses the resolved capacity, in the unit of the values. When it is not known, the range is as `"auto"`.
+`overrides` change one cell. The key is the draw.io cell id. An override has the fields of a class, except `extends`. It applies after the class chain, with the same rule: rows append and the other fields replace. Use it for the rare exception. An override for a cell id that the diagram does not have gives `unknown-override`. An invalid override makes its cell unavailable.
 
-#### Capacity of each direction
+An invalid class, and the classes below it, make their cells unavailable. The other classes bind as usual.
 
-An asymmetric link has one capacity for each direction. Set `capacity` on a `series` entry (a number, or a template in bit/s). The percent and the colour of each direction use its own capacity.
+### Match
 
-```json
-{
-  "kind": "combined",
-  "label": "Traffic",
-  "unit": "bps",
-  "max": "capacity",
-  "series": [
-    {
-      "binding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-      "direction": "up",
-      "capacity": "${cell.capacity_a2b_bps}"
-    },
-    {
-      "binding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-      "direction": "down",
-      "capacity": "${cell.capacity_b2a_bps}"
-    }
-  ]
-}
-```
+`match` is a map. The key is a **cell attribute**. The value says which series label must agree with it.
 
-For one direction, the order is: the `capacityBinding` and the `capacity` of the `series` entry, the row `capacityBinding` and `capacity`, the **Max** of its field config, no percent. A source that does not resolve reports its path and the direction takes the next source (see above). With `"max": "capacity"`, the half range is the larger of the two capacities. The legend title stays **Link load %**. The demo panel 3 has a link with the attributes `capacity_a2b_bps` (100 Mb/s) and `capacity_b2a_bps` (50 Mb/s), and its combined row uses them.
+| Form                                       | Meaning                                                                             |
+| ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `key: job`                                 | The series label `job` equals the attribute `key` of the cell.                      |
+| `key: instance=~"${key}:.*"`               | The label `instance` matches the regular expression `^(?:<value of key>:.*)$`.      |
+| `port: device`                             | A second pair: the label `device` equals the attribute `port`.                      |
+| `key: entity="switch.${key}_k${port}"`     | A template. It reads any attribute of the cell; each one that it reads is required. |
+| `key: [instance=~"${key}:.*", job="node"]` | A list. All matchers must pass.                                                     |
 
-#### Chart height
+A row, `text` and `chart` can have their own `match`. It replaces the `match` of the class as a whole; it does not add to it. A filter that does not depend on a cell belongs in the query, not in `match`.
 
-A chart with both directions is 80 px tall by default. Each half is 40 px tall, the same height as a single sparkline. A row with one direction is 40 px tall. With both directions, the zero line stays in the middle of the chart.
+In YAML flow style (`{…}`, `[…]`) a plain value cannot hold `{`, `}`, `[`, `]` or `,`. Write `match` in block style, as above, or in single quotes. The editor writes block style.
 
-Set `height` on a `display.hover.rows` row of kind `history` or `combined` to change the chart height. Use a number from 16 to 400, in pixels.
+#### The matcher contract
 
-Click or tap to pin the card before you scroll. The desktop card scrolls when its content exceeds the available panel height. In panels narrower than 480 px, the card becomes a bottom sheet. The sheet scrolls when its content exceeds 60% of the viewport height.
+The panel runs one matcher in these steps.
 
-```json
-{ "kind": "combined", "label": "Traffic", "capacity": 100000000, "height": 120, "series": [] }
-{ "kind": "history", "label": "CPU", "height": 64, "binding": { "queryId": "cpu", "match": {}, "reducer": "last" } }
-```
+1. **Parse.** The text is `<label>` or `<label><op>"<string>"`. `<label>` is `[A-Za-z_][A-Za-z0-9_]*`. `<op>` is `=`, `!=`, `=~` or `!~`. Only double quotes are allowed. Space around the parts is allowed. A text that does not parse is a `schema` entry.
+2. **Unescape.** The string uses the Go escapes of PromQL: `\\`, `\"`, `\n`, `\t`. Another backslash sequence is a `schema` entry. Thus `entity=~"\\d+"` gives the body `\d+`, and `"\d"` is an error, as in PromQL.
+3. **Find the placeholders.** A matcher reads `${name}`, `${from.name}` and `${to.name}`. Each one is a required attribute. `${labels.x}`, `${value}` and a dashboard variable (`${name:format}`) are a `schema` entry in a matcher. A matcher reads no dashboard variable: put such a filter in the query.
+4. **Required attributes.** The record keys and the placeholders are required. A cell that lacks one gets `missing-attr`, and that use selects no series for the cell. An empty value counts as present.
+5. **Substitute.** `=` and `!=` take the value as it is. `=~` and `!~` regex-escape it first. A quote or a backslash in a cell value cannot change the matcher.
+6. **Compile.** The regex dialect is the part of RE2 (PromQL) and JavaScript that means the same in both. The panel rejects, with `matcher-error`: `\A`, `\z`, `\Q…\E`, `\C`, `\p`, `\P`, `(?P<`, a flag group other than one leading `(?i)`, lookaround, and backreferences. A `\` and an ASCII punctuation character is that literal character (`\-`, `\_`, `\:`). Another unknown escape (for example `\y`) is a `matcher-error`. A regex is anchored: `^(?:…)$`. `.` does not match a line break.
+7. **Test.** The test reads the whole label value. An absent label is the empty string, as in PromQL: `job!="x"` and `job=""` pass on a series with no `job`; `job="x"` fails.
+8. **Combine.** All matchers of a block must pass.
 
-In the first example, replace the empty `series` with the two entries from the combined row example above. In the inspector, use **Hover row N height**. Clear the field to restore the default height.
+A block must read the cell: a bare matcher, or a placeholder. `match: {}` and `match: { key: job!="" }` are `schema` entries, because they select the same series for every cell.
 
-The third demo panel shows a combined row on its link (synthetic transmit and receive rate of `rtr-a:wan1`). The link has two capacities, 100 Mb/s up and 50 Mb/s down.
-
-### Status summary
-
-A band above the diagram has one row for each status cause: the state, the reason and the number of elements, for example `? missing   No data   26 elements`. Elements with the same state and reason share one row, also when each element has its own query. The most severe cause is first (down, critical, warning, stale, missing), then the cause with the most elements. Normal elements do not show in the band.
-
-The band has at most **Status summary rows** rows (default 3), and at most half of the panel height. When there are more causes, the last row is `+N more (M elements)` (with one row: `N causes (M elements)`). Click it to show all causes; **Show less** collapses the band again. The band takes its own height above the diagram, so it never covers the diagram. The diagram fits into the remaining height. Set **Status summary rows** to 0 to hide the band. The paint of the elements stays.
-
-### Status paint
-
-A status that is not `normal` paints its element. The colours come from the theme: `down` and `critical` are the palette red, `warning` and `stale` the palette orange, `missing` the grey of "no data". The status band and the colour legend use the same colours. A `normal` status changes nothing: the element keeps its binding colours.
-
-- A device gets a border in the status colour, 1.5 times the stroke width the shape had and at least 2 units (in the units of the shape, which are the root units of a draw.io export), and a light tint of its fill: the fill the shape shows now (the class fill, or the binding colour of a `shape` target), mixed with one fifth of the status colour. A fill that is not an opaque colour (none, a gradient, a transparent colour) keeps its fill; the border alone shows the status. The border wins over the outline of a `stroke` target. The icon keeps its colour.
-- A link takes the status colour on its stroke: both halves and their arrow heads, and the end dots, whatever the binding colours say. A link without a link binding gets the status colour on its drawn stroke. One exception: a `missing` status on a link with halves leaves the halves alone, because each half shows its own state (a half with no data is grey; the other keeps the colour of its value).
-- Limit: a link with no link binding (only a status) paints its stroke and end dots; the arrow heads that draw.io drew into the edge keep their colour. A device drawn as a bitmap (an `<image>`) gets the border only, as a rectangle around the image, and no tint.
-- Both themes: a theme change paints every element again. When the status goes back to `normal`, or the element leaves the bindings, the panel puts the drawn colours back.
-
-The hover card of a device or a link with a status that is not `normal` shows the state and its reason as its first row, for example `warning   probe delay ≥ 400 ms`, before the configured hover rows. The state word has a text-safe colour of its status (red for down and critical, orange for warning and stale, grey for missing; the theme text colours keep their contrast in both themes); the reason keeps the plain text colour. A `normal` status adds no row to a card that has hover rows. A card with no hover rows shows the `normal` row.
-
-### Supported query results and migration
-
-Finite Grafana data frames with one selected numeric series and one time field support histories. Null gaps retain their meaning. Empty, single-sample, failed and stale histories show text. Logs, traces, legacy datapoint objects, streaming/partial frames, ambiguous numeric fields and invalid timestamps receive validation messages. Direct queries do not automatically inherit Grafana panel transformations or field overrides; use returned field configuration or explicit inspector units.
-
-Only the installed Prometheus and TestData plugins in the [tested matrix](docs/research/authoring-compatibility.md) have browser evidence. Other datasource editors can require capabilities this panel does not supply. Without a supported editor, use validated native-target JSON import. This is not universal datasource compatibility.
-
-The plugin is unshipped. Recreate authoring configuration if a saved format cannot be migrated. The rules of version 1 are not read any more, see [Rules of version 1](#rules-of-version-1); a config of version 2 binds nothing, see [Configs of version 2](#configs-of-version-2). Back up dashboard JSON before conversion. Revert the implementation commits and restore that JSON for rollback; draw.io XML/SVG alone does not contain plugin behavior.
-
-### Configs of version 2
-
-The config shape is **version 3** since 2026-10-25. Before 1.0.0 there is no migration: a saved config with `"version": 2` loads, the diagram renders, the panel binds nothing and shows one warning, `This configuration has version 2, the shape before 1.0.0`. The bindings popup shows the same note above an empty list. Create the bindings again in **Edit bindings**, or regenerate the config with `"version": 3`. The changes from version 2: `link.a2bBinding` and `link.b2aBinding` became `link.a2b.binding` and `link.b2a.binding`; `link.capacityA2b`, `link.capacityB2a`, `link.capacityA2bBinding` and `link.capacityB2aBinding` became `link.a2b.capacity`, `link.b2a.capacity`, `link.a2b.capacityBinding` and `link.b2a.capacityBinding`; a `history` row with `series` became a `combined` row; a `capacity` is a positive number or a template (no `0`, no numeric string, no `"auto"`). Inside a version 3 document, an item with an old key does not parse: it is skipped with its diagnostics, the other items still apply.
-
-## Rules of version 1
-
-Version 1 of the plugin bound cells with the `rules` option: a YAML list of rules with `select`, `link`, `shape`, `card` and `url`. This option is removed. A dashboard that still has it loads: the panel ignores the rules, binds the config (`options.config`, see [Configs of version 2](#configs-of-version-2)) and shows one warning, `The panel ignores N rules of version 1`. The bindings popup shows the same note above an empty list. Create the bindings again in **Edit bindings**, then save the dashboard. The saved `rules` value stays in the dashboard JSON until you remove it. There is no migration on load.
-
-The table gives the version 3 field of each rule field. `src/fixtures/demo-config.ts` is the version 3 form of the former demo rules.
-
-| Version 1 rule                                         | Version 3 pattern (`display`)                                                                                                                                          |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `select`                                               | `select`, unchanged (see [Cell selectors](#cell-selectors-select))                                                                                                     |
-| `link.a2b`, `link.b2a` (`refId`, `match`)              | `link.a2b.binding`, `link.b2a.binding`: `{ queryId, match, reducer }`. The `queryId` names a query of the config; a panel query is `source: { kind: 'panel', refId }`. |
-| `link.capacity` as a series selector                   | `link.capacityBinding`                                                                                                                                                 |
-| `link.capacity` as a number or a template              | `link.capacity`, unchanged                                                                                                                                             |
-| `link.card.title`                                      | `hover.title`                                                                                                                                                          |
-| `link.card.url` and the two direction rows             | one `hover.rows` row of kind `combined` with `series: [{ binding, direction: 'up' }, { binding, direction: 'down' }]`, its `capacity` and its `url`                    |
-| `shape.series`, `shape.target`, `shape.text`, `label`  | `shape.binding`, `shape.target`, `shape.text`, `label`. `fill: true` is `target: shape`; `stroke: true` is `target: stroke`.                                           |
-| `shape.card` rows (`title`, `unit`, `decimals`, `url`) | `hover.rows` value or history rows (`label`, `unit`, `url`). `decimals` has no equivalent.                                                                             |
-| `reducer`                                              | the `reducer` of each binding                                                                                                                                          |
-| `url`, `urlTitle`                                      | `url`, `urlTitle`, unchanged                                                                                                                                           |
-| `thresholds`, `shape.sparkline`                        | removed before version 2: the field config gives the colours, the hover card shows the histories                                                                       |
-
-### Cell selectors (`select`)
-
-| Key       | Meaning                                                                        |
-| --------- | ------------------------------------------------------------------------------ |
-| `kind`    | `node`, `port`, `link`, `link-label`, `other` or `any`.                        |
-| `ids`     | A list of cell ids or `pg-id` values.                                          |
-| `attrs`   | A map of attribute name to matcher (the `data-meta-*` attributes of the cell). |
-| `label`   | A matcher for the label text.                                                  |
-| `between` | `[a, b]`. A link between two nodes, in any direction.                          |
-
-A matcher is an exact string, or a regular expression between slashes: `/^rtr-a:(wan1|wan3)$/`.
+When the result of a query has no label that names the cell, change the query so that it keeps one, for example `min by (entity) (…)`.
 
 ### Templates
 
-| Template                       | Value                                                                         |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| `${cell.<attr>}`               | Any attribute of the cell, for example `${cell.pg-id}` or `${cell.capacity}`. |
-| `${from.node}`, `${from.port}` | The first end of a link (from `pg-from`).                                     |
-| `${to.node}`, `${to.port}`     | The second end of a link (from `pg-to`).                                      |
-| `${labels.<name>}`             | A label of the matched series. Use it in `url`.                               |
-| `${value}`                     | The value, formatted with the unit and decimals of the field config.          |
-| `${cellTitle}`                 | The readable title of the cell (see [Hover card](#hover-card)).               |
+A template is the text of `url`, `urlTitle`, a `metadata` row and a `drilldown` row, and the string of a matcher. The scope:
 
-`${value}` is for `label`. Grafana dashboard variables also resolve in all URLs. If a template in a binding does not resolve, the cell has no data: it is grey and the panel shows a warning with the config path.
+| Placeholder                  | Value                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| `${name}`                    | The attribute `name` of the cell. `${id}` is the cell id. `${label}` is the attribute `label`. |
+| `${from.name}`, `${to.name}` | An attribute of the cell at that end of a link (see [Links](#links)).                          |
+| `${labels.name}`             | A label of the status series of the cell. Only when the status use selects exactly one series. |
+| `${value}`                   | The formatted status value. The same condition.                                                |
 
-A missing series gives a grey "no data" state. It is never green.
+`${name}` is always a cell attribute. There is no `cell.` prefix. A missing attribute is a `missing-attr` entry, never a dashboard variable: the item is not shown. `${labels.x}` and `${value}` with no series or many series give `template-unresolved`. A `${` that starts none of the forms here and no `${name:format}` is a `schema` entry in a URL, a `metadata` text and a `drilldown`. `${__name}` is a cell attribute; write `$__name` for a Grafana variable.
 
-Unit, decimals, value mappings and data links come from the Grafana field config.
+**Dashboard variables.** The panel does not substitute them. Grafana does (`replaceVariables`), and only in a URL and in a title (`urlTitle`, the label of a `drilldown`).
+
+| Form               | Meaning                                                                                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$name`, `$__name` | A dashboard variable, or a Grafana global variable.                                                                                                               |
+| `${name:format}`   | A dashboard variable with a Grafana format: `csv`, `pipe`, `regex`, `queryparam`, `percentencode`, `raw`, `text`, and so on. The panel does not check the format. |
+
+A `${name:format}` in a `metadata` text is a `schema` entry: a `metadata` text reads no dashboard variable.
+
+**The URL encoding.** For a URL the panel works in this order:
+
+1. It replaces each placeholder of the scope table with the value, encoded with `encodeURIComponent`. A `$` in a cell value is shielded, so `replaceVariables` does not expand an attribute that holds `${site}`.
+2. It writes each bare variable `$name` as `${name:percentencode}`. A name that starts with `__` stays as it is: `$__url_time_range` gives `from=…&to=…`, unencoded. A `${name:format}` keeps its format.
+3. `replaceVariables` runs. Then the panel removes the shield and checks the final text. A URL that is not relative and not `http` or `https` is not shown.
+
+Thus `/d/host?var-job=$job` with the value `a&var-site=b` gives `var-job=a%26var-site%3Db`. A multi-value variable in the bare form gives one encoded value, not several parameters; the exact text is the output of the Grafana format `percentencode`. To get repeated parameters write `/d/host?${job:queryparam}`: the result is `var-job=a&var-job=b`. A cell attribute `job` and the variable `job` do not clash: `${job}` is the attribute, `$job` and `${job:queryparam}` are the variable.
+
+### Status, colour and text
+
+`status` names a refId. The field config of that refId in the panel (thresholds, value mappings, colour scheme, unit) gives the colour and the text of the cell. The cell shows the **exact** colour and text of its series. A value mapping that maps `1` to the text `Offline` in magenta paints the cell magenta with the text `Offline`.
+
+- **Severity** decides only three things: the worst of N series, the status band and the legend. A mapping text `down` (any case) gives `down`. Else the colour name decides: `red*` is critical, `orange*` and `yellow*` are warning, the rest is normal. A hex colour goes to the nearest hue of the Grafana palette.
+- **Worst of N.** A cell with several series shows the worst by this rank: down, critical, warning, stale, missing, normal. At one rank, the first series in the [fixed order](#several-series) wins.
+- **Transparent.** A field config can map a value to the colour `transparent`. Then the panel paints nothing and the cell keeps its drawn colour. A generator writes `transparent` for each healthy value. A hand author can choose green.
+- **Text.** The hover card and the status band show the text. A cell without a value has the text `–`; its reason shows in place of it.
+
+The paint itself is in [Status paint](#status-paint).
+
+### Missing data
+
+The state of a use comes from the result of its refId.
+
+| Result                                                          | The cell shows                              | `missing: down` |
+| --------------------------------------------------------------- | ------------------------------------------- | --------------- |
+| The query failed, or the whole request failed                   | grey, "Query failed" (`query-unavailable`)  | does not apply  |
+| First load, no series yet                                       | grey, "Loading data"                        | does not apply  |
+| A refresh is loading                                            | the last series (Grafana keeps them)        | as ready        |
+| A refId that no panel target has                                | grey, "Unknown query" (`unknown-ref`)       | does not apply  |
+| Ready, zero series for the cell                                 | grey, "no data"                             | `down`          |
+| Ready, a series with no finite value (all null, NaN, ±Infinity) | that series is `missing`, "No value"        | does not apply  |
+| Ready, a field that fails the frame checks                      | that series is `missing` (`invalid-series`) | does not apply  |
+
+A missing value never shows as a good state. A special-value mapping of Grafana (null → green) does not apply. With two series, one with the value 1 and one with no value, the cell is `missing` with the reason "1 of 2 series have no value". `missing: down` applies only to zero series of a ready query. A module with 5 of 6 series shows the worst of the 5.
+
+### Freshness
+
+A series is **stale** when its last non-null value is older than the freshness. A cell is stale when one of its series is stale.
+
+- `5m` is a fixed time. `3x` is three times the cadence of the query. The cadence is the larger of the request interval and the minimum interval of the target; without both, it is the median step of the series. A series with fewer than two points then has no stale check.
+- A target with `instant: true` and no `range: true` is never stale. A dead exporter goes to no data through the lookback of the data source.
+- On a relative time range (`now`, `now-1h`) a cell turns stale at its time with no new data. The age counts from the clock, less the lag of the range end. On an absolute range the age counts from the end of the range, and the state does not change with the clock.
+- Freshness applies to the status and to the rows (a row shows "stale"). It does not apply to the capacity.
+
+### Several series
+
+A use can select more than one series.
+
+**Order.** The series of a use are in one fixed order: by the label string (`k="v"` pairs, keys sorted), then by frame order, then by field index. "First", "+N more" and the colour of a line use this order. A frame with more than one numeric field gives `many-fields`. Two frames with equal labels and field name are one series: the panel merges their samples by time, so a target with `instant` and `range` gives the range points and then the instant point. Two different values at one time give `duplicate-series`.
+
+| Use                          | With N series                                                        |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `status`                     | the worst state                                                      |
+| `text`, `value` row or chart | reduce across the series; `many-series` unless the use sets `reduce` |
+| `history` row or chart       | up to 8 lines, then "+N more"                                        |
+| `updown` row or chart        | reduce each direction; `many-series` unless the use sets `reduce`    |
+| `up`, `down` of a link       | reduce with the default; `many-series`                               |
+| `capacity`                   | not used, falls through; `many-series`                               |
+
+**`reduce`.** `sum`, `max` or `mean`. The default is `sum` when the unit is a rate unit (`bps`, `Bps`, `pps`, `cpm`, `flowlpm`, and the other units of the Grafana categories "Data rate", "Throughput" and "Flow"), else `max`. An explicit `reduce` says that N series are expected, so the report stays quiet.
+
+**Units.** When the units of the series differ and all are bit or byte rates, the panel converts to the unit of the first series: 1 Mbit/s and 500 kbit/s sum to 1.5 Mbit/s. Other mixed units give `missing` with "Mixed units" and `unit-mismatch`.
+
+**N lines.** A `history` row or chart draws up to 8 lines in one chart with one Y range. A line shows only the labels that differ between the lines; when no label differs, it shows the display name of the field. The 8 lines have 8 distinct colours of the Grafana classic palette, in the fixed order. A series with no value keeps its place and colour and shows "no data" in the tooltip.
+
+### Rows
+
+`rows` is a list. A row is one line of the hover card.
+
+| `kind`      | Fields                                                       | Meaning                                                               |
+| ----------- | ------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `history`   | `query`, `match`, `label`, `unit`, `decimals`, `min`, `max`  | A value and a sparkline. `min` is a number or `auto`; `max` a number. |
+| `value`     | `query`, `match`, `reduce`, `label`, `unit`, `decimals`      | A reduced value.                                                      |
+| `updown`    | `up`, `down`, `match`, `reduce`, `label`, `unit`, `decimals` | Two directions of one subject in one chart (see below).               |
+| `metadata`  | `label`, `text`                                              | A text from a template. It reads no dashboard variable.               |
+| `drilldown` | `label`, `url`                                               | A link in the footer of the card.                                     |
+
+The label, unit and decimals come from the field config of the refId. A row can override them. Rows of different units can share one card.
+
+An `updown` row draws the two directions in one chart: up above a zero line, down mirrored below it, in one symmetric range. The colour and the text of each direction follow the rules of a link half (see [Links](#links)).
+
+### Sparkline Y range
+
+All sparklines use one Y range: card rows and chart regions. A series without negative values starts at 0, so a small change on a flat series does not look like a big climb. The top is the largest value, the capacity, or 100 for the unit `percent` (1 for `percentunit`), whichever is largest. A series with negative values uses its own min and max. The lines of one chart share one range.
+
+Each bound uses the first source that has a value:
+
+1. `min` and `max` of the row or the chart.
+2. **Min** and **Max** of the Grafana field config.
+3. The default above.
+
+The bounds are soft: the range always holds all values. Set `min: auto` to use the data range instead of the zero baseline. The span is then at least 10% of the largest value, centred on the data.
+
+```yaml
+rows:
+  - kind: history
+    label: PoE power
+    query: poe
+    min: auto
+```
+
+### Chart regions
+
+The class field `chart` draws a chart in the box of each of its cells. It has the fields and the rules of a row of the kind `history`, `value` or `updown`. A `value` chart is a bar gauge. Draw a rectangle in the diagram, give it `bind` and `key`, and bind a class with a `chart`.
+
+```yaml
+classes:
+  cpu-chart:
+    match:
+      key: job
+    chart:
+      kind: history
+      query: cpu
+      unit: percent
+```
+
+### Links
+
+A class with `up`, `down` or `capacity` applies to a link (an edge cell).
+
+- **Ends.** The ends of a portograph link come from `pg-from` and `pg-to`. An ordinary draw.io edge has its ends in the `source` and `target` of its cell in page 1 of the stored XML. An attribute on the port cell wins over the same attribute on the node cell. When the end cell has no such attribute, the panel looks in its parents up to the layer (a shape inside a container). `${from.key}` and `${to.key}` read the attribute at an end.
+- **Direction.** The half at the start of the drawn path is **a→b**. The `key` and the other matched attributes name the interface at the source end. a→b takes `up` (transmit) and b→a takes `down` (receive). With `at=target` the attributes name the target end, and a→b takes `down`. The stroke of each half, the link value label and the `updown` row of the card follow the same rule.
+- **Colour and width.** With a capacity, the colour input is the percent of the capacity. Without one, it is the raw value. See [How colours and thresholds work](#how-colours-and-thresholds-work).
+- **Capacity.** See [Capacity](#capacity).
+
+### The match report
+
+On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the count, and its tooltip lists the entries. A click on it opens nothing in this version. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
+
+| Entry                                                         | Meaning                                                                                 |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `schema`                                                      | A field has a wrong name, type or form. The entry gives the YAML path.                  |
+| `yaml`                                                        | A YAML syntax error. The editor only.                                                   |
+| `outdated-config`                                             | The config has version 3 or older.                                                      |
+| `class-no-match`                                              | Cells bind a class that has no `match`.                                                 |
+| `class-cycle`, `class-unknown-parent`, `class-invalid-parent` | The chain of `extends` has an error. The class and the classes below it are invalid.    |
+| `unknown-ref`                                                 | No panel target has this refId.                                                         |
+| `unknown-class`                                               | Cells have a `bind` that names no class.                                                |
+| `unknown-override`                                            | An override names a cell id that the diagram does not have.                             |
+| `missing-attr`                                                | A cell lacks an attribute that the match or a template reads.                           |
+| `matcher-error`                                               | A regex is not in the dialect, or does not compile.                                     |
+| `template-unresolved`                                         | `${labels.x}` or `${value}` found zero or many series.                                  |
+| `query-unavailable`                                           | A query failed or is loading.                                                           |
+| `no-series`                                                   | Cells have no series for a use.                                                         |
+| `many-series`                                                 | A use found more than one series where one is expected.                                 |
+| `orphan-series`                                               | Series that no cell selects. The entry lists 50 label sets at most, then "+N more".     |
+| `many-fields`, `invalid-series`                               | A frame has more than one numeric field, or a field fails the checks.                   |
+| `duplicate-series`                                            | Two frames hold different values at one time for equal labels.                          |
+| `unit-mismatch`                                               | The units of the series cannot convert to one unit.                                     |
+| `capacity-fallback`                                           | The capacity series cannot give a value (the reason says why); the next source applies. |
+| `bad-cap`                                                     | The attribute `cap` does not parse.                                                     |
+| `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                      |
+| `unused-field`                                                | A link field on a class whose cells are not links.                                      |
+| `class-no-cells`                                              | No cell binds this class. An abstract class gives none.                                 |
+
+`no-series` and `orphan-series` are how you find a wrong `match`.
+
+### Hand-authored panels
+
+A generator writes an explicit list of hosts in each query (`job=~"node-rtr-a|node-hv-a|node-ctl-a"`). By hand, a new host would need an edit of every target. A hand-authored panel uses **open selectors** instead (`job=~"node-.*"`) and relies on the report. `orphan-series` shows a series that has no cell, and `no-series` a cell that has no series. The cap of 8 lines and of 50 orphan label sets keeps an open selector safe.
+
+### Supported query results
+
+Finite Grafana data frames with one numeric field per series support histories. Null gaps keep their meaning. Empty, single-sample, failed and stale histories show text. Logs, traces, legacy datapoint objects, streaming or partial frames, ambiguous numeric fields and invalid timestamps give a report entry. A query result does not inherit panel transformations or field overrides of other panels: use the field config of this panel.
+
+Only the Prometheus and TestData plugins of the [tested matrix](docs/research/authoring-compatibility.md) have browser evidence.
+
+### Old configs
+
+The plugin is not released as 1.0, so there is no migration code.
+
+- **Version 3 and older.** A config with `"version": 3` or lower loads, the diagram renders, the panel binds nothing and shows one note: `This configuration has version 3. The panel reads version 4 only: write the config again as version 4.` Write the config again as version 4, or regenerate it.
+- **Rules of version 1.** The option `rules` of version 1 is gone. A dashboard that still has it loads. The panel ignores the rules and shows one warning: `The panel ignores N rules of version 1. Write the bindings again as a version 4 config.` The saved value stays in the dashboard JSON until you remove it.
+- **`editorUrl`.** An old value is ignored (see [Editor](#editor)).
+
+Back up the dashboard JSON before you change a config.
 
 ## How colours and thresholds work
 
@@ -382,16 +403,16 @@ The panel has no colour settings of its own. It uses the standard field config o
 
 - **Standard options → Color scheme**: for example **From thresholds**, **Single color**, **Classic palette** or a continuous scheme such as **Green-Yellow-Red (by value)**.
 - **Thresholds**: the steps and their colours.
-- **Standard options → Max**: a capacity for links (see [Capacity](#capacity)).
+- **Standard options → Min** and **Max**: the Y range of the charts (see [Sparkline Y range](#sparkline-y-range)). The field **Max** is not a link capacity (see [Capacity](#capacity)).
 - **Overrides**: each of these settings for one query (**Fields returned by query**), one series name, or a regex. Use overrides to give each kind of link its own scale, for example a continuous scheme for the WAN query and thresholds for the LAN query.
 
-For each link half and each shape, the panel finds the matched series. Then it uses the field config of that series, with the overrides applied:
+For each link half and each status, the panel finds the matched series. Then it uses the field config of that series, with the overrides applied:
 
 ```text
 matched series ─▶ field config (defaults + overrides)
                         │
         link half with a capacity?
-          │ yes                                   │ no (and all shapes)
+          │ yes                                   │ no (and all statuses)
           ▼                                       ▼
   percent = value in bit/s / capacity × 100       the display colour of the raw value:
           │                                       value mappings, then thresholds
@@ -404,24 +425,32 @@ matched series ─▶ field config (defaults + overrides)
 ```
 
 - A link half with a capacity: the colour input is the utilisation, 0 to 100 %. A step at 85 means 85 % of the capacity. Values above 100 % get the end colour of a continuous scheme. The line width also follows the percent (option **Link width**).
-- A link half without a capacity, and every shape: the colour is the normal display colour of the raw value, as in any Grafana panel. For example, an `up` query with the thresholds base red and 1 green colours a node green when it is up.
+- A link half without a capacity, and every status: the colour is the normal display colour of the raw value, as in any Grafana panel. For example, an `up` query with the thresholds base red and 1 green colours a node green when it is up.
 - No data: always grey, never green.
 
 The overlay attribute `data-dmap-step` is the index of the active threshold step.
 
-### Shape binding
+### Status band
 
-`display.shape` of a pattern binds a node to one series. With a `target` it colours the node by the value, with the field config of that series (value mappings, thresholds, Color scheme):
+A band above the diagram has one row for each status cause: the text of the status, the query and the number of cells, for example `Offline · up: 3 cells`. A cell with no value (text `–`) gives its reason in place of the text, for example `No data · up: 26 cells`. Cells with the same severity, text and query share one row. The most severe cause is first (down, critical, warning, stale, missing), then the cause with the most cells. Normal cells do not show in the band.
 
-| Key       | Meaning                                                                                                                                                                                                                                                                                        |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `binding` | The series: `{ queryId, match, field, reducer }`.                                                                                                                                                                                                                                              |
-| `target`  | What the colour changes: `icon`, `shape` (the fill of the whole shape) or `stroke` (the outline). Without `target` (or with `none`) the colour changes nothing: the value then feeds the card, the legend and `text` only. Without an icon, or with a bitmap icon, `icon` colours the outline. |
-| `text`    | `true` writes the value into the node label. The `label` template of the display formats it; the default is `${value}`.                                                                                                                                                                        |
+The band has at most **Status summary rows** rows (default 3), and at most half of the panel height. When there are more causes, the last row is `+N more (M elements)` (with one row: `N causes (M elements)`). Click it to show all causes; **Show less** collapses the band again. The band takes its own height above the diagram, so it never covers the diagram. The diagram fits into the remaining height. Set **Status summary rows** to 0 to hide the band. The paint of the cells stays.
 
-A missing series gives a grey "no data" state (and the text `no data` with `text`). A `label` template that does not resolve gives `unbound`. The health rule (`display.status`) is separate: it paints an abnormal device with a border and a tint in the colour of its state, over the shape colour (see [Status paint](#status-paint)).
+### Status paint
 
-The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-icon~<pg-id>`. Some icons are a white glyph on a tile (`pg-iconTile~<pg-id>`). Then the tile takes the colour. A hover or a click on the icon or on the node description opens the card of the node. A hover on a link label (`pg-kind="link-label"` with `pg-of`, or `pg-linkLabel~<link pg-id>`) opens the card of the link. Each other cell with `pg-of` belongs to the node or link with that `pg-id`. Such sub-cells never open a card of their own.
+The status of a cell paints the cell. The colour is the exact colour of the value in the field config of the `status` query (see [Status, colour and text](#status-colour-and-text)). Two states have the colour of the theme: `stale` is the palette orange and `missing` the grey of "no data". A `down` with no value (`missing: down`) is the palette red. The status band and the colour legend use the same colours.
+
+- A device gets a border in the status colour, 1.5 times the stroke width the shape had and at least 2 units (in the units of the shape, which are the root units of a draw.io export), and a light tint of its fill: the fill the shape shows now, mixed with one fifth of the status colour. A fill that is not an opaque colour (none, a gradient, a transparent colour) keeps its fill; the border alone shows the status. The icon keeps its colour.
+- A link takes the status colour on its stroke: both halves and their arrow heads, and the end dots, whatever the binding colours say. One exception: a `missing` status on a link with halves leaves the halves alone, because each half shows its own state (a half with no data is grey; the other keeps the colour of its value).
+- A value that the field config maps to the colour `transparent` paints nothing. The cell keeps its drawn colour. A normal status with no colour paints nothing too.
+- Limit: a link with no `up` or `down` (only a status) paints its stroke and end dots; the arrow heads that draw.io drew into the edge keep their colour. A device drawn as a bitmap (an `<image>`) gets the border only, as a rectangle around the image, and no tint.
+- A theme change paints every cell again. When the status changes, or the cell leaves the bindings, the panel puts the drawn colours back. The panel repaints a cell when any of the colour, the text, the state, the severity, the query or the reason changes. A mapping that changes from green to blue with the same text repaints.
+
+### Text on a cell
+
+The class field `text` writes a formatted value into the label of the cell, with the unit and decimals of the field config (or the `unit` and `decimals` of the field). It changes no colour. A cell with no value shows `–`.
+
+The icon of a node is the cell with `pg-kind="node-icon"` and `pg-of="<node pg-id>"`. Older portograph exports have no such tag. Then the panel uses the cell `pg-icon~<pg-id>`. Some icons are a white glyph on a tile (`pg-iconTile~<pg-id>`). Then the tile takes the status paint. A hover or a click on the icon or on the node description opens the card of the node. A hover on a link label (`pg-kind="link-label"` with `pg-of`, or `pg-linkLabel~<link pg-id>`) opens the card of the link. Each other cell with `pg-of` belongs to the node or link with that `pg-id`. Such sub-cells never open a card of their own.
 
 ### Colour legend
 
@@ -429,14 +458,13 @@ A small legend in a corner of the panel shows each colour that the bound cells c
 
 ![Colour legend of the demo network](docs/images/colour-legend.png)
 
-- One block for each colour scale, with the unit or the kind as the title: **Link load %** for links with a capacity, else the query name (or **Link** or **Node**) and the unit symbol, for example `PoE W`. The **Display name** of the field replaces this title. Two different scales with the same title get their queries in brackets, for example `Link load % (A)` and `Link load % (W)`.
+- One block for each status query in use, in the order of first use. The title is the **Display name** of the field, else the name of the query. The entries are the value mappings of the field config, then its threshold steps, each with its exact colour and text, and with the cells that show it. Then the blocks of the link scales: **Link load %** for links with a capacity, else the query name and the unit symbol, for example `PoE W`. Two different scales with the same title get their queries in brackets.
 - **From thresholds**: one swatch for each step, from low to high: `< 60%`, `≥ 60%`, `≥ 85%`. Links with a capacity show percent. Other values show the field unit.
 - A continuous scheme: a gradient bar from `0%` to `100%` for links with a capacity, else from the field **Min** to **Max**.
 - **Single color** and **Shades**: one swatch, `All values`.
-- Value mappings with a colour: one swatch with the mapping text, before the threshold swatches. A link with a capacity takes its colour from the percent, so its mappings do not show.
+- Value mappings with a colour: one swatch with the mapping text, before the threshold swatches. A link with a capacity takes its colour from the percent, so its mappings do not show. A mapping with a colour and no text that shares the colour of a threshold step shows its cells under the step.
 - **Classic palette** (a colour for each series): no block, because the colour does not tell a value.
-- **Status**: the colours of the status paint (the border of a device, the stroke of a link): `Down, critical`, `Warning, stale` and `Missing`. Normal elements keep their binding colours.
-- **No data**: the grey of links and shapes without data.
+- **State**: the block that follows the status blocks. It has `Down, no data` (the theme red of a cell with `missing: down` and no value), `Stale` and `No data`, each with the cells that are in that state.
 - Identical scales merge into one block, also when they come from different queries. An override that changes the thresholds or the scheme of one query gives that query its own block.
 
 Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elements in that band stay visible and the other elements of the legend dim. Move the pointer away, or move the focus, to show all elements again. On a phone, which has no hover, tap an entry to show its elements. Tap the same entry again, or tap anywhere else, to show all elements again. The dim uses one CSS class on the diagram, so it is cheap on a large diagram. It does not change a pinned card or the link colour overlays.
@@ -476,69 +504,43 @@ In the panel JSON:
 
 ### Capacity
 
-The panel gives each link half a capacity. It uses the first source that gives a value; a source that fails reports where and the next one applies:
+A link has a capacity for each geometric direction, a→b and b→a. For each direction the panel uses the first source that gives a value:
 
-| Order | Source            | Example                                                                                                      | Notes                                                                                                                              |
-| ----- | ----------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | A series          | `capacityBinding: { queryId: 'S', match: { job: 'node-${to.node}', device: '${to.port}' }, reducer: 'max' }` | For example `node_network_speed_bytes`. The unit of the field converts the value to bit/s (`Bps` multiplies by 8). Templates work. |
-| 2     | A cell attribute  | `capacity: '${cell.capacity}'`                                                                               | The `capacity` attribute of the cell, for example `meta: { capacity: 1e9 }` in a portograph YAML file.                             |
-| 3     | A number          | `capacity: 1000000000`                                                                                       | bit/s.                                                                                                                             |
-| 4     | The field **Max** | **Standard options → Max** of the traffic series, or an override for one query                               | In the unit of the field, for example Max `100000000` with the unit `bits/sec(SI)`.                                                |
+| Order | Source                | Example                   | Notes                                                                                                                                                  |
+| ----- | --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | A series (`capacity`) | `capacity: speed`         | A refId, or `{ a2b: speed_a, b2a: speed_b }`. The class `match` selects the series. The unit of the field converts the value to bit/s (`Bps` times 8). |
+| 2     | The attribute `cap`   | `cap=1G` or `cap=50M/10M` | `1G` is 10⁹ bit/s for both directions. `50M/10M` is 50 Mbit/s a→b and 10 Mbit/s b→a.                                                                   |
+| 3     | None                  |                           | The half shows the raw rate and no percent.                                                                                                            |
 
-The `reducer` of the capacity binding reduces its series. If the capacity series is missing, the field **Max** applies and the panel reports the missing metric. A capacity template that does not resolve gives the diagnostic `unresolved-metadata`, and the half falls to the field **Max**. A field unit that is not a data rate gives the diagnostic `unit-not-rate`; the panel uses the raw value as bit/s.
+The panel uses a `capacity` series only when its query is ready and exactly one series gives a finite value above 0 in a rate unit. Else it falls through to `cap` and the report has `capacity-fallback` with the reason: no series, many series, not positive, not finite, not a rate, query failed. A `cap` that does not parse gives `bad-cap` and no capacity for that cell. One value is a number with an optional `k`, `K`, `M`, `G` or `T` (SI, decimal): `^\d+(\.\d+)?[kKMGT]?$`.
 
-The hover card shows the capacity of each half in the unit of the value field, for example `41 Mb/s · 41% of 100 Mb/s`; a field in `Bps` with a capacity of 1 Gb/s shows `… of 125 MB/s`, a field in m³ shows `… of 4.1 m³`. The percent is a whole number: a load above 0 and under 0.5 % reads `<1%` (never `0%`), a real 0 reads `0%`, a load above 999 % reads `>999%`. The percent and the colour do not depend on the unit. Without a capacity, the card shows only the value. A direction without a value is grey "no data", also with a capacity: a capacity never produces a value or a percent on its own.
+The capacities follow the geometry. `at=target` changes only which counter feeds which direction, not the capacities. Example: `cap=50M/10M`, `at=target`, rx 8 Mbit/s: a→b shows 8 Mbit/s and 16 %. The field **Max** is not a capacity.
 
-The units are the data-rate units of Grafana: `bps`, `Kbits` … `Pbits`, `Bps`, `KBs` … `PBs`, and the binary (IEC) forms. A field without a unit is in bit/s. A unit that is not a data rate gives a warning, and the panel uses the raw value as bit/s.
+The hover card shows the capacity of each half in the unit of the value field, for example `41 Mb/s · 41% of 100 Mb/s`; a field in `Bps` with a capacity of 1 Gb/s shows `… of 125 MB/s`. The percent is a whole number: a load above 0 and under 0.5 % reads `<1%` (never `0%`), a real 0 reads `0%`, a load above 999 % reads `>999%`. The percent and the colour do not depend on the unit. Without a capacity, the card shows only the value. A direction without a value is grey "no data", also with a capacity: a capacity never produces a value or a percent on its own.
 
-#### Capacity of each link direction
+The units are the data-rate units of Grafana: `bps`, `Kbits` … `Pbits`, `Bps`, `KBs` … `PBs`, and the binary (IEC) forms. A field without a unit is in bit/s. A `capacity` series in a unit that is not a data rate falls through (`capacity-fallback`, "not a rate").
 
-In `display.link` of a pattern, each direction is an object: `a2b` goes from the first end of the link to the second, `b2a` the other way. Each holds the `binding` of its value and, optionally, its own capacity sources. All numbers are in bit/s.
+A direction with no series is its own grey half, "no data"; the other half keeps its colour.
 
-```json
-{
-  "link": {
-    "a2b": {
-      "binding": { "queryId": "tx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-      "capacity": "${cell.capacity_a2b_bps}"
-    },
-    "b2a": {
-      "binding": { "queryId": "rx", "match": { "device": "${cell.key}" }, "reducer": "last" },
-      "capacity": "${cell.capacity_b2a_bps}"
-    },
-    "capacity": 100000000
-  }
-}
-```
-
-| Key                                          | Meaning                                                                                                              |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `a2b.binding`, `b2a.binding`                 | The value series of the direction. A direction without a binding shows nothing; an override may set only a capacity. |
-| `a2b.capacity`, `b2a.capacity`               | A positive number in bit/s, or a template, for one direction.                                                        |
-| `a2b.capacityBinding`, `b2a.capacityBinding` | A query binding for one direction. It is read like `capacityBinding`: the field unit converts the value to bit/s.    |
-| `capacityBinding`, `capacity`                | Shared by both directions.                                                                                           |
-
-The order for each direction is: its `capacityBinding`, its `capacity`, the link `capacityBinding`, the link `capacity`, the field **Max**, no percent. A source that fails (no data, not positive, not a number) falls to the next one and reports where, for example `unresolved-metadata` at `cells.<id>.link.a2b.capacity`. A later pattern or an override merges each direction field by field: it can replace a capacity and keep the binding of an earlier pattern. The legend title stays **Link load %**.
-
-A direction whose binding cannot run for the cell (its query is unknown, skipped or cannot run, or a parameter path is missing) is drawn as its own grey half, "unavailable", so the other half never covers it. The status band counts it as incomplete coverage.
-
-The demo dashboard uses all four sources: LAN links get the port speed series `S`, WAN links the **Max** of an override of query `W`, tunnels a number, and the hand-drawn panel the `capacity` attribute of its cells.
+The demo dashboard uses both sources: the LAN links take the port speed series `speed`, and the WAN and tunnel links carry `cap=100M`.
 
 ### Link value labels
 
-Each link half can show its load as a small text beside the stroke, in the middle of its own half, turned to follow the edge. The text is the one the hover card shows for that direction. The labels are off by default; `display.link.label.mode` of a pattern or an override turns them on:
+Each link half can show its load as a small text beside the stroke, in the middle of its own half, turned to follow the edge. The text is the one the hover card shows for that direction. The labels are off by default; the class field `linkLabel` turns them on:
 
-```json
-{ "select": { "kind": "link" }, "display": { "link": { "label": { "mode": "percent" } } } }
+```yaml
+classes:
+  lan:
+    linkLabel: percent
 ```
 
-| Mode      | Half with a capacity               | Half without a capacity | No data, or an unavailable direction |
-| --------- | ---------------------------------- | ----------------------- | ------------------------------------ |
-| `percent` | the percent of its capacity, `41%` | the value, `3.1 Mb/s`   | no label                             |
-| `value`   | the value in the unit of its field | the value               | no label                             |
-| `none`    | no label (the default when absent) | no label                | no label                             |
+| Mode      | Half with a capacity               | Half without a capacity | No data  |
+| --------- | ---------------------------------- | ----------------------- | -------- |
+| `percent` | the percent of its capacity, `41%` | the value, `3.1 Mb/s`   | no label |
+| `value`   | the value in the unit of its field | the value               | no label |
+| `none`    | no label (the default when absent) | no label                | no label |
 
-`label` merges as one leaf, like `capacity`: a later pattern or an override replaces the mode, and an override with `{ "mode": "none" }` switches one link off. There is no panel option: a pattern that selects `{ "kind": "link" }` is the sheet-wide default, in the same document as the bindings. The bindings popup has the field **Link label** in the Link section.
+`linkLabel` is one field: a subclass or an override replaces the mode, and an override with `linkLabel: none` switches one link off. A generator sets `percent` on its link classes. There is no panel option.
 
 Placement: the label stands first on its own stroke, in the middle of its half. The stroke stops under the text: the panel cuts the stroke of the link (its halves and arrow heads) with an SVG mask, a hole as long as the text (plus 1.5 units on each end) and as wide as the drawn width plus 1 unit on each side. The cut shows whatever lies behind the stroke, so it needs no colour and it is the same in every theme; no box is drawn. When the stroke is not free on the whole half, the label stands beside it, with the near edge of its box 2 units beyond the stroke edge at its widest (`linkWidth.max`); a chip or a pill that is wider than the stroke can need 4 units, and the label takes 4 then. A label has a thin halo (1 unit outside the glyphs, behind them) in the background colour of the diagram: the computed `background-color` of the svg root, resolved for the colour scheme of the panel, else the canvas colour of the Grafana theme when the diagram has no background. The stroke of its own half is cut under it. The frame line of a group is not an obstacle: the halo keeps the text readable over it. The top side is the side the tops of the letters face: above a horizontal edge, to the left of a vertical one (the text reads bottom to top), and on a diagonal edge the side of the text top (the text is never upside down). Both halves of a link stand in one place: first both on their strokes, then both on the top side, then both on the bottom side, and only when no single place holds both, each half takes its own. A label moves along its half, away from the arrow heads first, when a node, a plain text cell, the text of an edge (its own value text or an edge label cell, also of the edge that the label belongs to), a port pill, a portograph label chip, an end dot, an arrow head (at the size it has at `linkWidth.max`, so a wider half on a refresh never grows its head under a label), another edge (or a crossing run of its own edge) or another label is in its way; only the stroke of its own half is not in its way, never the text of its edge. As a last resort, a half that fits nowhere can stand beside a bend, with its centre on a straight run and the box over the end of the run, if the label is clearly nearer to its own stroke than to any other link. On a link so short that every spot beside the stroke meets an arrow head at its widest, the label stands farther out, 4 units beyond the wings of the widest head. It is dropped when its half is too short or every spot is taken. Backgrounds are not in the way: the portograph canvas and groups (but the title text of a group or container is), and in a plain draw.io diagram a vertex whose body holds two or more other vertices (a container or a swimlane; a device with one badge inside stays in the way). The placement runs once per diagram: a data refresh changes the text only. A percent label keeps one slot from `<1%` to `>999%`; a value label can move when its text grows past a 4-unit step, and only that label moves.
 
@@ -555,11 +557,10 @@ The canvas shows only colours. The values show in a card:
 | Click another cell                 | The pinned card moves to that cell.                                                                  |
 | Esc, ✕, or a click outside         | The pinned card closes.                                                                              |
 | Tap a cell (phone, tablet)         | The card opens pinned. Devices without hover (`(hover: none)`) do not open a card on a pointer move. |
-| Click or tap a row or a sparkline  | Opens the URL of the row in a new tab (the `url` of the hover row, else the `url` of the display).   |
 | Tab to a cell, then Enter or Space | The card opens pinned. Esc closes it and the focus goes back to the cell.                            |
 | Move over a chart in a pinned card | A crosshair and the Grafana tooltip show the time and the value of each series (see below).          |
 
-**Chart tooltip.** In a pinned card, move the pointer over a chart: a crosshair follows the pointer and the standard Grafana tooltip shows the time of the nearest sample, and the colour, name and value of each series. The values use the unit and decimals of the field. A gap shows "–". A combined up/down row shows both directions in one tooltip. On a phone, tap or drag on a chart in the sheet; the tooltip stays until you tap outside the chart. With the keyboard, Tab to the chart in a pinned card, then use the left and right arrow keys to move the sample; Esc hides the tooltip (a second Esc closes the card) and Enter follows the row link. The tooltip does not change the Y range, and a click on the chart still opens the row link. The hover card that is not pinned shows no tooltip.
+**Chart tooltip.** In a pinned card, move the pointer over a chart: a crosshair follows the pointer and the standard Grafana tooltip shows the time of the nearest sample, and the colour, name and value of each series. The values use the unit and decimals of the field. A gap shows "–". An `updown` row shows both directions in one tooltip. A row with N lines lists the lines (at most 8) and then "+N more"; a line with no value shows "no data". On a phone, tap or drag on a chart in the sheet; the tooltip stays until you tap outside the chart. With the keyboard, Tab to the chart in a pinned card, then use the left and right arrow keys to move the sample; Esc hides the tooltip (a second Esc closes the card). The tooltip does not change the Y range. The hover card that is not pinned shows no tooltip.
 
 The card stays inside the panel. It scrolls when it is too long. In a panel narrower than 480 px (a phone), the card is a sheet at the bottom of the screen, with the width of the panel. The sheet stays visible also in a panel that is taller than the screen. It is at most 60% of the screen height, scrolls when it is too long, and keeps clear of the home indicator (the safe-area inset). The sheet is above the Grafana menus. ✕, Esc or a tap outside the panel and the sheet closes it. The page does not move when the sheet opens.
 
@@ -568,7 +569,7 @@ The card stays inside the panel. It scrolls when it is too long. In a panel narr
 A cell opens a card only when both conditions are true:
 
 - The kind of the cell is in the **Hover kinds** panel option (group **View**, option path `hover.kinds`). The default is `node`, `link`, `port` and `other`.
-- The card has content: at least one row (a status, a value, a history or a metadata row) or one footer link.
+- The card has content: at least one row (a status, a value, a history or a metadata row) or one footer link (the `url` of the class, a `drilldown` row, or a data link of the field config).
 
 Thus by default the empty background (`pg-canvas`), the layers, groups (`pg-group~…`, `pg-groupTitle~…`), the legend (`pg-legend…`) and cells without bound rows or links open nothing.
 
@@ -591,7 +592,7 @@ In the panel JSON, the option is:
 "options": { "hover": { "kinds": ["node", "link", "port", "other"] } }
 ```
 
-To remove the card of one element, add an element override with `"hover": { "enabled": false, "rows": [] }` in its display.
+To remove the card of one cell, give it a class (or an override) with no `rows`, no `url` and no `status`.
 
 **Card title.** The card, the keyboard label of the cell and the lists in the editor use one readable title for each cell. In a portograph export (a diagram with `pg-schema`):
 
@@ -611,11 +612,11 @@ A part or a structure cell of a portograph export uses the caption that the diag
 | Legend body, tile, swatch (`pg-legend…~X`) | The label of `pg-legendRow~X`, else the readable id. A legend row uses its own label.                   |
 | Layer, legend frame                        | Its label (layers draw none), else the readable id.                                                     |
 
-A missing label falls back to the node id and the port name (`pg-node`, `pg-port`), then to the `pg-id` as written, or the cell id without its `pg-…~` prefix when the cell has no `pg-id`. A cell that is not in a portograph export (no `pg-schema`) has its label, else its id. To change the title of the cards of a pattern, set `hover.title` of its display. The value is a template, and `${cellTitle}` is the default title. `${cellTitle}` is a root of its own, like `${value}`: a metadata key named `title` stays `${cell.title}`. A template that does not resolve, or gives an empty text, keeps the default title.
+A missing label falls back to the node id and the port name (`pg-node`, `pg-port`), then to the `pg-id` as written, or the cell id without its `pg-…~` prefix when the cell has no `pg-id`. A cell that is not in a portograph export (no `pg-schema`) has its label, else its id. The title is not configurable. A cell attribute named `title` does not change it.
 
-A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The sparkline has the full width of the card. Its Y range starts at 0 for a series without negative values and reaches up to the capacity (see [Sparkline Y range](#sparkline-y-range)). Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
+A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The title of a row is its `label`, else the display name of the field, else the refId. The sparkline has the full width of the card. Its Y range starts at 0 for a series without negative values (see [Sparkline Y range](#sparkline-y-range)). Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
 
-The footer has the `url` of the class (title: `urlTitle`), then the data links of the field config of the series of the cell (title: the data link title), then the `drilldown` rows. A data link takes the last value in the frame of its series as its context (`${__value.text}`). A link with the same `href` as an earlier link shows once. A link that opens in a new tab has an external-link icon.
+The first row of a cell whose status is not `normal` is the state and its reason, for example `warning   probe delay ≥ 400 ms`. The state word has a text-safe colour of its status (red for down and critical, orange for warning and stale, grey for missing). A `normal` status adds no row to a card that has other rows. Then come the rows of the class in their order. The footer has the `url` of the class (title: `urlTitle`), then the data links of the field config of the series of the cell (title: the data link title), then the `drilldown` rows. A data link takes the last value in the frame of its series as its context (`${__value.text}`). A link with the same `href` as an earlier link shows once. A link that opens in a new tab has an external-link icon.
 
 The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button is a normal button. Each bound cell is a button for the keyboard (`tabindex="0"`). The panel builds the card only when it opens, and only for one cell.
 
@@ -635,7 +636,7 @@ In the **View** group of the panel options:
 | Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                                                                                 |
 | Link width min, max  | The range of the link width in pixels. The width grows with the load. The arrow head grows with the width: 8 by 8 units up to a 2-unit half; above, each unit of width adds 2 to its base and 0.5 to its length (24 wide and 12 long at 10). |
 | Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                                                                                 |
-| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-summary)). Default 3. 0 hides the band.                                                                                                        |
+| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-band)). Default 3. 0 hides the band.                                                                                                           |
 
 ### Live zoom
 
@@ -681,7 +682,7 @@ Before the modal makes the editor frame, the panel reads `drawio/js/main.js` of 
 
 ## Grafana 12 and 13
 
-The plugin targets Grafana `>=12.4.0` and builds against `@grafana/*` 12.4.x. React comes from Grafana (it is not bundled). The authoring matrix and its evidence are in [authoring compatibility](docs/research/authoring-compatibility.md). Earlier PoC results in `docs/acceptance.md` describe the previous workflow.
+The plugin targets Grafana `>=12.4.0` and builds against `@grafana/*` 12.4.x. React comes from Grafana (it is not bundled). The authoring matrix and its evidence are in [authoring compatibility](docs/research/authoring-compatibility.md). The v4 checks and the earlier PoC results are in `docs/acceptance.md`.
 
 ## Development
 
@@ -757,14 +758,14 @@ The steps do not use the docker socket, volumes, privileged mode or secrets. The
 
 ## Known limits
 
-Authoring evidence: 2026-10-18, in `docs/research/authoring-compatibility.md`. Earlier PoC results are in `docs/acceptance.md`.
+Authoring evidence: 2026-10-18, in `docs/research/authoring-compatibility.md`. The v4 checks and the earlier PoC results are in `docs/acceptance.md`.
 
 - No signing and no catalogue entry.
 - No rules embedded in the diagram (`pg-rules`).
 - No animated flow.
 - No diagrams loaded from a URL.
-- No multi-page diagrams. The panel renders page 1 and shows a warning.
-- The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes, and patterns select its cells by id, label and other attributes.
+- No multi-page diagrams. The panel renders page 1 and binds page 1 only; it shows a warning.
+- The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes. The cells join a class with `bind`, and the ends of its edges come from the `source` and `target` of the stored XML.
 - Consult the authoring compatibility matrix for current browser and sandbox evidence.
 - Panel edit can run the panel queries many times. This is not the panel: in the VictoriaMetrics datasource plugin (seen with 0.26.1), each query editor calls `onRunQuery` when it mounts and starts a label lookup. A panel with N VictoriaMetrics targets runs all its queries N+1 times when panel edit opens. The target JSON has no workaround.
 

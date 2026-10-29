@@ -1,5 +1,7 @@
 # Diagram authoring and demand-loaded data
 
+Status: superseded by the binding model v4 (`2026-10-28-binding-model-v4-design.md`), 2026-10-29. The config, the popup and the demand model of this spec are gone.
+
 Date: 2026-10-18. Product direction approved in the architecture interview.
 Baseline inspected: `881f4dfa9ddf6412cf4eccfd9a3440594876e38d`.
 Implementation and runtime compatibility have not been validated.
