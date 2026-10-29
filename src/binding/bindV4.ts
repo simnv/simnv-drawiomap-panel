@@ -515,9 +515,13 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
   }
 
-  /** Spec 3.5: the stale state of the status use; a relative range gives a deadline to the clock. */
+  /**
+   * Spec 3.5: the stale state of the status use; a relative range gives a deadline to the clock. A ready selection
+   * with partial coverage still checks its finite samples: stale ranks above missing (3.4). Series with no finite
+   * value give no age, so an all-null selection stays missing.
+   */
   function freshness(status: StatusV4, use: Use, r: UseResult, eff: ResolvedClass, patch: PatchV4): StatusV4 {
-    if (status.reason !== undefined || r.problem) {
+    if (r.problem || r.snapshot.state !== 'ready') {
       return status;
     }
     const q = query(use.refId);

@@ -735,6 +735,39 @@ describe('bindV4: the engine', () => {
     expect(patch(absolute, 'a').statusView).toMatchObject({ state: 'stale' });
   });
 
+  describe('an old series next to an all-null series: stale ranks above missing (gate A2)', () => {
+    const cells: Cell[] = [['a', { bind: 'host', key: 'a' }]];
+    const mixed = [frame('up', { job: 'a', i: '1' }, [1], {}, [0]), frame('up', { job: 'a', i: '2' }, [null], {}, [0])];
+
+    it('an absolute range makes the cell stale', () => {
+      const r = run(hostConfig({ host: { ...HOST, freshness: '1m' } }), cells, mixed);
+      expect(patch(r, 'a').statusView).toMatchObject({ state: 'stale' });
+      expect(r.deadlines).toEqual([]);
+    });
+
+    it('a relative range keeps the coverage reason and gives the clock a stale deadline', () => {
+      const r = run(hostConfig(), cells, mixed, { timeRange: range('now') });
+      expect(patch(r, 'a').statusView).toMatchObject({ state: 'missing', reason: '1 of 2 series have no value' });
+      expect(r.deadlines).toEqual([180_000]);
+      expect(patch(r, 'a').staleStatusV4).toMatchObject({ after: 180_000, status: { state: 'stale' } });
+    });
+
+    it('all-null series and a failed query stay missing with no deadline', () => {
+      const allNull = [frame('up', { job: 'a' }, [null], {}, [0])];
+      const r = run(hostConfig(), cells, allNull, { timeRange: range('now') });
+      expect(patch(r, 'a').statusView).toMatchObject({ state: 'missing', reason: 'No value' });
+      expect(r.deadlines).toEqual([]);
+      const failed = run(hostConfig(), cells, mixed, {
+        timeRange: range('now'),
+        state: LoadingState.Error,
+        errors: [{ refId: 'up', message: 'boom' }],
+      });
+      expect(patch(failed, 'a').statusView).toMatchObject({ state: 'missing' });
+      expect(failed.deadlines).toEqual([]);
+      expect(patch(failed, 'a').staleStatusV4).toBeUndefined();
+    });
+  });
+
   it('a cell URL resolves its cell attributes and the labels of its one status series', () => {
     const r = run(
       hostConfig({ host: { ...HOST, url: '/d/host?var-job=${key}&i=${labels.instance}', urlTitle: 'Open ${key}' } }),
