@@ -304,7 +304,9 @@ for (const theme of ['light', 'dark'] as const) {
                   ? 'No data'
                   : state === 'error'
                     ? 'Query failed'
-                    : 'Healthy';
+                    : state === 'stale'
+                      ? 'Stale'
+                      : 'Healthy';
               await expect(
                 panel.locator('.dmap-status-summary').filter({ hasText: `${text} · health:` })
               ).toBeVisible();
