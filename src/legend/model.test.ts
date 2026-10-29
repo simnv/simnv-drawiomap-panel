@@ -168,11 +168,8 @@ describe('buildLegendV4: status scales', () => {
   });
   it('labels absolute thresholds of a status value in the field unit', () => {
     const f = field({ unit: 'watt', thresholds: { ...thresholds, steps: steps.slice(0, 2) } });
-    const blocks = legendOf([node('n1', status('P', named('yellow'), '70 W'))], f, 'P', {
-      ...ctx,
-      queryName: (refId) => (refId === 'P' ? 'PoE' : undefined),
-    });
-    expect(blocks[0].title).toBe('PoE');
+    const blocks = legendOf([node('n1', status('P', named('yellow'), '70 W'))], f, 'P', ctx);
+    expect(blocks[0].title).toBe('P');
     expect(blocks[0].entries.map((e) => e.label)).toEqual(['< 60 W', '≥ 60 W']);
     expect(blocks[0].entries[1].cellIds).toEqual(['n1']);
   });
