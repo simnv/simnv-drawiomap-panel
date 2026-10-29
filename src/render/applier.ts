@@ -1,6 +1,5 @@
 import { createTheme, type GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import type { PlanCellPatch } from '../binding/engine';
 import {
   alphaOf,
   linkStatusPaint,
@@ -232,7 +231,7 @@ function tintedFill(shape: SVGElement, status: string): string | undefined {
  * `applyShape`, so the border wins over a `stroke` target and the tint goes over a `shape` target. A bitmap device
  * (an `<image>`) takes no fill and no stroke: the overlay draws its border (`renderOverlay`).
  */
-function applyStatus(entry: CellEntry, patch: PlanCellPatch, width: number, theme: GrafanaTheme2): void {
+function applyStatus(entry: CellEntry, patch: CellPatch, width: number, theme: GrafanaTheme2): void {
   const shape = entry.shape as SVGElement | undefined;
   const paint = entry.line || shape?.localName === 'image' ? undefined : statusPaint(patch.statusView, theme);
   if (!shape || !paint) {
@@ -262,7 +261,7 @@ function applyUnavailable(entry: CellEntry, patch: CellPatch): void {
   }
 }
 
-function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined, interactive: boolean): void {
+function tag(entry: CellEntry, patch: CellPatch, target: string | undefined, interactive: boolean): void {
   if (target) {
     entry.group.setAttribute('data-dmap-target', target);
   }

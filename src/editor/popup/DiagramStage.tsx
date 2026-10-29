@@ -39,10 +39,8 @@ export interface DiagramStageProps {
   onSelect: (cellId: string, options: { shift: boolean }) => void;
   /** A box select ended: the cells that the band touches, to add to the selection. */
   onBox?: (cellIds: string[]) => void;
-  /** The chart widgets of the draft. Without it the stage shows no charts. */
-  chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision' | 'owner'>;
-  /** Namespace of the query consumers of the charts, for example `popup:3`. */
-  owner: string;
+  /** The chart uses of the bind (spec 3.9). Without it the stage shows no charts. */
+  chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision'>;
   /** The hash of the shown diagram. The stage writes it as `data-dmap-hash`, as the panel does. */
   hash?: string;
   /** The link width range of the panel: the value labels keep `linkWidth.max / 2` clear of the strokes. */
@@ -63,7 +61,6 @@ export function DiagramStage({
   onSelect,
   onBox,
   chartLayer,
-  owner,
   hash,
   linkWidth,
 }: DiagramStageProps) {
@@ -192,7 +189,6 @@ export function DiagramStage({
           cells={stage.index}
           viewport={viewport}
           revision={revision}
-          owner={owner}
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}

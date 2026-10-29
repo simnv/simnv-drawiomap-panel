@@ -4,7 +4,8 @@ import {
   formatBareVariables,
   missingAttrHint,
   resolveTemplateV4,
-  shield,
+  shieldV4,
+  unshieldV4,
   type TemplateScopeV4,
 } from './template';
 
@@ -93,9 +94,13 @@ describe('resolveTemplateV4', () => {
   });
 
   it('does not read a placeholder in a substituted value', () => {
-    const r = resolveTemplateV4('${key}', { attr: attrs({ key: '${port}', port: 'x' }) }, shield);
-    expect(r.text).toBe(shield('${port}'));
+    const r = resolveTemplateV4('${key}', { attr: attrs({ key: '${port}', port: 'x' }) }, shieldV4);
+    expect(r.text).toBe(shieldV4('${port}'));
     expect(r.missing).toEqual([]);
+  });
+
+  it('unshieldV4 removes the marks of shieldV4 and gives back the value', () => {
+    expect(unshieldV4(shieldV4('$job [[x]]'))).toBe('$job [[x]]');
   });
 });
 
@@ -166,6 +171,6 @@ describe('formatBareVariables', () => {
   });
 
   it('does not change a shielded $', () => {
-    expect(formatBareVariables(`/d/x?a=${shield('$job')}`)).toBe(`/d/x?a=${shield('$job')}`);
+    expect(formatBareVariables(`/d/x?a=${shieldV4('$job')}`)).toBe(`/d/x?a=${shieldV4('$job')}`);
   });
 });

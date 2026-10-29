@@ -93,8 +93,8 @@ describe('bandRowsV4', () => {
   });
 });
 
-describe('StatusBand with v4 rows', () => {
-  it('shows the v4 row text in place of the v3 summaries', () => {
+describe('StatusBand', () => {
+  it('shows the row text, the state and the count of the row', () => {
     const rows = bandRowsV4(
       patchesOf([
         ['n1', v4('scrape_up', 'down', 'Offline')],
@@ -102,13 +102,7 @@ describe('StatusBand with v4 rows', () => {
       ])
     );
     render(
-      <StatusBand
-        summaries={[]}
-        rowsV4={rows}
-        layout={bandLayout(rows.length, 3, false, 600)}
-        expanded={false}
-        onToggle={() => {}}
-      />
+      <StatusBand rowsV4={rows} layout={bandLayout(rows.length, 3, false, 600)} expanded={false} onToggle={() => {}} />
     );
     const row = screen.getByTestId('dmap-status-band').querySelector('.dmap-status-summary')!;
     expect(row.textContent).toContain('Offline · scrape_up: 2 cells');
@@ -126,13 +120,7 @@ describe('StatusBand with v4 rows', () => {
       ])
     );
     render(
-      <StatusBand
-        summaries={[]}
-        rowsV4={rows}
-        layout={bandLayout(rows.length, 2, false, 600)}
-        expanded={false}
-        onToggle={() => {}}
-      />
+      <StatusBand rowsV4={rows} layout={bandLayout(rows.length, 2, false, 600)} expanded={false} onToggle={() => {}} />
     );
     expect(screen.getByRole('button').textContent).toBe('+3 more (4 cells)');
   });

@@ -16,12 +16,14 @@
       "gridPos": { "x": 0, "y": 0, "w": 24, "h": 18 },
       "datasource": { "type": "prometheus", "uid": "victoriametrics" },
       "targets": [
-        { "refId": "A", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "{{job}} {{device}}" },
-        { "refId": "W", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan {{job}} {{device}}" },
-        { "refId": "S", "expr": "node_network_speed_bytes", "legendFormat": "speed {{job}} {{device}}" },
-        { "refId": "C", "expr": "up", "legendFormat": "{{job}}" },
-        { "refId": "D", "expr": "node_load1", "legendFormat": "{{job}}" },
-        { "refId": "E", "expr": "node_cpu_usage_percent", "legendFormat": "{{job}}" }
+        { "refId": "lan_tx", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "tx {{job}} {{device}}" },
+        { "refId": "lan_rx", "expr": "rate(node_network_receive_bytes_total{device!~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "rx {{job}} {{device}}" },
+        { "refId": "wan_tx", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan tx {{job}} {{device}}" },
+        { "refId": "wan_rx", "expr": "rate(node_network_receive_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan rx {{job}} {{device}}" },
+        { "refId": "speed", "expr": "node_network_speed_bytes", "legendFormat": "speed {{job}} {{device}}" },
+        { "refId": "up", "expr": "up", "legendFormat": "{{job}}" },
+        { "refId": "load", "expr": "node_load1", "legendFormat": "{{job}}" },
+        { "refId": "cpu", "expr": "node_cpu_usage_percent{job=~\"node-rtr-a|node-rtr-b\"}", "legendFormat": "{{job}}" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -32,33 +34,43 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "matcher": { "id": "byFrameRefID", "options": "lan_tx" },
             "properties": [{ "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }]
           },
           {
-            "matcher": { "id": "byFrameRefID", "options": "W" },
+            "matcher": { "id": "byFrameRefID", "options": "lan_rx" },
+            "properties": [{ "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "wan_tx" },
             "properties": [
               { "id": "color", "value": { "mode": "continuous-GrYlRd" } },
-              { "id": "max", "value": 100000000 },
               { "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }
             ]
           },
-          { "matcher": { "id": "byFrameRefID", "options": "S" }, "properties": [{ "id": "unit", "value": "Bps" }] },
           {
-            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "matcher": { "id": "byFrameRefID", "options": "wan_rx" },
+            "properties": [
+              { "id": "color", "value": { "mode": "continuous-GrYlRd" } },
+              { "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }
+            ]
+          },
+          { "matcher": { "id": "byFrameRefID", "options": "speed" }, "properties": [{ "id": "unit", "value": "Bps" }] },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "up" },
             "properties": [{ "id": "links", "value": [{ "title": "Host overview", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&${__url_time_range}", "targetBlank": true }] }]
           },
           {
-            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "matcher": { "id": "byFrameRefID", "options": "up" },
             "properties": [
               { "id": "unit", "value": "none" },
               { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } },
               { "id": "mappings", "value": [{ "type": "value", "options": { "0": { "text": "down", "index": 0 }, "1": { "text": "up", "index": 1 } } }] }
             ]
           },
-          { "matcher": { "id": "byFrameRefID", "options": "D" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] },
+          { "matcher": { "id": "byFrameRefID", "options": "load" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] },
           {
-            "matcher": { "id": "byFrameRefID", "options": "E" },
+            "matcher": { "id": "byFrameRefID", "options": "cpu" },
             "properties": [{ "id": "links", "value": [{ "title": "Host overview", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&${__url_time_range}", "targetBlank": true }] }]
           }
         ]
@@ -76,7 +88,10 @@
       "title": "hand-drawn",
       "gridPos": { "x": 0, "y": 18, "w": 12, "h": 10 },
       "datasource": { "type": "prometheus", "uid": "victoriametrics" },
-      "targets": [{ "refId": "A", "expr": "rate(node_network_transmit_bytes_total[1m]) * 8", "legendFormat": "{{job}} {{device}}" }],
+      "targets": [
+        { "refId": "wan_tx", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan tx {{job}} {{device}}" },
+        { "refId": "wan_rx", "expr": "rate(node_network_receive_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan rx {{job}} {{device}}" }
+      ],
       "fieldConfig": { "defaults": { "unit": "bps", "decimals": 1 }, "overrides": [] },
       "options": {
         "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false, "align": "top" },

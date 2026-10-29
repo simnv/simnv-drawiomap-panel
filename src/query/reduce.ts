@@ -1,6 +1,8 @@
 import { toBitsPerSecond } from '../binding/units';
 import type { Series } from './snapshot';
-import type { ReducerName } from '../types';
+
+/** A reduce over the time of one history. */
+export type ReducerName = 'last' | 'mean' | 'max' | 'min';
 
 /** The reduced value of a history. Null gaps and non-finite values are skipped in place: no filtered copy. */
 export function reduceValues(

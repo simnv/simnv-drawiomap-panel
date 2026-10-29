@@ -2,31 +2,7 @@
  * The only module that knows the portograph draw.io binding contract (schema PG_SCHEMA).
  * See docs/research/portograph-contract.md. Adjust here when the contract changes.
  */
-import type { CellEntry, CellKind, CellMeta, Endpoint, HoverKind, TemplateScope } from '../types';
-import type { Diagnostic } from '../model/config';
-import { scopeTitle } from './cellTitle';
-
-/** Duplicate explicit identities cannot safely select a device, even if labels differ. */
-export function cellIdentityDiagnostics(cells: CellMeta[]): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-  for (const [key, code] of [
-    ['id', 'duplicate-cell-id'],
-    ['key', 'duplicate-semantic-id'],
-  ] as const) {
-    const seen = new Set<string>();
-    cells.forEach((cell, i) => {
-      if (seen.has(cell[key])) {
-        diagnostics.push({
-          code,
-          path: `cells[${i}].${key}`,
-          message: `Cell ${key} ${cell[key]} is ambiguous. Assign each diagram entity a unique ${key === 'key' ? 'pg-id metadata value' : 'cell ID'} in draw.io. Copy/paste may duplicate metadata.`,
-        });
-      }
-      seen.add(cell[key]);
-    });
-  }
-  return diagnostics;
-}
+import type { CellEntry, CellKind, CellMeta, Endpoint, HoverKind } from '../types';
 
 /** The pg-schema version that this panel reads. */
 export const PG_SCHEMA = '1';
@@ -141,7 +117,8 @@ function schemaWarning(schema: string | undefined): string | undefined {
 /**
  * Apply the pg-schema of the root cell to all cells (changes the cells).
  * No pg-schema: the diagram is not a portograph export. All cells become generic: kind "other", key = cell id,
- * no endpoints. The data-meta attributes stay, so rules can still select the cells.
+ * no `pg-from`/`pg-to` endpoints: the ends of an edge come from the `source` and `target` of the XML at bind time
+ * (`edgeEnds`, spec 3.8.1). The data-meta attributes stay, so `bind` and the class match still read them.
  * A different pg-schema: the cells are read as schema 1, and the result has a warning for the editor.
  */
 export function applyContract(cells: CellMeta[]): { schema?: string; warning?: string } {
@@ -175,24 +152,6 @@ export function attachLinkLabels(cells: CellMeta[]): CellMeta[] {
     }
   }
   return cells;
-}
-
-/** Scope values for templates: ${cell.*}, ${from.*}, ${to.*}. */
-export function endpointScope(e?: Endpoint): Record<string, string> | undefined {
-  if (!e) {
-    return undefined;
-  }
-  return { node: e.node, port: e.port ?? '', ordinal: String(e.ordinal), raw: e.raw };
-}
-
-/** Pure identity/metadata scope shared by the V2 binding plan and query parameters. */
-export function cellScope(cell: CellMeta): TemplateScope {
-  return {
-    cell: { ...cell.attrs, id: cell.id, key: cell.key, label: cell.labelText },
-    cellTitle: scopeTitle(cell),
-    from: endpointScope(cell.from),
-    to: endpointScope(cell.to),
-  };
 }
 
 /** pg-kind="node-icon" cells by the pg-id of their node (pg-of), and the set of all cell ids. */

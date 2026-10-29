@@ -10,7 +10,6 @@ import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
 import { renderOverlay } from './overlay';
-import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 import type { StatusV4 } from '../binding/statusV4';
 
@@ -147,12 +146,12 @@ describe('applyPatches', () => {
       queryIds: ['up'],
       coverage: { available: 1, expected: 1 },
     };
-    const p: PlanCellPatch = { ...patch('n1', {}), statusView };
+    const p: CellPatch = { ...patch('n1', {}), statusView };
     const prev = applyPatches(index, new Map([['n1', p]]));
     expect(index.get('n1')!.group.getAttribute('data-dmap-status')).toBe('down');
     expect(index.get('n1')!.group.getAttribute('data-dmap-reason')).toBe('Device down');
     expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a: down. Device down');
-    const normal: PlanCellPatch = { ...p, statusView: { ...statusView, state: 'normal', reason: 'Healthy' } };
+    const normal: CellPatch = { ...p, statusView: { ...statusView, state: 'normal', reason: 'Healthy' } };
     applyPatches(index, new Map([['n1', normal]]), prev);
     expect((index.get('n1')!.shape as SVGElement).style.fill).toBe(index.get('n1')!.original.fill);
     applyPatches(index, new Map(), prev);
@@ -432,7 +431,7 @@ describe('applyPatches with a patched icon cell', () => {
     // the icon cell gets a status (a new key), the node does not change: the icon keeps the node colour
     prev = applyPatches(
       index,
-      new Map<string, PlanCellPatch>([
+      new Map<string, CellPatch>([
         ['n1', node()],
         ['i1', { ...patch('i1', {}), statusView }],
       ]),
@@ -670,8 +669,8 @@ describe('applyPatches diff', () => {
     coverage: { available: 1, expected: 1 },
   };
   /** The patches of one refresh: a coloured node, a two-way link and a status cell. New objects on every call. */
-  const round = (color = '#ff0000'): Map<string, PlanCellPatch> =>
-    new Map<string, PlanCellPatch>([
+  const round = (color = '#ff0000'): Map<string, CellPatch> =>
+    new Map<string, CellPatch>([
       ['n1', patch('n1', { shape: shape({ color, text: 'up' }) })],
       ['e1', patch('e1', { link: { a2b: ok(), b2a: ok({ color: '#0000ff' }) } })],
       ['n2', { ...patch('n2', {}), statusView }],
@@ -795,7 +794,7 @@ describe('applyPatches status paint', () => {
     queryIds: ['up'],
     coverage: { available: 1, expected: 1 },
   });
-  const withStatus = (cellId: string, state: StatusView['state'], p: Partial<CellPatch> = {}): PlanCellPatch => ({
+  const withStatus = (cellId: string, state: StatusView['state'], p: Partial<CellPatch> = {}): CellPatch => ({
     ...patch(cellId, p),
     statusView: view(state),
   });
@@ -1026,7 +1025,7 @@ describe('applyKey and the v4 status (Astra R1)', () => {
       queryIds: ['up'],
       coverage: { available: 1, expected: 1 },
     };
-    const p: PlanCellPatch = { ...patch('n3', {}), statusView: view };
+    const p: CellPatch = { ...patch('n3', {}), statusView: view };
     expect(applyKey(p, true)).toBe(applyKey({ ...p, statusView: { ...view, conditionKey: 'other' } }, true));
     expect(applyKey(p, true)).not.toBe(applyKey({ ...p, statusView: { ...view, reason: 'Other' } }, true));
   });

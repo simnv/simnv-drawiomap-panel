@@ -2,14 +2,6 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
-import type { BindingPlan } from '../binding/patterns';
-import { resolveBinding } from '../binding/engine';
-import { resolveTemplate } from '../binding/template';
-import { isAllowedUrl } from '../binding/url';
-import type { PanelQueryService } from '../query/panel';
-import { LOADING, matchKeyOf, shownSnapshot, type StoreDemand } from '../query/store';
-import type { QuerySnapshot } from '../query/types';
-import { useBindings } from '../query/useBindings';
 import { readChartAnchor, type ChartAnchor } from '../render/geometry';
 import type { CellEntry, CellIndex } from '../types';
 import type { BindResultV4 } from '../binding/bindV4';
@@ -50,18 +42,6 @@ export interface ChartLayerProps extends StageProps {
   ctx: CardContextV4;
 }
 
-/** The v3 input: the widgets of the binding plan, each with its own query. It goes with the v3 runtime (P1-13c). */
-export interface ChartLayerV3Props extends StageProps {
-  plan: BindingPlan;
-  /** The query service: the widgets are consumers of its store. */
-  service: PanelQueryService;
-  /** Namespace of the consumer ids, for example `panel:3` or `popup:3`. */
-  owner: string;
-  replaceVariables?: (value: string) => string;
-  /** The popup is open over the panel: show the held result. The watches stay open; the latest result shows after the pause. */
-  paused?: boolean;
-}
-
 /** The chart regions of the bind: one for each cell whose effective class has a `chart` (spec 3.9). */
 export function chartUsesV4(bound: BindResultV4): ChartUse[] {
   const charts: ChartUse[] = [];
@@ -78,7 +58,6 @@ export function chartUsesV4(bound: BindResultV4): ChartUse[] {
   return charts;
 }
 
-const NO_DEMANDS: StoreDemand[] = [];
 const NO_DEADLINES: readonly number[] = [];
 /** Height in px of the title line above a bar gauge or an updown chart, and of the value line of a sparkline. */
 const TITLE_HEIGHT = 22;
@@ -120,13 +99,11 @@ function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
 interface RegionGeometry {
   anchor: ChartAnchor;
   visible: boolean;
-  /** the width of the cell on the screen, in px */
-  resolution: number;
 }
 
 /**
  * The region of a cell: a `foreignObject` after the shape of the cell with the box and the transform of the shape,
- * and whether the shape shows on the screen. `mark` and `id` name the region in the DOM (`data-dmap-widget`).
+ * and whether the shape shows on the screen. `mark` and `id` name the region in the DOM (`data-dmap-chart`).
  */
 function useRegion(
   { root, viewport, revision }: StageProps,
@@ -175,7 +152,6 @@ function useRegion(
       const next = {
         anchor,
         visible: intersecting && displayed(shape, viewport),
-        resolution: Math.max(1, Math.ceil(shape.getBoundingClientRect().width)),
       };
       setGeometry((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
     };
@@ -220,149 +196,6 @@ function useRegion(
     updateRef.current?.();
   }, [revision]);
   return { portal, geometry };
-}
-
-function Region({
-  entry,
-  ...props
-}: ChartLayerV3Props & {
-  entry: BindingPlan['widgets'][number];
-}) {
-  const { cells, service, plan, replaceVariables, owner } = props;
-  const paused = !!props.paused;
-  const { context } = service;
-  const { widget, scope } = entry;
-  const cell = cells.get(entry.anchorCellId);
-  const theme = useTheme2();
-  const { portal, geometry } = useRegion(props, cell, 'data-dmap-widget', widget.id);
-  const query = plan.config.queries.find((q) => q.id === widget.binding.queryId);
-  const resolution = geometry?.resolution;
-  // The one demand of the widget, at its anchor cell and its own resolution: a consumer of the store like a binding.
-  // An unavailable widget shows its reason and runs no query; a clipped one releases its entry.
-  const demands = useMemo(
-    () =>
-      query && resolution !== undefined && geometry?.visible && !entry.unavailable
-        ? [
-            {
-              cellId: entry.anchorCellId,
-              query,
-              scope,
-              context,
-              maxDataPoints: resolution,
-              matchKey: matchKeyOf(query, scope, context),
-            },
-          ]
-        : NO_DEMANDS,
-    [query, resolution, geometry?.visible, entry.unavailable, entry.anchorCellId, scope, context]
-  );
-  const frame = useBindings(service, owner, `widget:${widget.id}`, demands, paused);
-
-  if (!geometry) {
-    return (
-      <span role="status" data-dmap-widget-error={widget.id}>
-        {widget.label} needs a rectangle with a valid transform.
-      </span>
-    );
-  }
-  if (entry.unavailable) {
-    // admitted with a reason (an unusable query, an invalid range or freshness): the text instead of the chart
-    return portal && geometry.visible
-      ? createPortal(
-          <div
-            data-testid="dmap-widget"
-            role="status"
-            data-dmap-widget-unavailable={widget.id}
-            aria-label={widget.label}
-            style={{
-              width: geometry.anchor.width,
-              height: geometry.anchor.height,
-              overflow: 'hidden',
-              fontSize: 12,
-              fontFamily: theme.typography.fontFamily,
-              color: theme.colors.text.secondary,
-              background: theme.colors.background.primary,
-            }}
-          >
-            {widget.label}: {entry.unavailable}
-          </div>,
-          portal
-        )
-      : null;
-  }
-  if (!portal || !geometry || !geometry.visible) {
-    return null;
-  }
-  const { width, height } = geometry.anchor;
-  // The entry of the widget, checked against the demand of this render (the effect watches after the render):
-  // a kept result while a new generation or resolution loads, loading for a changed query, never old data as fresh.
-  const demand = demands[0];
-  const shown = demand ? frame.get(entry.anchorCellId, demand.query.id) : undefined;
-  const snapshot: QuerySnapshot = !query
-    ? { state: 'error', message: 'Choose a named query.' }
-    : demand && shown
-      ? shownSnapshot(shown, demand)
-      : LOADING;
-  const model = resolveBinding(snapshot, widget.binding, scope, {
-    theme,
-    unit: widget.unit,
-    timeZone: context.timeZone,
-  });
-  const resolvedUrl = widget.url ? resolveTemplate(widget.url, scope, encodeURIComponent) : undefined;
-  const href =
-    resolvedUrl && !resolvedUrl.unresolved.length
-      ? (replaceVariables?.(resolvedUrl.text) ?? resolvedUrl.text)
-      : undefined;
-  return createPortal(
-    <div
-      data-testid="dmap-widget"
-      aria-label={widget.label}
-      style={{ ...regionStyle(theme, width, height), visibility: geometry.visible ? 'visible' : 'hidden' }}
-    >
-      {widget.kind === 'bar' && model.state === 'ready' && model.latestDisplayValue ? (
-        <>
-          <div>{widget.label}</div>
-          <BarGaugeView
-            value={model.latestDisplayValue}
-            field={{ ...model.field.config, min: widget.min === 'auto' ? undefined : widget.min, max: widget.max }}
-            width={width}
-            height={Math.max(1, height - TITLE_HEIGHT)}
-            sampleAt={model.sampleAt}
-            freshness={widget.freshness}
-          />
-        </>
-      ) : (
-        <SparklineView
-          model={model}
-          width={width}
-          height={height}
-          label={widget.label}
-          timeRange={context.timeRange}
-          freshness={widget.freshness}
-          min={widget.min}
-          max={widget.max}
-        />
-      )}
-      {href && isAllowedUrl(href) ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            pointerEvents: 'auto',
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            background: theme.colors.background.primary,
-          }}
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          Open {widget.label}
-        </a>
-      ) : null}
-    </div>,
-    portal
-  );
 }
 
 /** The look of a region: the font of the theme over the background of the panel. */
@@ -521,21 +354,12 @@ function RegionV4({ use, ...props }: ChartLayerProps & { use: ChartUse }) {
   );
 }
 
-/** The chart regions over the diagram: the v4 chart uses, or the v3 widgets through the shim until P1-13c. */
-export function ChartLayer(props: ChartLayerProps | ChartLayerV3Props) {
-  if ('charts' in props) {
-    return (
-      <>
-        {props.charts.map((use) => (
-          <RegionV4 key={use.cellId} {...props} use={use} />
-        ))}
-      </>
-    );
-  }
+/** The chart regions over the diagram: one for each chart use of the bind (spec 3.9). */
+export function ChartLayer(props: ChartLayerProps) {
   return (
     <>
-      {props.plan.widgets.map((entry) => (
-        <Region key={entry.widget.id} {...props} entry={entry} />
+      {props.charts.map((use) => (
+        <RegionV4 key={use.cellId} {...props} use={use} />
       ))}
     </>
   );

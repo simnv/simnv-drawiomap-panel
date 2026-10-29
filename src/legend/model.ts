@@ -11,9 +11,7 @@ import {
   ThresholdsMode,
   type ValueMapping,
 } from '@grafana/data';
-import type { PlanCellPatch } from '../binding/engine';
-import { statusLevel, type StatusLevel, type StatusView } from '../binding/status';
-import { linkStatusPaint, noDataColor, statusColor } from '../binding/color';
+import { linkStatusPaint, statusColor } from '../binding/color';
 import type { HalfState, PatchMap, ShapeState } from '../types';
 
 /** One colour of a scale: a swatch and its threshold or mapping text. */
@@ -211,12 +209,6 @@ function entryOfV4(block: LegendBlock, item: Item): LegendEntry | undefined {
   );
 }
 
-const STATUS_ENTRIES: Array<{ key: StatusLevel; label: string }> = [
-  { key: 'critical', label: 'Down, critical' },
-  { key: 'warning', label: 'Warning, stale' },
-  { key: 'missing', label: 'Missing' },
-];
-
 /**
  * Adds the coloured value of a link half or a shape to `items`. A state with no data adds its cell to `nodata`. A
  * shape that colours nothing adds nothing.
@@ -292,49 +284,6 @@ function scaleBlocks(items: Item[], ctx: LegendContext): LegendBlock[] {
   }));
 }
 
-/**
- * The colour legend of the bound cells: one block for each distinct colour scale (the field Color scheme,
- * Thresholds and Value mappings, incl. overrides), then the status markers, then the no data colour.
- * Identical scales merge into one block.
- */
-export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendContext): LegendBlock[] {
-  const items: Item[] = [];
-  const nodata: string[] = [];
-  const statuses: Array<{ cellId: string; state: StatusView['state'] }> = [];
-  for (const patch of patches.values()) {
-    addItem(items, nodata, patch.cellId, 'link', patch.link?.a2b);
-    addItem(items, nodata, patch.cellId, 'link', patch.link?.b2a);
-    addItem(items, nodata, patch.cellId, 'node', patch.shape);
-    if (patch.statusView) {
-      statuses.push({ cellId: patch.cellId, state: patch.statusView.state });
-    }
-  }
-  const out = scaleBlocks(items, ctx);
-  if (statuses.length) {
-    const cellIds: string[] = [];
-    statuses.forEach((s) => push(cellIds, s.cellId));
-    out.push({
-      key: 'status',
-      title: 'Status',
-      entries: STATUS_ENTRIES.map(({ key, label }) => ({
-        key,
-        label,
-        color: statusColor({ state: key }, ctx.theme),
-        cellIds: statuses.filter((s) => statusLevel(s.state) === key).map((s) => s.cellId),
-      })),
-      cellIds,
-    });
-  }
-  if (nodata.length) {
-    out.push({
-      key: 'nodata',
-      entries: [{ key: 'nodata', label: 'No data', color: noDataColor(ctx.theme), cellIds: nodata }],
-      cellIds: nodata,
-    });
-  }
-  return out;
-}
-
 /** The state entries of the v4 legend, in this order. They have the theme colours of the painter. */
 const STATE_ENTRIES_V4: Array<{ key: 'down' | 'stale' | 'missing'; label: string }> = [
   { key: 'down', label: 'Down, no data' },
@@ -350,8 +299,8 @@ const STATE_ENTRIES_V4: Array<{ key: 'down' | 'stale' | 'missing'; label: string
  * that show it. `fields` gives the field of each status refId; a refId with no field has no block. Then one `State`
  * block with a `down`, a `stale` and a `missing` entry, each only when cells have that state: `down` is a down status
  * with no value (`missing: down`), which the painter paints in the theme red; a link half with no data is `missing`,
- * and so is a missing status that the painter paints grey. Then the link load scale of the link halves. A v3 status
- * is not in this legend.
+ * and so is a missing status that the painter paints grey. Then the link load scale of the link halves. A status
+ * without a `severity` is not in this legend.
  */
 export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx: LegendContext): LegendBlock[] {
   const statusItems = new Map<string, Item[]>();

@@ -1,7 +1,6 @@
 import type { GrafanaTheme2 } from '@grafana/data';
-import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
+import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { arrowAnchor, PathGeom, pathGeometry, Point } from './geometry';
-import type { PlanCellPatch } from '../binding/engine';
 import { linkStatusPaint, statusBorderWidth, statusPaint } from '../binding/color';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
@@ -179,7 +178,7 @@ const halfKey = (s: HalfState) => `${s.status}|${s.color}|${s.width}|${s.stepInd
  * paints (`linkStatusPaint`: a status that is not normal wins over the binding colour). `status` and `stepIndex`
  * stay the binding's: the data attributes and the legend highlight read them.
  */
-function drawnHalves(patch: PlanCellPatch, theme: GrafanaTheme2): { a2b?: HalfState; b2a?: HalfState } {
+function drawnHalves(patch: CellPatch, theme: GrafanaTheme2): { a2b?: HalfState; b2a?: HalfState } {
   const link = patch.link ?? {};
   const color = linkStatusPaint(patch, theme);
   if (!color) {
@@ -350,7 +349,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
     states.set(root, state);
   }
   const liveLinks = new Set<string>();
-  for (const [id, patch] of patches as Map<string, PlanCellPatch>) {
+  for (const [id, patch] of patches) {
     const entry = index.get(id);
     if (!entry?.line || !(patch.link?.a2b || patch.link?.b2a)) {
       continue;
@@ -382,7 +381,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
   }
   // the status border of a bitmap device (the applier paints every other shape itself)
   const liveBorders = new Set<string>();
-  for (const [id, patch] of patches as Map<string, PlanCellPatch>) {
+  for (const [id, patch] of patches) {
     const image = index.get(id)?.shape;
     const paint = image?.localName === 'image' ? statusPaint(patch.statusView, opts.theme) : undefined;
     if (!image || !paint) {

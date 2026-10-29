@@ -1,5 +1,4 @@
 import { formattedValueToString, type Field, type PanelData } from '@grafana/data';
-import type { QueryBinding } from '../model/config';
 import type { RowV4 } from '../model/v4';
 import type { validateConfig } from '../model/validate';
 import { reduceAcross } from '../query/reduce';
@@ -615,8 +614,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
         stepIndex: -1,
       };
     }
-    const binding: QueryBinding = { queryId: refId, match: {}, reducer: 'last' };
-    return halfState(directionHistory(r), binding, cap, ctx).state;
+    return halfState(directionHistory(r), refId, cap, ctx).state;
   }
 
   /**

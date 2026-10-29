@@ -1,18 +1,14 @@
 import type { DataFrame, DisplayValue, Field, GrafanaTheme2, ScopedVars, ThresholdsConfig } from '@grafana/data';
-import type {
-  CellKind,
-  CellSelector,
-  DiagramConfig,
-  LinkLabelMode,
-  Matcher,
-  ReducerName,
-  ShapeTarget,
-} from './model/config';
+import type { LinkLabelMode } from './model/v4';
 import type { StatusView } from './binding/status';
 
-export type { CellKind, CellSelector, Matcher, ReducerName, ShapeTarget };
-
 /* ---------- cells (from the SVG) ---------- */
+
+/** The kind of a cell from its `pg-kind`, or from its geometry in a plain draw.io diagram. */
+export type CellKind = 'node' | 'port' | 'link' | 'link-label' | 'other';
+
+/** The element of a node that a status or a value paints. */
+export type ShapeTarget = 'icon' | 'shape' | 'stroke';
 
 /**
  * The kind of a cell for the hover card (Options.hover.kinds). Portograph structure cells (canvas and layers,
@@ -119,8 +115,10 @@ export interface ZoomOptions {
 
 export interface Options {
   diagram?: Diagram;
-  /** The authoring configuration: named queries, patterns, overrides and chart regions. */
-  config?: DiagramConfig;
+  /** The v4 configuration: classes and overrides (spec 2.2). The panel reads it through `validateConfig`. */
+  config?: unknown;
+  /** The build id that the generator writes (spec 7.3.5). The panel never reads it. */
+  build?: string;
   /** Removed: the rules of version 1. A saved value loads, the panel ignores it and shows a warning. */
   rules?: unknown[];
   zoom: ZoomOptions;
@@ -176,7 +174,7 @@ export function withDefaults(options: Options): ResolvedOptions {
 }
 
 /** Where the capacity of a link half comes from. The first source that gives a value wins, in this order. */
-export type CapacitySource = 'series' | 'attr' | 'number' | 'fieldMax' | 'none';
+export type CapacitySource = 'series' | 'attr' | 'none';
 
 /* ---------- binding output ---------- */
 

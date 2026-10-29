@@ -2,7 +2,7 @@ import React from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
-import { STATUS_SEVERITY, type StatusSummary, type StatusView } from '../binding/status';
+import { STATUS_SEVERITY, type StatusView } from '../binding/status';
 import { NO_DATA_TEXT } from '../binding/statusV4';
 import { statusColor } from '../binding/color';
 import type { PatchMap } from '../types';
@@ -45,7 +45,6 @@ export function bandLayout(count: number, maxRows: number, expanded: boolean, pa
   return { causes, hidden: count - causes, toggle: true, height: max * BAND_ROW + BAND_PAD };
 }
 
-const plural = (n: number) => `${n} element${n === 1 ? '' : 's'}`;
 const cells = (n: number) => `${n} cell${n === 1 ? '' : 's'}`;
 const marker = (state: StatusView['state']) => (state === 'missing' || state === 'stale' ? '?' : '!');
 
@@ -60,7 +59,7 @@ export interface BandRowV4 {
 /**
  * The rows of the v4 band (spec 3.4): one row for each severity, text and refId of the cells that are not normal.
  * The row text is `<text> · <refId>: <n> cells`. A status with no value text ("–") gives its reason as the text.
- * The order is worst first, then the most cells first. A v3 status gives no row.
+ * The order is worst first, then the most cells first. A status without a `severity` gives no row.
  */
 export function bandRowsV4(patches: PatchMap): BandRowV4[] {
   const groups = new Map<string, { label: string; refId: string; severity: StatusView['state']; cellIds: string[] }>();
@@ -121,11 +120,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
     text-overflow: ellipsis;
     color: ${theme.colors.text.primary};
   `,
-  count: css`
-    flex: none;
-    color: ${theme.colors.text.secondary};
-    font-variant-numeric: tabular-nums;
-  `,
   more: css`
     height: ${BAND_ROW}px;
     padding: 0;
@@ -142,20 +136,16 @@ const getStyles = (theme: GrafanaTheme2) => ({
 });
 
 interface Props {
-  summaries: StatusSummary[];
-  /** the v4 rows (`bandRowsV4`); when set, the band shows them and not the v3 summaries */
-  rowsV4?: BandRowV4[];
+  /** the rows of `bandRowsV4` */
+  rowsV4: BandRowV4[];
   layout: BandLayout;
   expanded: boolean;
   onToggle: () => void;
 }
 
-/**
- * One row per cause of the elements that are not normal: state, reason and the number of elements. With `rowsV4`,
- * one row per v4 band row: the marker in the theme colour of its severity and the row text.
- */
+/** One row per band row of `bandRowsV4`: the marker in the theme colour of its severity and the row text. */
 export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBand(
-  { summaries, rowsV4, layout, expanded, onToggle },
+  { rowsV4, layout, expanded, onToggle },
   ref
 ) {
   const styles = useStyles2(getStyles);
@@ -163,10 +153,7 @@ export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBa
   if (!layout.height) {
     return null;
   }
-  const unit = rowsV4 ? cells : plural;
-  const hiddenCells = rowsV4
-    ? rowsV4.slice(layout.causes).reduce((n, r) => n + r.count, 0)
-    : summaries.slice(layout.causes).reduce((n, s) => n + s.cellIds.length, 0);
+  const hiddenCells = rowsV4.slice(layout.causes).reduce((n, r) => n + r.count, 0);
   return (
     <section
       ref={ref}
@@ -176,47 +163,28 @@ export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBa
       data-testid="dmap-status-band"
     >
       <ul className={styles.list}>
-        {rowsV4
-          ? rowsV4.slice(0, layout.causes).map((r) => (
-              <li
-                key={`${r.severity}\n${r.text}`}
-                className={`${styles.row} dmap-status-summary`}
-                title={r.text}
-                data-dmap-state={r.severity}
-                data-dmap-count={r.count}
-              >
-                <span className={styles.state} style={{ color: statusColor({ state: r.severity }, theme) }}>
-                  {marker(r.severity)}
-                </span>
-                <span className={styles.reason}>{r.text}</span>
-              </li>
-            ))
-          : summaries.slice(0, layout.causes).map((s) => {
-              const text = `${s.state}: ${s.reason} (${plural(s.cellIds.length)})`;
-              return (
-                <li
-                  key={`${s.state}\n${s.reason}`}
-                  className={`${styles.row} dmap-status-summary`}
-                  title={text}
-                  data-dmap-state={s.state}
-                  data-dmap-count={s.cellIds.length}
-                >
-                  <span className={styles.state} style={{ color: statusColor(s, theme) }}>
-                    {marker(s.state)} {s.state}
-                  </span>
-                  <span className={styles.reason}>{s.reason}</span>
-                  <span className={styles.count}>{plural(s.cellIds.length)}</span>
-                </li>
-              );
-            })}
+        {rowsV4.slice(0, layout.causes).map((r) => (
+          <li
+            key={`${r.severity}\n${r.text}`}
+            className={`${styles.row} dmap-status-summary`}
+            title={r.text}
+            data-dmap-state={r.severity}
+            data-dmap-count={r.count}
+          >
+            <span className={styles.state} style={{ color: statusColor({ state: r.severity }, theme) }}>
+              {marker(r.severity)}
+            </span>
+            <span className={styles.reason}>{r.text}</span>
+          </li>
+        ))}
         {layout.toggle ? (
           <li className={styles.row}>
             <button type="button" className={styles.more} aria-expanded={expanded} onClick={onToggle}>
               {expanded
                 ? 'Show less'
                 : layout.causes
-                  ? `+${layout.hidden} more (${unit(hiddenCells)})`
-                  : `${layout.hidden} causes (${unit(hiddenCells)})`}
+                  ? `+${layout.hidden} more (${cells(hiddenCells)})`
+                  : `${layout.hidden} causes (${cells(hiddenCells)})`}
             </button>
           </li>
         ) : null}
