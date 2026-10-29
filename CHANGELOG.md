@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0 (Unreleased)
+
+The 1.1.0 tag comes first: do not release 1.2.0 before it.
+
+- Added a split bindings editor with a live diagram, match report and cell inspector. Open it with **Edit bindings**.
+- The cursor in the YAML highlights the affected cells. A click on a cell opens its inspector and moves the cursor to its class or override.
+- The inspector writes `bind` and `key` for one cell. **Assign class** sets `bind` on several selected cells and keeps their keys.
+- On an edge, **key is at the target** sets or clears `at=target`. On a generated panel the inspector warns that the generator writes `at` again.
+- The writes change page 1 of the diagram, in XML and SVG. They need an uncompressed page 1.
+- **Undo** and **Redo** keep up to 50 diagram versions. **Apply** saves the config and the diagram together. A save in another tab shows a conflict banner.
+
 ## 1.1.0 (Unreleased)
 
 Binding model v4. This is the first version that reads the v4 config. A config of version 3 or older binds nothing: the diagram renders, the panel shows one note, and you write the config again as version 4 (or regenerate it). There is no migration. Regenerate the dashboards of a generator in the same change as this release.

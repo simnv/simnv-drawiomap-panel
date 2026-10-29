@@ -154,8 +154,7 @@ for (const title of ['', 'Reset corner test']) {
   });
 }
 
-// P3-08: P1 has no edit-bindings button. The split editor of P3 brings it back; rewrite this case for it then.
-test.fixme('in panel edit the edit-bindings button joins the reset button and the badge in the corner without overlap', async ({
+test('in panel edit the edit-bindings button joins the reset button and the badge in the corner without overlap', async ({
   page,
   request,
   gotoPanelEditPage,
@@ -183,9 +182,14 @@ test.fixme('in panel edit the edit-bindings button joins the reset button and th
     expect(e.height).toBeGreaterThanOrEqual(32);
     await edit.hover();
     await expect(page.getByRole('tooltip').filter({ hasText: 'Edit bindings' })).toBeVisible();
-    // the badge is a button here and opens the popup on the first problem
-    await badge.click();
-    await expect(page.getByTestId('dmap-bindings-popup')).toBeVisible();
+    // the button opens the split editor with the stored config in the code box
+    await edit.click();
+    const popup = page.getByTestId('dmap-bindings-popup');
+    await expect(popup).toBeVisible();
+    await expect(popup.getByTestId('data-testid Code editor container').locator('.view-lines')).toContainText(
+      'version: 4',
+      { timeout: 30_000 }
+    );
   } finally {
     await request.delete(`/api/dashboards/uid/${uid}`);
   }

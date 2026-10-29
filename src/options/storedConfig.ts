@@ -1,6 +1,12 @@
 const isMap = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** The JSON of a value with its map keys sorted. A key with the value `undefined` is not in the JSON. */
+export const sortedJson = (value: unknown): string | undefined =>
+  JSON.stringify(value, (_key, item: unknown) =>
+    isMap(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : item
+  );
+
 /**
  * The value to give to `onChange` so that Grafana stores `next` and not a mix of `stored` and `next`. Grafana 12.4
  * and 13.2 merge an options update into the old options (`VizPanel.onOptionsChange` of `@grafana/scenes`): a map

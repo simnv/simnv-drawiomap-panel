@@ -117,7 +117,10 @@ export interface Options {
   diagram?: Diagram;
   /** The v4 configuration: classes and overrides (spec 2.2). The panel reads it through `validateConfig`. */
   config?: unknown;
-  /** The build id that the generator writes (spec 7.3.5). The panel never reads it. */
+  /**
+   * The build id that the generator writes (spec 7.3.5). The panel reads it only to tell a generated panel apart in
+   * the inspector (spec 5.4).
+   */
   build?: string;
   /** Removed: the rules of version 1. A saved value loads, the panel ignores it and shows a warning. */
   rules?: unknown[];

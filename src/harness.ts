@@ -11,6 +11,7 @@ export { sanitizeSvg } from './render/sanitize';
 export { buildCardV4 as buildCard } from './interact/cardModel';
 export { buildLegendV4 as buildLegend } from './legend/model';
 export { fnv1a } from './util/hash';
+export { setCellAttrs } from './editor/setCellAttrs';
 
 /** Parse a v4 match block, then resolve its cell attributes with the shared matcher. */
 export function compileMatcher(

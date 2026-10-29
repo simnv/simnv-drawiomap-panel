@@ -9,9 +9,13 @@ const componentTests = [
   'src/module.test.ts',
   'src/query/grafana.test.ts',
   // These .ts files reach DOMPurify, which binds to the jsdom window of the first file that imports it.
+  // vitest.setup.logic.ts mocks dompurify with an error, so a logic file that reaches it fails every time.
   'src/adapter/portograph.test.ts',
+  'src/editor/setCellAttrs.test.ts',
+  'src/harness.test.ts',
   'src/render/applier.test.ts',
   'src/render/sanitize.test.ts',
+  'src/render/sanitizeCache.test.ts',
   'src/render/svgStage.test.ts',
 ];
 const exclude = ['node_modules', 'dist', 'tests'];

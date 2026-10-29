@@ -1,7 +1,8 @@
 import { createPortal } from 'react-dom';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css } from '@emotion/css';
 import type { Field, PanelProps } from '@grafana/data';
+import { locationService } from '@grafana/runtime';
 import { useTheme2 } from '@grafana/ui';
 import { bindContextFor } from '../binding/context';
 import type { BindResultV4 } from '../binding/bindV4';
@@ -27,6 +28,23 @@ import { buildLegendV4 } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
 import { bindSymbolLegend } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
+import { currentAddress, subscribe } from '../editor/popup/popupBus';
+import { LazyBindingsPopup } from './LazyBindingsPopup';
+
+/** The address of the open edit session of this panel, or an empty string when the panel is not in panel edit. */
+function usePanelEditing(id: number) {
+  const subscribe = useCallback((notify: () => void) => {
+    const sub = locationService?.getLocationObservable().subscribe(notify);
+    return () => sub?.unsubscribe();
+  }, []);
+  // The snapshot holds the pathname too: the same panel id on another dashboard is another edit session.
+  const snapshot = useSyncExternalStore(
+    subscribe,
+    () => `${locationService?.getLocation().pathname ?? ''}\n${locationService?.getSearchObject().editPanel ?? ''}`
+  );
+  const [pathname, editPanel] = snapshot.split('\n');
+  return editPanel === String(id) ? `${pathname}\n${editPanel}` : '';
+}
 
 const styles = {
   // The status band and the stage stack: the band never covers the diagram.
@@ -96,16 +114,70 @@ function statusFields(bound: BindResultV4): Map<string, Field> {
 }
 
 export function DrawioMapPanel(props: PanelProps<Options>) {
+  const session = usePanelEditing(props.id);
+  const editing = session !== '';
+  const [popup, setPopup] = useState(false);
+  // The element that opened the popup gets the focus back on close. The chunk loader and the dialog mount later and
+  // would see another active element, so the panel records it at the click.
+  const opener = useRef<HTMLElement | null>(null);
+  const openPopup = useCallback(() => {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPopup(true);
+  }, []);
+  // The popup lives as long as the edit session of this panel: leaving panel edit (navigation, "Back to dashboard",
+  // browser back) or unmounting drops it with its draft, also while its chunk still loads.
+  // A change of the address (another dashboard, another panel id) is a new session too: the draft is dropped.
+  const [wasSession, setWasSession] = useState(session);
+  if (wasSession !== session) {
+    setWasSession(session);
+    setPopup(false);
+  }
+  // The "Edit bindings" button of the options pane asks for the popup through the addressed bus.
+  useEffect(() => {
+    if (!editing) {
+      return;
+    }
+    return subscribe(currentAddress(), openPopup);
+    // The session is the address: a new one subscribes again.
+  }, [session, editing, openPopup]);
+  const closePopup = useCallback(() => {
+    setPopup(false);
+    const target = opener.current;
+    window.requestAnimationFrame(() => {
+      if (target?.isConnected) {
+        target.focus();
+      }
+    });
+  }, []);
   // Sandbox hosts do not provide a definite percentage-height containing block.
   return (
-    <div style={{ width: props.width, height: props.height }}>
-      <DrawioMapPanelView {...props} />
-    </div>
+    <>
+      <div style={{ width: props.width, height: props.height }}>
+        <DrawioMapPanelView {...props} editing={editing} onEditBindings={openPopup} />
+      </div>
+      {editing && popup ? (
+        <LazyBindingsPopup
+          options={props.options}
+          data={props.data}
+          timeZone={props.timeZone}
+          fieldConfig={props.fieldConfig}
+          replaceVariables={props.replaceVariables}
+          onOptionsChange={props.onOptionsChange}
+          onClose={closePopup}
+        />
+      ) : null}
+    </>
   );
 }
 
-function DrawioMapPanelView(props: PanelProps<Options>) {
-  const { options, data, width, height, fieldConfig, replaceVariables, timeZone, timeRange } = props;
+interface ViewProps extends PanelProps<Options> {
+  /** The panel is open in the panel editor: the corner shows the "Edit bindings" button. */
+  editing: boolean;
+  onEditBindings: () => void;
+}
+
+function DrawioMapPanelView(props: ViewProps) {
+  const { options, data, width, height, fieldConfig, replaceVariables, timeZone, timeRange, editing } = props;
   const theme = useTheme2();
   const opts = withDefaults(options);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -342,7 +414,7 @@ function DrawioMapPanelView(props: PanelProps<Options>) {
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
-  const corners = legendCorners(band.height, cornerRowHeight(panZoom.zoomed, warnings.length), width);
+  const corners = legendCorners(band.height, cornerRowHeight(panZoom.zoomed || editing, warnings.length), width);
   // a saved corner that this version does not know
   const legendCorner: LegendCorner = corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
   const legend = legendOptions.show ? (
@@ -404,8 +476,13 @@ function DrawioMapPanelView(props: PanelProps<Options>) {
         ref={corner}
         bandHeight={band.height}
         zoomed={panZoom.zoomed}
+        editing={editing}
         warnings={warnings}
         onReset={resetView}
+        onEditBindings={() => {
+          dispatch({ type: 'close' });
+          props.onEditBindings();
+        }}
       />
       {legend}
       {open && model && card

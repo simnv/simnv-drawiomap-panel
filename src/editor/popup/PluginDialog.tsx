@@ -4,7 +4,6 @@ import React, {
   useId,
   useLayoutEffect,
   useRef,
-  useState,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
@@ -12,17 +11,16 @@ import { createPortal } from 'react-dom';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
-import pluginJson from '../../plugin.json';
+import { useSandboxHost } from '../../util/sandboxHost';
 import { isTop, pop, push } from './overlayStack';
 import { usePopupKeys } from './usePopupKeys';
 
 /**
  * A plugin-owned dialog with the look of a Grafana `Modal`.
  *
- * Why not `Modal`: it renders into `#grafana-portal-container`, which is inside `#reactRoot`. In the frontend sandbox, plugin
- * code gets only a detached mock for an element there, so the imperative DOM work of the diagram stage does not reach the
- * page. `getSafeSandboxDomElement` returns the real element for a node that is under `[data-plugin-sandbox=<id>]`, so the
- * host of this dialog carries that attribute and sits directly in `document.body`.
+ * Why not `Modal`: it renders into `#grafana-portal-container`. In the frontend sandbox, plugin code gets only a detached
+ * mock for that element, so the imperative DOM work of the diagram stage does not reach the page. The dialog renders
+ * into a sandbox host (`useSandboxHost`) in `document.body`.
  *
  * The dialog keeps its z-index one step under the Grafana modal layers, so that a Grafana `ConfirmModal`, the draw.io
  * modal and the `Select` menus (all Grafana portals) paint above it.
@@ -110,16 +108,11 @@ export function PluginDialog({ title, onDismiss, onEscape, overlayId, children }
   }, [hasEscape, escId]);
   const guardId = overlayId ?? escId;
   const esc = usePopupKeys({ id: escId, dialogRef, enabled: hasEscape, onEscape: onEscape ?? noop });
-  const [host] = useState(() => {
-    const el = document.createElement('div');
-    el.dataset.pluginSandbox = pluginJson.id;
-    return el;
-  });
+  // The layout effect of the hook puts the host in the body before the layout effect below.
+  const host = useSandboxHost();
 
-  // The host is in the body while the dialog is mounted. A double mount (StrictMode) adds and removes it twice.
   useLayoutEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    document.body.appendChild(host);
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     // In the frontend sandbox the portal container is a mock element, and its place in the page is unknown. Then the whole
@@ -134,7 +127,6 @@ export function PluginDialog({ title, onDismiss, onEscape, overlayId, children }
     return () => {
       restoreInert();
       document.body.style.overflow = overflow;
-      host.remove();
       // The opener (the corner button) keeps the keyboard place of the user.
       if (opener?.isConnected) {
         opener.focus();

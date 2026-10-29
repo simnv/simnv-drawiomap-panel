@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { CellEntry, CellIndex } from '../types';
 import {
   applyLayout,
   clampFactor,
   clientToView,
+  fitCells,
   isDefaultView,
+  MAX_SCALE,
   pinchView,
   readViewBox,
   viewBoxFor,
@@ -231,5 +234,73 @@ describe('viewScaleOf', () => {
   });
   it('an svg without a size gives 0', () => {
     expect(viewScaleOf(rendered(0, 0))).toBe(0);
+  });
+});
+
+describe('fitCells', () => {
+  const SVG = 'http://www.w3.org/2000/svg';
+  /** An index of cell groups in one svg; each group has the box `[x, y, w, h]` in its own user space. */
+  const indexOf = (cells: Record<string, { box: number[]; transform?: string }>): CellIndex => {
+    const root = document.createElementNS(SVG, 'svg');
+    const layer = document.createElementNS(SVG, 'g');
+    root.appendChild(layer);
+    const index: CellIndex = new Map();
+    for (const [id, { box, transform }] of Object.entries(cells)) {
+      const group = document.createElementNS(SVG, 'g');
+      if (transform) {
+        group.setAttribute('transform', transform);
+      }
+      const [x, y, width, height] = box;
+      Object.assign(group, { getBBox: () => ({ x, y, width, height }) });
+      layer.appendChild(group);
+      index.set(id, { group } as unknown as CellEntry);
+    }
+    return index;
+  };
+  const contains = (
+    vb: { x: number; y: number; w: number; h: number },
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number
+  ) => vb.x <= x0 && vb.y <= y0 && vb.x + vb.w >= x1 && vb.y + vb.h >= y1;
+
+  it('the view of two boxes holds both with the margin, at the aspect of the base', () => {
+    const index = indexOf({ a: { box: [10, 10, 20, 20] }, b: { box: [100, 50, 30, 10] } });
+    const vb = fitCells(index, ['a', 'b'], base, 5);
+    // the union is 10..130 × 10..60; with the margin 5..135 × 5..65
+    expect(contains(vb, 5, 5, 135, 65)).toBe(true);
+    expect(vb.w / vb.h).toBeCloseTo(base.w / base.h);
+    expect(vb).toEqual({ x: 5, y: 2.5, w: 130, h: 65 });
+  });
+
+  it('the boxes go through the transforms of the cells', () => {
+    const index = indexOf({ a: { box: [0, 0, 100, 100], transform: 'translate(200, 100)' } });
+    expect(fitCells(index, ['a'], base, 0)).toEqual({ x: 150, y: 100, w: 200, h: 100 });
+  });
+
+  it('the boxes go through the screen CTMs, as the label code does: a viewBox in the CTM of the svg does not count', () => {
+    const index = indexOf({ a: { box: [0, 0, 100, 100] } });
+    const group = index.get('a')!.group as unknown as SVGGElement;
+    const root = group.ownerSVGElement!;
+    const matrix = (m: object) => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0, ...m });
+    Object.assign(root, { getCTM: () => matrix({ a: 2, d: 2 }), getScreenCTM: () => matrix({}) });
+    Object.assign(group, { getCTM: () => matrix({ e: 200, f: 100 }), getScreenCTM: () => matrix({ e: 200, f: 100 }) });
+    expect(fitCells(index, ['a'], base, 0)).toEqual({ x: 150, y: 100, w: 200, h: 100 });
+  });
+
+  it('a small cell zooms in no more than MAX_SCALE', () => {
+    const index = indexOf({ a: { box: [500, 250, 1, 1] } });
+    const vb = fitCells(index, ['a'], base, 0);
+    expect(base.w / vb.w).toBeCloseTo(MAX_SCALE);
+    expect(vb.x + vb.w / 2).toBeCloseTo(500.5);
+    expect(vb.y + vb.h / 2).toBeCloseTo(250.5);
+  });
+
+  it('an id with no cell or no box is skipped; no box at all gives the base view', () => {
+    const index = indexOf({ a: { box: [10, 10, 20, 20] }, bad: { box: [NaN, 0, 1, 1] } });
+    expect(fitCells(index, ['a', 'nope', 'bad'], base, 0)).toEqual(fitCells(index, ['a'], base, 0));
+    expect(fitCells(index, ['nope'], base, 10)).toEqual(base);
+    expect(fitCells(index, [], base, 10)).toEqual(base);
   });
 });

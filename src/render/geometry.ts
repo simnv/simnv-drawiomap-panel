@@ -523,6 +523,14 @@ export function relativeMatrix(
   return opts.singular ? (finite(m) ? m : undefined) : usable(m) ? m : undefined;
 }
 
+/**
+ * The matrix from the user space of `el` into root user units: the screen CTMs of both, the transform attributes in
+ * jsdom. Undefined when it cannot be read.
+ */
+export function toRoot(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Matrix | undefined {
+  return relativeMatrix(el, root, { screen: true, toCtm: rootCtm });
+}
+
 /** The CTM (or the screen CTM) of an element: null when the engine gives none, undefined when it has no such API. */
 function ctmOf(el: Element, screen = false): Matrix | null | undefined {
   const g = el as SVGGraphicsElement;

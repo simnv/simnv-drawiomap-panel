@@ -54,6 +54,27 @@ Unit proof, 2026-10-29, worktree of P1-20: `npx vitest run <the unit files below
 | 16  | Bench: the v4 bind is faster than the P0 number                          | `src/binding/bind.v4.bench.test.ts`                                                                                                                               | Pass: 15.046 ms against 16.373 ms (section "bench" above) |
 | 17  | `check:bundle` and `tests/no-drawio.spec.ts`: no YAML chunk in view mode | `npm run build && npm run check:bundle`, `tests/no-drawio.spec.ts`                                                                                                | Open: the P1-G gate                                       |
 
+## Binding model v4: P3 checks
+
+These checks cover the split editor. The P3-G gate task records the test output and fills the Result column; these rows do not claim a new run. The numbers in the first column are the P3 acceptance items of the v4 spec, section 9.
+
+| Item | Check                                                                                                                        | Proof                                                                                                                             | Result                                                                      |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 1    | YAML path at the cursor, cells of a path, report counts                                                                      | `src/editor/split/yamlPath.test.ts`, `src/editor/split/cellsForPath.test.ts`, `src/editor/split/reportCounts.test.ts`             | Open: P3-G gate                                                             |
+| 2    | `setCellAttrs` writes XML and SVG                                                                                            | `src/editor/setCellAttrs.test.ts`                                                                                                 | Open: P3-G gate                                                             |
+| 3    | The sanitiser keeps the new `data-meta-*` attributes                                                                         | `src/editor/setCellAttrs.test.ts` ("keeps new metadata through the sanitizer")                                                    | Open: P3-G gate                                                             |
+| 4    | YAML completion                                                                                                              | `src/editor/split/completion.test.ts`                                                                                             | Open: P3-G gate                                                             |
+| -    | Split panes, tabs and resizing                                                                                               | `src/editor/popup/PopupLayout.test.tsx`                                                                                           | Open: P3-G gate                                                             |
+| -    | Draft preview, report, selection, inspector and diagram writes                                                               | `src/editor/popup/SplitEditor.test.tsx`, `src/editor/popup/InspectorV4.test.tsx`, `src/editor/popup/MatchReport.test.tsx`         | Open: P3-G gate                                                             |
+| -    | Diagram selection and box selection                                                                                          | `src/editor/popup/DiagramStage.test.tsx`, `src/editor/popup/boxTargets.test.ts`                                                   | Open: P3-G gate                                                             |
+| 5-8  | E2E: cursor and cells, click on a cell, multi-select and assign, schema error, conflict, discard, undo                       | `tests/split-editor.spec.ts` (P3-07); the split-editor cases of `tests/editor-refresh.spec.ts` and `tests/editor.spec.ts` (P3-08) | Open: P3-07, P3-08 and the P3-G gate. The specs are not in this branch yet. |
+| 7    | Undo stack of diagram writes                                                                                                 | `src/editor/history.test.ts`                                                                                                      | Open: P3-G gate                                                             |
+| 9    | E2E on Grafana 12.4 and 13.2, project `matrix`: the code box loads, completion opens above the modal, the cursor events fire | `tests/split-editor.spec.ts` (P3-07 adds `split-editor` to `MATRIX_SPECS`), `npm run e2e:matrix`                                  | Open: P3-07 and the P3-G gate                                               |
+| 10   | Pilot round trip on boiler-enclosure                                                                                         | P3-11                                                                                                                             | Open: P3-11                                                                 |
+| 11   | Screenshot of the split view, checked by eye                                                                                 | P3-09 (`DMAP_SCREENSHOTS=docs/images`)                                                                                            | Open: P3-09                                                                 |
+| 12   | Monaco test on `grafana13-csp` and `grafana13-sandbox-csp`                                                                   | P3-09; the result goes in the table "Isolation variants"                                                                          | Open: P3-09                                                                 |
+| 13   | Phone: the split view opens at the iPhone 13 viewport of `tests/phone-sheet.spec.ts`                                         | `tests/split-editor.spec.ts` (phone test, P3-09)                                                                                  | Open: P3-09                                                                 |
+
 ## E2E suites by Grafana version
 
 The Playwright projects are `matrix` (the tests on surfaces that differ between Grafana versions) and `plugin` (the plugin's own DOM).
@@ -109,13 +130,21 @@ Results of the v3 runtime (before P1). The P1-G gate replaces them.
 The services of the compose profile `isolation` (see `docker-compose.yaml`). Command:
 `docker compose --profile isolation up -d --wait <service>`, then `GRAFANA_URL=<url> npx playwright test`.
 
-| Grafana | Setting                          | URL                           | Result              |
-| ------- | -------------------------------- | ----------------------------- | ------------------- |
-| 12.4.13 | frontend sandbox                 | http://localhost:3122         | 21 passed, 1 failed |
-| 13.2.4  | frontend sandbox                 | http://localhost:3123         | 21 passed, 1 failed |
-| 13.2.4  | `content_security_policy = true` | http://localhost:3133         | 22 passed           |
-| 13.2.4  | frontend sandbox + CSP           | http://localhost:3143         | 21 passed, 1 failed |
-| 13.2.4  | `app_sub_url = /grafana`         | http://localhost:3153/grafana | 22 passed           |
+P3 item 12 adds the split-editor Monaco test on `grafana13-csp` and `grafana13-sandbox-csp` (P3-09). The rows
+"P3-09" below are the v4 runtime with the split editor: the same settings as those services, in two containers with
+the worktree `dist/` on ports 3233 and 3243, all specs of the projects `matrix` and `plugin`, `--workers 1`.
+
+| Grafana | Setting                                  | URL                           | Result              |
+| ------- | ---------------------------------------- | ----------------------------- | ------------------- |
+| 12.4.13 | frontend sandbox                         | http://localhost:3122         | 21 passed, 1 failed |
+| 13.2.4  | frontend sandbox                         | http://localhost:3123         | 21 passed, 1 failed |
+| 13.2.4  | `content_security_policy = true`         | http://localhost:3133         | 22 passed           |
+| 13.2.4  | frontend sandbox + CSP                   | http://localhost:3143         | 21 passed, 1 failed |
+| 13.2.4  | `app_sub_url = /grafana`                 | http://localhost:3153/grafana | 22 passed           |
+| 13.2.4  | P3-09: `content_security_policy = true`  | http://localhost:3233         | 97 passed           |
+| 13.2.4  | P3-09: frontend sandbox + CSP            | http://localhost:3243         | 89 passed, 8 failed |
+| 13.2.4  | P3-sbx: `content_security_policy = true` | http://localhost:3252         | 97 passed           |
+| 13.2.4  | P3-sbx: frontend sandbox + CSP           | http://localhost:3253         | 97 passed           |
 
 - The sandbox settings are `GF_SECURITY_ENABLE_FRONTEND_SANDBOX_FOR_PLUGINS=simnv-drawiomap-panel` and
   `GF_FEATURE_TOGGLES_ENABLE=pluginsFrontendSandbox`. `/api/frontend/settings` on :3123 shows
@@ -124,3 +153,21 @@ The services of the compose profile `isolation` (see `docker-compose.yaml`). Com
 - The failed test in the sandbox is `live zoom on a phone › the fitted diagram is at the top of a tall panel and
 centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The fitted diagram fills the full panel
   height on a phone viewport in the sandbox. This is an open item.
+- P3-09, P3 item 12: `tests/split-editor.spec.ts` passes on both P3-09 rows (11 passed each), with the Monaco test
+  of item 9 (the code box loads, completion opens above the modal, the cursor events fire).
+- P3-09 fixed two faults in the sandbox. The draw.io XML parse gave elements with no namespace; the sandbox reads
+  `style` of each element and throws on them (`src/util/xml.ts`, used by `edgeEnds` and `setCellAttrs`). The
+  sanitizer copied its options with `structuredClone`, which the sandbox cannot do: no diagram showed in view mode.
+  P3-09 also moves the focus into the code box when the split editor opens (P3 item 13), on all variants.
+- P3-sbx fixed the 8 failed tests on 3243. The rows "P3-sbx" are the same settings and specs, on ports 3252 and 3253.
+  - 7 chart tooltip tests (`card-tooltip.spec.ts` :92, :145, :213, :252; `visual-regions.spec.ts` :153, :214;
+    `binding-v4.spec.ts` :87): `dmap-chart-tooltip` did not show. `src/visuals/ChartHover.tsx` rendered it through
+    the Grafana `Portal`, and in the sandbox the portal container is a detached mock element. The tooltip and
+    `PluginDialog` now render into a plugin host in `document.body` with `data-plugin-sandbox`
+    (`src/util/sandboxHost.tsx`).
+  - `panel-edit-requests.spec.ts:121`: the popup draft did not change the panel. The page snapshot shows the
+    routers as `stale`: the test runs no query after the first one, and the freshness `3x` of a 5 s step gives a
+    deadline of about 15 s. The slower sandbox run passed that deadline. A 20 s pause after the draft gives the same
+    failure with CSP only. The test diagram now has the freshness `1h`.
+- An e2e run needs 15 minutes of data with no gap. When the Mac sleeps, the demo metrics have a gap, and the chart
+  tests read "No data" or a value of 0 until the gap leaves the time range.

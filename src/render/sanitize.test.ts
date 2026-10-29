@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sanitizeSvg } from './sanitize';
+import { sanitizeSvg, sanitizeSvgUncached } from './sanitize';
 
 const l3 = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8');
 // An html=1 variant of demo-l3: every label is <switch><foreignObject/><image PNG/></switch>.
@@ -142,5 +142,22 @@ describe('sanitizeSvg: idempotence', () => {
     expect(twice.warnings.join(' ')).not.toMatch(/Not an SVG/i);
     expect(twice.svg).toContain('data-cell-id="pg-node~rtr-a"');
     expect(twice.foreignObjects).toBe(once.foreignObjects);
+  });
+});
+
+describe('sanitizeSvgUncached in the Grafana frontend sandbox', () => {
+  it('does not need structuredClone: the sandbox cannot clone the options of the plugin', () => {
+    const original = globalThis.structuredClone;
+    globalThis.structuredClone = () => {
+      throw new DOMException('#<Object> could not be cloned.', 'DataCloneError');
+    };
+    try {
+      const { svg } = sanitizeSvgUncached(
+        '<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="a"><rect/></g></svg>'
+      );
+      expect(svg).toContain('data-cell-id="a"');
+    } finally {
+      globalThis.structuredClone = original;
+    }
   });
 });

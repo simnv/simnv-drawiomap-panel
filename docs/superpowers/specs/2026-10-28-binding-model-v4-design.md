@@ -33,6 +33,7 @@ Changes since review round 3 (revision 4):
 | N1 | major | Only a positively identified v3 deployment (`options.config.version` below 4) is exempt when `options.build` is missing. A v4 panel with no usable base stops `pull` and the deploy gate; nothing replaces `.cells.yml`, and nothing deploys. | 7.3.5, 7.4, 9 (P2 acceptance 2, 9), 10.3 |
 | P1-10 review 4 | minor | A band row of a cell with no value (text `–`) shows the status reason in place of the text, for example `No data · cpu: 1 cell`. A row `– · cpu: 1 cell` gives no cause. | 3.4 |
 | P1-10 review 2 | minor | The legend has a `down` entry ("Down, no data") before `stale` and `missing`, when cells have a down status with no value (`missing: down`). The painter paints such a cell in the theme red, and no value mapping or step explains that colour. | 3.4 |
+| P3-05 review, finding 2 | minor | The panel reads `options.build` only to tell a generated panel apart: the inspector shows the generated-panel note next to the `at` button when the panel has a build id (5.4). The panel never changes the build id, and Apply keeps it. | 5.4, 6.2, 7.3.5 |
 | P1 gate review B, m6 | minor | Line i of a chart takes slot i of `[0, 1, 2, 3, 4, 5, 26, 30]` in the Grafana classic palette, not slot i: slots 6 and 7 repeat the green and yellow shades, so cyan (26) and pink (30) replace them. The order stays fixed. Decided in the P1-11b review; `docs/adr/0003-history-line-labels-colours.md`. | 3.7 |
 
 Changes since review round 2 (revision 3). Amendments:
@@ -200,6 +201,8 @@ The config stays in `Options.config` (`src/types.ts:122`). The diagram stays in 
 the dashboard (D16, A12). The YAML text is only the editing view (section 5).
 
 ### 2.2 Sketch
+
+Cell attribute names use ASCII lowercase; `setCellAttrs` lowercases written names, treats case variants as one key with the last write winning, and removes all variants for `null`.
 
 zod 3.23.8 (`package.json:95`), the same as v3 (`src/model/config.ts:2`). One schema gives the types. A new module
 `src/model/v4.ts` holds it. Section 2.5 tells how the panel applies it: the envelope first, then each item.
@@ -959,8 +962,13 @@ The popup holds one draft: the YAML text, the last valid config, and the diagram
   (`src/editor/popup/BindingsPopup.tsx:119-125`). Apply is off while the YAML does not parse or the envelope fails.
   Item errors do not block Apply.
 - **Conflict.** The base revision stays (`src/editor/revision.ts:3-16`, `baseRevision`, `hasConflict`). When the saved
-  options change after the draft started (another tab, a dashboard reload), the popup shows "The saved panel
-  changed" with two actions: "Reload" (drop the draft) and "Keep my draft" (the next Apply overwrites).
+  options change after the draft started, the popup shows "The saved panel changed" with two actions: "Reload"
+  (drop the draft) and "Keep my draft" (the next Apply overwrites). Erratum (P3-07): in Grafana 12.4 and 13.2 only an
+  edit in the same tab (for example the YAML option of the options pane) changes the options while the popup is open.
+  A save from another session goes through Grafana Live: with unsaved dashboard changes, Grafana shows its own
+  "Dashboard changed" dialog and the options of the tab stay the same; without them, Grafana loads the dashboard again,
+  the popup closes and its draft is lost (a popup draft does not make the dashboard dirty). The panel cannot change
+  this; a draft that survives the reload is a later task.
 - **Discard.** Escape or close with a dirty draft opens the discard confirmation, as today
   (`src/editor/popup/BindingsPopup.tsx:145-163`). A draft with text that does not parse is dirty.
 - **Undo.** Monaco keeps the undo of the text. The popup keeps a bounded stack (50) of diagram versions for the writes
@@ -1019,7 +1027,7 @@ P1 deletes every module of this table, the v3 popup included (5.0, Astra R2). Af
 | `src/editor/popup/PopupLayout.tsx`, `DiagramStage.tsx` | P3: the split editor. In P1 they have no user; `DiagramStage.tsx:13` follows the P1 type of `ChartLayerProps`, so P1 typechecks. |
 | `src/editor/history.ts`, `src/components/LazyBindingsPopup.tsx`, `src/editor/popup/index.ts` (new in P3) | the split editor (5.1, 5.7) |
 | `src/fixtures/demo-config.ts`, `authoring-config.ts`, `scripts/build-dashboard.ts` | v4 demo configs |
-| `src/module.ts`, `src/types.ts` | `Options.config` type; the YAML option of 5.0; drop the v1 `rules` warning only when 1.0 allows it; `Options.build?: string`, which the generator writes and the panel never reads (7.3.5) |
+| `src/module.ts`, `src/types.ts` | `Options.config` type; the YAML option of 5.0; drop the v1 `rules` warning only when 1.0 allows it; `Options.build?: string`, which the generator writes and the panel reads only to tell a generated panel apart in the inspector (5.4, 7.3.5) |
 | `scripts/check-bundle.sh`, `playwright.config.ts` | the bundle checks of 5.3; `MATRIX_SPECS` (`playwright.config.ts:22-33`) loses `binding-editor` and `query` in P1 and gets `split-editor` in P3 (6.5) |
 | `src/harness.ts` (new) | the stable export for the consumer harness (6.4) |
 
@@ -1090,7 +1098,7 @@ these modules.
   | Case | P1 | P3 |
   |---|---|---|
   | `bindings-popup.spec.ts` | deleted; the cases of :251-365 wait for P3 | the cases of :251-365 in `split-editor.spec.ts` |
-  | `editor-refresh.spec.ts:6-18`, entry `geometry` (through the popup) | the entry `Diagram option` only | the entry `geometry` through the split editor |
+  | `editor-refresh.spec.ts:6-18`, entry `geometry` (through the popup) | the entry `Diagram option` only | the split editor keeps its dialog, Monaco model and draft through two refreshes; Apply still works (erratum P3-08: the split editor has no geometry entry, 5.1) |
   | `editor.spec.ts:125` (geometry export through the popup) | geometry export through the Diagram option; `bind` and `key` survive the save and the reopen | the chart assignment through the split editor |
   | `options.spec.ts:8-39` (Diagram option buttons at the narrowest width) | the buttons without `dmap-edit-bindings-option`, and the YAML option | with the button |
   | `zoom.spec.ts:138-162` (the corner in panel edit) | the corner without `dmap-edit-bindings` | with the button |
@@ -1188,7 +1196,7 @@ Verdict: yes. The one clash is in the v3 template scope, and v4 replaces that sc
      `diagram.drawio`. In mode B it is the source `.drawio`, which the merge never changes. The build id is the git
      blob id of these bytes (`git hash-object -w`, which also stores the blob in the local repository), and the
      build writes it into the panel as `options.build`. The
-     panel never reads this key. Grafana keeps it in the saved options, the YAML option of 5.0 changes only
+     panel reads this key only to tell a generated panel apart in the inspector (5.4). Grafana keeps it in the saved options, the YAML option of 5.0 changes only
      `config`, and Apply writes `{...options, config, diagram}` (`src/editor/popup/BindingsPopup.tsx:121` today,
      kept in 5.7). P1 acceptance 14 checks that a save keeps it.
    - **The base.** For each sheet, `pull` finds the panel by id, checks its type and reads `options.build`. It loads

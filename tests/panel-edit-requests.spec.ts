@@ -4,9 +4,9 @@ import { expect, test } from './authoring-fixtures';
 /**
  * Entering panel edit must not run the panel queries again (Grafana does not run them then either), must not call
  * datasource resources besides those of the Grafana query editors, and must show no error toast. Discard closes panel
- * edit. Regression for the "refresh on panel edit" and "Cancel does nothing" reports. P1 has no bindings popup
- * (spec 5.0): the draft is an edit in the YAML option, and Discard of the panel editor is the Cancel. The popup part
- * of this check comes with P3.
+ * edit. Regression for the "refresh on panel edit" and "Cancel does nothing" reports. The bindings popup (the split
+ * editor, spec 5.1) reads the data of the panel: it runs no query either, and Close drops its draft after a
+ * confirmation. A draft in the YAML option is dropped by Discard of the panel editor.
  */
 
 /**
@@ -37,13 +37,15 @@ function observeApi(page: Page) {
   return log;
 }
 
-test('panel edit runs no query again, calls no datasource resource of its own, and Discard drops a YAML edit', async ({
+test('panel edit and the popup run no query again, call no datasource resource of their own, and Close and Discard drop the drafts', async ({
   page,
   config,
   createDiagram,
   gotoDashboardPage,
 }) => {
-  const uid = await createDiagram(config);
+  // The test runs no query after the first one, and it runs longer than three samples of 5 s. With the freshness 3x the
+  // routers become stale (spec 3.5) during the test, the slow frontend sandbox first. One hour keeps them normal.
+  const uid = await createDiagram({ ...config, freshness: '1h' });
   const log = observeApi(page);
   // Monaco (the query editors) adds two empty `alert` live regions to the page: a toast has a text.
   const toasts = page.getByRole('alert').filter({ hasText: /\S/ });
@@ -60,9 +62,7 @@ test('panel edit runs no query again, calls no datasource resource of its own, a
   await panel.hover();
   await page.keyboard.press('e');
   await page.waitForURL(/editPanel=1/);
-  // P1 has no "Edit bindings" button (spec 5.0); the corner of the panel is there.
-  await expect(page.getByTestId('dmap-corner')).toBeAttached();
-  await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
+  await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
   await expect(normal()).toHaveCount(2);
   await page.waitForTimeout(5000);
   const afterEdit = log.slice(before);
@@ -75,6 +75,71 @@ test('panel edit runs no query again, calls no datasource resource of its own, a
     JSON.stringify(afterEdit)
   ).toEqual([]);
   await expect(toasts).toHaveCount(0);
+
+  // The popup reads the data of the panel (spec 5.1): its stage binds with no request.
+  const popup = page.getByTestId('dmap-bindings-popup');
+  const dialog = page.getByRole('dialog', { name: 'Edit bindings' });
+  const popupLines = popup.getByTestId('data-testid Code editor container').locator('.view-lines');
+  const popupNormal = () => popup.getByTestId('dmap-popup-stage').locator('[data-dmap-status="normal"]');
+  const openPopup = async () => {
+    await page.getByTestId('dmap-edit-bindings').click();
+    // Monaco loads lazily (spec 5.2); a code box with text is loaded.
+    await expect(popupLines).toContainText(/\S/, { timeout: 30_000 });
+  };
+  await openPopup();
+  await expect(popupLines).toContainText('version: 4');
+  await expect(popupNormal()).toHaveCount(2);
+  await page.waitForTimeout(3000);
+  const afterPopup = log.slice(before);
+  expect(
+    afterPopup.filter((r) => r.kind === 'query' || r.kind === 'resource'),
+    JSON.stringify(afterPopup)
+  ).toEqual([]);
+  await expect(toasts).toHaveCount(0);
+
+  // Close closes a clean draft at once.
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(popup).toHaveCount(0);
+
+  // With a dirty draft, Close asks first: Cancel keeps the draft, Discard closes and drops it.
+  await openPopup();
+  // Monaco renders only the lines in view: page down in the code box until the line of the router status is there.
+  const statusLine = popupLines.locator('.view-line').filter({ hasText: /status:\s+health/ });
+  await popupLines.locator('.view-line').first().click();
+  await expect
+    .poll(async () => {
+      if (await statusLine.count()) {
+        return true;
+      }
+      await page.keyboard.press('PageDown');
+      return false;
+    })
+    .toBe(true);
+  await statusLine.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('-draft');
+  // The draft binds the popup stage only: the panel keeps the saved bindings.
+  await expect(popupNormal()).toHaveCount(0);
+  await expect(normal()).toHaveCount(2);
+  const confirm = page.getByRole('dialog', { name: 'Discard changes?' });
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(popupLines).toContainText('health-draft');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await confirm.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(popup).toHaveCount(0);
+  await expect(normal()).toHaveCount(2);
+  // A new draft starts from the saved config: the routers have their status again.
+  await openPopup();
+  await expect(popupNormal()).toHaveCount(2);
+  await expect(popupLines).not.toContainText('health-draft');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(popup).toHaveCount(0);
+  expect(
+    log.slice(before).filter((r) => r.kind === 'query' || r.kind === 'resource'),
+    JSON.stringify(log.slice(before))
+  ).toEqual([]);
 
   // An edit in the YAML option changes the panel at once: the routers read a refId that no target has.
   const bindings = page.getByTestId('data-testid Options group Bindings');

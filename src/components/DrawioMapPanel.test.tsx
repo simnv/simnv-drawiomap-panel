@@ -17,6 +17,8 @@ import {
   toDataFrame,
 } from '@grafana/data';
 import { DrawioMapPanel } from './DrawioMapPanel';
+import { currentAddress, requestOpen } from '../editor/popup/popupBus';
+import { writeYaml } from '../options/yamlConfig';
 import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
 import type { ConfigV4 } from '../model/v4';
@@ -63,6 +65,14 @@ vi.mock('@grafana/ui', async (importOriginal) => ({
     <canvas data-testid="grafana-sparkline" width={props.width} height={props.height} />
   ),
   BarGauge: () => <div data-testid="grafana-bar" />,
+  // The split editor loads Monaco: a text area takes its place.
+  CodeEditor: (props: { value: string; onChange?: (text: string) => void }) => (
+    <textarea
+      data-testid="code-editor"
+      value={props.value}
+      onChange={(event) => props.onChange?.(event.target.value)}
+    />
+  ),
 }));
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. Set them before the imports run.
@@ -223,18 +233,20 @@ function stubRegionGeometry(): () => void {
 }
 
 describe('DrawioMapPanel', () => {
-  it.each([null, 1])('has no bindings editor when editPanel is %s', async (editPanel) => {
-    locationService.partial({ editPanel });
-    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
-    render(<DrawioMapPanel {...props({ options: { ...options, rules: [{ name: 'old' }] } })} />);
-    const badge = await screen.findByTestId('dmap-warning-badge');
-    expect(screen.queryByRole('button', { name: 'Edit bindings' })).toBeNull();
+  it('shows the Edit bindings button only in the panel editor of this panel', async () => {
+    const view = render(<DrawioMapPanel {...props()} />);
+    await screen.findByTestId('dmap-panel');
     expect(screen.queryByTestId('dmap-edit-bindings')).toBeNull();
-    const count = badge.textContent;
-    fireEvent.click(badge);
-    expect(badge.textContent).toBe(count);
-    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    view.unmount();
+    locationService.partial({ editPanel: 2 });
+    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
+    const other = render(<DrawioMapPanel {...props()} />);
+    await screen.findByTestId('dmap-panel');
+    expect(screen.queryByTestId('dmap-edit-bindings')).toBeNull();
+    other.unmount();
+    act(() => locationService.partial({ editPanel: 1 }));
+    render(<DrawioMapPanel {...props()} />);
+    expect(await screen.findByTestId('dmap-edit-bindings')).toBeTruthy();
   });
 
   it('keeps the warning count and opens nothing when the badge is clicked in edit mode', async () => {
@@ -909,6 +921,12 @@ describe('DrawioMapPanel live zoom', () => {
     const badge = screen.getByTestId('dmap-warning-badge');
     expect(badge.tagName).toBe('DIV');
     expect(resetButton.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // in panel edit the "Edit bindings" button comes last in the row
+    const edit = screen.queryByTestId('dmap-edit-bindings');
+    expect(!!edit).toBe(editPanel === 1);
+    if (edit) {
+      expect(badge.compareDocumentPosition(edit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
@@ -1618,5 +1636,95 @@ describe('DrawioMapPanel refresh and freshness', () => {
     expect(status()).toContain('q: 1 cell');
     expect(cell()?.getAttribute('data-dmap-status')).toBe('stale');
     expect(panelApplies()).toBe(applies + 1);
+  });
+});
+
+describe('DrawioMapPanel bindings popup', () => {
+  const inEditor = (id: number) => {
+    locationService.partial({ editPanel: id });
+    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
+  };
+
+  it('passes the save callback through the lazy popup and saves only on Apply', async () => {
+    inEditor(1);
+    const onOptionsChange = vi.fn();
+    render(<DrawioMapPanel {...props({ onOptionsChange })} />);
+    fireEvent.click(await screen.findByTestId('dmap-edit-bindings'));
+    const code = await screen.findByTestId('code-editor');
+    fireEvent.change(code, { target: { value: 'version: 4\nclasses: {}\n' } });
+    expect(onOptionsChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onOptionsChange).toHaveBeenCalledTimes(1);
+    expect(onOptionsChange.mock.calls[0][0].diagram).toEqual(options.diagram);
+  });
+
+  it('opens the split editor from the corner button with the saved config as YAML, and closes it', async () => {
+    inEditor(1);
+    render(<DrawioMapPanel {...props()} />);
+    const button = await screen.findByTestId('dmap-edit-bindings');
+    button.focus();
+    fireEvent.click(button);
+    const popup = await screen.findByTestId('dmap-bindings-popup');
+    expect(popup.closest('[role="dialog"]')).not.toBeNull();
+    expect((within(popup).getByTestId('code-editor') as HTMLTextAreaElement).value).toBe(writeYaml(demoConfigV4));
+    expect(within(popup).getByTestId('dmap-popup-stage').querySelector('svg')).not.toBeNull();
+    expect(within(popup).getByTestId('dmap-match-report')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
+    // the focus goes back to the button that opened the popup
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('dmap-edit-bindings')));
+  });
+
+  it('opens from the button of the options pane through the bus of its address', async () => {
+    inEditor(1);
+    render(<DrawioMapPanel {...props()} />);
+    await screen.findByTestId('dmap-edit-bindings');
+    act(() => {
+      expect(requestOpen(currentAddress(), { kind: 'none' })).toBe(true);
+    });
+    expect(await screen.findByTestId('dmap-bindings-popup')).toBeTruthy();
+  });
+
+  it('closes on Escape', async () => {
+    inEditor(1);
+    render(<DrawioMapPanel {...props()} />);
+    fireEvent.click(await screen.findByTestId('dmap-edit-bindings'));
+    const popup = await screen.findByTestId('dmap-bindings-popup');
+    fireEvent.keyDown(popup, { key: 'Escape' });
+    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
+  });
+
+  it('keeps the draft on a refresh and drops the popup when the panel editor closes', async () => {
+    inEditor(1);
+    const view = render(<DrawioMapPanel {...props()} />);
+    fireEvent.click(await screen.findByTestId('dmap-edit-bindings'));
+    const code = (await screen.findByTestId('code-editor')) as HTMLTextAreaElement;
+    const text = code.value;
+    // new data and new saved options: the code box keeps its text
+    view.rerender(
+      <DrawioMapPanel
+        {...props({ options: { ...options, config: withClass('router-cpu', { status: 'up' }) } })}
+        data={{ ...props().data, series: demoSeries().slice(1) }}
+      />
+    );
+    expect((screen.getByTestId('code-editor') as HTMLTextAreaElement).value).toBe(text);
+    act(() => locationService.partial({ editPanel: null }));
+    expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull();
+    expect(screen.queryByTestId('dmap-edit-bindings')).toBeNull();
+  });
+
+  it('closes the popup when the address changes, and listens at the new address', async () => {
+    inEditor(1);
+    render(<DrawioMapPanel {...props()} />);
+    fireEvent.click(await screen.findByTestId('dmap-edit-bindings'));
+    await screen.findByTestId('dmap-bindings-popup');
+    // the same panel id in the editor of another dashboard
+    act(() => locationService.push('/d/another-dashboard/x?editPanel=1'));
+    onTestFinished(() => act(() => locationService.push('/')));
+    await waitFor(() => expect(screen.queryByTestId('dmap-bindings-popup')).toBeNull());
+    act(() => {
+      expect(requestOpen(currentAddress(), { kind: 'none' })).toBe(true);
+    });
+    expect(await screen.findByTestId('dmap-bindings-popup')).toBeTruthy();
   });
 });

@@ -9,12 +9,12 @@ import {
   parsePathPoints,
   pathGeometry,
   polylineLength,
-  relativeMatrix,
   strokeReach,
   scaleOf,
   drawnStrokeWidth,
   originalStrokeWidth,
   toMatrix,
+  toRoot,
   usable,
   type Matrix,
   type Point,
@@ -342,14 +342,6 @@ function stageFont(root: SVGSVGElement): string {
 }
 
 /* ---------- coordinates ---------- */
-
-/**
- * The matrix from the user space of `el` into root user units: the screen CTMs of both, the transform attributes in
- * jsdom. Undefined when it cannot be read.
- */
-function toRoot(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Matrix | undefined {
-  return relativeMatrix(el, root, { screen: true, toCtm: rootCtm });
-}
 
 /** The axis-aligned box of `rect` mapped through `m`. */
 function mapRect(rect: Rect, m: Matrix): Rect {
