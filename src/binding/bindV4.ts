@@ -366,7 +366,10 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   for (const { meta } of index.values()) {
     const bind = meta.attrs.bind;
     if (bind !== undefined) {
-      withCells.add(bind);
+      // A cell uses each ancestor, but belongs directly to the class that its `bind` names.
+      for (const name of classes.get(bind)?.chain ?? [bind]) {
+        withCells.add(name);
+      }
       if (classes.has(bind)) {
         const ids = out.cells.get(bind);
         if (ids) {

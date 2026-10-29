@@ -385,7 +385,7 @@ On each bind the panel collects a **report**. In view mode the warning badge in 
 | `bad-cap`                                                     | The attribute `cap` does not parse.                                                     |
 | `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                      |
 | `unused-field`                                                | A link field on a class whose cells are not links.                                      |
-| `class-no-cells`                                              | No cell binds this class. An abstract class gives none.                                 |
+| `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.       |
 
 `no-series` and `orphan-series` are how you find a wrong `match`.
 

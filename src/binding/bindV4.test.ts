@@ -420,6 +420,38 @@ describe('bindV4: the report kinds of spec 4', () => {
     );
     expect(entries(r.report, 'class-no-cells')).toEqual([{ kind: 'class-no-cells', cls: 'idle' }]);
   });
+
+  it.each([
+    ['base', false],
+    ['middle', false],
+    ['middle', true],
+  ])('class-no-cells: ancestors of a bound class are used, parent %s, invalid override %s', (parent, invalid) => {
+    const r = run(
+      hostConfig(
+        { base: HOST, middle: { extends: 'base' }, host: { extends: parent } },
+        invalid ? { a: { colour: 'red' } } : undefined
+      ),
+      [['a', { bind: 'host', key: 'a' }]],
+      [frame('up', { job: 'a' })]
+    );
+    expect(entries(r.report, 'class-no-cells')).toEqual(
+      parent === 'base' ? [{ kind: 'class-no-cells', cls: 'middle' }] : []
+    );
+    expect([...r.cells]).toEqual([['host', ['a']]]);
+  });
+
+  it('class-no-cells: an unused base chain still reports each concrete class', () => {
+    const r = run(
+      hostConfig({ base: HOST, middle: { extends: 'base' }, leaf: { extends: 'middle' }, host: HOST }),
+      [['a', { bind: 'host', key: 'a' }]],
+      [frame('up', { job: 'a' })]
+    );
+    expect(entries(r.report, 'class-no-cells')).toEqual([
+      { kind: 'class-no-cells', cls: 'base' },
+      { kind: 'class-no-cells', cls: 'middle' },
+      { kind: 'class-no-cells', cls: 'leaf' },
+    ]);
+  });
 });
 
 describe('bindV4: the engine', () => {
