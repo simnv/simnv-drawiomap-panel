@@ -307,6 +307,8 @@ function DrawioMapPanelView(props: PanelProps<Options>) {
     dragPan,
     align,
     ignore: (t) => cards.inCard(t) || onControl(t),
+    // the hover surface of a chart region (ChartHover): a finger on it reads the samples
+    scrub: (t) => t instanceof Element && !!t.closest('[data-testid="dmap-chart-hover"]'),
   });
 
   // The configured view starts at the top-left corner of a stage that scrolls.

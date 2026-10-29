@@ -642,14 +642,14 @@ In the **View** group of the panel options:
 
 You can zoom and pan the view of the panel. The live zoom does not change the saved panel options.
 
-| Gesture                            | Result                                                                       |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| Pinch with two fingers             | Zooms around the point between the fingers. A move of the two fingers pans.  |
-| One finger, at the configured zoom | Scrolls the page, or the panel when it scrolls. A tap opens the card.        |
-| One finger, when zoomed            | Pans the view. A tap (less than 6 px of movement) opens the card.            |
-| Trackpad pinch (Ctrl+wheel)        | Zooms around the pointer. This is always on.                                 |
-| Mouse wheel                        | Zooms only when **Wheel zoom** is on. Else it scrolls the panel or the page. |
-| Mouse drag                         | Pans when the view is zoomed, or at all times when **Drag pan** is on.       |
+| Gesture                            | Result                                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Pinch with two fingers             | Zooms around the point between the fingers. A move of the two fingers pans.                                                       |
+| One finger, at the configured zoom | Scrolls the page, or the panel when it scrolls. A tap opens the card.                                                             |
+| One finger, when zoomed            | Pans the view. A tap (less than 6 px of movement) opens the card. On a chart region, it reads the chart values and does not pan.  |
+| Trackpad pinch (Ctrl+wheel)        | Zooms around the pointer. This is always on.                                                                                      |
+| Mouse wheel                        | Zooms only when **Wheel zoom** is on. Else it scrolls the panel or the page.                                                      |
+| Mouse drag                         | Pans when the view is zoomed, or at all times when **Drag pan** is on. This also applies to a drag that starts on a chart region. |
 
 The scale stays between 0.2× and 10× of the configured zoom. When the view is not at the configured zoom, a **Reset zoom** button shows in the top-left corner of the panel, below the status band and above the legend (top-left corner). The top-right corner stays free for the Grafana panel menu button. The warning badge is next to the button. Click or tap it to go back to the configured zoom; a panel that scrolls goes back to its top-left corner. A new panel size or a new **Zoom** option also resets the view.
 

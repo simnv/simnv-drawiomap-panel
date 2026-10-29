@@ -1,3 +1,4 @@
+import { devices, type Page } from '@playwright/test';
 import type { ConfigV4 } from '../src/model/v4';
 import {
   authoringTargets,
@@ -186,6 +187,77 @@ test('a drag that starts on a chart region pans the diagram, and a hover still r
   await page.mouse.move(moved.x + moved.width / 2 + 5, moved.y + moved.height / 2);
   await expect(page.getByTestId('dmap-chart-tooltip')).toBeVisible();
   expect(await viewBox()).toBe(panned);
+});
+
+// Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
+const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
+
+type TouchPoint = { x: number; y: number };
+
+/** Real touch input through the browser input pipeline, so touch-action applies. */
+async function touch(page: Page, from: TouchPoint[], to: TouchPoint[], steps = 10) {
+  const cdp = await page.context().newCDPSession(page);
+  const at = (t: number) => from.map((p, i) => ({ id: i, x: p.x + (to[i].x - p.x) * t, y: p.y + (to[i].y - p.y) * t }));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+  for (let i = 1; i <= steps; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(i / steps) });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+test.describe('a chart region on a phone', () => {
+  test.use(iPhone);
+
+  test('on a zoomed view one finger on a chart scrubs it and does not pan; two fingers pinch', async ({
+    page,
+    config,
+    createDiagram,
+    gotoDashboardPage,
+  }) => {
+    const uid = await createDiagram(config);
+    await gotoDashboardPage({ uid });
+    const panel = page.getByTestId('dmap-panel');
+    const chart = panel.getByTestId('dmap-chart');
+    await expect(chart.locator('canvas').first()).toBeVisible();
+    await chart.scrollIntoViewIfNeeded();
+    const viewBox = () => panel.locator('svg').first().getAttribute('viewBox');
+    const fitted = await viewBox();
+    // two fingers on the chart pinch the diagram
+    let box = (await chart.boundingBox())!;
+    const cy = box.y + box.height / 2;
+    const cx = box.x + box.width / 2;
+    await touch(
+      page,
+      [
+        { x: cx - 20, y: cy },
+        { x: cx + 20, y: cy },
+      ],
+      [
+        { x: cx - 80, y: cy },
+        { x: cx + 80, y: cy },
+      ]
+    );
+    await expect.poll(viewBox).not.toBe(fitted);
+    await expect(panel).toHaveCSS('touch-action', 'none');
+    // the view settles after the pinch
+    await expect(async () => {
+      const before = await viewBox();
+      await page.waitForTimeout(500);
+      expect(await viewBox()).toBe(before);
+    }).toPass();
+    const zoomed = await viewBox();
+    // one finger across the part of the chart inside the panel reads the samples; the view stays
+    box = (await chart.boundingBox())!;
+    const inside = (await panel.boundingBox())!;
+    const top = Math.max(box.y, inside.y);
+    const y = (top + Math.min(box.y + box.height, inside.y + inside.height)) / 2;
+    const left = Math.max(box.x, inside.x) + 10;
+    const right = Math.min(box.x + box.width, inside.x + inside.width) - 10;
+    await touch(page, [{ x: left, y }], [{ x: right, y }]);
+    await expect(page.getByTestId('dmap-chart-tooltip')).toBeVisible();
+    expect(await viewBox()).toBe(zoomed);
+  });
 });
 
 const STATES = [
