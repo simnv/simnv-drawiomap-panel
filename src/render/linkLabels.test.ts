@@ -16,6 +16,8 @@ import {
   stageObstacles,
   watchLinkLabelFonts,
 } from './linkLabels';
+import { cornersOf } from './labelPlacement';
+import type { Point } from './geometry';
 
 /** The status of a patch, as `statusViewOf` gives it. */
 type PatchStatus = NonNullable<CellPatch['statusView']>;
@@ -974,6 +976,66 @@ describe('renderLinkLabels: review cases', () => {
     ]);
     render(root, index, both);
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
+  });
+  describe('the own head on another run (review of 2026-10-29)', () => {
+    // a one-way link: a jog of 4, a vertical run of 40 and the run of 24 that holds the head, which points left to
+    // (80, 60). Two bodies leave the left of the vertical run as the only spot of the 28-unit percent slot. Before
+    // the fix the head was no obstacle for that spot, and at width 8 it met the text.
+    const svg = (d: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+      <g data-cell-id="e1"><g><path d="${d}" fill="none" pointer-events="stroke"/></g></g>
+      <g data-cell-id="n1"><g><rect x="97" y="41" width="42" height="68" stroke-width="0"/></g></g>
+      <g data-cell-id="n2"><g><rect x="61" y="98" width="78" height="13" stroke-width="0"/></g></g></svg>`;
+    /** a separating-axis test of two convex polygons; touching is free */
+    const convexMeet = (a: Point[], b: Point[]) =>
+      ![a, b].some((poly) =>
+        poly.some((p, i) => {
+          const q = poly[(i + 1) % poly.length];
+          const ax = { x: p.y - q.y, y: q.x - p.x };
+          const span = (pts: Point[]) => pts.map((v) => v.x * ax.x + v.y * ax.y);
+          const [sa, sb] = [span(a), span(b)];
+          return Math.max(...sa) <= Math.min(...sb) + 1e-9 || Math.max(...sb) <= Math.min(...sa) + 1e-9;
+        })
+      );
+    const pointsOf = (el: Element) =>
+      el
+        .getAttribute('points')!
+        .trim()
+        .split(/\s+/)
+        .map((pair) => {
+          const [x, y] = pair.split(',').map(Number);
+          return { x, y };
+        });
+    it.each([
+      ['a2b', 'M 100 100 L 104 100 L 104 60 L 80 60'],
+      ['b2a', 'M 80 60 L 104 60 L 104 100 L 100 100'],
+    ] as const)('%s: the text clears its drawn head at every width, on each refresh', (which, d) => {
+      const length = vi.fn(() => 28);
+      Object.defineProperty(SVGElement.prototype, 'getComputedTextLength', { configurable: true, value: length });
+      try {
+        const { root, index } = build(svg(d));
+        const patches = (width: number): PatchMap =>
+          new Map([
+            ['e1', linkPatch('e1', { [which]: half({ width, percentDisplay: '100%' }), labelMode: 'percent' })],
+          ]);
+        for (const width of [2, 3, 4, 5, 6, 7, 8, 9, 10, 6, 2]) {
+          expect(render(root, index, patches(width)).placed).toBe(1);
+          const label = byHalf(root, which)!;
+          const [, degrees] = /^rotate\((\S+) /.exec(label.getAttribute('transform')!)!;
+          // the text box of the slot (28 × 10, without the halo) about its centre
+          const box = cornersOf({
+            centre: { x: Number(label.getAttribute('x')), y: Number(label.getAttribute('y')) },
+            width: 28,
+            height: 10,
+            degrees: Number(degrees),
+          });
+          const head = pointsOf(root.querySelector(`polygon.dmap-arrow[data-dmap-half="${which}"]`)!);
+          expect(convexMeet(box, head), `width ${width}`).toBe(false);
+        }
+        expect(length).toHaveBeenCalled();
+      } finally {
+        delete (SVGElement.prototype as { getComputedTextLength?: unknown }).getComputedTextLength;
+      }
+    });
   });
   describe('the bend spot', () => {
     // a run of 31 and a jog of 10: no straight run holds the 26 unit box, so only the last resort can place it

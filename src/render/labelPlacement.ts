@@ -57,8 +57,8 @@ export type Obstacle =
   | { kind: 'rect'; rect: Rect; clearance: number }
   /**
    * A convex polygon (the reserved arrowhead of an overlay half: a triangle); no clearance. `owner` is the cell id of
-   * the edge and `leg` the id of the leg whose half draws the head, when known: a label on the sides ±3 of that leg
-   * moves with the head, so the head is no obstacle for it.
+   * the edge and `leg` the id of the leg whose half draws the head, when known: a label on the sides ±3 of a run of
+   * that leg moves with the head, so the head is no obstacle for it when its centreline lies on the line of that run.
    */
   | { kind: 'polygon'; points: [Point, Point, Point]; owner?: string; leg?: string }
   /** a piece of a drawn edge; `owner` is the cell id of the edge, `piece` its place in a leg polyline, when known */
@@ -132,6 +132,8 @@ export const MIN_GLYPH_PX = 7;
 export const VERTICAL_EPS = 0.01;
 /** Rounding slack: a box that touches an obstacle is free, a run of exactly the box width fits. */
 const EPS = 1e-6;
+/** A head whose centreline stands at most this far off the line of a run lies on it (`headOnLine`). */
+const HEAD_ON_LINE_EPS = 0.01;
 
 /** True when the labels read at `viewScale` pixels per user unit (section 6). */
 export function labelsVisible(viewScale: number): boolean {
@@ -418,6 +420,17 @@ function segmentHits(box: OrientedBox, a: Point, b: Point, clearance: number): b
   return distance < clearance - EPS;
 }
 
+/**
+ * True when the centreline of a head (from its tip to the middle of its base) lies on the line through `a` and `b`.
+ * The slack is far below the wide gap that the text keeps beyond the wing.
+ */
+function headOnLine([tip, left, right]: readonly [Point, Point, Point], a: Point, b: Point): boolean {
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  const off = (p: Point) => Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / length;
+  const base = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };
+  return length > 0 && off(tip) <= HEAD_ON_LINE_EPS && off(base) <= HEAD_ON_LINE_EPS;
+}
+
 /** The arc length at every vertex of a polyline. */
 const arcLengths = (pts: readonly Point[]): number[] => {
   const out = [0];
@@ -546,7 +559,18 @@ function placeOnRuns(
         o.piece.leg === leg.id &&
         arcs[o.piece.index] >= run.from - EPS &&
         arcs[o.piece.index + 1] <= run.to + EPS;
-      return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece }];
+      // the head of the own half, only when its centreline lies on the line of this run: then every drawn head stays
+      // within half its base of that line, and the sides ±3 keep the wide gap beyond that half base at every width.
+      // A head on another run (it points another way) stays an obstacle at its widest.
+      const ownHead = (o: Obstacle) =>
+        o.kind === 'polygon' &&
+        o.owner === own &&
+        o.leg !== undefined &&
+        o.leg === leg.id &&
+        headOnLine(o.points, a, b);
+      return [
+        { d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece, ownHead },
+      ];
     });
   });
   for (const side of sides) {
@@ -555,16 +579,15 @@ function placeOnRuns(
     if ((atBends && side === 0) || (Math.abs(side) >= 3 && !((leg.headRoot ?? 0) > leg.strokeRoot))) {
       continue;
     }
-    // beside the drawn heads the text moves with the head of its own half, so that head is no obstacle; every other
-    // head stays one at its widest
-    const ownHead = (o: Obstacle) =>
-      Math.abs(side) === 3 && o.kind === 'polygon' && o.owner === own && o.leg !== undefined && o.leg === leg.id;
-    for (const { d, anchor, heading, ownPiece } of candidates) {
+    // beside the drawn heads the text moves with the head of its own half, so that head is no obstacle when it lies
+    // on the candidate's run; every other head stays one at its widest
+    const besideHead = Math.abs(side) === 3;
+    for (const { d, anchor, heading, ownPiece, ownHead } of candidates) {
       const shift = offsetOf(side);
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
       const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
       if (
-        !collides(box, (o) => ownPiece(o) || ownHead(o), index) &&
+        !collides(box, (o) => ownPiece(o) || (besideHead && ownHead(o)), index) &&
         (!atBends || bendSpotFits(leg, own, index, box, side, anchor, heading.first))
       ) {
         return {

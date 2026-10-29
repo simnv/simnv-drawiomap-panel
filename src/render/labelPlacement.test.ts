@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { bendLengths, polylineLength, type Point } from './geometry';
+import { headSize } from './overlay';
 import {
   boundsOf,
+  cornersOf,
   labelsVisible,
   drawnCentre,
   LABEL_SIDES,
@@ -902,5 +904,110 @@ describe('labels near their link (the two cases of the report of 2026-10-29)', (
     // neighbour: it takes the top side at the wide gap
     expect(b.side).toBe(2);
     expect(b.centre.x).toBeCloseTo(-15);
+  });
+});
+
+describe('the own head on another run of the leg (review of 2026-10-29)', () => {
+  // A one-leg link: a jog of 4, a vertical run of 40, and the run of 24 that holds the head; the tip at (80, 60)
+  // points left. The percent slot is 28 × 10; linkWidth is 2 to 10, so the heads are 8 (thin) to 24 (widest) wide.
+  const PATH: Point[] = [
+    { x: 100, y: 100 },
+    { x: 104, y: 100 },
+    { x: 104, y: 60 },
+    { x: 80, y: 60 },
+  ];
+  const WIDTHS = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const percent = { size: { width: 28, height: 10 }, strokeRoot: 10, minRoot: 2, headRoot: 24, headMinRoot: 8 };
+  /** the head of the half drawn `width` wide: the tip at the end of the leg, along the direction of its last run */
+  const drawnHead = (points: Point[], width: number): Point[] => {
+    const tip = points[points.length - 1];
+    const before = points[points.length - 2];
+    const run = Math.hypot(tip.x - before.x, tip.y - before.y);
+    const ux = (tip.x - before.x) / run;
+    const uy = (tip.y - before.y) / run;
+    const { length, base } = headSize(width, 10);
+    return [
+      tip,
+      { x: tip.x - ux * length - (uy * base) / 2, y: tip.y - uy * length + (ux * base) / 2 },
+      { x: tip.x - ux * length + (uy * base) / 2, y: tip.y - uy * length - (ux * base) / 2 },
+    ];
+  };
+  /** a separating-axis test of two convex polygons; touching is free */
+  const convexMeet = (a: Point[], b: Point[]) =>
+    ![a, b].some((poly) =>
+      poly.some((p, i) => {
+        const q = poly[(i + 1) % poly.length];
+        const ax = { x: p.y - q.y, y: q.x - p.x };
+        const span = (pts: Point[]) => pts.map((v) => v.x * ax.x + v.y * ax.y);
+        const [sa, sb] = [span(a), span(b)];
+        const eps = 1e-9 * Math.hypot(ax.x, ax.y);
+        return Math.max(...sa) <= Math.min(...sb) + eps || Math.max(...sb) <= Math.min(...sa) + eps;
+      })
+    );
+  /** the box of the text (with the halo) at a drawn width */
+  const textAt = (p: Placed, width: number): Point[] =>
+    cornersOf({
+      centre: drawnCentre(p, width, headSize(width, 10).base),
+      width: p.box.width,
+      height: p.height,
+      degrees: p.degrees,
+    });
+  /** the scene of the review, turned by `degrees` about (100, 80): the leg, its strokes, its widest head, two bodies */
+  const scene = (degrees: number) => {
+    const r = (degrees * Math.PI) / 180;
+    const turn = (p: Point): Point => ({
+      x: 100 + (p.x - 100) * Math.cos(r) - (p.y - 80) * Math.sin(r),
+      y: 80 + (p.x - 100) * Math.sin(r) + (p.y - 80) * Math.cos(r),
+    });
+    const points = PATH.map(turn);
+    // the two bodies with the clearance of 1 that the stage gives them, each as two triangles (a turned rect)
+    const body = (x: number, y: number, width: number, height: number): Obstacle[] => {
+      const [a, b, c, d] = [
+        { x: x - 1, y: y - 1 },
+        { x: x + width + 1, y: y - 1 },
+        { x: x + width + 1, y: y + height + 1 },
+        { x: x - 1, y: y + height + 1 },
+      ].map(turn);
+      return [
+        { kind: 'polygon', points: [a, b, c] },
+        { kind: 'polygon', points: [a, c, d] },
+      ];
+    };
+    const [tip, left, right] = drawnHead(points, 10);
+    const obstacles: Obstacle[] = [
+      ...points.slice(1).map((p, i) => ({ ...segment(points[i], p, 'e', 1), piece: { leg: 'e:a2b', index: i } })),
+      { kind: 'polygon', points: [tip, left, right], owner: 'e', leg: 'e:a2b' },
+      ...body(97, 41, 42, 68),
+      ...body(61, 98, 78, 13),
+    ];
+    return { leg: leg(points, { ...percent, id: 'e:a2b' }), obstacles };
+  };
+
+  it.each([0, 30, 45, 90, 135, 210])(
+    'turned by %i°: the text clears the drawn head at every width between linkWidth.min and max',
+    (degrees) => {
+      const { leg: l, obstacles } = scene(degrees);
+      const p = placed(placeOnLadder(l, 'e', obstacleIndex(obstacles), LABEL_SIDES, true));
+      for (const width of WIDTHS) {
+        expect(convexMeet(textAt(p, width), drawnHead(l.points, width)), `width ${width}`).toBe(false);
+      }
+    }
+  );
+  it('the head on the run of the label is still no obstacle: the text moves out with it', () => {
+    // a straight leg of 36 with its head at the end: the label beside the drawn head, as in the case of 36 units
+    const l = leg(
+      [
+        { x: 0, y: 0 },
+        { x: 0, y: 18 },
+      ],
+      { ...percent, id: 'e:a2b' }
+    );
+    const [tip, left, right] = drawnHead(l.points, 10);
+    const head: Obstacle = { kind: 'polygon', points: [tip, left, right], owner: 'e', leg: 'e:a2b' };
+    const p = placed(placeOnLadder(l, 'e', obstacleIndex([head]), LABEL_SIDES, true));
+    expect(Math.abs(p.side)).toBe(3);
+    for (const width of WIDTHS) {
+      expect(convexMeet(textAt(p, width), drawnHead(l.points, width)), `width ${width}`).toBe(false);
+    }
   });
 });
