@@ -54,6 +54,17 @@ Unit proof, 2026-10-29, worktree of P1-20: `npx vitest run <the unit files below
 | 16  | Bench: the v4 bind is faster than the P0 number                          | `src/binding/bind.v4.bench.test.ts`                                                                                                                               | Pass: 15.046 ms against 16.373 ms (section "bench" above) |
 | 17  | `check:bundle` and `tests/no-drawio.spec.ts`: no YAML chunk in view mode | `npm run build && npm run check:bundle`, `tests/no-drawio.spec.ts`                                                                                                | Open: the P1-G gate                                       |
 
+## Binding model v4: P3 checks
+
+These checks cover the split editor. The P3 gate records the test output; these rows do not claim a new run.
+
+| Check | Proof | Result |
+| --- | --- | --- |
+| Split panes, tabs and resizing | `src/editor/popup/PopupLayout.test.tsx` | Open: P3 gate |
+| Draft preview, report, selection, inspector and diagram writes | `src/editor/popup/SplitEditor.test.tsx`, `src/editor/popup/InspectorV4.test.tsx`, `src/editor/popup/MatchReport.test.tsx` | Open: P3 gate |
+| Diagram selection and box selection | `src/editor/popup/DiagramStage.test.tsx`, `src/editor/popup/boxTargets.test.ts` | Open: P3 gate |
+| Editor in Grafana | `tests/binding-v4.spec.ts` | Open: P3 gate |
+
 ## E2E suites by Grafana version
 
 The Playwright projects are `matrix` (the tests on surfaces that differ between Grafana versions) and `plugin` (the plugin's own DOM).

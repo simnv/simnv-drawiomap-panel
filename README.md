@@ -105,6 +105,16 @@ A cell with `bind=node-up` and `key=node-rtr-a` shows the series of the target `
 
 ### Edit the config
 
+### Split editor
+
+In panel edit, select **Edit bindings** in the Diagram options or on the panel. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
+
+The preview follows a valid draft. Move the cursor in YAML to highlight the affected cells; select a report entry to move to its YAML path and highlight its cells. Select a cell to open its inspector and move the cursor to its override or class. The inspector shows its attributes, class chain, override, and, for each use, the query, matchers, series count and up to eight label sets and values. For an edge it also shows the ends and the direction of each half.
+
+Set `bind` and `key` for one cell with **Set bind and key**. An empty field removes that attribute. Shift-click cells or drag a selection box with Shift, then use **Assign class** to set `bind` on all selected cells; their keys stay. For an edge, use **key is at the target** or **key is at the source** to set or clear `at=target`. These writes change page 1 of the draft diagram in both XML and SVG. If the page is compressed, open it in draw.io and save it once before a write.
+
+Use **Undo** and **Redo** for diagram writes. **Apply** saves the valid YAML and diagram draft to the panel options; save the dashboard to keep the changes. Closing with an unapplied draft asks for confirmation. If the saved panel changes while the editor is open, choose **Reload** to discard the draft or **Keep my draft** before applying it.
+
 The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores the config as JSON in the dashboard. The editor shows the same data as YAML in a fixed key order.
 
 - A YAML comment is not kept. The editor writes the config from the data on each load.
@@ -129,7 +139,7 @@ Cell attribute names use ASCII lowercase; `setCellAttrs` lowercases written name
 | `label`   | The label of the cell. Read it as `${label}`.                                                                                              |
 | other     | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                           |
 
-The panel has no form for cell attributes in this version. Two ways set them:
+The inspector can write `bind` and `key`, and can set or clear `at=target` on an edge. For other attributes:
 
 - The generator or the `meta` of the portograph source writes them.
 - You set them in draw.io with **Edit Data** (Ctrl+M) in the embedded editor: **Diagram → Open editor**, select the cell, press Ctrl+M, add the attribute, then **Save**.
@@ -349,7 +359,7 @@ A class with `up`, `down` or `capacity` applies to a link (an edge cell).
 
 ### The match report
 
-On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the count, and its tooltip lists the entries. A click on it opens nothing in this version. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
+On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the count, and its tooltip lists the entries. In panel edit, use **Edit bindings** to open the split editor and its report. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
 
 | Entry                                                         | Meaning                                                                                 |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0 (Unreleased)
+
+- Added a split bindings editor with a live diagram, match report and cell inspector. The inspector can write bind, key and edge direction to the diagram.
+
 ## 1.1.0 (Unreleased)
 
 Binding model v4. This is the first version that reads the v4 config. A config of version 3 or older binds nothing: the diagram renders, the panel shows one note, and you write the config again as version 4 (or regenerate it). There is no migration. Regenerate the dashboards of a generator in the same change as this release.
