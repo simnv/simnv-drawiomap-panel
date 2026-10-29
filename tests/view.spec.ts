@@ -12,8 +12,8 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
   await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'b2a')).toHaveAttribute('data-dmap-status', 'ok');
   await expect(half('pg-link~radio:dhcp->rtr-a:wan2', 'a2b')).toHaveAttribute('data-dmap-step', '2');
   await expect(half('pg-link~lte:static->rtr-a:wan3', 'a2b')).toHaveAttribute('data-dmap-status', 'nodata');
-  await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-step', '0');
-  await expect(panel.locator.locator('[data-cell-id="pg-node~rtr-a"]')).toHaveAttribute('data-dmap-step', '1');
+  await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-status', 'down');
+  await expect(panel.locator.locator('[data-cell-id="pg-node~rtr-a"]')).toHaveAttribute('data-dmap-status', 'normal');
   // The values and sparklines show in the hover card only.
   await expect(panel.locator.locator('.dmap-overlay text, .dmap-label, .dmap-spark')).toHaveCount(0);
 });
@@ -39,21 +39,23 @@ test('link labels stay above the coloured link halves', async ({ gotoDashboardPa
   }
 });
 
-test('node state colours the node icon, not the whole node', async ({ gotoDashboardPage }) => {
+test('node status colours its border and tints its fill', async ({ gotoDashboardPage }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
   const node = panel.locator.locator('[data-cell-id="pg-node~rtr-a"]');
-  await expect(node).toHaveAttribute('data-dmap-target', 'icon');
+  await expect(node).toHaveAttribute('data-dmap-status', 'normal');
   const colours = await node.evaluate((el) => {
-    const svg = el.ownerSVGElement!;
-    const icon = svg.querySelector('[data-cell-id="pg-icon~rtr-a"] ellipse') as SVGElement;
     const rect = el.querySelector('rect') as SVGElement;
-    return { icon: icon.style.fill, node: rect.style.fill };
+    return { fill: rect.style.fill, stroke: rect.style.stroke };
   });
-  // green from the thresholds of the up query (an override); the node keeps its draw.io fill
-  expect(colours.icon).toMatch(/^(rgb\(115, 191, 105\)|#73bf69)$/i);
-  expect(colours.node).toContain('light-dark');
-  await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-target', 'icon');
+  // The up query gives the border its exact colour. The fill mixes that colour with its drawn fill.
+  expect(colours.stroke).toMatch(/^(rgb\(115, 191, 105\)|#73bf69)$/i);
+  expect(colours.fill).toMatch(/^rgb\(/);
+  expect(colours.fill).not.toBe(colours.stroke);
+  await expect(panel.locator.locator('[data-cell-id="pg-node~lte"] rect').first()).toHaveCSS(
+    'stroke',
+    'rgb(242, 73, 92)'
+  );
 });
 
 test('curved edge halves follow the real path geometry (getPointAtLength + CTM)', async ({ gotoDashboardPage }) => {

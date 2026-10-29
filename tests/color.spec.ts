@@ -1,8 +1,8 @@
-import { hoverHalf, pointOnHalf } from './authoring-controls';
+import { hoverHalf } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
-// The demo dashboard: WAN query W has the Color scheme "Green-Yellow-Red" and Max 100 Mb/s by an override.
-// LAN links use query A with "From thresholds" and a capacity from the port speed series S.
+// The WAN queries use "Green-Yellow-Red" with cap=100M on their cells.
+// The LAN queries use "From thresholds" and the port speed series for capacity.
 const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
 const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';
 const LAN = 'pg-link~net-a:lan->rtr-a:br-lan';
@@ -36,12 +36,12 @@ test('a WAN link has a colour from the continuous scheme of its field, a LAN lin
   // the thresholds still give the step index in percent
   await expect(half(RADIO)).toHaveAttribute('data-dmap-step', '2');
 
-  // LAN: 480 Mb/s of 1 Gb/s = 48 %, green from the thresholds
+  // The LAN a2b half uses rx at the target: 96 Mb/s of 1 Gb/s = 9.6 %, green from the thresholds
   expect(css((await half(LAN).getAttribute('stroke'))!)).toBe(THRESHOLD_COLOURS[0]);
   await expect(half(LAN)).toHaveAttribute('data-dmap-step', '0');
 });
 
-test('the hover card shows the percent of the field Max; the port speed series colours the canvas', async ({
+test('the hover card shows the percent of the cell capacity; the port speed series colours the canvas', async ({
   gotoDashboardPage,
   page,
 }) => {
@@ -53,7 +53,7 @@ test('the hover card shows the percent of the field Max; the port speed series c
     await expect(half).toHaveAttribute('data-dmap-status', 'ok');
     await hoverHalf(half);
   };
-  // field Max of the WAN query: 41 Mb/s of 100 Mb/s
+  // capacity of the WAN cell: 41 Mb/s of 100 Mb/s
   await hover(ISP_A);
   await expect(card).toContainText(/↑ 41(\.\d)? Mb\/s · 41%/);
   await page.mouse.move(1, 1);
@@ -69,7 +69,7 @@ test('the hand-drawn panel reads the capacity from a cell attribute', async ({ g
     queryParams: new URLSearchParams({ viewPanel: 'panel-2' }),
   });
   const panel = await dashboardPage.getPanelByTitle('hand-drawn');
-  // edge-ab has capacity="100000000"; the a2b series is 41 Mb/s
+  // edge-ab has cap="100M"; the a2b series is 41 Mb/s
   const half = panel.locator.locator('polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="edge-ab"]');
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
   await hoverHalf(half);
