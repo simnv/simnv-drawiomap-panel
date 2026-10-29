@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { css } from '@emotion/css';
 import type { FieldConfigSource, PanelData, PanelProps } from '@grafana/data';
 import { CodeEditor, useTheme2, type Monaco, type MonacoEditor } from '@grafana/ui';
+import { isMap, isNode, isScalar, type Document } from 'yaml';
 import type { BindResultV4 } from '../../binding/bindV4';
 import { bindContextFor } from '../../binding/context';
 import { snapshotV4 } from '../../binding/rowData';
@@ -11,13 +12,15 @@ import { indexSeries } from '../../query/seriesIndex';
 import { fitCells, type ViewBox } from '../../render/zoom';
 import { useBoundDiagram } from '../../stage/useBoundDiagram';
 import { useStage } from '../../stage/useStage';
-import { withDefaults, type Options, type PatchMap } from '../../types';
+import { withDefaults, type Diagram, type Options, type PatchMap } from '../../types';
 import { chartUsesV4 } from '../../visuals/ChartLayer';
+import { setCellAttrs } from '../setCellAttrs';
 import { cellsForPath, type CellSet } from '../split/cellsForPath';
-import { registerCompletion, type CompletionSource } from '../split/completion';
+import { classNamesOf, registerCompletion, type CompletionSource } from '../split/completion';
 import { reportCounts } from '../split/reportCounts';
 import { pathAt, readDraft } from '../split/yamlPath';
 import { DiagramStage, type StageSelection } from './DiagramStage';
+import { InspectorV4, type CellWrite } from './InspectorV4';
 import { MatchReport, type ReportPick } from './MatchReport';
 import { PluginDialog } from './PluginDialog';
 import { PopupLayout } from './PopupLayout';
@@ -40,12 +43,47 @@ export const CURSOR_WAIT_MS = 150;
 const FIT_MARGIN = 0.03;
 const MARKER_OWNER = 'drawiomap-split-editor';
 const NO_CELLS: CellSet = { cells: [], lighter: [], badges: new Map() };
-const noSelect = () => {};
 
 /** The refIds of the panel targets; without a request, the refIds of the loaded frames. */
 function refIdsOf(data: PanelData): string[] {
   const refIds = data.request ? data.request.targets.map((t) => t.refId) : data.series.map((f) => f.refId);
   return [...new Set(refIds.filter((refId): refId is string => !!refId))];
+}
+
+/** The start of the key at a path of plain keys, or undefined when the text has no such key. */
+function keyStart(doc: Document, parts: string[]): number | undefined {
+  let node: unknown = doc.contents;
+  let start: number | undefined;
+  for (const part of parts) {
+    const pair = isMap(node) ? node.items.find((p) => isScalar(p.key) && String(p.key.value) === part) : undefined;
+    if (!pair || !isNode(pair.key) || !pair.key.range) {
+      return undefined;
+    }
+    start = pair.key.range[0];
+    node = pair.value;
+  }
+  return start;
+}
+
+/**
+ * The YAML place of a clicked cell (spec 5.4): `overrides.<id>` when it exists, else `classes.<bind>`, else the end of
+ * the last line of `classes`.
+ */
+function cellPlace(text: string, id: string, bind: string | undefined): number | undefined {
+  const doc = readDraft(text).doc;
+  const place = keyStart(doc, ['overrides', id]) ?? (bind === undefined ? undefined : keyStart(doc, ['classes', bind]));
+  if (place !== undefined) {
+    return place;
+  }
+  const classes = isMap(doc.contents) ? doc.contents.get('classes', true) : undefined;
+  if (!isNode(classes) || !classes.range) {
+    return undefined;
+  }
+  let end = classes.range[1];
+  while (end > 0 && /\s/.test(text[end - 1])) {
+    end--;
+  }
+  return end;
 }
 
 /** Monaco and its editor: they exist only after the code box mounts (spec 5.2). */
@@ -64,6 +102,8 @@ interface Instance {
 export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVariables }: SplitEditorProps) {
   const theme = useTheme2();
   const opts = withDefaults(options);
+  /** The diagram with the writes of the inspector (spec 5.5). The writes go into the draw.io XML and the SVG (D19). */
+  const [diagram, setDiagram] = useState<Diagram | undefined>(opts.diagram);
   const [text, setText] = useState(() => toYaml(options.config));
   /** The value of the last text that parsed. */
   const [draft, setDraft] = useState<unknown>(options.config);
@@ -83,7 +123,7 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
   const yamlEntries = useMemo(() => readDraft(text).entries, [text]);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const stage = useStage(stageRef, opts.diagram?.svg, opts.diagram?.hash);
+  const stage = useStage(stageRef, diagram?.svg, diagram?.hash);
   const { min, max } = opts.linkWidth;
   const bindContext = useMemo(
     () =>
@@ -98,7 +138,7 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
   );
   const { validated, bound, patches, cardContext } = useBoundDiagram({
     index: stage.index,
-    xml: opts.diagram?.xml,
+    xml: diagram?.xml,
     config: draft,
     data,
     bindContext,
@@ -119,9 +159,17 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
     [cursorPath, bound, validated.classes]
   );
   const lit = entryCells ? { ...NO_CELLS, cells: entryCells } : pathCells;
+  // The selected cells of the inspector (spec 5.4, 5.5). The last one is the primary cell.
+  const [selected, setSelected] = useState<string[]>([]);
   const selection = useMemo(
-    (): StageSelection => ({ selected: [], affected: [], highlight: lit.cells, lighter: lit.lighter }),
-    [lit.cells, lit.lighter]
+    (): StageSelection => ({
+      selected,
+      primary: selected[selected.length - 1],
+      affected: [],
+      highlight: lit.cells,
+      lighter: lit.lighter,
+    }),
+    [selected, lit.cells, lit.lighter]
   );
 
   // The stage zooms to the highlighted cells when the set changes (spec 5.3).
@@ -227,6 +275,52 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
     [instance]
   );
 
+  /** A click on a cell selects it and moves the cursor to its class (spec 5.4). Shift adds it or takes it out. */
+  const onSelect = useCallback(
+    (id: string, { shift }: { shift: boolean }) => {
+      if (shift) {
+        setSelected((old) => (old.includes(id) ? old.filter((other) => other !== id) : [...old, id]));
+        return;
+      }
+      setSelected([id]);
+      const editor = instance?.editor;
+      const model = editor?.getModel();
+      const offset = cellPlace(textRef.current, id, stage.index.get(id)?.meta.attrs.bind);
+      if (editor && model && offset !== undefined) {
+        clearTimeout(cursorTimer.current);
+        const position = model.getPositionAt(offset);
+        editor.setPosition(position);
+        editor.revealLineInCenter(position.lineNumber);
+      }
+    },
+    [instance, stage.index]
+  );
+  const onBox = useCallback(
+    (ids: string[]) => setSelected((old) => [...old, ...ids.filter((id) => !old.includes(id))]),
+    []
+  );
+
+  const [writeError, setWriteError] = useState<string>();
+  const onWrite = useCallback(
+    (cells: CellWrite[]) => {
+      if (!diagram) {
+        return;
+      }
+      try {
+        setDiagram(setCellAttrs(diagram, cells));
+        setWriteError(undefined);
+      } catch (error) {
+        setWriteError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [diagram]
+  );
+  const onCloseInspector = useCallback(() => {
+    setSelected([]);
+    setWriteError(undefined);
+  }, []);
+  const classNames = useMemo(() => classNamesOf(draft), [draft]);
+
   return (
     <PopupLayout
       code={
@@ -247,16 +341,39 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
           stageRef={stageRef}
           patches={patches as PatchMap}
           selection={selection}
-          onSelect={noSelect}
+          onSelect={onSelect}
+          onBox={onBox}
           chartLayer={chartLayer}
-          hash={opts.diagram?.hash}
+          hash={diagram?.hash}
           linkWidth={opts.linkWidth}
           badges={entryCells ? undefined : lit.badges}
           view={view}
           setView={setView}
         />
       }
-      below={<MatchReport entries={entries} counts={counts} onPick={onPick} />}
+      below={
+        <div className={styles.below}>
+          <div className={styles.report}>
+            <MatchReport entries={entries} counts={counts} onPick={onPick} />
+          </div>
+          {selected.length ? (
+            <div className={styles.inspector}>
+              <InspectorV4
+                cellIds={selected}
+                index={stage.index}
+                xml={diagram?.xml}
+                bound={bound}
+                validated={validated}
+                classNames={classNames}
+                generated={options.build !== undefined}
+                error={writeError}
+                onWrite={onWrite}
+                onClose={onCloseInspector}
+              />
+            </div>
+          ) : null}
+        </div>
+      }
     />
   );
 }
@@ -285,4 +402,13 @@ export function BindingsPopup({ onClose, ...props }: BindingsPopupProps) {
 const styles = {
   body: css({ flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }),
   code: css({ height: '100%' }),
+  // The report and the inspector scroll on their own. A narrow pane puts the inspector below the report.
+  below: css({
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gridAutoRows: 'minmax(0, 1fr)',
+    height: '100%',
+  }),
+  report: css({ minWidth: 0, overflow: 'auto' }),
+  inspector: css({ minWidth: 0, overflow: 'auto' }),
 };
