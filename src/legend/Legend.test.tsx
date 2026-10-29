@@ -58,6 +58,46 @@ describe('Legend', () => {
       'linear-gradient'
     );
   });
+  it('draws a scale with a bar as one bar: a segment of the same width for each entry, the step values under it', () => {
+    const load: LegendBlock = {
+      ...blocks[0],
+      entries: [...blocks[0].entries, { key: 'step-2', label: '≥ 85%', color: '#f00', cellIds: [] }],
+      bar: {
+        segments: [
+          { from: 0, to: 1 / 3, range: '< 60%' },
+          { from: 1 / 3, to: 2 / 3, tick: '60%', range: '60% to 85%' },
+          { from: 2 / 3, to: 1, tick: '85%', range: '≥ 85%' },
+        ],
+      },
+    };
+    const { legend, onHighlight } = view({ blocks: [load] });
+    const bar = legend.querySelector('[data-dmap-bar]') as HTMLElement;
+    expect(bar.textContent).toBe('60%85%');
+    const segments = within(legend).getAllByTestId('dmap-legend-entry');
+    expect(segments.map((e) => e.getAttribute('aria-label'))).toEqual([
+      '< 60%: 1 element',
+      '60% to 85%: 2 elements',
+      '≥ 85%: 0 elements',
+    ]);
+    expect(segments.map((e) => e.style.width)).toEqual(['33.3%', '33.3%', '33.3%']);
+    expect(segments.map((e) => (e.querySelector('[data-dmap-swatch]') as HTMLElement).style.background)).toEqual([
+      'rgb(0, 255, 0)',
+      'rgb(255, 255, 0)',
+      'rgb(255, 0, 0)',
+    ]);
+    expect(
+      Array.from(bar.querySelectorAll<HTMLElement>('[data-dmap-tick]'), (t) => [t.textContent, t.style.left])
+    ).toEqual([
+      ['60%', '33.3%'],
+      ['85%', '66.7%'],
+    ]);
+    fireEvent.pointerEnter(segments[1]);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
+    fireEvent.pointerLeave(segments[1]);
+    fireEvent.focus(segments[0]);
+    expect(onHighlight).toHaveBeenLastCalledWith(['l1']);
+    expect(segments[2].tabIndex).toBe(0);
+  });
   it('highlights the cells of an entry on hover and on focus, and clears on leave and on blur', () => {
     const { legend, onHighlight } = view();
     const [, high, gradient] = within(legend).getAllByTestId('dmap-legend-entry');

@@ -154,6 +154,56 @@ test('hovering a legend entry highlights the cells in that band', async ({ page,
   await expect(panel.locator('.dmap-legend-hit')).toHaveCount(0);
 });
 
+test('the link load scale is one bar of equal segments with the step values under it, inside the legend', async ({
+  page,
+  gotoDashboardPage,
+}) => {
+  await gotoDashboardPage({ uid: 'drawiomap-demo' });
+  const panel = page.getByTestId('dmap-panel').first();
+  const legend = panel.getByTestId('dmap-legend');
+  await openLegend(legend);
+  const block = legend.getByRole('group', { name: /^Link load % \(lan_rx, lan_tx\)$/ });
+  const bar = block.locator('[data-dmap-bar]');
+  await expect(bar).toBeVisible();
+  const segments = block.getByTestId('dmap-legend-entry');
+  await expect(segments).toHaveCount(3);
+  const labels = await segments.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  expect(labels.map((l) => l!.replace(/: \d+ elements?$/, ''))).toEqual(['< 60%', '60% to 85%', '≥ 85%']);
+  await expect(bar.locator('[data-dmap-tick]')).toHaveText(['60%', '85%']);
+  await expect(bar).toHaveText('60%85%');
+  // the segments touch and have the same width: hard colour stops between the steps
+  const boxes = await Promise.all((await segments.all()).map(box));
+  for (let i = 1; i < boxes.length; i++) {
+    expect(boxes[i].x).toBeCloseTo(boxes[i - 1].x + boxes[i - 1].width, 0);
+    expect(boxes[i].width).toBeCloseTo(boxes[0].width, 0);
+  }
+  // the tick texts do not overlap, and the bar row fits the legend
+  const ticks = await Promise.all((await bar.locator('[data-dmap-tick]').all()).map(box));
+  for (let i = 1; i < ticks.length; i++) {
+    expect(ticks[i].x).toBeGreaterThan(ticks[i - 1].x + ticks[i - 1].width);
+  }
+  const l = await box(legend);
+  const b = await box(bar);
+  expect(b.x).toBeGreaterThanOrEqual(l.x);
+  expect(b.x + b.width).toBeLessThanOrEqual(l.x + l.width);
+  expect(l.width).toBeLessThanOrEqual(280);
+  await expect(legend).toHaveJSProperty('scrollWidth', await legend.evaluate((el) => el.clientWidth));
+  if (process.env.DMAP_SCREENSHOTS) {
+    await legend.screenshot({ path: 'local/legend-loadbar.png' });
+  }
+  // a narrow panel: the bar shrinks, the legend does not scroll sideways, and the tick texts still do not overlap
+  await legend.evaluate((el) => (el.parentElement!.style.width = '175px'));
+  await expect.poll(async () => (await box(bar.locator('ul'))).width).toBeLessThan(180);
+  await expect(legend).toHaveJSProperty('scrollWidth', await legend.evaluate((el) => el.clientWidth));
+  const narrow = await Promise.all((await bar.locator('[data-dmap-tick]').all()).map(box));
+  for (let i = 1; i < narrow.length; i++) {
+    expect(narrow[i].x).toBeGreaterThan(narrow[i - 1].x + narrow[i - 1].width);
+  }
+  if (process.env.DMAP_SCREENSHOTS) {
+    await legend.screenshot({ path: 'local/legend-loadbar-narrow.png' });
+  }
+});
+
 test('hovering a legend row of the diagram highlights the nodes of that symbol', async ({
   page,
   gotoDashboardPage,

@@ -338,7 +338,7 @@ describe('buildLegendV4', () => {
       expect(buildLegendV4(warm, gradients, ctx).map((b) => b.title)).toEqual(['t1 · t3', 't2']);
     });
 
-    it('keep the State block and the link load scale apart, unless the link load scale shows the same', () => {
+    it('keep the State block and the link load bar apart, and a status scale with the same entries too', () => {
       const s: SeriesInfo = {
         refId: 'tx',
         name: 'Value',
@@ -362,14 +362,16 @@ describe('buildLegendV4', () => {
         cell('e1', undefined, { a2b: half }),
       ]);
       expect(buildLegendV4(patches, own, ctx).map((b) => b.title)).toEqual(['scrape_up', 'State', 'Link load %']);
-      // the CPU scale has the texts and colours of the link load scale: one block
+      // the CPU scale has the texts and colours of the link load scale, but the link load scale is a bar
       patches.set(...cell('n3', status('cpu', 'normal', named('green'), '12%')));
       const blocks = buildLegendV4(patches, own, ctx);
-      expect(blocks.map((b) => b.title)).toEqual(['scrape_up', 'CPU busy · Link load %', 'State']);
-      expect(blocks[1].entries.map((e) => [e.label, e.cellIds])).toEqual([
-        ['< 80%', ['n3', 'e1']],
-        ['≥ 80%', []],
-      ]);
+      expect(blocks.map((b) => b.title)).toEqual(['scrape_up', 'CPU busy', 'State', 'Link load %']);
+      expect(blocks.map((b) => b.bar !== undefined)).toEqual([false, false, false, true]);
+      // two link load bars with the same steps from different queries are one block
+      const rx: HalfState = { ...half, series: { ...s, refId: 'rx' } };
+      patches.set(...cell('e2', undefined, { a2b: rx }));
+      const load = buildLegendV4(patches, own, ctx).at(-1)!;
+      expect([load.title, load.cellIds]).toEqual(['Link load %', ['e1', 'e2']]);
     });
   });
 
