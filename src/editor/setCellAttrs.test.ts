@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sanitizeSvg } from '../render/sanitize';
+import { buildCellIndex, mountSvg } from '../render/svgStage';
 import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { setCellAttrs } from './setCellAttrs';
@@ -188,5 +189,77 @@ describe('setCellAttrs', () => {
     expect(group.getAttribute('data-meta-at')).toBe('target');
     expect(group.getAttribute('data-meta-label')).toBe('Host A');
     expect(sanitizeSvg(clean).svg).toBe(clean);
+  });
+
+  it.each([
+    { existing: 'key', written: 'Key' },
+    { existing: 'Key', written: 'key' },
+  ])('replaces $existing with canonical $written through sanitization and mounting', ({ existing, written }) => {
+    const input = {
+      ...diagram(),
+      xml: diagram().xml.replace('key="host-a"', `${existing}="old"`),
+      svg: svg.replace('data-meta-key="host-a"', `data-meta-${existing}="old"`),
+    };
+    const result = setCellAttrs(input, [{ id: 'host-a', attrs: { [written]: 'new' } }]);
+    const wrapper = parse(result.xml).getElementById('host-a')!;
+    expect(wrapper.getAttribute('key')).toBe('new');
+    expect(wrapper.hasAttribute('Key')).toBe(false);
+    const clean = sanitizeSvg(result.svg).svg;
+    const group = parse(clean).querySelector('g')!;
+    expect(group.getAttribute('data-meta-key')).toBe('new');
+    expect(group.hasAttribute('data-meta-Key')).toBe(false);
+    expect(sanitizeSvg(clean).svg).toBe(clean);
+    const index = buildCellIndex(mountSvg(document.createElement('div'), clean));
+    expect(index.get('host-a')?.meta.attrs.key).toBe('new');
+    expect(index.get('host-a')?.meta.attrs).not.toHaveProperty('Key');
+  });
+
+  it('sets and removes an uppercase attribute across sanitizer passes', () => {
+    const result = setCellAttrs(diagram(), [{ id: 'host-a', attrs: { Rack_ID: 'rack-a' } }]);
+    const clean = sanitizeSvg(result.svg).svg;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), clean));
+    expect(parse(result.xml).getElementById('host-a')?.getAttribute('rack_id')).toBe('rack-a');
+    expect(parse(result.xml).getElementById('host-a')?.hasAttribute('Rack_ID')).toBe(false);
+    expect(index.get('host-a')?.meta.attrs.rack_id).toBe('rack-a');
+    expect(index.get('host-a')?.meta.attrs.Rack_ID).toBeUndefined();
+    const removed = setCellAttrs({ ...result, svg: clean }, [{ id: 'host-a', attrs: { Rack_ID: null } }]);
+    expect(parse(removed.xml).getElementById('host-a')?.hasAttribute('Rack_ID')).toBe(false);
+    const removedClean = sanitizeSvg(removed.svg).svg;
+    const removedIndex = buildCellIndex(mountSvg(document.createElement('div'), removedClean));
+    expect(removedIndex.get('host-a')?.meta.attrs).not.toHaveProperty('Rack_ID');
+    expect(removedIndex.get('host-a')?.meta.attrs).not.toHaveProperty('rack_id');
+    expect(sanitizeSvg(removedClean).svg).toBe(removedClean);
+  });
+
+  it.each(['key', 'Key', 'KEY'])('removes all imported case variants with %s', (name) => {
+    const input = {
+      ...diagram(),
+      xml: diagram().xml.replace('key="host-a"', 'key="old" Key="older" KEY="oldest"'),
+      svg: svg.replace('data-meta-key="host-a"', 'data-meta-key="old" data-meta-Key="older" data-meta-KEY="oldest"'),
+    };
+    const result = setCellAttrs(input, [{ id: 'host-a', attrs: { [name]: null } }]);
+    const wrapper = parse(result.xml).getElementById('host-a')!;
+    const group = parse(result.svg).querySelector('g')!;
+    for (const variant of ['key', 'Key', 'KEY']) {
+      expect(wrapper.hasAttribute(variant)).toBe(false);
+      expect(group.hasAttribute(`data-meta-${variant}`)).toBe(false);
+    }
+    const clean = sanitizeSvg(result.svg).svg;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), clean));
+    expect(index.get('host-a')?.meta.attrs).not.toHaveProperty('key');
+    expect(sanitizeSvg(clean).svg).toBe(clean);
+  });
+
+  it.each([
+    { key: 'first', Key: 'last' },
+    { Key: 'first', key: 'last' },
+  ])('uses the last write for case-only collisions in one request', (attrs) => {
+    const result = setCellAttrs(diagram(), [{ id: 'host-a', attrs }]);
+    const wrapper = parse(result.xml).getElementById('host-a')!;
+    expect(wrapper.getAttribute('key')).toBe('last');
+    expect(wrapper.hasAttribute('Key')).toBe(false);
+    const clean = sanitizeSvg(result.svg).svg;
+    const index = buildCellIndex(mountSvg(document.createElement('div'), clean));
+    expect(index.get('host-a')?.meta.attrs.key).toBe('last');
   });
 });

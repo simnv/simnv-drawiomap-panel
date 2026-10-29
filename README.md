@@ -116,6 +116,8 @@ The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores 
 
 A cell has attributes: the `data-meta-*` attributes of the exported SVG, written by draw.io, or by portograph from the `meta` of a node. The panel reads page 1 only.
 
+Cell attribute names use ASCII lowercase; `setCellAttrs` lowercases written names, replaces case variants, and removes all variants for `null`.
+
 | Attribute | Use                                                                                                                                        |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `bind`    | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                              |

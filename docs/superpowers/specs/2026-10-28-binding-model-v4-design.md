@@ -201,6 +201,8 @@ the dashboard (D16, A12). The YAML text is only the editing view (section 5).
 
 ### 2.2 Sketch
 
+Cell attribute names use ASCII lowercase; `setCellAttrs` lowercases written names, treats case variants as one key with the last write winning, and removes all variants for `null`.
+
 zod 3.23.8 (`package.json:95`), the same as v3 (`src/model/config.ts:2`). One schema gives the types. A new module
 `src/model/v4.ts` holds it. Section 2.5 tells how the panel applies it: the envelope first, then each item.
 

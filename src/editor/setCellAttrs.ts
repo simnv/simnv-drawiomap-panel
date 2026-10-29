@@ -55,6 +55,18 @@ function wrapCell(cell: Element): Element {
   return wrapper;
 }
 
+/** Replace all case variants with one lowercase name, or remove them all. */
+function writeAttribute(el: Element, name: string, value: string | null): void {
+  for (const attr of Array.from(el.attributes)) {
+    if (attr.name.toLowerCase() === name) {
+      el.removeAttributeNode(attr);
+    }
+  }
+  if (value !== null) {
+    el.setAttribute(name, value);
+  }
+}
+
 /** Set page 1 cell attributes in the XML and SVG, then update the content hash and time. */
 export function setCellAttrs(
   d: Diagram,
@@ -92,13 +104,9 @@ export function setCellAttrs(
     const wrapper = wrapCell(cell);
     index.set(id, wrapper);
     for (const [name, value] of Object.entries(attrs)) {
-      if (value === null) {
-        wrapper.removeAttribute(name);
-        matches[0].removeAttribute(`data-meta-${name}`);
-      } else {
-        wrapper.setAttribute(name, value);
-        matches[0].setAttribute(`data-meta-${name}`, value);
-      }
+      const canonical = name.toLowerCase();
+      writeAttribute(wrapper, canonical, value);
+      writeAttribute(matches[0], `data-meta-${canonical}`, value);
     }
   }
   const serializer = new XMLSerializer();
