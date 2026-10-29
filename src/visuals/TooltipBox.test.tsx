@@ -1,10 +1,10 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { Portal } from '@grafana/ui';
 import { TooltipBox } from './ChartHover';
+import { SandboxPortal } from '../util/sandboxHost';
 
-// The real Grafana Portal: it attaches its container to the document in its own layout effect, after the layout
+// The real sandbox portal: it attaches its host to the document in its own layout effect, after the layout
 // effect of the box. jsdom gives no element a size: this stub gives the box one once it is in the document.
 const size = { w: 200, h: 80 };
 const view = { w: 1000, h: 800 };
@@ -77,23 +77,23 @@ afterEach(() => {
 
 const mount = (x: number, y: number) =>
   render(
-    <Portal>
+    <SandboxPortal>
       <TooltipBox x={x} y={y} live={false} className="box">
         <span>value</span>
       </TooltipBox>
-    </Portal>
+    </SandboxPortal>
   );
 const box = () => screen.getByTestId('dmap-chart-tooltip');
 // the browser reports the size of the box once it is in the document
 const observe = () => act(() => observers.forEach((o) => !o.disconnected && o.callback()));
 
-describe('TooltipBox in the Grafana Portal', () => {
+describe('TooltipBox in the sandbox portal', () => {
   it('is hidden and unflipped before the portal attaches it; the size report flips it to the edge and shows it', () => {
     mount(900, 50);
     const el = box();
     expect(el.isConnected).toBe(true);
-    expect(el.closest('#grafana-portal-container, body')).toBeTruthy();
-    // the layout effect of the box ran before the portal attached the container: no size, no place, hidden
+    expect(el.closest('body > [data-plugin-sandbox]')).toBeTruthy();
+    // the layout effect of the box ran before the portal attached the host: no size, no place, hidden
     expect(el.style.visibility).toBe('hidden');
     expect(el.style.transform).toBe('');
     expect(observers).toHaveLength(1);
@@ -118,11 +118,11 @@ describe('TooltipBox in the Grafana Portal', () => {
     observe();
     expect(box().style.transform).toBe('translate(110px, 60px)');
     view.rerender(
-      <Portal>
+      <SandboxPortal>
         <TooltipBox x={900} y={780} live={false} className="box">
           <span>other</span>
         </TooltipBox>
-      </Portal>
+      </SandboxPortal>
     );
     expect(box().style.transform).toBe('translate(690px, 690px)');
   });

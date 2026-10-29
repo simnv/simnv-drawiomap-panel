@@ -8,10 +8,11 @@ import {
   type GrafanaTheme2,
   type TimeRange,
 } from '@grafana/data';
-import { Portal, SeriesTable, useStyles2, useTheme2 } from '@grafana/ui';
+import { SeriesTable, useStyles2, useTheme2 } from '@grafana/ui';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import { alignedSamples, nearestIndex, sampleTimes, timeAt, tooltipRows } from './hoverSample';
 import { placeTooltip } from './tooltipPlace';
+import { SandboxPortal } from '../util/sandboxHost';
 
 /** One series of the tooltip. */
 export interface HoverSeries {
@@ -91,8 +92,8 @@ const PLACE_RETRIES = 10;
  * box trails the pointer. This box writes its place to the DOM, no state, no transition: one commit for each
  * sample. Only a keyboard step is a live region: a pointer scrub would flood a screen reader.
  *
- * The Grafana Portal attaches its container in a layout effect of a parent, after the layout effect of this box:
- * the first measurement sees no size. The box stays hidden until it has a size. A ResizeObserver reports the
+ * The sandbox host (`SandboxPortal`) goes into the document in a layout effect of a parent, after the layout effect of
+ * this box: the first measurement sees no size. The box stays hidden until it has a size. A ResizeObserver reports the
  * size when the box is in the document and on each change of its content; without one, frames retry. A change
  * of the viewport places the box again.
  */
@@ -404,7 +405,7 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
             data-testid="dmap-chart-crosshair"
             style={{ left: `${Math.min(1, Math.max(0, hover.fraction)) * 100}%` }}
           />
-          <Portal>
+          <SandboxPortal>
             <TooltipBox x={hover.x} y={hover.y} live={hover.kind === 'key'} className={styles.box}>
               <SeriesTable
                 timestamp={dateTimeFormat(rows.time, { timeZone, format: 'YYYY-MM-DD HH:mm:ss' })}
@@ -416,7 +417,7 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
                 </div>
               ) : null}
             </TooltipBox>
-          </Portal>
+          </SandboxPortal>
         </>
       ) : null}
     </div>
