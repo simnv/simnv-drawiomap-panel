@@ -1,4 +1,5 @@
-import type { ZoomAlign, ZoomOptions } from '../types';
+import type { CellIndex, ZoomAlign, ZoomOptions } from '../types';
+import { applyMatrix, relativeMatrix } from './geometry';
 
 export interface ViewBox {
   x: number;
@@ -168,4 +169,62 @@ export function pinchView(
   const h = (start.h * w) / start.w;
   const { k, ox, oy } = meet({ w, h }, rect, align);
   return { x: anchor.x - (mid.x - rect.left - ox) / k, y: anchor.y - (mid.y - rect.top - oy) / k, w, h };
+}
+
+/** The box of a cell group in the user space of its svg; undefined when the engine gives no finite box. */
+function cellBox(group: SVGGElement): { x0: number; y0: number; x1: number; y1: number } | undefined {
+  const root = group.ownerSVGElement;
+  if (!root || typeof group.getBBox !== 'function') {
+    return undefined;
+  }
+  try {
+    const b = group.getBBox();
+    const m = relativeMatrix(group, root);
+    if (!m || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) {
+      return undefined;
+    }
+    const corners = [
+      [b.x, b.y],
+      [b.x + b.width, b.y],
+      [b.x, b.y + b.height],
+      [b.x + b.width, b.y + b.height],
+    ].map(([x, y]) => applyMatrix(m, { x, y }));
+    const xs = corners.map((p) => p.x);
+    const ys = corners.map((p) => p.y);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The view that fits the union of the boxes of the cells `ids`, with `margin` user units on each side (spec 5.3). The
+ * view has the aspect of `base`, so the scale is the same on both axes, and its scale stays in MIN_SCALE..MAX_SCALE
+ * of the base (`clampFactor`). An id with no cell or no box is skipped; with no box the result is `base`.
+ */
+export function fitCells(index: CellIndex, ids: string[], base: ViewBox, margin: number): ViewBox {
+  let union: { x0: number; y0: number; x1: number; y1: number } | undefined;
+  for (const id of ids) {
+    const group = index.get(id)?.group;
+    const box = group && cellBox(group);
+    if (box) {
+      union = union
+        ? {
+            x0: Math.min(union.x0, box.x0),
+            y0: Math.min(union.y0, box.y0),
+            x1: Math.max(union.x1, box.x1),
+            y1: Math.max(union.y1, box.y1),
+          }
+        : box;
+    }
+  }
+  if (!union) {
+    return base;
+  }
+  const w = union.x1 - union.x0 + 2 * margin;
+  const h = union.y1 - union.y0 + 2 * margin;
+  const factor = clampFactor(base, Math.max(w / base.w, h / base.h), base);
+  const cx = (union.x0 + union.x1) / 2;
+  const cy = (union.y0 + union.y1) / 2;
+  return { x: cx - (base.w * factor) / 2, y: cy - (base.h * factor) / 2, w: base.w * factor, h: base.h * factor };
 }
