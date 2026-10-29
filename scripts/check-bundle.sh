@@ -4,13 +4,27 @@
 #  1. no draw.io / maxGraph package in the dependency tree,
 #  2. no draw.io runtime globals in any plugin script dist/*.js, the lazy chunks too (GraphViewer, mxClient, viewer-static, @maxgraph),
 #  3. the bundle stays small,
-#  4. @grafana/react-detect finds no React 19 breakers.
+#  4. @grafana/react-detect finds no React 19 breakers,
+#  5. the build is newer than each file in src/ (spec 5.3: no stale build),
+#  6. dist/module.js holds no message text of the yaml package: the parser loads only in the lazy editor chunk
+#     (spec 5.3, A13). A minifier renames functions but keeps string literals.
 # The runtime check (no request to the editor origin in view mode) is tests/no-drawio.spec.ts.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 f="$root/dist/module.js"
 [ -f "$f" ] || { echo "run npm run build first"; exit 1; }
 bad=0
+stale=$(find "$root/src" -type f -newer "$f" | head -n 1)
+if [ -n "$stale" ]; then
+  echo "FAIL: stale build: ${stale#"$root/"} is newer than dist/module.js; run npm run build"
+  bad=1
+fi
+for text in 'Implicit keys need to be on a single line' 'Map keys must be unique'; do
+  if grep -qF -- "$text" "$f"; then
+    echo "FAIL: dist/module.js holds the yaml package text \"$text\"; load yaml only in a lazy chunk"
+    bad=1
+  fi
+done
 deps=$(node -e 'const p=require(process.argv[1]); console.log(Object.keys({...p.dependencies,...p.devDependencies}).join("\n"))' "$root/package.json")
 for pkg in @maxgraph/core mxgraph drawio @drawio/mcp; do
   if printf '%s\n' "$deps" | grep -qx "$pkg"; then
