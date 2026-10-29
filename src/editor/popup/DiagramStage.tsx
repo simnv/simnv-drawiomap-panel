@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
+import type { Badge } from '../split/cellsForPath';
 import { cellAt } from '../../interact/hit';
+import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../../legend/highlight';
 import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
 import type { ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
@@ -25,8 +27,10 @@ export interface StageSelection {
   missed?: string[];
   /** The cells that the edited pattern or override changes. */
   affected: string[];
-  /** The cells that a list row points at. */
+  /** The cells of the YAML path under the cursor or of a report entry (spec 5.3). The other cells dim. */
   highlight: string[];
+  /** The cells of the classes that extend the class under the cursor: a lighter highlight. */
+  lighter?: string[];
 }
 
 export interface DiagramStageProps {
@@ -45,6 +49,18 @@ export interface DiagramStageProps {
   hash?: string;
   /** The link width range of the panel: the value labels keep `linkWidth.max / 2` clear of the strokes. */
   linkWidth?: { min: number; max: number };
+  /** The count of series per cell for the path under the cursor (spec 5.3). Red for 0. */
+  badges?: ReadonlyMap<string, Badge>;
+  /** The live view, when the parent controls it (the split editor zooms to the highlighted cells). */
+  view?: ViewBox | null;
+  setView?: React.Dispatch<React.SetStateAction<ViewBox | null>>;
+}
+
+/** The place of a badge in the stage, in px from the top-left corner of the stage. */
+interface BadgePlace {
+  id: string;
+  left: number;
+  top: number;
 }
 
 const FIT: ZoomOptions = { ...DEFAULT_OPTIONS.zoom, mode: 'fit', percent: 100, align: 'center', minScale: 0 };
@@ -63,6 +79,8 @@ export function DiagramStage({
   chartLayer,
   hash,
   linkWidth,
+  badges,
+  ...controlled
 }: DiagramStageProps) {
   const theme = useTheme2();
   const styles = useStyles2(getStyles);
@@ -77,14 +95,18 @@ export function DiagramStage({
     [stageRef]
   );
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [view, setView] = useState<ViewBox | null>(null);
+  const [ownView, setOwnView] = useState<ViewBox | null>(null);
+  const view = controlled.setView ? (controlled.view ?? null) : ownView;
+  const setView = controlled.setView ?? setOwnView;
 
   // A new diagram starts at the fitted view.
-  const [viewRoot, setViewRoot] = useState(stage.root);
-  if (viewRoot !== stage.root) {
-    setViewRoot(stage.root);
-    setView(null);
-  }
+  const viewRoot = useRef(stage.root);
+  useLayoutEffect(() => {
+    if (viewRoot.current !== stage.root) {
+      viewRoot.current = stage.root;
+      setView(null);
+    }
+  }, [stage.root, setView]);
 
   // The size of the pane. The fitted layout follows it.
   useLayoutEffect(() => {
@@ -111,6 +133,25 @@ export function DiagramStage({
   // Fit the diagram into the pane. A pane with no size yet keeps the layout.
   useStageLayout(stage, FIT, size.width && size.height ? size : undefined, view, stageRef);
 
+  // The badges sit at the top-right corner of their cells. The effect runs after the layout of the view.
+  const [places, setPlaces] = useState<BadgePlace[]>([]);
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    const next: BadgePlace[] = [];
+    if (wrapper && badges?.size) {
+      const origin = wrapper.getBoundingClientRect();
+      for (const id of badges.keys()) {
+        const box = stage.index.get(id)?.group.getBoundingClientRect();
+        if (box) {
+          next.push({ id, left: box.right - origin.left, top: box.top - origin.top });
+        }
+      }
+    }
+    // The places come from the layout of the external SVG DOM.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPlaces((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
+  }, [badges, stage.index, view, size]);
+
   const box = useBoxSelect({
     wrapperRef,
     targets: () => boxTargets(stage.index),
@@ -131,7 +172,7 @@ export function DiagramStage({
   });
 
   // The editor layer of the cell attributes: the patch applier does not touch it.
-  const { selected, affected, highlight, primary, extra, missed } = selection;
+  const { selected, affected, highlight, lighter, primary, extra, missed } = selection;
   useEffect(() => {
     for (const [id, cell] of stage.index) {
       setOwnedAttrs(cell.group, 'editor', {
@@ -144,9 +185,20 @@ export function DiagramStage({
         'data-dmap-missed': missed?.includes(id) ? 'true' : 'false',
         'data-dmap-affected': affected.includes(id) ? 'true' : 'false',
         'data-dmap-highlight': highlight.includes(id) ? 'true' : 'false',
+        'data-dmap-lighter': lighter?.includes(id) ? 'true' : 'false',
       });
     }
-  }, [stage.index, selected, affected, highlight, primary, extra, missed]);
+  }, [stage.index, selected, affected, highlight, lighter, primary, extra, missed]);
+  // The cells that the highlight does not hold dim (the dimming of the legend, spec 5.3).
+  useEffect(() => {
+    const root = stage.root;
+    if (!root) {
+      return;
+    }
+    const hits = [...highlight, ...(lighter ?? [])];
+    highlightCells(root, stage.index, [...stage.index.keys()], hits.length ? hits : null);
+    return () => highlightCells(root, stage.index, [], null);
+  }, [stage.root, stage.index, highlight, lighter]);
   useEffect(() => {
     const index = stage.index;
     return () => index.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
@@ -192,6 +244,26 @@ export function DiagramStage({
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
+      {places.map(({ id, left, top }) => {
+        const badge = badges?.get(id);
+        return badge ? (
+          <span
+            key={id}
+            className={styles.badge}
+            data-testid="dmap-cell-badge"
+            data-dmap-badge={id}
+            data-dmap-red={badge.red ? 'true' : 'false'}
+            style={{
+              left,
+              top,
+              background: badge.red ? theme.colors.error.main : theme.colors.background.primary,
+              color: badge.red ? theme.colors.error.contrastText : theme.colors.text.primary,
+            }}
+          >
+            {badge.count}
+          </span>
+        ) : null;
+      })}
       {box.rect ? (
         <div
           className={styles.band}
@@ -239,6 +311,24 @@ const getStyles = (theme: GrafanaTheme2) => ({
     // The proposed selector misses these selected cells.
     '& [data-dmap-missed="true"]': { outline: `3px double ${theme.colors.error.border}`, outlineOffset: '2px' },
     '& [data-dmap-highlight="true"]': { outline: '3px dotted currentColor' },
+    // The cells of the classes that extend the class under the cursor.
+    '& [data-dmap-lighter="true"]': { outline: '2px dotted currentColor', opacity: 0.6 },
+    [`& .${LEGEND_MEMBER}`]: { transition: 'opacity 120ms' },
+    [`& svg.${LEGEND_ACTIVE} .${LEGEND_MEMBER}:not(.${LEGEND_HIT}):not(:has(.${LEGEND_HIT}))`]: { opacity: 0.2 },
+  }),
+  // A badge: its centre is on the top-right corner of its cell. It does not catch the pointer.
+  badge: css({
+    position: 'absolute',
+    zIndex: 1,
+    transform: 'translate(-50%, -50%)',
+    pointerEvents: 'none',
+    minWidth: 18,
+    padding: '0 4px',
+    borderRadius: 9,
+    border: `1px solid ${theme.colors.border.medium}`,
+    fontSize: theme.typography.bodySmall.fontSize,
+    lineHeight: '16px',
+    textAlign: 'center',
   }),
   band: css({
     position: 'absolute',

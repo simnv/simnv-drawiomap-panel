@@ -50,13 +50,16 @@ interface Props {
   bandHeight: number;
   /** The live view differs from the configured view: the reset button shows. */
   zoomed: boolean;
+  /** Panel edit: the "Edit bindings" button shows. */
+  editing: boolean;
   warnings: string[];
   onReset: () => void;
+  onEditBindings: () => void;
 }
 
-/** The top-left row holds the reset button and the warning badge. */
+/** The top-left row holds the reset button, the warning badge and, in panel edit, the "Edit bindings" button. */
 export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerControls(
-  { bandHeight, zoomed, warnings, onReset },
+  { bandHeight, zoomed, editing, warnings, onReset, onEditBindings },
   ref
 ) {
   const theme = useTheme2();
@@ -71,7 +74,7 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
       style={{ left: 4, top: bandHeight + 4, maxHeight: `calc(100% - ${bandHeight + 8}px)` }}
       data-testid="dmap-corner"
     >
-      {zoomed || warnings.length ? (
+      {zoomed || warnings.length || editing ? (
         <div className={styles.cornerRow}>
           {zoomed ? (
             <IconButton
@@ -94,6 +97,18 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             >
               {warnings.length} warning{warnings.length > 1 ? 's' : ''}
             </div>
+          ) : null}
+          {editing ? (
+            <IconButton
+              name="link"
+              size="lg"
+              tooltip="Edit bindings"
+              tooltipPlacement="right"
+              className={styles.reset}
+              style={buttonStyle}
+              data-testid="dmap-edit-bindings"
+              onClick={onEditBindings}
+            />
           ) : null}
         </div>
       ) : null}

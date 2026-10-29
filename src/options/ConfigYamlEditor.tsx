@@ -12,7 +12,7 @@ import { readYaml, writeYaml } from './yamlConfig';
 type Props = StandardEditorProps<unknown, Record<string, never>, Options>;
 
 /** A marker with no Monaco types: `blocks` is true when the error stops the save. */
-interface Mark {
+export interface Mark {
   blocks: boolean;
   message: string;
   startLineNumber: number;
@@ -29,7 +29,7 @@ interface Check {
 
 const OWNER = 'drawiomap-config';
 
-const toYaml = (value: unknown): string => (value === undefined || value === null ? '' : writeYaml(value));
+export const toYaml = (value: unknown): string => (value === undefined || value === null ? '' : writeYaml(value));
 
 /** The JSON of a value with its map keys sorted. A key with the value `undefined` is not in the JSON. */
 const sortedJson = (value: unknown): string | undefined =>
@@ -75,7 +75,7 @@ function mark(text: string, starts: number[], from: number, to: number, blocks: 
  * When a part of the path is not in the document, the range of the last part that is in it is the result: a missing
  * field marks its parent key.
  */
-function rangeOf(doc: Document, path: string): [number, number] {
+export function rangeOf(doc: Document, path: string): [number, number] {
   let node: unknown = doc.contents;
   let range: [number, number] = isNode(node) && node.range ? [node.range[0], node.range[1]] : [0, 0];
   for (const part of parsePath(path)) {
@@ -134,7 +134,7 @@ function entryMessage(entry: ReportEntry): string {
 }
 
 /** Parse and validate the text (spec 2.5). An item error is a marker that does not stop the save (spec 5.0). */
-function check(text: string): Check {
+export function check(text: string): Check {
   const starts = lineStarts(text);
   const read = readYaml(text);
   if (!read.ok) {

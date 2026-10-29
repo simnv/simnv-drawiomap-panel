@@ -162,6 +162,7 @@ const CONSUMER_ATTRS = [
   'data-dmap-missed',
   'data-dmap-affected',
   'data-dmap-highlight',
+  'data-dmap-lighter',
 ];
 /** The painted content of a stage root: the cells with their data-* and styles, the overlay and the labels. */
 function painted(root: SVGSVGElement): string {

@@ -5,7 +5,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DiagramStage, type StageSelection } from './DiagramStage';
 import { useStage } from '../../stage/useStage';
+import type { ViewBox } from '../../render/zoom';
 import type { CellPatch, PatchMap } from '../../types';
+import type { Badge } from '../split/cellsForPath';
 
 const svg = readFileSync(resolve(__dirname, '../../fixtures/authoring.svg'), 'utf8');
 const NONE: StageSelection = { selected: [], affected: [], highlight: [] };
@@ -25,6 +27,9 @@ interface HarnessProps {
   onSelect?: (id: string, options: { shift: boolean }) => void;
   onBox?: (ids: string[]) => void;
   onStage?: (stage: ReturnType<typeof useStage>) => void;
+  badges?: Map<string, Badge>;
+  view?: ViewBox | null;
+  setView?: React.Dispatch<React.SetStateAction<ViewBox | null>>;
 }
 function Harness({
   svg: text = svg,
@@ -34,6 +39,7 @@ function Harness({
   onSelect,
   onBox,
   onStage,
+  ...rest
 }: HarnessProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const stage = useStage(ref, text, hash);
@@ -46,6 +52,7 @@ function Harness({
       selection={selection}
       onSelect={onSelect ?? (() => {})}
       onBox={onBox}
+      {...rest}
     />
   );
 }
@@ -127,6 +134,65 @@ describe('DiagramStage', () => {
     expect(cell('device-2').getAttribute('role')).toBe('button');
     expect(cell('device-2').getAttribute('tabindex')).toBe('0');
     expect(cell('device-2').getAttribute('aria-label')).toBe('device-2 diagram element');
+  });
+
+  it('lights the highlighted and the lighter cells and dims the other cells', () => {
+    const view = render(
+      <Harness selection={{ selected: [], affected: [], highlight: ['device-1'], lighter: ['device-2'] }} />
+    );
+    const cell = (id: string) => screen.getByTestId('dmap-popup-stage').querySelector(`g[data-cell-id="${id}"]`)!;
+    const root = screen.getByTestId('dmap-popup-stage').querySelector('svg')!;
+    expect(cell('device-1').getAttribute('data-dmap-highlight')).toBe('true');
+    expect(cell('device-2').getAttribute('data-dmap-lighter')).toBe('true');
+    expect(cell('device-1').getAttribute('data-dmap-lighter')).toBe('false');
+    expect(root.classList.contains('dmap-legend-active')).toBe(true);
+    expect(cell('device-1').classList.contains('dmap-legend-hit')).toBe(true);
+    expect(cell('device-2').classList.contains('dmap-legend-hit')).toBe(true);
+    expect(cell('link-1').classList.contains('dmap-legend-member')).toBe(true);
+    expect(cell('link-1').classList.contains('dmap-legend-hit')).toBe(false);
+    // no highlight: nothing dims
+    view.rerender(<Harness selection={NONE} />);
+    expect(root.classList.contains('dmap-legend-active')).toBe(false);
+    expect(root.querySelectorAll('.dmap-legend-member')).toHaveLength(0);
+  });
+
+  it('puts a badge with the count on the top-right corner of each cell, red for 0', async () => {
+    const boxes: Record<string, Partial<DOMRect>> = {
+      'device-1': { left: 100, top: 50, right: 160, bottom: 90 },
+      'device-2': { left: 200, top: 60, right: 250, bottom: 100 },
+    };
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const id = this.getAttribute('data-cell-id') ?? '';
+      return { left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, ...boxes[id] } as DOMRect;
+    });
+    const badges = new Map([
+      ['device-1', { count: 2, red: false }],
+      ['device-2', { count: 0, red: true }],
+    ]);
+    const view = render(<Harness badges={badges} />);
+    await frame();
+    const shown = screen.getAllByTestId('dmap-cell-badge');
+    expect(shown.map((el) => [el.dataset.dmapBadge, el.textContent, el.dataset.dmapRed])).toEqual([
+      ['device-1', '2', 'false'],
+      ['device-2', '0', 'true'],
+    ]);
+    expect([shown[0].style.left, shown[0].style.top]).toEqual(['160px', '50px']);
+    view.rerender(<Harness badges={new Map()} />);
+    await frame();
+    expect(screen.queryAllByTestId('dmap-cell-badge')).toHaveLength(0);
+  });
+
+  it('follows a view of the parent and gives the reset to the parent', async () => {
+    const setView = vi.fn();
+    const view: ViewBox = { x: 10, y: 20, w: 320, h: 160 };
+    render(<Harness view={view} setView={setView} />);
+    await frame();
+    const root = screen.getByTestId('dmap-popup-stage').querySelector('svg')!;
+    expect(root.getAttribute('viewBox')).toBe('10 20 320 160');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('dmap-popup-reset-zoom'));
+    });
+    expect(setView).toHaveBeenLastCalledWith(null);
   });
 
   it('selects a cell on a click, with the shift state, and on Enter and Space', () => {
