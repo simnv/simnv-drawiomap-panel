@@ -92,11 +92,47 @@ function halfContext(ctx: CardContext): HalfContext {
 }
 
 /**
- * True when the card of the cell has rows or links: a URL, a row of its class, or a status. It reads no series
- * values, so the panel can call it for all cells once per data update.
+ * True when the card of the cell has rows or links: a URL, a row of its class, a status, or a series with data links
+ * in its field config. It reads no series values, so the panel can call it for all cells once per data update.
  */
-export function opensCard(patch: CellPatch & Pick<PatchV4, 'rowsV4'>): boolean {
-  return patch.urls.length > 0 || (patch.rowsV4?.length ?? 0) > 0 || patch.statusView !== undefined;
+export function opensCard(
+  patch: CellPatch & Pick<PatchV4, 'rowsV4'>,
+  series?: ReadonlyMap<UsePath, Series[]>
+): boolean {
+  if (patch.urls.length > 0 || (patch.rowsV4?.length ?? 0) > 0 || patch.statusView !== undefined) {
+    return true;
+  }
+  // a cheap guess: getLinks can still drop a link, then the card has nothing to show and does not open
+  return [...(series?.values() ?? [])].some(
+    (s) => !!s[0]?.field.getLinks && (s[0].field.config.links?.length ?? 0) > 0
+  );
+}
+
+/**
+ * The Grafana data links of a cell: the field config links of the first series of each use, in the order of the
+ * uses. The context is the row of the last value in the frame of the field: Grafana formats `${__value.text}` from
+ * that row. A link whose target is already in `links` is not added again.
+ */
+function fieldLinksV4(cellId: string, bound: BindResultV4, links: LinkModel[]): void {
+  const byPath = bound.series.get(cellId);
+  const seen = new Set<Field>();
+  for (const use of bound.uses.get(cellId) ?? []) {
+    const field = byPath?.get(use.path)?.[0]?.field;
+    if (!field?.getLinks || seen.has(field)) {
+      continue;
+    }
+    seen.add(field);
+    const values = field.values as ReadonlyArray<number | null | undefined>;
+    let row = values.length - 1;
+    while (row > 0 && typeof values[row] !== 'number') {
+      row--;
+    }
+    for (const link of field.getLinks({ valueRowIndex: Math.max(0, row) })) {
+      if (!links.some((l) => l.href === link.href)) {
+        links.push(link);
+      }
+    }
+  }
 }
 
 /** The most lines of one history chart; the other series give "+N more" (spec 3.7, D9). */
@@ -141,9 +177,9 @@ interface UseData {
 /**
  * The card of a v4 cell (spec 3.7, 3.5 step 6, 3.6): a status row when the status is not normal, then the rows of the
  * effective class in their order. A `history` row draws up to MAX_LINES lines in one `yDomain` range, a `value` row
- * reduces across its series, an `updown` row reduces each direction at each timestamp. The URL of the cell and the
- * `drilldown` rows are the links. A row is stale when one of its series is stale; on a relative range the row gives
- * the deadline (`staleAfter`) and the card reads the clock.
+ * reduces across its series, an `updown` row reduces each direction at each timestamp. The URL of the cell, the data
+ * links of its series and the `drilldown` rows are the links, in this order. A row is stale when one of its series is
+ * stale; on a relative range the row gives the deadline (`staleAfter`) and the card reads the clock.
  */
 export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContextV4): CardModelV4 {
   const meta = ctx.index.get(cellId)?.meta;
@@ -157,6 +193,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
   for (const u of patch.urls) {
     card.links.push({ title: u.title ?? defaultUrlTitle(u.url, title), href: u.url, target: '_blank', origin: patch });
   }
+  fieldLinksV4(cellId, bound, card.links);
   const slots = patch.rowsV4 ?? [];
   const status = patch.statusView;
   // a state that is not normal and its reason come first; a normal status shows only on a card with no rows

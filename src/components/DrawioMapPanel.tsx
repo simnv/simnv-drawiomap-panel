@@ -203,9 +203,13 @@ function DrawioMapPanelView(props: PanelProps<Options>) {
     () =>
       interactiveCells(result.patches, stage.index, (p) => {
         const entry = stage.index.get(p.cellId);
-        return !!entry && hoverKinds.includes(hoverKind(entry)) && opensCard(patches.get(p.cellId) ?? p);
+        return (
+          !!entry &&
+          hoverKinds.includes(hoverKind(entry)) &&
+          opensCard(patches.get(p.cellId) ?? p, bound.series.get(p.cellId))
+        );
       }),
-    [result.patches, patches, stage.index, hoverKinds]
+    [result.patches, patches, bound, stage.index, hoverKinds]
   );
   const cardable = (p: CellPatch) => interactive.has(p.cellId);
 

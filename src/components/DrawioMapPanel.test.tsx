@@ -635,6 +635,52 @@ describe('DrawioMapPanel hover card', () => {
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(dialog.getAttribute('aria-label'));
   });
 
+  it('a pinned card shows the Grafana data links of the field after the class URL', async () => {
+    const p = props();
+    const series = p.data.series.map((f) => {
+      if (f.refId === 'wan_tx' && f.fields[1].labels?.device === 'pppoe') {
+        const field = f.fields[1];
+        field.getLinks = () => [
+          { title: 'Interface details', href: '/d/iface?var-device=pppoe', target: '_blank', origin: field },
+        ];
+      }
+      return f;
+    });
+    const { half } = await setup(props({ data: { ...p.data, series } }));
+    fireEvent.click(half(linkId));
+    await screen.findByRole('dialog');
+    const links = screen.getAllByTestId('dmap-card-link');
+    expect(links.map((l) => l.textContent)).toEqual(['Traffic of node-isp-a:pppoe', 'Interface details']);
+    expect(links[1].getAttribute('href')).toBe('/d/iface?var-device=pppoe');
+  });
+
+  it('a link with no url, rows or status opens a card when its field has data links', async () => {
+    const { url: _url, urlTitle: _title, ...wan } = demoConfigV4.classes.wan;
+    const config: ConfigV4 = { ...demoConfigV4, classes: { ...demoConfigV4.classes, wan: { ...wan, rows: [] } } };
+    const p = props({ options: { ...options, config } });
+    const interactive = (container: HTMLElement) =>
+      container.querySelector(`[data-cell-id="${linkId}"]`)!.hasAttribute('data-dmap-interactive');
+    const plain = await setup(p);
+    await waitFor(() => expect(interactive(plain.container)).toBe(false));
+    plain.unmount();
+    const links = [{ title: 'Interface details', url: '/d/iface?var-device=pppoe' }];
+    const series = demoSeries().map((f) => {
+      if (f.refId === 'wan_tx' && f.fields[1].labels?.device === 'pppoe') {
+        const field = f.fields[1];
+        field.config = { ...field.config, links };
+        field.getLinks = () => [{ title: links[0].title, href: links[0].url, target: '_blank', origin: field }];
+      }
+      return f;
+    });
+    const { container, half } = await setup(props({ ...p, data: { ...p.data, series } }));
+    await waitFor(() => expect(interactive(container)).toBe(true));
+    fireEvent.click(half(linkId));
+    await screen.findByRole('dialog');
+    expect(screen.getByRole('link', { name: 'Interface details' }).getAttribute('href')).toBe(
+      '/d/iface?var-device=pppoe'
+    );
+  });
+
   it('the urlTitle of the class names the footer link', async () => {
     const config = withClass('wan', { urlTitle: 'Port ${port}' });
     const { half } = await setup(props({ options: { ...options, config } }));

@@ -1,3 +1,5 @@
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { getPanelOptionsWithDefaults } from '@grafana/data';
 import type { Options } from './types';
@@ -27,6 +29,7 @@ interface Item {
   description?: string;
   defaultValue?: unknown;
   showIf?: (options: Options) => boolean;
+  editor?: React.ComponentType<{ value: unknown; onChange: (v: unknown) => void; context: object; item: object }>;
 }
 
 /** Record the add* calls of the options builder: the real builder needs the Grafana editor registry. */
@@ -59,8 +62,12 @@ describe('Minimum scale option', () => {
 });
 
 describe('Build id option', () => {
-  it('keeps options.build through the defaults and an option change', () => {
-    const saved = { build: 'build-1', config: { version: 4, classes: {}, overrides: {} } } as Partial<Options>;
+  const saved = {
+    build: 'build-1',
+    config: { version: 4, classes: {}, overrides: {} },
+    diagram: { xml: '<mxfile/>', svg: '<svg/>', hash: 'h', updatedAt: '2026-10-29T00:00:00Z' },
+  } as Partial<Options>;
+  it('keeps options.build through the defaults', () => {
     // the plugin has no migration handler that could drop a key
     expect(plugin.onPanelMigration).toBeUndefined();
     // the defaults step of Grafana; the stub has no option editors, which this test does not need
@@ -70,10 +77,21 @@ describe('Build id option', () => {
       currentFieldConfig: { defaults: {}, overrides: [] },
       isAfterPluginChange: false,
     });
-    // an option editor writes its own path; Grafana gives onOptionsChange the whole object
-    const changed = { ...options, zoom: { mode: 'original' } } as unknown as Options;
-    expect(changed.build).toBe('build-1');
-    expect(changed.config).toEqual(saved.config);
+    expect(options).toMatchObject(saved);
+  });
+  it('keeps options.build when the custom editor of the plugin changes an option: it gives only its own value', () => {
+    const onOptionsChange = vi.fn();
+    const item = option('diagram')!;
+    const Editor = item.editor!;
+    // as Grafana: the editor gives the value of its path, the panel editor sets that path on a copy of the options
+    // and gives onOptionsChange the whole object
+    const onChange = (value: unknown) => onOptionsChange({ ...saved, [item.path]: value });
+    render(
+      React.createElement(Editor, { value: saved.diagram, onChange, context: { data: [], options: saved }, item })
+    );
+    fireEvent.click(screen.getByText('Clear'));
+    expect(onOptionsChange).toHaveBeenCalledTimes(1);
+    expect(onOptionsChange.mock.calls[0][0]).toEqual({ build: 'build-1', config: saved.config, diagram: undefined });
   });
 });
 

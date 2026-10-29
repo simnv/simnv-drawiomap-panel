@@ -8,15 +8,18 @@ import {
   type DataFrame,
   type DataQueryRequest,
   type FieldConfig,
+  type Field,
   type Labels,
+  type LinkModel,
   type PanelData,
 } from '@grafana/data';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applyContract, cellMetaFromAttrs } from '../adapter/portograph';
 import { bindContextFor } from '../binding/context';
 import { bindV4 } from '../binding/bindV4';
 import { validateConfig } from '../model/validate';
 import type { CellEntry, CellIndex, CellMeta, CellPatch } from '../types';
+import type { Series } from '../query/snapshot';
 import {
   buildCardV4,
   chartHeight,
@@ -136,6 +139,49 @@ describe('card links', () => {
   });
 });
 
+describe('field data links', () => {
+  /** A frame whose number field has the data links of its Grafana field config. */
+  function linked(refId: string, values: Array<number | null>, links: Array<Pick<LinkModel, 'title' | 'href'>>) {
+    const f = frame(refId, job, values, { links: links.map((l) => ({ title: l.title, url: l.href })) });
+    const getLinks = vi.fn(() => links.map((l): LinkModel<Field> => ({ ...l, target: '_blank', origin: f.fields[1] })));
+    f.fields[1].getLinks = getLinks;
+    return { frame: f, getLinks };
+  }
+  const host = { title: 'Host overview', href: '/d/host?var-job=node-rtr-a' };
+  it('adds the data links of the series of the cell to a card with no class url, once each', () => {
+    const up = linked('up', [1, 1, null], [host]);
+    const cpu = linked('cpu', [40], [host, { title: 'CPU', href: '/d/cpu' }]);
+    const model = card({ status: 'up', rows: [{ kind: 'value', query: 'cpu' }] }, [up.frame, cpu.frame]);
+    expect(model.links.map((l) => [l.title, l.href])).toEqual([
+      ['Host overview', '/d/host?var-job=node-rtr-a'],
+      ['CPU', '/d/cpu'],
+    ]);
+    // the row of the last value in the frame gives the link context (${__value.text})
+    expect(up.getLinks).toHaveBeenCalledWith({ valueRowIndex: 1 });
+  });
+  it('puts the data links after the class url and before the drilldowns', () => {
+    const cpu = linked('cpu', [40], [{ title: 'CPU', href: '/d/cpu' }]);
+    const model = card(
+      { url: '/d/rtr', urlTitle: 'Router', rows: [{ kind: 'drilldown', label: 'Logs', url: '/d/logs' }] },
+      [cpu.frame]
+    );
+    // the class does not use cpu: its data links are not for this cell
+    expect(model.links.map((l) => l.title)).toEqual(['Router', 'Logs']);
+    const withRow = card(
+      {
+        url: '/d/rtr',
+        urlTitle: 'Router',
+        rows: [
+          { kind: 'value', query: 'cpu' },
+          { kind: 'drilldown', label: 'Logs', url: '/d/logs' },
+        ],
+      },
+      [cpu.frame]
+    );
+    expect(withRow.links.map((l) => l.title)).toEqual(['Router', 'CPU', 'Logs']);
+  });
+});
+
 describe('updown row', () => {
   const traffic = { kind: 'updown', label: 'Traffic', up: 'tx', down: 'rx' };
   const frames = (tx: Array<number | null>, rx: Array<number | null>, config: FieldConfig = { unit: 'bps' }) => [
@@ -236,5 +282,15 @@ describe('opensCard', () => {
   it('is false for a cell that only colours, or has an empty list of rows', () => {
     expect(opensCard(bare())).toBe(false);
     expect(opensCard(bare({ rowsV4: [] }))).toBe(false);
+  });
+  it('is true for a cell whose series have data links, for example a link with only up and down', () => {
+    const series = (config: FieldConfig): Series => {
+      const field: Field = { name: 'Value', type: FieldType.number, config, values: [1], getLinks: () => [] };
+      return { refId: 'tx', labels: job, field, frameIndex: 0, fieldIndex: 1, times: [0], values: [1] };
+    };
+    const links = [{ title: 'Interface details', url: '/d/iface' }];
+    expect(opensCard(bare(), new Map([['classes.lan.up', [series({ links })]]]))).toBe(true);
+    expect(opensCard(bare(), new Map([['classes.lan.up', [series({})]]]))).toBe(false);
+    expect(opensCard(bare(), new Map([['classes.lan.up', []]]))).toBe(false);
   });
 });
