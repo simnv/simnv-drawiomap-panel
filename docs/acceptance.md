@@ -17,6 +17,7 @@ The fixture builder has no v3 type. `benchV3Config` adds one v3 pattern per cell
 | Engine        | CPU model    | Runs per process | Process medians                 | Median of the three medians |
 | ------------- | ------------ | ---------------- | ------------------------------- | --------------------------- |
 | v3 `bindPlan` | Apple M5 Pro | 20               | 16.310 ms, 16.396 ms, 16.373 ms | **16.373 ms**               |
+| v4 `bindV4`   | Apple M5 Pro | 20               | 15.758 ms, 15.046 ms, 14.921 ms | **15.046 ms**               |
 
 Command, run three times: `npx vitest run src/binding/bind.v3.bench.test.ts --maxWorkers=1`.
 Each process passed: `Test Files 1 passed (1)`, `Tests 1 passed (1)`.
