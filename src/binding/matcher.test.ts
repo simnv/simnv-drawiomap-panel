@@ -118,7 +118,7 @@ describe('parseMatchBlock', () => {
     if (result.ok) {
       return;
     }
-    expect(result.errors).toEqual([{ path: `${path}.key.1`, message: expect.any(String) }]);
+    expect(result.errors).toEqual([{ path: `${path}.key[1]`, message: expect.any(String) }]);
   });
 
   it('unescapes the four PromQL string escapes', () => {

@@ -1,5 +1,6 @@
 import type { Labels } from '@grafana/data';
 import type { MatchV4 } from '../model/v4';
+import { yamlPath } from '../model/yamlPath';
 import { scanPlaceholders } from './template';
 
 type Operator = '=' | '!=' | '=~' | '!~';
@@ -83,7 +84,7 @@ export function parseMatchBlock(block: MatchV4 | Record<string, string | string[
     requiredAttrs.add(attr);
     const values = Array.isArray(value) ? value : [value];
     for (const [index, text] of values.entries()) {
-      const itemPath = `${path}.${attr}${Array.isArray(value) ? `.${index}` : ''}`;
+      const itemPath = yamlPath(Array.isArray(value) ? [attr, index] : [attr], path);
       const parsed = typeof text === 'string' ? MATCHER.exec(text) : null;
       if (!parsed) {
         errors.push({ path: itemPath, message: 'write a label or a double-quoted label matcher' });

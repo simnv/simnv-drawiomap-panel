@@ -88,6 +88,24 @@ describe('validateConfig (S2.5 steps 1-4)', () => {
     ).toEqual(['class-unknown-parent', 'schema']);
   });
 
+  it('gives a dotted override id and a list item one unambiguous report path', () => {
+    const { report } = validateConfig(
+      config(
+        { host: { match: { key: 'job' }, status: 'up' } },
+        {
+          'sw.1': { match: { key: ['job', 'name="\\d"'] } },
+          'sw.2': { status: 5 },
+          '7': { url: '/d/x?a=${}' },
+        }
+      )
+    );
+    expect(report.map((e) => (e.kind === 'schema' ? e.path : e.kind)).sort()).toEqual([
+      'overrides.7.url',
+      'overrides["sw.1"].match.key[1]',
+      'overrides["sw.2"].status',
+    ]);
+  });
+
   it('makes an invalid override invalid alone and keeps its class valid', () => {
     const { parsed, classes, report } = validateConfig(
       config(

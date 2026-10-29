@@ -112,6 +112,29 @@ describe('ConfigYamlEditor', () => {
     });
   });
 
+  it('marks the error of an override on its own key when another override id has a dot', () => {
+    mount();
+    type(
+      [
+        'version: 4',
+        'classes:',
+        '  node-up:',
+        '    match: { key: job }',
+        'overrides:',
+        '  x:',
+        '    status: 5',
+        '  x.status:',
+        '    match:',
+        '      key: [job, "name=\\"\\\\d\\""]',
+        '',
+      ].join('\n')
+    );
+    expect(markers().map((m) => [m.startLineNumber, m.message])).toEqual([
+      [7, expect.stringMatching(/^overrides\.x\.status: /)],
+      [10, expect.stringMatching(/^overrides\["x\.status"\]\.match\.key\[1\]: /)],
+    ]);
+  });
+
   it('marks a chain error on the extends line of the class', () => {
     const { onChange } = mount();
     type(['version: 4', 'classes:', '  a:', '    extends: b', ''].join('\n'));

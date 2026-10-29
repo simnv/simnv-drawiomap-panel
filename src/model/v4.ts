@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { ReportEntry } from '../binding/report';
+import { yamlPath } from './yamlPath';
 
 export type MatchV4 = Record<string, string | string[]>;
 
@@ -179,13 +180,6 @@ function withoutUndefined(value: unknown): unknown {
       .map(([key, item]) => [key, withoutUndefined(item)])
   );
 }
-
-/** A YAML path from its parts: `classes.lan.rows[2].query`. */
-const yamlPath = (parts: ReadonlyArray<string | number>): string =>
-  parts.reduce<string>(
-    (path, part) => (typeof part === 'number' ? `${path}[${part}]` : path ? `${path}.${part}` : part),
-    ''
-  );
 
 /** One `schema` entry per zod issue; an unknown key gives the path of that key. */
 function schemaEntries(error: z.ZodError, prefix: ReadonlyArray<string | number>): ReportEntry[] {
