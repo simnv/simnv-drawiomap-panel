@@ -119,7 +119,7 @@ const headMinOf = (leg: LegInput): number => Math.min(leg.headMinRoot ?? gapBase
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
 
 export const LINK_LABEL_GEOMETRY = {
-  fontSize: 8,
+  fontSize: 9,
   normalGap: 2,
   wideGap: 4,
   halo: 1,

@@ -150,7 +150,7 @@ export interface Placed {
 }
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
 export const LINK_LABEL_GEOMETRY = {
-  fontSize: 8,
+  fontSize: 9,
   normalGap: 2,
   wideGap: 4,
   halo: 1,
@@ -289,7 +289,7 @@ transform="rotate(θ x y)" pointer-events="visiblePainted">`. The label carries 
   hover or a tap on it opens the card of the link, not of the node or group under it: `hit.ts:57` resolves
   `data-dmap-cell` on the element or its ancestors with no change. `visiblePainted`, not `all`: a label hidden by
   the zoom rule or by section "Isolated re-placement" never takes input (`all` ignores `visibility`), so the half
-  or the node under it gets the tap. `font-size: 8` (the port pill size of the export),
+  or the node under it gets the tap. `font-size: 9` (the smallest text on a diagram, decision 9; 8 before 1.3.0),
   `font-family` of the first `pg-linkLabel` text in the stage when there is one, else `sans-serif` (the status
   markers' choice), `fill: theme.colors.text.primary` (decided), `text-rendering: geometricPrecision`. The label has a halo (`stroke-width 2 × halo`, `paint-order: stroke`, round joins and caps) in one colour per pass, `haloColour(root, theme)`: the computed `background-color` of the svg root, else `theme.colors.background.canvas` when it is transparent or unreadable; it is read again at each call and repaints the labels when it or the theme changed. No colour is guessed from the shapes. The label has no box: the labels never overlap an obstacle, and the stroke of the own link is cut. (`LINK_LABEL_GEOMETRY.halo = 1` stays as 1 unit of padding of the reserved box.) A theme change rewrites the text fill only.
 - The cut (since 2026-10-29, 1.2.2). `syncCuts` runs on every pass (since simplify step 5 the overlay keeps its elements across refreshes; a layer that was built again in this frame has no cut yet). For each link that has an on-stroke, visible label it writes a gap into the dash pattern of each `.dmap-half` that the label lies on (`stroke-dasharray`, the overlay itself never writes one). The gap is the text axis of the label: the drawn text (`getBBox`, else the slot) plus `CUT_PAD` 1.5 on each end, rotated with the label, mapped from root units through the inverse of the matrix of the overlay group and projected onto the polyline of the half (a half is cut when the axis lies within `linkWidth.max / 2 + 1` of it). The last dash runs past the end of the half, so the pattern never repeats. The halves have butt caps, so the gap is exact across the whole drawn width. The arrow heads are not cut: an on-stroke label never stands on a head (every head is an obstacle at its widest). A pattern that did not change is not written; `setLinkLabelScale` syncs the cuts only when the layer visibility flips. The cut is removed when the label moves off the stroke, has no text, is dropped, the layer is hidden by the scale or the labels are switched off. There is no `<mask>`, no `<defs>`, no id and no `url(#id)` reference. Before 1.2.2 the cut was one `<mask>` per link on the halves and the arrow heads; in Safari the links with a mask (and only those) stopped painting after the dashboard was open for a long time with the tab in the background, while the DOM stayed correct (R6-1).
@@ -410,6 +410,9 @@ spec, the bench figure and the three screenshots.
 6. Split links: every run with halves gets labels; the short-leg rule prunes.
 7. Minimum on-screen size: 7 CSS px.
 8. Group backgrounds as obstacles: no.
+9. Smallest text on a diagram (owner, 2026-10-29, 1.3.0): 9 user units. The labels use `fontSize: 9`, not 8.
+   Portograph also writes no text below 9. The 7 CSS px rule of decision 7 does not change, so the labels now show
+   from the view scale 7 / 9.
 
 ## 10. Review resolutions
 
