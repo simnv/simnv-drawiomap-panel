@@ -3,7 +3,7 @@ import type { ClassV4, ConfigV4, RowV4 } from '../model/v4';
 /**
  * The bindings of the demo panels (provisioning/dashboards/demo.json). The series come from the synthetic generator
  * in stack/metrics-gen/gen.py, through the panel targets of demo/dashboard.template.json. The refId of a target is
- * its query name: lan_tx, lan_rx, wan_tx, wan_rx, speed, up, load and cpu.
+ * its query name: lan_tx, lan_rx, wan_tx, wan_rx, speed, up, load, cpu, v4_samples and v4_nine.
  *
  * A link carries key=<job>, port=<device> and at=source or at=target: the end that owns the transmit and receive
  * counters. tx is up and rx is down, so the halves follow the geometric direction of the link (spec 3.8.2).
@@ -57,6 +57,8 @@ export const demoConfigV4: ConfigV4 = {
         { kind: 'history', label: 'CPU', unit: 'percent', query: 'cpu' },
         { kind: 'drilldown', label: 'CPU details', url: '/d/drawiomap-demo?var-job=${key}&var-metric=cpu' },
         ...nodeRows(),
+        { kind: 'history', label: 'Three lines', query: 'v4_samples', unit: 'none', decimals: 0 },
+        { kind: 'history', label: 'Nine lines', query: 'v4_nine', unit: 'none', decimals: 0 },
       ],
       url: '/d/drawiomap-demo?var-job=${key}',
       urlTitle: 'Host ${key}',
