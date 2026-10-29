@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useLayoutEffect, useRef } from 'react';
 import { css } from '@emotion/css';
 import { Button, IconButton, useTheme2 } from '@grafana/ui';
 
@@ -63,14 +63,31 @@ interface Props {
   warnings: string[];
   onReset: () => void;
   onEditBindings: () => void;
+  /** The drawn height of the row in px, also when it wraps to more lines; 0 when there is no row or no layout. */
+  onRowHeight: (height: number) => void;
 }
 
 /** The top-left row holds the reset button, the warning badge and, in panel edit, the "Edit bindings" button. */
 export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerControls(
-  { bandHeight, zoomed, editing, warnings, onReset, onEditBindings },
+  { bandHeight, zoomed, editing, warnings, onReset, onEditBindings, onRowHeight },
   ref
 ) {
   const theme = useTheme2();
+  const showRow = !!(zoomed || warnings.length || editing);
+  const rowRef = useRef<HTMLDivElement>(null);
+  // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!showRow || !row || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(() => onRowHeight(row.offsetHeight));
+    observer.observe(row);
+    return () => {
+      observer.disconnect();
+      onRowHeight(0);
+    };
+  }, [showRow, onRowHeight]);
   const buttonStyle = {
     background: theme.colors.background.primary,
     border: `1px solid ${theme.colors.border.medium}`,
@@ -82,8 +99,8 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
       style={{ left: 4, top: bandHeight + 4, maxHeight: `calc(100% - ${bandHeight + 8}px)` }}
       data-testid="dmap-corner"
     >
-      {zoomed || warnings.length || editing ? (
-        <div className={styles.cornerRow}>
+      {showRow ? (
+        <div ref={rowRef} className={styles.cornerRow} data-testid="dmap-corner-row">
           {zoomed ? (
             <IconButton
               name="search-minus"

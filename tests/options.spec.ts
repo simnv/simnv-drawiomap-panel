@@ -68,13 +68,17 @@ test('the Diagram option buttons, the Edit bindings button and the YAML option s
   expect(editBox.y + editBox.height, 'Edit bindings: above the YAML').toBeLessThanOrEqual(codeBox.y);
   expect(codeBox.y - (editBox.y + editBox.height), 'Edit bindings: next to the YAML').toBeLessThan(80);
   if (BINDINGS_SCREENSHOT) {
+    await edit.scrollIntoViewIfNeeded();
+    const top = Math.max(0, (await edit.boundingBox())!.y - 60);
+    const pane = (await bindings.boundingBox())!;
     await page.screenshot({
       path: BINDINGS_SCREENSHOT,
-      clip: { x: bindingsBox.x, y: Math.max(0, bindingsBox.y - 8), width: bindingsBox.width, height: 360 },
+      clip: { x: pane.x, y: top, width: pane.width, height: Math.min(360, 800 - top) },
     });
   }
 
   if (SCREENSHOT) {
+    await page.getByTestId('dmap-diagram-status').scrollIntoViewIfNeeded();
     const paneBox = (await group.boundingBox())!;
     const top = (await page.getByTestId('dmap-diagram-status').boundingBox())!.y - 80;
     await page.screenshot({

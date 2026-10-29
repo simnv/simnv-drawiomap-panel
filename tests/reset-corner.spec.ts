@@ -182,6 +182,24 @@ test('in panel edit the edit-bindings button joins the reset button and the badg
     expect(e.height).toBeGreaterThanOrEqual(32);
     // a visible text title, not a tooltip only
     await expect(edit).toHaveText('Edit bindings');
+    // a narrow panel: the row wraps and every item stays inside the panel
+    await page.setViewportSize({ width: 820, height: 900 });
+    await expect.poll(async () => (await box(panel)).width).toBeLessThan(560);
+    // a new panel size resets the view: zoom again to show the reset button
+    await zoomIn(page, panel.getByTestId('dmap-stage'));
+    await expect(reset).toBeVisible();
+    const narrow = await box(panel);
+    for (const [name, item] of [
+      ['reset', reset],
+      ['badge', badge],
+      ['edit', edit],
+    ] as const) {
+      const b = await box(item);
+      expect(b.x, `${name}: left edge`).toBeGreaterThanOrEqual(narrow.x);
+      expect(b.x + b.width, `${name}: right edge`).toBeLessThanOrEqual(narrow.x + narrow.width);
+    }
+    await panel.screenshot({ path: testInfo.outputPath('corner-narrow.png') });
+    await page.setViewportSize({ width: 1440, height: 900 });
     // the button opens the split editor with the stored config in the code box
     await edit.click();
     const popup = page.getByTestId('dmap-bindings-popup');

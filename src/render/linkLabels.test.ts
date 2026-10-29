@@ -16,7 +16,7 @@ import {
   stageObstacles,
   watchLinkLabelFonts,
 } from './linkLabels';
-import { cornersOf } from './labelPlacement';
+import { cornersOf, LINK_LABEL_GEOMETRY } from './labelPlacement';
 import type { Point } from './geometry';
 
 /** The status of a patch, as `statusViewOf` gives it. */
@@ -1049,11 +1049,11 @@ describe('renderLinkLabels: review cases', () => {
           expect(render(root, index, patches(width)).placed).toBe(1);
           const label = byHalf(root, which)!;
           const [, degrees] = /^rotate\((\S+) /.exec(label.getAttribute('transform')!)!;
-          // the text box of the slot (28 × 10, without the halo) about its centre
+          // the text box of the slot (28 × 11.25, without the halo) about its centre
           const box = cornersOf({
             centre: { x: Number(label.getAttribute('x')), y: Number(label.getAttribute('y')) },
             width: 28,
-            height: 10,
+            height: LINK_LABEL_GEOMETRY.fontSize * 1.25,
             degrees: Number(degrees),
           });
           const head = pointsOf(root.querySelector(`polygon.dmap-arrow[data-dmap-half="${which}"]`)!);
@@ -1066,7 +1066,7 @@ describe('renderLinkLabels: review cases', () => {
     });
   });
   describe('the bend spot', () => {
-    // a run of 31 and a jog of 10: no straight run holds the 26 unit box, so only the last resort can place it
+    // a run of 31 and a jog of 10: no straight run holds the 30 unit box (the 28-unit slot and the halo), so only the last resort can place it
     const bend = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
       <g data-cell-id="e1"><g><path d="M 20 100 L 51 100 L 51 110" fill="none" stroke="#333" pointer-events="stroke"/></g></g></svg>`;
     const one = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]);

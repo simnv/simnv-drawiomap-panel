@@ -459,7 +459,7 @@ function mergeSame(blocks: LegendBlock[]): LegendBlock[] {
         .map((m) => m.key)
         .sort()
         .join('|'),
-      title: titles.join(' · '),
+      title: titles.length ? titles.join(' · ') : undefined,
       entries: first.entries.map((e, i) => ({ ...e, cellIds: union((m) => m.entries[i].cellIds) })),
       ...(first.gradient ? { gradient: first.gradient } : {}),
       cellIds: union((m) => m.cellIds),

@@ -933,6 +933,37 @@ describe('DrawioMapPanel live zoom', () => {
     }
   });
 
+  it('a corner row that wraps to two lines pushes the top-left legend below its drawn height', async () => {
+    // jsdom has no layout: the row says it is 68 px high (two lines), and the observer reports at once
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === 'dmap-corner-row' ? 68 : 0;
+      },
+    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private readonly cb: () => void) {}
+        observe() {
+          this.cb();
+        }
+        disconnect() {}
+      }
+    );
+    onTestFinished(() => {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height);
+      vi.unstubAllGlobals();
+    });
+    const { wrapper } = await setup(withWarning({ show: true, corner: 'top-left' }));
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    // the top of the row, the 68 px row and a 4 px gap
+    const rowTop = parseFloat(screen.getByTestId('dmap-corner').style.top);
+    await waitFor(() => expect(parseFloat(screen.getByTestId('dmap-legend').style.top)).toBe(rowTop + 68 + 4));
+  });
+
   it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
     const { wrapper } = await setup({
       ...withWarning({ show: true, corner: 'top-right' }),
@@ -1377,11 +1408,7 @@ describe('DrawioMapPanel colour legend', () => {
       props({ options: { ...options, legend: { show: false, corner: 'bottom-right' } } })
     );
     expect(legend()).toBeNull();
-    rerender(
-      <DrawioMapPanel
-        {...props({ options: { ...options, legend: { show: true, corner: 'top-left' } } })}
-      />
-    );
+    rerender(<DrawioMapPanel {...props({ options: { ...options, legend: { show: true, corner: 'top-left' } } })} />);
     expect(legend()!.getAttribute('data-dmap-corner')).toBe('top-left');
     const chip = within(legend()!).getByRole('button', { name: 'Legend' });
     fireEvent.click(chip);
