@@ -116,7 +116,7 @@ function DrawioMapPanelView(props: PanelProps<Options>) {
   }, []);
   const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
   const interactiveRef = useRef<Marked>();
-  const cards = useCardState(false);
+  const cards = useCardState();
   const { card, dispatch, cardRef } = cards;
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -203,13 +203,9 @@ function DrawioMapPanelView(props: PanelProps<Options>) {
     () =>
       interactiveCells(result.patches, stage.index, (p) => {
         const entry = stage.index.get(p.cellId);
-        return (
-          !!entry &&
-          hoverKinds.includes(hoverKind(entry)) &&
-          opensCard(patches.get(p.cellId) ?? p, bound.series.get(p.cellId))
-        );
+        return !!entry && hoverKinds.includes(hoverKind(entry)) && opensCard(p, bound.series.get(p.cellId));
       }),
-    [result.patches, patches, bound, stage.index, hoverKinds]
+    [result.patches, bound, stage.index, hoverKinds]
   );
   const cardable = (p: CellPatch) => interactive.has(p.cellId);
 

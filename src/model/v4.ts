@@ -129,11 +129,6 @@ export type ConfigV4 = Omit<z.infer<typeof envelopeSchema>, 'classes' | 'overrid
 export type LowerBound = z.infer<typeof lowerBound>;
 /** The half range of an up/down chart: a number, "auto" (the data) or "capacity". The same shape as in v3. */
 export type RangeMax = number | 'auto' | 'capacity';
-/** The freshness of one value in milliseconds, after "5m" or "3x" resolves (3.5). The same shape as in v3. */
-export interface FreshnessPolicy {
-  expectedIntervalMs: number;
-  staleAfterMs: number;
-}
 /** The value label beside each link half (A13). */
 export type LinkLabelMode = NonNullable<ClassV4['linkLabel']>;
 

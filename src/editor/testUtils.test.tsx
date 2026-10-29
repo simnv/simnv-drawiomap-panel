@@ -1,39 +1,9 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { buttonNamed, editorField } from './testUtils';
+import { buttonNamed } from './testUtils';
 
 describe('test lookups keep the semantics of testing-library', () => {
-  it('does not match a hidden element on its aria-label', () => {
-    render(
-      <div>
-        <input aria-label="Field" hidden />
-        <input aria-label="Field" data-testid="visible" />
-      </div>
-    );
-    expect(editorField('Field').getAttribute('data-testid')).toBe('visible');
-  });
-  it('does not match an element that has aria-labelledby on its aria-label', () => {
-    render(
-      <div>
-        <span id="name">Other name</span>
-        <input aria-label="Field" aria-labelledby="name" />
-        <input aria-label="Field" data-testid="plain" />
-      </div>
-    );
-    expect(editorField('Field').getAttribute('data-testid')).toBe('plain');
-  });
-  it('takes the full query when a <label> gives the same name', () => {
-    render(
-      <div>
-        <label htmlFor="a">Field</label>
-        <input id="a" data-testid="labelled" />
-        <input aria-label="Field" data-testid="aria" />
-      </div>
-    );
-    // two elements have the name: the full query reports the ambiguity, as before
-    expect(() => editorField('Field')).toThrow(/multiple/i);
-  });
   it('finds a button by text, and skips a hidden duplicate', () => {
     render(
       <div>
@@ -43,20 +13,18 @@ describe('test lookups keep the semantics of testing-library', () => {
     );
     expect(buttonNamed('Save').getAttribute('data-testid')).toBe('real');
   });
-  it('skips an element that a <style> rule hides, on itself or on an ancestor', () => {
+  it('skips a button that a <style> rule hides, on itself or on an ancestor', () => {
     render(
       <div>
         <style>{'.gone { display: none } .invisible { visibility: hidden }'}</style>
         <div className="gone">
-          <input aria-label="Field" />
+          <button>Save</button>
         </div>
-        <input aria-label="Field" className="invisible" />
-        <input aria-label="Field" data-testid="shown" />
+        <button className="invisible">Save</button>
         <button className="gone">Save</button>
         <button data-testid="real">Save</button>
       </div>
     );
-    expect(editorField('Field').getAttribute('data-testid')).toBe('shown');
     expect(buttonNamed('Save').getAttribute('data-testid')).toBe('real');
   });
   it('takes the full query when a <label> also names a button', () => {

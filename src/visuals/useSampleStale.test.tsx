@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { useClock, useSampleStale } from './useSampleStale';
+import { useClock } from './useSampleStale';
 
 afterEach(() => vi.useRealTimers());
 
@@ -84,22 +84,5 @@ describe('useClock', () => {
     });
     expect(view.result.current).toBe(2147483647);
     expect(vi.getTimerCount()).toBe(1);
-  });
-});
-
-describe('useSampleStale', () => {
-  it('is false without a policy or a sample, and true after sampleAt + staleAfterMs', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(10000);
-    const policy = { expectedIntervalMs: 1000, staleAfterMs: 5000 };
-    expect(renderHook(() => useSampleStale(undefined, policy)).result.current).toBe(false);
-    expect(renderHook(() => useSampleStale(8000)).result.current).toBe(false);
-    const view = renderHook(() => useSampleStale(8000, policy));
-    expect(view.result.current).toBe(false);
-    act(() => vi.advanceTimersByTime(3000));
-    expect(view.result.current).toBe(false);
-    act(() => vi.advanceTimersByTime(1));
-    expect(view.result.current).toBe(true);
-    expect(vi.getTimerCount()).toBe(0);
   });
 });
