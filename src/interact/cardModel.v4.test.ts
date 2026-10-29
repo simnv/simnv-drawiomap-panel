@@ -4,6 +4,7 @@ import {
   dateTime,
   FieldType,
   LoadingState,
+  ThresholdsMode,
   type DataFrame,
   type DataQueryRequest,
   type FieldConfig,
@@ -128,6 +129,44 @@ describe('buildCardV4: link row capacity (spec 3.8, A4)', () => {
 
   it('shows the rate and percent of the cap attribute', () => {
     expect(texts(linkRow({ cap: '10M' }))).toEqual(['8 Mb/s · 80% of 10 Mb/s', '2 Mb/s · 20% of 10 Mb/s']);
+  });
+
+  it('keeps utilization and threshold colours equal to the link halves when a row overrides the rate unit', () => {
+    const index = indexOf([['ap', { bind: 'ap', key: 'ap-1', cap: '10M' }, true]]);
+    const validated = validateConfig({
+      version: 4,
+      classes: clients([{ kind: 'updown', up: 'tx', down: 'rx', unit: 'Mbits', decimals: 2 }], {
+        up: 'tx',
+        down: 'rx',
+      }),
+    });
+    const data = panelData(
+      traffic.map((f) => ({
+        ...f,
+        fields: f.fields.map((field) => ({
+          ...field,
+          config: {
+            ...field.config,
+            color: { mode: 'thresholds' },
+            thresholds: {
+              mode: ThresholdsMode.Absolute,
+              steps: [
+                { value: -Infinity, color: 'green' },
+                { value: 90, color: 'red' },
+              ],
+            },
+          },
+        })),
+      }))
+    );
+    const bound = bindV4({ index, validated, data, ctx: bindCtx });
+    const link = bound.patches.get('ap')!.link!;
+    expect(link.a2b).toMatchObject({ percent: 80, color: theme.visualization.getColorByName('green') });
+    expect(link.b2a).toMatchObject({ percent: 20, color: theme.visualization.getColorByName('green') });
+    const row = buildCardV4('ap', bound, { theme, replaceVariables: (s) => s, index, validated, data }).rows[0];
+    expect(row.directions!.map((d) => d.color)).toEqual([link.a2b!.color, link.b2a!.color]);
+    expect(texts(row)).toEqual(['8.00 Tb/s · 80% of 10 Tb/s', '2.00 Tb/s · 20% of 10 Tb/s']);
+    expect(data.series[0].fields[1].config.unit).toBe('bps');
   });
 
   it('uses the class speed refId before cap, with the class match and the speed field unit', () => {

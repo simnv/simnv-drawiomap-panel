@@ -548,7 +548,11 @@ function updownRow(
         ? { ...reduced, field: shownField(reduced.field, row) as typeof reduced.field }
         : reduced;
     const capacity = reader.capacityOf(feeds.a2b === direction ? 'a2b' : 'b2a');
-    const half = halfState(history, d.use.refId, capacity, halves).state;
+    // Keep the source unit for utilization; the row overrides only the display processor.
+    const half = halfState(reduced, d.use.refId, capacity, {
+      ...halves,
+      display: (series, value) => halves.display({ ...series, field: shownField(series.field, row) }, value),
+    }).state;
     return { direction, label, mirrored, history, text: half.label, color: half.color };
   });
   const ready = directions.flatMap((d) => (d.history.state === 'ready' ? [d.history] : []));
