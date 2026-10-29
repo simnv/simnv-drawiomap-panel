@@ -82,6 +82,50 @@ describe('buildLegendV4: link load scales', () => {
     expect(blocks[0].entries.map((e) => e.cellIds)).toEqual([['l1'], ['l1'], ['l2']]);
     expect(blocks[0].cellIds).toEqual(['l1', 'l2']);
   });
+  it('draws the threshold steps of a link load scale as one bar, with a segment of the same width for each entry', () => {
+    const s = series({ thresholds });
+    const [block] = buildLegendV4(new Map([link('l1', half(s, { percent: 10 }))]), new Map(), ctx);
+    expect(block.bar).toEqual({
+      segments: [
+        { from: 0, to: 1 / 3, range: '< 60%' },
+        { from: 1 / 3, to: 2 / 3, tick: '60%', range: '60% to 85%' },
+        { from: 2 / 3, to: 1, tick: '85%', range: '≥ 85%' },
+      ],
+    });
+    // the entries do not change: the same keys, texts, colours and cells
+    expect(block.entries.map((e) => [e.key, e.label, e.cellIds])).toEqual([
+      ['step-0', '< 60%', ['l1']],
+      ['step-1', '≥ 60%', []],
+      ['step-2', '≥ 85%', []],
+    ]);
+    const one = series({ thresholds: { ...thresholds, steps: [steps[0]] } });
+    const [all] = buildLegendV4(new Map([link('l1', half(one, { percent: 10 }))]), new Map(), ctx);
+    expect(all.bar).toEqual({ segments: [{ from: 0, to: 1, range: 'All values' }] });
+  });
+  it('gives near-logarithmic levels segments of the same width, and a step above 100% its own segment', () => {
+    const ramp = ['#7A7A7D', '#416180', '#749DC4', '#B5D9FD', '#E4F0FF'];
+    const lan = [-Infinity, 0.1, 0.5, 2, 10].map((value, i) => ({ value, color: ramp[i] }));
+    const s = series({ thresholds: { ...thresholds, steps: lan } });
+    const [block] = buildLegendV4(new Map([link('l1', half(s, { percent: 0.3 }))]), new Map(), ctx);
+    const segments = block.bar!.segments;
+    expect(segments.map((g) => g.to - g.from)).toEqual(segments.map(() => expect.closeTo(0.2, 9)));
+    expect(segments.map((g) => g.tick)).toEqual([undefined, '0.1%', '0.5%', '2%', '10%']);
+    expect(segments.map((g) => g.range)).toEqual(['< 0.1%', '0.1% to 0.5%', '0.5% to 2%', '2% to 10%', '≥ 10%']);
+    const over = series({ thresholds: { ...thresholds, steps: [...steps, { value: 120, color: 'purple' }] } });
+    const [overload] = buildLegendV4(new Map([link('l1', half(over, { percent: 10 }))]), new Map(), ctx);
+    expect(overload.bar!.segments.map((g) => g.tick)).toEqual([undefined, '60%', '85%', '120%']);
+  });
+  it('draws no bar without a capacity, without steps, or with two steps of the same value', () => {
+    const value = series({ thresholds, unit: 'watt' });
+    expect(buildLegendV4(new Map([link('l1', half(value))]), new Map(), ctx)[0].bar).toBeUndefined();
+    const none = series({ thresholds: { ...thresholds, steps: [] } });
+    const [empty] = buildLegendV4(new Map([link('l1', half(none, { percent: 10 }))]), new Map(), ctx);
+    expect([empty.bar, chipSwatch([empty])]).toEqual([undefined, 'transparent']);
+    const twice = series({ thresholds: { ...thresholds, steps: [...steps, { value: 85, color: 'purple' }] } });
+    const [block] = buildLegendV4(new Map([link('l1', half(twice, { percent: 10 }))]), new Map(), ctx);
+    expect(block.bar).toBeUndefined();
+    expect(block.entries).toHaveLength(4);
+  });
   it('shows a continuous scheme as a gradient: 0–100% with a capacity, else the field min and max', () => {
     const mode = { mode: FieldColorModeId.ContinuousGrYlRd };
     const calc = getFieldColorMode(FieldColorModeId.ContinuousGrYlRd).getCalculator(
@@ -246,5 +290,10 @@ describe('chipSwatch', () => {
     expect(chipSwatch([block(['#0f0', '#ff0', '#f00'], true)])).toContain('#ff0');
     expect(chipSwatch([block(['#0f0'])])).toBe('#0f0');
     expect(chipSwatch([])).toBe('transparent');
+  });
+  it('has hard colour stops between segments of the same width when the first scale is a bar', () => {
+    const [load] = buildLegendV4(new Map([link('l1', half(series({ thresholds }), { percent: 10 }))]), new Map(), ctx);
+    const [g, y, r] = [named('green'), named('yellow'), named('red')];
+    expect(chipSwatch([load])).toBe(`linear-gradient(to right, ${g} 0% 33.3%, ${y} 33.3% 66.7%, ${r} 66.7% 100%)`);
   });
 });

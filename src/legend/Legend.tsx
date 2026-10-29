@@ -3,7 +3,8 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Icon, useStyles2 } from '@grafana/ui';
 import type { LegendCorner } from '../types';
-import { chipSwatch, type LegendBlock, type LegendEntry } from './model';
+import { BarRow } from './BarRow';
+import { chipSwatch, type LegendBlock, type LegendEntry, plural } from './model';
 import { clampPoint, isDrag, keyMove, type Point } from './position';
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -105,8 +106,6 @@ interface Props {
   style?: React.CSSProperties;
   corner?: LegendCorner;
 }
-
-const plural = (n: number) => `${n} element${n === 1 ? '' : 's'}`;
 
 /**
  * The colour legend: one block for each colour scale of the bound cells. It is a chip until the user opens it, and
@@ -397,25 +396,29 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
               aria-label={b.title ?? 'No data'}
             >
               {b.title ? <div className={styles.title}>{b.title}</div> : null}
-              <ul className={styles.entries}>
-                {b.gradient ? (
-                  <li
-                    className={styles.entry}
-                    data-testid="dmap-legend-entry"
-                    aria-label={`${b.gradient.min} to ${b.gradient.max}: ${plural(b.cellIds.length)}`}
-                    {...activate(`${b.key}\n`)}
-                  >
-                    <span>{b.gradient.min}</span>
-                    <span
-                      className={styles.gradient}
-                      style={{ background: `linear-gradient(to right, ${b.gradient.colors.join(', ')})` }}
-                      data-dmap-gradient=""
-                    />
-                    <span>{b.gradient.max}</span>
-                  </li>
-                ) : null}
-                {b.entries.map((e) => entry(b.key, e))}
-              </ul>
+              {b.bar ? (
+                <BarRow bar={b.bar} entries={b.entries} activate={(e) => activate(`${b.key}\n${e.key}`)} />
+              ) : (
+                <ul className={styles.entries}>
+                  {b.gradient ? (
+                    <li
+                      className={styles.entry}
+                      data-testid="dmap-legend-entry"
+                      aria-label={`${b.gradient.min} to ${b.gradient.max}: ${plural(b.cellIds.length)}`}
+                      {...activate(`${b.key}\n`)}
+                    >
+                      <span>{b.gradient.min}</span>
+                      <span
+                        className={styles.gradient}
+                        style={{ background: `linear-gradient(to right, ${b.gradient.colors.join(', ')})` }}
+                        data-dmap-gradient=""
+                      />
+                      <span>{b.gradient.max}</span>
+                    </li>
+                  ) : null}
+                  {b.entries.map((e) => entry(b.key, e))}
+                </ul>
+              )}
             </div>
           ))
         : null}

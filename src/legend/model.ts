@@ -30,6 +30,31 @@ export interface LegendGradient {
   max: string;
 }
 
+/** One segment of a bar: the place on the bar (0 to 1), the text of the step value at `from`, and the range text. */
+export interface LegendBarSegment {
+  from: number;
+  to: number;
+  /** the first segment is the base step: it has no value and no tick */
+  tick?: string;
+  range: string;
+}
+
+/**
+ * The threshold steps of a link load scale as one bar: one segment of the same width for each step, with hard colour
+ * stops between them. The bar is ordinal, not an axis: the step values of a scale are often near-logarithmic (0.1%,
+ * 0.5%, 2%, 10%), and at linear places most colours would take a thin part of the bar. Segment n is the place of
+ * entry n.
+ */
+export interface LegendBar {
+  segments: LegendBarSegment[];
+}
+
+/** The number of cells of an entry, for its accessible name. */
+export const plural = (n: number) => `${n} element${n === 1 ? '' : 's'}`;
+
+/** A place or a length on a bar (0 to 1) as a CSS percent, to 0.1 %. */
+export const barPercent = (v: number) => `${Math.round(v * 1000) / 10}%`;
+
 /** One colour scale of the bound cells. */
 export interface LegendBlock {
   key: string;
@@ -37,6 +62,7 @@ export interface LegendBlock {
   title?: string;
   entries: LegendEntry[];
   gradient?: LegendGradient;
+  bar?: LegendBar;
   /** all cells that use this scale */
   cellIds: string[];
 }
@@ -154,6 +180,29 @@ function thresholdEntries(steps: Threshold[], text: (v: number) => string, theme
   }));
 }
 
+/** The text of a percent: a capacity, a step of a link load scale or a step in the percentage mode. */
+const percentText = (v: number) => `${v}%`;
+
+/**
+ * The bar of the threshold steps of a link load scale. `entries` are the entries of the steps. Undefined when there is
+ * no step, or when a step above the base step is not above the step before it: then two ticks have the same value,
+ * and the entries show.
+ */
+function loadBar(steps: Threshold[], entries: LegendEntry[]): LegendBar | undefined {
+  const values = steps.slice(1).map((s) => s.value);
+  const rising = values.every((v, i) => Number.isFinite(v) && (i === 0 || v > values[i - 1]));
+  if (!entries.length || !rising) {
+    return undefined;
+  }
+  const n = entries.length;
+  const segments = entries.map((e, i) => {
+    const middle = i > 0 && i < n - 1;
+    const range = middle ? `${percentText(values[i - 1])} to ${percentText(values[i])}` : e.label;
+    return { from: i / n, to: (i + 1) / n, ...(i ? { tick: percentText(values[i - 1]) } : {}), range };
+  });
+  return { segments };
+}
+
 /** The symbol of a Grafana unit, for example "W" for watt or "%" for percent. */
 function unitSymbol(unit: string | undefined): string {
   if (!unit || unit === 'none') {
@@ -177,15 +226,17 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
   // With a capacity the colour comes from the percent (colorFor), so the value mappings do not apply.
   const entries = capacity ? [] : mappingEntries(config.mappings, theme);
   let gradient: LegendGradient | undefined;
+  let bar: LegendBar | undefined;
   let auto: Draft['auto'];
   if (mode.id === FieldColorModeId.Thresholds) {
     const percent = capacity || thresholds?.mode === ThresholdsMode.Percentage;
-    entries.push(...thresholdEntries(steps, percent ? (v) => `${v}%` : format, theme));
+    entries.push(...thresholdEntries(steps, percent ? percentText : format, theme));
+    bar = capacity ? loadBar(steps, entries) : undefined;
   } else if (mode.isContinuous) {
     const calc = mode.getCalculator(effective, theme);
     const colors = Array.from({ length: GRADIENT_STOPS }, (_, i) => calc(0, i / (GRADIENT_STOPS - 1)));
     if (capacity) {
-      gradient = { colors, min: '0%', max: '100%' };
+      gradient = { colors, min: percentText(0), max: percentText(100) };
     } else {
       const min = config.min ?? field.state?.range?.min ?? undefined;
       const max = config.max ?? field.state?.range?.max ?? undefined;
@@ -218,9 +269,9 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
   const name = item.kind === 'link' ? 'Link' : 'Node';
   const symbol = unitSymbol(config.unit);
   const title = capacity ? 'Link load %' : (config.displayName ?? (symbol ? `${name} ${symbol}` : name));
-  const key = JSON.stringify([entries.map((e) => [e.label, e.color]), gradient]);
+  const key = JSON.stringify([entries.map((e) => [e.label, e.color]), gradient, bar]);
   const source = item.refId ?? '';
-  return { key, title, titles: [title], sources: source ? [source] : [], entries, gradient, auto, cellIds: [] };
+  return { key, title, titles: [title], sources: source ? [source] : [], entries, gradient, bar, auto, cellIds: [] };
 }
 
 /** The entry of a cell: the threshold step of its colour, else the first entry with its colour. */
@@ -321,11 +372,12 @@ function scaleBlocks(items: Item[], ctx: LegendContext): LegendBlock[] {
   for (const d of shared) {
     d.title = `${d.title} (${d.sources.join(', ')})`;
   }
-  return drafts.map(({ key, title, entries, gradient, cellIds }) => ({
+  return drafts.map(({ key, title, entries, gradient, bar, cellIds }) => ({
     key,
     title,
     entries,
     ...(gradient ? { gradient } : {}),
+    ...(bar ? { bar } : {}),
     cellIds,
   }));
 }
@@ -426,9 +478,9 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
   return mergeSame([...out, ...scaleBlocks(links, ctx)]);
 }
 
-/** What a block shows: the text and colour of each entry in order, and the gradient with its end texts. */
+/** What a block shows: the text and colour of each entry in order, the gradient with its end texts, and the bar. */
 const contentOf = (block: LegendBlock) =>
-  JSON.stringify([block.entries.map((e) => [e.label, e.color]), block.gradient ?? null]);
+  JSON.stringify([block.entries.map((e) => [e.label, e.color]), block.gradient ?? null, block.bar ?? null]);
 
 /**
  * Blocks with the same content (`contentOf`) become one block at the place of the first. Its title is the titles of
@@ -461,14 +513,24 @@ function mergeSame(blocks: LegendBlock[]): LegendBlock[] {
       title: titles.length ? titles.join(' · ') : undefined,
       entries: first.entries.map((e, i) => ({ ...e, cellIds: union((m) => m.entries[i].cellIds) })),
       ...(first.gradient ? { gradient: first.gradient } : {}),
+      ...(first.bar ? { bar: first.bar } : {}),
       cellIds: union((m) => m.cellIds),
     };
   });
 }
 
-/** The swatch of the collapsed legend chip: the colours of the first scale, low to high. */
+/**
+ * The swatch of the collapsed legend chip: the colours of the first scale, low to high. A bar keeps its hard colour
+ * stops at the step values.
+ */
 export function chipSwatch(blocks: LegendBlock[]): string {
   const first = blocks[0];
+  if (first?.bar) {
+    const stops = first.bar.segments.map(
+      (s, i) => `${first.entries[i].color} ${barPercent(s.from)} ${barPercent(s.to)}`
+    );
+    return `linear-gradient(to right, ${stops.join(', ')})`;
+  }
   const colors = first?.gradient?.colors ?? first?.entries.map((e) => e.color) ?? [];
   if (colors.length === 0) {
     return 'transparent';

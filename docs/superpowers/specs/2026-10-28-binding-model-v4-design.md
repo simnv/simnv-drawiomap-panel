@@ -571,6 +571,19 @@ For each series of the status use, the display processor of its field gives `{te
   scale use the same rule: they merge with a status block only when the content is the same. The legend shows all
   blocks and scrolls (most height: half of the panel). There is no "+N more" line and no option for the number of
   blocks: 1.3.0 removed `legend.maxBlocks`, and the panel ignores a saved value.
+- **Link load bar (1.3.1, owner decision 2026-10-29).** The threshold steps of the link load scale show as one
+  horizontal bar. Each step is a segment of the same width (an ordinal bar, not an axis), with hard colour stops
+  between the segments: a link shows the colour of one step, so the colours do not blend. Real scales are often
+  near-logarithmic (for example 0.1 %, 0.5 %, 2 %, 10 % of the port speed); at linear places most colours would take a
+  thin part of the bar. The step values are small tick texts under the bar, at the stops. There are no end texts:
+  the base step has no value and the last step has no upper limit. When a tick text comes too near the tick text
+  before it, it does not show. The bar is 200 px wide and shrinks in a narrow legend; the tick texts follow its width.
+  Each segment is an entry with the key, the colour and the cells of its step, so the hover, the keyboard focus and a
+  tap highlight the links of that step. Its accessible name is the range and the number of cells, for example
+  `60% to 85%: 3 elements`. When two steps have the same value, the steps show as entries. The bar is part of the
+  content of the block: the link load bar merges only with a block that has the same bar, not with a status block
+  that has the same entries. The collapsed chip uses the same hard stops when the bar is the first block. The status
+  blocks and a continuous scheme (the gradient row) do not change.
 - **Links.** A link class can set `status`, for example a port state. `linkStatusPaint` keeps its rule: a `missing`
   status on a link with halves paints nothing, because each half shows its own state (`src/binding/color.ts:55-71`).
 
