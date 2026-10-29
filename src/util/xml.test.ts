@@ -46,6 +46,24 @@ describe('parseXml', () => {
 });
 
 describe('serializeXml', () => {
+  it.each([
+    '<!-- xmlns="http://www.w3.org/2000/svg" --><mxGraphModel><root/></mxGraphModel>',
+    '<?probe xmlns="http://www.w3.org/2000/svg"?><mxGraphModel><root/></mxGraphModel>',
+    '<?xml version="1.0" encoding="UTF-8"?>\n<mxGraphModel><root/></mxGraphModel>',
+    "<?xml version = '1.0' standalone = 'yes'?>\r\n<mxGraphModel><root/></mxGraphModel>",
+    '<mxGraphModel xmlns="urn:demo"><root/></mxGraphModel>',
+    '<mxGraphModel xmlns="http://www.w3.org/2000/svg"><root/></mxGraphModel>',
+  ])('keeps the prolog and the source namespace in %s', (source) => {
+    expect(serializeXml(parseXml(source)!)).toBe(source);
+  });
+
+  it('keeps namespace text inside a root attribute value', () => {
+    const source = '<mxGraphModel note=\' xmlns="http://www.w3.org/2000/svg"\'><root/></mxGraphModel>';
+    expect(serializeXml(parseXml(source)!)).toBe(
+      '<mxGraphModel note=" xmlns=&quot;http://www.w3.org/2000/svg&quot;"><root/></mxGraphModel>'
+    );
+  });
+
   it('gives the source text again, with no namespace of its own', () => {
     expect(serializeXml(parseXml(FILE)!)).toBe(FILE);
   });

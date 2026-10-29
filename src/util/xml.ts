@@ -15,6 +15,8 @@ const OWN_NAMESPACE = /^[^>]*?\sxmlns\s*=/;
 
 /** The documents that got the SVG namespace from `parseXml`. */
 const wrapped = new WeakSet<Document>();
+/** The source declaration and its whitespace, which DOMParser does not retain. */
+const prologs = new WeakMap<Document, string>();
 
 /** Parse an XML text. Give `undefined` when it does not parse. */
 export function parseXml(text: string): Document | undefined {
@@ -28,6 +30,10 @@ export function parseXml(text: string): Document | undefined {
   if (root && !own) {
     wrapped.add(doc);
   }
+  const prolog = /^<\?xml\s[\s\S]*?\?>\s*/.exec(text);
+  if (prolog) {
+    prologs.set(doc, prolog[0]);
+  }
   return doc;
 }
 
@@ -38,7 +44,11 @@ export function createXmlElement(doc: Document, name: string): Element {
 
 /** The XML text of a document from `parseXml`, with no namespace that the parse added. */
 export function serializeXml(doc: Document): string {
-  const text = new XMLSerializer().serializeToString(doc);
-  // The first match is in the root start tag: a value in an attribute escapes its quotes.
-  return wrapped.has(doc) ? text.replace(DECLARATION, '') : text;
+  let text = new XMLSerializer().serializeToString(doc);
+  const root = ROOT_NAME.exec(text);
+  // The injected attribute is first in the root start tag. Leave the prolog and other attributes intact.
+  if (wrapped.has(doc) && root && text.startsWith(DECLARATION, root[0].length)) {
+    text = root[0] + text.slice(root[0].length + DECLARATION.length);
+  }
+  return (prologs.get(doc) ?? '') + text;
 }
