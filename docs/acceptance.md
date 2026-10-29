@@ -56,14 +56,24 @@ Unit proof, 2026-10-29, worktree of P1-20: `npx vitest run <the unit files below
 
 ## Binding model v4: P3 checks
 
-These checks cover the split editor. The P3 gate records the test output; these rows do not claim a new run.
+These checks cover the split editor. The P3-G gate task records the test output and fills the Result column; these rows do not claim a new run. The numbers in the first column are the P3 acceptance items of the v4 spec, section 9.
 
-| Check | Proof | Result |
-| --- | --- | --- |
-| Split panes, tabs and resizing | `src/editor/popup/PopupLayout.test.tsx` | Open: P3 gate |
-| Draft preview, report, selection, inspector and diagram writes | `src/editor/popup/SplitEditor.test.tsx`, `src/editor/popup/InspectorV4.test.tsx`, `src/editor/popup/MatchReport.test.tsx` | Open: P3 gate |
-| Diagram selection and box selection | `src/editor/popup/DiagramStage.test.tsx`, `src/editor/popup/boxTargets.test.ts` | Open: P3 gate |
-| Editor in Grafana | `tests/binding-v4.spec.ts` | Open: P3 gate |
+| Item | Check | Proof | Result |
+| --- | --- | --- | --- |
+| 1 | YAML path at the cursor, cells of a path, report counts | `src/editor/split/yamlPath.test.ts`, `src/editor/split/cellsForPath.test.ts`, `src/editor/split/reportCounts.test.ts` | Open: P3-G gate |
+| 2 | `setCellAttrs` writes XML and SVG | `src/editor/setCellAttrs.test.ts` | Open: P3-G gate |
+| 3 | The sanitiser keeps the new `data-meta-*` attributes | `src/editor/setCellAttrs.test.ts` ("keeps new metadata through the sanitizer") | Open: P3-G gate |
+| 4 | YAML completion | `src/editor/split/completion.test.ts` | Open: P3-G gate |
+| - | Split panes, tabs and resizing | `src/editor/popup/PopupLayout.test.tsx` | Open: P3-G gate |
+| - | Draft preview, report, selection, inspector and diagram writes | `src/editor/popup/SplitEditor.test.tsx`, `src/editor/popup/InspectorV4.test.tsx`, `src/editor/popup/MatchReport.test.tsx` | Open: P3-G gate |
+| - | Diagram selection and box selection | `src/editor/popup/DiagramStage.test.tsx`, `src/editor/popup/boxTargets.test.ts` | Open: P3-G gate |
+| 5-8 | E2E: cursor and cells, click on a cell, multi-select and assign, schema error, conflict, discard, undo | `tests/split-editor.spec.ts` (P3-07); the split-editor cases of `tests/editor-refresh.spec.ts` and `tests/editor.spec.ts` (P3-08) | Open: P3-07, P3-08 and the P3-G gate. The specs are not in this branch yet. |
+| 7 | Undo stack of diagram writes | `src/editor/history.test.ts` | Open: P3-G gate |
+| 9 | E2E on Grafana 12.4 and 13.2, project `matrix`: the code box loads, completion opens above the modal, the cursor events fire | `tests/split-editor.spec.ts` (P3-07 adds `split-editor` to `MATRIX_SPECS`), `npm run e2e:matrix` | Open: P3-07 and the P3-G gate |
+| 10 | Pilot round trip on boiler-enclosure | P3-11 | Open: P3-11 |
+| 11 | Screenshot of the split view, checked by eye | P3-09 (`DMAP_SCREENSHOTS=docs/images`) | Open: P3-09 |
+| 12 | Monaco test on `grafana13-csp` and `grafana13-sandbox-csp` | P3-09; the result goes in the table "Isolation variants" | Open: P3-09 |
+| 13 | Phone: the split view opens at the iPhone 13 viewport of `tests/phone-sheet.spec.ts` | `tests/split-editor.spec.ts` (phone test, P3-09) | Open: P3-09 |
 
 ## E2E suites by Grafana version
 
@@ -119,6 +129,8 @@ Results of the v3 runtime (before P1). The P1-G gate replaces them.
 
 The services of the compose profile `isolation` (see `docker-compose.yaml`). Command:
 `docker compose --profile isolation up -d --wait <service>`, then `GRAFANA_URL=<url> npx playwright test`.
+
+P3 item 12 adds the split-editor Monaco test on `grafana13-csp` and `grafana13-sandbox-csp` (P3-09). Its result goes in this table.
 
 | Grafana | Setting                          | URL                           | Result              |
 | ------- | -------------------------------- | ----------------------------- | ------------------- |

@@ -105,22 +105,22 @@ A cell with `bind=node-up` and `key=node-rtr-a` shows the series of the target `
 
 ### Edit the config
 
-### Split editor
-
-In panel edit, select **Edit bindings** in the Diagram options or on the panel. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
-
-The preview follows a valid draft. Move the cursor in YAML to highlight the affected cells; select a report entry to move to its YAML path and highlight its cells. Select a cell to open its inspector and move the cursor to its override or class. The inspector shows its attributes, class chain, override, and, for each use, the query, matchers, series count and up to eight label sets and values. For an edge it also shows the ends and the direction of each half.
-
-Set `bind` and `key` for one cell with **Set bind and key**. An empty field removes that attribute. Shift-click cells or drag a selection box with Shift, then use **Assign class** to set `bind` on all selected cells; their keys stay. For an edge, use **key is at the target** or **key is at the source** to set or clear `at=target`. These writes change page 1 of the draft diagram in both XML and SVG. If the page is compressed, open it in draw.io and save it once before a write.
-
-Use **Undo** and **Redo** for diagram writes. **Apply** saves the valid YAML and diagram draft to the panel options; save the dashboard to keep the changes. Closing with an unapplied draft asks for confirmation. If the saved panel changes while the editor is open, choose **Reload** to discard the draft or **Keep my draft** before applying it.
-
 The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores the config as JSON in the dashboard. The editor shows the same data as YAML in a fixed key order.
 
 - A YAML comment is not kept. The editor writes the config from the data on each load.
 - An error shows as a marker on its line. A YAML syntax error and an error in the top level (`version`, `freshness`, `classes`, `overrides`) stop the save: the editor keeps your text and stores nothing. An error inside one class or one override does not stop the save. The panel shows the cells of that class or override as **unavailable**: grey, with the reason "Binding is not valid".
 - The editor loads in a separate chunk. View mode and the dashboard do not load the YAML parser.
 - The option `build` of the panel JSON is never read by the panel. A generator can write it. The editor keeps it.
+
+### Split editor
+
+In panel edit, select **Edit bindings** in the Diagram options or on the panel. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
+
+The preview follows a valid draft. Move the cursor in YAML to highlight the affected cells; select a report entry to move to its YAML path and highlight its cells. Select a cell to open its inspector and move the cursor to its override or class. The inspector shows its attributes, class chain, override, and, for each use, the query, matchers, series count and up to eight label sets and values. For an edge it also shows the ends and the direction of each half.
+
+Set `bind` and `key` for one cell with **Set bind and key**. An empty field removes that attribute. Shift-click cells or drag a selection box with Shift, then use **Assign class** to set `bind` on all selected cells; their keys stay. For an edge, use **key is at the target** or **key is at the source** to set or clear `at=target`. On a generated panel the inspector says that the generator writes `at` again at the next build; change the link in the catalogue family of the generator source. These writes change page 1 of the draft diagram in both XML and SVG. If the page is compressed, open it in draw.io and save it once before a write.
+
+Use **Undo** and **Redo** for diagram writes. Ctrl+Z (Cmd+Z on a Mac) undoes the text when the code box has the focus; in other places it undoes the last diagram write. **Apply** saves the valid YAML and diagram draft to the panel options; save the dashboard to keep the changes. **Apply** is off while the YAML does not parse. An error in one class or one override does not turn it off. Closing with an unapplied draft asks for confirmation. If the saved panel changes while the editor is open, choose **Reload** to discard the draft or **Keep my draft** before applying it.
 
 ### Cell attributes
 

@@ -2,7 +2,14 @@
 
 ## 1.2.0 (Unreleased)
 
-- Added a split bindings editor with a live diagram, match report and cell inspector. The inspector can write bind, key and edge direction to the diagram.
+The 1.1.0 tag comes first: do not release 1.2.0 before it.
+
+- Added a split bindings editor with a live diagram, match report and cell inspector. Open it with **Edit bindings**.
+- The cursor in the YAML highlights the affected cells. A click on a cell opens its inspector and moves the cursor to its class or override.
+- The inspector writes `bind` and `key` for one cell. **Assign class** sets `bind` on several selected cells and keeps their keys.
+- On an edge, **key is at the target** sets or clears `at=target`. On a generated panel the inspector warns that the generator writes `at` again.
+- The writes change page 1 of the diagram, in XML and SVG. They need an uncompressed page 1.
+- **Undo** and **Redo** keep up to 50 diagram versions. **Apply** saves the config and the diagram together. A save in another tab shows a conflict banner.
 
 ## 1.1.0 (Unreleased)
 
