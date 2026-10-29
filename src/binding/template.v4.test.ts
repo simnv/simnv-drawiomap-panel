@@ -4,12 +4,29 @@ import {
   formatBareVariables,
   missingAttrHint,
   resolveTemplateV4,
+  scanPlaceholders,
   shieldV4,
   unshieldV4,
   type TemplateScopeV4,
 } from './template';
 
 const attrs = (o: Record<string, string>) => (n: string) => o[n];
+
+describe('scanPlaceholders', () => {
+  it('splits a text into literal parts and classified placeholders, in order', () => {
+    expect(scanPlaceholders('a$b${key}${from.port}${x:csv}${value}${labels.ssid}${}${open')).toEqual([
+      'a$b',
+      { placeholder: { kind: 'attr', name: 'key' }, source: '${key}' },
+      { placeholder: { kind: 'from', name: 'port' }, source: '${from.port}' },
+      { placeholder: { kind: 'variable' }, source: '${x:csv}' },
+      { placeholder: { kind: 'value' }, source: '${value}' },
+      { placeholder: { kind: 'labels', name: 'ssid' }, source: '${labels.ssid}' },
+      { placeholder: { kind: 'bad' }, source: '${}' },
+      { placeholder: { kind: 'bad' }, source: '${open' },
+    ]);
+    expect(scanPlaceholders('')).toEqual(['']);
+  });
+});
 
 const scope: TemplateScopeV4 = {
   attr: attrs({ id: 'c1', key: 'sw-a', 'path-role': 'uplink', label: 'Switch A', cellTitle: 'T', percent: '7' }),

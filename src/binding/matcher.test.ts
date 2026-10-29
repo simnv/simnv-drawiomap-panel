@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MatchV4 } from '../model/v4';
 import { createRegexCache, parseMatchBlock, resolveBlock } from './matcher';
+import { resolveTemplateV4 } from './template';
 
 const path = 'classes.node.match';
 
@@ -76,6 +77,16 @@ describe('parseMatchBlock', () => {
       ['key', 'port', 'from.key', 'to.port-id']
     );
   });
+
+  it.each(['${key}', '${from.key}-${to.port-id}', '${cell.key}', 'a$b ${key}} $${port}', '[[x]]${key}'])(
+    'reads the same cell attributes from %s as a template (one placeholder scanner)',
+    (text) => {
+      const template = resolveTemplateV4(text, { attr: () => undefined, from: () => undefined, to: () => undefined });
+      // the record key `k0` is the first required attribute; the placeholders follow in text order
+      const block = parse({ k0: `job=${JSON.stringify(text)}` });
+      expect(block.requiredAttrs).toEqual(['k0', ...template.missing]);
+    }
+  );
 
   it.each<MatchV4>([{}, { key: 'job!=""' }, { key: [] }])(
     'rejects a block that reads no cell attribute: %j',

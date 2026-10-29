@@ -1,5 +1,6 @@
 import type { Labels } from '@grafana/data';
 import type { MatchV4 } from '../model/v4';
+import { scanPlaceholders } from './template';
 
 type Operator = '=' | '!=' | '=~' | '!~';
 type Part = string | { attr: string };
@@ -33,7 +34,6 @@ export type ResolveResult =
   | { ok: false; kind: 'matcher-error'; text: string; message: string };
 
 const MATCHER = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:(=~|!~|!=|=)\s*"((?:\\[^\r\n]|[^"\\\r\n])*)"\s*)?$/;
-const ATTRIBUTE = /^(?:from\.|to\.)?[A-Za-z_][A-Za-z0-9_-]*$/;
 const ESCAPES: Record<string, string> = { '\\': '\\', '"': '"', n: '\n', t: '\t' };
 
 function unescapeString(text: string): string | undefined {
@@ -52,24 +52,24 @@ function unescapeString(text: string): string | undefined {
   return value;
 }
 
+/**
+ * The parts of a matcher string (spec 2.4 step 3), from the placeholder scanner of the templates. A matcher reads
+ * only `${<name>}`, `${from.<name>}` and `${to.<name>}`: any other `${…}` is an error.
+ */
 function templateParts(value: string): Part[] | undefined {
   const parts: Part[] = [];
-  let offset = 0;
-  for (;;) {
-    const start = value.indexOf('${', offset);
-    if (start < 0) {
-      parts.push(value.slice(offset));
-      return parts;
+  for (const part of scanPlaceholders(value)) {
+    if (typeof part === 'string') {
+      parts.push(part);
+      continue;
     }
-    parts.push(value.slice(offset, start));
-    const end = value.indexOf('}', start + 2);
-    const attr = value.slice(start + 2, end);
-    if (end < 0 || !ATTRIBUTE.test(attr) || attr === 'value') {
+    const p = part.placeholder;
+    if (p.kind !== 'attr' && p.kind !== 'from' && p.kind !== 'to') {
       return undefined;
     }
-    parts.push({ attr });
-    offset = end + 1;
+    parts.push({ attr: p.kind === 'attr' ? p.name : `${p.kind}.${p.name}` });
   }
+  return parts;
 }
 
 /** Parse the template before any cell value can change its syntax. */
