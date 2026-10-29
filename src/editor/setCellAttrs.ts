@@ -1,6 +1,7 @@
 import { parseSvg } from '../render/sanitize';
 import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
+import { createXmlElement, parseXml, serializeXml } from '../util/xml';
 
 const META_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const RESERVED_META = /^(?:pg-.*|id|label|placeholders|xml.*)$/i;
@@ -45,7 +46,7 @@ function wrapCell(cell: Element): Element {
   if (cell.localName !== 'mxCell') {
     return cell;
   }
-  const wrapper = cell.ownerDocument.createElement('object');
+  const wrapper = createXmlElement(cell.ownerDocument, 'object');
   wrapper.setAttribute('id', cell.getAttribute('id')!);
   wrapper.setAttribute('label', cell.getAttribute('value') ?? '');
   cell.removeAttribute('id');
@@ -79,8 +80,8 @@ export function setCellAttrs(
       }
     }
   }
-  const doc = new DOMParser().parseFromString(d.xml, 'text/xml');
-  if (doc.getElementsByTagName('parsererror').length) {
+  const doc = parseXml(d.xml);
+  if (!doc) {
     throw new Error('The diagram XML does not parse.');
   }
   const index = xmlCells(firstModel(doc));
@@ -109,8 +110,7 @@ export function setCellAttrs(
       writeAttribute(matches[0], `data-meta-${canonical}`, value);
     }
   }
-  const serializer = new XMLSerializer();
-  const xml = serializer.serializeToString(doc);
-  const svg = serializer.serializeToString(image);
+  const xml = serializeXml(doc);
+  const svg = new XMLSerializer().serializeToString(image);
   return { ...d, xml, svg, hash: fnv1a(svg + xml), updatedAt: new Date().toISOString() };
 }

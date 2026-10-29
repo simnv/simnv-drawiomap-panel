@@ -101,6 +101,8 @@ interface Provider {
 export function createFakeMonaco() {
   const fake = {
     text: '',
+    /** The text area of the code box: the DOM node of the editor. */
+    dom: null as HTMLTextAreaElement | null,
     cursor: new Set<(event: CursorEvent) => void>(),
     providers: [] as Array<{ language: string; provider: Provider; dispose: ReturnType<typeof vi.fn> }>,
     setModelMarkers: vi.fn<(model: unknown, owner: string, markers: Array<{ severity: number; message: string }>) => void>(),
@@ -118,6 +120,7 @@ export function createFakeMonaco() {
     },
     editor: {
       getModel: () => fake.model,
+      getDomNode: () => fake.dom,
       onDidChangeCursorPosition(listener: (event: CursorEvent) => void) {
         fake.cursor.add(listener);
         return { dispose: () => fake.cursor.delete(listener) };
@@ -177,6 +180,9 @@ export function createFakeMonaco() {
     }, [onEditorDidMount]);
     return (
       <textarea
+        ref={(el) => {
+          fake.dom = el;
+        }}
         data-testid="code-editor"
         data-language={props.language}
         value={props.value}

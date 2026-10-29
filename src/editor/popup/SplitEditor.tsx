@@ -236,7 +236,16 @@ export function SplitEditor({
 
   const [instance, setInstance] = useState<Instance>();
   const cursorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const onEditorDidMount = useCallback((editor: MonacoEditor, monaco: Monaco) => setInstance({ editor, monaco }), []);
+  const onEditorDidMount = useCallback((editor: MonacoEditor, monaco: Monaco) => {
+    // The focus starts in the code box (P3.13). Until Monaco loads, the dialog root holds the focus. A focus that the
+    // user moved to an element of the dialog stays there.
+    const active = document.activeElement;
+    const node = editor.getDomNode();
+    if (node && (!active || active === document.body || (active !== node && active.contains(node)))) {
+      editor.focus();
+    }
+    setInstance({ editor, monaco });
+  }, []);
   useEffect(() => {
     const model = instance?.editor.getModel();
     if (!instance || !model) {

@@ -1,4 +1,5 @@
 import type { CellIndex, Endpoint } from '../types';
+import { parseXml } from '../util/xml';
 import type { ReportEntry } from './report';
 
 /** The draw.io ids of the cells at the two ends of an edge. */
@@ -31,8 +32,8 @@ const EMPTY_PAGE: Page = { ends: new Map(), parents: new Map() };
 
 /** Reads the edge ends and the parents of page 1 of a draw.io XML. */
 function readPage(xml: string): Page {
-  const doc = new DOMParser().parseFromString(xml, 'text/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) {
+  const doc = parseXml(xml);
+  if (!doc) {
     return { error: 'the diagram XML does not parse' };
   }
   let model: Element | undefined = doc.documentElement;

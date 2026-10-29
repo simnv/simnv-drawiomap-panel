@@ -378,6 +378,26 @@ describe('SplitEditor', () => {
     expect(fake.cursor.size).toBe(0);
   });
 
+  it('moves the focus into the code box when Monaco loads and the dialog holds the focus (P3.13)', () => {
+    render(
+      <div role="dialog" tabIndex={-1} ref={(el) => el?.focus()}>
+        <SplitEditor {...editorProps()} />
+      </div>
+    );
+    expect(fake.editor.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a focus that the user moved to another element before Monaco loads', () => {
+    render(
+      <div role="dialog" tabIndex={-1}>
+        <button ref={(el) => el?.focus()}>Close</button>
+        <SplitEditor {...editorProps()} />
+      </div>
+    );
+    expect(fake.editor.focus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
+  });
+
   it('keeps the draft when the saved options change on a refresh', () => {
     const view = render(<SplitEditor {...editorProps()} />);
     type(fake.text.replace('status: up', 'status: down'));

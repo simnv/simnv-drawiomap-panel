@@ -8,6 +8,7 @@ export interface SanitizeResult {
 }
 
 import { extractThemeVars } from './themeVars';
+import { jsonCopy } from '../util/json';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -45,7 +46,8 @@ const deepFreeze = <T extends object>(o: T): T => {
 };
 
 // Frozen: DOMPurify lowercases array entries of the config in place, so each call gets a deep copy and the original
-// never changes. Entries are already in the lowercase form that DOMPurify expects. The cache pin hashes this object.
+// never changes. The copy is `jsonCopy`, not `structuredClone`: the Grafana frontend sandbox cannot clone an object of
+// the plugin. Entries are already in the lowercase form that DOMPurify expects. The cache pin hashes this object.
 export const PURIFY_CONFIG: Config = deepFreeze({
   USE_PROFILES: { svg: true, svgFilters: true, html: true },
   // DOMPurify forbids foreignObject by default; the spec keeps HTML labels. The html profile
@@ -124,7 +126,7 @@ export function sanitizeSvgUncached(text: string): SanitizeResult {
 
   // Pass 2: DOMPurify.
   const serialized = new XMLSerializer().serializeToString(root);
-  const body = DOMPurify.sanitize(serialized, structuredClone(PURIFY_CONFIG)) as unknown as HTMLElement;
+  const body = DOMPurify.sanitize(serialized, jsonCopy(PURIFY_CONFIG)) as unknown as HTMLElement;
   removed.elements += DOMPurify.removed.filter((r) => 'element' in r).length;
   removed.attributes += DOMPurify.removed.filter((r) => 'attribute' in r).length;
   const svg = body.querySelector('svg');
