@@ -16,12 +16,16 @@
       "gridPos": { "x": 0, "y": 0, "w": 24, "h": 18 },
       "datasource": { "type": "prometheus", "uid": "victoriametrics" },
       "targets": [
-        { "refId": "A", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "{{job}} {{device}}" },
-        { "refId": "W", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan {{job}} {{device}}" },
-        { "refId": "S", "expr": "node_network_speed_bytes", "legendFormat": "speed {{job}} {{device}}" },
-        { "refId": "C", "expr": "up", "legendFormat": "{{job}}" },
-        { "refId": "D", "expr": "node_load1", "legendFormat": "{{job}}" },
-        { "refId": "E", "expr": "node_cpu_usage_percent", "legendFormat": "{{job}}" }
+        { "refId": "lan_tx", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "tx {{job}} {{device}}" },
+        { "refId": "lan_rx", "expr": "rate(node_network_receive_bytes_total{device!~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "rx {{job}} {{device}}" },
+        { "refId": "wan_tx", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan tx {{job}} {{device}}" },
+        { "refId": "wan_rx", "expr": "rate(node_network_receive_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan rx {{job}} {{device}}" },
+        { "refId": "speed", "expr": "node_network_speed_bytes", "legendFormat": "speed {{job}} {{device}}" },
+        { "refId": "up", "expr": "up", "legendFormat": "{{job}}" },
+        { "refId": "load", "expr": "node_load1", "legendFormat": "{{job}}" },
+        { "refId": "cpu", "expr": "node_cpu_usage_percent{job=~\"node-rtr-a|node-rtr-b\"}", "legendFormat": "{{job}}" },
+        { "refId": "v4_samples", "expr": "dmap_v4_three{job=\"node-rtr-a\"}", "legendFormat": "{{line}}" },
+        { "refId": "v4_nine", "expr": "dmap_v4_nine", "legendFormat": "{{line}}" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -32,33 +36,51 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "matcher": { "id": "byFrameRefID", "options": "v4_samples" },
+            "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 0 }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "v4_nine" },
+            "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 0 }, { "id": "min", "value": 0 }, { "id": "max", "value": 100 }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "lan_tx" },
             "properties": [{ "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }]
           },
           {
-            "matcher": { "id": "byFrameRefID", "options": "W" },
+            "matcher": { "id": "byFrameRefID", "options": "lan_rx" },
+            "properties": [{ "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "wan_tx" },
             "properties": [
               { "id": "color", "value": { "mode": "continuous-GrYlRd" } },
-              { "id": "max", "value": 100000000 },
               { "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }
             ]
           },
-          { "matcher": { "id": "byFrameRefID", "options": "S" }, "properties": [{ "id": "unit", "value": "Bps" }] },
           {
-            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "matcher": { "id": "byFrameRefID", "options": "wan_rx" },
+            "properties": [
+              { "id": "color", "value": { "mode": "continuous-GrYlRd" } },
+              { "id": "links", "value": [{ "title": "Interface details", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&var-device=${__field.labels.device}&${__url_time_range}", "targetBlank": true }] }
+            ]
+          },
+          { "matcher": { "id": "byFrameRefID", "options": "speed" }, "properties": [{ "id": "unit", "value": "Bps" }] },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "up" },
             "properties": [{ "id": "links", "value": [{ "title": "Host overview", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&${__url_time_range}", "targetBlank": true }] }]
           },
           {
-            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "matcher": { "id": "byFrameRefID", "options": "up" },
             "properties": [
               { "id": "unit", "value": "none" },
               { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } },
               { "id": "mappings", "value": [{ "type": "value", "options": { "0": { "text": "down", "index": 0 }, "1": { "text": "up", "index": 1 } } }] }
             ]
           },
-          { "matcher": { "id": "byFrameRefID", "options": "D" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] },
+          { "matcher": { "id": "byFrameRefID", "options": "load" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] },
           {
-            "matcher": { "id": "byFrameRefID", "options": "E" },
+            "matcher": { "id": "byFrameRefID", "options": "cpu" },
             "properties": [{ "id": "links", "value": [{ "title": "Host overview", "url": "/d/drawiomap-demo?var-job=${__field.labels.job}&${__url_time_range}", "targetBlank": true }] }]
           }
         ]
@@ -76,12 +98,106 @@
       "title": "hand-drawn",
       "gridPos": { "x": 0, "y": 18, "w": 12, "h": 10 },
       "datasource": { "type": "prometheus", "uid": "victoriametrics" },
-      "targets": [{ "refId": "A", "expr": "rate(node_network_transmit_bytes_total[1m]) * 8", "legendFormat": "{{job}} {{device}}" }],
+      "targets": [
+        { "refId": "wan_tx", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan tx {{job}} {{device}}" },
+        { "refId": "wan_rx", "expr": "rate(node_network_receive_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan rx {{job}} {{device}}" }
+      ],
       "fieldConfig": { "defaults": { "unit": "bps", "decimals": 1 }, "overrides": [] },
       "options": {
         "zoom": { "mode": "fit", "percent": 100, "wheel": false, "pan": false, "align": "top" },
         "linkWidth": { "min": 2, "max": 10 },
         "diagram": null
+      }
+    },
+    {
+      "id": 4,
+      "type": "simnv-drawiomap-panel",
+      "title": "v4 chart regions",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "refId": "history",
+          "expr": "dmap_v4_three{job=\"node-net-b\"}",
+          "legendFormat": "{{line}}"
+        },
+        {
+          "refId": "gauge",
+          "expr": "dmap_v4_gauge",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "config": {
+          "version": 4,
+          "freshness": "3x",
+          "classes": {
+            "history-region": {
+              "match": {
+                "key": "job"
+              },
+              "chart": {
+                "kind": "history",
+                "query": "history",
+                "label": "Three lines"
+              }
+            },
+            "value-region": {
+              "match": {
+                "key": "job"
+              },
+              "chart": {
+                "kind": "value",
+                "query": "gauge",
+                "label": "Gauge"
+              }
+            }
+          },
+          "overrides": {}
+        },
+        "diagram": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"660\" height=\"220\" viewBox=\"0 0 660 220\"><g data-cell-id=\"history-region\" data-meta-pg-kind=\"other\" data-meta-bind=\"history-region\" data-meta-key=\"node-net-b\"><rect x=\"20\" y=\"20\" width=\"300\" height=\"180\" fill=\"#ffffff\" stroke=\"#666666\"/></g><g data-cell-id=\"value-region\" data-meta-pg-kind=\"other\" data-meta-bind=\"value-region\" data-meta-key=\"node-proxy-a\"><rect x=\"340\" y=\"20\" width=\"300\" height=\"180\" fill=\"#ffffff\" stroke=\"#666666\"/></g></svg>",
+          "xml": "<mxfile><diagram id=\"page-1\" name=\"Charts\"><mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/><object id=\"history-region\" label=\"\" bind=\"history-region\" key=\"node-net-b\"><mxCell vertex=\"1\" parent=\"1\" style=\"rounded=0;\"><mxGeometry x=\"20\" y=\"20\" width=\"300\" height=\"180\" as=\"geometry\"/></mxCell></object><object id=\"value-region\" label=\"\" bind=\"value-region\" key=\"node-proxy-a\"><mxCell vertex=\"1\" parent=\"1\" style=\"rounded=0;\"><mxGeometry x=\"340\" y=\"20\" width=\"300\" height=\"180\" as=\"geometry\"/></mxCell></object></root></mxGraphModel></diagram></mxfile>",
+          "hash": "v4-chart-regions"
+        },
+        "zoom": {
+          "mode": "fit",
+          "wheel": true,
+          "pan": true
+        }
       }
     }
   ]

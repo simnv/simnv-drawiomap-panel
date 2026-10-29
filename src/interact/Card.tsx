@@ -9,15 +9,16 @@ import React, {
   useState,
 } from 'react';
 import { css, cx } from '@emotion/css';
-import { getDefaultTimeRange, getFieldSeriesColor, type GrafanaTheme2, type TimeRange } from '@grafana/data';
+import { getDefaultTimeRange, type GrafanaTheme2, type TimeRange } from '@grafana/data';
 import { IconButton, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { statusTextColor } from '../binding/color';
-import { chartHeight, type ConfiguredCardModel, type ConfiguredCardRow } from './cardModel';
-import { SparklineView } from '../visuals/SparklineView';
+import { chartHeight, staleDeadline, type CardModelV4, type ConfiguredCardRow } from './cardModel';
+import { lineHistory, SparklineView, type HistoryChart } from '../visuals/SparklineView';
 import { MirrorSparkline } from '../visuals/MirrorSparkline';
 import { ChartHover, type HoverSeries } from '../visuals/ChartHover';
 import { placeTooltip } from '../visuals/tooltipPlace';
-import { useSampleStale } from '../visuals/useSampleStale';
+import { useClock } from '../visuals/useSampleStale';
+import { isPast } from '../binding/status';
 
 /** Panels narrower than this show the pinned or hover card as a sheet at the bottom of the viewport. */
 export const SHEET_BELOW = 480;
@@ -27,8 +28,11 @@ const EDGE = 4;
 /** Padding (8 px each side) and border (1 px each side) of the card: the charts of an inline card are narrower by this. */
 const INLINE_CHROME = 18;
 
+/** The card input: the card model of `buildCardV4`. */
+export type CardView = CardModelV4;
+
 export interface CardProps {
-  model: ConfiguredCardModel;
+  model: CardView;
   pinned: boolean;
   /**
    * `floating` (default) follows the pointer or sits fixed in the panel; narrow panels show it as a sheet.
@@ -146,6 +150,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   `,
+  // missing data is grey, never the colour of a value (CODING_STANDARDS.md, "State and data")
+  empty: css`
+    color: ${theme.colors.text.secondary};
+  `,
   // keeps the two spaces between the directions of a combined row
   pre: css`
     white-space: pre;
@@ -167,7 +175,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
     margin-top: ${theme.spacing(0.5)};
     color: ${theme.colors.text.secondary};
   `,
+  more: css`
+    color: ${theme.colors.text.secondary};
+  `,
 });
+
+const NO_DEADLINES: readonly number[] = [];
 
 /** Memoised: the card re-renders on each pointer move, the rows change only with the data. */
 const Row = memo(function Row({
@@ -189,19 +202,30 @@ const Row = memo(function Row({
   chartsReady: boolean;
 }) {
   const theme = useTheme2();
-  const stale = useSampleStale(row.sampleAt, row.freshness);
-  const { history, directions } = row;
+  // a row is stale at the bind or after its deadline
+  const deadline = staleDeadline(row);
+  const now = useClock(deadline === undefined ? NO_DEADLINES : [deadline]);
+  const stale = row.stale === true || (deadline !== undefined && isPast(deadline, now));
+  const { directions, lines, domain, format } = row;
+  // the chart of a history row: its lines, or why it has none
+  const chart = useMemo((): HistoryChart | undefined => {
+    if (!lines || !domain) {
+      return undefined;
+    }
+    return row.state === 'ready' ? { lines, domain } : { message: row.text };
+  }, [lines, domain, row.state, row.text]);
   const hoverSeries = useMemo((): HoverSeries[] => {
     if (directions) {
       return directions.map((d) => ({ name: d.label, color: d.color, history: d.history }));
     }
-    if (!history) {
-      return [];
-    }
-    const color =
-      history.state === 'ready' ? getFieldSeriesColor(history.field, theme).color : theme.colors.primary.main;
-    return [{ name: row.title, color, history }];
-  }, [directions, history, row.title, theme]);
+    return (lines ?? []).map((l) => ({
+      name: l.label,
+      color: l.color,
+      history: lineHistory(l),
+      format,
+      noData: l.noData,
+    }));
+  }, [directions, lines, format]);
   const chartH = chartHeight(row);
   const body = (
     <>
@@ -212,7 +236,14 @@ const Row = memo(function Row({
         >
           {row.title}
         </span>
-        <span className={cx(styles.value, directions && styles.pre)} data-testid="dmap-card-value">
+        <span
+          className={cx(
+            styles.value,
+            directions && styles.pre,
+            (row.state === 'empty' || lines?.every((l) => l.noData)) && styles.empty
+          )}
+          data-testid="dmap-card-value"
+        >
           {directions
             ? directions.map((d, j) => (
                 <React.Fragment key={d.direction}>
@@ -221,10 +252,10 @@ const Row = memo(function Row({
                 </React.Fragment>
               ))
             : row.text}
-          {stale && !history ? <small role="status"> Stale data</small> : null}
+          {stale && !chart ? <small role="status"> Stale data</small> : null}
         </span>
       </div>
-      {!chartsReady && (history || (directions && row.domain)) ? (
+      {!chartsReady && (chart || (directions && row.domain)) ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark" />
       ) : directions && row.domain ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
@@ -239,7 +270,7 @@ const Row = memo(function Row({
             />
           </ChartHover>
         </div>
-      ) : history ? (
+      ) : chart ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
           <ChartHover
             enabled={pinned}
@@ -248,28 +279,25 @@ const Row = memo(function Row({
             timeZone={timeZone}
             width={width}
             label={row.title}
+            more={row.more}
           >
             <SparklineView
-              model={history}
+              chart={chart}
+              config={row.config}
               width={width}
               height={chartH}
               timeRange={timeRange}
               label={row.title}
               showValue={false}
-              freshness={row.freshness}
-              min={row.min}
-              max={row.max}
+              stale={stale}
             />
           </ChartHover>
         </div>
       ) : null}
+      {row.more ? <div className={styles.more}>+{row.more} more</div> : null}
     </>
   );
-  return row.href ? (
-    <a className={styles.row} href={row.href} target="_blank" rel="noopener noreferrer" data-testid="dmap-card-row">
-      {body}
-    </a>
-  ) : (
+  return (
     <div className={styles.row} data-testid="dmap-card-row">
       {body}
     </div>
@@ -443,9 +471,7 @@ export function Card({
           ))}
         </div>
       ) : null}
-      {!pinned && !inline && (model.links.length || model.rows.some((r) => r.href)) ? (
-        <div className={styles.hint}>Click for links</div>
-      ) : null}
+      {!pinned && !inline && model.links.length ? <div className={styles.hint}>Click for links</div> : null}
     </div>
   );
 }

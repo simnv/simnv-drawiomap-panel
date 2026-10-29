@@ -1,8 +1,11 @@
 import { devices, type APIRequestContext, type Locator } from '@playwright/test';
+import fs from 'node:fs';
 import { expect, test } from './authoring-fixtures';
 
 // Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
 const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
+/** The number of panels of the demo dashboard: all of them are drawiomap panels. */
+const DEMO_PANELS: number = JSON.parse(fs.readFileSync('provisioning/dashboards/demo.json', 'utf8')).panels.length;
 
 /** A copy of the demo dashboard with changed options of the portograph panel (id 1). Returns the uid. */
 async function demoCopy(request: APIRequestContext, uid: string, options: Record<string, unknown>) {
@@ -32,6 +35,15 @@ test('the demo shows the colour legend in the bottom-right corner', async ({ pag
   await expect(legend).toHaveAttribute('data-dmap-corner', 'bottom-right');
   await openLegend(legend);
   await expect(legend.getByRole('group', { name: /^Link load %/ }).first()).toBeVisible();
+  const status = legend.getByRole('group', { name: 'node-net-a', exact: true });
+  for (const [text, color] of [
+    ['< 1.0', 'rgb(242, 73, 92)'],
+    ['≥ 1.0', 'rgb(115, 191, 105)'],
+  ]) {
+    const entry = status.getByTestId('dmap-legend-entry').filter({ hasText: text });
+    await expect(entry).toHaveText(text);
+    await expect(entry.locator('[data-dmap-swatch]')).toHaveCSS('background-color', color);
+  }
   const p = await box(panel);
   const l = await box(legend);
   expect(p.x + p.width - (l.x + l.width)).toBeLessThan(12);
@@ -42,7 +54,7 @@ test('hovering a legend entry highlights the cells in that band', async ({ page,
   await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = page.getByTestId('dmap-panel').first();
   await openLegend(panel.getByTestId('dmap-legend'));
-  const block = panel.getByTestId('dmap-legend').getByRole('group', { name: 'Link load % (A)' });
+  const block = panel.getByTestId('dmap-legend').getByRole('group', { name: /^Link load % \(lan_rx, lan_tx\)$/ });
   // the first threshold entry that has cells now
   const entries = block.getByTestId('dmap-legend-entry');
   await expect(entries.first()).toBeVisible();
@@ -230,7 +242,7 @@ test.describe('legend taps across panels', () => {
     await page.setViewportSize({ width: 390, height: 2400 });
     await gotoDashboardPage({ uid: 'drawiomap-demo' });
     const [a, b] = [page.getByTestId('dmap-panel').nth(0), page.getByTestId('dmap-panel').nth(1)];
-    await expect(page.getByTestId('dmap-panel')).toHaveCount(3);
+    await expect(page.getByTestId('dmap-panel')).toHaveCount(DEMO_PANELS);
     const tapEntry = async (panel: Locator) => {
       await panel.getByTestId('dmap-legend').getByRole('button', { name: 'Legend' }).tap();
       const entries = panel.getByTestId('dmap-legend').getByTestId('dmap-legend-entry');

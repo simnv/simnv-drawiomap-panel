@@ -16,11 +16,11 @@ import type { CellPatch, HalfState, Options, PatchMap } from '../types';
 const bound = vi.hoisted(() => ({ patches: new Map() as Map<string, unknown> }));
 /** The stage index of each applier call. */
 const applied = vi.hoisted(() => [] as unknown[]);
-vi.mock('../binding/engine', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../binding/engine')>();
+vi.mock('../binding/bindV4', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../binding/bindV4')>();
   return {
     ...actual,
-    bindPlan: () => ({ patches: bound.patches, diagnostics: [], summaries: [], deadlines: [] }),
+    bindV4: () => ({ patches: bound.patches, uses: new Map(), series: new Map(), report: [], deadlines: [] }),
   };
 });
 vi.mock('../render/applier', async (importOriginal) => {
@@ -121,7 +121,6 @@ function Popup({ patches, hash }: { patches: PatchMap; hash: string }) {
       patches={patches}
       selection={NONE}
       onSelect={() => {}}
-      owner="popup:1"
       hash={hash}
       linkWidth={LINK_WIDTH}
     />

@@ -1,6 +1,6 @@
 import { LoadingState, type PanelData } from '@grafana/data';
 import { copyFrames } from './boundary';
-import type { QuerySnapshot } from './types';
+import type { QuerySnapshot } from './snapshot';
 
 const snapshots = new WeakMap<PanelData, Map<string, QuerySnapshot>>();
 

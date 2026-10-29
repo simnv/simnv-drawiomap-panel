@@ -6,6 +6,8 @@ rate(...[1m]) * 8 is stable: isp-a (wan1) 41 Mb/s (41 % of 100M), radio (wan2) 9
 node_network_speed_bytes gives the port speed of some ports (bytes/s, as node_exporter):
 the demo reads the LAN capacity from it.
 node_cpu_usage_percent moves slowly around a base value for each host that is up.
+The v4 metrics use separate names. GEN_SET=v4 writes only those metrics. dmap_v4_three has no min or max
+in the demo: its shared Y range comes from the values of the three lines.
 """
 import math
 import os
@@ -54,7 +56,20 @@ CPU = {
 
 
 def build(elapsed: float) -> bytes:
-    lines = []
+    # Each nine line steps by one every 5 s, with a phase for each line: the tooltip test reads two times
+    # that differ and can tell values of one sample from values of another.
+    tick = int(elapsed // 5)
+    lines = [
+        f'dmap_v4_nine{{job="node-rtr-a",line="line-{i}"}} {(i + 1) * 10 + (tick + i) % 5}'
+        for i in range(9)
+    ]
+    for job in ("node-rtr-a", "node-net-b"):
+        for i in range(3):
+            value = 20 * (i + 1) + 5 * math.sin(elapsed / 15 + i)
+            lines.append(f'dmap_v4_three{{job="{job}",line="line-{i}"}} {value:.2f}')
+    lines.append('dmap_v4_gauge{job="node-proxy-a"} 42')
+    if os.environ.get("GEN_SET") == "v4":
+        return ("\n".join(lines) + "\n").encode()
     for job, dev, tx, rx in LINKS:
         lines.append(f'node_network_transmit_bytes_total{{job="{job}",device="{dev}"}} {int(tx * elapsed)}')
         lines.append(f'node_network_receive_bytes_total{{job="{job}",device="{dev}"}} {int(rx * elapsed)}')

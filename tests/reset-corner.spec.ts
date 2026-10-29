@@ -1,5 +1,5 @@
 import { type APIRequestContext, type Locator, type Page } from '@playwright/test';
-import { nativeQuery, binding } from '../src/fixtures/authoring-config';
+import type { ConfigV4 } from '../src/model/v4';
 import { expect, test } from './authoring-fixtures';
 
 /**
@@ -23,26 +23,18 @@ const box = async (locator: Locator) => (await locator.boundingBox())!;
 async function cornerDashboard(request: APIRequestContext, uid: string, title: string, corners: readonly string[]) {
   const demo = await (await request.get('/api/dashboards/uid/drawiomap-demo')).json();
   const panel = demo.dashboard.panels.find((p: { id: number }) => p.id === 1);
-  const config = {
-    version: 3,
-    defaultDatasource: { uid: 'victoriametrics', type: 'prometheus' },
-    queries: [nativeQuery('absent', 'absent(vector(1))')],
-    patterns: [],
-    widgets: [],
-    overrides: [
-      ...['pg-node~net-a', 'pg-node~net-b'].map((cellId) => ({
-        cellId,
-        display: {
-          status: {
-            kind: 'mapping',
-            binding: binding('absent'),
-            default: { state: 'normal', reason: 'Healthy' },
-            mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
-          },
-        },
-      })),
-      { cellId: 'pg-node~gone', display: { enabled: false } },
-    ],
+  // The demo config, plus two nodes that select no series (grey, a band row) and an override of a cell that the
+  // diagram does not have (a warning).
+  const demoConfig: ConfigV4 = panel.options.config;
+  const noData = { match: { key: 'job="${key}-no-data"' } };
+  const config: ConfigV4 = {
+    ...demoConfig,
+    overrides: {
+      ...demoConfig.overrides,
+      'pg-node~net-a': noData,
+      'pg-node~net-b': noData,
+      'pg-node~gone': {},
+    },
   };
   const options = (corner: string) => ({
     ...panel.options,
@@ -162,7 +154,8 @@ for (const title of ['', 'Reset corner test']) {
   });
 }
 
-test('in panel edit the edit-bindings button joins the reset button and the badge in the corner without overlap', async ({
+// P3-08: P1 has no edit-bindings button. The split editor of P3 brings it back; rewrite this case for it then.
+test.fixme('in panel edit the edit-bindings button joins the reset button and the badge in the corner without overlap', async ({
   page,
   request,
   gotoPanelEditPage,

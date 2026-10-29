@@ -1,7 +1,6 @@
 import { devices, type Locator, type Page } from '@playwright/test';
-import type { DiagramConfig } from '../src/model/config';
-import { binding, nativeQuery } from '../src/fixtures/authoring-config';
-import { expect, test } from './authoring-fixtures';
+import type { ConfigV4 } from '../src/model/v4';
+import { expect, promTarget, test } from './authoring-fixtures';
 
 // A wide fictional sheet with 11 px labels: 14 columns of switches in three rows.
 const COLUMNS = 14;
@@ -9,41 +8,23 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="600" v
   <g data-cell-id="0" data-meta-pg-schema="1">${Array.from({ length: COLUMNS * 3 }, (_, i) => {
     const x = 20 + (i % COLUMNS) * 134;
     const y = 40 + Math.floor(i / COLUMNS) * 190;
-    return `<g data-cell-id="sw-${i}" data-meta-pg-id="sw-${i}" data-meta-pg-kind="node"><rect x="${x}" y="${y}" width="110" height="60" fill="#d5e8d4" stroke="#82b366"/><text x="${x + 10}" y="${y + 35}" font-size="11" font-family="sans-serif">sw-${i}</text></g>`;
+    return `<g data-cell-id="sw-${i}" data-meta-pg-id="sw-${i}" data-meta-bind="switches" data-meta-key="sw-${i}" data-meta-pg-kind="node"><rect x="${x}" y="${y}" width="110" height="60" fill="#d5e8d4" stroke="#82b366"/><text x="${x + 10}" y="${y + 35}" font-size="11" font-family="sans-serif">sw-${i}</text></g>`;
   }).join('')}</g>
 </svg>`;
 // the last switch of the middle row
 const LAST = `sw-${COLUMNS * 2 - 1}`;
 
-/** A card on every switch; one switch is down, so the status band has a row. */
-function minScaleConfig(config: DiagramConfig): DiagramConfig {
-  return {
-    ...config,
-    queries: [nativeQuery('health', 'vector(0)')],
-    widgets: [],
-    patterns: [
-      {
-        id: 'switches',
-        name: 'Switches',
-        select: { kind: 'node' },
-        display: { hover: { rows: [{ kind: 'metadata', label: 'Device', path: 'cell.key' }] } },
-      },
-    ],
-    overrides: [
-      {
-        cellId: 'sw-0',
-        display: {
-          status: {
-            kind: 'mapping',
-            binding: binding('health'),
-            default: { state: 'normal', reason: 'Healthy' },
-            mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
-          },
-        },
-      },
-    ],
-  };
-}
+/** A card on every switch; the health check of one switch failed, so the status band has a row. */
+const minScaleConfig: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: {
+    switches: { match: { key: 'device' }, rows: [{ kind: 'metadata', label: 'Device', text: '${key}' }] },
+  },
+  overrides: { 'sw-0': { status: 'health' } },
+};
+/** The health of sw-0 is 0: the field config of the authoring panel maps it to red, "Health check failed". */
+const targets = [promTarget('health', 'label_replace(vector(0), "device", "sw-0", "", "")')];
 
 const scroll = (stage: Locator) =>
   stage.evaluate((el) => ({
@@ -66,7 +47,7 @@ async function open(page: Page, gotoDashboardPage: (args: { uid: string }) => Pr
   await gotoDashboardPage({ uid });
   const panel = page.getByTestId('dmap-panel');
   await expect(panel).toHaveAttribute('data-dmap-cells', String(COLUMNS * 3 + 1));
-  await expect(panel.locator('[data-cell-id="sw-0"][data-dmap-status="down"]')).toHaveCount(1);
+  await expect(panel.locator('[data-cell-id="sw-0"][data-dmap-status="critical"]')).toHaveCount(1);
   return { panel, stage: panel.getByTestId('dmap-stage'), band: panel.getByTestId('dmap-status-band') };
 }
 
@@ -76,12 +57,12 @@ test.describe('Minimum scale on the desktop', () => {
   for (const mode of ['fit', 'fit-width'] as const) {
     test(`${mode}: a wide sheet in a narrow panel keeps 11 px labels and the stage scrolls`, async ({
       page,
-      config,
       createDiagram,
       gotoDashboardPage,
     }) => {
       // 14 of 24 grid columns: about 550 px for a 1900 px sheet (a hover card, not a sheet)
-      const uid = await createDiagram(minScaleConfig(config), {
+      const uid = await createDiagram(minScaleConfig, {
+        targets,
         svg,
         width: 14,
         height: 14,
@@ -98,11 +79,11 @@ test.describe('Minimum scale on the desktop', () => {
 
   test('the band stays above the stage after a scroll, the card opens at the pointer, reset goes to the top left', async ({
     page,
-    config,
     createDiagram,
     gotoDashboardPage,
   }, testInfo) => {
-    const uid = await createDiagram(minScaleConfig(config), {
+    const uid = await createDiagram(minScaleConfig, {
+      targets,
       svg,
       width: 14,
       height: 14,
@@ -180,11 +161,15 @@ test.describe('Minimum scale on a phone', () => {
 
   test('one finger scrolls the stage and does not zoom; a tap opens the sheet in the viewport', async ({
     page,
-    config,
     createDiagram,
     gotoDashboardPage,
   }, testInfo) => {
-    const uid = await createDiagram(minScaleConfig(config), { svg, height: 14, zoom: { mode: 'fit', minScale: 1.3 } });
+    const uid = await createDiagram(minScaleConfig, {
+      targets,
+      svg,
+      height: 14,
+      zoom: { mode: 'fit', minScale: 1.3 },
+    });
     const { panel, stage } = await open(page, gotoDashboardPage, uid);
     expect(await labelHeight(panel, 'sw-0')).toBeGreaterThanOrEqual(11);
     const box = (await stage.boundingBox())!;

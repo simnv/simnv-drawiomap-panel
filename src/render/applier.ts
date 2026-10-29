@@ -1,6 +1,5 @@
 import { createTheme, type GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import type { PlanCellPatch } from '../binding/engine';
 import {
   alphaOf,
   linkStatusPaint,
@@ -226,12 +225,13 @@ function tintedFill(shape: SVGElement, status: string): string | undefined {
 }
 
 /**
- * A device whose status is not normal: a border in the status colour, wider than the stroke the shape had
+ * A device whose status paints (`statusPaint`: a status with an opaque value colour, normal included, or a status with
+ * no value colour that is not normal): a border in the status colour, wider than the stroke the shape had
  * (`width`, read before the shape binding wrote its own), and a light tint of the fill it shows now. It runs after
  * `applyShape`, so the border wins over a `stroke` target and the tint goes over a `shape` target. A bitmap device
  * (an `<image>`) takes no fill and no stroke: the overlay draws its border (`renderOverlay`).
  */
-function applyStatus(entry: CellEntry, patch: PlanCellPatch, width: number, theme: GrafanaTheme2): void {
+function applyStatus(entry: CellEntry, patch: CellPatch, width: number, theme: GrafanaTheme2): void {
   const shape = entry.shape as SVGElement | undefined;
   const paint = entry.line || shape?.localName === 'image' ? undefined : statusPaint(patch.statusView, theme);
   if (!shape || !paint) {
@@ -261,7 +261,7 @@ function applyUnavailable(entry: CellEntry, patch: CellPatch): void {
   }
 }
 
-function tag(entry: CellEntry, patch: PlanCellPatch, target: string | undefined, interactive: boolean): void {
+function tag(entry: CellEntry, patch: CellPatch, target: string | undefined, interactive: boolean): void {
   if (target) {
     entry.group.setAttribute('data-dmap-target', target);
   }
@@ -377,9 +377,10 @@ const sameScheme = (a: ColourScheme, b: ColourScheme) =>
 /**
  * The fields of a patch that the writes above read, as one string. Two patches with the same key draw the same
  * picture, so a cell whose key did not change is not touched on a refresh. The cell label of `aria-label` comes
- * from the entry, constant per index.
+ * from the entry, constant per index. The status part holds each status field that a write reads: a new colour with
+ * the same state and text paints the cell again (spec 3.4).
  */
-export function applyKey(patch: PlanCellPatch, interactive: boolean): string {
+export function applyKey(patch: CellPatch, interactive: boolean): string {
   const half = (h: HalfState | undefined) => (h ? [h.status, h.color, h.width, h.stepIndex] : null);
   const s = patch.shape;
   const u = patch.unavailable;
@@ -389,7 +390,7 @@ export function applyKey(patch: PlanCellPatch, interactive: boolean): string {
     s ? [s.status, s.stepIndex, s.target, s.color, s.text ?? null] : null,
     u ? [u.color, u.reason] : null,
     l ? [half(l.a2b), half(l.b2a)] : null,
-    v ? [v.state, v.reason] : null,
+    v ? [v.state, v.severity, v.color ?? null, v.text ?? null, v.refId, v.reason] : null,
     interactive,
   ]);
 }

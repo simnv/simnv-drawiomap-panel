@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { expect, PanelEditPage, test as base, type DashboardPage } from '@grafana/plugin-e2e';
 import type { Page, TestInfo } from '@playwright/test';
-import type { DiagramConfig } from '../src/model/config';
-import { authoringConfig } from '../src/fixtures/authoring-config';
+import type { ConfigV4 } from '../src/model/v4';
+import { authoringConfigV4 } from '../src/fixtures/authoring-config';
 
 export { expect };
 
@@ -22,10 +22,55 @@ function quietDemo(uid: string | undefined, queryParams?: URLSearchParams) {
 
 export const svg = fs.readFileSync('src/fixtures/authoring.svg', 'utf8');
 export const xml = fs.readFileSync('src/fixtures/authoring.drawio', 'utf8');
+
+/** A Grafana panel target. A target with no `datasource` uses the default datasource. */
+export type PanelTarget = { refId: string; datasource?: { type: string; uid: string } } & Record<string, unknown>;
+export type FieldConfig = { defaults: Record<string, unknown>; overrides: unknown[] };
+/** The provisioned datasources (provisioning/datasources/). */
+export const PROMETHEUS = { type: 'prometheus', uid: 'victoriametrics' };
+export const TESTDATA = { type: 'grafana-testdata-datasource', uid: 'authoring-testdata' };
+/** A panel target of the VictoriaMetrics datasource. */
+export const promTarget = (refId: string, expr: string, extra: Record<string, unknown> = {}): PanelTarget => ({
+  refId,
+  datasource: PROMETHEUS,
+  expr,
+  ...extra,
+});
+/** A panel target of the TestData datasource, for example `{ scenarioId: 'random_walk' }`. */
+export const testdataTarget = (refId: string, fields: Record<string, unknown>): PanelTarget => ({
+  refId,
+  datasource: TESTDATA,
+  ...fields,
+});
+
+/**
+ * The authoring panel of the provisioned demo dashboard. scripts/build-dashboard.ts writes its targets (the refIds of
+ * src/fixtures/authoring-config.ts) and its field config (the health thresholds and mappings), so the tests read them
+ * from there and do not keep a second copy.
+ */
+const authoringPanel: { targets: PanelTarget[]; fieldConfig: FieldConfig } = JSON.parse(
+  fs.readFileSync('provisioning/dashboards/demo.json', 'utf8')
+).panels.find((p: { title: string }) => p.title === 'Sanitized authoring topology');
+export const authoringTargets = (): PanelTarget[] => structuredClone(authoringPanel.targets);
+export const authoringFieldConfig = (): FieldConfig => structuredClone(authoringPanel.fieldConfig);
+/** One panel of `createDiagram` with `panels`. */
+export type DiagramPanel = {
+  config: ConfigV4;
+  title?: string;
+  svg?: string;
+  /** the targets of this panel; default: the `targets` setting */
+  targets?: PanelTarget[];
+  /** the field config of this panel; default: the `fieldConfig` setting */
+  fieldConfig?: FieldConfig;
+};
+/** The panel datasource for targets of more than one datasource. */
+const MIXED = { type: 'datasource', uid: '-- Mixed --' };
+
 export const test = base.extend<{
-  config: DiagramConfig;
+  /** A new copy of the authoring config for each test: a test can change it. */
+  config: ConfigV4;
   createDiagram: (
-    config: DiagramConfig,
+    config: ConfigV4,
     settings?: {
       clones?: number;
       svg?: string;
@@ -33,14 +78,14 @@ export const test = base.extend<{
       /** grid columns of the panel; default: the full row */
       width?: number;
       zoom?: Record<string, unknown>;
-      /** Grafana panel queries; default: none */
-      targets?: unknown[];
-      /** the field config of every panel; default: empty */
-      fieldConfig?: { defaults: Record<string, unknown>; overrides: unknown[] };
+      /** the panel targets of every panel; default: the targets of the authoring panel */
+      targets?: PanelTarget[];
+      /** the field config of every panel; default: the field config of the authoring panel */
+      fieldConfig?: FieldConfig;
       /** the panel options besides `config`, `diagram` and `zoom`, for example `linkWidth` */
       options?: Record<string, unknown>;
       /** Several panels with their own config, one below the other. Replaces `clones`. */
-      panels?: Array<{ config: DiagramConfig; title?: string; svg?: string }>;
+      panels?: DiagramPanel[];
       /** Dashboard auto refresh, for example `5s`; default: off */
       refresh?: string;
     }
@@ -76,10 +121,8 @@ export const test = base.extend<{
     },
     { auto: true },
   ],
-  config: async ({ readProvisionedDataSource }, use) => {
-    const prom = await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' });
-    const td = await readProvisionedDataSource({ fileName: 'authoring.yaml' });
-    await use(authoringConfig(prom.uid, td.uid));
+  config: async ({}, use) => {
+    await use(structuredClone(authoringConfigV4));
   },
   createDiagram: async ({ request }, use, testInfo) => {
     const dashboards: string[] = [];
@@ -108,32 +151,33 @@ export const test = base.extend<{
                 },
               ],
             },
-            panels: (settings.panels ?? Array.from({ length: settings.clones ?? 1 }, () => ({ config }))).map(
-              (panel, i) => {
-                // `panels` lay out one below the other, as wide as the row; `clones` in one row.
-                const grid = settings.panels
-                  ? { x: 0, y: i * (settings.height ?? 20), w: 24 }
-                  : { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24) };
-                return {
-                  id: i + 1,
-                  title: panel.title ?? `Sanitized topology ${i + 1}`,
-                  type: 'simnv-drawiomap-panel',
-                  gridPos: { ...grid, h: settings.height ?? 20 },
-                  targets: settings.targets ?? [],
-                  fieldConfig: settings.fieldConfig ?? { defaults: {}, overrides: [] },
-                  options: {
-                    ...settings.options,
-                    config: panel.config,
-                    diagram: {
-                      svg: ('svg' in panel && panel.svg) || (settings.svg ?? svg),
-                      xml,
-                      hash: settings.panels ? `${uid}-${i}` : uid,
-                    },
-                    zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
+            panels: (
+              settings.panels ?? Array.from({ length: settings.clones ?? 1 }, (): DiagramPanel => ({ config }))
+            ).map((panel, i) => {
+              // `panels` lay out one below the other, as wide as the row; `clones` in one row.
+              const grid = settings.panels
+                ? { x: 0, y: i * (settings.height ?? 20), w: 24 }
+                : { x: i * 12, y: 0, w: settings.width ?? (settings.clones ? 12 : 24) };
+              return {
+                id: i + 1,
+                title: panel.title ?? `Sanitized topology ${i + 1}`,
+                type: 'simnv-drawiomap-panel',
+                gridPos: { ...grid, h: settings.height ?? 20 },
+                datasource: MIXED,
+                targets: panel.targets ?? settings.targets ?? authoringTargets(),
+                fieldConfig: panel.fieldConfig ?? settings.fieldConfig ?? authoringFieldConfig(),
+                options: {
+                  ...settings.options,
+                  config: panel.config,
+                  diagram: {
+                    svg: panel.svg ?? settings.svg ?? svg,
+                    xml,
+                    hash: settings.panels ? `${uid}-${i}` : uid,
                   },
-                };
-              }
-            ),
+                  zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
+                },
+              };
+            }),
           },
         },
       });

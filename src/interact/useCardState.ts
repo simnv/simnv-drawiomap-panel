@@ -12,13 +12,9 @@ const canHover = () => !(typeof window.matchMedia === 'function' && window.match
  * the events after it. The dispatch is useState with an updater, not useReducer: useReducer gets no eager bail-out,
  * so an action that keeps the state (a pointer that leaves the panel with no card) would render the view.
  */
-export function useCardState(paused: boolean) {
+export function useCardState() {
   const [card, setCard] = useState<CardState | null>(null);
   const dispatch = useCallback((action: CardAction) => setCard((c) => cardReducer(c, action)), []);
-  // Opening the popup closes the card of the panel (state adjustment during render).
-  if (paused && card) {
-    dispatch({ type: 'close' });
-  }
   const cardRef = useRef<HTMLDivElement>(null);
   const inCard = useCallback((t: EventTarget | null) => t instanceof Node && !!cardRef.current?.contains(t), []);
   return { card, dispatch, cardRef, inCard };

@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { colorManipulator, createTheme, getDefaultTimeRange } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Card } from './Card';
-import type { ConfiguredCardModel } from './cardModel';
+import type { CardModelV4, CardRowV4, HistoryRowV4 } from './cardModel';
 import { statusTextColor } from '../binding/color';
 import type { StatusView } from '../binding/status';
 
@@ -31,190 +31,6 @@ vi.mock('@grafana/ui', () => ({
     <div data-testid="series-table">{props.series.map((r: any) => `${r.label}=${r.value}`).join(';')}</div>
   ),
 }));
-it('renders configured history states through SparklineView and keeps a failure local to its row', () => {
-  const model: ConfiguredCardModel = {
-    title: 'Router',
-    links: [],
-    demands: [],
-    diagnostics: [],
-    rows: [
-      { key: 'a', kind: 'history', title: 'CPU', text: 'Loading', state: 'loading', history: { state: 'loading' } },
-      { key: 'b', kind: 'value', title: 'Temperature', text: '42 °C', state: 'ready' },
-      {
-        key: 'c',
-        kind: 'history',
-        title: 'Disk',
-        text: 'Failed',
-        state: 'error',
-        history: { state: 'error', message: 'Query failed' },
-      },
-    ],
-  };
-  render(
-    <Card
-      model={model}
-      pinned={false}
-      x={20}
-      y={20}
-      width={800}
-      height={600}
-      onClose={() => {}}
-      timeRange={getDefaultTimeRange()}
-    />
-  );
-  expect(screen.getByText('Loading…')).toBeTruthy();
-  expect(screen.getByText('Query failed')).toBeTruthy();
-  expect(screen.getByText('42 °C')).toBeTruthy();
-});
-it('shows stale scalar rows using sample age and an explicit cadence policy', () => {
-  const model: ConfiguredCardModel = {
-    title: 'Router',
-    links: [],
-    demands: [],
-    diagnostics: [],
-    rows: [
-      {
-        key: 'a',
-        kind: 'value',
-        title: 'CPU',
-        text: '42%',
-        state: 'ready',
-        sampleAt: 1000,
-        freshness: { expectedIntervalMs: 1000, staleAfterMs: 5000 },
-      },
-    ],
-  };
-  render(
-    <Card
-      model={model}
-      pinned={false}
-      x={20}
-      y={20}
-      width={800}
-      height={600}
-      onClose={() => {}}
-      timeRange={getDefaultTimeRange()}
-    />
-  );
-  expect(screen.getByText('Stale data')).toBeTruthy();
-  expect(screen.getByText('42%')).toBeTruthy();
-});
-it('expires a displayed scalar without data updates and cancels its clock when the card closes', () => {
-  vi.useFakeTimers();
-  try {
-    vi.setSystemTime(4000);
-    const model: ConfiguredCardModel = {
-      title: 'Router',
-      links: [],
-      demands: [],
-      diagnostics: [],
-      rows: [
-        {
-          key: 'value',
-          kind: 'value',
-          title: 'CPU',
-          text: '42%',
-          state: 'ready',
-          sampleAt: 3000,
-          freshness: { expectedIntervalMs: 1000, staleAfterMs: 5000 },
-        },
-      ],
-    };
-    const { unmount } = render(
-      <Card model={model} pinned={false} x={20} y={20} width={800} height={600} onClose={() => {}} />
-    );
-    expect(screen.queryByText('Stale data')).toBeNull();
-    act(() => vi.advanceTimersByTime(4001));
-    expect(screen.getByText('Stale data')).toBeTruthy();
-    unmount();
-    expect(vi.getTimerCount()).toBe(0);
-  } finally {
-    vi.useRealTimers();
-  }
-});
-it('passes the min and max of a configured row to its sparkline', () => {
-  const history = {
-    state: 'ready' as const,
-    field: { name: 'v', type: 'number' as any, config: {}, values: [40, 41] },
-    timeField: { name: 'Time', type: 'time' as any, config: {}, values: [1, 2] },
-    timestamps: [1, 2],
-    values: [40, 41],
-    latestValue: 41,
-    fetchedAt: 0,
-    fromCache: false,
-  };
-  const model: ConfiguredCardModel = {
-    title: 'Router',
-    links: [],
-    demands: [],
-    diagnostics: [],
-    rows: [{ key: 'a', kind: 'history', title: 'Temp', text: '41', state: 'ready', history, min: 'auto' }],
-  };
-  render(<Card model={model} pinned={false} x={20} y={20} width={800} height={600} onClose={() => {}} />);
-  // "auto": no zero baseline, the minimum span is centred on the data
-  const { min, max } = sparkline.mock.calls.at(-1)![0].sparkline.y.state.range;
-  expect(min).toBeCloseTo(38.45);
-  expect(max).toBeCloseTo(42.55);
-});
-it('renders a combined up/down row: both values with coloured direction labels and one mirrored chart', () => {
-  const ready = (values: number[]) => ({
-    state: 'ready' as const,
-    field: { name: 'v', type: 'number' as any, config: {}, values },
-    timeField: { name: 'Time', type: 'time' as any, config: {}, values: values.map((_, i) => i) },
-    timestamps: values.map((_, i) => i),
-    values,
-    latestValue: values.at(-1),
-    fetchedAt: 0,
-    fromCache: false,
-  });
-  const model: ConfiguredCardModel = {
-    title: 'wan1',
-    links: [],
-    demands: [],
-    diagnostics: [],
-    rows: [
-      {
-        key: 'a',
-        kind: 'history',
-        title: 'Traffic',
-        text: '↑ 8.2 Mb/s  ↓ 1.1 Mb/s',
-        state: 'ready',
-        href: '/d/traffic',
-        domain: [-10, 10],
-        directions: [
-          {
-            direction: 'up',
-            label: '↑',
-            text: '8.2 Mb/s',
-            color: 'rgb(1, 2, 3)',
-            mirrored: false,
-            history: ready([5, 8]),
-          },
-          {
-            direction: 'down',
-            label: '↓',
-            text: '1.1 Mb/s',
-            color: 'rgb(4, 5, 6)',
-            mirrored: true,
-            history: ready([2, 1]),
-          },
-        ],
-      },
-    ],
-  };
-  sparkline.mockClear();
-  render(<Card model={model} pinned={true} x={20} y={20} width={800} height={600} onClose={() => {}} />);
-  const row = screen.getByTestId('dmap-card-row');
-  expect(row.getAttribute('href')).toBe('/d/traffic');
-  expect(row.textContent).toContain('Traffic');
-  expect(screen.getByTestId('dmap-card-value').textContent).toBe('↑ 8.2 Mb/s  ↓ 1.1 Mb/s');
-  expect((screen.getByText('↑') as HTMLElement).style.color).toBe('rgb(1, 2, 3)');
-  expect((screen.getByText('↓') as HTMLElement).style.color).toBe('rgb(4, 5, 6)');
-  expect(screen.getByTestId('dmap-card-spark').querySelector('[data-testid="dmap-mirror-spark"]')).toBeTruthy();
-  expect(row.querySelector('polyline[data-direction="down"]')?.getAttribute('data-mirrored')).toBe('true');
-  expect(sparkline).not.toHaveBeenCalled();
-});
-
 const readyHistory = (values: number[]) => ({
   state: 'ready' as const,
   field: { name: 'v', type: 'number' as any, config: {}, values },
@@ -225,20 +41,33 @@ const readyHistory = (values: number[]) => ({
   fetchedAt: 0,
   fromCache: false,
 });
-const chartRow = (extra: Record<string, unknown>): ConfiguredCardModel['rows'][number] => ({
+const line = (values: Array<number | null>, label = 'Traffic') => ({
+  label,
+  color: '#111111',
+  times: values.map((_, i) => i),
+  values,
+  noData: !values.some((v) => v !== null),
+});
+const historyRow = (over: Partial<HistoryRowV4> = {}): HistoryRowV4 => ({
   key: 'r',
   kind: 'history',
   title: 'Traffic',
-  text: '',
+  text: '2',
   state: 'ready',
-  ...extra,
+  lines: [line([1, 2])],
+  more: 0,
+  domain: [0, 2],
+  stale: false,
+  ...over,
 });
-const cardOf = (row: ConfiguredCardModel['rows'][number]): ConfiguredCardModel => ({
-  title: 'wan1',
-  links: [],
-  demands: [],
-  diagnostics: [],
-  rows: [row],
+const valueRow = (over: { text?: string; stale?: boolean; staleAfter?: number } = {}): CardRowV4 => ({
+  key: 'v',
+  kind: 'value',
+  title: 'Temperature',
+  text: '42 °C',
+  state: 'ready',
+  stale: false,
+  ...over,
 });
 const directions = (mirrored: boolean) => [
   { direction: 'up' as const, label: '↑', text: '8', color: 'red', mirrored: false, history: readyHistory([5, 8]) },
@@ -255,39 +84,89 @@ const directions = (mirrored: boolean) => [
       ]
     : []),
 ];
+const updownRow = (mirrored = true): CardRowV4 => ({
+  key: 'r',
+  kind: 'updown',
+  title: 'Traffic',
+  text: '↑ 8  ↓ 1',
+  state: 'ready',
+  stale: false,
+  domain: mirrored ? [-10, 10] : [0, 10],
+  directions: directions(mirrored),
+});
+const cardOf = (...rows: CardRowV4[]): CardModelV4 => ({ title: 'wan1', links: [], rows });
 const chartPx = () => {
   const box = screen.getByTestId('dmap-card-spark') as HTMLElement;
   return { box: box.style.height, svg: box.querySelector('svg')?.getAttribute('height') };
 };
-const renderCard = (model: ConfiguredCardModel) =>
+const renderCard = (model: CardModelV4) =>
   render(<Card model={model} pinned={true} x={20} y={20} width={800} height={600} onClose={() => {}} />);
 
-it('draws a combined up/down row twice as tall as a single sparkline', () => {
-  renderCard(cardOf(chartRow({ domain: [-10, 10], directions: directions(true) })));
-  expect(chartPx()).toEqual({ box: '80px', svg: '80' });
+it('shows a history row that has no chart as its text, and keeps a failure local to its row', () => {
+  const failed = (key: string, title: string, text: string, state: HistoryRowV4['state']) =>
+    historyRow({ key, title, text, state, lines: [], domain: [0, 1] });
+  renderCard(
+    cardOf(failed('a', 'CPU', 'Loading data', 'loading'), valueRow(), failed('c', 'Disk', 'Query failed', 'error'))
+  );
+  expect(screen.getAllByText('Loading data').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Query failed').length).toBeGreaterThan(0);
+  expect(screen.getByText('42 °C')).toBeTruthy();
+  expect(screen.queryByTestId('grafana-sparkline')).toBeNull();
 });
-it('draws a combined row with one direction at the normal sparkline height', () => {
-  renderCard(cardOf(chartRow({ domain: [0, 10], directions: directions(false) })));
+it('shows a stale value row with the stale hint, and a fresh one without it', () => {
+  const { unmount } = renderCard(cardOf(valueRow({ text: '42%', stale: true })));
+  expect(screen.getByText('Stale data')).toBeTruthy();
+  expect(screen.getByText('42%')).toBeTruthy();
+  unmount();
+  renderCard(cardOf(valueRow({ text: '42%' })));
+  expect(screen.queryByText('Stale data')).toBeNull();
+});
+it('expires a displayed value row at its deadline without data updates and cancels its clock when the card closes', () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(4000);
+    const model = cardOf(valueRow({ text: '42%', staleAfter: 5000 }));
+    const { unmount } = render(
+      <Card model={model} pinned={false} x={20} y={20} width={800} height={600} onClose={() => {}} />
+    );
+    expect(screen.queryByText('Stale data')).toBeNull();
+    act(() => vi.advanceTimersByTime(1001));
+    expect(screen.getByText('Stale data')).toBeTruthy();
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it('renders an up/down row: both values with coloured direction labels and one mirrored chart', () => {
+  sparkline.mockClear();
+  renderCard(cardOf({ ...updownRow(), text: '↑ 8.2 Mb/s  ↓ 1.1 Mb/s' }));
+  const row = screen.getByTestId('dmap-card-row');
+  expect(row.textContent).toContain('Traffic');
+  expect(screen.getByTestId('dmap-card-value').textContent).toBe('↑ 8  ↓ 1');
+  expect((screen.getByText('↑') as HTMLElement).style.color).toBe('red');
+  expect((screen.getByText('↓') as HTMLElement).style.color).toBe('blue');
+  expect(screen.getByTestId('dmap-card-spark').querySelector('[data-testid="dmap-mirror-spark"]')).toBeTruthy();
+  expect(row.querySelector('polyline[data-direction="down"]')?.getAttribute('data-mirrored')).toBe('true');
+  expect(sparkline).not.toHaveBeenCalled();
+});
+it('draws an up/down row twice as tall as a single sparkline, with the zero line in the middle', () => {
+  renderCard(cardOf(updownRow()));
+  expect(chartPx()).toEqual({ box: '80px', svg: '80' });
+  const svg = screen.getByTestId('dmap-mirror-spark');
+  expect(svg.getAttribute('viewBox')).toBe('0 0 264 80');
+  expect(svg.getAttribute('preserveAspectRatio')).toBe('none');
+  expect(screen.getByTestId('dmap-zero-line').getAttribute('y1')).toBe('40');
+});
+it('draws an up/down row with one direction at the normal sparkline height', () => {
+  renderCard(cardOf(updownRow(false)));
   expect(chartPx()).toEqual({ box: '40px', svg: '40' });
 });
-it('draws a single history row at the normal height', () => {
+it('draws a history row at the normal height', () => {
   sparkline.mockClear();
-  renderCard(cardOf(chartRow({ history: readyHistory([1, 2]) })));
+  renderCard(cardOf(historyRow()));
   expect(chartPx().box).toBe('40px');
   expect(sparkline.mock.calls.at(-1)![0].height).toBe(40);
-});
-it('takes the row height option for a combined row and for a single row', () => {
-  const { unmount } = renderCard(cardOf(chartRow({ height: 120, domain: [-10, 10], directions: directions(true) })));
-  expect(chartPx()).toEqual({ box: '120px', svg: '120' });
-  const svg = screen.getByTestId('dmap-mirror-spark');
-  expect(svg.getAttribute('viewBox')).toBe('0 0 264 120');
-  expect(svg.getAttribute('preserveAspectRatio')).toBe('none');
-  expect(screen.getByTestId('dmap-zero-line').getAttribute('y1')).toBe('60');
-  unmount();
-  sparkline.mockClear();
-  renderCard(cardOf(chartRow({ height: 64, history: readyHistory([1, 2]) })));
-  expect(chartPx().box).toBe('64px');
-  expect(sparkline.mock.calls.at(-1)![0].height).toBe(64);
 });
 
 const hoverChart = () => {
@@ -301,33 +180,31 @@ const hoverChart = () => {
   fireEvent.pointerMove(el, { clientX: 100, clientY: 5, pointerType: 'mouse' });
   vi.unstubAllGlobals();
 };
-it('shows the chart tooltip for a single history row only in the pinned card', () => {
-  const model = cardOf(chartRow({ history: readyHistory([1, 2]) }));
+it('shows the chart tooltip for a history row only in the pinned card', () => {
+  const model = cardOf(historyRow());
   const { unmount } = renderCard(model);
   hoverChart();
   expect(screen.getByTestId('series-table').textContent).toBe('Traffic=2');
   unmount();
-  render(<Card model={model} pinned={false} x={20} y={20} width={800} height={600} onClose={() => {}} />);
+  render(<Card model={model} pinned={false} x={20} y={20} width={800} height={600} />);
   expect(screen.queryByTestId('dmap-chart-hover')).toBeNull();
   expect(screen.queryByTestId('series-table')).toBeNull();
 });
-it('shows both directions of a combined row in the pinned card tooltip', () => {
-  renderCard(cardOf(chartRow({ domain: [-10, 10], directions: directions(true) })));
+it('shows both directions of an up/down row in the pinned card tooltip', () => {
+  renderCard(cardOf(updownRow()));
   hoverChart();
   expect(screen.getByTestId('series-table').textContent).toBe('↑=8;↓=1');
 });
 
-it('sets the hover width of a single chart to the chart width, not the row', () => {
-  renderCard(cardOf(chartRow({ history: readyHistory([1, 2]) })));
+it('sets the hover width of a history chart to the chart width, not the row', () => {
+  renderCard(cardOf(historyRow()));
   expect(screen.getByTestId('dmap-chart-hover').style.width).toBe('264px');
 });
 it('renders the inline variant in the page flow: no sheet, no close button, no placement, full width', () => {
-  const model: ConfiguredCardModel = {
+  const model: CardModelV4 = {
     title: 'Router',
     links: [{ title: 'Docs', href: '/docs', target: '_blank', origin: {} as never }],
-    demands: [],
-    diagnostics: [],
-    rows: [{ key: 'b', kind: 'value', title: 'Temperature', text: '42 °C', state: 'ready' }],
+    rows: [valueRow()],
   };
   // A narrow width would make a floating card a bottom sheet.
   render(<Card model={model} pinned={true} variant="inline" width={300} timeRange={getDefaultTimeRange()} />);
@@ -345,10 +222,35 @@ it('renders the inline variant in the page flow: no sheet, no close button, no p
   expect(screen.queryByText('Click for links')).toBeNull();
 });
 it('keeps the floating card a sheet below the breakpoint', () => {
-  const model: ConfiguredCardModel = { title: 'Router', links: [], demands: [], diagnostics: [], rows: [] };
+  const model: CardModelV4 = { title: 'Router', links: [], rows: [] };
   render(<Card model={model} pinned={true} x={0} y={0} width={300} height={300} onClose={() => {}} />);
   expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
   expect(screen.getByTestId('dmap-card').getAttribute('data-variant')).toBe('floating');
+});
+it('shows the close button and the footer links of a pinned card, and calls onClose', () => {
+  const onClose = vi.fn();
+  const model: CardModelV4 = {
+    title: 'Router',
+    links: [{ title: 'Docs', href: '/docs', target: '_blank', origin: {} as never }],
+    rows: [],
+  };
+  render(<Card model={model} pinned x={0} y={0} width={800} height={600} onClose={onClose} />);
+  expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Router');
+  expect(screen.getByRole('link', { name: 'Docs' }).getAttribute('href')).toBe('/docs');
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+it('shows the hint "Click for links" and no close button in a hover card with links', () => {
+  const model: CardModelV4 = {
+    title: 'Router',
+    links: [{ title: 'Docs', href: '/docs', target: '_blank', origin: {} as never }],
+    rows: [],
+  };
+  render(<Card model={model} pinned={false} x={0} y={0} width={800} height={600} />);
+  expect(screen.getByRole('tooltip')).toBeTruthy();
+  expect(screen.getByText('Click for links')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Docs' })).toBeNull();
 });
 
 /** A manual frame queue for the card that follows the pointer. */
@@ -368,7 +270,7 @@ const frames = () => {
   flush.pending = () => queue.size;
   return flush;
 };
-const followModel: ConfiguredCardModel = { title: 'Router', links: [], rows: [], demands: [], diagnostics: [] };
+const followModel: CardModelV4 = { title: 'Router', links: [], rows: [] };
 const panelRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }) as DOMRect;
 type FollowProps = Partial<React.ComponentProps<typeof Card>>;
 const follow = (props: FollowProps = {}) => {
@@ -477,14 +379,8 @@ describe('deferred charts', () => {
     act(() => {
       transitions.queue?.splice(0).forEach((cb) => cb());
     });
-  const threeRows = (): ConfiguredCardModel => ({
-    ...cardOf(chartRow({ history: readyHistory([1, 2]) })),
-    rows: [
-      chartRow({ key: 'h', title: 'CPU', text: '2 %', history: readyHistory([1, 2]) }),
-      chartRow({ key: 'c', title: 'Traffic', domain: [-10, 10], directions: directions(true) }),
-      { key: 'v', kind: 'value', title: 'Temperature', text: '42 °C', state: 'ready' },
-    ],
-  });
+  const threeRows = (): CardModelV4 =>
+    cardOf(historyRow({ key: 'h', title: 'CPU', text: '2 %' }), { ...updownRow(), key: 'c' }, valueRow());
   const boxes = () => screen.getAllByTestId('dmap-card-spark').map((el) => [el.style.height, el.childElementCount]);
   it('a hover card has the texts and empty chart boxes in the first commit; the charts come in the transition', () => {
     queued();
@@ -528,13 +424,14 @@ describe('deferred charts', () => {
 });
 
 describe('the status row', () => {
-  const statusRow = (status: StatusView['state']): ConfiguredCardModel['rows'][number] => ({
+  const statusRow = (status: StatusView['state']): CardRowV4 => ({
     key: 'status',
     kind: 'status',
     title: status,
     text: 'probe delay over 400 ms',
     state: 'ready',
     status,
+    stale: false,
   });
   const theme = createTheme();
   const colourOf = (v: string) => {
@@ -560,4 +457,16 @@ describe('the status row', () => {
       colorManipulator.getContrastRatio(statusTextColor({ state: 'warning' }, light), light.colors.background.primary)
     ).toBeGreaterThanOrEqual(4.5);
   });
+});
+
+it('shows the value of a history row with no data in grey', () => {
+  const model = cardOf(
+    historyRow({ title: 'CPU', text: 'No data', lines: [line([null, null], 'CPU')], domain: [0, 1] })
+  );
+  render(<Card model={model} pinned x={20} y={20} width={800} height={600} onClose={() => {}} />);
+  const expected = document.createElement('span');
+  expected.style.color = createTheme().colors.text.secondary;
+  document.body.append(expected);
+  expect(getComputedStyle(screen.getByTestId('dmap-card-value')).color).toBe(getComputedStyle(expected).color);
+  expected.remove();
 });

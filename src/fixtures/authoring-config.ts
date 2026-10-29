@@ -1,86 +1,35 @@
-import type { DiagramConfig, NamedQuery, QueryBinding } from '../model/config';
+import type { ConfigV4 } from '../model/v4';
 
-/** Fictional routers and constant values: no live infrastructure or credentials. */
-export const binding = (queryId: string): QueryBinding => ({ queryId, match: {}, reducer: 'last' });
-export const nativeQuery = (id: string, expr: string, parameters: Record<string, string> = {}): NamedQuery => {
-  const target = { refId: id.toUpperCase(), expr, range: true };
-  return { id, name: id, source: { kind: 'datasource', target, parameters } };
+/**
+ * The bindings of the authoring panel (src/fixtures/authoring.drawio). Fictional routers and constant values: no live
+ * infrastructure or credentials. The panel targets are health, detail, trend, tx and rx (scripts/build-dashboard.ts).
+ * Health and detail have a device label for each router key; the trend target has device=trend.
+ * device-1 and device-2 carry bind=routers and key=router-1 or router-2; chart-1 carries bind=trend-region and
+ * key=trend; link-1 carries bind=directional-link, key=node-rtr-a, port=wan1, at=source and cap=100M/50M.
+ */
+export const authoringConfigV4: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: {
+    routers: {
+      match: { key: 'device' },
+      status: 'health',
+      rows: [
+        { kind: 'value', label: 'Detail value', query: 'detail' },
+        { kind: 'history', label: 'Detail history', query: 'detail' },
+      ],
+    },
+    'directional-link': {
+      match: { key: 'job', port: 'device' },
+      up: 'tx',
+      down: 'rx',
+      linkLabel: 'none',
+      rows: [{ kind: 'updown', label: 'Traffic', unit: 'bps', up: 'tx', down: 'rx' }],
+    },
+    'trend-region': {
+      match: { key: 'device' },
+      chart: { kind: 'history', label: 'Standalone trend', query: 'trend' },
+    },
+  },
+  overrides: {},
 };
-export function authoringConfig(prometheus: string, testdata: string): DiagramConfig {
-  const trendTarget = { refId: 'TREND', scenarioId: 'random_walk', alias: 'Sanitized trend' };
-  return {
-    version: 3,
-    defaultDatasource: { uid: prometheus, type: 'prometheus' },
-    queries: [
-      nativeQuery('health', 'label_replace(vector(1), "device", "$dm_key", "", "")', { dm_key: 'cell.key' }),
-      nativeQuery('detail', 'label_replace(vector($site), "device", "$dm_key", "", "")', { dm_key: 'cell.key' }),
-      {
-        id: 'trend',
-        name: 'Standalone trend',
-        source: {
-          kind: 'datasource',
-          datasource: { uid: testdata, type: 'grafana-testdata-datasource' },
-          target: trendTarget,
-          parameters: {},
-        },
-      },
-      // synthetic traffic from stack/metrics-gen: the transmit and receive rate of one port, in bit/s
-      nativeQuery('tx', 'rate(node_network_transmit_bytes_total{job="node-rtr-a",device="wan1"}[1m]) * 8'),
-      nativeQuery('rx', 'rate(node_network_receive_bytes_total{job="node-rtr-a",device="wan1"}[1m]) * 8'),
-    ],
-    patterns: [
-      {
-        id: 'routers',
-        name: 'Repeated routers',
-        select: { ids: ['device-1', 'device-2'] },
-        display: {
-          label: 'Router ${cell.key}',
-          status: {
-            kind: 'mapping',
-            binding: binding('health'),
-            default: { state: 'normal', reason: 'Healthy' },
-            mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
-          },
-          hover: {
-            rows: [
-              { kind: 'value', label: 'Detail value', binding: binding('detail') },
-              { kind: 'history', label: 'Detail history', binding: binding('detail') },
-            ],
-          },
-        },
-      },
-      {
-        id: 'directional-link',
-        name: 'Directional traffic',
-        select: { ids: ['link-1'] },
-        display: {
-          link: { a2b: { binding: binding('health') }, b2a: { binding: binding('health') }, capacity: 100 },
-          hover: {
-            rows: [
-              {
-                kind: 'combined',
-                label: 'Traffic',
-                unit: 'bps',
-                // an asymmetric link: each direction has its own capacity, from the attributes of the link
-                series: [
-                  { binding: binding('tx'), direction: 'up', label: '↑', capacity: '${cell.capacity_a2b_bps}' },
-                  { binding: binding('rx'), direction: 'down', label: '↓', capacity: '${cell.capacity_b2a_bps}' },
-                ],
-              },
-            ],
-          },
-        },
-      },
-    ],
-    overrides: [],
-    widgets: [
-      {
-        id: 'trend-region',
-        anchorCellId: 'chart-1',
-        kind: 'sparkline',
-        label: 'Standalone trend',
-        binding: binding('trend'),
-      },
-    ],
-  };
-}

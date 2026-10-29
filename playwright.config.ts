@@ -20,14 +20,12 @@ import baseConfig from './.config/playwright.config';
  */
 const chromium = baseConfig.projects!.find((p) => p.name === 'chromium')!;
 const MATRIX_SPECS = [
-  'binding-editor',
   'color',
   'editor',
   'editor-refresh',
   'no-drawio',
   'options',
   'panel-edit-requests',
-  'query',
   'refresh',
   'reset-corner',
 ];

@@ -1,6 +1,6 @@
 # Simplify step 2: one v2 schema, per-direction capacity, per-item validation
 
-- Status: decided 2026-10-25 (all open questions; no backward compatibility), revised after three reviews (section 9)
+- Status: superseded by the binding model v4 (`2026-10-28-binding-model-v4-design.md`), 2026-10-29. Decided 2026-10-25 (all open questions; no backward compatibility), revised after three reviews (section 9)
 - Scope: `src/model/config.ts`, `src/binding/patterns.ts`, `src/binding/engine.ts`, `src/binding/status.ts`,
   `src/interact/cardModel.ts`, `src/render/applier.ts`, a new `src/binding/capacity.ts`, the editor fields that write
   `display.link`, the popup list and inspector for a skipped item, the fixtures and the README.

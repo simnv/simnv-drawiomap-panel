@@ -1,32 +1,19 @@
 /**
- * The history bench of the snapshot store design (docs/superpowers/specs/2026-10-25-simplify-step3, section 7).
- * It prints ms and KB per pass over a synthetic result of 300 cells with one series of 300 points each. Skipped
- * unless DMAP_BENCH=1. Run it alone, with the GC held:
+ * The series bench of the v4 snapshot read. It prints ms and KB per pass over a synthetic result of 300 cells with
+ * one series of 300 points each. Skipped unless DMAP_BENCH=1. Run it alone, with the GC held:
  *   DMAP_BENCH=1 NODE_OPTIONS="--expose-gc --max-semi-space-size=512" npx vitest run src/query/history.bench.test.ts --maxWorkers=1
  */
-import {
-  createTheme,
-  FieldType,
-  getDefaultTimeRange,
-  LoadingState,
-  type DataFrame,
-  type PanelData,
-} from '@grafana/data';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { BindingPlan } from '../binding/patterns';
-import type { NamedQuery, QueryBinding } from '../model/config';
-import type { QueryContext, QueryController, QuerySnapshot } from './types';
+import { FieldType, type DataFrame } from '@grafana/data';
+import { describe, expect, it } from 'vitest';
+import { directionHistory } from '../binding/rowData';
+import { copyFrames } from './boundary';
+import { indexFrames } from './frames';
+import { indexSeries } from './seriesIndex';
+import type { QuerySnapshot } from './snapshot';
 
 const CELLS = 300;
 const POINTS = 300;
 const PASSES = 20;
-
-type Frames = typeof import('./frames');
-type Engine = typeof import('../binding/engine');
-type Store = typeof import('./store');
-type Resolve = typeof import('../binding/resolve');
-type Boundary = typeof import('./boundary');
-type Reduce = typeof import('./reduce');
 
 const cellId = (i: number) => `c${i}`;
 const series = (i: number): DataFrame => {
@@ -41,25 +28,6 @@ const series = (i: number): DataFrame => {
       { name: 'Value', type: FieldType.number, config: { unit: 'percent' }, values, labels: { cell: cellId(i) } },
     ],
   };
-};
-const query = (id: string): NamedQuery => ({
-  id,
-  name: id,
-  source: { kind: 'datasource', datasource: { uid: 'prom' }, target: { refId: 'Q' }, parameters: {} },
-});
-const bindingOf = (i: number, queryId = 'q'): QueryBinding => ({
-  queryId,
-  match: { cell: cellId(i) },
-  reducer: 'last',
-});
-const timeRange = getDefaultTimeRange();
-const context: QueryContext = {
-  timeRange,
-  timeZone: 'utc',
-  scopedVars: {},
-  intervalMs: 60_000,
-  refreshMs: 0,
-  generation: 1,
 };
 
 const gc = () => (globalThis as { gc?: () => void }).gc?.();
@@ -82,120 +50,30 @@ function passes(name: string, run: () => void) {
   console.log(`${name.padEnd(52)} first ${fmt(first)}; then ${fmt({ ms: mean((m) => m.ms), kb: mean((m) => m.kb) })}`);
 }
 
-describe.skipIf(!process.env.DMAP_BENCH)('history bench', () => {
-  let frames: Frames;
-  let engine: Engine;
-  let store: Store;
-  let resolveModule: Resolve;
-  let boundary: Boundary;
-  let reduce: Reduce;
-  beforeAll(async () => {
-    vi.resetModules();
-    vi.doMock('./reduce', { spy: true });
-    reduce = await import('./reduce');
-    frames = await import('./frames');
-    engine = await import('../binding/engine');
-    store = await import('./store');
-    resolveModule = await import('../binding/resolve');
-    boundary = await import('./boundary');
-  });
-  afterAll(() => {
-    vi.doUnmock('./reduce');
-    vi.resetModules();
-  });
-
-  it('prints the cost per pass and calls reduceValues once per (match, field, reducer)', () => {
+describe.skipIf(!process.env.DMAP_BENCH)('series bench', () => {
+  it('prints the cost per pass of the series index, the boundary copy and the history of a direction', () => {
     const result = Array.from({ length: CELLS }, (_, i) => series(i));
-    const snapshot: QuerySnapshot = { state: 'ready', frames: result, fetchedAt: 1, fromCache: false };
-    const bindings = Array.from({ length: CELLS }, (_, i) => bindingOf(i));
-    const format = { theme: createTheme(), timeZone: 'utc' };
-    const reduceValues = vi.mocked(reduce.reduceValues);
-    reduceValues.mockClear();
 
-    // 1. toHistory for every cell
-    passes('toHistory, every cell', () => {
-      for (const binding of bindings) {
-        frames.historyOf(snapshot, binding, format);
-      }
+    // 1. the checks of every field, once per result (a fresh array has no cached index)
+    passes('frame index of a fresh array', () => {
+      indexFrames([...result]);
     });
-    expect(reduceValues).toHaveBeenCalledTimes(CELLS);
-
-    // 2. the frame scan with the matchers: the index of a result and one selection per cell
-    passes('frame scan: index of a fresh array + 300 selections', () => {
-      const index = frames.indexFrames([...result]);
-      for (const binding of bindings) {
-        frames.selectField(index, binding.match, binding.field);
-      }
+    // 2. the series of a refId: the index, the merge of the samples and the order
+    passes('series index of a fresh array', () => {
+      expect(indexSeries([...result], 'Q').series).toHaveLength(CELLS);
     });
     // 3. the array copies: once per result, at the boundary
     passes('boundary copy of the result', () => {
-      boundary.copyFrames(result);
+      copyFrames(result);
     });
-
-    // 4. historySeries for every cell
-    const models = bindings.map((binding) => frames.historyOf(snapshot, binding, format));
-    passes('historySeries, every cell', () => {
-      models.forEach((model, i) => {
-        if (model.state === 'ready') {
-          engine.historySeries(model, bindings[i]);
-        }
-      });
-    });
-
-    // 5. 600 resolves over 600 entries of the store (two queries per cell)
-    const queries = [query('q'), query('q2')];
-    const plan = {
-      cells: Object.fromEntries(
-        Array.from({ length: CELLS }, (_, i) => {
-          // the demands come from the display; a display binding is a binding of the cell (one object)
-          const status = bindingOf(i);
-          const shape = bindingOf(i, 'q2');
-          return [
-            cellId(i),
-            {
-              cellId: cellId(i),
-              scope: { cell: { key: cellId(i) } },
-              bindings: [status, shape],
-              display: {
-                status: { kind: 'mapping', binding: status, default: { state: 'normal' }, mappings: [] },
-                shape: { binding: shape },
-              },
-            },
-          ];
-        })
-      ),
-      widgets: [],
-      diagnostics: [],
-      config: { version: 3, queries, patterns: [], overrides: [], widgets: [] },
-    } as unknown as BindingPlan;
-    // the second query has its own result object over the same frames, as two controller entries have
-    const second: QuerySnapshot = { ...snapshot };
-    const controller: QueryController = {
-      setPanelData: () => {},
-      watch: (demand, listener) => {
-        listener(demand.query.id === 'q' ? snapshot : second);
-        return () => {};
-      },
-      dispose: () => {},
-    };
-    const data: PanelData = { state: LoadingState.Done, series: [], timeRange };
-    const demands = resolveModule.demandsOf(plan, context, 264, 'visible');
-    expect(demands).toHaveLength(2 * CELLS);
-    const snapshots = store.createSnapshotStore(controller);
-    snapshots.want('bench', 'visible', demands);
-    const frame = snapshots.frame('bench', 'visible');
-    expect(frame.size).toBe(2 * CELLS);
-    const resolve = resolveModule.resolverFrom([frame], resolveModule.demandMap(demands), plan, data, format);
-    const pairs = Object.values(plan.cells).flatMap((cell) =>
-      cell.bindings.map((binding) => [cell.cellId, binding] as const)
-    );
-    passes('600 resolves over 600 store entries', () => {
-      for (const [id, binding] of pairs) {
-        resolve(id, binding);
+    // 4. the history of a direction for every cell: one series each
+    const snapshot: QuerySnapshot = { state: 'ready', frames: result, fetchedAt: 1, fromCache: false };
+    const { series: all, report } = indexSeries(result, 'Q');
+    expect(report).toEqual([]);
+    passes('history of a direction, every cell', () => {
+      for (const one of all) {
+        expect(directionHistory({ snapshot, series: [one] }).state).toBe('ready');
       }
     });
-    // the models of the first row are shared: no reduction ran again for q; q2 has its own 300
-    expect(reduceValues).toHaveBeenCalledTimes(2 * CELLS);
-    snapshots.dispose();
   });
 });

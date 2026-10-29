@@ -1,34 +1,32 @@
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { createTheme, FieldType, getDefaultTimeRange, toDataFrame } from '@grafana/data';
-import { ChartLayer as OwnedChartLayer, type ChartLayerProps } from './ChartLayer';
+import {
+  CoreApp,
+  createTheme,
+  dateTime,
+  FieldType,
+  LoadingState,
+  type DataFrame,
+  type DataQueryRequest,
+  type FieldConfig,
+  type Labels,
+  type PanelData,
+} from '@grafana/data';
+import { ChartLayer, chartUsesV4 } from './ChartLayer';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { readChartAnchor } from '../render/geometry';
-import { createQueryController } from '../query/controller';
-import { testQueryService } from '../query/testService';
-import type { BindingPlan } from '../binding/patterns';
-import type { QueryController, QueryContext, QueryExecutor } from '../query/types';
-import type { NamedQuery, Widget } from '../model/config';
+import { bindContextFor } from '../binding/context';
+import { bindV4 } from '../binding/bindV4';
+import { validateConfig } from '../model/validate';
+import type { CardContextV4 } from '../interact/cardModel';
 
-type TestProps = Omit<ChartLayerProps, 'owner' | 'service'> & {
-  owner?: string;
-  queries: NamedQuery[];
-  controller: QueryController;
-  context: QueryContext;
-};
-const ChartLayer = ({ queries, controller, context, plan, ...props }: TestProps) => (
-  <OwnedChartLayer
-    owner="test"
-    {...props}
-    plan={{ ...plan, config: { ...plan.config, queries } }}
-    service={testQueryService(controller, context)}
-  />
-);
-
-const { sparkline } = vi.hoisted(() => ({ sparkline: vi.fn((_props: any) => <canvas />) }));
+const { sparkline } = vi.hoisted(() => ({ sparkline: vi.fn((_props: any) => <canvas data-testid="sparkline" />) }));
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
+  useStyles2: (fn: any) => fn(createTheme()),
+  Portal: ({ children }: any) => <div>{children}</div>,
+  SeriesTable: () => <div />,
   Sparkline: sparkline,
   BarGauge: (props: { field: { min?: number; max?: number }; value: { numeric: number } }) => (
     <div data-testid="bar-props">
@@ -36,179 +34,140 @@ vi.mock('@grafana/ui', () => ({
     </div>
   ),
 }));
-const query: NamedQuery = { id: 'q', name: 'CPU', source: { kind: 'panel', refId: 'A' } };
-const widget: Widget = {
-  id: 'w',
-  anchorCellId: 'chart',
-  kind: 'sparkline',
-  label: 'CPU',
-  binding: { queryId: 'q', match: {}, reducer: 'last' },
-};
-const context: QueryContext = {
-  timeRange: getDefaultTimeRange(),
-  timeZone: 'utc',
-  scopedVars: {},
-  refreshMs: 0,
-  intervalMs: 1000,
-  generation: 1,
-};
+
+const theme = createTheme();
+const bindCtx = bindContextFor({ theme, replaceVariables: (s) => s, timeZone: 'utc', linkWidth: { min: 2, max: 10 } });
+const T = [0, 60_000, 120_000];
 const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-function setup() {
+
+function frame(refId: string, labels: Labels, values: Array<number | null>, config: FieldConfig = {}): DataFrame {
+  return {
+    refId,
+    length: values.length,
+    fields: [
+      { name: 'Time', type: FieldType.time, config: {}, values: T.slice(T.length - values.length) },
+      { name: 'Value', type: FieldType.number, config, labels, values },
+    ],
+  };
+}
+
+function panelData(series: DataFrame[]): PanelData {
+  const timeRange = { from: dateTime(0), to: dateTime(120_000), raw: { from: dateTime(0), to: dateTime(120_000) } };
+  const request: DataQueryRequest = {
+    requestId: 'demo',
+    app: CoreApp.Dashboard,
+    startTime: 120_000,
+    range: timeRange,
+    timezone: 'browser',
+    scopedVars: {},
+    interval: '1m',
+    intervalMs: 60_000,
+    targets: [...new Set(series.map((f) => f.refId!))].map((refId) => ({ refId })),
+  };
+  return { state: LoadingState.Done, series, timeRange, request };
+}
+
+/** The diagram: one rectangle `cpu` of 180 × 70 px at (12, 5). The left edge of the rectangle on the screen moves. */
+function stage() {
   const host = document.createElement('div');
   document.body.append(host);
   const root = mountSvg(
     host,
-    '<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="chart"><rect width="180" height="70"/><text>Label outside bounds</text></g><g data-cell-id="ordinary"><rect width="50" height="30"/></g></svg>'
+    '<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="cpu" data-meta-bind="host" data-meta-key="node-rtr-a"><rect width="180" height="70"/><text>Label outside bounds</text></g></svg>'
   );
   const cells = buildCellIndex(root);
-  const rect = cells.get('chart')!.shape!;
-  const parent = rect.parentElement!;
-  Object.assign(parent, { getCTM: () => identity });
+  const rect = cells.get('cpu')!.shape!;
+  Object.assign(rect.parentElement!, { getCTM: () => identity });
+  let left = 20;
   Object.assign(rect, {
     getCTM: () => ({ ...identity, e: 12, f: 5 }),
     getBBox: () => ({ x: 0, y: 0, width: 180, height: 70 }),
+    getBoundingClientRect: () => ({ left, top: 20, right: left + 180, bottom: 90, width: 180, height: 70 }),
   });
   Object.assign(host, {
     getBoundingClientRect: () => ({ left: 0, top: 0, right: 400, bottom: 200, width: 400, height: 200 }),
   });
-  let left = 20;
-  Object.assign(rect, {
-    getBoundingClientRect: () => ({ left, top: 20, right: left + 180, bottom: 90, width: 180, height: 70 }),
-  });
-  const release = vi.fn();
-  const watch = vi.fn<QueryController['watch']>(() => release);
-  const controller: QueryController = { watch, setPanelData: vi.fn(), dispose: vi.fn() };
-  const plan: BindingPlan = {
-    cells: {},
-    widgets: [{ widget, anchorCellId: 'chart', scope: { cell: {} }, index: 0 }],
-    diagnostics: [],
-    config: { version: 3, queries: [], patterns: [], overrides: [], widgets: [widget] },
-  };
   return {
     host,
     root,
     cells,
     rect,
-    plan,
-    controller,
-    watch,
-    release,
     move: (x: number) => {
       left = x;
     },
   };
 }
+
+/** Bind the class `host` for the cell `cpu` and give the props of the chart layer. */
+function setup(cls: Record<string, unknown>, frames: DataFrame[]) {
+  const s = stage();
+  const validated = validateConfig({ version: 4, classes: { host: { match: { key: 'job' }, ...cls } } });
+  const bind = (series: DataFrame[]) => {
+    const data = panelData(series);
+    const bound = bindV4({ index: s.cells, validated, data, ctx: bindCtx });
+    const ctx: CardContextV4 = { theme, replaceVariables: (v) => v, index: s.cells, validated, data };
+    return { bound, ctx, charts: chartUsesV4(bound) };
+  };
+  return { ...s, ...bind(frames), rebind: bind };
+}
+type Setup = ReturnType<typeof setup>;
+
+const layer = (s: Setup, extra: { revision?: unknown } = {}) => (
+  <ChartLayer
+    root={s.root}
+    cells={s.cells}
+    viewport={s.host}
+    charts={s.charts}
+    bound={s.bound}
+    ctx={s.ctx}
+    {...extra}
+  />
+);
+const historyClass = { chart: { kind: 'history', query: 'cpu', label: 'CPU' } };
+const cpu = () => [frame('cpu', { job: 'node-rtr-a' }, [1, 2, 3])];
+const drawn = (s: Setup) => s.root.querySelector('[data-testid="dmap-chart"]');
+
 describe('ChartLayer', () => {
-  it.each([
-    [{}, { min: 0, max: 42 }],
-    [{ min: 'auto' as const }, { min: 21, max: 42 }],
-    [
-      { min: 5, max: 100 },
-      { min: 5, max: 100 },
-    ],
-  ])('draws a sparkline widget %j in the shared Y range (zero baseline by default)', (bounds, range) => {
-    const s = setup();
-    const native: NamedQuery = {
-      id: 'q',
-      name: 'CPU',
-      source: { kind: 'datasource', datasource: { uid: 'native' }, parameters: {}, target: { refId: 'D' } },
-    };
-    s.watch.mockImplementation((_demand, emit) => {
-      emit({
-        state: 'ready',
-        fetchedAt: 1,
-        fromCache: false,
-        frames: [
-          toDataFrame({
-            fields: [
-              { name: 'Time', type: FieldType.time, values: [1, 2] },
-              { name: 'CPU', type: FieldType.number, values: [21, 42] },
-            ],
-          }),
-        ],
-      });
-      return s.release;
-    });
-    const plan = { ...s.plan, widgets: [{ ...s.plan.widgets[0], widget: { ...widget, ...bounds } }] };
-    render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={plan}
-        queries={[native]}
-        controller={s.controller}
-        context={context}
-        viewport={s.host}
-      />
-    );
-    expect(sparkline.mock.calls.at(-1)![0].sparkline.y.state.range).toMatchObject(range);
-  });
-  it('updates query resolution on zoom while preserving rectangle-local dimensions', async () => {
-    const s = setup();
-    const { unmount } = render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={s.plan}
-        queries={[query]}
-        controller={s.controller}
-        context={context}
-        viewport={s.host}
-      />
-    );
-    expect(s.watch.mock.calls[0][0].maxDataPoints).toBe(180);
+  it('keeps the dimensions of the region in the units of the rectangle when the viewport zooms', async () => {
+    const s = setup(historyClass, cpu());
+    const { unmount } = render(layer(s));
     Object.assign(s.rect, {
       getBoundingClientRect: () => ({ left: 20, top: 20, right: 380, bottom: 160, width: 360, height: 140 }),
     });
     await act(async () => {
       s.root.setAttribute('viewBox', '0 0 200 100');
     });
-    expect(s.watch.mock.calls[1][0].maxDataPoints).toBe(360);
-    expect(s.release).toHaveBeenCalledTimes(1);
     expect(s.root.querySelector('foreignObject')?.getAttribute('width')).toBe('180');
     expect(s.root.querySelector('foreignObject')?.getAttribute('height')).toBe('70');
     unmount();
     s.host.remove();
   });
-  it('preserves the portal and active demand through a viewport revision with unchanged resolution', () => {
-    const s = setup();
-    const props = {
-      root: s.root,
-      cells: s.cells,
-      plan: s.plan,
-      queries: [query],
-      controller: s.controller,
-      context,
-      viewport: s.host,
-    };
-    const { rerender, unmount } = render(<ChartLayer {...props} />);
+  it('preserves the portal and the chart through a viewport revision', () => {
+    const s = setup(historyClass, cpu());
+    const { rerender, unmount } = render(layer(s));
     const portal = s.root.querySelector('foreignObject');
-    rerender(<ChartLayer {...props} revision={2} />);
+    expect(drawn(s)).toBeTruthy();
+    rerender(layer(s, { revision: 2 }));
     expect(s.root.querySelector('foreignObject') === portal).toBe(true);
-    expect(s.watch).toHaveBeenCalledTimes(1);
+    expect(drawn(s)).toBeTruthy();
     unmount();
     s.host.remove();
   });
-  it('prefixes the widget consumer id with the owner', () => {
-    const s = setup();
-    const { unmount } = render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={s.plan}
-        queries={[query]}
-        controller={s.controller}
-        context={context}
-        viewport={s.host}
-        owner="popup:7"
-      />
-    );
-    expect(s.watch.mock.calls.map(([demand]) => demand.consumerId)).toEqual(['popup%3A7:widget%3Aw:chart:q']);
+  it('draws a new bind in the same region', () => {
+    const s = setup({ chart: { kind: 'value', query: 'cpu', label: 'CPU' } }, [
+      frame('cpu', { job: 'node-rtr-a' }, [10, 42], { min: 0, max: 100 }),
+    ]);
+    const { rerender, unmount } = render(layer(s));
+    expect(screen.getByTestId('bar-props').textContent).toBe('0..100: 42');
+    const next = s.rebind([frame('cpu', { job: 'node-rtr-a' }, [10, 77], { min: 0, max: 100 })]);
+    rerender(layer({ ...s, ...next }));
+    expect(screen.getByTestId('bar-props').textContent).toBe('0..100: 77');
+    expect(s.root.querySelectorAll('foreignObject')).toHaveLength(1);
     unmount();
     s.host.remove();
   });
-  it('waits for the browser visibility result before demanding a clipped chart', () => {
-    const s = setup();
+  it('waits for the browser visibility result before it draws a clipped chart', () => {
+    const s = setup(historyClass, cpu());
     let intersect: (entries: Array<{ isIntersecting: boolean }>) => void = () => {};
     vi.stubGlobal(
       'IntersectionObserver',
@@ -221,169 +180,54 @@ describe('ChartLayer', () => {
       }
     );
     try {
-      const { unmount } = render(
-        <ChartLayer
-          root={s.root}
-          cells={s.cells}
-          plan={s.plan}
-          queries={[query]}
-          controller={s.controller}
-          context={context}
-          viewport={s.host}
-        />
-      );
-      expect(s.watch).not.toHaveBeenCalled();
+      const { unmount } = render(layer(s));
+      expect(drawn(s)).toBeNull();
       act(() => intersect([{ isIntersecting: true }]));
-      expect(s.watch).toHaveBeenCalledTimes(1);
+      expect(drawn(s)).toBeTruthy();
       act(() => intersect([{ isIntersecting: false }]));
-      expect(s.release).toHaveBeenCalledTimes(1);
+      expect(drawn(s)).toBeNull();
       unmount();
     } finally {
       vi.unstubAllGlobals();
       s.host.remove();
     }
   });
-  it('retains the shared controller cache when a region leaves the panel and reappears', async () => {
-    const s = setup();
-    const execute = vi.fn<QueryExecutor>((_request, emit) => {
-      emit({ state: 'empty', fetchedAt: 1000, fromCache: false });
-      return () => {};
-    });
-    const controller = createQueryController(execute, undefined, () => 1000);
-    const native: NamedQuery = {
-      ...query,
-      source: { kind: 'datasource', datasource: { uid: 'prom' }, target: { refId: 'D' }, parameters: {} },
-    };
-    const { unmount } = render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={s.plan}
-        queries={[native]}
-        controller={controller}
-        context={context}
-        viewport={s.host}
-      />
-    );
-    expect(execute).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      s.move(500);
-      s.root.setAttribute('viewBox', '0 0 100 100');
-    });
-    await act(async () => {
-      s.move(20);
-      s.root.setAttribute('viewBox', '0 0 200 200');
-    });
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(s.host.textContent).toContain('No data');
-    unmount();
-    controller.dispose();
-    s.host.remove();
-  });
-  it('limits interaction to the configured drilldown and leaves the underlying cell selectable', () => {
-    const s = setup();
+  it('limits interaction to the chart and leaves the underlying cell selectable', () => {
+    const s = setup(historyClass, cpu());
     const click = vi.fn();
     s.host.addEventListener('click', click);
-    const plan = { ...s.plan, widgets: [{ ...s.plan.widgets[0], widget: { ...widget, url: '/d/detail' } }] };
-    const { unmount } = render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={plan}
-        queries={[query]}
-        controller={s.controller}
-        context={context}
-        viewport={s.host}
-      />
-    );
-    const region = s.root.querySelector('foreignObject')!;
+    const { unmount } = render(layer(s));
+    const region = s.root.querySelector('foreignObject') as SVGForeignObjectElement;
     expect(region.style.pointerEvents).toBe('none');
-    const link = region.querySelector('a')!;
-    expect(link.style.pointerEvents).toBe('auto');
-    const preventNavigation = (event: Event) => event.preventDefault();
-    link.addEventListener('click', preventNavigation);
-    fireEvent.click(link);
-    expect(click).not.toHaveBeenCalled();
+    expect((drawn(s) as HTMLElement).style.pointerEvents).toBe('auto');
+    expect(region.style.overflow).toBe('hidden');
     fireEvent.click(s.rect);
     expect(click).toHaveBeenCalledTimes(1);
-    expect(region.style.overflow).toBe('hidden');
-    unmount();
-    s.host.remove();
-  });
-  it('keeps displayed values on context changes until the new result and rejects late old results', async () => {
-    const s = setup();
-    const listeners: Array<Parameters<QueryController['watch']>[1]> = [];
-    s.watch.mockImplementation((_demand, listener) => {
-      listeners.push(listener);
-      return s.release;
-    });
-    const props = {
-      root: s.root,
-      cells: s.cells,
-      plan: s.plan,
-      queries: [query],
-      controller: s.controller,
-      context,
-      viewport: s.host,
-    };
-    const { rerender, unmount } = render(<ChartLayer {...props} />);
-    const result = {
-      state: 'ready',
-      fetchedAt: Date.now(),
-      fromCache: false,
-      frames: [
-        {
-          length: 2,
-          fields: [
-            { name: 'Time', type: FieldType.time, config: {}, values: [1000, 2000] },
-            { name: 'Value', type: FieldType.number, config: {}, values: [10, 20] },
-          ],
-        },
-      ],
-    } as const;
-    await act(async () => listeners[0](result as any));
-    expect(s.host.textContent).toContain('20');
-    rerender(<ChartLayer {...props} context={{ ...context, generation: 2 }} />);
-    expect(s.release).toHaveBeenCalledTimes(1);
-    expect(s.host.textContent).toContain('20');
-    const late = {
-      ...result,
-      frames: [
-        {
-          ...result.frames[0],
-          fields: [result.frames[0].fields[0], { ...result.frames[0].fields[1], values: [10, 99] }],
-        },
-      ],
-    };
-    await act(async () => listeners[0](late as any));
-    expect(s.host.textContent).not.toContain('99');
-    await act(async () => listeners[1]({ state: 'error', message: 'This widget query failed' }));
-    expect(s.host.textContent).toContain('This widget query failed');
     unmount();
     s.host.remove();
   });
   it('keeps null and singular CTMs invalid and preserves rotation/skew relative to a nested parent', () => {
-    const s = setup();
+    const s = setup(historyClass, cpu());
     const parent = s.rect.parentElement as unknown as SVGGraphicsElement;
     Object.assign(parent, { getCTM: () => ({ ...identity, a: 2, d: 2, e: 100, f: 40 }) });
     Object.assign(s.rect, { getCTM: () => ({ a: 0, b: 2, c: -2, d: 1, e: 120, f: 50 }) });
-    expect(readChartAnchor(s.cells.get('chart')!, parent)).toMatchObject({
+    expect(readChartAnchor(s.cells.get('cpu')!, parent)).toMatchObject({
       width: 180,
       height: 70,
       matrix: { a: 0, b: 1, c: -1, d: 0.5, e: 10, f: 5 },
     });
     Object.assign(s.rect, { getCTM: () => null });
-    expect(readChartAnchor(s.cells.get('chart')!, parent)).toBeUndefined();
+    expect(readChartAnchor(s.cells.get('cpu')!, parent)).toBeUndefined();
     Object.assign(s.rect, { getCTM: () => ({ ...identity, a: 0 }) });
-    expect(readChartAnchor(s.cells.get('chart')!, parent)).toBeUndefined();
+    expect(readChartAnchor(s.cells.get('cpu')!, parent)).toBeUndefined();
     s.host.remove();
   });
   it('keeps the anchor when the rect and its parent share a small scale: the matrix between them is a translation', () => {
-    const s = setup();
+    const s = setup(historyClass, cpu());
     const parent = s.rect.parentElement as unknown as SVGGraphicsElement;
     Object.assign(parent, { getCTM: () => ({ ...identity, a: 1e-5, d: 1e-5, e: 3, f: 4 }) });
     Object.assign(s.rect, { getCTM: () => ({ ...identity, a: 1e-5, d: 1e-5, e: 3 + 12e-5, f: 4 + 5e-5 }) });
-    const m = readChartAnchor(s.cells.get('chart')!, parent)?.matrix;
+    const m = readChartAnchor(s.cells.get('cpu')!, parent)?.matrix;
     expect(m).toBeDefined();
     const want = { a: 1, b: 0, c: 0, d: 1, e: 12, f: 5 };
     for (const k of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
@@ -391,196 +235,49 @@ describe('ChartLayer', () => {
     }
     s.host.remove();
   });
-  it('does not demand a hidden region and reacts when its ancestor becomes visible', async () => {
-    const s = setup();
+  it('does not draw a hidden region and reacts when its ancestor becomes visible', async () => {
+    const s = setup(historyClass, cpu());
     s.host.style.display = 'none';
-    const { unmount } = render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={s.plan}
-        queries={[query]}
-        controller={s.controller}
-        context={context}
-        viewport={s.host}
-      />
-    );
-    expect(s.watch).not.toHaveBeenCalled();
+    const { unmount } = render(layer(s));
+    expect(drawn(s)).toBeNull();
     await act(async () => {
       s.host.style.display = 'block';
     });
-    expect(s.watch).toHaveBeenCalledTimes(1);
+    expect(drawn(s)).toBeTruthy();
     unmount();
     s.host.remove();
   });
-  it('explains an invalid anchor without starting its query', () => {
-    const s = setup();
+  it('explains an invalid anchor without drawing the chart', () => {
+    const s = setup(historyClass, cpu());
     Object.assign(s.rect, { getCTM: () => null });
-    const { getByRole, unmount } = render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={s.plan}
-        queries={[query]}
-        controller={s.controller}
-        context={context}
-        viewport={s.host}
-      />
-    );
+    sparkline.mockClear();
+    const { getByRole, unmount } = render(layer(s));
     expect(getByRole('status').textContent).toMatch(/CPU.*rectangle.*transform/);
-    expect(s.watch).not.toHaveBeenCalled();
+    expect(drawn(s)).toBeNull();
+    expect(sparkline).not.toHaveBeenCalled();
     unmount();
     s.host.remove();
   });
-  it('creates only explicit regions after the primitive, follows its relative matrix and releases clipped demand', async () => {
-    const s = setup();
-    const props = {
-      root: s.root,
-      cells: s.cells,
-      plan: s.plan,
-      queries: [query],
-      controller: s.controller,
-      context,
-      viewport: s.host,
-    };
-    const { rerender, unmount } = render(<ChartLayer {...props} />);
+  it('creates only explicit regions after the primitive, follows its relative matrix and releases a clipped chart', async () => {
+    const s = setup(historyClass, cpu());
+    const { rerender, unmount } = render(layer(s));
     expect(s.root.querySelectorAll('foreignObject')).toHaveLength(1);
     const region = s.root.querySelector('foreignObject')!;
     expect(s.rect.nextElementSibling).toBe(region);
     expect(region.getAttribute('transform')).toBe('matrix(1 0 0 1 12 5)');
     expect(region.getAttribute('width')).toBe('180');
     expect(region.style.pointerEvents).toBe('none');
-    expect(s.watch).toHaveBeenCalledTimes(1);
+    expect(drawn(s)).toBeTruthy();
     s.move(500);
     await act(async () => {
       s.root.setAttribute('viewBox', '0 0 100 100');
     });
-    expect(s.release).toHaveBeenCalledTimes(1);
+    expect(drawn(s)).toBeNull();
     s.move(20);
-    rerender(<ChartLayer {...props} revision={2} />);
-    expect(s.watch).toHaveBeenCalledTimes(2);
+    rerender(layer(s, { revision: 2 }));
+    expect(drawn(s)).toBeTruthy();
     unmount();
-    expect(s.release).toHaveBeenCalledTimes(2);
+    expect(s.root.querySelector('foreignObject')).toBeNull();
     s.host.remove();
-  });
-  it('keeps the last result while a refresh in the next generation loads', async () => {
-    const s = setup();
-    const native: NamedQuery = {
-      id: 'q',
-      name: 'CPU',
-      source: { kind: 'datasource', datasource: { uid: 'native' }, parameters: {}, target: { refId: 'D' } },
-    };
-    const ready = (value: number) => ({
-      state: 'ready' as const,
-      fetchedAt: 1,
-      fromCache: false,
-      frames: [
-        toDataFrame({
-          fields: [
-            { name: 'Time', type: FieldType.time, values: [1, 2] },
-            { name: 'CPU', type: FieldType.number, values: [21, value] },
-          ],
-        }),
-      ],
-    });
-    const emits: Array<(snapshot: Parameters<Parameters<QueryController['watch']>[1]>[0]) => void> = [];
-    s.watch.mockImplementation((_demand, emit) => {
-      emits.push(emit);
-      emit(emits.length === 1 ? ready(42) : { state: 'loading' });
-      return s.release;
-    });
-    const props = {
-      root: s.root,
-      cells: s.cells,
-      plan: s.plan,
-      queries: [native],
-      controller: s.controller,
-      viewport: s.host,
-    };
-    const view = render(<ChartLayer {...props} context={context} />);
-    expect(s.host.textContent).toContain('42');
-    view.rerender(<ChartLayer {...props} context={{ ...context, generation: 2 }} />);
-    expect(s.watch).toHaveBeenCalledTimes(2);
-    expect(s.host.textContent).toContain('42');
-    expect(s.host.textContent).not.toContain('Loading');
-    await act(async () => emits[1](ready(50)));
-    expect(s.host.textContent).toContain('50');
-    view.unmount();
-    s.host.remove();
-  });
-  it('shows the held result while paused, then shows the latest result', async () => {
-    const s = setup();
-    const listeners: Array<Parameters<QueryController['watch']>[1]> = [];
-    s.watch.mockImplementation((_demand, listener) => {
-      listeners.push(listener);
-      return s.release;
-    });
-    const props = {
-      root: s.root,
-      cells: s.cells,
-      plan: s.plan,
-      queries: [query],
-      controller: s.controller,
-      context,
-      viewport: s.host,
-    };
-    const ready = (last: number) =>
-      ({
-        state: 'ready',
-        fetchedAt: Date.now(),
-        fromCache: false,
-        frames: [
-          {
-            length: 2,
-            fields: [
-              { name: 'Time', type: FieldType.time, config: {}, values: [1000, 2000] },
-              { name: 'Value', type: FieldType.number, config: {}, values: [10, last] },
-            ],
-          },
-        ],
-      }) as any;
-    const view = render(<ChartLayer {...props} />);
-    await act(async () => listeners[0](ready(20)));
-    expect(s.host.textContent).toContain('20');
-    view.rerender(<ChartLayer {...props} paused />);
-    const drawn = sparkline.mock.calls.length;
-    await act(async () => listeners[0](ready(77)));
-    // No state update while paused: the widget does not render for the emission.
-    expect(sparkline.mock.calls.length).toBe(drawn);
-    expect(s.host.textContent).toContain('20');
-    expect(s.host.textContent).not.toContain('77');
-    // The watch stays open through the pause.
-    expect(s.release).not.toHaveBeenCalled();
-    view.rerender(<ChartLayer {...props} paused={false} />);
-    expect(s.host.textContent).toContain('77');
-    view.unmount();
-    s.host.remove();
-  });
-});
-
-describe('ChartLayer with an unavailable widget', () => {
-  it('shows the reason instead of the chart and starts no query', () => {
-    const s = setup();
-    const plan: BindingPlan = {
-      ...s.plan,
-      widgets: [{ ...s.plan.widgets[0], unavailable: 'Invalid range' }],
-    };
-    sparkline.mockClear();
-    const view = render(
-      <ChartLayer
-        root={s.root}
-        cells={s.cells}
-        plan={plan}
-        queries={[query]}
-        controller={s.controller}
-        context={context}
-        viewport={s.host}
-      />
-    );
-    const status = s.root.querySelector('[data-dmap-widget-unavailable="w"]');
-    expect(status?.textContent).toBe('CPU: Invalid range');
-    expect(s.watch).not.toHaveBeenCalled();
-    expect(sparkline).not.toHaveBeenCalled();
-    view.unmount();
   });
 });

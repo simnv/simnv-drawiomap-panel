@@ -1,6 +1,24 @@
-import { expect, observeQueries, svg, test } from './authoring-fixtures';
-import { binding, nativeQuery } from '../src/fixtures/authoring-config';
-import type { DiagramConfig } from '../src/model/config';
+import { devices, type Page } from '@playwright/test';
+import type { ConfigV4 } from '../src/model/v4';
+import {
+  authoringTargets,
+  expect,
+  observeQueries,
+  promTarget,
+  svg,
+  test,
+  type DiagramPanel,
+  type PanelTarget,
+} from './authoring-fixtures';
+
+/** The authoring targets with some targets replaced (by refId). */
+function targetsWith(...replace: PanelTarget[]): PanelTarget[] {
+  return authoringTargets().map((t) => replace.find((r) => r.refId === t.refId) ?? t);
+}
+
+/** A health series of router-1 and router-2, with the given values. */
+const health = (router1: string, router2: string) =>
+  `label_replace(${router1}, "device", "router-1", "", "") or label_replace(${router2}, "device", "router-2", "", "")`;
 
 test('visible health becomes stale without another response or network request', async ({
   page,
@@ -8,22 +26,240 @@ test('visible health becomes stale without another response or network request',
   createDiagram,
   gotoDashboardPage,
 }) => {
-  config.queries[0] = nativeQuery('health', 'vector(1)');
-  config.queries[0].source = {
-    kind: 'datasource',
-    target: { refId: 'HEALTH', ...{ expr: 'vector(1)', instant: true } },
-    parameters: {},
-  };
-  config.patterns[0].display.status!.freshness = { expectedIntervalMs: 1000, staleAfterMs: 5000 };
-  config.widgets = [];
+  // An instant query is never stale (spec 3.5). The range query has a step of at most 15 s, so its last sample is
+  // fresh at the first load and stale 20 s after it.
+  config.classes.routers.freshness = '20s';
   const uid = await createDiagram(config);
   const requests = observeQueries(page);
   await gotoDashboardPage({ uid });
   const device = page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"]');
   await expect(device).toHaveAttribute('data-dmap-status', 'normal');
   const count = requests.length;
-  await expect(device).toHaveAttribute('data-dmap-status', 'stale', { timeout: 8000 });
+  await expect(device).toHaveAttribute('data-dmap-status', 'stale', { timeout: 40_000 });
   expect(requests).toHaveLength(count);
+});
+
+test('a chart region follows a nested affine anchor through fit, resize, pan and zoom', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}, testInfo) => {
+  // The sanitiser drops the style element of the diagram: the page keeps its opacity.
+  const uid = await createDiagram(config, {
+    svg: svg.replace('</svg>', '<style>body { opacity: 0.25 }</style></svg>'),
+  });
+  await gotoDashboardPage({ uid });
+  const panel = page.getByTestId('dmap-panel');
+  await expect(panel).toHaveAttribute('data-dmap-cells', '7');
+  await expect(panel.getByTestId('dmap-chart')).toBeVisible();
+  const read = () =>
+    panel.evaluate((el) => {
+      const anchor = el.querySelector<SVGRectElement>('[data-cell-id="chart-1"] rect')!;
+      const region = el.querySelector<SVGForeignObjectElement>('foreignObject[data-dmap-chart="chart-1"]')!;
+      const quad = (node: SVGGraphicsElement) => {
+        const b = node.getBBox();
+        const m = node.getScreenCTM()!;
+        return [
+          [b.x, b.y],
+          [b.x + b.width, b.y],
+          [b.x, b.y + b.height],
+          [b.x + b.width, b.y + b.height],
+        ].map(([x, y]) => {
+          const p = new DOMPoint(x, y).matrixTransform(m);
+          return [p.x, p.y];
+        });
+      };
+      const expected = quad(anchor);
+      const actual = quad(region);
+      // A region whose cell is off the screen has no chart. After a resize Grafana moves the panel one frame late,
+      // so for that frame the cell can be outside the window.
+      const chart = el.querySelector<HTMLElement>('[data-testid="dmap-chart"]');
+      // a point of the region in its own coordinates: is the chart the top element there?
+      const hit = (x: number) => {
+        const p = new DOMPoint(x, 30).matrixTransform(region.getScreenCTM()!);
+        return document.elementFromPoint(p.x, p.y)?.closest('[data-testid="dmap-chart"]') != null;
+      };
+      const pixels = [...(chart?.querySelectorAll('canvas') ?? [])].some((canvas) => {
+        const data = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
+        return data?.some((v, i) => i % 4 === 3 && v > 0);
+      });
+      const ctm = anchor.getScreenCTM()!;
+      return {
+        error: Math.max(...actual.flatMap((p, i) => p.map((v, k) => Math.abs(v - expected[i][k])))),
+        localWidth: region.width.baseVal.value,
+        localHeight: region.height.baseVal.value,
+        paintOrder: anchor.nextElementSibling === region,
+        pixels,
+        inside: hit(177),
+        outside: hit(200),
+        parentOffset: region.transform.baseVal.consolidate()!.matrix.e,
+        color: chart && getComputedStyle(chart).color,
+        fontSize: chart && getComputedStyle(chart).fontSize,
+        svgOverflow: getComputedStyle(el.querySelector('svg')!).overflow,
+        matrix: [ctm.a, ctm.b, ctm.c, ctm.d],
+        box: anchor.getBoundingClientRect().toJSON(),
+        viewBox: el.querySelector('svg')!.getAttribute('viewBox'),
+      };
+    });
+  const verify = async () => {
+    await expect.poll(async () => (await read()).pixels).toBe(true);
+    const g = await read();
+    expect(g.error).toBeLessThan(0.5);
+    expect(g.localWidth).toBe(180);
+    expect(g.localHeight).toBe(70);
+    expect(g.paintOrder).toBe(true);
+    expect(g.pixels).toBe(true);
+    return g;
+  };
+  const fitted = await verify();
+  // the anchor is rotated and skewed
+  expect(Math.abs(fitted.matrix[1])).toBeGreaterThan(0.01);
+  expect(Math.abs(fitted.matrix[2])).toBeGreaterThan(0.01);
+  // the transform of the rect (translate(2 0)) is part of the region transform
+  expect(fitted.parentOffset).toBeCloseTo(2);
+  // the region uses the theme font and colour, not the font and colour of the cell
+  expect(fitted.fontSize).toBe('12px');
+  expect(fitted.color).not.toBe('rgb(1, 2, 3)');
+  expect(fitted.svgOverflow).toBe('hidden');
+  await expect(page.locator('body')).toHaveCSS('opacity', '1');
+  // the clip path of the cell clips the region
+  expect(fitted.inside).toBe(true);
+  expect(fitted.outside).toBe(false);
+  await page.setViewportSize({ width: 450, height: 950 });
+  await expect.poll(async () => (await read()).box.width).not.toBe(fitted.box.width);
+  const narrow = await verify();
+  await page.setViewportSize({ width: 1450, height: 950 });
+  await expect.poll(async () => (await read()).box.width).not.toBe(narrow.box.width);
+  const resized = await verify();
+  const box = (await panel.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 100);
+  await page.mouse.wheel(0, -100);
+  await expect.poll(async () => (await read()).viewBox).not.toBe(resized.viewBox);
+  const zoomed = await verify();
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 35, box.y + 110, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await read()).viewBox).not.toBe(zoomed.viewBox);
+  await verify();
+  await panel.getByRole('button', { name: 'Reset zoom' }).click();
+  await expect.poll(async () => (await read()).viewBox).toBe(resized.viewBox);
+  await verify();
+  const screenshot = testInfo.outputPath('chart-region-geometry.png');
+  await panel.screenshot({ path: screenshot });
+  await testInfo.attach('chart-region-geometry', { path: screenshot, contentType: 'image/png' });
+});
+
+test('a drag that starts on a chart region pans the diagram, and a hover still reads the chart', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}) => {
+  const uid = await createDiagram(config);
+  await gotoDashboardPage({ uid });
+  const panel = page.getByTestId('dmap-panel');
+  const chart = panel.getByTestId('dmap-chart');
+  await expect(chart.locator('canvas').first()).toBeVisible();
+  const viewBox = () => panel.locator('svg').first().getAttribute('viewBox');
+  // zoom in first: a fitted diagram has no room to pan
+  const fitted = await viewBox();
+  const box = (await chart.boundingBox())!;
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.wheel(0, -100);
+  await expect.poll(viewBox).not.toBe(fitted);
+  await expect.poll(async () => (await chart.boundingBox())!.width).toBeGreaterThan(box.width);
+  const before = await viewBox();
+  // a hover with no drag reads the chart and does not move the view
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.move(start.x + 5, start.y);
+  await expect(page.getByTestId('dmap-chart-tooltip')).toBeVisible();
+  expect(await viewBox()).toBe(before);
+  // a drag from the chart pans the diagram
+  await page.mouse.down();
+  await page.mouse.move(start.x + 60, start.y + 30, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(viewBox).not.toBe(before);
+  await expect(panel.getByRole('button', { name: 'Reset zoom' })).toBeVisible();
+  // a click with no drag on the chart does not move the view, and the chart still reads the pointer
+  const panned = await viewBox();
+  const moved = (await chart.boundingBox())!;
+  await page.mouse.click(moved.x + moved.width / 2, moved.y + moved.height / 2);
+  await page.mouse.move(moved.x + moved.width / 2 + 5, moved.y + moved.height / 2);
+  await expect(page.getByTestId('dmap-chart-tooltip')).toBeVisible();
+  expect(await viewBox()).toBe(panned);
+});
+
+// Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
+const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
+
+type TouchPoint = { x: number; y: number };
+
+/** Real touch input through the browser input pipeline, so touch-action applies. */
+async function touch(page: Page, from: TouchPoint[], to: TouchPoint[], steps = 10) {
+  const cdp = await page.context().newCDPSession(page);
+  const at = (t: number) => from.map((p, i) => ({ id: i, x: p.x + (to[i].x - p.x) * t, y: p.y + (to[i].y - p.y) * t }));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+  for (let i = 1; i <= steps; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(i / steps) });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+test.describe('a chart region on a phone', () => {
+  test.use(iPhone);
+
+  test('on a zoomed view one finger on a chart scrubs it and does not pan; two fingers pinch', async ({
+    page,
+    config,
+    createDiagram,
+    gotoDashboardPage,
+  }) => {
+    const uid = await createDiagram(config);
+    await gotoDashboardPage({ uid });
+    const panel = page.getByTestId('dmap-panel');
+    const chart = panel.getByTestId('dmap-chart');
+    await expect(chart.locator('canvas').first()).toBeVisible();
+    await chart.scrollIntoViewIfNeeded();
+    const viewBox = () => panel.locator('svg').first().getAttribute('viewBox');
+    const fitted = await viewBox();
+    // two fingers on the chart pinch the diagram
+    let box = (await chart.boundingBox())!;
+    const cy = box.y + box.height / 2;
+    const cx = box.x + box.width / 2;
+    await touch(
+      page,
+      [
+        { x: cx - 20, y: cy },
+        { x: cx + 20, y: cy },
+      ],
+      [
+        { x: cx - 80, y: cy },
+        { x: cx + 80, y: cy },
+      ]
+    );
+    await expect.poll(viewBox).not.toBe(fitted);
+    await expect(panel).toHaveCSS('touch-action', 'none');
+    // the view settles after the pinch
+    await expect(async () => {
+      const before = await viewBox();
+      await page.waitForTimeout(500);
+      expect(await viewBox()).toBe(before);
+    }).toPass();
+    const zoomed = await viewBox();
+    // one finger across the part of the chart inside the panel reads the samples; the view stays
+    box = (await chart.boundingBox())!;
+    const inside = (await panel.boundingBox())!;
+    const top = Math.max(box.y, inside.y);
+    const y = (top + Math.min(box.y + box.height, inside.y + inside.height)) / 2;
+    const left = Math.max(box.x, inside.x) + 10;
+    const right = Math.min(box.x + box.width, inside.x + inside.width) - 10;
+    await touch(page, [{ x: left, y }], [{ x: right, y }]);
+    await expect(page.getByTestId('dmap-chart-tooltip')).toBeVisible();
+    expect(await viewBox()).toBe(zoomed);
+  });
 });
 
 const STATES = [
@@ -40,34 +276,36 @@ type State = (typeof STATES)[number];
 
 /** The loading panel gets its own expression, so the route holds only its query. */
 const LOADING_EXPR = 'vector(1) + 0';
+/** A health series of the link: link-1 has key=node-rtr-a and port=wan1, and the link class matches job and device. */
+const LINK_HEALTH = 'label_replace(label_replace(vector(0), "job", "node-rtr-a", "", ""), "device", "wan1", "", "")';
 
-function stateConfig(base: DiagramConfig, state: State): DiagramConfig {
+/** The panel of one state: the authoring config and targets, with the change that gives the state. */
+function statePanel(base: ConfigV4, state: State): DiagramPanel {
   const config = structuredClone(base);
+  // The dashboard does not refresh: with the default freshness (3x) each cell turns stale during the test.
+  config.freshness = '1h';
   const expr =
     state === 'error'
       ? 'vector('
       : state === 'missing'
         ? 'absent(vector(1))'
-        : state === 'loading'
-          ? LOADING_EXPR
-          : state.includes('outage')
-            ? 'vector(0)'
-            : 'vector(1)';
-  config.queries[0] = nativeQuery('health', expr);
-  if (state === 'partial outage') {
-    config.queries.push(nativeQuery('healthy-peer', 'vector(1)'));
-    config.overrides.push({
-      cellId: 'device-2',
-      display: { status: { ...config.patterns[0].display.status!, binding: binding('healthy-peer') } },
-    });
-  }
+        : state === 'partial outage'
+          ? health('vector(0)', 'vector(1)')
+          : state === 'widespread outage'
+            ? `${health('vector(0)', 'vector(0)')} or ${LINK_HEALTH}`
+            : health(state === 'loading' ? LOADING_EXPR : 'vector(1)', 'vector(1)');
+  const replace = [promTarget('health', expr)];
   if (state === 'widespread outage') {
-    // the link takes the status too: its halves show the status colour over the binding colour
-    config.overrides.push({ cellId: 'link-1', display: { status: config.patterns[0].display.status! } });
+    // the link takes the status too: its halves show the status colour over the colour of the traffic
+    config.overrides['link-1'] = { status: 'health' };
   }
-  if (state === 'stale') config.patterns[0].display.status!.freshness = { expectedIntervalMs: 1, staleAfterMs: 2 };
-  if (state === 'zero') config.queries[2] = nativeQuery('trend', 'vector(0)');
-  return config;
+  if (state === 'stale') {
+    config.classes.routers.freshness = '1ms';
+  }
+  if (state === 'zero') {
+    replace.push(promTarget('trend', 'label_replace(vector(0), "device", "trend", "", "")'));
+  }
+  return { config, title: state, targets: targetsWith(...replace) };
 }
 
 // One dashboard per theme holds a panel for each state. The theme is on the first load, and one page load serves all
@@ -88,15 +326,20 @@ for (const theme of ['light', 'dark'] as const) {
         release = resolve;
       });
       await page.route('**/api/ds/query*', async (route) => {
-        if (route.request().postData()?.includes(LOADING_EXPR)) await gate;
+        if (route.request().postData()?.includes(LOADING_EXPR)) {
+          await gate;
+        }
         await route.continue().catch(() => {});
       });
-      const crowdedConfig = structuredClone(config);
-      crowdedConfig.queries[0] = nativeQuery('health', 'vector(0)');
       const uid = await createDiagram(config, {
         panels: [
-          ...STATES.map((state) => ({ config: stateConfig(config, state), title: state })),
-          { config: crowdedConfig, title: 'crowded', svg: svg.replace('translate(35 35)', 'translate(0 0)') },
+          ...STATES.map((state) => statePanel(config, state)),
+          {
+            config: { ...config, freshness: '1h' },
+            title: 'crowded',
+            svg: svg.replace('translate(35 35)', 'translate(0 0)'),
+            targets: targetsWith(promTarget('health', health('vector(0)', 'vector(0)'))),
+          },
         ],
       });
       try {
@@ -115,25 +358,34 @@ for (const theme of ['light', 'dark'] as const) {
 
         for (const state of STATES) {
           await test.step(`${state}: reasons stay visible and charts remain explicit`, async () => {
+            if (state === 'loading') {
+              // Grafana mounts the panel only with its first data: while the query waits, the plugin draws nothing.
+              // After the response the panel shows the data.
+              const frame = dashboard.getPanelByTitle(state).locator;
+              await expect(frame).toBeVisible();
+              await expect(frame.getByTestId('dmap-panel')).toHaveCount(0);
+              release();
+            }
             const panel = await open(state);
             const device = panel.locator('[data-cell-id="device-1"]');
             const expected = state.includes('outage')
-              ? 'down'
+              ? 'critical'
               : state === 'stale'
                 ? 'stale'
-                : ['missing', 'loading', 'error'].includes(state)
+                : ['missing', 'error'].includes(state)
                   ? 'missing'
                   : 'normal';
             await expect(device).toHaveAttribute('data-dmap-status', expected);
-            if (state === 'partial outage')
+            if (state === 'partial outage') {
               await expect(panel.locator('[data-cell-id="device-2"]')).toHaveAttribute('data-dmap-status', 'normal');
+            }
             const rect = device.locator('rect').first();
             if (state === 'widespread outage') {
               await expect(panel.locator('.dmap-status-marker')).toHaveCount(0);
               await expect(panel.locator('.dmap-status-summary')).toHaveCount(1);
               await expect(panel.locator('.dmap-status-summary')).toHaveAttribute(
                 'title',
-                'down: Health check failed (3 elements)'
+                'Health check failed · health: 3 cells'
               );
               // the status paints the device: a border twice the default width in the status colour, a tinted fill
               await expect(rect).toHaveCSS('stroke-width', '2px');
@@ -146,37 +398,48 @@ for (const theme of ['light', 'dark'] as const) {
               expect(paint.fill).toMatch(/^rgb\(/);
               expect(paint.fill).not.toBe('rgb(213, 232, 212)');
               expect(paint.drawn).toBe('#d5e8d4');
-              // and the link: both halves and arrow heads in the same status colour, over the binding colour
+              // and the link: both halves in the same status colour, over the colour of the traffic
               const halves = panel.locator('.dmap-half[data-dmap-cell="link-1"]');
               await expect(halves).toHaveCount(2);
-              const strokes = await halves.evaluateAll((els) => els.map((el) => getComputedStyle(el).stroke));
               const deviceStroke = await rect.evaluate((el) => getComputedStyle(el).stroke);
-              expect(strokes).toEqual([deviceStroke, deviceStroke]);
+              await expect
+                .poll(() => halves.evaluateAll((els) => els.map((el) => getComputedStyle(el).stroke)))
+                .toEqual([deviceStroke, deviceStroke]);
               await expect(halves.first()).toHaveAttribute('data-dmap-status', 'ok');
             }
             if (state === 'normal') {
-              // a normal status paints nothing: the drawn colours stay
-              expect(await rect.evaluate((el) => [el.style.stroke, el.style.fill])).toEqual(['', '']);
+              // v4 paints a normal status too, in the exact colour of its threshold step (spec 3.4)
+              await expect(rect).toHaveCSS('stroke', theme === 'dark' ? 'rgb(115, 191, 105)' : 'rgb(86, 166, 75)');
             }
             if (expected !== 'normal') {
-              const reason = state.includes('outage')
+              // the band row is `<text> · <refId>: <n> cells`; a cell with no value gives its reason as the text
+              const text = state.includes('outage')
                 ? 'Health check failed'
                 : state === 'missing'
                   ? 'No data'
                   : state === 'error'
                     ? 'Query failed'
-                    : state === 'loading'
-                      ? 'Loading data'
-                      : 'Sample is stale';
-              await expect(panel.locator('.dmap-status-summary').filter({ hasText: reason })).toBeVisible();
+                    : state === 'stale'
+                      ? 'Stale'
+                      : 'Healthy';
+              await expect(
+                panel.locator('.dmap-status-summary').filter({ hasText: `${text} · health:` })
+              ).toBeVisible();
             }
-            await expect(panel.locator('[data-dmap-widget]')).toHaveCount(1);
-            await expect(panel.locator('[data-cell-id^="device-"] [data-dmap-widget]')).toHaveCount(0);
+            if (state === 'stale') {
+              await expect(device).toHaveAttribute('aria-label', /Sample is stale/);
+            }
+            // one chart region, on the chart cell only, and no card
+            const region = panel.getByTestId('dmap-chart');
+            await expect(region).toHaveCount(1);
+            await expect(panel.locator('[data-dmap-chart]')).toHaveAttribute('data-dmap-chart', 'chart-1');
             await expect(panel.getByTestId('dmap-card')).toHaveCount(0);
             if (state === 'zero') {
-              await expect(panel.locator('[data-dmap-widget]')).toContainText('0');
-              await expect(panel.locator('[data-dmap-widget] [data-state="ready"]')).toBeVisible();
-            } else await expect(panel.locator('[data-dmap-widget] canvas')).toBeVisible();
+              // a series of zeros is data, not "no data"
+              await expect(region).toContainText('0');
+              await expect(region.locator('[data-state="ready"]')).toBeVisible();
+            }
+            await expect(region.locator('canvas')).toBeVisible();
             await shoot(panel, state);
           });
         }
@@ -184,10 +447,10 @@ for (const theme of ['light', 'dark'] as const) {
         await test.step('crowded topology keeps a widespread reason readable', async () => {
           const panel = await open('crowded');
           await expect(
-            panel.locator('.dmap-status-summary[title="down: Health check failed (2 elements)"]')
+            panel.locator('.dmap-status-summary[title="Health check failed · health: 2 cells"]')
           ).toBeVisible();
           // the two down devices are painted, nothing is drawn on top of the diagram
-          await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="down"]')).toHaveCount(2);
+          await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="critical"]')).toHaveCount(2);
           await expect(panel.locator('.dmap-status-marker')).toHaveCount(0);
           await shoot(panel, 'crowded');
         });

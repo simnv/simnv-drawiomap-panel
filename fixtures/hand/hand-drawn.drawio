@@ -12,7 +12,7 @@
         <mxCell id="node-b" value="rtr-a" style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;" vertex="1" parent="1">
           <mxGeometry x="400" y="110" width="120" height="60" as="geometry"/>
         </mxCell>
-        <object id="edge-ab" label="" kind="wan" capacity="100000000">
+        <object id="edge-ab" label="" kind="wan" capacity="100000000" bind="hand-links" cap="100M" key="node-isp-a" port="pppoe">
           <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeWidth=2;" edge="1" parent="1" source="node-a" target="node-b">
             <mxGeometry relative="1" as="geometry"/>
           </mxCell>
@@ -29,7 +29,7 @@
         <mxCell id="node-d" value="d" style="rounded=1;whiteSpace=wrap;html=1;convertToSvg=1;" vertex="1" parent="grp">
           <mxGeometry x="340" y="90" width="100" height="50" as="geometry"/>
         </mxCell>
-        <object id="edge-cd" label="" kind="lan" capacity="1000000000">
+        <object id="edge-cd" label="" kind="lan" capacity="1000000000" bind="hand-links" cap="1G" key="node-isp-a" port="pppoe">
           <mxCell style="edgeStyle=orthogonalEdgeStyle;curved=1;rounded=1;html=1;endArrow=none;strokeWidth=2;" edge="1" parent="grp" source="node-c" target="node-d">
             <mxGeometry relative="1" as="geometry">
               <Array as="points"><mxPoint x="220" y="25"/><mxPoint x="220" y="115"/></Array>

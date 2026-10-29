@@ -15,10 +15,9 @@ test.describe('hover card', () => {
     await expect(panel.locator.getByTestId('dmap-card')).toHaveCount(0);
     await hoverHalf(half);
     const card = panel.locator.getByRole('tooltip');
-    await expect(card).toContainText('radio ↔ rtr-a');
-    // one combined row: up leaves radio (90 Mb/s of 100 Mb/s), down enters it
+    await expect(card).toContainText('Radio bridge dhcp ↔ rtr-a wan2');
+    // one combined row: up leaves radio, down enters it
     await expect(card).toContainText('Traffic');
-    await expect(card).toContainText('90%');
     await expect(card.getByTestId('dmap-card-spark')).toHaveCount(1);
     // the hover card draws its charts in a second commit: wait for the chart, not for the box
     await expect(card.getByTestId('dmap-mirror-spark')).toBeVisible();
@@ -41,12 +40,12 @@ test.describe('hover card', () => {
     await expect(half(ISP_A)).toHaveAttribute('data-dmap-status', 'ok');
     await half(ISP_A).click({ force: true });
     const dialog = panel.locator.getByRole('dialog');
-    await expect(dialog).toContainText('isp-a ↔ rtr-a');
-    await expect(dialog).toContainText(/↑ 41(\.\d)? Mb\/s · 41%/);
+    await expect(dialog).toContainText('ISP A pppoe ↔ rtr-a wan1');
+    await expect(dialog).toContainText(/↑ 41(\.\d)? Mb\/s/);
     // the footer: the display url with its urlTitle, then the data link of the field with its title
     const footer = dialog.getByTestId('dmap-card-link');
-    await expect(footer).toHaveText(['Traffic of isp-a:pppoe', 'Interface details']);
-    await expect(dialog.getByRole('link', { name: 'Traffic of isp-a:pppoe' })).toHaveAttribute(
+    await expect(footer).toHaveText(['Traffic of node-isp-a:pppoe', 'Interface details']);
+    await expect(dialog.getByRole('link', { name: 'Traffic of node-isp-a:pppoe' })).toHaveAttribute(
       'href',
       /var-job=node-isp-a&var-device=pppoe/
     );
@@ -71,24 +70,43 @@ test.describe('hover card', () => {
     await expect(dialog).toHaveCount(0);
 
     await half(ISP_A).click({ force: true });
-    await expect(dialog).toContainText('isp-a ↔ rtr-a');
+    await expect(dialog).toContainText('ISP A pppoe ↔ rtr-a wan1');
     await half(RADIO).click({ force: true });
-    await expect(dialog).toContainText('radio ↔ rtr-a');
+    await expect(dialog).toContainText('Radio bridge dhcp ↔ rtr-a wan2');
     await dialog.getByRole('button', { name: 'Close' }).click();
     await expect(dialog).toHaveCount(0);
   });
 
-  test('a click on a sparkline opens the url of its row', async ({ gotoDashboardPage, page }) => {
+  test('the hover and the pinned card show the percent of the link capacity', async ({ gotoDashboardPage, page }) => {
+    const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
+    const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
+    const half = (cell: string) =>
+      panel.locator.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${cell}"]`);
+    // hover: up leaves radio, 90 Mb/s of 100 Mb/s
+    await expect(half(RADIO)).toHaveAttribute('data-dmap-status', 'ok');
+    await hoverHalf(half(RADIO));
+    await expect(panel.locator.getByRole('tooltip')).toContainText('90%');
+    await page.mouse.move(1, 1);
+    await expect(panel.locator.getByTestId('dmap-card')).toHaveCount(0);
+    // pinned: 41 Mb/s of 100 Mb/s
+    await half(ISP_A).click({ force: true });
+    await expect(panel.locator.getByRole('dialog')).toContainText(/↑ 41(\.\d)? Mb\/s · 41%/);
+  });
+
+  test('a click on the CPU details link opens its drilldown URL', async ({ gotoDashboardPage, page }) => {
     const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
     const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
     const node = panel.locator.locator('[data-cell-id="pg-node~rtr-a"]');
-    await expect(node).toHaveAttribute('data-dmap-status', 'ok');
+    await expect(node).toHaveAttribute('data-dmap-status', 'normal');
     // the group box is too big (the foreignObject label has width and height 100%), so click the node shape
     await node.locator('rect').first().click({ force: true });
     const dialog = panel.locator.getByRole('dialog');
     const cpu = dialog.getByTestId('dmap-card-row').filter({ hasText: 'CPU' });
     await expect(cpu).toContainText('%');
-    const [popup] = await Promise.all([page.waitForEvent('popup'), cpu.getByTestId('dmap-card-spark').click()]);
+    const [popup] = await Promise.all([
+      page.waitForEvent('popup'),
+      dialog.getByRole('link', { name: 'CPU details', exact: true }).click(),
+    ]);
     await popup.waitForLoadState('domcontentloaded');
     expect(popup.url()).toMatch(/\/d\/drawiomap-demo.*var-job=node-rtr-a&var-metric=cpu/);
     await popup.close();
@@ -119,7 +137,7 @@ test.describe('hover card on a phone', () => {
     }).toPass();
     await expect(dialog).toBeInViewport({ ratio: 0.99 });
     await expect(dialog).toHaveAttribute('data-sheet', 'true');
-    await expect(dialog).toContainText('isp-a ↔ rtr-a');
+    await expect(dialog).toContainText('ISP A pppoe ↔ rtr-a wan1');
     // the sparkline is responsive: it has the full width of the sheet row
     const row = dialog.getByTestId('dmap-card-row').first();
     const r = (await row.boundingBox())!;

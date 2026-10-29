@@ -1,4 +1,4 @@
-import { devices, type Locator, type Page } from '@playwright/test';
+import { devices, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { hoverHalf, pointOnHalf } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
@@ -10,15 +10,45 @@ type GotoDashboardPage = (args: { uid: string; queryParams?: URLSearchParams }) 
 }>;
 
 /** Opens the demo dashboard and returns the panel, the half-link polyline and the pinned-card dialog. */
-async function openPanel(gotoDashboardPage: GotoDashboardPage, title: string, cell: string, view?: string) {
+async function openPanel(
+  gotoDashboardPage: GotoDashboardPage,
+  title: string,
+  cell: string,
+  view?: string,
+  range?: { from: number; to: number }
+) {
+  const params = new URLSearchParams(view ? { viewPanel: view } : {});
+  if (range) {
+    params.set('from', String(range.from));
+    params.set('to', String(range.to));
+  }
   const dashboardPage = await gotoDashboardPage({
     uid: 'drawiomap-demo',
-    queryParams: view ? new URLSearchParams({ viewPanel: view }) : undefined,
+    queryParams: params.size ? params : undefined,
   });
   const panel = (await dashboardPage.getPanelByTitle(title)).locator;
   const half = panel.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${cell}"]`);
   await expect(half).toHaveAttribute('data-dmap-status', 'ok');
   return { panel, half };
+}
+
+/**
+ * The range of the demo dashboard (the last 15 min), but not before the first sample of the radio link. The
+ * crosshair sits on the sample nearest to the pointer: on a stack younger than 15 min, a pointer before the first
+ * sample puts the crosshair on that sample, far from the pointer.
+ */
+async function sampledRange(request: APIRequestContext) {
+  const to = Date.now();
+  const params = new URLSearchParams({
+    query: 'rate(node_network_transmit_bytes_total{job="node-radio",device="dhcp"}[1m])',
+    start: String((to - 15 * 60_000) / 1000),
+    end: String(to / 1000),
+    step: '5',
+  });
+  const response = await request.get(`/api/datasources/proxy/uid/victoriametrics/api/v1/query_range?${params}`);
+  expect(response.ok()).toBe(true);
+  const [first] = (await response.json()).data.result[0].values[0];
+  return { from: Math.ceil(Number(first) * 1000), to };
 }
 
 /** Moves the mouse to a fraction of the width of the chart, at its middle height; returns the pointer x. */
@@ -53,7 +83,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
     await hoverHalf(half);
     const card = panel.getByRole('tooltip');
-    await expect(card).toContainText('radio ↔ rtr-a');
+    await expect(card).toContainText('dhcp ↔ rtr-a wan2');
     // the hover card ignores the pointer, so the chart under it gets no pointer event
     await expect(card.getByTestId('dmap-chart-hover')).toHaveCount(0);
     await expect(page.getByTestId('dmap-chart-tooltip')).toHaveCount(0);
@@ -62,12 +92,14 @@ test.describe('tooltip on the charts of the pinned card', () => {
   test('a pinned chart shows crosshair and a Grafana tooltip at 25, 50 and 90 percent', async ({
     gotoDashboardPage,
     page,
+    request,
   }) => {
-    const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
+    const range = await sampledRange(request);
+    const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO, undefined, range);
     await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
-    await expect(dialog).toContainText('radio ↔ rtr-a');
+    await expect(dialog).toContainText('dhcp ↔ rtr-a wan2');
     const chart = dialog.getByTestId('dmap-chart-hover').first();
     const tooltip = page.getByTestId('dmap-chart-tooltip');
     const crosshair = chart.getByTestId('dmap-chart-crosshair');
@@ -150,7 +182,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     await expect(tooltip).toBeInViewport({ ratio: 1 });
   });
 
-  test('a click on the chart still follows the row link and the card stays pinned', async ({
+  test('a click on the chart keeps the card pinned; the drilldown link follows its URL', async ({
     gotoDashboardPage,
     page,
   }) => {
@@ -161,16 +193,16 @@ test.describe('tooltip on the charts of the pinned card', () => {
     const node = panel.locator('[data-cell-id="pg-node~rtr-a"]');
     await node.locator('rect').first().click({ force: true });
     await expect(dialog).toContainText('CPU');
+    // v4: a history row has no URL; the drilldown row of the class is a footer link
     const cpu = dialog.getByTestId('dmap-card-row').filter({ hasText: 'CPU' });
-    await expect(cpu).toHaveAttribute('href', /var-job=node-rtr-a&var-metric=cpu/);
-    const [popup] = await Promise.all([
-      page.waitForEvent('popup'),
-      (async () => {
-        await moveOnChart(page, cpu.getByTestId('dmap-chart-hover'), 0.5);
-        await page.mouse.down();
-        await page.mouse.up();
-      })(),
-    ]);
+    await moveOnChart(page, cpu.getByTestId('dmap-chart-hover'), 0.5);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute('data-pinned', 'true');
+    const details = dialog.getByTestId('dmap-card-link').filter({ hasText: 'CPU details' });
+    await expect(details).toHaveAttribute('href', /var-job=node-rtr-a&var-metric=cpu/);
+    const [popup] = await Promise.all([page.waitForEvent('popup'), details.click()]);
     await popup.waitForLoadState('domcontentloaded');
     expect(popup.url()).toMatch(/\/d\/drawiomap-demo.*var-job=node-rtr-a&var-metric=cpu/);
     await popup.close();

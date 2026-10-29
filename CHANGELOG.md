@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0 (Unreleased)
+
+Binding model v4. This is the first version that reads the v4 config. A config of version 3 or older binds nothing: the diagram renders, the panel shows one note, and you write the config again as version 4 (or regenerate it). There is no migration. Regenerate the dashboards of a generator in the same change as this release.
+
+- A cell joins a class with its attribute `bind`. The attributes `key`, `port` and others select the series of the cell, with a matcher (`=`, `!=`, `=~`, `!~`, a list) in a fixed regex dialect. The classes and the cell overrides are in the panel option `config`. See README, "Bindings (v4)".
+- The status colour and text of a cell are the exact colour and text of the field config of the `status` query. A healthy value can keep the drawn colour with the colour `transparent`. A missing value is grey "no data", never a good state.
+- A link takes `up` and `down` queries for its two halves; the attribute `at=target` flips them. The capacity of a link is a `capacity` query, else the attribute `cap` (`1G`, `50M/10M`), else none. The field Max is no longer a capacity.
+- A `history` row or chart draws up to 8 lines in one Y range and then "+N more". A `value` chart is a bar gauge. A cell turns stale on the clock when its newest sample is too old, with no new data.
+- The match report names the cells with no series, the series with no cell and each config error with its YAML path. The warning badge shows its count.
+- New option **Bindings**: a YAML editor for the config. It loads in its own chunk, so view mode loads no YAML parser. The panel stores the config as JSON; YAML comments are not kept.
+- A dashboard variable in a link keeps its place: the panel encodes each cell value and each bare `$name`, and `${name:format}` selects a Grafana format (`${job:queryparam}`).
+- The panel reads page 1 of a diagram only, and binds page 1 only.
+- Removed: the bindings popup, the pattern selectors, the named queries, the combined row, the `display` settings and the v3 config. The popup results are archived in `docs/archive/acceptance-v3-popup.md`.
+
 ## 1.0.0 (Unreleased)
 
 Initial release.

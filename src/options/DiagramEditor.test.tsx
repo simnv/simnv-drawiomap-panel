@@ -1,8 +1,7 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { DiagramEditor } from './DiagramEditor';
-import { currentAddress, subscribe } from '../editor/popup/popupBus';
 import type { Diagram } from '../types';
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. This jsdom setup has neither.
@@ -51,28 +50,11 @@ describe('DiagramEditor pg-schema warning', () => {
   });
 });
 
-describe('DiagramEditor Edit bindings button', () => {
-  const button = () => screen.getByTestId('dmap-edit-bindings-option') as HTMLButtonElement;
-
-  it('is disabled without a diagram', () => {
-    renderEditor(undefined);
-    expect(button().disabled).toBe(true);
-  });
-
-  it('names the reason when no panel editor listens', async () => {
-    renderEditor(diagram('1'));
-    expect(button().disabled).toBe(false);
-    fireEvent.click(button());
-    expect((await screen.findAllByText('Open the panel editor first')).length).toBeGreaterThan(0);
-  });
-
-  it('opens the popup of the panel that listens', () => {
-    const open = vi.fn();
-    const unsubscribe = subscribe(currentAddress(), open);
-    renderEditor(diagram('1'));
-    fireEvent.click(button());
-    unsubscribe();
-    expect(open).toHaveBeenCalledWith({ kind: 'none' });
-    expect(screen.queryByText('Open the panel editor first')).toBeNull();
+describe('DiagramEditor controls', () => {
+  it.each([undefined, diagram('1')])('has no bindings editor with diagram %j', (value) => {
+    renderEditor(value);
+    expect(screen.queryByRole('button', { name: 'Edit bindings' })).toBeNull();
+    expect(screen.queryByTestId('dmap-edit-bindings-option')).toBeNull();
+    expect(screen.getByTestId('dmap-open-editor')).toBeTruthy();
   });
 });

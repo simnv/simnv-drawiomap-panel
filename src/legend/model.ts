@@ -11,10 +11,8 @@ import {
   ThresholdsMode,
   type ValueMapping,
 } from '@grafana/data';
-import type { PlanCellPatch } from '../binding/engine';
-import { statusLevel, type StatusLevel, type StatusView } from '../binding/status';
-import { noDataColor, statusColor } from '../binding/color';
-import type { HalfState, SeriesInfo, ShapeState } from '../types';
+import { linkStatusPaint, statusColor } from '../binding/color';
+import type { HalfState, PatchMap, ShapeState } from '../types';
 
 /** One colour of a scale: a swatch and its threshold or mapping text. */
 export interface LegendEntry {
@@ -47,14 +45,13 @@ export interface LegendContext {
   theme: GrafanaTheme2;
   /** The panel default thresholds. They apply when a field has none (as in colorFor). */
   fieldThresholds?: ThresholdsConfig;
-  /** The name of a query from its id (the refId of a series). */
-  queryName?: (refId: string) => string | undefined;
 }
 
 interface Item {
   cellId: string;
   kind: 'link' | 'node';
-  series: SeriesInfo;
+  field: Field;
+  refId?: string;
   color: string;
   stepIndex: number;
   percent?: number;
@@ -78,28 +75,72 @@ const push = (list: string[], id: string) => {
   }
 };
 
-function mappingEntries(mappings: ValueMapping[] | undefined, theme: GrafanaTheme2): LegendEntry[] {
-  const out: LegendEntry[] = [];
-  const add = (label: string, color: string | undefined) => {
-    if (color) {
-      out.push({ key: `map-${out.length}`, label, color: theme.visualization.getColorByName(color), cellIds: [] });
-    }
-  };
+/** One result of the value mappings of a field, in the order of Grafana, with the test of a finite value. */
+interface MappingResult {
+  label: string;
+  color?: string;
+  matches: (value: number) => boolean;
+}
+
+/**
+ * The results of the value mappings, in the order that Grafana tests them (`getValueMappingResult`). A regex and a
+ * special value never match a finite number, which is the only value of a status.
+ */
+function mappingResults(mappings: ValueMapping[] | undefined): MappingResult[] {
+  const out: MappingResult[] = [];
   for (const m of mappings ?? []) {
     if (m.type === MappingType.ValueToText) {
       for (const [value, result] of Object.entries(m.options)) {
-        add(result.text ?? value, result.color);
+        out.push({ label: result.text ?? value, color: result.color, matches: (v) => String(v) === value });
       }
     } else if (m.type === MappingType.RangeToText) {
       const { from, to, result } = m.options;
-      add(result.text ?? `${from ?? '-∞'}–${to ?? '∞'}`, result.color);
+      out.push({
+        label: result.text ?? `${from ?? '-∞'}–${to ?? '∞'}`,
+        color: result.color,
+        matches: (v) => v >= (from ?? -Infinity) && v <= (to ?? Infinity),
+      });
     } else if (m.type === MappingType.RegexToText) {
-      add(m.options.result.text ?? `/${m.options.pattern}/`, m.options.result.color);
+      out.push({
+        label: m.options.result.text ?? `/${m.options.pattern}/`,
+        color: m.options.result.color,
+        matches: () => false,
+      });
     } else if (m.type === MappingType.SpecialValue) {
-      add(m.options.result.text ?? m.options.match, m.options.result.color);
+      out.push({
+        label: m.options.result.text ?? m.options.match,
+        color: m.options.result.color,
+        matches: () => false,
+      });
     }
   }
   return out;
+}
+
+/** The mapping entries: one for each mapping result with a colour, with the key `map-<n>`. */
+function mappingEntries(mappings: ValueMapping[] | undefined, theme: GrafanaTheme2): LegendEntry[] {
+  return mappingResults(mappings)
+    .filter((r) => r.color)
+    .map((r, i) => ({
+      key: `map-${i}`,
+      label: r.label,
+      color: theme.visualization.getColorByName(r.color!),
+      cellIds: [],
+    }));
+}
+
+/**
+ * The key of the mapping entry that a value shows: `map-<n>` for the first mapping result that matches it, when that
+ * result has a colour. Undefined when no result matches or the result has no colour: then a threshold step gives
+ * the colour.
+ */
+function mappingKeyOf(mappings: ValueMapping[] | undefined, value: number): string | undefined {
+  const results = mappingResults(mappings);
+  const index = results.findIndex((r) => r.matches(value));
+  if (index < 0 || !results[index].color) {
+    return undefined;
+  }
+  return `map-${results.slice(0, index).filter((r) => r.color).length}`;
 }
 
 function thresholdEntries(steps: Threshold[], text: (v: number) => string, theme: GrafanaTheme2): LegendEntry[] {
@@ -125,7 +166,7 @@ function unitSymbol(unit: string | undefined): string {
 /** The scale of one coloured value, without its cells. Undefined: the colour does not depend on the value. */
 function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
   const { theme } = ctx;
-  const field = item.series.field;
+  const field = item.field;
   const config = field.config ?? {};
   const thresholds = config.thresholds ?? ctx.fieldThresholds;
   const steps = thresholds?.steps ?? [];
@@ -174,11 +215,11 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
     // one colour per series (classic palette): no value scale
     return undefined;
   }
-  const name = ctx.queryName?.(item.series.refId ?? '') ?? (item.kind === 'link' ? 'Link' : 'Node');
+  const name = item.kind === 'link' ? 'Link' : 'Node';
   const symbol = unitSymbol(config.unit);
   const title = capacity ? 'Link load %' : (config.displayName ?? (symbol ? `${name} ${symbol}` : name));
   const key = JSON.stringify([entries.map((e) => [e.label, e.color]), gradient]);
-  const source = ctx.queryName?.(item.series.refId ?? '') ?? item.series.refId ?? '';
+  const source = item.refId ?? '';
   return { key, title, titles: [title], sources: source ? [source] : [], entries, gradient, auto, cellIds: [] };
 }
 
@@ -195,49 +236,59 @@ function entryOf(block: LegendBlock, item: Item): LegendEntry | undefined {
   return step?.color === item.color ? step : block.entries.find((e) => e.color === item.color);
 }
 
-const STATUS_ENTRIES: Array<{ key: StatusLevel; label: string }> = [
-  { key: 'critical', label: 'Down, critical' },
-  { key: 'warning', label: 'Warning, stale' },
-  { key: 'missing', label: 'Missing' },
-];
+/**
+ * The entry of a v4 status cell. With the value of the status: the mapping entry of the value (`mappingKeyOf`), else
+ * the first threshold step with its colour, so that a colour-only mapping and a step of the same colour each keep
+ * their cells. With no value: the mapping with its text and colour, else the first threshold step with its colour.
+ * Then, in both cases, the first entry with its colour.
+ */
+function entryOfV4(block: LegendBlock, item: Item): LegendEntry | undefined {
+  const isMapping = (e: LegendEntry) => e.key.startsWith('map-');
+  const byColor = (e: LegendEntry) => e.color === item.color;
+  let mapping: LegendEntry | undefined;
+  if (item.value !== undefined) {
+    const key = mappingKeyOf(item.field.config.mappings, item.value);
+    mapping = key === undefined ? undefined : block.entries.find((e) => e.key === key && byColor(e));
+  } else {
+    mapping = block.entries.find((e) => isMapping(e) && byColor(e) && e.label === item.text);
+  }
+  return mapping ?? block.entries.find((e) => !isMapping(e) && byColor(e)) ?? block.entries.find(byColor);
+}
 
 /**
- * The colour legend of the bound cells: one block for each distinct colour scale (the field Color scheme,
- * Thresholds and Value mappings, incl. overrides), then the status markers, then the no data colour.
- * Identical scales merge into one block.
+ * Adds the coloured value of a link half or a shape to `items`. A state with no data adds its cell to `nodata`. A
+ * shape that colours nothing adds nothing.
  */
-export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendContext): LegendBlock[] {
-  const items: Item[] = [];
-  const nodata: string[] = [];
-  const statuses: Array<{ cellId: string; state: StatusView['state'] }> = [];
-  const add = (cellId: string, kind: Item['kind'], state: HalfState | ShapeState | undefined) => {
-    if (!state || ('target' in state && state.target === 'none')) {
-      return;
-    }
-    if (state.status !== 'ok' || !state.series) {
-      push(nodata, cellId);
-      return;
-    }
-    const percent = 'percent' in state ? state.percent : undefined;
-    items.push({
-      cellId,
-      kind,
-      series: state.series,
-      color: state.color,
-      stepIndex: state.stepIndex,
-      percent,
-      value: state.value,
-      text: state.display?.text,
-    });
-  };
-  for (const patch of patches.values()) {
-    add(patch.cellId, 'link', patch.link?.a2b);
-    add(patch.cellId, 'link', patch.link?.b2a);
-    add(patch.cellId, 'node', patch.shape);
-    if (patch.statusView) {
-      statuses.push({ cellId: patch.cellId, state: patch.statusView.state });
-    }
+function addItem(
+  items: Item[],
+  nodata: string[],
+  cellId: string,
+  kind: Item['kind'],
+  state: HalfState | ShapeState | undefined
+) {
+  if (!state || ('target' in state && state.target === 'none')) {
+    return;
   }
+  if (state.status !== 'ok' || !state.series) {
+    push(nodata, cellId);
+    return;
+  }
+  const percent = 'percent' in state ? state.percent : undefined;
+  items.push({
+    cellId,
+    kind,
+    field: state.series.field,
+    refId: state.series.refId,
+    color: state.color,
+    stepIndex: state.stepIndex,
+    percent,
+    value: state.value,
+    text: state.display?.text,
+  });
+}
+
+/** One block for each distinct colour scale of the items. Identical scales merge into one block. */
+function scaleBlocks(items: Item[], ctx: LegendContext): LegendBlock[] {
   const blocks = new Map<string, Draft>();
   for (const item of items) {
     const scale = scaleOf(item, ctx);
@@ -270,36 +321,108 @@ export function buildLegend(patches: Map<string, PlanCellPatch>, ctx: LegendCont
   for (const d of shared) {
     d.title = `${d.title} (${d.sources.join(', ')})`;
   }
-  const out: LegendBlock[] = drafts.map(({ key, title, entries, gradient, cellIds }) => ({
+  return drafts.map(({ key, title, entries, gradient, cellIds }) => ({
     key,
     title,
     entries,
     ...(gradient ? { gradient } : {}),
     cellIds,
   }));
-  if (statuses.length) {
+}
+
+/** The state entries of the v4 legend, in this order. They have the theme colours of the painter. */
+const STATE_ENTRIES_V4: Array<{ key: 'down' | 'stale' | 'missing'; label: string }> = [
+  { key: 'down', label: 'Down, no data' },
+  { key: 'stale', label: 'Stale' },
+  { key: 'missing', label: 'No data' },
+];
+
+/**
+ * The v4 legend (spec 3.4). First one block for each status refId in use, in the order of first use. The title is
+ * the display name of the field of the refId: `displayName`, else `displayNameFromDS` of its config, else the refId. A name from the series labels names one series, not the refId, so it is not used. The
+ * entries are its value mappings and then its threshold steps, each with its exact colour and text and the cells
+ * that show it. `fields` gives the field of each status refId; a refId with no field has no block. Then one `State`
+ * block with a `down`, a `stale` and a `missing` entry, each only when cells have that state: `down` is a down status
+ * with no value (`missing: down`), which the painter paints in the theme red; a link half with no data is `missing`,
+ * and so is a missing status that the painter paints grey. Then the link load scale of the link halves. A status
+ * with no refId (an unavailable cell) is not in this legend.
+ */
+export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx: LegendContext): LegendBlock[] {
+  const statusItems = new Map<string, Item[]>();
+  const links: Item[] = [];
+  const states: Record<(typeof STATE_ENTRIES_V4)[number]['key'], string[]> = { down: [], stale: [], missing: [] };
+  for (const patch of patches.values()) {
+    addItem(links, states.missing, patch.cellId, 'link', patch.link?.a2b);
+    addItem(links, states.missing, patch.cellId, 'link', patch.link?.b2a);
+    const view = patch.statusView;
+    if (!view?.refId) {
+      continue;
+    }
+    if (view.state === 'stale' || view.state === 'missing') {
+      if (view.state === 'stale' || linkStatusPaint(patch, ctx.theme) !== undefined) {
+        push(states[view.state], patch.cellId);
+      }
+      continue;
+    }
+    if (view.state === 'down' && !view.color) {
+      // `missing: down` with no value: the painter paints the theme red
+      push(states.down, patch.cellId);
+      continue;
+    }
+    const field = fields.get(view.refId);
+    if (field) {
+      const items = statusItems.get(view.refId) ?? [];
+      statusItems.set(view.refId, items);
+      items.push({
+        cellId: patch.cellId,
+        kind: 'node',
+        field,
+        refId: view.refId,
+        color: view.color ?? '',
+        stepIndex: -1,
+        value: view.value,
+        text: view.text,
+      });
+    }
+  }
+  const out: LegendBlock[] = [];
+  for (const [refId, items] of statusItems) {
+    const scale = scaleOf(items[0], ctx);
+    if (!scale) {
+      continue;
+    }
+    const { auto, gradient } = scale;
+    const config = items[0].field.config;
+    const block: LegendBlock = {
+      key: `status:${refId}`,
+      title: config.displayName ?? config.displayNameFromDS ?? refId,
+      entries: scale.entries,
+      ...(gradient
+        ? { gradient: auto ? { ...gradient, min: auto.format(auto.min), max: auto.format(auto.max) } : gradient }
+        : {}),
+      cellIds: [],
+    };
+    for (const item of items) {
+      push(block.cellIds, item.cellId);
+      const entry = entryOfV4(block, item);
+      if (entry) {
+        push(entry.cellIds, item.cellId);
+      }
+    }
+    out.push(block);
+  }
+  const entries = STATE_ENTRIES_V4.filter(({ key }) => states[key].length).map(({ key, label }) => ({
+    key,
+    label,
+    color: statusColor({ state: key }, ctx.theme),
+    cellIds: states[key],
+  }));
+  if (entries.length) {
     const cellIds: string[] = [];
-    statuses.forEach((s) => push(cellIds, s.cellId));
-    out.push({
-      key: 'status',
-      title: 'Status',
-      entries: STATUS_ENTRIES.map(({ key, label }) => ({
-        key,
-        label,
-        color: statusColor({ state: key }, ctx.theme),
-        cellIds: statuses.filter((s) => statusLevel(s.state) === key).map((s) => s.cellId),
-      })),
-      cellIds,
-    });
+    entries.forEach((e) => e.cellIds.forEach((id) => push(cellIds, id)));
+    out.push({ key: 'state', title: 'State', entries, cellIds });
   }
-  if (nodata.length) {
-    out.push({
-      key: 'nodata',
-      entries: [{ key: 'nodata', label: 'No data', color: noDataColor(ctx.theme), cellIds: nodata }],
-      cellIds: nodata,
-    });
-  }
-  return out;
+  return [...out, ...scaleBlocks(links, ctx)];
 }
 
 /** The swatch of the collapsed legend chip: the colours of the first scale, low to high. */

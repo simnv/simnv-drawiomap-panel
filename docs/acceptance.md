@@ -7,6 +7,53 @@ draw.io 32.4.1. Stack: `docker compose` from this repository, started with
 Every result below is real output from this run. `npm run ci:local` passed end to end (exit 0): it runs the same steps as CI
 (`.woodpecker/build.yaml`, `.woodpecker/e2e.yaml`).
 
+## Binding model v4: bench
+
+P0-1, 2026-10-29. The v3 runtime source matches `main` at `a9967089e6d1f5b747f6b2a6cc0f06e64c0e34ff`.
+The fixture has 300 cells and 1000 distinct series, with one sample per series and seed 42.
+Each cell matches one series by `job`; 700 series have no cell.
+The fixture builder has no v3 type. `benchV3Config` adds one v3 pattern per cell.
+
+| Engine        | CPU model    | Runs per process | Process medians                 | Median of the three medians |
+| ------------- | ------------ | ---------------- | ------------------------------- | --------------------------- |
+| v3 `bindPlan` | Apple M5 Pro | 20               | 16.310 ms, 16.396 ms, 16.373 ms | **16.373 ms**               |
+| v4 `bindV4`   | Apple M5 Pro | 20               | 15.758 ms, 15.046 ms, 14.921 ms | **15.046 ms**               |
+
+Command, run three times: `npx vitest run src/binding/bind.v3.bench.test.ts --maxWorkers=1` for the v3 row (the file went away with the v3 engine at the cut-over, P1-13c; the number stays as the record), and `npx vitest run src/binding/bind.v4.bench.test.ts --maxWorkers=1` for the v4 row.
+Each process passed: `Test Files 1 passed (1)`, `Tests 1 passed (1)`.
+The test checks the value of each cell after each measured pass.
+
+The timer covers `bindPlan` and the lazy v3 resolver in jsdom, with a new panel data identity per refresh.
+It includes the frame copy, the frame index, series selection, value display and patch creation.
+Fixture creation, SVG indexing, pattern resolution, resolver creation and assertions are outside the timer.
+This is a unit bench. It does not measure browser paint or a dashboard refresh.
+
+## Binding model v4: P1 checks
+
+The list of P1 acceptance (spec section 9) for the v4 runtime. The v3 popup results are archived in `docs/archive/acceptance-v3-popup.md`: the popup, the patterns and the v3 config are gone. A line is `Pass` only with a command output. A line with "Open" has no output yet, and its task or gate is named.
+
+Unit proof, 2026-10-29, worktree of P1-20: `npx vitest run <the unit files below> --maxWorkers=4` gave `Test Files  29 passed (29)` and `Tests  733 passed (733)`. The P1-G gate checks that each item has a passing test or e2e run, and records the full output.
+
+| #   | Check (spec section 9)                                                   | Proof                                                                                                                                                             | Result                                                    |
+| --- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 1   | Parse: both pilot configs, an invalid class, parent and override         | `src/model/v4.test.ts`, `src/model/validate.test.ts`, `src/binding/classes.test.ts`                                                                               | Pass (unit)                                               |
+| 2   | YAML round trip of both pilots; block style for `${` and `[`             | `src/options/yamlConfig.test.ts`, `src/options/ConfigYamlEditor.test.tsx`                                                                                         | Pass (unit)                                               |
+| 3   | Matcher forms, anchoring, escapes, dialect, empty block                  | `src/binding/matcher.test.ts`                                                                                                                                     | Pass (unit)                                               |
+| 4   | Templates, `missing-attr`, shield, URL order, A17 formats                | `src/binding/template.v4.test.ts`, `src/interact/links.v4.test.ts`                                                                                                | Pass (unit). The real Grafana formats run in item 14.     |
+| 5   | `extends`, overrides, row match                                          | `src/binding/classes.test.ts`, `src/binding/uses.test.ts`, `src/binding/bindV4.test.ts`                                                                           | Pass (unit)                                               |
+| 6   | Status colour and text, severity, `applyKey`, legend, band               | `src/binding/statusV4.test.ts`, `src/binding/severity.test.ts`, `src/binding/color.v4.test.ts`, `src/render/applier.test.ts`, `src/legend/model.v4.test.ts`       | Pass (unit)                                               |
+| 7   | No data, `missing: down`, NaN, coverage                                  | `src/binding/statusV4.test.ts`, `src/binding/bindV4.test.ts`                                                                                                      | Pass (unit)                                               |
+| 8   | Freshness, cadence, the clock on relative and absolute ranges            | `src/binding/freshness.test.ts`, `src/visuals/useSampleStale.v4.test.tsx`                                                                                         | Pass (unit)                                               |
+| 9   | Several series, units, frame merge, N lines, Y range                     | `src/query/seriesIndex.test.ts`, `src/query/reduce.v4.test.ts`, `src/binding/units.v4.test.ts`, `src/interact/cardModel.v4.test.ts`, `src/visuals/domain.test.ts` | Pass (unit)                                               |
+| 10  | Links: direction, `at=target`, capacity chain, `cap`, edge ends          | `src/binding/capacity.v4.test.ts`, `src/binding/edgeEnds.test.ts`, `src/binding/linkFeeds.test.ts`                                                                | Pass (unit)                                               |
+| 11  | The report: each entry kind; the orphan cap of 50                        | `src/binding/report.test.ts`, `src/binding/bindV4.test.ts`                                                                                                        | Pass (unit)                                               |
+| 12  | A `version: 3` config binds nothing and gives one notice                 | `src/model/v4.test.ts`, `src/stage/useBoundDiagram.test.tsx`                                                                                                      | Pass (unit)                                               |
+| 13  | `src/harness.ts` exports the pinned names                                | `src/harness.test.ts`                                                                                                                                             | Pass (unit)                                               |
+| 14  | E2E, `plugin` project: the v4 demo, the YAML option, URL encoding        | `tests/v4-demo.spec.ts` (P1-18)                                                                                                                                   | Open: P1-18 and the P1-G gate                             |
+| 15  | E2E: the re-fixtured specs of the P1 column                              | P1-15a, P1-15b, P1-16, P1-17                                                                                                                                      | Open: those tasks and the P1-G gate                       |
+| 16  | Bench: the v4 bind is faster than the P0 number                          | `src/binding/bind.v4.bench.test.ts`                                                                                                                               | Pass: 15.046 ms against 16.373 ms (section "bench" above) |
+| 17  | `check:bundle` and `tests/no-drawio.spec.ts`: no YAML chunk in view mode | `npm run build && npm run check:bundle`, `tests/no-drawio.spec.ts`                                                                                                | Open: the P1-G gate                                       |
+
 ## E2E suites by Grafana version
 
 The Playwright projects are `matrix` (the tests on surfaces that differ between Grafana versions) and `plugin` (the plugin's own DOM).
@@ -23,6 +70,8 @@ A plugin DOM regression on 12.4 only is found by `e2e:release`, not by the push 
 
 ## Spec checks (spec section 6, with the superseded decisions applied)
 
+Results of the v3 runtime (before P1). The P1-G gate replaces them.
+
 | #   | Check                        | Command                                                          | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ---------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1   | build, typecheck, lint, test | `npm run typecheck && npm run lint && npm test && npm run build` | PASS. typecheck: 0 errors. lint: `2 problems (0 errors, 2 warnings)`; the 2 warnings are the deprecated `Select` in an option editor. test: `Test Files 29 passed (29)`, `Tests 309 passed (309)`. build: `webpack 5.112.0 compiled successfully`.                                                                                                                                                                                                                                                                             |
@@ -34,12 +83,14 @@ A plugin DOM regression on 12.4 only is found by `e2e:release`, not by the push 
 
 ## Current UI
 
+Results of the v3 runtime (before P1). The P1-G gate replaces them.
+
 | Feature                   | Proof                                                                                                            | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Link colours by direction | `tests/view.spec.ts`                                                                                             | PASS on both versions. Link halves take colours from the synthetic traffic; link labels stay above the coloured halves; curved halves follow the edge path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Node icon colouring       | `tests/view.spec.ts` (`node state colours the node icon, not the whole node`)                                    | PASS on both versions. The icon of the node whose `up` series is 0 is red; the node shape keeps its colour.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Grafana-native colours    | `tests/color.spec.ts`                                                                                            | PASS on both versions. A WAN link takes its colour from the continuous scheme of its field (override of query `W`). A LAN link takes it from the thresholds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Capacity sources          | `tests/color.spec.ts`                                                                                            | To run after step 2 (2026-10-25): one `resolveCapacity` for link halves and card directions; the capacity text is in the unit of the value field. The hover card shows the capacity of a WAN link from the field **Max** (`41% of 100 Mb/s`) and of a LAN link from the port speed series `S` (`48% of 1 Gb/s`). The hand-drawn panel reads the capacity from a cell attribute.                                                                                                                                                                                                                                                                                                     |
+| Capacity sources          | `tests/color.spec.ts`                                                                                            | Replaced by v4 (P1-20): the capacity of a link is a `capacity` series, else the attribute `cap`, else none; the field Max is gone. See item 10 above and README, "Capacity". The e2e run of the v4 demo is item 14.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Live zoom and pinch zoom  | `tests/zoom.spec.ts`                                                                                             | PASS on both versions. Ctrl+wheel (a trackpad pinch) zooms, the reset button shows and restores the view. On a phone, a one-finger swipe at the configured view does not zoom, a pinch zooms, and the reset button restores the view. The alignment of the fitted diagram (top, centred) is a unit test: `DrawioMapPanel.test.tsx` "a fitted diagram goes to the top by default, to the centre with Align: center".                                                                                                                                                                                                                                                                 |
 | Reset button corner       | `tests/reset-corner.spec.ts`                                                                                     | PASS on both versions. One dashboard with four panels (one legend corner each) for untitled panels and one for titled panels: two page loads for 8 checks. After a zoom, the reset button is in the top-left corner. It does not touch the Grafana panel menu button (panel with and without a title), the status band, the warning badge or the legend in any corner. A click restores the view.                                                                                                                                                                                                                                                                                   |
 | Theme                     | `tests/view.spec.ts`                                                                                             | PASS on both versions. The diagram background follows the Grafana theme (light and dark), not the OS preference.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -52,6 +103,8 @@ Screenshots: `docs/images/card-hover-desktop.png`, `card-pinned-desktop.png`, `c
 `link-labels-value.png`, `link-labels-phone-zoomed.png` (set `DMAP_SCREENSHOTS=docs/images` to write them again).
 
 ## Isolation variants
+
+Results of the v3 runtime (before P1). The P1-G gate replaces them.
 
 The services of the compose profile `isolation` (see `docker-compose.yaml`). Command:
 `docker compose --profile isolation up -d --wait <service>`, then `GRAFANA_URL=<url> npx playwright test`.
@@ -71,261 +124,3 @@ The services of the compose profile `isolation` (see `docker-compose.yaml`). Com
 - The failed test in the sandbox is `live zoom on a phone › the fitted diagram is at the top of a tall panel and
 centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The fitted diagram fills the full panel
   height on a phone viewport in the sandbox. This is an open item.
-
-## Bindings popup: Task 0
-
-Spike and measurements for the bindings popup (spec `2026-10-23-bindings-popup-design.md`, sections 4.5 and 4.6).
-The spike was a `React.lazy(() => import('./spike'))` component that shows `data-testid="dmap-spike"` in panel edit.
-The test opened the panel editor and expected the element. The chunk (`164.js`, 321 bytes) loaded in all variants.
-
-| Grafana | Setting                   | URL                           | Chunk loads |
-| ------- | ------------------------- | ----------------------------- | ----------- |
-| 12.4.13 | none                      | http://localhost:3012         | pass        |
-| 13.2.4  | none                      | http://localhost:3013         | pass        |
-| 12.4.13 | frontend sandbox          | http://localhost:3122         | pass        |
-| 13.2.4  | frontend sandbox          | http://localhost:3123         | pass        |
-| 13.2.4  | `content_security_policy` | http://localhost:3133         | pass        |
-| 13.2.4  | sandbox + CSP             | http://localhost:3143         | pass        |
-| 13.2.4  | `app_sub_url=/grafana`    | http://localhost:3153/grafana | pass        |
-
-Stage build time (`sanitizeSvg` + `mountSvg` + `buildCellIndex`, `performance.now()`, Grafana 12.4.13, Chromium, first
-build after page load) and JS heap after two forced garbage collections (CDP `Runtime.getHeapUsage`):
-
-| Diagram                                          | SVG size | Cells | Build time | Heap, one stage | Heap, two stages |
-| ------------------------------------------------ | -------- | ----- | ---------- | --------------- | ---------------- |
-| `demo-l3.svg`                                    | 72 kB    | 108   | 8 ms       | 38.0 MB         | 38.7 MB          |
-| `demo-l1.svg`                                    | 101 kB   | 172   | 11 ms      | 38.1 MB         | 38.9 MB          |
-| `legacy-html-labels.svg`                         | 386 kB   | 100   | 12 ms      | 39.1 MB         | 38.8 MB          |
-| synthetic (`scripts/gen-synthetic-svg.mjs 2000`) | 668 kB   | 2001  | 77 ms      | 43.8 MB         | 45.4 MB          |
-
-Decisions:
-
-- Import strategy (spec 4.6): **lazy** (`React.lazy`). All seven variants are green.
-- Stage build (spec Q3): **in render** (`useStage` as it is). The largest synthetic diagram builds in 77 ms, below the
-  200 ms limit. A second stage adds 0.7 to 1.6 MB.
-
-## Bindings popup: Phase 1 results
-
-Commands: `npm run e2e:12`, `npm run e2e:13` (the version split suite, see "E2E suites by Grafana version"), and `GRAFANA_URL=<url> npx playwright test tests/bindings-popup.spec.ts`
-for the variants (`AUTHORING_SANDBOX=1` on the sandbox ports).
-
-| Grafana | Setting                   | URL                           | Result                              |
-| ------- | ------------------------- | ----------------------------- | ----------------------------------- |
-| 12.4.13 | none                      | http://localhost:3012         | full suite passed (4 skipped)       |
-| 13.2.4  | none                      | http://localhost:3013         | full suite passed (4 skipped)       |
-| 12.4.13 | frontend sandbox          | http://localhost:3122         | `bindings-popup.spec.ts`: 19 passed |
-| 13.2.4  | frontend sandbox          | http://localhost:3123         | `bindings-popup.spec.ts`: 19 passed |
-| 13.2.4  | `content_security_policy` | http://localhost:3133         | `bindings-popup.spec.ts`: 19 passed |
-| 13.2.4  | sandbox + CSP             | http://localhost:3143         | `bindings-popup.spec.ts`: 19 passed |
-| 13.2.4  | `app_sub_url=/grafana`    | http://localhost:3153/grafana | `bindings-popup.spec.ts`: 19 passed |
-
-- The popup chunk (`bindings-popup.js`, 91 KB) loads in all seven variants. `dist/module.js` is 332 KB; `check:bundle` scans every
-  `dist/*.js` for draw.io tokens and reports the sizes.
-- The popup is a plugin-owned dialog, not a Grafana `Modal` (spec section 11, "Sandbox DOM access"): in the frontend sandbox, a
-  `Modal` gives plugin code a mock element for the diagram stage. The browser tests check, in every variant, that the stage root is in
-  the page with no sandbox mock element, that the focus is in the dialog on open and returns to the opener, that Tab wraps, and that
-  the discard question, a Select menu and the draw.io modal paint above the dialog.
-- `tests/authoring-compat.spec.ts` tests a separate probe component (`tests/authoring-compat.probe.tsx`) against Grafana panel APIs.
-  It does not use the inspector of the plugin, so it needs no migration. Run it with `AUTHORING_COMPAT=1` and
-  `tests/authoring-compat.config.ts` on the isolated stack that `tests/authoring-stack.mjs` generates.
-
-## Bindings popup: Phase 2 results
-
-Phase 2 adds the live hover card preview, field sources with reset, undo and redo, the tab layout below 1000 px, and the
-query result table, "Used by" list and deletion (spec `2026-10-23-bindings-popup-design.md`, section 6, P2).
-
-| Acceptance item (spec section 6, P2)                                                                      | Evidence                                                                                                                                                                  |
-| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The card preview shows the rows of the panel card for the same element and data                           | `tests/bindings-popup-inspector.spec.ts`: rows of the preview equal the rows of the hover card of `device-1` in the panel. Unit: `CardPreview.test.tsx`, `Card.test.tsx`. |
-| The preview updates on a data refresh without a click; an element without hover rows has a message        | Unit `CardPreview.test.tsx` (new resolver changes the rows; empty states). e2e: "No card for this element" for `chart-1`.                                                 |
-| A pattern field shows the pattern name; an override shows "Override" with a reset button                  | e2e: chip "Pattern Repeated routers"; "Override" after an edit; "Reset Label template to pattern". Unit `fieldSource.test.ts`, `BindingInspector.test.tsx`.               |
-| A reset inside a hover row resets the whole rows array; the Effective binding preview agrees              | e2e: after the reset the Overrides group count drops to 0 and the pattern rows show. Unit `BindingInspector.test.tsx`, `draft.test.ts` (`unset`).                         |
-| Ten edits and ten undos restore the saved config; redo replays; one field is one step; a selection splits | Unit `history.test.ts`: ten edits, "abc" in one field, two fields, selection between keystrokes, owner change, window, `coalesceMs: 0`, caps of 200 steps and 5 diagrams. |
-| A geometry save is one step; Apply clears the history                                                     | Unit `history.test.ts`; `BindingsPopup.test.tsx` (Apply clears). e2e: Apply disables Undo and Redo.                                                                       |
-| Ctrl+Z in a text input or the Monaco editor keeps the native undo; with a nested dialog it does nothing   | Unit `usePopupKeys.test.tsx`, `BindingsPopup.test.tsx`. e2e: Label template, the Prometheus code editor, the metrics explorer dialog.                                     |
-| At 1280 px three panes; at 900 px three tabs; the tabs keep the selection                                 | e2e: 1280x800 `panes`, 900x700 `tabs`; a stage click opens the Inspector tab; the selection survives tab changes. Unit `PopupLayout.test.tsx`.                            |
-| The query pane shows a result table, a "Used by" list and deletes with a confirmation                     | e2e: table of `Standalone trend`, used-by of `health`, Esc keeps the query, delete then Undo. Unit `QueryPane.test.tsx`, `draft.test.ts` (`remove-query`).                |
-
-Screenshots (written by the browser tests to `/tmp/dmap-popup-p2/`): `inspector-desktop-<port>.png` (1440x900, card preview and
-source chips), `sources-desktop-<port>.png` (an override with reset buttons), `query-table-<port>.png`, and
-`tabs-list|diagram|inspector-900-<port>.png` (900x700 tab mode).
-
-Decisions and deviations:
-
-- The tab threshold is the width of the popup (95 vw of the window minus padding), not the window: a 1024 px window has tabs.
-- A text-like `input` keeps the native undo. A checkbox or a switch has no text undo, so Ctrl+Z there undoes the draft.
-- The history keys also do nothing while another `[role="dialog"]` is visible in the page, also when the focus has not moved into
-  it yet. In the frontend sandbox a Grafana dialog is a mock that this check cannot see; the focus guard and the event target
-  check of the Esc owner still apply there.
-- The reset of a path in the health rule resets the whole `status` rule (its schema needs the binding and the default), as a hover
-  row path resets `hover.rows`.
-- Coalescing joins edits that change exactly one leaf. The leaves come from a diff of the owner's display before and after the
-  edit, so typing into one field of a binding (which the editor writes whole) is one step. When the first step creates a value
-  with many leaves (a new binding), the next edit of one of them within the window joins it.
-- Undo and redo keep the 5-revision diagram cap: whole steps go, the oldest past steps first. An undo or redo with nothing to do
-  ends the edit run, and leaves the query editors and the validity messages alone; a real step clears the validity messages and
-  remounts the query editors.
-- A reset of `hover.rows` removes only that key; `hover.enabled` stays (a hover with only `enabled` is valid and merges with the
-  rows of the patterns).
-- The tabs follow the ARIA tabs pattern (one tab stop, arrow keys, Home and End).
-
-## Bindings popup: Phase 3 results
-
-Phase 3 adds multi-select on the stage, the box select, a pattern from the selection, bulk edit with leaf operations, and the
-pause of the panel behind the popup (spec `2026-10-23-bindings-popup-design.md`, section 6, P3, and section 11).
-
-| Acceptance item (spec section 6, P3)                                                                                    | Evidence                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shift-click three cells, bulk label: three overrides; rows and link bindings unchanged; one undo removes all three      | e2e `bindings-popup-selection.spec.ts` test 1: Overrides (0) → (3), one Undo → (0), Redo → (3), Apply, reopen: three overrides, the hover rows of a cell unchanged. Unit `BulkPane.test.tsx`, `draft.test.ts` (`display-many`, `batch`), `history.test.ts`.                                                                                           |
-| Box select over two routers ranks the proposals by extra cells, `ids` last; Create adds it                              | e2e test 2 (a diagram whose nodes carry a `role` attribute): `role=router`, "matches 3, extra 1", the extra marked on the canvas, ids last; ids clears the extras; Create is one step. Unit `proposeSelector.test.ts`, `multiSelect.test.tsx`.                                                                                                        |
-| A band released outside the stage selects the clipped band; Esc selects nothing; the click after a band selects nothing | Unit only (the e2e repeats were deleted by the test cost audit): `DiagramStage.test.tsx` "clips a band that ends outside the stage to the stage", "cancels the band on Esc", "suppresses the click after a band once", "keeps suppressing the click after Esc"; `boxTargets.test.ts`. The e2e tests 1 and 2 keep the real shift-click and shift-drag. |
-| With a 5 s refresh the panel behind keeps its paint for three refreshes; on close it updates once                       | e2e `refresh.spec.ts` "popup open": the link halves and `data-dmap-patched` do not change and the panel subtree has zero DOM mutations over three refreshes; after Close the halves change. A control (no popup) shows mutations. Unit `DrawioMapPanel.test.tsx`.                                                                                     |
-| A status deadline during the pause marks the status stale                                                               | Unit `DrawioMapPanel.test.tsx`: the band shows "stale" with the popup open, with one applier call; the popup stays open.                                                                                                                                                                                                                              |
-| A close during a loading preview leaves the panel consumers attached                                                    | Unit `DrawioMapPanel.test.tsx`: after Discard and close, a value on the panel's request reaches the panel.                                                                                                                                                                                                                                            |
-
-Measurement (unit, jsdom, `DrawioMapPanel.test.tsx`, demo diagram, three dashboard refreshes with new data; measured with the rules of version 1, the test now binds the version 3 demo config):
-
-| Run        | Panel applier calls during the 3 refreshes | Panel view renders during the 3 refreshes | After close                          |
-| ---------- | ------------------------------------------ | ----------------------------------------- | ------------------------------------ |
-| no popup   | 3                                          | 6                                         | not applicable                       |
-| popup open | 0                                          | 0                                         | 1 applier call, 2 renders (one data) |
-
-In the browser (e2e): zero DOM mutations in `dmap-panel` over three refreshes while the popup is open.
-
-Snapshot store (simplify step 3, 2026-10-25, `docs/superpowers/specs/2026-10-25-simplify-step3-snapshot-store-design.md`):
-
-| Check                                                                                                                    | Evidence                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A refresh keeps the last result of every entry as cached until the new one arrives; a changed query shows loading        | Unit `store.test.tsx` (keep-last, the render check: a new match key gives loading, a new generation gives the kept copy), `DrawioMapPanel.test.tsx` "rejects old results when the open card context changes". e2e `refresh.spec.ts`, `zoom.spec.ts` (to run after step 3). |
-| A hover row of the query of a visible binding at the same element adds no request; a widget of another width is one more | Unit `DrawioMapPanel.test.tsx` "a widget of 264 px gives the requests [264]; of 400 px, [400, 264]", `store.test.tsx` sharing cases. e2e `panel-edit-requests.spec.ts` (unchanged count: scalar bindings, no widgets).                                                     |
-| The hover card draws its texts first and its charts in a transition; a pinned or inline card at once                     | Unit `Card.test.tsx` "deferred charts". e2e `links.spec.ts` waits for the chart.                                                                                                                                                                                           |
-| One frame copy per result; the models and series are cached per result object                                            | Unit `controller.test.ts` "the boundary copy", `frames.test.ts` "the history cache", `engine.test.ts` `historySeries`. Bench below.                                                                                                                                        |
-
-Bind without time (simplify step 4, 2026-10-25, `docs/superpowers/specs/2026-10-25-simplify-step4-bind-without-time-design.md`):
-
-| Check                                                                                             | Evidence                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The bind takes no clock; the same inputs give the same patches at any moment                      | Unit `engine.test.ts` "binds without time", `status.test.ts` "gives the stale view with the moment it applies".                                                                                                                                                                                           |
-| A status turns stale at `sampleAt + staleAfterMs` as before, in the band, the paint and the stage | Unit `engine.test.ts` "staleStatuses" (the moment itself is not stale, one ms later it is; a stale view replaces an earlier missing view), `DrawioMapPanel.test.tsx` "lets a freshness deadline mark the status stale while paused", `BindingEditor.test.tsx` "turns stale at its deadline on the stage". |
-| The clock causes no bind: a panel-source data update binds once (two before step 4)               | Unit `DrawioMapPanel.test.tsx` "a panel-source data update with a fresh status sample binds once".                                                                                                                                                                                                        |
-| A sample already stale on arrival shows stale in the first applier call                           | Unit `DrawioMapPanel.test.tsx` "a status sample that is already stale on arrival", `useSampleStale.test.tsx` "corrects a deadline that is already passed when it arrives".                                                                                                                                |
-| One clock: at most one timer per status set or card row, capped, released on change and unmount   | Unit `useSampleStale.test.tsx` (`useClock`: one timer, the cap at 2147483647 ms, release), `Card.test.tsx` and `SparklineView.test.tsx` (`useSampleStale`, unchanged).                                                                                                                                    |
-
-Patch diff and geometry cache (simplify step 5, 2026-10-26, `docs/superpowers/specs/2026-10-26-simplify-step5-patch-diff-design.md`):
-
-| Check                                                                                                           | Evidence                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A refresh with equal patches makes no DOM mutation in the stage; a changed cell is the only one written         | Unit `applier.test.ts` "applyPatches diff" (zero `MutationObserver` records on an equal apply; the records of a colour change stay inside the cell), `DrawioMapPanel.test.tsx` "a data refresh with equal values keeps the overlay elements". Bench below.                                                                                          |
-| The overlay elements live across refreshes; a change updates them in place                                      | Unit `overlay.test.ts` "renderOverlay keeps its elements across refreshes" (`isSameNode`, a `mask` attribute stays, a width change rewrites the points of the half and its head, a half that goes rebuilds that link only, the child order path, overlay holds after a rebuild). `linkLabels.test.ts` "a refresh keeps the strokes and their mask". |
-| The path geometry is measured once per element                                                                  | Unit `geometry.test.ts` "measures a path once" (`getTotalLength` once, `getPointAtLength` once per arc length, the matrices on every call). Bench below: `getPointAtLength` per refresh.                                                                                                                                                            |
-| A node and its parts change together; another colour scheme writes every cell; a new stage gets every attribute | Unit `applier.test.ts` "keeps the icon colour when the patch of the icon cell changes or goes", "a changed description of the node leaves the grey of the icon cell", "another colour scheme resets and writes every cell", "an applied set of another index counts as empty", "marks the cells of a new stage".                                    |
-| No subtree follows the OS colour scheme                                                                         | Unit `sanitize.test.ts` "keeps the colour scheme of the root and strips it from every descendant" (idempotent). `docs/security.md`.                                                                                                                                                                                                                 |
-
-Browser bench `scripts/bench/refresh.mjs` (Chromium, demo dashboard on 13.2, 1600×1000, 2 stages, 118 cells, 24 link halves, 10 refreshes by the refresh button, 1500 ms gap; the demo values change on every refresh, so some widths and colours change each time):
-
-| Per refresh                                                    | Before (main dist, `e5a27d5`)                          | After                                                |
-| -------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------- |
-| DOM mutation records under the stages                          | 723 (648 attributes, 63 nodes added, 13 nodes removed) | 242 (242 attributes, 0 nodes added, 0 nodes removed) |
-| apply passes (animation frame callbacks that mutated a stage)  | 2; median 2.40 ms, p90 3.30 ms, max 3.80 ms            | 2; median 0.20 ms, p90 0.30 ms, max 0.30 ms          |
-| path API calls: `getTotalLength`, `getPointAtLength`, `getCTM` | 13, 713, 26                                            | 0, 0, 0                                              |
-
-The "before" dist is `e5a27d5` (before the label halo of `8e0ad81`); the "after" dist is this branch with main merged. The
-halo is a stroke attribute of the label texts, not a per-refresh write, so the two runs compare the same work. The 242
-attribute writes that remain are the changed cells of the refresh: the demo values move on every refresh, so most halves
-get a new width (five attributes per half: `stroke`, `stroke-width`, `data-dmap-status` and `data-dmap-step` on the
-polyline, `fill` on the arrow head), and the applier resets and writes those link cells. The consumer team's dense sheet
-has mostly idle links, so its share of equal cells is higher than the demo's.
-
-Status paint (2026-10-26, `docs/superpowers/specs/2026-10-26-status-paints-design.md`):
-
-| Check                                                                                                                                                                          | Evidence                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No status marker on any element; the band stays                                                                                                                                | Unit `overlay.test.ts` "status paint of the halves" (no `.dmap-status-marker`), `linkLabels.test.ts` "a status on a patched edge reserves no room". e2e `visual-regions.spec.ts` (count 0 in every state; the band row title).                                                                                       |
-| One status colour per state in the elements, the band and the legend: palette red, palette orange, no-data grey                                                                | Unit `color.test.ts` "status colours" (both themes), `legend/model.test.ts` "Status" block.                                                                                                                                                                                                                          |
-| A device with a status: a border `max(2, 1.5 × width)` in the status colour and a 20 % tint of its fill; border only when the fill is not an opaque colour                     | Unit `applier.test.ts` "applyPatches status paint" (widths 6 and 2, the tint of the drawn fill and of a `shape` target, the border over a `stroke` target, `url(#g)` keeps its fill). e2e `visual-regions.spec.ts` "widespread outage" (`stroke-width: 2px`, a tinted computed fill, the attribute untouched).       |
-| A link with a status: both halves, arrow heads and end dots in the status colour over the binding colour; `missing` leaves the halves; an edge without halves takes the stroke | Unit `overlay.test.ts` "status paint of the halves", `applier.test.ts` "a link with halves and a down status paints the end dots", "an edge without halves takes the status colour on its stroke", `color.test.ts` "linkStatusPaint". e2e `visual-regions.spec.ts` (the halves of `link-1` equal the device stroke). |
-| The paint goes with a normal status and with the patch; a theme change paints again; an equal apply writes nothing                                                             | Unit `applier.test.ts` "the paint goes with a normal status and with the patch", "the same status again writes nothing; another theme writes the paint in its own colour", `overlay.test.ts` "a new theme paints the same elements".                                                                                 |
-| The hover card shows the state and the reason first, also with hover rows                                                                                                      | Unit `cardModel.test.ts` "shows the status state and its reason first", `DrawioMapPanel.test.tsx` "a node card shows the configured rows" (the status row, then the CPU row).                                                                                                                                        |
-
-Arrow head scaling (2026-10-28, `docs/superpowers/specs/2026-10-28-arrow-head-scaling-design.md`):
-
-| Check                                                                                                                                                                                                        | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The head is 8 by 8 for a half up to 2 units wide; above, the base grows by 2 and the length by 0.5 per unit of width; the base is at least twice the stroke from 2 to 10                                     | Unit `overlay.test.ts` "the arrow head grows with the drawn width". e2e `view.spec.ts` "link arrows stand away from the bends of the link path and stand out of their stroke" (the head base against the drawn stroke width).                                                                                                                                                                                                                                                                    |
-| The stroke stops at the middle of its head; a one-way half cuts the port end only                                                                                                                            | Unit `overlay.test.ts` "a wide half has a wide head; the stroke stops at the middle of the head", "a one-way half cuts its stroke at the port end only".                                                                                                                                                                                                                                                                                                                                         |
-| The split and a one-way tip keep the longest head to the bends, at least 16 (a 20-unit jetty keeps the tip at the port)                                                                                      | Unit `overlay.test.ts` "linkSplit", "arrow tip position" (with "keeps the tip of a single direction at the port behind a 20-unit jetty"). e2e `view.spec.ts` (the same test).                                                                                                                                                                                                                                                                                                                    |
-| A width change on a refresh: the same elements, new points, the same tip, split and label places, the same mask frame                                                                                        | Unit `overlay.test.ts` "a width change redraws the half and its head in the same elements", `linkLabels.test.ts` "a half that gets wide grows its head on a refresh".                                                                                                                                                                                                                                                                                                                            |
-| The label obstacle of a head is the triangle of the head at `linkWidth.max`; the short WAN link of the demo L3 sheet keeps both value labels; a 36-unit link keeps both labels beyond the wings of the heads | Unit `linkLabels.test.ts` "the obstacle of an arrow head is the head of the widest half", "the short WAN link (104 units) keeps both value labels", "a link of 36 units keeps both labels beyond the wings of the widest heads"; `labelPlacement.test.ts` "placeHalfLabel: arrow heads". e2e `link-labels.spec.ts` "a link too short for a spot beside its stroke keeps both labels beyond the wings of the widest heads" (screenshot with `DMAP_SCREENSHOTS`). e2e `link-labels.spec.ts` (all). |
-| Refresh cost: two more attribute writes per width change (the points of the half and of its head)                                                                                                            | Unit `paintParity.test.tsx` "the refresh bench" (94 → 96 panel), `DrawioMapPanel.test.tsx` "makes a fixed number of DOM mutations" (51 → 57, three width changes).                                                                                                                                                                                                                                                                                                                               |
-
-History bench (`src/query/history.bench.test.ts`, jsdom, 300 cells with one series of 300 points each, one worker, `--expose-gc --max-semi-space-size=512`; one pass = every cell once; "then" is the mean of 19 passes after the first):
-
-| Step, per pass                                     | Before (d534752)                     | After                                                                                    |
-| -------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `toHistory` for every cell                         | 8.0 ms, 38.8 MB (first pass 20.5 ms) | first pass 17.0 ms, 27.5 MB (the index and 300 display processors); then 0.17 ms, 253 KB |
-| the frame scan with the matchers (a fresh result)  | inside `toHistory`, every pass       | 2.8 ms, 7.4 MB, once per result                                                          |
-| the array copies                                   | inside `toHistory`, every pass       | 0.10 ms, 1.5 MB, once per result at the boundary                                         |
-| `historySeries` for every cell                     | 2.7 ms, 15.7 MB                      | first pass 1.6 ms, 4.8 MB; then 0.03 ms, 1 KB                                            |
-| 600 resolves over 600 entries (two queries a cell) | 159 ms, 117 MB (`preparedSnapshot`)  | first pass 2.4 ms, 3.0 MB; then 0.50 ms, 0.7 MB                                          |
-| `reduceValues` calls over 20 passes                | 6000                                 | 300 (one per match, field and reducer)                                                   |
-
-Browser bench `scripts/bench/card-hover.mjs` (Chromium trace, demo dashboard on 13.2, 20 bound cells, 300 ms gap, 16 cards opened in both runs; React renders a pointermove update in a task after the event, so the card cost is in "the next long task"):
-
-| Task                                                      | Before (main dist)                                 | After                                             |
-| --------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------- |
-| pointermove task that opened the card (longest per hover) | median 0.64 ms, p90 1.26 ms                        | median 0.64 ms, p90 1.25 ms                       |
-| next long task after it (the card and chart commit)       | 12 tasks; median 1.42 ms, p90 1.61 ms, max 2.25 ms | 8 tasks; median 1.22 ms, p90 1.72 ms, max 1.72 ms |
-| top self time under the opening tasks                     | `getPointAtLength` 2.2 ms, `getCTM` 0.3 ms         | plugin chunk frames only, all under 0.4 ms        |
-
-The demo cards are light (one or two rows), so the browser numbers are small on both sides; the first hover of a run pays about 270 ms once for the lazy chunks. The consumer team's dense diagram is the reference for the live profile.
-
-Legend highlight (O8, 2026-10-27, `docs/superpowers/specs/2026-10-27-o8-legend-highlight-design.md`):
-
-| Check                                                                                       | Evidence                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A legend entry or a legend row of the diagram marks the cells and does not render the panel | Unit `DrawioMapPanel.test.tsx` "highlight cost" (pointer and focus, zero view renders, no applier call), "a row hover does not render the panel view", `highlightStore.test.ts`. e2e `legend.spec.ts` 8/8, `hover-kinds` 2/2, `card-tooltip` 8/8, `visual-regions` 4/4 (13.2). |
-| A pinned card stays pinned; a refresh during a hover keeps the marks                        | Unit "a pinned card stays open and pinned during a legend hover", "a data refresh during a hover keeps the marks on the cells of the entry now".                                                                                                                               |
-| The popup ends the highlight; nothing behind the popup marks cells                          | Unit "opening the bindings popup ends the highlight; a hover behind it marks nothing", "a freshness deadline after the popup opened marks no legend cells" (it fails with no `paused` guard in the reader).                                                                    |
-
-Browser bench `scripts/bench/legend-hover.mjs` (Chromium, a copy of the demo dashboard with the auto refresh off, 13.2, 1600×1000, first panel, 9 legend entries and 2 diagram rows, 3 rounds, 300 ms gap; one run each; the task time holds the style and paint of the dim, which this change does not touch):
-
-| Per hover                                        | Before (main dist, `000c690`) | After                       |
-| ------------------------------------------------ | ----------------------------- | --------------------------- |
-| entry: React commits                             | 2 (the legend, then the view) | 1 (the legend)              |
-| entry: renders over 27 hovers (view/legend/band) | 28 / 54 / 27                  | 0 / 28 / 0                  |
-| entry: pointer event to the class change         | median 14.2 ms, p90 23.7 ms   | median 14.6 ms, p90 22.1 ms |
-| entry: main-thread task time in the window       | median 11.8 ms, p90 20.2 ms   | median 11.1 ms, p90 17.1 ms |
-| row: React commits                               | 1 (the view)                  | 0                           |
-| row: renders over 6 hovers (view/legend/band)    | 6 / 6 / 6                     | 0 / 0 / 0                   |
-| row: pointer event to the class change           | median 11.0 ms, p90 19.2 ms   | median 1.9 ms, p90 2.7 ms   |
-| row: main-thread task time in the window         | median 14.1 ms, p90 15.2 ms   | median 10.4 ms, p90 12.9 ms |
-
-The demo view is light (118 cells, few patterns), so its render costs little; the counts are the result that carries to the consumer team's dense sheet, where each view render costs more. A hover that leaves an open hover card (not pinned) still renders the view once: the panel closes the card.
-
-Bundle: `dist/module.js` 339 288 bytes (P2: 337 072), `dist/bindings-popup.js` 123 389 bytes (P2: 108 048); `check:bundle` passes.
-
-Screenshot (written by the browser tests to `/tmp/dmap-popup-p3/`): `pattern-from-selection-<port>.png` (two routers boxed, the
-proposal with its counts, the extra router outlined on the canvas). The bulk pane with the chip Mixed has only unit tests now
-(`BulkPane.test.tsx`).
-
-Decisions and deviations:
-
-- The pointer capture of the box starts when the pointer leaves the 4 px click slop, not at the press. A captured press sends its
-  click to the stage, so Shift + click could not toggle the cell under it. The release and `pointercancel` still reach the stage
-  from outside.
-- A box select always adds to the selection: the band starts with Shift, and Shift keeps the earlier cells. A plain click starts a
-  new selection.
-- The band tests the elements of the diagram: the nodes (with their ports and icon), the links (with their label) and other plain
-  cells. The canvas, layers, groups, the legend, and any cell that holds nodes or links (a root that draw.io nests) never join.
-- The demo diagram has no `router` attribute: every node has `pg-kind="node"`. Two demo routers get the label proposal `/^rtr-/` (no extra) first, then `{ kind: 'node' }` (8 extras). The e2e test uses a diagram with a `role` attribute to show the
-  attribute proposal of the spec. The ranking is the spec's: fewest extras first, attributes before label on a tie, ids last.
-- Hover rows, other arrays and the health rule (`status`) count as one leaf each in a bulk edit. The health rule is replaced as a
-  whole when its kind changes, so a lone leaf of it is not a valid override. `status.rules` of the plan is `status` here.
-- A binding is one unit leaf in a bulk edit: common only if deep-equal, else Mixed with no binding fields (spec section 11, decision A; astra dissents). A mixed field has a Clear button that removes it from every selected override.
-- While the popup is open the query context is held, and consumers buffer emissions and apply them once on close (unit `DrawioMapPanel.test.tsx`, `useBindingSnapshots.test.tsx`, `ChartLayer.test.tsx`). Esc keeps click suppression until its pointer ends; a window pointerup clears a pending band (`DiagramStage.test.tsx`).
-- A bulk change that clears a field removes it from the overrides. It cannot hide a value that a pattern gives the element.
-- A bulk edit joins one undo step while the same cells and the same leaf change within the window, as a single element does.
-- "Create pattern" is one `batch`: the pattern, then the selection of the first match, then the pattern scope (a selection resets the
-  scope, so it comes before it).
-- The panel view does not render at all while paused (a `React.memo` that ignores new props of the dashboard while it is paused),
-  and holds its inputs and its query service with `useHeld`. The popup's own consumers (`popup:<id>`) keep running on the live data.

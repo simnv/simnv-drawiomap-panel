@@ -3,8 +3,6 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@grafana/data';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import type { StatusView } from '../binding/status';
-import type { PlanCellPatch } from '../binding/engine';
 import { cellAt, patchAt } from '../interact/hit';
 import { buildCellIndex } from './svgStage';
 import { renderOverlay } from './overlay';
@@ -18,6 +16,9 @@ import {
   stageObstacles,
   watchLinkLabelFonts,
 } from './linkLabels';
+
+/** The status of a patch, as `statusViewOf` gives it. */
+type PatchStatus = NonNullable<CellPatch['statusView']>;
 
 /*
  * A plain diagram: two nodes and one edge of 320 units between them. The split is at x = 200; the a2b leg runs
@@ -631,14 +632,16 @@ describe('renderLinkLabels: obstacles', () => {
   it('the clearance of a node body is half its drawn stroke: a status border of 12 reserves 6 (R5)', () => {
     const node = `<g data-cell-id="n3"><g><rect x="100" y="20" width="40" height="30" stroke-width="8"/></g></g>`;
     const { root, index } = build(SVG(node));
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'down',
+      severity: 'down',
+      refId: 'up',
       reason: 'Down',
       conditionKey: 'k',
       queryIds: ['q'],
       coverage: { available: 1, expected: 1 },
     };
-    const down: PlanCellPatch = {
+    const down: CellPatch = {
       cellId: 'n3',
       scope: { cell: {} },
       urls: [],
@@ -666,7 +669,7 @@ describe('renderLinkLabels: obstacles', () => {
       scope: { cell: {} },
       urls: [],
       shape: { color: '#00ff00', target: 'stroke' },
-    } as unknown as PlanCellPatch;
+    } as unknown as CellPatch;
     applyPatches(index, new Map([['n5', patch]]), undefined, undefined, { theme, osDark: false });
     const r = stageObstacles(root, index, new Map(), 10).find((o) => o.kind === 'rect' && o.rect.y === 20);
     expect(r && r.kind === 'rect' && r.clearance).toBeGreaterThanOrEqual(1.25);
@@ -674,8 +677,10 @@ describe('renderLinkLabels: obstacles', () => {
   it('a stroke binding keeps the reserve of the grid through down and normal (the widest stroke is fixed)', () => {
     const node = `<g data-cell-id="n6"><g><rect x="100" y="20" width="40" height="30" stroke-width="1.5"/></g></g>`;
     const { root, index } = build(SVG(node));
-    const view = (state: 'down' | 'normal'): StatusView => ({
+    const view = (state: 'down' | 'normal'): PatchStatus => ({
       state,
+      severity: state,
+      refId: 'up',
       reason: state,
       conditionKey: 'k',
       queryIds: ['q'],
@@ -688,7 +693,7 @@ describe('renderLinkLabels: obstacles', () => {
         urls: [],
         shape: { color: '#00ff00', target: 'stroke' },
         statusView: view(state),
-      }) as unknown as PlanCellPatch;
+      }) as unknown as CellPatch;
     const ctx = { theme, osDark: false };
     const grid = stageObstacles(root, index, new Map(), 10);
     const prev = applyPatches(index, new Map([['n6', patch('down')]]), undefined, undefined, ctx);
@@ -724,15 +729,17 @@ describe('renderLinkLabels: obstacles', () => {
   });
   it('a status on a patched edge reserves no room: the obstacles are the stroke pieces and the node bodies', () => {
     const { root, index } = build();
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'down',
+      severity: 'down',
+      refId: 'up',
       reason: 'Down',
       conditionKey: 'k',
       queryIds: ['q'],
       coverage: { available: 1, expected: 1 },
     };
-    const patch: PlanCellPatch = { ...linkPatch('e1', { a2b: half(), labelMode: 'percent' }), statusView };
-    const patches = new Map<string, PlanCellPatch>([['e1', patch]]);
+    const patch: CellPatch = { ...linkPatch('e1', { a2b: half(), labelMode: 'percent' }), statusView };
+    const patches = new Map<string, CellPatch>([['e1', patch]]);
     render(root, index, patches);
     expect(root.querySelector('.dmap-status-marker')).toBeNull();
     // one leg: its label stands at the midpoint of the edge

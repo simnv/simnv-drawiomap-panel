@@ -99,7 +99,9 @@ describe('DrawioModal start-up', () => {
     expect(screen.getByTestId('dmap-editor-modal').textContent).not.toContain('Move or resize');
     fireEvent.click(help);
     await settle();
-    expect(screen.getByTestId('dmap-editor-help-text').textContent).toContain('Keep cell IDs unchanged to retain bindings. Assign queries and chart settings');
+    expect(screen.getByTestId('dmap-editor-help-text').textContent).toContain(
+      'Keep cell IDs unchanged to retain bindings. Assign queries and chart settings'
+    );
   });
 
   it('shows the missing-editor message and no frame when dist/drawio is missing, and Close closes', async () => {
@@ -185,7 +187,8 @@ describe('DrawioModal during panel refreshes', () => {
     const frame = (await screen.findByTitle('draw.io')) as HTMLIFrameElement;
     const srcdoc = frame.srcdoc;
     const port = hello();
-    port.onmessage?.({ data: JSON.stringify({ event: 'init' }) });
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'init' }) }));
+    expect(JSON.parse(port.postMessage.mock.calls[0][0]).xml).toBe(props.xml);
     const listen = vi.spyOn(window, 'addEventListener');
     const unlisten = vi.spyOn(window, 'removeEventListener');
     // A dashboard refresh renders the panel and its editor again: the inline callbacks are new functions.

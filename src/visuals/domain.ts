@@ -1,4 +1,4 @@
-import type { LowerBound, RangeMax } from '../model/config';
+import type { LowerBound, RangeMax } from '../model/v4';
 
 export type { LowerBound, RangeMax };
 

@@ -1,162 +1,85 @@
-import type { DiagramConfig, HoverRow, LinkLabelMode, NamedQuery, Pattern, QueryBinding } from '../model/config';
+import type { ClassV4, ConfigV4, RowV4 } from '../model/v4';
 
 /**
- * The bindings of the two demo panels (provisioning/dashboards/demo.json). The series come from the synthetic
- * generator in stack/metrics-gen/gen.py, through the panel queries of demo/dashboard.template.json.
- * The canvas shows colours only; the values and the histories show in the hover card. The colours come from the
- * field config of the panel (Color scheme and Thresholds, also by override).
+ * The bindings of the demo panels (provisioning/dashboards/demo.json). The series come from the synthetic generator
+ * in stack/metrics-gen/gen.py, through the panel targets of demo/dashboard.template.json. The refId of a target is
+ * its query name: lan_tx, lan_rx, wan_tx, wan_rx, speed, up, load, cpu, v4_samples and v4_nine.
+ *
+ * A link carries key=<job>, port=<device> and at=source or at=target: the end that owns the transmit and receive
+ * counters. tx is up and rx is down, so the halves follow the geometric direction of the link (spec 3.8.2).
+ * LAN links use key=node-rtr-a or node-rtr-b, port=br-lan and at=target; their capacity is the speed series of the
+ * same port. WAN and tunnel links carry cap=100M. The cells get these attributes in fixtures/demo/demo-l3.yaml.
  */
 
-const panelQuery = (refId: string): NamedQuery => ({ id: refId, name: refId, source: { kind: 'panel', refId } });
-const bind = (queryId: string, match: Record<string, string>): QueryBinding => ({ queryId, match, reducer: 'last' });
-/** The series of the two ends of a link, by the node and the port of each end. */
-const FROM = { job: 'node-${from.node}', device: '${from.port}' };
-const TO = { job: 'node-${to.node}', device: '${to.port}' };
-/** The series of a node, by its id. */
-const HOST = { job: 'node-${cell.pg-id}' };
-
-/** One combined up/down row: up leaves the first end (a2b), down enters it (b2a). */
-const trafficRow = (queryId: string, capacity?: number): HoverRow => ({
-  kind: 'combined',
-  label: 'Traffic',
-  series: [
-    { binding: bind(queryId, FROM), direction: 'up' },
-    { binding: bind(queryId, TO), direction: 'down' },
-  ],
-  ...(capacity === undefined ? {} : { capacity }),
+/** A link class: the transmit and receive targets, one updown row, the URL of the interface. */
+const traffic = (up: string, down: string): ClassV4 => ({
+  match: { key: 'job', port: 'device' },
+  up,
+  down,
+  linkLabel: 'none',
+  rows: [{ kind: 'updown', label: 'Traffic', up, down }],
+  url: '/d/drawiomap-demo?var-job=${key}&var-device=${port}',
+  urlTitle: 'Traffic of ${key}:${port}',
 });
-/** The rows of a node card: its state and its load, each with a history. */
-const nodeRows = (): HoverRow[] => [
-  { kind: 'history', label: 'state', binding: bind('C', HOST) },
-  { kind: 'history', label: 'load 1m', binding: bind('D', HOST) },
+
+const nodeRows = (): RowV4[] => [
+  { kind: 'history', label: 'state', query: 'up' },
+  { kind: 'history', label: 'load 1m', query: 'load' },
 ];
 
 /**
- * demo-l3: LAN links take their capacity from the port speed series S, WAN links from the field Max (an override
- * of query W), tunnels from a number. Later patterns override earlier ones for the same property of the same cell.
- * `wanLabel` turns the value labels of the WAN pattern on; the demo dashboard stays at the default (off) and the
- * e2e spec `tests/link-labels.spec.ts` uses the labelled variants.
+ * The L3 demo. LTE stays down; the proxy-b override selects no series from the up target and stays grey. `links` is
+ * the base of the tunnels: it has no match, so it is abstract and needs no cell (spec 2.3).
  */
-export function demoL3Config(wanLabel?: LinkLabelMode): DiagramConfig {
-  const patterns: Pattern[] = [
-    {
-      id: 'links',
-      name: 'Links',
-      select: { kind: 'link' },
-      display: {
-        link: { a2b: { binding: bind('A', FROM) }, b2a: { binding: bind('A', TO) } },
-        hover: { title: '${from.node} ↔ ${to.node}', rows: [trafficRow('A')] },
-        url: '/d/drawiomap-demo?var-job=node-${from.node}&var-device=${from.port}',
-        urlTitle: 'Traffic of ${from.node}:${from.port}',
-      },
-    },
-    {
-      id: 'lan-speed',
-      name: 'LAN by port speed',
-      select: { kind: 'link', attrs: { 'pg-to': '/:br-lan$/' } },
-      display: { link: { capacityBinding: bind('S', TO) } },
-    },
-    {
-      id: 'wan',
-      name: 'WAN uplinks',
-      select: { kind: 'link', attrs: { 'pg-to': '/^rtr-(a|b):(wan1|wan2|wan3|pppoe)$/' } },
-      display: {
-        link: {
-          a2b: { binding: bind('W', FROM) },
-          b2a: { binding: bind('W', TO) },
-          ...(wanLabel ? { label: { mode: wanLabel } } : {}),
-        },
-        hover: { rows: [trafficRow('W')] },
-      },
-    },
-    {
-      id: 'tunnels',
-      name: 'Tunnels 100M',
-      select: { kind: 'link', attrs: { 'pg-to': '/:(ts0|tun-in|relay-in)$/' } },
-      display: { link: { capacity: 100000000 }, hover: { rows: [trafficRow('A', 100000000)] } },
-    },
-    {
-      id: 'node-up',
-      name: 'Node up',
-      select: { kind: 'node' },
-      display: {
-        shape: { binding: bind('C', HOST), target: 'icon' },
-        hover: { rows: nodeRows() },
-        url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}',
-        urlTitle: 'Host ${cell.pg-id}',
-      },
-    },
-    {
-      id: 'router-cpu',
-      name: 'Router CPU',
-      select: { ids: ['rtr-a', 'rtr-b'] },
-      display: {
-        hover: {
-          rows: [
-            {
-              kind: 'history',
-              label: 'CPU',
-              unit: 'percent',
-              binding: bind('E', HOST),
-              url: '/d/drawiomap-demo?var-job=node-${cell.pg-id}&var-metric=cpu',
-            },
-            ...nodeRows(),
-          ],
-        },
-      },
-    },
-  ];
-  return {
-    version: 3,
-    queries: ['A', 'W', 'S', 'C', 'D', 'E'].map(panelQuery),
-    patterns,
-    overrides: [],
-    widgets: [],
-  };
-}
+const { match: linkMatch, ...links } = traffic('lan_tx', 'lan_rx');
 
-/**
- * hand-drawn: a plain draw.io diagram. The capacity comes from the `capacity` attribute of each edge. `queryId` is
- * the panel query that holds the WAN series (`A` in the demo dashboard, `W` next to the L3 panel in the e2e spec);
- * `label` turns the value labels on.
- */
-export function handDrawnConfig(queryId = 'A', label?: LinkLabelMode): DiagramConfig {
-  const a2b = bind(queryId, { job: 'node-isp-a', device: 'pppoe' });
-  const b2a = bind(queryId, { job: 'node-rtr-a', device: 'wan1' });
-  return {
-    version: 3,
-    queries: [panelQuery(queryId)],
-    patterns: [
-      {
-        id: 'hand-links',
-        name: 'Hand links',
-        select: { ids: ['edge-ab', 'edge-cd'] },
-        display: {
-          link: {
-            a2b: { binding: a2b },
-            b2a: { binding: b2a },
-            capacity: '${cell.capacity}',
-            ...(label ? { label: { mode: label } } : {}),
-          },
-          hover: {
-            rows: [
-              {
-                kind: 'combined',
-                label: 'Traffic',
-                capacity: '${cell.capacity}',
-                series: [
-                  { binding: a2b, direction: 'up' },
-                  { binding: b2a, direction: 'down' },
-                ],
-              },
-            ],
-          },
-          url: '/d/drawiomap-demo?cell=${cell.id}',
-          urlTitle: 'Link ${cell.id}',
-        },
-      },
-    ],
-    overrides: [],
-    widgets: [],
-  };
-}
+export const demoConfigV4: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: {
+    links,
+    'lan-speed': { ...traffic('lan_tx', 'lan_rx'), capacity: 'speed' },
+    wan: traffic('wan_tx', 'wan_rx'),
+    tunnels: { extends: 'links', match: linkMatch },
+    'node-up': {
+      match: { key: 'job' },
+      status: 'up',
+      missing: 'nodata',
+      rows: nodeRows(),
+      url: '/d/drawiomap-demo?var-job=${key}',
+      urlTitle: 'Host ${key}',
+    },
+    'router-cpu': {
+      match: { key: 'job' },
+      status: 'up',
+      missing: 'nodata',
+      rows: [
+        { kind: 'history', label: 'CPU', unit: 'percent', query: 'cpu' },
+        { kind: 'drilldown', label: 'CPU details', url: '/d/drawiomap-demo?var-job=${key}&var-metric=cpu' },
+        ...nodeRows(),
+        { kind: 'history', label: 'Three lines', query: 'v4_samples', unit: 'none', decimals: 0 },
+        { kind: 'history', label: 'Nine lines', query: 'v4_nine', unit: 'none', decimals: 0 },
+      ],
+      url: '/d/drawiomap-demo?var-job=${key}',
+      urlTitle: 'Host ${key}',
+    },
+  },
+  overrides: {
+    // key=node-proxy-b selects node-proxy-b-no-data, which the generator never emits. Keep up and load unchanged.
+    'pg-node~proxy-b': { match: { key: 'job="${key}-no-data"' } },
+  },
+};
+
+/** The two hand-drawn edges carry bind=hand-links, key=<job>, port=<device> and their capacity in `cap`. */
+export const handDrawnConfigV4: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: {
+    'hand-links': {
+      ...traffic('wan_tx', 'wan_rx'),
+      url: '/d/drawiomap-demo?cell=${id}',
+      urlTitle: 'Link ${id}',
+    },
+  },
+  overrides: {},
+};

@@ -96,3 +96,54 @@ export function sampleTimes(series: Array<{ timestamps: ArrayLike<number> }>): n
   }
   return [...all].sort((a, b) => a - b);
 }
+
+/** The value text of a card row, a chart or a tooltip line with no data (spec 3.6, 3.7). */
+export const NO_DATA_ROW = 'No data';
+
+/** One line of a chart tooltip: its label, colour and samples, and the formatter of its values. */
+export interface TooltipLine {
+  label: string;
+  color: string;
+  times: ArrayLike<number>;
+  values: ArrayLike<number | null>;
+  /** the line has no finite value: it keeps its place and shows "No data" (spec 3.7) */
+  noData?: boolean;
+  format?: (value: number) => string;
+}
+
+/** One row of a chart tooltip. */
+export interface TooltipRow {
+  label: string;
+  color: string;
+  value: string;
+}
+
+/**
+ * The pinned tooltip of a chart (spec 3.7): all drawn lines at the sample time nearest to `time`, then "+N more". A
+ * line with no finite value shows "No data"; a gap of a line shows "–". Undefined when no line has a sample.
+ */
+export function tooltipRows(
+  lines: TooltipLine[],
+  time: number,
+  more = 0
+): { time: number; list: TooltipRow[]; more: number } | undefined {
+  const picked = alignedSamples(
+    lines.map((l) => ({ timestamps: l.times, values: l.values })),
+    time
+  );
+  if (!picked) {
+    return undefined;
+  }
+  return {
+    time: picked.time,
+    list: lines.map((l, i) => {
+      const v = picked.values[i];
+      return {
+        label: l.label,
+        color: l.color,
+        value: l.noData ? NO_DATA_ROW : v === null ? '–' : (l.format ?? String)(v),
+      };
+    }),
+    more,
+  };
+}

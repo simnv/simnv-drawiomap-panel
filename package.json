@@ -1,6 +1,6 @@
 {
   "name": "simnv-drawiomap-panel",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "scripts": {
     "build": "./scripts/vendor-drawio.sh --if-missing && webpack -c ./webpack.config.ts --env production",
     "dev": "./scripts/vendor-drawio.sh --if-missing && webpack -w -c ./webpack.config.ts --env development",
@@ -92,6 +92,7 @@
     "dompurify": "3.2.6",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "yaml": "2.9.1",
     "zod": "3.23.8"
   },
   "packageManager": "npm@11.20.0"

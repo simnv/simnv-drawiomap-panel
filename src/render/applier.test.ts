@@ -5,12 +5,16 @@ import { colorManipulator, createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { noDataColor, statusColor, tintFill } from '../binding/color';
 import type { CellIndex, CellPatch, HalfState, PatchMap, ShapeState } from '../types';
-import { applyPatches, INTERACTIVE_ATTR, markInteractive } from './applier';
+import { applyKey, applyPatches, INTERACTIVE_ATTR, markInteractive } from './applier';
 import { clearOwnedAttrs, setOwnedAttrs } from './cellAttrs';
 import { sanitizeSvg } from './sanitize';
 import { buildCellIndex, mountSvg } from './svgStage';
-import type { PlanCellPatch } from '../binding/engine';
+import { renderOverlay } from './overlay';
 import type { StatusView } from '../binding/status';
+import type { StatusV4 } from '../binding/statusV4';
+
+/** The status of a patch, as `statusViewOf` gives it. */
+type PatchStatus = NonNullable<CellPatch['statusView']>;
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30" fill="#fff" style="fill: light-dark(#fff, #111); stroke: #000;"/></g><g><text><tspan>rtr-a</tspan></text></g></g>
@@ -138,19 +142,21 @@ describe('applyPatches', () => {
   });
   it('marks explicit health accessibly, leaves a normal shape alone and resets its reason', () => {
     const index = build();
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'down',
+      severity: 'down',
+      refId: 'up',
       reason: 'Device down',
       conditionKey: 'health',
       queryIds: ['up'],
       coverage: { available: 1, expected: 1 },
     };
-    const p: PlanCellPatch = { ...patch('n1', {}), statusView };
+    const p: CellPatch = { ...patch('n1', {}), statusView };
     const prev = applyPatches(index, new Map([['n1', p]]));
     expect(index.get('n1')!.group.getAttribute('data-dmap-status')).toBe('down');
     expect(index.get('n1')!.group.getAttribute('data-dmap-reason')).toBe('Device down');
     expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a: down. Device down');
-    const normal: PlanCellPatch = { ...p, statusView: { ...statusView, state: 'normal', reason: 'Healthy' } };
+    const normal: CellPatch = { ...p, statusView: { ...statusView, state: 'normal', reason: 'Healthy' } };
     applyPatches(index, new Map([['n1', normal]]), prev);
     expect((index.get('n1')!.shape as SVGElement).style.fill).toBe(index.get('n1')!.original.fill);
     applyPatches(index, new Map(), prev);
@@ -412,8 +418,10 @@ describe('applyPatches with a patched icon cell', () => {
     const icon = () => index.get('i1')!.shape as SVGElement;
     const node = (color = '#ff0000') => patch('n1', { shape: shape({ target: 'icon', color }) });
     // a normal status: a new key for the icon cell, and no paint of its own
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'normal',
+      severity: 'normal',
+      refId: 'up',
       reason: 'Healthy',
       conditionKey: 'k',
       queryIds: ['q'],
@@ -430,7 +438,7 @@ describe('applyPatches with a patched icon cell', () => {
     // the icon cell gets a status (a new key), the node does not change: the icon keeps the node colour
     prev = applyPatches(
       index,
-      new Map<string, PlanCellPatch>([
+      new Map<string, CellPatch>([
         ['n1', node()],
         ['i1', { ...patch('i1', {}), statusView }],
       ]),
@@ -660,16 +668,18 @@ describe('end markers: unusable geometry and cost', () => {
 });
 
 describe('applyPatches diff', () => {
-  const statusView: StatusView = {
+  const statusView: PatchStatus = {
     state: 'down',
+    severity: 'down',
+    refId: 'up',
     reason: 'Device down',
     conditionKey: 'health',
     queryIds: ['up'],
     coverage: { available: 1, expected: 1 },
   };
   /** The patches of one refresh: a coloured node, a two-way link and a status cell. New objects on every call. */
-  const round = (color = '#ff0000'): Map<string, PlanCellPatch> =>
-    new Map<string, PlanCellPatch>([
+  const round = (color = '#ff0000'): Map<string, CellPatch> =>
+    new Map<string, CellPatch>([
       ['n1', patch('n1', { shape: shape({ color, text: 'up' }) })],
       ['e1', patch('e1', { link: { a2b: ok(), b2a: ok({ color: '#0000ff' }) } })],
       ['n2', { ...patch('n2', {}), statusView }],
@@ -786,14 +796,16 @@ describe('applyPatches diff', () => {
 describe('applyPatches status paint', () => {
   const light = createTheme({ colors: { mode: 'light' } });
   const dark = createTheme({ colors: { mode: 'dark' } });
-  const view = (state: StatusView['state'], reason = 'Health check failed'): StatusView => ({
+  const view = (state: StatusView['state'], reason = 'Health check failed'): PatchStatus => ({
     state,
+    severity: state,
+    refId: 'up',
     reason,
     conditionKey: 'health',
     queryIds: ['up'],
     coverage: { available: 1, expected: 1 },
   });
-  const withStatus = (cellId: string, state: StatusView['state'], p: Partial<CellPatch> = {}): PlanCellPatch => ({
+  const withStatus = (cellId: string, state: StatusView['state'], p: Partial<CellPatch> = {}): CellPatch => ({
     ...patch(cellId, p),
     statusView: view(state),
   });
@@ -980,4 +992,104 @@ describe('applyPatches status paint', () => {
     expectColour(rect(index, 'n3').style.stroke, statusColor({ state: 'down' }, dark));
     expect(statusColor({ state: 'down' }, dark)).not.toBe(red);
   });
+});
+
+describe('applyKey and the v4 status (Astra R1)', () => {
+  const theme = createTheme({ colors: { mode: 'light' } });
+  const ctx = { theme, osDark: false };
+  const GREEN = '#73bf69';
+  const BLUE = '#0000ff';
+  /** a status as `statusViewOf` gives it */
+  const v4 = (over: Partial<StatusV4> = {}): CellPatch => ({
+    ...patch('n3', {}),
+    statusView: {
+      queryIds: ['up'],
+      conditionKey: '',
+      coverage: { available: 1, expected: 1 },
+      state: 'normal',
+      severity: 'normal',
+      color: GREEN,
+      text: 'Up',
+      refId: 'up',
+      reason: '',
+      ...over,
+    },
+  });
+  const expectColour = (actual: string, expected: string) =>
+    expect([expected.toLowerCase(), colorManipulator.asRgbString(expected)]).toContain(actual.toLowerCase());
+
+  it.each([
+    ['state', { state: 'critical' }],
+    ['severity', { severity: 'critical' }],
+    ['color', { color: BLUE }],
+    ['text', { text: 'Online' }],
+    ['refId', { refId: 'scrape_up' }],
+    ['reason', { reason: '1 of 2 series have no value' }],
+  ] as const)('a change of %s alone gives a new key', (_, over) => {
+    expect(applyKey(v4(over), true)).not.toBe(applyKey(v4(), true));
+  });
+  it('a change of conditionKey alone keeps the key; a new reason gives a new key', () => {
+    const view: PatchStatus = {
+      state: 'down',
+      severity: 'down',
+      refId: 'up',
+      reason: 'Device down',
+      conditionKey: 'health',
+      queryIds: ['up'],
+      coverage: { available: 1, expected: 1 },
+    };
+    const p: CellPatch = { ...patch('n3', {}), statusView: view };
+    expect(applyKey(p, true)).toBe(applyKey({ ...p, statusView: { ...view, conditionKey: 'other' } }, true));
+    expect(applyKey(p, true)).not.toBe(applyKey({ ...p, statusView: { ...view, reason: 'Other' } }, true));
+  });
+  it('repaints green → blue with the same state and text; blue → transparent removes the paint', () => {
+    const index = build();
+    const n3 = index.get('n3')!.shape as SVGElement;
+    const original = { fill: n3.style.fill, stroke: n3.style.stroke, width: n3.style.strokeWidth };
+    let prev = applyPatches(index, new Map([['n3', v4()]]), undefined, undefined, ctx);
+    expectColour(n3.style.stroke, GREEN);
+    prev = applyPatches(index, new Map([['n3', v4({ color: BLUE })]]), prev, undefined, ctx);
+    expectColour(n3.style.stroke, BLUE);
+    expectColour(n3.style.fill, tintFill('#d5e8d4', BLUE)!);
+    applyPatches(
+      index,
+      new Map([['n3', v4({ color: theme.visualization.getColorByName('transparent') })]]),
+      prev,
+      undefined,
+      ctx
+    );
+    expect({ fill: n3.style.fill, stroke: n3.style.stroke, width: n3.style.strokeWidth }).toEqual(original);
+    expect(index.get('n3')!.group.getAttribute('data-dmap-status')).toBe('normal');
+  });
+  it.each(['light', 'dark'] as const)(
+    'paints normal v4 link statuses on halves, heads and dots; transparent and missing restore halves (%s)',
+    (mode) => {
+      const theme = createTheme({ colors: { mode } });
+      const ctx = { theme, osDark: mode === 'dark' };
+      const id = 'pg-link~dot-a-b';
+      const raw = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/bare-end-dot.svg'), 'utf8');
+      const root = mountSvg(document.createElement('div'), sanitizeSvg(raw).svg);
+      const index = buildCellIndex(root);
+      const ends = index.get(id)!.ends!.map((end) => end.el as SVGElement);
+      const magenta = theme.visualization.getColorByName('magenta');
+      const halfColors = ['#ff8800', '#0000ff'];
+      const link = { a2b: ok({ color: halfColors[0] }), b2a: ok({ color: halfColors[1] }) };
+      const rounds: Array<{ status: Partial<StatusV4>; colors: string[] }> = [
+        { status: { color: magenta, text: 'Offline' }, colors: [magenta, magenta] },
+        { status: { color: GREEN }, colors: [GREEN, GREEN] },
+        { status: { color: 'transparent' }, colors: halfColors },
+        { status: { color: magenta, text: 'Offline' }, colors: [magenta, magenta] },
+        { status: { state: 'missing', severity: 'missing', text: '–' }, colors: halfColors },
+      ];
+      let prev: ReturnType<typeof applyPatches> | undefined;
+      for (const { status, colors } of rounds) {
+        const patches = new Map([[id, { ...v4(status), cellId: id, link }]]);
+        prev = applyPatches(index, patches, prev, undefined, ctx);
+        renderOverlay(root, index, patches, { theme, maxWidth: 10 });
+        expect(Array.from(root.querySelectorAll('.dmap-half'), (el) => el.getAttribute('stroke'))).toEqual(colors);
+        expect(Array.from(root.querySelectorAll('.dmap-arrow'), (el) => el.getAttribute('fill'))).toEqual(colors);
+        ends.forEach((end, i) => expectColour(end.style.fill, colors[i]));
+      }
+    }
+  );
 });
