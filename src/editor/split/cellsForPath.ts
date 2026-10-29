@@ -51,18 +51,6 @@ export function badgeOf(cellId: string, uses: Use[], bound: BindResultV4): Badge
   return { count, red: count === 0 };
 }
 
-/** The cells of each class: the cells whose `bind` names it, in the order of the bind result. */
-export function cellsByClass(bound: BindResultV4): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  for (const [cellId, patch] of bound.patches) {
-    const bind = patch.scope.cell.bind;
-    if (bind !== undefined) {
-      out.set(bind, [...(out.get(bind) ?? []), cellId]);
-    }
-  }
-  return out;
-}
-
 /**
  * The cells to highlight for the YAML path under the cursor, and the badge of each (spec 5.3 "The cells of a path"):
  *
@@ -91,8 +79,7 @@ export function cellsForPath(path: string, bound: BindResultV4, classes: Map<str
   if (root !== 'classes' || typeof name !== 'string') {
     return { cells: [], lighter: [], badges };
   }
-  const byClass = cellsByClass(bound);
-  const cellsOf = (names: string[]) => names.flatMap((n) => byClass.get(n) ?? []);
+  const cellsOf = (names: string[]) => names.flatMap((n) => bound.cells.get(n) ?? []);
 
   if (field === 'rows' && typeof index === 'number') {
     const origin = yamlPath(['classes', name, 'rows', index]);
@@ -102,16 +89,13 @@ export function cellsForPath(path: string, bound: BindResultV4, classes: Map<str
     return { cells, lighter: [], badges };
   }
 
-  const cells = byClass.get(name) ?? [];
+  const cells = bound.cells.get(name) ?? [];
   const children = [...classes.values()].filter((c) => c.name !== name && c.chain.includes(name));
   const lighter = cellsOf(children.map((c) => c.name));
   if (field === 'match') {
     const own = yamlPath(['classes', name, 'match']);
-    for (const cls of [classes.get(name), ...children]) {
-      if (cls?.origins.match === own) {
-        byClass.get(cls.name)?.forEach((id) => badge(id, firstUses));
-      }
-    }
+    // a cell with an override match has the origin of the override: its match is not this block
+    [...cells, ...lighter].filter((id) => bound.matchOrigins.get(id) === own).forEach((id) => badge(id, firstUses));
   } else if (typeof field === 'string' && USE_FIELDS.has(field)) {
     const own = yamlPath(['classes', name, field]);
     [...cells, ...lighter].forEach((id) => badge(id, (uses) => uses.filter((u) => under(u.path, own))));

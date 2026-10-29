@@ -279,6 +279,16 @@ describe('fitCells', () => {
     expect(fitCells(index, ['a'], base, 0)).toEqual({ x: 150, y: 100, w: 200, h: 100 });
   });
 
+  it('the boxes go through the screen CTMs, as the label code does: a viewBox in the CTM of the svg does not count', () => {
+    const index = indexOf({ a: { box: [0, 0, 100, 100] } });
+    const group = index.get('a')!.group as unknown as SVGGElement;
+    const root = group.ownerSVGElement!;
+    const matrix = (m: object) => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0, ...m });
+    Object.assign(root, { getCTM: () => matrix({ a: 2, d: 2 }), getScreenCTM: () => matrix({}) });
+    Object.assign(group, { getCTM: () => matrix({ e: 200, f: 100 }), getScreenCTM: () => matrix({ e: 200, f: 100 }) });
+    expect(fitCells(index, ['a'], base, 0)).toEqual({ x: 150, y: 100, w: 200, h: 100 });
+  });
+
   it('a small cell zooms in no more than MAX_SCALE', () => {
     const index = indexOf({ a: { box: [500, 250, 1, 1] } });
     const vb = fitCells(index, ['a'], base, 0);

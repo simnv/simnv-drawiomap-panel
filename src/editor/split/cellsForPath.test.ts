@@ -173,10 +173,45 @@ describe('cellsForPath (spec 5.3 "The cells of a path")', () => {
     }
   });
 
+  it('classes.<c>.match: a cell with an override match gets no badge, its match is not this block', () => {
+    const r = bound(
+      {
+        version: 4,
+        classes: { host: { match: { key: 'job' }, status: 'up' }, sub: { extends: 'host' } },
+        overrides: { h2: { match: { key: 'name' } }, s2: { match: { key: 'name' } } },
+      },
+      [
+        ['h1', { bind: 'host', key: 'a' }],
+        ['h2', { bind: 'host', key: 'b' }],
+        ['s1', { bind: 'sub', key: 'a' }],
+        ['s2', { bind: 'sub', key: 'b' }],
+      ],
+      [frame('up', { job: 'a' }), frame('up', { name: 'b' })],
+      ['up']
+    );
+    const set = cellsForPath('classes.host.match', r.result, r.classes);
+    expect([...set.cells].sort()).toEqual(['h1', 'h2']);
+    expect([...set.lighter].sort()).toEqual(['s1', 's2']);
+    expect([...set.badges.keys()].sort()).toEqual(['h1', 's1']);
+  });
+
+  it('a cell with an unknown class is in no cell set', () => {
+    const r = bound({ version: 4, classes: { box: { match: { key: 'name' } } } }, [['b', { bind: 'nope' }]], [], []);
+    expect(cellsForPath('classes.nope', r.result, r.classes).cells).toEqual([]);
+  });
+
   it('a class with no use gives no match badge', () => {
     const r = bound({ version: 4, classes: { box: { match: { key: 'name' } } } }, [['b', { bind: 'box' }]], [], []);
     const set = cellsForPath('classes.box.match', r.result, r.classes);
     expect(set.cells).toEqual(['b']);
     expect(set.badges.size).toBe(0);
+  });
+});
+
+describe('cellsForPath: a cell with an invalid override', () => {
+  it('stays a cell of its class: the class path lights it', () => {
+    const config = { ...CONFIG, overrides: { h2: { bogus: 1 } } };
+    const { result: r, classes: c } = bound(config, CELLS, FRAMES, ['up', 'cpu', 'mem', 'health', 'tx', 'rx']);
+    expect([...cellsForPath('classes.host', r, c).cells].sort()).toEqual(['h1', 'h2']);
   });
 });
