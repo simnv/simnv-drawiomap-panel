@@ -78,8 +78,8 @@ export function statusViewOf(status: StatusV4): StatusView & StatusV4Fields {
   return {
     state,
     reason: reason ?? '',
-    queryIds: refId === undefined ? [] : [refId],
-    conditionKey: JSON.stringify([refId ?? null, state, severity, color ?? null, text ?? null, reason ?? null]),
+    queryIds: refId ? [refId] : [],
+    conditionKey: JSON.stringify([refId || null, state, severity, color ?? null, text ?? null, reason ?? null]),
     coverage: { available: state === 'missing' ? 0 : 1, expected: 1 },
     severity,
     color,
@@ -89,11 +89,11 @@ export function statusViewOf(status: StatusV4): StatusView & StatusV4Fields {
   };
 }
 
-const missingStatus = (reason: string, refId?: string): StatusV4 => ({
+const missingStatus = (reason: string, refId = ''): StatusV4 => ({
   state: 'missing',
   severity: 'missing',
   text: NO_DATA_TEXT,
-  ...(refId === undefined ? {} : { refId }),
+  refId,
   reason,
 });
 

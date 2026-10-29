@@ -348,7 +348,7 @@ const STATE_ENTRIES_V4: Array<{ key: 'down' | 'stale' | 'missing'; label: string
  * block with a `down`, a `stale` and a `missing` entry, each only when cells have that state: `down` is a down status
  * with no value (`missing: down`), which the painter paints in the theme red; a link half with no data is `missing`,
  * and so is a missing status that the painter paints grey. Then the link load scale of the link halves. A status
- * without a `severity` is not in this legend.
+ * with no refId (an unavailable cell) is not in this legend.
  */
 export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx: LegendContext): LegendBlock[] {
   const statusItems = new Map<string, Item[]>();
@@ -358,7 +358,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     addItem(links, states.missing, patch.cellId, 'link', patch.link?.a2b);
     addItem(links, states.missing, patch.cellId, 'link', patch.link?.b2a);
     const view = patch.statusView;
-    if (view?.severity === undefined || !view.refId) {
+    if (!view?.refId) {
       continue;
     }
     if (view.state === 'stale' || view.state === 'missing') {

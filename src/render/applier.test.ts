@@ -13,6 +13,9 @@ import { renderOverlay } from './overlay';
 import type { StatusView } from '../binding/status';
 import type { StatusV4 } from '../binding/statusV4';
 
+/** The status of a patch, as `statusViewOf` gives it. */
+type PatchStatus = NonNullable<CellPatch['statusView']>;
+
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30" fill="#fff" style="fill: light-dark(#fff, #111); stroke: #000;"/></g><g><text><tspan>rtr-a</tspan></text></g></g>
   <g data-cell-id="n2"><g><rect x="10" y="50" width="50" height="30"/></g><g><switch><foreignObject><div xmlns="http://www.w3.org/1999/xhtml"><div>old</div></div></foreignObject></switch></g></g>
@@ -139,8 +142,10 @@ describe('applyPatches', () => {
   });
   it('marks explicit health accessibly, leaves a normal shape alone and resets its reason', () => {
     const index = build();
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'down',
+      severity: 'down',
+      refId: 'up',
       reason: 'Device down',
       conditionKey: 'health',
       queryIds: ['up'],
@@ -413,8 +418,10 @@ describe('applyPatches with a patched icon cell', () => {
     const icon = () => index.get('i1')!.shape as SVGElement;
     const node = (color = '#ff0000') => patch('n1', { shape: shape({ target: 'icon', color }) });
     // a normal status: a new key for the icon cell, and no paint of its own
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'normal',
+      severity: 'normal',
+      refId: 'up',
       reason: 'Healthy',
       conditionKey: 'k',
       queryIds: ['q'],
@@ -661,8 +668,10 @@ describe('end markers: unusable geometry and cost', () => {
 });
 
 describe('applyPatches diff', () => {
-  const statusView: StatusView = {
+  const statusView: PatchStatus = {
     state: 'down',
+    severity: 'down',
+    refId: 'up',
     reason: 'Device down',
     conditionKey: 'health',
     queryIds: ['up'],
@@ -787,8 +796,10 @@ describe('applyPatches diff', () => {
 describe('applyPatches status paint', () => {
   const light = createTheme({ colors: { mode: 'light' } });
   const dark = createTheme({ colors: { mode: 'dark' } });
-  const view = (state: StatusView['state'], reason = 'Health check failed'): StatusView => ({
+  const view = (state: StatusView['state'], reason = 'Health check failed'): PatchStatus => ({
     state,
+    severity: state,
+    refId: 'up',
     reason,
     conditionKey: 'health',
     queryIds: ['up'],
@@ -988,7 +999,7 @@ describe('applyKey and the v4 status (Astra R1)', () => {
   const ctx = { theme, osDark: false };
   const GREEN = '#73bf69';
   const BLUE = '#0000ff';
-  /** a v4 status on the v3 patch type: the cut-over (P1-13c) drops the v3 fields */
+  /** a status as `statusViewOf` gives it */
   const v4 = (over: Partial<StatusV4> = {}): CellPatch => ({
     ...patch('n3', {}),
     statusView: {
@@ -1017,9 +1028,11 @@ describe('applyKey and the v4 status (Astra R1)', () => {
   ] as const)('a change of %s alone gives a new key', (_, over) => {
     expect(applyKey(v4(over), true)).not.toBe(applyKey(v4(), true));
   });
-  it('a v3 status keeps its key: state and reason', () => {
-    const view: StatusView = {
+  it('a change of conditionKey alone keeps the key; a new reason gives a new key', () => {
+    const view: PatchStatus = {
       state: 'down',
+      severity: 'down',
+      refId: 'up',
       reason: 'Device down',
       conditionKey: 'health',
       queryIds: ['up'],

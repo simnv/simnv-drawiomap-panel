@@ -267,6 +267,8 @@ describe('opensCard', () => {
   });
   const statusView: NonNullable<CellPatch['statusView']> = {
     state: 'down',
+    severity: 'down',
+    refId: 'up',
     reason: 'Device down',
     conditionKey: 'health',
     queryIds: [],

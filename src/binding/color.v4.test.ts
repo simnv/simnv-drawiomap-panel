@@ -40,11 +40,13 @@ describe.each(themes)('statusPaintV4, %s theme', (_, theme) => {
 
 describe('statusPaint and linkStatusPaint read a v4 status', () => {
   const theme = createTheme();
-  it('statusPaint paints a v4 status with its colour and keeps the v3 rule for a v3 status', () => {
+  it('statusPaint paints the colour of the value; a status with no value colour takes the theme rule', () => {
     expect(statusPaint(status({ color: '#0000ff' }), theme)).toBe('#0000ff');
     expect(statusPaint(status({ color: 'transparent' }), theme)).toBeUndefined();
-    expect(statusPaint({ state: 'normal' }, theme)).toBeUndefined();
-    expect(statusPaint({ state: 'down' }, theme)).toBe(statusColor({ state: 'down' }, theme));
+    expect(statusPaint({ state: 'normal', severity: 'normal', refId: 'up' }, theme)).toBeUndefined();
+    expect(statusPaint({ state: 'down', severity: 'down', refId: 'up' }, theme)).toBe(
+      statusColor({ state: 'down' }, theme)
+    );
   });
   it('a missing v4 status on a link with halves paints nothing; on a link with no halves it paints grey', () => {
     const missing = status({ state: 'missing', severity: 'missing', text: '–' });
@@ -62,12 +64,14 @@ describe('statusPaint and linkStatusPaint read a v4 status', () => {
     expect(linkStatusPaint({ link: { b2a: half }, statusView: view }, theme)).toBe(color);
     expect(linkStatusPaint({ statusView: view }, theme)).toBe(color);
   });
-  it('transparent v4 and normal v3 statuses leave the halves; a critical v4 status paints its colour', () => {
+  it('a transparent or a normal status with no colour leaves the halves; a critical status paints its colour', () => {
     const half = { status: 'ok' as const, color: '#00ff00', width: 2, label: '', stepIndex: 0 };
     expect(
       linkStatusPaint({ link: { a2b: half }, statusView: status({ color: 'transparent' }) }, theme)
     ).toBeUndefined();
-    expect(linkStatusPaint({ link: { a2b: half }, statusView: { state: 'normal' } }, theme)).toBeUndefined();
+    expect(
+      linkStatusPaint({ link: { a2b: half }, statusView: { state: 'normal', severity: 'normal', refId: 'up' } }, theme)
+    ).toBeUndefined();
     const offline = status({ state: 'critical', severity: 'critical', color: '#0000ff', text: 'Offline' });
     expect(linkStatusPaint({ link: { b2a: half }, statusView: offline }, theme)).toBe('#0000ff');
   });

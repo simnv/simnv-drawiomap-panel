@@ -22,6 +22,10 @@ import {
   widthFor,
 } from './color';
 import type { StatusView } from './status';
+import type { CellPatch } from '../types';
+
+/** The status of a patch, as `statusViewOf` gives it. */
+type PatchStatus = NonNullable<CellPatch['statusView']>;
 
 const theme = createTheme();
 const named = (c: string) => theme.visualization.getColorByName(c);
@@ -110,8 +114,10 @@ describe('widthFor', () => {
 });
 
 describe('status colours', () => {
-  const view = (state: StatusView['state']): StatusView => ({
+  const view = (state: StatusView['state']): PatchStatus => ({
     state,
+    severity: state,
+    refId: 'up',
     reason: 'r',
     queryIds: [],
     conditionKey: 'k',

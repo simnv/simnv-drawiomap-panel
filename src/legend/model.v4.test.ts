@@ -225,9 +225,8 @@ describe('buildLegendV4', () => {
     expect(buildLegendV4(patches, own, ctx)[0].gradient).toMatchObject({ min: '10%', max: '50%' });
   });
 
-  it('ignores a v3 status and a refId with no field', () => {
-    const v3: Status = { ...status('scrape_up', 'critical'), severity: undefined };
-    const patches: PatchMap = new Map([cell('n1', v3), cell('n2', status('nope', 'normal', named('green'), '1'))]);
+  it('ignores a refId with no field', () => {
+    const patches: PatchMap = new Map([cell('n2', status('nope', 'normal', named('green'), '1'))]);
     expect(buildLegendV4(patches, fields, ctx)).toEqual([]);
   });
 });

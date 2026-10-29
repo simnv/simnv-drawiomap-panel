@@ -232,16 +232,16 @@ export interface LinkTarget {
 }
 
 /**
- * The fields of a v4 status (spec 3.4, `StatusV4`) on the status of a patch. A v3 status has none of them. A status
- * with a `severity` paints with the exact colour of its value (`statusPaint`).
+ * The fields of a v4 status (spec 3.4, `StatusV4`) on the status of a patch. Each status comes from `statusViewOf`,
+ * which sets `severity` and `refId`. A status paints with the exact colour of its value (`statusPaint`).
  */
 export interface StatusV4Fields {
   /** the rank for the worst of N, the status band and the legend */
-  severity?: StatusView['state'];
+  severity: StatusView['state'];
   /** the display colour of the value; a transparent colour keeps the drawn colour */
   color?: string;
   text?: string;
-  refId?: string;
+  refId: string;
   /** the raw value that gives `color` and `text`; the legend finds the mapping of the value with it */
   value?: number;
 }
