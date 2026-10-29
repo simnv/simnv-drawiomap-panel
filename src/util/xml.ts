@@ -44,7 +44,8 @@ export function createXmlElement(doc: Document, name: string): Element {
 
 /** The XML text of a document from `parseXml`, with no namespace that the parse added. */
 export function serializeXml(doc: Document): string {
-  let text = new XMLSerializer().serializeToString(doc);
+  // Chromium writes the declaration of a parsed document, jsdom does not: drop it, the saved prolog goes back below.
+  let text = new XMLSerializer().serializeToString(doc).replace(/^<\?xml\s[\s\S]*?\?>\s*/, '');
   const root = ROOT_NAME.exec(text);
   // The injected attribute is first in the root start tag. Leave the prolog and other attributes intact.
   if (wrapped.has(doc) && root && text.startsWith(DECLARATION, root[0].length)) {
