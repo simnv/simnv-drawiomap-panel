@@ -73,12 +73,12 @@ test('the v4 demo shows three history lines on one axis and a history chart regi
   expect(heights[1] / heights[2]).toBeGreaterThan(0.5);
   expect(heights[1] / heights[2]).toBeLessThan(0.8);
   await screenshot(panel, testInfo, 'three-lines');
+  // Grafana 12.4 loads a panel below the fold only when it scrolls into view. viewPanel shows this panel alone.
   const regions = await gotoDashboardPage({
     ...DEMO,
-    queryParams: new URLSearchParams({ from: 'now-2m', to: 'now' }),
+    queryParams: new URLSearchParams({ viewPanel: 'panel-4', from: 'now-2m', to: 'now' }),
   });
   const chartPanel = regions.getPanelByTitle('v4 chart regions').locator;
-  await chartPanel.scrollIntoViewIfNeeded();
   const region = chartPanel.locator('[data-dmap-chart="history-region"]');
   await expect(region.locator('.uplot')).toHaveCount(3);
   await screenshot(region, testInfo, 'history-region');
@@ -146,9 +146,9 @@ test('nine series show eight lines, +1 more and eight values at the hovered time
 });
 
 test('a value chart region draws a Grafana bar gauge', async ({ gotoDashboardPage }, testInfo) => {
-  const dashboard = await gotoDashboardPage(DEMO);
+  // Grafana 12.4 loads a panel below the fold only when it scrolls into view. viewPanel shows this panel alone.
+  const dashboard = await gotoDashboardPage({ ...DEMO, queryParams: new URLSearchParams({ viewPanel: 'panel-4' }) });
   const panel = dashboard.getPanelByTitle('v4 chart regions').locator;
-  await panel.scrollIntoViewIfNeeded();
   const gauge = panel.locator('[data-dmap-chart="value-region"]');
   await expect(gauge).toContainText('Gauge');
   await expect(gauge).toContainText('42');
