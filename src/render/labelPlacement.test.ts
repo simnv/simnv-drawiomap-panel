@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { bendLengths, polylineLength, type Point } from './geometry';
+import { headSize } from './overlay';
 import {
   boundsOf,
+  cornersOf,
   labelsVisible,
   drawnCentre,
   LABEL_SIDES,
@@ -767,5 +769,245 @@ describe('the bend spot: the last resort when no straight run holds the box', ()
       const [a] = placeLinkLabels(bendy(), far, 'e', index);
       expect(a).toEqual({ dropped: 'short-leg' });
     });
+  });
+});
+
+describe('labels near their link (the two cases of the report of 2026-10-29)', () => {
+  // The geometry of two vertical links of a live sheet, moved so that the link stands at x = 0 and starts at y = 0.
+  // The percent slot is 28 × 10 (the box 30 × 12 with the halo); linkWidth is 2 to 10, so the stroke reservation is
+  // 10 and the heads are 8 (thin) to 24 (widest) wide.
+  const percent = { size: { width: 28, height: 10 }, strokeRoot: 10, minRoot: 2, headRoot: 24, headMinRoot: 8 };
+  const vertical = (from: number, to: number, x = 0) => [
+    { x, y: from },
+    { x, y: to },
+  ];
+  /** the reserved head of a half at linkWidth.max: the tip at the split, the base 12 back along the leg, 24 wide */
+  const head = (x: number, tip: number, back: 1 | -1, owner: string, half: string): Obstacle => ({
+    kind: 'polygon',
+    points: [
+      { x, y: tip },
+      { x: x + 12, y: tip + back * 12 },
+      { x: x - 12, y: tip + back * 12 },
+    ],
+    owner,
+    leg: `${owner}:${half}`,
+  });
+  const strokes = (owner: string, x: number, split: number, end: number): Obstacle[] => [
+    { ...segment({ x, y: 0 }, { x, y: split }, owner), piece: { leg: `${owner}:b2a`, index: 0 } },
+    { ...segment({ x, y: end }, { x, y: split }, owner), piece: { leg: `${owner}:a2b`, index: 0 } },
+  ];
+  /** the box of the text (with the halo) of a label on a vertical link, at the drawn stroke and head */
+  const textBox = (p: Placed, stroke: number, headBase: number): Rect => {
+    const c = drawnCentre(p, stroke, headBase);
+    return { x: c.x - p.height / 2, y: c.y - p.box.width / 2, width: p.height, height: p.box.width };
+  };
+  const meets = (a: Rect, b: Rect) =>
+    a.x < b.x + b.width - 1e-9 &&
+    b.x < a.x + a.width - 1e-9 &&
+    a.y < b.y + b.height - 1e-9 &&
+    b.y < a.y + a.height - 1e-9;
+
+  it('a link of 36 units: each label stands beside the head of its half as it is drawn, not beyond the widest head', () => {
+    // a2b runs from the top port (y 0) to the split at 18, b2a from the bottom port (y 36); both tips at the split.
+    // The port chips are 10 wide (0.5 off the line) with a stroke of 1; the device bodies are above and below.
+    const a2b = leg(vertical(0, 18), { ...percent, id: 'e:a2b' });
+    const b2a = leg(vertical(36, 18), { ...percent, id: 'e:b2a' });
+    const obstacles: Obstacle[] = [
+      ...strokes('e', 0, 18, 36),
+      head(0, 18, -1, 'e', 'a2b'),
+      head(0, 18, 1, 'e', 'b2a'),
+      rect(-4.49, -23.5, 10, 24, 1),
+      rect(-4.49, 36.5, 10, 24, 1),
+      rect(-472.69, -84, 1140.8, 72, 1.25),
+      rect(-57.69, 48, 115.3, 72, 1.25),
+    ];
+    const [a, b] = placeLinkLabels(a2b, b2a, 'e', obstacleIndex(obstacles)).map(placed);
+    // the two boxes overlap along the link, so the halves take opposite sides
+    expect([a.side, b.side]).toEqual([3, -3]);
+    // at <1 % (stroke 2, head 8) the near edge of the text stands the wide gap (4) beyond the wing (4): the centre
+    // 4 + 4 + 6 = 14 off the line; it was 22 (beyond the wing of the widest head)
+    expect(drawnCentre(a, 2, 8).x).toBeCloseTo(-14);
+    expect(drawnCentre(b, 2, 8).x).toBeCloseTo(14);
+    // at the widest half the text moves out with its head
+    expect(drawnCentre(a, 10, 24).x).toBeCloseTo(-22);
+    // at every drawn width the text clears the drawn head of its half, the widest head of the other half and the chips
+    const drawnHead = (base: number, back: 1 | -1): Rect => ({
+      x: -base / 2,
+      y: back < 0 ? 18 - (8 + (base - 8) / 4) : 18,
+      width: base,
+      height: 8 + (base - 8) / 4,
+    });
+    for (const [stroke, base] of [
+      [2, 8],
+      [6, 16],
+      [10, 24],
+    ]) {
+      const ta = textBox(a, stroke, base);
+      const tb = textBox(b, stroke, base);
+      expect(meets(ta, drawnHead(base, -1))).toBe(false);
+      expect(meets(tb, drawnHead(base, 1))).toBe(false);
+      expect(meets(ta, tb)).toBe(false);
+      for (const chip of [obstacles[4], obstacles[5]]) {
+        const r = (chip as Extract<Obstacle, { kind: 'rect' }>).rect;
+        const grown = { x: r.x - 1, y: r.y - 1, width: r.width + 2, height: r.height + 2 };
+        expect(meets(ta, grown)).toBe(false);
+        expect(meets(tb, grown)).toBe(false);
+      }
+    }
+  });
+  it('the reservation of a label beside the heads holds its text for every drawn width', () => {
+    const a2b = leg(vertical(0, 18), { ...percent, id: 'e:a2b' });
+    const p = placed(placeOnLadder(a2b, 'e', obstacleIndex([head(0, 18, -1, 'e', 'a2b')]), LABEL_SIDES, true));
+    expect(p.side).toBe(3);
+    const r = boundsOf(p.box);
+    for (const [stroke, base] of [
+      [2, 8],
+      [10, 24],
+    ]) {
+      const t = textBox(p, stroke, base);
+      expect(t.x).toBeGreaterThanOrEqual(r.x - 1e-9);
+      expect(t.x + t.width).toBeLessThanOrEqual(r.x + r.width + 1e-9);
+    }
+  });
+  it('an obstacle in the band of the drawn heads sends the label to the other side, then beyond the widest head', () => {
+    const a2b = leg(vertical(0, 18), { ...percent, id: 'e:a2b' });
+    const own = head(0, 18, -1, 'e', 'a2b');
+    // a thin node at x -12 .. -10 stands in the band left of the stroke (x -26 .. -8), not beyond the widest head
+    const near = rect(-12, -40, 2, 100);
+    expect(placed(placeOnLadder(a2b, 'e', obstacleIndex([own, near]), LABEL_SIDES, true)).side).toBe(-3);
+    // the right side is blocked too: the label stands beyond the widest head, 22 off the line whatever the drawn width
+    const q = placed(placeOnLadder(a2b, 'e', obstacleIndex([own, near, rect(7, -40, 40, 100)]), LABEL_SIDES, true));
+    expect(q.side).toBe(4);
+    expect(drawnCentre(q, 2, 8).x).toBeCloseTo(-22);
+    expect(drawnCentre(q, 10, 24).x).toBeCloseTo(-22);
+  });
+  it('a link with its text on the stroke of one half: that half moves beside it; the free half stays on its stroke', () => {
+    // b2a runs from the top port (y 0) to the split at 61.5, a2b from the bottom port (y 123). The text of the link
+    // stands on the stroke across the split (9.8 wide); a neighbour link runs 17.5 to the right.
+    const a2b = leg(vertical(123, 61.5), { ...percent, id: 'e:a2b' });
+    const b2a = leg(vertical(0, 61.5), { ...percent, id: 'e:b2a' });
+    const obstacles: Obstacle[] = [
+      ...strokes('e', 0, 61.5, 123),
+      ...strokes('n', 17.5, 61.5, 123),
+      head(0, 61.5, -1, 'e', 'b2a'),
+      head(0, 61.5, 1, 'e', 'a2b'),
+      head(17.5, 61.5, -1, 'n', 'b2a'),
+      head(17.5, 61.5, 1, 'n', 'a2b'),
+      rect(-4.8, 32.3, 9.8, 40.4),
+      rect(12.7, 48, 9.8, 24.4),
+    ];
+    const [a, b] = placeLinkLabels(a2b, b2a, 'e', obstacleIndex(obstacles)).map(placed);
+    // a2b: on its stroke in the middle of its half (it was beside the stroke at the wide gap, 15 off the line)
+    expect(a.side).toBe(0);
+    expect(a.centre).toEqual({ x: 0, y: 92.25 });
+    // b2a: its stroke and the top side at the near gap meet the text of the link, the bottom side meets the
+    // neighbour: it takes the top side at the wide gap
+    expect(b.side).toBe(2);
+    expect(b.centre.x).toBeCloseTo(-15);
+  });
+});
+
+describe('the own head on another run of the leg (review of 2026-10-29)', () => {
+  // A one-leg link: a jog of 4, a vertical run of 40, and the run of 24 that holds the head; the tip at (80, 60)
+  // points left. The percent slot is 28 × 10; linkWidth is 2 to 10, so the heads are 8 (thin) to 24 (widest) wide.
+  const PATH: Point[] = [
+    { x: 100, y: 100 },
+    { x: 104, y: 100 },
+    { x: 104, y: 60 },
+    { x: 80, y: 60 },
+  ];
+  const WIDTHS = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const percent = { size: { width: 28, height: 10 }, strokeRoot: 10, minRoot: 2, headRoot: 24, headMinRoot: 8 };
+  /** the head of the half drawn `width` wide: the tip at the end of the leg, along the direction of its last run */
+  const drawnHead = (points: Point[], width: number): Point[] => {
+    const tip = points[points.length - 1];
+    const before = points[points.length - 2];
+    const run = Math.hypot(tip.x - before.x, tip.y - before.y);
+    const ux = (tip.x - before.x) / run;
+    const uy = (tip.y - before.y) / run;
+    const { length, base } = headSize(width, 10);
+    return [
+      tip,
+      { x: tip.x - ux * length - (uy * base) / 2, y: tip.y - uy * length + (ux * base) / 2 },
+      { x: tip.x - ux * length + (uy * base) / 2, y: tip.y - uy * length - (ux * base) / 2 },
+    ];
+  };
+  /** a separating-axis test of two convex polygons; touching is free */
+  const convexMeet = (a: Point[], b: Point[]) =>
+    ![a, b].some((poly) =>
+      poly.some((p, i) => {
+        const q = poly[(i + 1) % poly.length];
+        const ax = { x: p.y - q.y, y: q.x - p.x };
+        const span = (pts: Point[]) => pts.map((v) => v.x * ax.x + v.y * ax.y);
+        const [sa, sb] = [span(a), span(b)];
+        const eps = 1e-9 * Math.hypot(ax.x, ax.y);
+        return Math.max(...sa) <= Math.min(...sb) + eps || Math.max(...sb) <= Math.min(...sa) + eps;
+      })
+    );
+  /** the box of the text (with the halo) at a drawn width */
+  const textAt = (p: Placed, width: number): Point[] =>
+    cornersOf({
+      centre: drawnCentre(p, width, headSize(width, 10).base),
+      width: p.box.width,
+      height: p.height,
+      degrees: p.degrees,
+    });
+  /** the scene of the review, turned by `degrees` about (100, 80): the leg, its strokes, its widest head, two bodies */
+  const scene = (degrees: number) => {
+    const r = (degrees * Math.PI) / 180;
+    const turn = (p: Point): Point => ({
+      x: 100 + (p.x - 100) * Math.cos(r) - (p.y - 80) * Math.sin(r),
+      y: 80 + (p.x - 100) * Math.sin(r) + (p.y - 80) * Math.cos(r),
+    });
+    const points = PATH.map(turn);
+    // the two bodies with the clearance of 1 that the stage gives them, each as two triangles (a turned rect)
+    const body = (x: number, y: number, width: number, height: number): Obstacle[] => {
+      const [a, b, c, d] = [
+        { x: x - 1, y: y - 1 },
+        { x: x + width + 1, y: y - 1 },
+        { x: x + width + 1, y: y + height + 1 },
+        { x: x - 1, y: y + height + 1 },
+      ].map(turn);
+      return [
+        { kind: 'polygon', points: [a, b, c] },
+        { kind: 'polygon', points: [a, c, d] },
+      ];
+    };
+    const [tip, left, right] = drawnHead(points, 10);
+    const obstacles: Obstacle[] = [
+      ...points.slice(1).map((p, i) => ({ ...segment(points[i], p, 'e', 1), piece: { leg: 'e:a2b', index: i } })),
+      { kind: 'polygon', points: [tip, left, right], owner: 'e', leg: 'e:a2b' },
+      ...body(97, 41, 42, 68),
+      ...body(61, 98, 78, 13),
+    ];
+    return { leg: leg(points, { ...percent, id: 'e:a2b' }), obstacles };
+  };
+
+  it.each([0, 30, 45, 90, 135, 210])(
+    'turned by %i°: the text clears the drawn head at every width between linkWidth.min and max',
+    (degrees) => {
+      const { leg: l, obstacles } = scene(degrees);
+      const p = placed(placeOnLadder(l, 'e', obstacleIndex(obstacles), LABEL_SIDES, true));
+      for (const width of WIDTHS) {
+        expect(convexMeet(textAt(p, width), drawnHead(l.points, width)), `width ${width}`).toBe(false);
+      }
+    }
+  );
+  it('the head on the run of the label is still no obstacle: the text moves out with it', () => {
+    // a straight leg of 36 with its head at the end: the label beside the drawn head, as in the case of 36 units
+    const l = leg(
+      [
+        { x: 0, y: 0 },
+        { x: 0, y: 18 },
+      ],
+      { ...percent, id: 'e:a2b' }
+    );
+    const [tip, left, right] = drawnHead(l.points, 10);
+    const head: Obstacle = { kind: 'polygon', points: [tip, left, right], owner: 'e', leg: 'e:a2b' };
+    const p = placed(placeOnLadder(l, 'e', obstacleIndex([head]), LABEL_SIDES, true));
+    expect(Math.abs(p.side)).toBe(3);
+    for (const width of WIDTHS) {
+      expect(convexMeet(textAt(p, width), drawnHead(l.points, width)), `width ${width}`).toBe(false);
+    }
   });
 });

@@ -376,7 +376,46 @@ test('an HTML edge label (a 100% foreignObject) does not drop the labels and no 
   }
 });
 
-test('a link too short for a spot beside its stroke keeps both labels beyond the wings of the widest heads', async ({
+test('a half that the text of its link blocks moves beside it; the other half stays on its stroke', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const prom = await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' });
+  const datasource = { uid: prom.uid, type: prom.type };
+  // edge-ab as a straight link of 120 units in the empty middle of the sheet, split at x = 200; its text "10G" stands
+  // on the stroke of the b2a half (x 200 .. 260), so b2a has no spot on its stroke or at the near gap beside it
+  const textSvg = handSvg
+    .replace('M 120 30 L 220 30 L 220 60 L 320 60', 'M 140 110 L 260 110')
+    .replace('translate(220.5,50)', 'translate(230,114)');
+  expect(textSvg).not.toBe(handSvg);
+  const uid = await createDiagram(handDrawnConfig('percent'), {
+    panels: [{ config: handDrawnConfig('percent'), svg: textSvg, title: 'labels text' }],
+    targets: demoTargets(datasource),
+    fieldConfig,
+    height: 12,
+    options: { linkWidth: { min: 2, max: 10 } },
+  });
+  const dashboardPage = await gotoDashboardPage({ uid });
+  const panel = (await dashboardPage.getPanelByTitle('labels text')).locator;
+  // a2b is free on its stroke: it stays there, it does not follow b2a away from the link
+  await expect(label(panel, 'edge-ab', 'a2b')).toHaveAttribute('data-dmap-side', 'line');
+  expect(Number(await label(panel, 'edge-ab', 'a2b').getAttribute('y'))).toBeCloseTo(110, 1);
+  await expect(label(panel, 'edge-ab', 'b2a')).toHaveAttribute('data-dmap-side', /^(top|bottom)-wide$/);
+  // no label stands on the text of the link
+  const placed = await boxes(panel.locator('text.dmap-link-label[data-dmap-cell="edge-ab"]'));
+  const text = await boxes(panel.locator('[data-cell-id="lbl-ab"] text'));
+  expect(placed).toHaveLength(2);
+  expect(text).toHaveLength(1);
+  for (const box of placed) {
+    expect(intersects(box, text[0]), JSON.stringify({ box, text })).toBe(false);
+  }
+  if (SHOTS) {
+    await panel.screenshot({ path: `${SHOTS}/link-labels-text-on-link.png` });
+  }
+});
+
+test('a link too short for a spot beside its stroke keeps both labels beside the wings of its drawn heads', async ({
   createDiagram,
   gotoDashboardPage,
   readProvisionedDataSource,
@@ -397,6 +436,16 @@ test('a link too short for a spot beside its stroke keeps both labels beyond the
   const panel = (await dashboardPage.getPanelByTitle('labels short')).locator;
   for (const half of ['a2b', 'b2a'] as const) {
     await expect(label(panel, 'edge-ab', half)).toHaveAttribute('data-dmap-side', /^(top|bottom)-head$/);
+    // near the link: the text stands the wide gap (4) beyond the wing of the head of its half as it is drawn, plus half
+    // the box height (6), not beyond the widest head (root units; the link is horizontal at y = 110)
+    const base = await panel
+      .locator(`polygon.dmap-arrow[data-dmap-cell="edge-ab"][data-dmap-half="${half}"]`)
+      .evaluate((el) => {
+        const [, left, right] = (el.getAttribute('points') ?? '').split(' ').map((p) => p.split(',').map(Number));
+        return Math.hypot(left[0] - right[0], left[1] - right[1]);
+      });
+    const y = Number(await label(panel, 'edge-ab', half).getAttribute('y'));
+    expect(Math.abs(y - 110)).toBeCloseTo(4 + base / 2 + 6, 1);
   }
   // no label stands on a drawn arrow head of the link (the unit tests pin the reserved heads at linkWidth.max)
   const placed = await boxes(panel.locator('text.dmap-link-label[data-dmap-cell="edge-ab"]'));

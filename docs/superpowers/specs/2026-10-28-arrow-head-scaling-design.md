@@ -50,7 +50,8 @@ as a short widening of the stroke, not as an arrow.
    - A link so short that every spot beside its stroke meets a widest head (a 36-unit link of a consumer team
      sheet: two "<1%" labels beside the stroke at the split) gets one more pair of sides, ±3
      (`top-head`, `bottom-head`): the near edge of the box stands the wide gap beyond the wing of the widest head
-     (`headRoot = base(max)`). It is the last rung of the ladder of a label, after the bend spots (only a label whose
+     (`headRoot = base(max)`). Revision 3 (section 4) changes this: ±3 stands beyond the drawn head, and the place
+     beyond the widest head is ±4. It is the last rung of the ladder of a label, after the bend spots (only a label whose
      mate holds ±3 tries that side first), so within one link every label that has a place on the lower rungs keeps
      it. A label on ±3 is an obstacle for the links placed after it, as a label on a bend spot is.
    - The white rect of the mask covers the box of the edge path with the margin `3 × max + 20`, not the current box
@@ -75,7 +76,28 @@ the labels of those four links stay on the line one step (4 units) farther from 
 stand beside the heads instead of at the wide gap beside the stroke (7 units farther out: the centre 22 off the
 line instead of 15).
 
-## 4. Out of scope
+## 4. Revision 3 (2026-10-29, the owner's report: labels far from a short link)
+
+On a live sheet the two "<1%" labels of a 36-unit link stood 22 units off the line, beyond the wings of the widest
+heads, while the drawn heads at that load were 8 units wide. The reserved head of the own half (24 wide at
+`linkWidth.max`) pushed the labels out. Revision 3 treats the head of the own half as the side ±1 treats the own
+stroke:
+
+- The sides ±3 (`top-head`, `bottom-head`) stand the wide gap beyond the wings of the head of the own half as it is
+  drawn (`drawnCentre` gets the drawn head). The reservation is the band from the near edge at the thinnest head
+  (`headMinRoot`, the head at `linkWidth.min`) to the far edge at the widest, so a width change still moves no
+  reservation; only the text moves across the link. The head of the own half is no obstacle for this band (the head
+  obstacle carries its edge and its leg); every other head, also the head of the other half, stays an obstacle at its
+  widest.
+- The old place beyond the wings of the widest head is now the sides ±4 (`top-head-wide`, `bottom-head-wide`), the
+  last try, for a link where an obstacle stands in the band.
+- A label whose mate holds ±3 no longer tries that side first: an isolated re-placement tries the place of the
+  mate first only when that place is on the stroke or at the near gap (link value labels spec, "Place").
+- At "<1%" the labels of the 36-unit link stand 14 units off the line (were 22); at `linkWidth.max` they stand at 22,
+  as before. A replay of nine consumer sheets in jsdom gives the same placed and dropped counts; every label on ±3
+  moves 8 units nearer at a thin load, and no label takes ±4.
+
+## 5. Out of scope
 
 - An option for the head size. The size follows the width; nothing to tune.
 - The `--ge-adaptive-bg` fallback of the sanitiser and the demo fixture fix (a separate change).

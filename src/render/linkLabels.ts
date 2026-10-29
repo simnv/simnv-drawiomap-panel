@@ -25,6 +25,7 @@ import {
   labelsVisible,
   LABEL_SIDES,
   LINK_LABEL_GEOMETRY,
+  NEAR_SIDES,
   type LabelSide,
   drawnCentre,
   obstacleIndex,
@@ -49,8 +50,6 @@ import { readViewBox, viewScaleOf } from './zoom';
  */
 
 export const LINK_LABEL_CLASS = 'dmap-link-label';
-/** The class of the defs that hold the masks which cut the stroke of a link under its on-stroke labels. */
-export const LINK_LABEL_DEFS_CLASS = 'dmap-link-label-defs';
 export const LINK_LABEL_LAYER_CLASS = 'dmap-link-labels';
 const NS = 'http://www.w3.org/2000/svg';
 /** a slot width rounds up to a multiple of this, so that a small change of a value keeps its slot */
@@ -98,6 +97,8 @@ interface LabelRecord {
   side?: LabelSide;
   /** the drawn stroke width of the half in root units (`HalfState.width` as the overlay draws it) */
   drawn: number;
+  /** the base of the drawn arrow head of the half in root units: a label beside the heads (±3) stands beyond it */
+  head: number;
   /** the box the label holds in the grid */
   obstacle?: Obstacle;
   /** an isolated re-placement found no spot: the label is hidden and tries again on the next call */
@@ -115,10 +116,6 @@ interface LabelLayout {
   grid: ObstacleIndex;
   widths: Map<string, number>;
   records: Map<string, LabelRecord>;
-  /** the number of this panel instance; the mask ids carry it, so that two panels on one page never share one */
-  uid: number;
-  /** the mask id of each link that has one */
-  maskIds: Map<string, string>;
   /** `linkWidth.max` of the placement: the widest stroke, in the units of the edge */
   max: number;
   min: number;
@@ -127,7 +124,6 @@ interface LabelLayout {
 }
 
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
-let instances = 0;
 let stamp = 0;
 
 /** The text of a half label (spec section 3): nothing for no data, an unbound half or an empty display. */
@@ -160,7 +156,7 @@ export function renderLinkLabels(
       layout.layer.remove();
       layouts.delete(root);
     }
-    dropMasks(root);
+    dropCuts(root);
     return { placed: 0, dropped: 0, moved: 0 };
   }
   const fontFamily = stageFont(root);
@@ -199,7 +195,7 @@ export function renderLinkLabels(
       dropped++;
     }
   }
-  syncMasks(root, layout);
+  syncCuts(root, layout);
   layout.layer.setAttribute('data-dmap-labels-placed', String(placed));
   layout.layer.setAttribute('data-dmap-labels-dropped', String(dropped));
   if (debugEnabled()) {
@@ -228,7 +224,7 @@ function applyScale(root: SVGSVGElement): { layer?: Element; flipped: boolean } 
 
 /**
  * Hides the layer when a glyph would be smaller than the minimum on-screen size, shows it otherwise (spec section
- * 6). One rect read and one attribute on a pan or a zoom; the masks that cut the strokes change only when the layer
+ * 6). One rect read and one attribute on a pan or a zoom; the cuts in the strokes change only when the layer
  * flips (a pan or a zoom changes nothing in the local space of the overlay). The zoom effects call it after
  * `applyLayout`.
  */
@@ -236,13 +232,13 @@ export function setLinkLabelScale(root: SVGSVGElement): void {
   const { flipped } = applyScale(root);
   const layout = layouts.get(root);
   if (flipped && layout) {
-    syncMasks(root, layout);
+    syncCuts(root, layout);
   }
 }
 
 /**
  * Cuts the strokes again when a web font finishes loading: the cut follows the painted box of the text (`getBBox`),
- * and the glyphs of a late font are wider than those of the first render. Only the masks change. The placement uses
+ * and the glyphs of a late font are wider than those of the first render. Only the cuts change. The placement uses
  * the slot, which is an estimate from the font size and not a measure, so a font does not move any label. Runs once
  * for `document.fonts.ready` and after each 'loadingdone'. A host without `document.fonts` does nothing. Returns the
  * cleanup for the unmount.
@@ -256,7 +252,7 @@ export function watchLinkLabelFonts(root: SVGSVGElement): () => void {
   const resync = () => {
     const layout = layouts.get(root);
     if (live && layout && layout.layer.parentNode === root) {
-      syncMasks(root, layout);
+      syncCuts(root, layout);
     }
   };
   fonts.addEventListener?.('loadingdone', resync);
@@ -616,13 +612,20 @@ export function stageObstacles(
     }
   }
   // the head of a half grows with its width: the obstacle is the triangle of the head at linkWidth.max (not its box:
-  // a label beside the stroke may stand next to the narrow end), so a refresh needs no new one
+  // a label beside the stroke may stand next to the narrow end), so a refresh needs no new one. It knows its edge and
+  // its half: a label beside the drawn heads moves with the head of its own half.
   root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => {
     const head = reservedHead(a);
     const m = head && toRoot(a, root);
     if (head && m) {
       const [tip, left, right] = head.map((p) => applyMatrix(m, p));
-      out.push({ kind: 'polygon', points: [tip, left, right] });
+      const owner = a.getAttribute('data-dmap-cell');
+      const half = a.getAttribute('data-dmap-half');
+      out.push({
+        kind: 'polygon',
+        points: [tip, left, right],
+        ...(owner && half ? { owner, leg: `${owner}:${half}` } : {}),
+      });
     } else {
       rect(a);
     }
@@ -668,14 +671,20 @@ function nearestOnPolyline(pts: Point[], p: Point): { at: number; point: Point }
   return { at: best.at, point: best.point };
 }
 
-const legOf = (id: string, points: Point[], strokeRoot: number, minRoot: number, headRoot: number): Leg => ({
+const legOf = (
+  id: string,
+  points: Point[],
+  strokeRoot: number,
+  minRoot: number,
+  head: { headRoot: number; headMinRoot: number }
+): Leg => ({
   id,
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
   strokeRoot,
   minRoot,
-  headRoot,
+  ...head,
 });
 
 /**
@@ -701,8 +710,8 @@ function edgeLegs(
   }
   const strokeRoot = max * scaleOf(m);
   const minRoot = Math.min(min, max) * scaleOf(m);
-  // the base of the widest arrow head, through the same scale as the widest stroke
-  const headRoot = headSize(max, max).base * scaleOf(m);
+  // the bases of the widest and of the thinnest arrow head, through the same scale as the widest stroke
+  const head = { headRoot: headSize(max, max).base * scaleOf(m), headMinRoot: headSize(min, max).base * scaleOf(m) };
   if (halves.a2b && halves.b2a) {
     // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
     // then the point in the path's own space, into root units through the same matrix as the vertices
@@ -710,13 +719,13 @@ function edgeLegs(
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
-      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot, headRoot),
-      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot, headRoot),
+      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot, head),
+      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot, head),
     };
   }
   return halves.a2b
-    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot, headRoot) }
-    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot, headRoot) };
+    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot, head) }
+    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot, head) };
 }
 
 /* ---------- the layer and its elements ---------- */
@@ -786,8 +795,6 @@ function ensureElement(layout: LabelLayout, rec: LabelRecord): SVGTextElement {
   return el;
 }
 
-/** The corner radius of the cut a label on its stroke makes in the line. */
-const GAP_RADIUS = 2;
 const SIDE_NAMES = {
   '0': 'line',
   '1': 'top',
@@ -796,6 +803,8 @@ const SIDE_NAMES = {
   '-2': 'bottom-wide',
   '3': 'top-head',
   '-3': 'bottom-head',
+  '4': 'top-head-wide',
+  '-4': 'bottom-head-wide',
 } as const;
 function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   const el = ensureElement(layout, rec);
@@ -804,13 +813,13 @@ function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   draw(rec, placed);
 }
 
-/** Writes the geometry of a placed label: the text at the drawn stroke. The cut in the stroke is `syncMasks`. */
+/** Writes the geometry of a placed label: the text at the drawn stroke. The cut in the stroke is `syncCuts`. */
 function draw(rec: LabelRecord, placed: Placed): void {
   const el = rec.el;
   if (!el) {
     return;
   }
-  const at = drawnCentre(placed, rec.drawn);
+  const at = drawnCentre(placed, rec.drawn, rec.head);
   const x = fmt(at.x);
   const y = fmt(at.y);
   el.setAttribute('x', x);
@@ -822,10 +831,6 @@ const turnOf = (degrees: number, at: Point) => `rotate(${fmt(degrees)} ${fmt(at.
 
 /* ---------- the cut in the stroke ---------- */
 
-/** a matrix number for an attribute: six decimals, so that a rotated group keeps its angle */
-const mnum = (n: number) => String(Math.round(n * 1e6) / 1e6);
-const matrixAttr = (m: Matrix) => `matrix(${[m.a, m.b, m.c, m.d, m.e, m.f].map(mnum).join(' ')})`;
-const MASK_PREFIX = 'dmap-lm-';
 /** the cut stands this far beyond each end of the text */
 const CUT_PAD = 1.5;
 
@@ -847,28 +852,81 @@ function textSpan(rec: LabelRecord, at: Point): { centre: number; length: number
   return { centre: at.x, length: rec.slot! };
 }
 
-/** Takes every mask off the strokes and removes the defs of the stage. */
-function dropMasks(root: SVGSVGElement): void {
-  root.querySelectorAll(`defs.${LINK_LABEL_DEFS_CLASS}`).forEach((d) => d.remove());
-  // the strokes live across refreshes now, so this is the only place that takes the mask off when the labels go
-  root.querySelectorAll('[mask]').forEach((el) => {
-    if (el.getAttribute('mask')?.startsWith(`url(#${MASK_PREFIX}`)) {
-      el.removeAttribute('mask');
-    }
+/** Takes the cut off every half of the stage. The overlay never writes a dash pattern, so every one is a cut. */
+function dropCuts(root: SVGSVGElement): void {
+  root.querySelectorAll(`g.${OVERLAY_CLASS} .dmap-half[stroke-dasharray]`).forEach((el) => {
+    el.removeAttribute('stroke-dasharray');
   });
 }
 
+/** The points of a `points` attribute. */
+function pointsOf(el: Element): Point[] {
+  const nums = (el.getAttribute('points') ?? '')
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const pts: Point[] = [];
+  for (let i = 1; i < nums.length; i += 2) {
+    pts.push({ x: nums[i - 1], y: nums[i] });
+  }
+  return pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) ? pts : [];
+}
+
+/** The arc length of the point of a polyline nearest to `p`, and the distance of `p` to it. */
+function arcOf(pts: Point[], p: Point): { at: number; distance: number } {
+  const { at, point } = nearestOnPolyline(pts, p);
+  let arc = 0;
+  for (let i = 1; i <= at; i++) {
+    arc += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  }
+  return {
+    at: arc + Math.hypot(point.x - pts[at].x, point.y - pts[at].y),
+    distance: Math.hypot(point.x - p.x, point.y - p.y),
+  };
+}
+
 /**
- * The stroke of a link stops under the text of its on-stroke labels, whatever lies behind it (no colour is read): one
- * `<mask>` per link, a white rect over the strokes of the link and a black rect per label slot, as the gap had been
- * (the slot wide, the drawn stroke plus 1 on each side high). The mask content is in the user space of the element
- * that wears the mask, the overlay group of the link, so each slot is the root box mapped through the inverse of
- * the matrix of that group, with the rotation of the label after it. The elements that draw the stroke are the halves
- * and the arrow heads of the overlay (the edge itself is invisible under a patch). Called on every pass: an overlay
- * layer that was built again in this frame (a half appeared or went, a new stage) has no mask yet; an updated layer
- * keeps its elements and their mask.
+ * The dash pattern of a polyline of length `total` with gaps at `cuts` (arc lengths from its first point), or
+ * undefined without a gap. The last dash runs past the end, so the pattern never repeats on the line.
  */
-function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
+export function cutPattern(cuts: Array<[number, number]>, total: number): string | undefined {
+  const merged: Array<[number, number]> = [];
+  for (const [from, to] of cuts
+    .map(([a, b]): [number, number] => [Math.max(0, Math.min(a, b)), Math.min(total, Math.max(a, b))])
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0])) {
+    const last = merged[merged.length - 1];
+    if (last && from <= last[1]) {
+      last[1] = Math.max(last[1], to);
+    } else {
+      merged.push([from, to]);
+    }
+  }
+  if (!merged.length) {
+    return undefined;
+  }
+  const out: number[] = [];
+  let at = 0;
+  for (const [from, to] of merged) {
+    out.push(from - at, to - from);
+    at = to;
+  }
+  out.push(total - at + 1, 0);
+  return out.map(fmt).join(' ');
+}
+
+/**
+ * The stroke of a link stops under the text of its on-stroke labels, whatever lies behind it (no colour is read): a
+ * gap in the dash pattern (`stroke-dasharray`) of each half that the text lies on, as long as the drawn text plus
+ * `CUT_PAD` at each end. A stroke cut by a dash pattern has butt ends (the halves are drawn with butt caps), so the
+ * gap is exact across the whole width of the stroke. The cut is in the space of the half: the two ends of the text
+ * axis are mapped from root units through the inverse of the matrix of the overlay group, then onto the polyline of
+ * the half. The arrow heads need no cut: an on-stroke label never stands on a head (each head is an obstacle at its
+ * widest). No `<mask>`, no id and no `url()` reference: the links that Safari stopped painting after a long time in
+ * the background were the ones whose halves wore a mask. Called on every pass: an overlay layer that was built again in this frame has no cut yet, and a half
+ * whose points changed (a new width) gets its pattern again; an attribute that did not change is not written.
+ */
+function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
   const shown = layout.layer.getAttribute('visibility') !== 'hidden';
   const wanted = new Map<string, LabelRecord[]>();
   for (const rec of layout.records.values()) {
@@ -885,125 +943,61 @@ function syncMasks(root: SVGSVGElement, layout: LabelLayout): void {
       wanted.set(rec.cellId, [...(wanted.get(rec.cellId) ?? []), rec]);
     }
   }
-  const strokes = new Map<string, SVGElement[]>();
-  root.querySelectorAll<SVGElement>(`g.${OVERLAY_CLASS} .dmap-half, g.${OVERLAY_CLASS} .dmap-arrow`).forEach((el) => {
+  const halves = new Map<string, SVGElement[]>();
+  root.querySelectorAll<SVGElement>(`g.${OVERLAY_CLASS} .dmap-half`).forEach((el) => {
     const cell = el.getAttribute('data-dmap-cell') ?? '';
-    strokes.set(cell, [...(strokes.get(cell) ?? []), el]);
+    halves.set(cell, [...(halves.get(cell) ?? []), el]);
   });
-  // all the reads first (the matrices and the boxes), then all the writes: one layout, not one per link
+  // all the reads first (the matrices and the text boxes), then all the writes: one layout, not one per link
   const base = typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
-  interface Plan {
-    cell: string;
-    els: SVGElement[];
-    area: Rect;
-    slots: Array<Record<string, string>>;
-    key: string;
-  }
-  const plans: Plan[] = [];
-  for (const [cell, recs] of wanted) {
-    const els = strokes.get(cell);
-    const space = els?.[0].parentElement;
-    const m = space && toRoot(space, root, base);
-    if (!els || !space || !m) {
+  const patterns = new Map<SVGElement, string | undefined>();
+  for (const [cell, els] of halves) {
+    const recs = wanted.get(cell);
+    const space = els[0].parentElement;
+    const m = recs && space && toRoot(space, root, base);
+    if (!recs || !m) {
+      els.forEach((el) => patterns.set(el, undefined));
       continue;
     }
     const back = invert(m);
-    // the white rect covers the strokes of the link with a margin; everything it covers is kept except the slots.
-    // The box is the one of the edge path, not of the overlay: a head that grows on a refresh changes the box of the
-    // overlay, not of the path, and the margin holds the widest head.
-    const margin = 3 * layout.max * scaleOf(m) + 20;
-    const line = layout.index.get(cell)?.line;
-    const box = (line && rootBox(line, root)) ?? rootBox(space, root);
-    const area = box
-      ? mapRect(
-          { x: box.x - margin, y: box.y - margin, width: box.width + 2 * margin, height: box.height + 2 * margin },
-          back
-        )
-      : { x: -1e5, y: -1e5, width: 2e5, height: 2e5 };
-    const slots = recs.map((rec) => {
+    // the ends of the text axis of each label, in the space of the halves
+    const ends = recs.map((rec) => {
       const placed = rec.placement as Placed;
       const at = drawnCentre(placed, rec.drawn);
-      const height = Math.max(LINK_LABEL_GEOMETRY.fontSize * 1.25, rec.drawn + 2);
       const { centre, length } = textSpan(rec, at);
-      return {
-        x: fmt(centre - length / 2 - CUT_PAD),
-        y: fmt(at.y - height / 2),
-        width: fmt(length + 2 * CUT_PAD),
-        height: fmt(height),
-        transform: `${matrixAttr(back)} ${turnOf(placed.degrees, at)}`,
-      };
+      const angle = (placed.degrees * Math.PI) / 180;
+      const u = { x: Math.cos(angle), y: Math.sin(angle) };
+      const mid = { x: at.x + (centre - at.x) * u.x, y: at.y + (centre - at.x) * u.y };
+      const reach = length / 2 + CUT_PAD;
+      return [
+        applyMatrix(back, { x: mid.x - reach * u.x, y: mid.y - reach * u.y }),
+        applyMatrix(back, { x: mid.x + reach * u.x, y: mid.y + reach * u.y }),
+      ];
     });
-    plans.push({
-      cell,
-      els,
-      area,
-      slots,
-      key: JSON.stringify([fmt(area.x), fmt(area.y), fmt(area.width), fmt(area.height), slots]),
-    });
-  }
-  let defs = root.querySelector<SVGDefsElement>(`defs.${LINK_LABEL_DEFS_CLASS}`);
-  const live = new Set<string>();
-  for (const { cell, els, area, slots, key } of plans) {
-    if (!defs) {
-      defs = document.createElementNS(NS, 'defs') as SVGDefsElement;
-      defs.setAttribute('class', LINK_LABEL_DEFS_CLASS);
-      root.insertBefore(defs, layout.layer);
-    }
-    let id = layout.maskIds.get(cell);
-    if (!id) {
-      id = `${MASK_PREFIX}${layout.uid}-${layout.maskIds.size}`;
-      layout.maskIds.set(cell, id);
-    }
-    let mask = Array.from(defs.children).find((c) => c.id === id) as SVGMaskElement | undefined;
-    if (!mask) {
-      mask = document.createElementNS(NS, 'mask') as SVGMaskElement;
-      mask.setAttribute('id', id);
-      mask.setAttribute('data-dmap-cell', cell);
-      mask.setAttribute('maskUnits', 'userSpaceOnUse');
-      mask.setAttribute('maskContentUnits', 'userSpaceOnUse');
-      defs.appendChild(mask);
-    }
-    live.add(id);
-    // a pan or a zoom changes nothing in the local space of the overlay: an unchanged mask is not rebuilt
-    if (mask.getAttribute('data-dmap-key') !== key) {
-      mask.setAttribute('data-dmap-key', key);
-      const frame = { x: fmt(area.x), y: fmt(area.y), width: fmt(area.width), height: fmt(area.height) };
-      for (const [k, v] of Object.entries(frame)) {
-        mask.setAttribute(k, v);
+    // a text axis on the half lies within half the widest stroke of it (a label on a straight run lies on it)
+    const near = layout.max / 2 + 1;
+    for (const el of els) {
+      const pts = pointsOf(el);
+      if (pts.length < 2) {
+        patterns.set(el, undefined);
+        continue;
       }
-      const white = document.createElementNS(NS, 'rect');
-      for (const [k, v] of Object.entries(frame)) {
-        white.setAttribute(k, v);
+      const cuts: Array<[number, number]> = [];
+      for (const [p0, p1] of ends) {
+        const a = arcOf(pts, p0);
+        const b = arcOf(pts, p1);
+        if (Math.min(a.distance, b.distance) <= near) {
+          cuts.push([a.at, b.at]);
+        }
       }
-      white.setAttribute('fill', 'white');
-      mask.replaceChildren(
-        white,
-        ...slots.map((spec) => {
-          const k = document.createElementNS(NS, 'rect');
-          for (const [name, v] of Object.entries(spec)) {
-            k.setAttribute(name, v);
-          }
-          k.setAttribute('rx', String(GAP_RADIUS));
-          k.setAttribute('fill', 'black');
-          return k;
-        })
-      );
+      patterns.set(el, cutPattern(cuts, polylineLength(pts)));
     }
-    const ref = `url(#${id})`;
-    els.forEach((el) => el.getAttribute('mask') !== ref && el.setAttribute('mask', ref));
   }
-  Array.from(defs?.children ?? []).forEach((c) => {
-    if (!live.has(c.id)) {
-      c.remove();
-    }
-  });
-  if (defs && !defs.firstElementChild) {
-    defs.remove();
-  }
-  for (const [cell, els] of strokes) {
-    const id = layout.maskIds.get(cell);
-    if (!id || !live.has(id)) {
-      els.forEach((el) => el.getAttribute('mask')?.startsWith(`url(#${MASK_PREFIX}`) && el.removeAttribute('mask'));
+  for (const [el, pattern] of patterns) {
+    if (pattern === undefined) {
+      el.removeAttribute('stroke-dasharray');
+    } else if (el.getAttribute('stroke-dasharray') !== pattern) {
+      el.setAttribute('stroke-dasharray', pattern);
     }
   }
 }
@@ -1032,10 +1026,13 @@ function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
     rec.obstacle = undefined;
     return false;
   }
-  // an isolated re-placement tries first the side the other half of the link holds (or held before it dropped)
+  // an isolated re-placement tries first the near place the other half of the link holds (or held before it
+  // dropped); a place away from the stroke is the mate's own, it does not pull this half away from its link
   const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.side;
   const sides: readonly LabelSide[] =
-    mate === undefined ? LABEL_SIDES : [mate, ...LABEL_SIDES.filter((side) => side !== mate)];
+    mate === undefined || !NEAR_SIDES.includes(mate)
+      ? LABEL_SIDES
+      : [mate, ...LABEL_SIDES.filter((side) => side !== mate)];
   return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides, true));
 }
 
@@ -1089,8 +1086,6 @@ function fullPlacement(
     grid: obstacleIndex([]),
     widths: new Map(),
     records: new Map(),
-    uid: previous?.uid ?? ++instances,
-    maskIds: previous?.maskIds ?? new Map(),
     max: opts.linkWidth.max,
     min: opts.linkWidth.min,
     bounds: boundsOfStage(root, opts.bounds),
@@ -1116,7 +1111,7 @@ function fullPlacement(
       mode: slot.mode,
       leg: legs.get(slot.cellId)?.[slot.which],
       slot: slotOf(layout, slot, text),
-      drawn: drawnOf(layout, legs.get(slot.cellId)?.[slot.which], slot.state),
+      ...drawnOf(layout, legs.get(slot.cellId)?.[slot.which], slot.state),
       retry: false,
     };
     layout.records.set(`${slot.cellId}:${slot.which}`, rec);
@@ -1148,11 +1143,15 @@ function fullPlacement(
   return layout;
 }
 
-/** The drawn stroke width of a half in root units: its width in the units of the edge, converted as the widest one is. */
-function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): number {
+/**
+ * The drawn stroke width of a half and the base of its drawn head, in root units: the sizes in the units of the edge,
+ * converted as the widest stroke is.
+ */
+function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): { drawn: number; head: number } {
   // the reservation holds the widths between linkWidth.min and linkWidth.max only
   const width = Math.min(Math.max(state.width, layout.min), layout.max);
-  return leg && layout.max > 0 ? (width * leg.strokeRoot) / layout.max : width;
+  const toRootUnits = (v: number) => (leg && layout.max > 0 ? (v * leg.strokeRoot) / layout.max : v);
+  return { drawn: toRootUnits(width), head: toRootUnits(headSize(width, layout.max).base) };
 }
 
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
@@ -1169,10 +1168,12 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
   for (const slot of slots) {
     const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
     const text = linkLabelText(slot.state, slot.mode);
-    // a changed load changes the drawn width: the text moves across the link, on the same side and place along it
-    const drawn = drawnOf(layout, rec.leg, slot.state);
-    if (drawn !== rec.drawn) {
+    // a changed load changes the drawn width and head: the text moves across the link, on the same side and place
+    // along it
+    const { drawn, head } = drawnOf(layout, rec.leg, slot.state);
+    if (drawn !== rec.drawn || head !== rec.head) {
       rec.drawn = drawn;
+      rec.head = head;
       if (rec.placement && 'centre' in rec.placement) {
         draw(rec, rec.placement);
       }

@@ -43,15 +43,24 @@ export interface LegInput {
   bounds?: Rect;
   /** the thinnest stroke in root units (`linkWidth.min × geo.unit`); the width of a half is drawn between the two */
   minRoot?: number;
-  /** the base of the widest arrow head of the edge in root units: the sides ±3 stand beyond its wings */
+  /** the base of the widest arrow head of the edge in root units: the sides ±4 stand beyond its wings */
   headRoot?: number;
+  /**
+   * The base of the head of the thinnest half in root units (the head at `linkWidth.min`). The sides ±3 stand beyond
+   * the wings of the head as it is drawn, between this one and `headRoot`. Without it, `headRoot`.
+   */
+  headMinRoot?: number;
 }
 
 export type Obstacle =
   /** a cell body, a pill, a chip, a dot, an arrowhead of draw.io, the room of a status marker or a placed label */
   | { kind: 'rect'; rect: Rect; clearance: number }
-  /** a convex polygon (the reserved arrowhead of an overlay half: a triangle); no clearance */
-  | { kind: 'polygon'; points: [Point, Point, Point] }
+  /**
+   * A convex polygon (the reserved arrowhead of an overlay half: a triangle); no clearance. `owner` is the cell id of
+   * the edge and `leg` the id of the leg whose half draws the head, when known: a label on the sides ±3 of a run of
+   * that leg moves with the head, so the head is no obstacle for it when its centreline lies on the line of that run.
+   */
+  | { kind: 'polygon'; points: [Point, Point, Point]; owner?: string; leg?: string }
   /** a piece of a drawn edge; `owner` is the cell id of the edge, `piece` its place in a leg polyline, when known */
   | { kind: 'segment'; a: Point; b: Point; clearance: number; owner: string; piece?: { leg: string; index: number } };
 
@@ -75,7 +84,7 @@ export interface Placed {
   height: number;
   /**
    * The width the wide gap counts from, in root units, whatever the drawn width: the widest stroke for the sides ±2,
-   * the base of the widest arrow head for ±3.
+   * the base of the widest arrow head for ±3 and ±4 (±3 counts from the drawn head; `drawnCentre` gets it).
    */
   maxRoot: number;
   /** the point of the leg the box stands at, and the unit vector of the top side: `drawnCentre` needs them */
@@ -85,21 +94,28 @@ export interface Placed {
 /**
  * Where a label stands: 0 on the own stroke; 1 beside it on the top side (the side the tops of the letters face,
  * `runHeading().first`) and −1 on the bottom side, the near edge of the box `normalGap` beyond the stroke edge; 2 and
- * −2 are the same sides with `wideGap`, for a stroke with a wide chip or pill beside it; 3 and −3 (`HEAD_SIDES`)
- * stand `wideGap` beyond the wings of the widest arrow head, the last try on a link so short that every spot beside
- * the stroke meets a head.
+ * −2 are the same sides with `wideGap`, for a stroke with a wide chip or pill beside it. On a link so short that
+ * every spot beside the stroke meets a head: 3 and −3 (`HEAD_SIDES`) stand `wideGap` beyond the wings of the head of
+ * the own half as it is drawn, and 4 and −4 (`WIDEST_HEAD_SIDES`), the last try, `wideGap` beyond the wings of the
+ * widest head.
  */
-export type LabelSide = 0 | 1 | -1 | 2 | -2 | 3 | -3;
+export type LabelSide = 0 | 1 | -1 | 2 | -2 | 3 | -3 | 4 | -4;
 export const LABEL_SIDES: readonly LabelSide[] = [0, 1, -1, 2, -2];
 /**
- * The sides beyond the heads: tried after every other spot of the label, the bend spots too (a label whose mate holds
- * one of them tries that side first, as it does for any side of the mate).
+ * The places that the two halves of a link share: on the stroke and beside it at the near gap. A half that has none
+ * of them free takes its own nearest spot; it does not pull the other half away from its link.
  */
+export const NEAR_SIDES: readonly LabelSide[] = [0, 1, -1];
+/** The sides beside the drawn heads: tried after every other spot of the label, the bend spots too. */
 export const HEAD_SIDES: readonly LabelSide[] = [3, -3];
+/** The sides beyond the widest heads: the last try, when an obstacle stands between a drawn head and its widest. */
+export const WIDEST_HEAD_SIDES: readonly LabelSide[] = [4, -4];
 
-/** The width the gap of a side counts from: the widest stroke, or for ±3 the base of the widest head. */
+/** The width the gap of a side counts from: the widest stroke, or for ±3 and ±4 the base of the widest head. */
 const gapBase = (leg: LegInput, side: LabelSide): number =>
-  Math.abs(side) === 3 ? Math.max(leg.headRoot ?? 0, leg.strokeRoot) : leg.strokeRoot;
+  Math.abs(side) >= 3 ? Math.max(leg.headRoot ?? 0, leg.strokeRoot) : leg.strokeRoot;
+/** The base of the head of the thinnest half, at most the widest one. */
+const headMinOf = (leg: LegInput): number => Math.min(leg.headMinRoot ?? gapBase(leg, 3), gapBase(leg, 3));
 export type Placement = Placed | { dropped: 'short-leg' | 'no-free-spot' };
 
 export const LINK_LABEL_GEOMETRY = {
@@ -116,6 +132,8 @@ export const MIN_GLYPH_PX = 7;
 export const VERTICAL_EPS = 0.01;
 /** Rounding slack: a box that touches an obstacle is free, a run of exactly the box width fits. */
 const EPS = 1e-6;
+/** A head whose centreline stands at most this far off the line of a run lies on it (`headOnLine`). */
+const HEAD_ON_LINE_EPS = 0.01;
 
 /** True when the labels read at `viewScale` pixels per user unit (section 6). */
 export function labelsVisible(viewScale: number): boolean {
@@ -402,6 +420,17 @@ function segmentHits(box: OrientedBox, a: Point, b: Point, clearance: number): b
   return distance < clearance - EPS;
 }
 
+/**
+ * True when the centreline of a head (from its tip to the middle of its base) lies on the line through `a` and `b`.
+ * The slack is far below the wide gap that the text keeps beyond the wing.
+ */
+function headOnLine([tip, left, right]: readonly [Point, Point, Point], a: Point, b: Point): boolean {
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  const off = (p: Point) => Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / length;
+  const base = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };
+  return length > 0 && off(tip) <= HEAD_ON_LINE_EPS && off(base) <= HEAD_ON_LINE_EPS;
+}
+
 /** The arc length at every vertex of a polyline. */
 const arcLengths = (pts: readonly Point[]): number[] => {
   const out = [0];
@@ -432,10 +461,14 @@ export function placeHalfLabel(
     return strict;
   }
   // the last resort: the strict ladder found nothing, so the beside-stroke spots at a bend are tried, then the spots
-  // beyond the wings of the widest head (strict, then at a bend); when they fail too, the strict reason stays
-  const beyond = HEAD_SIDES.filter((side) => !sides.includes(side));
+  // beside the drawn heads, then beyond the wings of the widest head (each strict, then at a bend); when they fail
+  // too, the strict reason stays
+  const beside = HEAD_SIDES.filter((side) => !sides.includes(side));
+  const beyond = WIDEST_HEAD_SIDES.filter((side) => !sides.includes(side));
   for (const [ladder, atBends] of [
     [sides, true],
+    [beside, false],
+    [beside, true],
     [beyond, false],
     [beyond, true],
   ] as const) {
@@ -473,14 +506,24 @@ function placeOnRuns(
   // stroke it is as high as the largest gap rect.
   const minRoot = Math.min(leg.minRoot ?? leg.strokeRoot, leg.strokeRoot);
   // The wide gap (a chip or a pill beside the stroke is wider than a thin stroke) counts from the edge of the widest
-  // stroke for every drawn width: its text does not move with the load.
+  // stroke for every drawn width: its text does not move with the load. Beside the heads (±3) the band runs from the
+  // wing of the thinnest head to the wing of the widest, as beside the stroke (±1) from the thinnest stroke edge.
+  const headMin = headMinOf(leg);
   const offsetOf = (side: LabelSide) =>
     Math.sign(side) *
-    (Math.abs(side) >= 2
-      ? wideGap + gapBase(leg, side) / 2 + h / 2
-      : normalGap + (minRoot + leg.strokeRoot) / 4 + h / 2);
+    (Math.abs(side) === 1
+      ? normalGap + (minRoot + leg.strokeRoot) / 4 + h / 2
+      : Math.abs(side) === 3
+        ? wideGap + (headMin + gapBase(leg, side)) / 4 + h / 2
+        : wideGap + gapBase(leg, side) / 2 + h / 2);
   const sweptHeight = (side: LabelSide) =>
-    side === 0 ? Math.max(h, leg.strokeRoot + 2) : Math.abs(side) >= 2 ? h : h + (leg.strokeRoot - minRoot) / 2;
+    side === 0
+      ? Math.max(h, leg.strokeRoot + 2)
+      : Math.abs(side) === 1
+        ? h + (leg.strokeRoot - minRoot) / 2
+        : Math.abs(side) === 3
+          ? h + (gapBase(leg, side) - headMin) / 2
+          : h;
   const d0 = leg.length / 2;
   // the distances from the middle, the lower one first at each step; the same list serves both sides
   const distances: number[] = [d0];
@@ -516,21 +559,35 @@ function placeOnRuns(
         o.piece.leg === leg.id &&
         arcs[o.piece.index] >= run.from - EPS &&
         arcs[o.piece.index + 1] <= run.to + EPS;
-      return [{ d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece }];
+      // the head of the own half, only when its centreline lies on the line of this run: then every drawn head stays
+      // within half its base of that line, and the sides ±3 keep the wide gap beyond that half base at every width.
+      // A head on another run (it points another way) stays an obstacle at its widest.
+      const ownHead = (o: Obstacle) =>
+        o.kind === 'polygon' &&
+        o.owner === own &&
+        o.leg !== undefined &&
+        o.leg === leg.id &&
+        headOnLine(o.points, a, b);
+      return [
+        { d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece, ownHead },
+      ];
     });
   });
   for (const side of sides) {
     // on the stroke there is nothing to try at a bend; beside the heads only for a leg that knows a head wider than
     // its stroke
-    if ((atBends && side === 0) || (Math.abs(side) === 3 && !((leg.headRoot ?? 0) > leg.strokeRoot))) {
+    if ((atBends && side === 0) || (Math.abs(side) >= 3 && !((leg.headRoot ?? 0) > leg.strokeRoot))) {
       continue;
     }
-    for (const { d, anchor, heading, ownPiece } of candidates) {
+    // beside the drawn heads the text moves with the head of its own half, so that head is no obstacle when it lies
+    // on the candidate's run; every other head stays one at its widest
+    const besideHead = Math.abs(side) === 3;
+    for (const { d, anchor, heading, ownPiece, ownHead } of candidates) {
       const shift = offsetOf(side);
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
       const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
       if (
-        !collides(box, ownPiece, index) &&
+        !collides(box, (o) => ownPiece(o) || (besideHead && ownHead(o)), index) &&
         (!atBends || bendSpotFits(leg, own, index, box, side, anchor, heading.first))
       ) {
         return {
@@ -587,8 +644,12 @@ function bendSpotFits(
   }
   const height = leg.size.height + 2 * LINK_LABEL_GEOMETRY.halo;
   const minRoot = Math.min(leg.minRoot ?? leg.strokeRoot, leg.strokeRoot);
-  return [minRoot, leg.strokeRoot].every((drawn) =>
-    ownsSpot(drawnCentre({ side, anchor, normal, height, maxRoot: gapBase(leg, side) }, drawn), leg, own, index)
+  const maxRoot = gapBase(leg, side);
+  return [
+    [minRoot, headMinOf(leg)],
+    [leg.strokeRoot, maxRoot],
+  ].every(([drawn, head]) =>
+    ownsSpot(drawnCentre({ side, anchor, normal, height, maxRoot }, drawn, head), leg, own, index)
   );
 }
 
@@ -609,27 +670,30 @@ function ownsSpot(centre: Point, leg: LegInput, own: string, index: ObstacleInde
 }
 
 /**
- * The centre of the text for a stroke drawn `drawnRoot` wide (root units). The reservation of a label (`centre`,
- * `box`) always uses the widest stroke, so that a change of the load never makes a label collide; the text stands
- * `normalGap` (or `wideGap`) beyond the edge of the stroke as it is drawn.
+ * The centre of the text for a stroke drawn `drawnRoot` wide and its head `drawnHeadRoot` wide at the base (root
+ * units). The reservation of a label (`centre`, `box`) holds the text for every drawn width, so that a change of the
+ * load never makes a label collide. The text stands `normalGap` beyond the edge of the stroke as it is drawn (±1),
+ * `wideGap` beyond the wing of the head as it is drawn (±3), or `wideGap` beyond a fixed width (`maxRoot`: ±2, ±4).
  */
 export function drawnCentre(
   p: Pick<Placed, 'side' | 'anchor' | 'normal' | 'height' | 'maxRoot'>,
-  drawnRoot: number
+  drawnRoot: number,
+  drawnHeadRoot = p.maxRoot
 ): Point {
   if (p.side === 0) {
     return p.anchor;
   }
   const { normalGap, wideGap } = LINK_LABEL_GEOMETRY;
-  const wide = Math.abs(p.side) >= 2;
-  const shift = Math.sign(p.side) * ((wide ? wideGap : normalGap) + (wide ? p.maxRoot : drawnRoot) / 2 + p.height / 2);
+  const near = Math.abs(p.side) === 1;
+  const base = near ? drawnRoot : Math.abs(p.side) === 3 ? drawnHeadRoot : p.maxRoot;
+  const shift = Math.sign(p.side) * ((near ? normalGap : wideGap) + base / 2 + p.height / 2);
   return { x: p.anchor.x + p.normal.x * shift, y: p.anchor.y + p.normal.y * shift };
 }
 
 /**
- * Places the labels of the two halves of one link so that both stand in one place: on the stroke, else both on the
- * top side, else both on the bottom side, then the same two sides with the wide gap. Only when no single place holds both, each half takes its own first free
- * spot. The first label of a pair is an
+ * Places the labels of the two halves of one link so that both stand in one near place (`NEAR_SIDES`): on the
+ * stroke, else both on the top side, else both on the bottom side. When no near place holds both, each half takes
+ * its own first free spot, so a half that is free near its stroke stays there. The first label of a pair is an
  * obstacle for the second while the pair is placed; the index holds no label of the pair when this returns.
  */
 export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: ObstacleIndex): [Placement, Placement] {
@@ -649,7 +713,7 @@ export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: Ob
     drop(held);
     return [first, second];
   };
-  for (const side of LABEL_SIDES) {
+  for (const side of NEAR_SIDES) {
     const result = pair([side]);
     if ('centre' in result[0] && 'centre' in result[1]) {
       return result;
@@ -671,10 +735,13 @@ export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: Ob
   return [rescued, rescue(b, second, rescued)];
 }
 
-/** The box against the obstacles near it; the pieces of the own run (`ownPiece`) do not count. */
-function collides(box: OrientedBox, ownPiece: (o: Obstacle) => boolean, index: ObstacleIndex): boolean {
+/** The box against the obstacles near it; the pieces of the own run and the own head (`exempt`) do not count. */
+function collides(box: OrientedBox, exempt: (o: Obstacle) => boolean, index: ObstacleIndex): boolean {
   const corners = cornersOf(box);
   for (const o of index.near(boundsOf(box))) {
+    if (exempt(o)) {
+      continue;
+    }
     if (o.kind === 'rect') {
       if (overlapsRect(corners, box, grow(o.rect, o.clearance))) {
         return true;
@@ -683,7 +750,7 @@ function collides(box: OrientedBox, ownPiece: (o: Obstacle) => boolean, index: O
       if (overlapsConvex(corners, box, o.points)) {
         return true;
       }
-    } else if (!ownPiece(o) && segmentHits(box, o.a, o.b, o.clearance)) {
+    } else if (segmentHits(box, o.a, o.b, o.clearance)) {
       return true;
     }
   }
