@@ -611,7 +611,7 @@ The state of a use comes from the snapshot of its refId (`src/query/panelSnapsho
 - Coverage, as `src/binding/status.ts:44-65`: two series, one with the value 1 and one with no value, give the worst
   of `normal` and `missing`, which is `missing` with the reason "1 of 2 series have no value".
 - A link half with no series is grey; the other half keeps its colour (`src/binding/color.ts:55-71`). The text of a
-  cell with no data is "–". The hover row shows "no data".
+  cell with no data is "–". The hover row shows "No data".
 
 ### 3.7 Several series
 
@@ -657,7 +657,7 @@ Line i takes slot i of `[0, 1, 2, 3, 4, 5, 26, 30]` in the Grafana classic palet
 so the eight lines have distinct hues (0.1, ADR 0003). The order of this section
 fixes the colour and the label of each line, so a new frame order changes neither. The line label is the display
 name of the field. A series with no finite value keeps its place, its colour and its label; it draws no line, and
-the tooltip shows "no data" for it. The pinned tooltip lists all drawn lines at the hovered time, then "+N more".
+the tooltip shows "No data" for it. The pinned tooltip lists all drawn lines at the hovered time, then "+N more".
 Today a card row holds one history
 (`src/interact/cardModel.ts:33-51`), `Card` passes one model (`src/interact/Card.tsx:242-262`), and `SparklineView`
 takes one model (`src/visuals/SparklineView.tsx:9-23`). These files are rewritten (6.2).
@@ -1623,7 +1623,7 @@ P1 acceptance:
    R5): a range frame at 0, 60 and 120 s and an instant frame at 125 s with equal labels give four points in both
    frame orders, and the history row keeps all four; two values at one timestamp give `duplicate-series`. N lines
    (3.7): 9 series give 8 lines and "+1 more"; after a reorder of the frames each line keeps its colour and label;
-   a series with no finite value keeps its colour slot and shows "no data" in the tooltip model; two lines at 49 and
+   a series with no finite value keeps its colour slot and shows "No data" in the tooltip model; two lines at 49 and
    51 give the Y range 0 to 51 (Astra R8), and `min: auto` gives 47.45 to 52.55, the result of the retained
    `yDomain` (`src/visuals/domain.ts:49-59`: a span of at least 10 % of the top, centred on the data).
 10. Unit: links: a→b = `up`; `at=target` flips the halves, the label and the card row; capacity from the refId,
