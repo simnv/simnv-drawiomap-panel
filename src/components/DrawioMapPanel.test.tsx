@@ -1,16 +1,16 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { locationService } from '@grafana/runtime';
 import {
   createTheme,
-  dateTime,
   FieldConfig,
   FieldType,
   getDefaultTimeRange,
   LoadingState,
+  MappingType,
   PanelProps,
   ThemeContext,
   ThresholdsMode,
@@ -19,10 +19,9 @@ import {
 import { DrawioMapPanel } from './DrawioMapPanel';
 import { fnv1a } from '../util/hash';
 import type { Options } from '../types';
-import type { DiagramConfig } from '../model/config';
-import { Observable } from 'rxjs';
-import { clearQuerySessions } from '../query/session';
-const nativeQuery = vi.hoisted(() => vi.fn());
+import type { ConfigV4 } from '../model/v4';
+import { demoConfigV4 } from '../fixtures/demo-config';
+
 /** Count the binds, patch applications and view renders of the panel. */
 const work = vi.hoisted(() => ({ applied: [] as unknown[], binds: 0, viewRenders: 0, panelStage: 'dmap-stage' }));
 vi.mock('../render/applier', async (importOriginal) => {
@@ -35,13 +34,13 @@ vi.mock('../render/applier', async (importOriginal) => {
     },
   };
 });
-vi.mock('../binding/engine', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../binding/engine')>();
+vi.mock('../binding/bindV4', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../binding/bindV4')>();
   return {
     ...actual,
-    bindPlan: (...args: Parameters<typeof actual.bindPlan>) => {
+    bindV4: (...args: Parameters<typeof actual.bindV4>) => {
       work.binds++;
-      return actual.bindPlan(...args);
+      return actual.bindV4(...args);
     },
   };
 });
@@ -58,17 +57,6 @@ vi.mock('../stage/useStage', async (importOriginal) => {
     },
   };
 });
-const sourceLookups = vi.hoisted(() => vi.fn());
-vi.mock('@grafana/runtime', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@grafana/runtime')>()),
-  getDataSourceSrv: () => ({
-    get: async (ref?: { uid?: string }) => {
-      sourceLookups(ref);
-      return { uid: 'native', components: {}, query: nativeQuery };
-    },
-    getInstanceSettings: () => undefined,
-  }),
-}));
 vi.mock('@grafana/ui', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@grafana/ui')>()),
   Sparkline: (props: { width: number; height: number }) => (
@@ -93,82 +81,25 @@ vi.hoisted(() => {
     window.matchMedia ?? ((() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as never);
 });
 
+/** The demo L3 diagram: its cells carry `bind`, `key`, `port`, `at` and `cap` (fixtures/demo/demo-l3.yaml). */
 const svg = readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8');
 
-/** `config`: the field config after the overrides, as Grafana gives it to the panel. */
-const frame = (refId: string, labels: Record<string, string>, values: number[], config: FieldConfig = {}) =>
-  toDataFrame({
+/**
+ * A frame with one sample every 5 s, the last one now: the demo freshness (3x the cadence) keeps it fresh.
+ * `config`: the field config after the overrides, as Grafana gives it to the panel.
+ */
+const frame = (refId: string, labels: Record<string, string>, values: number[], config: FieldConfig = {}) => {
+  const now = Date.now();
+  return toDataFrame({
     refId,
     fields: [
-      { name: 'Time', type: FieldType.time, values: values.map((_, i) => i) },
+      { name: 'Time', type: FieldType.time, values: values.map((_, i) => now - (values.length - 1 - i) * 5000) },
       { name: 'Value', type: FieldType.number, values, labels, config },
     ],
   });
-
-/** The bindings of the demo diagram over the panel queries A (traffic), C (up) and E (cpu). */
-const binding = (queryId: string, match: Record<string, string>) => ({ queryId, match, reducer: 'last' as const });
-const a2b = binding('A', { job: 'node-${from.node}', device: '${from.port}' });
-const b2a = binding('A', { job: 'node-${to.node}', device: '${to.port}' });
-const demoConfig: DiagramConfig = {
-  version: 3,
-  queries: ['A', 'C', 'E'].map((id) => ({ id, name: id, source: { kind: 'panel', refId: id } })),
-  patterns: [
-    {
-      id: 'links',
-      name: 'links',
-      select: { kind: 'link' },
-      display: {
-        link: { a2b: { binding: a2b }, b2a: { binding: b2a }, capacity: 100000000 },
-        hover: {
-          rows: [
-            { kind: 'history', label: '${from.node} → ${to.node}', binding: a2b },
-            { kind: 'history', label: '${to.node} → ${from.node}', binding: b2a },
-          ],
-        },
-        url: '/d/x?job=${from.node}',
-      },
-    },
-    {
-      id: 'node up',
-      name: 'node up',
-      select: { kind: 'node' },
-      display: { shape: { binding: binding('C', { job: 'node-${cell.pg-id}' }), target: 'shape' } },
-    },
-  ],
-  overrides: [],
-  widgets: [],
-};
-/** The CPU row of one router, with its own url. */
-const cpuPattern: DiagramConfig['patterns'][number] = {
-  id: 'router cpu',
-  name: 'router cpu',
-  select: { ids: ['rtr-b'] },
-  display: {
-    hover: {
-      rows: [
-        {
-          kind: 'history',
-          label: 'CPU',
-          unit: 'percent',
-          binding: binding('E', { job: 'node-${cell.pg-id}' }),
-          url: '/d/cpu?h=${cell.pg-id}',
-        },
-      ],
-    },
-  },
-};
-const withPatterns = (...patterns: DiagramConfig['patterns']): DiagramConfig => ({
-  ...demoConfig,
-  patterns: [...demoConfig.patterns, ...patterns],
-});
-const options: Options = {
-  diagram: { xml: '<mxfile/>', svg, hash: fnv1a(svg), updatedAt: '2026-10-17T00:00:00Z' },
-  zoom: { mode: 'fit', percent: 100, wheel: false, pan: false },
-  linkWidth: { min: 2, max: 10 },
-  config: demoConfig,
 };
 
-// an override for query C in Grafana
+// the `up` override of the demo dashboard
 const upThresholds = {
   mode: ThresholdsMode.Absolute,
   steps: [
@@ -177,15 +108,36 @@ const upThresholds = {
   ],
 };
 
-function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
-  const series = [
-    frame('A', { job: 'node-isp-a', device: 'pppoe' }, [41e6]),
-    frame('A', { job: 'node-rtr-a', device: 'wan1' }, [10e6]),
-    frame('A', { job: 'node-radio', device: 'dhcp' }, [90e6]),
-    frame('C', { job: 'node-rtr-a' }, [1], { thresholds: upThresholds }),
-    frame('C', { job: 'node-lte' }, [0], { thresholds: upThresholds }),
-    frame('E', { job: 'node-rtr-b' }, [12, 30, 42]),
+const options: Options = {
+  diagram: { xml: '<mxfile/>', svg, hash: fnv1a(svg), updatedAt: '2026-10-17T00:00:00Z' },
+  zoom: { mode: 'fit', percent: 100, wheel: false, pan: false },
+  linkWidth: { min: 2, max: 10 },
+  config: demoConfigV4,
+};
+
+/** The demo config with a change to one class. */
+const withClass = (name: string, over: Partial<ConfigV4['classes'][string]>): ConfigV4 => ({
+  ...demoConfigV4,
+  classes: { ...demoConfigV4.classes, [name]: { ...demoConfigV4.classes[name], ...over } },
+});
+
+/**
+ * The demo series: two WAN links (41 % and 90 % of cap=100M a→b), rtr-a up, LTE down, and the CPU of rtr-b. The
+ * other cells have no series: rtr-b has no `up` series, so its status is missing.
+ */
+function demoSeries() {
+  return [
+    frame('wan_tx', { job: 'node-isp-a', device: 'pppoe' }, [41e6]),
+    frame('wan_rx', { job: 'node-isp-a', device: 'pppoe' }, [10e6]),
+    frame('wan_tx', { job: 'node-radio', device: 'dhcp' }, [90e6]),
+    frame('wan_rx', { job: 'node-radio', device: 'dhcp' }, [16e6]),
+    frame('up', { job: 'node-rtr-a' }, [1], { thresholds: upThresholds }),
+    frame('up', { job: 'node-lte' }, [0], { thresholds: upThresholds }),
+    frame('cpu', { job: 'node-rtr-b' }, [12, 30, 42]),
   ];
+}
+
+function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
   return {
     id: 1,
     title: 't',
@@ -193,7 +145,7 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
     width: 800,
     height: 600,
     options,
-    data: { series, state: LoadingState.Done, timeRange: getDefaultTimeRange() },
+    data: { series: demoSeries(), state: LoadingState.Done, timeRange: getDefaultTimeRange() },
     timeRange: getDefaultTimeRange(),
     timeZone: 'browser',
     fieldConfig: {
@@ -236,6 +188,40 @@ function props(over: Partial<PanelProps<Options>> = {}): PanelProps<Options> {
   } as PanelProps<Options>;
 }
 
+/** Stub the SVG geometry of a chart region: a 180 x 70 box at the origin in a 400 x 200 viewport. */
+function stubRegionGeometry(): () => void {
+  const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
+  const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+  Object.defineProperties(SVGElement.prototype, {
+    getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
+    getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
+  });
+  const bounds = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 400,
+    bottom: 200,
+    width: 400,
+    height: 200,
+    toJSON: () => ({}),
+  });
+  return () => {
+    bounds.mockRestore();
+    for (const [name, saved] of [
+      ['getCTM', ctm],
+      ['getBBox', bbox],
+    ] as const) {
+      if (saved) {
+        Object.defineProperty(SVGElement.prototype, name, saved);
+      } else {
+        Reflect.deleteProperty(SVGElement.prototype, name);
+      }
+    }
+  };
+}
+
 describe('DrawioMapPanel', () => {
   it.each([null, 1])('has no bindings editor when editPanel is %s', async (editPanel) => {
     locationService.partial({ editPanel });
@@ -264,91 +250,81 @@ describe('DrawioMapPanel', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('attaches only configured chart portals after the stage mounts and keeps query errors inside that widget', async () => {
-    const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
-    const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
-    Object.defineProperties(SVGElement.prototype, {
-      getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
-      getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
+  it('renders the v4 demo config: a link half takes its colour, a node with no series is grey', async () => {
+    const { container } = render(<DrawioMapPanel {...props()} />);
+    const half = await waitFor(() => {
+      const found = container.querySelector(
+        'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~isp-a:pppoe->rtr-a:wan1"]'
+      );
+      expect(found).not.toBeNull();
+      return found!;
     });
-    const bounds = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: 400,
-      bottom: 200,
-      width: 400,
-      height: 200,
-      toJSON: () => ({}),
-    });
+    expect(half.getAttribute('data-dmap-status')).toBe('ok');
+    expect(half.getAttribute('stroke')).toBe(createTheme().visualization.getColorByName('green'));
+    // proxy-b: its override selects no series of `up`, so the cell is missing (grey), never a good state
+    const proxy = container.querySelector('[data-cell-id="pg-node~proxy-b"]')!;
+    expect(proxy.getAttribute('data-dmap-status')).toBe('missing');
+    // up = 0 is on the red step of the thresholds: critical
+    expect(container.querySelector('[data-cell-id="pg-node~lte"]')!.getAttribute('data-dmap-status')).toBe('critical');
+  });
+
+  it('shows one notice for a version 3 config and binds nothing', async () => {
+    const old = { version: 3, queries: [], patterns: [] } as unknown as Options['config'];
+    const { container, findByTestId } = render(<DrawioMapPanel {...props({ options: { ...options, config: old } })} />);
+    const wrapper = await findByTestId('dmap-panel');
+    await waitFor(() => expect(wrapper.getAttribute('data-dmap-warnings')).toBe('1'));
+    expect(wrapper.getAttribute('data-dmap-patched')).toBe('0');
+    expect(container.querySelector('polyline.dmap-half')).toBeNull();
+    expect(screen.getByTestId('dmap-warning-badge').getAttribute('title')).toMatch(/version 3/);
+  });
+
+  it('attaches only the chart regions of the classes and keeps a query error inside its region', async () => {
+    const restore = stubRegionGeometry();
     try {
-      nativeQuery.mockReset().mockRejectedValue(new Error('private datasource failure'));
-      const config: DiagramConfig = {
-        version: 3,
-        patterns: [],
-        overrides: [],
-        queries: [
-          {
-            id: 'q',
-            name: 'CPU',
-            source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
-          },
-        ],
-        widgets: [
-          {
-            id: 'w',
-            anchorCellId: 'chart',
-            kind: 'sparkline',
-            label: 'CPU chart',
-            binding: { queryId: 'q', match: {}, reducer: 'last' },
-          },
-        ],
+      const config: ConfigV4 = {
+        version: 4,
+        freshness: '3x',
+        classes: { trend: { match: { key: 'device' }, chart: { kind: 'history', label: 'CPU chart', query: 'cpu' } } },
+        overrides: {},
       };
       const small =
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart"><rect width="180" height="70"/></g><g data-cell-id="ordinary"><rect x="200" width="40" height="30"/><text>Ordinary device</text></g></svg>';
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart" data-meta-bind="trend" data-meta-key="c1"><rect width="180" height="70"/></g><g data-cell-id="ordinary"><rect x="200" width="40" height="30"/><text>Ordinary device</text></g></svg>';
+      const p = props();
       const { container, unmount } = render(
         <DrawioMapPanel
-          {...props({
-            options: {
-              ...options,
-              config,
-              diagram: { xml: '', svg: small, hash: 'explicit-chart', updatedAt: '' },
-            },
-          })}
+          {...p}
+          options={{ ...options, config, diagram: { xml: '', svg: small, hash: 'explicit-chart', updatedAt: '' } }}
+          data={{
+            ...p.data,
+            series: [],
+            state: LoadingState.Error,
+            errors: [{ refId: 'cpu', message: 'private datasource failure' }],
+          }}
         />
       );
-      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('Datasource query failed.'));
-      expect(container.querySelectorAll('foreignObject[data-dmap-widget]')).toHaveLength(1);
+      await waitFor(() => expect(screen.getByTestId('dmap-chart').textContent).toContain('Query failed'));
+      expect(container.querySelectorAll('foreignObject[data-dmap-chart]')).toHaveLength(1);
       expect(container.querySelector('[data-cell-id="ordinary"] foreignObject')).toBeNull();
       expect(container.querySelector('[data-cell-id="ordinary"] text')?.textContent).toBe('Ordinary device');
-      expect(screen.getByTestId('dmap-panel')).toBeTruthy();
       expect(container.textContent).not.toContain('private datasource failure');
       unmount();
     } finally {
-      bounds.mockRestore();
-      if (ctm) {
-        Object.defineProperty(SVGElement.prototype, 'getCTM', ctm);
-      } else {
-        Reflect.deleteProperty(SVGElement.prototype, 'getCTM');
-      }
-      if (bbox) {
-        Object.defineProperty(SVGElement.prototype, 'getBBox', bbox);
-      } else {
-        Reflect.deleteProperty(SVGElement.prototype, 'getBBox');
-      }
+      restore();
     }
   });
+
   it('shows an empty state without a diagram', () => {
     const { getByTestId } = render(<DrawioMapPanel {...props({ options: { ...options, diagram: undefined } })} />);
     expect(getByTestId('dmap-empty')).toBeTruthy();
   });
+
   it('ignores an editorUrl value that an older version saved', async () => {
     const legacy = { ...options, editorUrl: 'http://localhost:8080' } as Options;
     const { findByTestId } = render(<DrawioMapPanel {...props({ options: legacy })} />);
     expect(await findByTestId('dmap-panel')).toBeTruthy();
   });
-  it('ignores the saved rules of version 1, binds the version 2 config and adds one warning for them', async () => {
+
+  it('ignores the saved rules of version 1, binds the v4 config and adds one warning for them', async () => {
     const p = props();
     const { container, rerender, findByTestId } = render(<DrawioMapPanel {...p} />);
     const wrapper = await findByTestId('dmap-panel');
@@ -361,9 +337,10 @@ describe('DrawioMapPanel', () => {
     expect(container.querySelector('polyline.dmap-half')).not.toBeNull();
     const badge = screen.getByTestId('dmap-warning-badge');
     expect(badge.getAttribute('title')!.split('\n')[0]).toBe(
-      'The panel ignores 2 rules of version 1. Create the bindings again in Edit bindings.'
+      'The panel ignores 2 rules of version 1. Write the bindings again as a version 4 config.'
     );
   });
+
   it('mounts the svg, binds and draws overlay halves', async () => {
     const { container, findByTestId } = render(<DrawioMapPanel {...props()} />);
     const wrapper = await findByTestId('dmap-panel');
@@ -382,10 +359,11 @@ describe('DrawioMapPanel', () => {
       'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~lte:static->rtr-a:wan3"]'
     )!;
     expect(lte.getAttribute('data-dmap-status')).toBe('nodata');
-    expect(container.querySelector('[data-cell-id="pg-node~lte"]')!.getAttribute('data-dmap-step')).toBe('0');
-    expect(container.querySelector('[data-cell-id="pg-node~rtr-a"]')!.getAttribute('data-dmap-step')).toBe('1');
+    expect(container.querySelector('[data-cell-id="pg-node~lte"]')!.getAttribute('data-dmap-status')).toBe('critical');
+    expect(container.querySelector('[data-cell-id="pg-node~rtr-a"]')!.getAttribute('data-dmap-status')).toBe('normal');
     expect(container.querySelector('svg')!.getAttribute('width')).toBe('100%');
   });
+
   it('sets the svg root color-scheme from the Grafana theme, not from the OS preference', () => {
     // draw.io writes color-scheme: light dark on the root, so light-dark() colours follow the OS.
     const themed = (mode: 'dark' | 'light') => (
@@ -399,6 +377,7 @@ describe('DrawioMapPanel', () => {
     rerender(themed('light'));
     expect(root.style.colorScheme).toBe('light');
   });
+
   it('zooms on the wheel with a non-passive listener when wheel zoom is on', async () => {
     const { findByTestId, container } = render(
       <DrawioMapPanel {...props({ options: { ...options, zoom: { ...options.zoom, wheel: true } } })} />
@@ -412,6 +391,7 @@ describe('DrawioMapPanel', () => {
     expect(ev.defaultPrevented).toBe(true);
     await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(before));
   });
+
   it('contains no draw.io runtime', () => {
     const { container } = render(<DrawioMapPanel {...props()} />);
     expect(container.querySelector('iframe')).toBeNull();
@@ -420,244 +400,7 @@ describe('DrawioMapPanel', () => {
 });
 
 describe('DrawioMapPanel hover card', () => {
-  it('shares saved visible data with hover rows and keeps monitoring after the card closes', async () => {
-    const cancel = vi.fn();
-    nativeQuery.mockReset().mockImplementation(
-      () =>
-        new Observable((observer) => {
-          observer.next({ data: [frame('D', {}, [10, 42])] });
-          return cancel;
-        })
-    );
-    const binding = { queryId: 'q', reducer: 'last', match: {} } as const;
-    const config: DiagramConfig = {
-      version: 3,
-      queries: [
-        {
-          id: 'q',
-          name: 'Detail',
-          source: {
-            kind: 'datasource',
-            datasource: { uid: 'native' },
-            target: { refId: 'D' },
-            parameters: {},
-          },
-        },
-      ],
-      widgets: [],
-      overrides: [],
-      patterns: [
-        {
-          id: 'p',
-          name: 'Device',
-          select: {},
-          display: {
-            shape: { text: true, binding },
-            label: 'Value ${value}',
-            hover: { rows: [{ kind: 'value', label: 'Value', binding }] },
-          },
-        },
-      ],
-    };
-    const small =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g data-cell-id="a"><rect width="40" height="30"/><text>A</text></g></svg>';
-    const p = props({
-      options: {
-        ...options,
-        config,
-        diagram: { xml: '', svg: small, hash: 'shared-demand', updatedAt: '' },
-      },
-    });
-    const { container, rerender, unmount } = render(<DrawioMapPanel {...p} />);
-    await waitFor(() => expect(container.querySelector('text')?.textContent).toBe('Value 42'));
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    expect(nativeQuery.mock.calls[0][0].range).toBe(p.timeRange);
-    fireEvent.click(container.querySelector('[data-cell-id="a"] rect')!);
-    expect((await screen.findByRole('dialog')).textContent).toContain('42');
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(cancel).not.toHaveBeenCalled();
-    const range = { from: dateTime(1000), to: dateTime(9000), raw: { from: dateTime(1000), to: dateTime(9000) } };
-    rerender(<DrawioMapPanel {...p} timeRange={range} />);
-    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
-    expect(nativeQuery.mock.calls[1][0].range).toBe(range);
-    expect(cancel).toHaveBeenCalledTimes(1);
-    unmount();
-    expect(cancel).toHaveBeenCalledTimes(2);
-  });
-  it('keeps all hover-only native requests at zero until open, releases on switch/close, rejects late values and reuses fresh cache', async () => {
-    const releases: Array<ReturnType<typeof vi.fn>> = [];
-    const receivers: Array<(value: { data: Array<ReturnType<typeof frame>> }) => void> = [];
-    nativeQuery.mockReset().mockImplementation(
-      () =>
-        new Observable((observer) => {
-          const release = vi.fn();
-          releases.push(release);
-          receivers.push((value) => observer.next(value));
-          return release;
-        })
-    );
-    const config: DiagramConfig = {
-      version: 3,
-      queries: [
-        {
-          id: 'detail',
-          name: 'Details',
-          source: {
-            kind: 'datasource',
-            datasource: { uid: 'native' },
-            target: { refId: 'D' },
-            parameters: { dm_device: 'cell.key' },
-          },
-        },
-      ],
-      overrides: [],
-      widgets: [],
-      patterns: [
-        {
-          id: 'p',
-          name: 'Devices',
-          select: {},
-          display: {
-            hover: {
-              rows: [
-                { kind: 'value', label: 'Temperature', binding: { queryId: 'detail', reducer: 'last', match: {} } },
-                { kind: 'history', label: 'Trend', binding: { queryId: 'detail', reducer: 'last', match: {} } },
-              ],
-            },
-          },
-        },
-      ],
-    };
-    const small =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/></g><g data-cell-id="b"><rect x="50" width="40" height="30"/></g></svg>';
-    const p = props({
-      options: { ...options, config, diagram: { xml: '', svg: small, hash: 'hover-demand', updatedAt: '' } },
-    });
-    const { container, unmount } = render(<DrawioMapPanel {...p} />);
-    await waitFor(() => expect(screen.getByTestId('dmap-panel').getAttribute('data-dmap-patched')).toBe('2'));
-    expect(nativeQuery).not.toHaveBeenCalled();
-    fireEvent.click(container.querySelector('[data-cell-id="a"] rect')!);
-    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
-    expect(nativeQuery.mock.calls[0][0].scopedVars.dm_device.value).toBe('a');
-    fireEvent.click(container.querySelector('[data-cell-id="b"] rect')!);
-    await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
-    expect(releases[0]).toHaveBeenCalledTimes(1);
-    act(() => receivers[0]({ data: [frame('D', {}, [999])] }));
-    expect(screen.getByRole('dialog').textContent).not.toContain('999');
-    act(() => receivers[1]({ data: [frame('D', {}, [10, 42])] }));
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(releases[1]).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(container.querySelector('[data-cell-id="b"] rect')!);
-    await screen.findByRole('dialog');
-    expect(screen.getByRole('dialog').textContent).toContain('42');
-    expect(nativeQuery).toHaveBeenCalledTimes(2);
-    unmount();
-  });
-  describe('hover cost', () => {
-    const small =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/></g><g data-cell-id="b"><rect x="50" width="40" height="30"/></g></svg>';
-    const hoverConfig = (): DiagramConfig => ({
-      version: 3,
-      queries: [
-        {
-          id: 'detail',
-          name: 'Details',
-          source: {
-            kind: 'datasource',
-            datasource: { uid: 'native' },
-            target: { refId: 'D' },
-            parameters: { dm_device: 'cell.key' },
-          },
-        },
-      ],
-      overrides: [],
-      widgets: [],
-      patterns: [
-        {
-          id: 'p',
-          name: 'Devices',
-          select: {},
-          display: {
-            hover: {
-              rows: [
-                { kind: 'value', label: 'Temperature', binding: { queryId: 'detail', reducer: 'last', match: {} } },
-              ],
-            },
-          },
-        },
-      ],
-    });
-    async function hoverSetup() {
-      clearQuerySessions();
-      nativeQuery.mockReset().mockImplementation(() => new Observable(() => () => {}));
-      const p = props({
-        options: {
-          ...options,
-          rules: [],
-          config: hoverConfig(),
-          diagram: { xml: '', svg: small, hash: 'hover-cost', updatedAt: '' },
-        },
-      });
-      const r = render(<DrawioMapPanel {...p} />);
-      await waitFor(() => expect(screen.getByTestId('dmap-panel').getAttribute('data-dmap-patched')).toBe('2'));
-      const rect = (id: string) => r.container.querySelector(`[data-cell-id="${id}"] rect`)!;
-      return { ...r, rect };
-    }
-    it('a hover over two cells in turn does not bind or patch the diagram again', async () => {
-      const { rect, unmount } = await hoverSetup();
-      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
-      await screen.findByRole('tooltip');
-      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
-      await act(async () => {
-        await new Promise((done) => setTimeout(done, 50));
-      });
-      const binds = work.binds;
-      const applied = work.applied.length;
-      fireEvent.pointerMove(rect('b'), { pointerType: 'mouse', clientX: 60, clientY: 10 });
-      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
-      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
-      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(3));
-      expect(work.binds).toBe(binds);
-      expect(work.applied.length).toBe(applied);
-      unmount();
-    });
-    it('pins the view renders of a hover over two cells in turn', async () => {
-      const { rect, unmount } = await hoverSetup();
-      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
-      await screen.findByRole('tooltip');
-      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(1));
-      await act(async () => {
-        await new Promise((done) => setTimeout(done, 50));
-      });
-      const renders = work.viewRenders;
-      fireEvent.pointerMove(rect('b'), { pointerType: 'mouse', clientX: 60, clientY: 10 });
-      await waitFor(() => expect(nativeQuery).toHaveBeenCalledTimes(2));
-      await act(async () => {
-        await new Promise((done) => setTimeout(done, 50));
-      });
-      expect(work.viewRenders - renders).toBe(2);
-      unmount();
-    });
-    it('pointer moves inside one cell render the panel at most once', async () => {
-      const { rect, unmount } = await hoverSetup();
-      fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10, clientY: 10 });
-      await screen.findByRole('tooltip');
-      const renders = work.viewRenders;
-      const card = screen.getByTestId('dmap-card');
-      for (let i = 0; i < 20; i++) {
-        fireEvent.pointerMove(rect('a'), { pointerType: 'mouse', clientX: 10 + i, clientY: 10 + i });
-      }
-      expect(work.viewRenders - renders).toBeLessThanOrEqual(1);
-      expect(screen.getByTestId('dmap-card')).toBe(card);
-      unmount();
-    });
-  });
   const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
-  const withCpu = (over: Partial<PanelProps<Options>> = {}) =>
-    props({ options: { ...options, config: withPatterns(cpuPattern) }, ...over });
   async function setup(p = props()) {
     const r = render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
@@ -668,25 +411,61 @@ describe('DrawioMapPanel hover card', () => {
   }
   const card = () => screen.queryByTestId('dmap-card');
 
+  describe('hover cost', () => {
+    it('a hover over two cells in turn does not bind or patch the diagram again', async () => {
+      const { half, cell, unmount } = await setup();
+      fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await screen.findByRole('tooltip');
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 50));
+      });
+      const binds = work.binds;
+      const applied = work.applied.length;
+      fireEvent.pointerMove(cell('pg-node~rtr-b'), { pointerType: 'mouse', clientX: 60, clientY: 10 });
+      await waitFor(() => expect(screen.getByRole('tooltip').getAttribute('aria-label')).toContain('rtr-b'));
+      fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await waitFor(() => expect(screen.getByRole('tooltip').getAttribute('aria-label')).toContain('ISP A'));
+      expect(work.binds).toBe(binds);
+      expect(work.applied.length).toBe(applied);
+      unmount();
+    });
+
+    it('pointer moves inside one cell render the panel at most once', async () => {
+      const { half, unmount } = await setup();
+      fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await screen.findByRole('tooltip');
+      const renders = work.viewRenders;
+      const shown = screen.getByTestId('dmap-card');
+      for (let i = 0; i < 20; i++) {
+        fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 10 + i, clientY: 10 + i });
+      }
+      expect(work.viewRenders - renders).toBeLessThanOrEqual(1);
+      expect(screen.getByTestId('dmap-card')).toBe(shown);
+      unmount();
+    });
+  });
+
   it('renders no card and no canvas value labels or sparklines until the pointer is on a cell', async () => {
     const { container } = await setup();
     expect(card()).toBeNull();
     expect(container.querySelector('.dmap-label, .dmap-spark')).toBeNull();
   });
+
   it('hover shows a card with both directions; leaving the panel hides it', async () => {
     const { half, wrapper } = await setup();
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 50, clientY: 40 });
     const c = await screen.findByRole('tooltip');
-    expect(c.textContent).toContain('isp-a → rtr-a');
-    // the test frames have no unit; the title names the two ends
-    expect(c.textContent).toContain('41000000');
+    expect(c.textContent).toContain('Traffic');
+    // the updown row: the up and down values; the test frames have no unit
+    expect(c.textContent).toContain('↑ 41000000');
+    expect(c.textContent).toContain('↓ 10000000');
     expect(c.getAttribute('aria-label')).toBe('ISP A pppoe ↔ rtr-a wan1');
-    expect(c.textContent).toContain('rtr-a → isp-a');
     expect(c.getAttribute('data-pinned')).toBe('false');
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
     fireEvent.pointerLeave(wrapper, { pointerType: 'mouse' });
     expect(card()).toBeNull();
   });
+
   it('leaving the panel hides the hover card also without a pointerout (the cell under the pointer was redrawn)', async () => {
     const { half, wrapper } = await setup();
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 50, clientY: 40 });
@@ -697,19 +476,18 @@ describe('DrawioMapPanel hover card', () => {
     });
     expect(card()).toBeNull();
   });
-  it('click pins the card as a dialog with a close button, row links and footer links', async () => {
+
+  it('click pins the card as a dialog with a close button and the footer link of the class URL', async () => {
     const { half } = await setup();
     fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });
     const dialog = await screen.findByRole('dialog', { name: 'ISP A pppoe ↔ rtr-a wan1' });
     expect(document.activeElement).toBe(dialog);
     const rows = screen.getAllByTestId('dmap-card-row');
-    expect(rows).toHaveLength(2);
-    expect(rows[0].tagName).toBe('A');
-    expect(rows[0].getAttribute('href')).toBe('/d/x?job=isp-a');
-    expect(rows[0].getAttribute('target')).toBe('_blank');
-    // a rule url without urlTitle to a dashboard path: "Open dashboard", a small link button with an external icon
-    const footer = screen.getByRole('link', { name: 'Open dashboard' });
-    expect(footer.getAttribute('href')).toBe('/d/x?job=isp-a');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('Traffic');
+    // the urlTitle of the class names the footer link; a small link button with an external icon
+    const footer = screen.getByRole('link', { name: 'Traffic of node-isp-a:pppoe' });
+    expect(footer.getAttribute('href')).toBe('/d/drawiomap-demo?var-job=node-isp-a&var-device=pppoe');
     expect(footer.getAttribute('target')).toBe('_blank');
     expect(footer.getAttribute('data-testid')).toBe('dmap-card-link');
     // the external-link icon: Icon renders no svg in jsdom, the e2e test checks it
@@ -719,6 +497,7 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.click(close);
     expect(card()).toBeNull();
   });
+
   it('a pinned card ignores hover, Esc closes it', async () => {
     const { half } = await setup();
     fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });
@@ -733,6 +512,7 @@ describe('DrawioMapPanel hover card', () => {
     // Grafana does not see this Esc (it would leave the panel view)
     expect(grafana).not.toHaveBeenCalled();
   });
+
   it('a click on another cell moves the pin; a click on empty space or outside the panel closes it', async () => {
     const { half, wrapper } = await setup();
     fireEvent.click(half(linkId));
@@ -749,6 +529,7 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.pointerDown(document.body);
     expect(card()).toBeNull();
   });
+
   it('touch: a moving finger opens nothing, a tap pins the card', async () => {
     const { half } = await setup();
     fireEvent.pointerMove(half(linkId), { pointerType: 'touch' });
@@ -757,6 +538,7 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.click(half(linkId));
     expect((await screen.findByRole('dialog')).getAttribute('data-pinned')).toBe('true');
   });
+
   it('a device without hover opens the card only on a tap', async () => {
     const mm = window.matchMedia;
     window.matchMedia = ((q: string) => ({
@@ -774,6 +556,7 @@ describe('DrawioMapPanel hover card', () => {
       window.matchMedia = mm;
     }
   });
+
   it('with wheel zoom on, the wheel scrolls the card and does not zoom', async () => {
     const { half, wrapper } = await setup(props({ options: { ...options, zoom: { ...options.zoom, wheel: true } } }));
     fireEvent.click(half(linkId));
@@ -785,8 +568,9 @@ describe('DrawioMapPanel hover card', () => {
     wrapper.querySelector('svg')!.dispatchEvent(outside);
     expect(outside.defaultPrevented).toBe(true);
   });
+
   it('keyboard: Enter on a focused cell pins its card, Esc closes it and gives the focus back', async () => {
-    const { cell } = await setup(withCpu());
+    const { cell } = await setup();
     const node = cell('pg-node~rtr-b') as SVGGElement;
     expect(node.getAttribute('tabindex')).toBe('0');
     node.focus();
@@ -797,18 +581,22 @@ describe('DrawioMapPanel hover card', () => {
     expect(card()).toBeNull();
     expect(document.activeElement).toBe(node);
   });
+
   it('closes a pinned card when its cell loses the patch, and hover works again', async () => {
-    const p = withCpu();
+    const p = props();
     const { cell, half, rerender } = await setup(p);
     fireEvent.click(cell('pg-node~rtr-b'));
     await screen.findByRole('dialog');
-    // the override turns the element off: it has no patch now
-    const off = withPatterns({ ...cpuPattern, display: { enabled: false } });
-    rerender(<DrawioMapPanel {...p} options={{ ...options, config: off }} />);
+    // a version 3 config binds nothing: no cell has a patch now
+    const old = { version: 3 } as unknown as Options['config'];
+    rerender(<DrawioMapPanel {...p} options={{ ...options, config: old }} />);
     expect(card()).toBeNull();
+    rerender(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(half(linkId)).not.toBeNull());
     fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toBeTruthy();
   });
+
   it('leaving the panel keeps a pinned card', async () => {
     const { half, wrapper } = await setup();
     fireEvent.click(half(linkId));
@@ -818,6 +606,7 @@ describe('DrawioMapPanel hover card', () => {
     });
     expect(card()!.getAttribute('data-pinned')).toBe('true');
   });
+
   it('a new diagram closes a pinned card, also when the cell is still there', async () => {
     const p = props();
     const { half, rerender } = await setup(p);
@@ -827,13 +616,16 @@ describe('DrawioMapPanel hover card', () => {
     rerender(<DrawioMapPanel {...p} options={{ ...options, diagram }} />);
     expect(card()).toBeNull();
   });
+
   it('a pinned card stays open through a data refresh and shows the new value', async () => {
-    const p = withCpu();
+    const p = props();
     const { cell, rerender } = await setup(p);
     fireEvent.click(cell('pg-node~rtr-b'));
     const dialog = await screen.findByRole('dialog');
     expect(dialog.textContent).toContain('42%');
-    const series = p.data.series.map((f) => (f.refId === 'E' ? frame('E', { job: 'node-rtr-b' }, [12, 30, 55]) : f));
+    const series = p.data.series.map((f) =>
+      f.refId === 'cpu' ? frame('cpu', { job: 'node-rtr-b' }, [12, 30, 55]) : f
+    );
     rerender(
       <DrawioMapPanel {...p} renderCounter={1} data={{ ...p.data, series, timeRange: getDefaultTimeRange() }} />
     );
@@ -842,19 +634,19 @@ describe('DrawioMapPanel hover card', () => {
     expect(card()!.getAttribute('data-pinned')).toBe('true');
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(dialog.getAttribute('aria-label'));
   });
-  it('the urlTitle of the display names the footer link', async () => {
-    const patterns = demoConfig.patterns.map((p) =>
-      p.id === 'links' ? { ...p, display: { ...p.display, urlTitle: 'Port ${from.port}' } } : p
-    );
-    const { half } = await setup(props({ options: { ...options, config: { ...demoConfig, patterns } } }));
+
+  it('the urlTitle of the class names the footer link', async () => {
+    const config = withClass('wan', { urlTitle: 'Port ${port}' });
+    const { half } = await setup(props({ options: { ...options, config } }));
     fireEvent.click(half(linkId));
     await screen.findByRole('dialog');
-    expect(screen.getByRole('link', { name: 'Port pppoe' }).getAttribute('href')).toBe('/d/x?job=isp-a');
+    expect(screen.getByRole('link', { name: 'Port pppoe' }).getAttribute('href')).toBe(
+      '/d/drawiomap-demo?var-job=node-isp-a&var-device=pppoe'
+    );
   });
+
   it('each row has its head line and below it a sparkline at the full row width', async () => {
-    // the data covers 0..2 ms of the 0..100 ms range: the line still fills the width
-    const range = { from: dateTime(0), to: dateTime(100), raw: { from: 'now-1h', to: 'now' } };
-    const { cell } = await setup(withCpu({ timeRange: range }));
+    const { cell } = await setup();
     fireEvent.click(cell('pg-node~rtr-b'));
     await screen.findByRole('dialog');
     // the status row (the node has a missing status) comes first; the CPU row follows
@@ -872,6 +664,7 @@ describe('DrawioMapPanel hover card', () => {
     expect(plot.getAttribute('height')).toBe('40');
     expect(spark.querySelector('polyline')).toBeNull();
   });
+
   it('a narrow panel shows the card as a sheet fixed to the bottom of the viewport, outside the panel', async () => {
     const { half, wrapper } = await setup(props({ width: 400, height: 2000 }));
     fireEvent.click(half(linkId));
@@ -894,6 +687,7 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.pointerDown(document.body);
     expect(card()).toBeNull();
   });
+
   it('Esc and the close button close the sheet', async () => {
     const { half } = await setup(props({ width: 400 }));
     fireEvent.click(half(linkId));
@@ -903,39 +697,33 @@ describe('DrawioMapPanel hover card', () => {
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close' }));
     expect(card()).toBeNull();
   });
-  it('a node card shows the configured rows with their unit, sparkline and url', async () => {
-    const { cell } = await setup(withCpu());
+
+  it('a node card shows the rows of its class with their unit and sparkline, and the drilldown as a link', async () => {
+    const { cell } = await setup();
     fireEvent.click(cell('pg-node~rtr-b'));
     const dialog = await screen.findByRole('dialog');
     const rows = screen.getAllByTestId('dmap-card-row');
-    // the status row first (the node has a missing status), then the one configured row
+    // the status row first (the node has no `up` series), then the rows of router-cpu; the drilldown is a link
     expect(rows.map((r) => r.textContent)).toEqual([
       expect.stringContaining('missing'),
       expect.stringContaining('CPU'),
+      expect.stringContaining('state'),
+      expect.stringContaining('load 1m'),
     ]);
-    const row = rows[1];
-    expect(row.textContent).toContain('CPU');
-    expect(row.textContent).toContain('42%');
-    expect(row.getAttribute('href')).toBe('/d/cpu?h=rtr-b');
+    expect(rows[1].textContent).toContain('42%');
     expect(dialog.querySelectorAll('[data-testid="grafana-sparkline"]')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'CPU details' }).getAttribute('href')).toBe(
+      '/d/drawiomap-demo?var-job=node-rtr-b&var-metric=cpu'
+    );
+    expect(screen.getByRole('link', { name: 'Host node-rtr-b' }).getAttribute('href')).toBe(
+      '/d/drawiomap-demo?var-job=node-rtr-b'
+    );
   });
+
   it('a click on the node icon opens the card of the node', async () => {
-    const { cell } = await setup(withCpu());
+    const { cell } = await setup();
     fireEvent.click(cell('pg-icon~rtr-b').querySelector('ellipse, path')!);
     expect((await screen.findByRole('dialog')).textContent).toContain('CPU');
-  });
-  it('a click on a sparkline opens its url', async () => {
-    const { cell } = await setup(withCpu());
-    fireEvent.click(cell('pg-node~rtr-b'));
-    await screen.findByRole('dialog');
-    const spark = screen.getByTestId('dmap-card-spark');
-    const link = spark.closest('a')!;
-    const opened = vi.fn((e: MouseEvent) => e.preventDefault());
-    link.addEventListener('click', opened);
-    fireEvent.click(spark);
-    expect(opened).toHaveBeenCalledTimes(1);
-    expect(link.getAttribute('href')).toBe('/d/cpu?h=rtr-b');
-    expect(link.getAttribute('target')).toBe('_blank');
   });
 });
 
@@ -1069,10 +857,10 @@ describe('DrawioMapPanel live zoom', () => {
     onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
     const view = await setup(withWarning());
     wheel(view.wrapper, { deltaY: -10, ctrlKey: true });
-    const reset = await screen.findByRole('button', { name: 'Reset zoom' });
+    const resetButton = await screen.findByRole('button', { name: 'Reset zoom' });
     const badge = screen.getByTestId('dmap-warning-badge');
     expect(badge.tagName).toBe('DIV');
-    expect(reset.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(resetButton.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
@@ -1192,286 +980,29 @@ describe('DrawioMapPanel live zoom', () => {
   });
 });
 
-describe('saved chart results in hover cards', () => {
-  let restoreGeometry: () => void;
-  const receivers: Array<(value: number) => void> = [];
-  const release = vi.fn();
-  beforeEach(() => {
-    const ctm = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getCTM');
-    const bbox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
-    Object.defineProperties(SVGElement.prototype, {
-      getCTM: { configurable: true, value: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) },
-      getBBox: { configurable: true, value: () => ({ x: 0, y: 0, width: 180, height: 70 }) },
-    });
-    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: 400,
-      bottom: 200,
-      width: 400,
-      height: 200,
-      toJSON: () => ({}),
-    });
-    restoreGeometry = () => {
-      rect.mockRestore();
-      for (const [key, descriptor] of [
-        ['getCTM', ctm],
-        ['getBBox', bbox],
-      ] as const) {
-        if (descriptor) {
-          Object.defineProperty(SVGElement.prototype, key, descriptor);
-        } else {
-          Reflect.deleteProperty(SVGElement.prototype, key);
-        }
-      }
-    };
-    receivers.length = 0;
-    release.mockClear();
-    nativeQuery.mockReset().mockImplementation(
-      (request) =>
-        new Observable((observer) => {
-          const receive = (value: number) => observer.next({ data: [frame('D', {}, [value - 1, value])] });
-          receivers.push(receive);
-          receive(request.targets[0].expr === 'changed' || request.scopedVars.dm_key?.value === 'other' ? 84 : 42);
-          return release;
-        })
-    );
-    locationService.partial({ editPanel: 818 });
-  });
-  afterEach(() => {
-    act(() => locationService.partial({ editPanel: null }));
-    restoreGeometry();
-  });
-  function fixture() {
-    const config: DiagramConfig = {
-      version: 3,
-      overrides: [],
-      queries: [
-        {
-          id: 'q',
-          name: 'Chart data',
-          source: { kind: 'datasource', datasource: { uid: 'native' }, target: { refId: 'D' }, parameters: {} },
-        },
-      ],
-      patterns: [{ id: 'p', name: 'Chart region', select: { ids: ['chart'] }, display: {} }],
-      widgets: [
-        {
-          id: 'w',
-          anchorCellId: 'chart',
-          kind: 'sparkline',
-          label: 'CPU chart',
-          binding: { queryId: 'q', match: {}, reducer: 'last' },
-        },
-      ],
-    };
-    const small =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="chart"><rect width="180" height="70"/></g><g data-cell-id="other"><rect x="200" width="180" height="70"/></g></svg>';
-    return {
-      ...props({ id: 818 }),
-      options: { ...options, config, diagram: { xml: '', svg: small, hash: 'reuse-chart', updatedAt: '' } },
-    };
-  }
-  function hoverFixture() {
-    locationService.partial({ editPanel: null });
-    const p = fixture();
-    p.options.config.patterns[0].display.hover = {
-      rows: [
-        { kind: 'value', label: 'Same chart value', binding: { queryId: 'q', match: {}, reducer: 'last' } },
-        { kind: 'history', label: 'Same chart history', binding: { queryId: 'q', match: {}, reducer: 'last' } },
-      ],
-    };
-    return p;
-  }
-  const clickChart = () => fireEvent.click(document.querySelector('[data-cell-id="chart"] rect')!);
-  /** The chart rectangle at `width` px: the widget asks for that many points; the card asks for 264. */
-  function withWidgetWidth(width: number) {
-    vi.mocked(Element.prototype.getBoundingClientRect).mockImplementation(function (this: Element) {
-      const w = this.localName === 'rect' ? width : 400;
-      return { x: 0, y: 0, left: 0, top: 0, right: w, bottom: 200, width: w, height: 200, toJSON: () => ({}) };
-    });
-  }
-  // A result is shared only between identical requests, by the controller: the same query, scope, context and
-  // resolution. A widget of another width is another request; nothing reuses a result of another resolution.
-  it.each([
-    [264, [264]],
-    [400, [400, 264]],
-  ])(
-    'hover rows and a widget of one query at one cell: a widget of %i px gives the requests %j',
-    async (width, asked) => {
-      withWidgetWidth(width);
-      const p = hoverFixture();
-      render(<DrawioMapPanel {...p} />);
-      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
-      expect(nativeQuery).toHaveBeenCalledTimes(1);
-      clickChart();
-      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
-      expect(screen.getByRole('dialog').textContent).toContain('Same chart value');
-      expect(screen.getByRole('dialog').textContent).toContain('Same chart history');
-      expect(screen.getByRole('dialog').querySelector('canvas')).not.toBeNull();
-      expect(nativeQuery.mock.calls.map(([request]) => request.maxDataPoints)).toEqual(asked);
-      // a later value reaches the widget and the open card
-      act(() => receivers.forEach((receive) => receive(99)));
-      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
-      expect(screen.getByTestId('dmap-widget').textContent).toContain('99');
-      expect(nativeQuery).toHaveBeenCalledTimes(asked.length);
-    }
-  );
-  it('keeps the shared request alive across close, fresh props and reopen', async () => {
-    withWidgetWidth(264);
-    const p = hoverFixture();
-    const view = render(<DrawioMapPanel {...p} />);
-    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
-    clickChart();
-    await screen.findByRole('dialog');
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
-    // the widget still holds the entry: closing the card ends no request
-    expect(release).not.toHaveBeenCalled();
-    view.rerender(<DrawioMapPanel {...p} timeRange={{ ...p.timeRange }} options={{ ...p.options }} />);
-    act(() => receivers[0](99));
-    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('99'));
-    clickChart();
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('99'));
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    expect(release).not.toHaveBeenCalled();
-    view.unmount();
-    expect(release).toHaveBeenCalledTimes(1);
-  });
-  it.each(['hidden', 'removed'] as const)(
-    'keeps the open card on the shared request when its chart is %s',
-    async (change) => {
-      withWidgetWidth(264);
-      const p = hoverFixture();
-      const view = render(<DrawioMapPanel {...p} />);
-      await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
-      clickChart();
-      await screen.findByRole('dialog');
-      expect(nativeQuery).toHaveBeenCalledTimes(1);
-      if (change === 'hidden') {
-        act(() => {
-          document.querySelector<SVGElement>('[data-cell-id="chart"] rect')!.style.display = 'none';
-        });
-      } else {
-        view.rerender(
-          <DrawioMapPanel {...p} options={{ ...p.options, config: { ...p.options.config, widgets: [] } }} />
-        );
-      }
-      await waitFor(() => expect(screen.queryByTestId('dmap-widget')).toBeNull());
-      // the card keeps the entry: the request runs on and no new one starts
-      expect(release).not.toHaveBeenCalled();
-      expect(nativeQuery).toHaveBeenCalledTimes(1);
-      act(() => receivers[0](84));
-      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
-      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-      expect(release).toHaveBeenCalledTimes(1);
-      clickChart();
-      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
-      expect(nativeQuery).toHaveBeenCalledTimes(1);
-      view.unmount();
-    }
-  );
-  it('rejects old results when the open card context changes and follows the new request', async () => {
-    withWidgetWidth(264);
-    const p = hoverFixture();
-    const view = render(<DrawioMapPanel {...p} />);
-    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
-    clickChart();
-    await screen.findByRole('dialog');
-    const current: Array<(value: number) => void> = [];
-    nativeQuery.mockImplementation(
-      () =>
-        new Observable((observer) => {
-          current.push((value) => observer.next({ data: [frame('D', {}, [value - 1, value])] }));
-          return release;
-        })
-    );
-    view.rerender(<DrawioMapPanel {...p} timeRange={{ ...p.timeRange, from: dateTime(1000), to: dateTime(2000) }} />);
-    await waitFor(() => expect(current).toHaveLength(1));
-    expect(release).toHaveBeenCalledTimes(1);
-    act(() => receivers[0](999));
-    // The card and the widget keep the last result until the new context has a result.
-    expect(screen.getByRole('dialog').textContent).toContain('42');
-    expect(screen.getByRole('dialog').textContent).not.toContain('999');
-    expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
-    act(() => current[0](84));
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
-    expect(screen.getByTestId('dmap-widget').textContent).toContain('84');
-    expect(nativeQuery).toHaveBeenCalledTimes(2);
-    view.unmount();
-    expect(release).toHaveBeenCalledTimes(2);
-  });
-  it('loads another parameterized cell and a changed hover query instead of reusing the chart data', async () => {
-    withWidgetWidth(264);
-    const p = hoverFixture();
-    const source = p.options.config.queries[0].source;
-    if (source.kind === 'datasource') {
-      source.parameters = { dm_key: 'cell.key' };
-    }
-    p.options.config.patterns[0].select = { ids: ['chart', 'other'] };
-    const view = render(<DrawioMapPanel {...p} />);
-    await waitFor(() => expect(screen.getByTestId('dmap-widget').textContent).toContain('42'));
-    clickChart();
-    await screen.findByRole('dialog');
-    expect(nativeQuery).toHaveBeenCalledTimes(1);
-    fireEvent.click(document.querySelector('[data-cell-id="other"] rect')!);
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
-    expect(nativeQuery).toHaveBeenCalledTimes(2);
-    expect(nativeQuery.mock.calls[1][0].scopedVars.dm_key.value).toBe('other');
-    clickChart();
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('42'));
-    expect(release).toHaveBeenCalledTimes(1);
-    const config = structuredClone(p.options.config);
-    const q = structuredClone(config.queries[0]);
-    q.id = 'different';
-    if (q.source.kind === 'datasource') {
-      q.source.target = { ...q.source.target, ...{ expr: 'changed' } };
-    }
-    config.queries.push(q);
-    config.patterns[0].display.hover!.rows = [
-      { kind: 'value', label: 'Different', binding: { queryId: q.id, match: {}, reducer: 'last' } },
-    ];
-    view.rerender(<DrawioMapPanel {...p} options={{ ...p.options, config }} />);
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('84'));
-    expect(nativeQuery.mock.calls.filter(([request]) => request.targets[0].expr === 'changed')).toHaveLength(1);
-    expect(screen.getByTestId('dmap-widget').textContent).toContain('42');
-    view.unmount();
-  });
-});
-
 describe('DrawioMapPanel status band', () => {
-  const statusBinding = (queryId: string) => ({ queryId, match: {}, reducer: 'last' }) as const;
-  /** count cells, each with its own panel query; reasons[i] gives the down reason of cell i (data value 0) */
+  /**
+   * `count` cells of the class `dev`, each with its own key. reasons[i] gives cell i a series of `q` with the value 0,
+   * which a value mapping shows as the reason in red (down). The other cells have no series: missing.
+   */
   function statusPanel(count: number, reasons: Record<number, string> = {}, over: Partial<Options> = {}) {
     const cells = Array.from(
       { length: count },
       (_, i) =>
-        `<g data-cell-id="c${i}" transform="translate(${(i % 6) * 60} ${Math.floor(i / 6) * 50})"><rect width="40" height="30"/><text>C${i}</text></g>`
+        `<g data-cell-id="c${i}" data-meta-bind="dev" data-meta-key="k${i}" transform="translate(${(i % 6) * 60} ${Math.floor(i / 6) * 50})"><rect width="40" height="30"/><text>C${i}</text></g>`
     ).join('');
     const svgText = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 250">${cells}</svg>`;
-    const config: DiagramConfig = {
-      version: 3,
-      queries: Array.from({ length: count }, (_, i) => ({
-        id: `q${i}`,
-        name: `Q${i}`,
-        source: { kind: 'panel', refId: `Q${i}` },
-      })),
-      patterns: [],
-      widgets: [],
-      overrides: Array.from({ length: count }, (_, i) => ({
-        cellId: `c${i}`,
-        display: {
-          status: {
-            kind: 'mapping',
-            binding: statusBinding(`q${i}`),
-            default: { state: 'normal', reason: 'Healthy' },
-            mappings: [{ value: 0, state: 'down', reason: reasons[i] ?? 'Down' }],
-          },
-        },
-      })),
+    const config: ConfigV4 = {
+      version: 4,
+      freshness: '3x',
+      classes: { dev: { match: { key: 'key' }, status: 'q' } },
+      overrides: {},
     };
-    const series = Object.keys(reasons).map((i) => frame(`Q${i}`, {}, [0]));
+    const series = Object.entries(reasons).map(([i, reason]) =>
+      frame('q', { key: `k${i}` }, [0], {
+        mappings: [{ type: MappingType.ValueToText, options: { '0': { text: reason, color: 'red' } } }],
+      })
+    );
     const p = props();
     return props({
       options: {
@@ -1486,11 +1017,11 @@ describe('DrawioMapPanel status band', () => {
   const band = () => screen.queryByTestId('dmap-status-band');
   const rows = () => Array.from(band()?.querySelectorAll('.dmap-status-summary') ?? []);
 
-  it('merges 26 elements without data into one row above the diagram, and the diagram gets the rest of the height', async () => {
+  it('merges 26 cells without data into one row above the diagram, and the diagram gets the rest of the height', async () => {
     render(<DrawioMapPanel {...statusPanel(26)} />);
     await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(rows()[0].textContent).toBe('? missingNo data26 elements');
-    expect(rows()[0].getAttribute('title')).toBe('missing: No data (26 elements)');
+    expect(rows()[0].textContent).toBe('?No data · q: 26 cells');
+    expect(rows()[0].getAttribute('title')).toBe('No data · q: 26 cells');
     const stage = screen.getByTestId('dmap-stage');
     // the band is before the stage, not on top of it
     expect(band()!.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -1499,24 +1030,23 @@ describe('DrawioMapPanel status band', () => {
     expect(parseFloat(screen.getByTestId('dmap-corner').style.top)).toBe(parseFloat(band()!.style.height) + 4);
     expect(screen.getByTestId('dmap-panel').querySelector('svg .dmap-status-summary')).toBeNull();
   });
+
   it('shows the most severe causes first, caps the band at 3 rows with "+k more", and expands on a click', async () => {
     const reasons = { 0: 'Power lost', 1: 'Power lost', 2: 'Link down', 3: 'Fan failed', 4: 'Disk failed' };
     render(<DrawioMapPanel {...statusPanel(8, reasons)} />);
     await waitFor(() => expect(rows()).toHaveLength(2));
-    expect(rows().map((r) => r.getAttribute('title'))).toEqual([
-      'down: Power lost (2 elements)',
-      'down: Link down (1 element)',
-    ]);
-    const more = screen.getByRole('button', { name: '+3 more (5 elements)' });
+    expect(rows().map((r) => r.getAttribute('title'))).toEqual(['Power lost · q: 2 cells', 'Link down · q: 1 cell']);
+    const more = screen.getByRole('button', { name: '+3 more (5 cells)' });
     expect(more.getAttribute('aria-expanded')).toBe('false');
     const collapsed = parseFloat(band()!.style.height);
     fireEvent.click(more);
     expect(rows()).toHaveLength(5);
-    expect(rows()[4].getAttribute('title')).toBe('missing: No data (3 elements)');
+    expect(rows()[4].getAttribute('title')).toBe('No data · q: 3 cells');
     expect(parseFloat(band()!.style.height)).toBeGreaterThan(collapsed);
     fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
     expect(rows()).toHaveLength(2);
   });
+
   it('Status summary rows sets the cap, 0 hides the band', async () => {
     const reasons = { 0: 'A', 1: 'B', 2: 'C' };
     const { rerender } = render(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 5 } })} />);
@@ -1524,7 +1054,7 @@ describe('DrawioMapPanel status band', () => {
     expect(screen.queryByRole('button', { name: /more/ })).toBeNull();
     rerender(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 1 } })} />);
     expect(rows()).toHaveLength(0);
-    expect(screen.getByRole('button', { name: '3 causes (3 elements)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '3 causes (3 cells)' })).toBeTruthy();
     rerender(<DrawioMapPanel {...statusPanel(3, reasons, { summary: { maxRows: 0 } })} />);
     expect(band()).toBeNull();
     expect(screen.getByTestId('dmap-stage').style.height).toBe('600px');
@@ -1532,34 +1062,46 @@ describe('DrawioMapPanel status band', () => {
 });
 
 describe('DrawioMapPanel cards only for cells with content', () => {
-  const structureSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><g data-cell-id="0" data-meta-pg-schema="1">
-    <g data-cell-id="pg-layer~canvas"><g data-cell-id="pg-canvas"><rect id="bg" width="300" height="200"/></g></g>
+  /** The structure cells of a portograph sheet; the cells in `bound` carry bind=cards. */
+  const structureSvg = (bound: string[]) => {
+    const bind = (id: string) => (bound.includes(id) ? ` data-meta-bind="cards" data-meta-key="${id}"` : '');
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><g data-cell-id="0" data-meta-pg-schema="1">
+    <g data-cell-id="pg-layer~canvas"><g data-cell-id="pg-canvas"${bind('pg-canvas')}><rect id="bg" width="300" height="200"/></g></g>
     <g data-cell-id="pg-layer~diagram">
-      <g data-cell-id="pg-group~core"><rect id="grp" x="5" y="5" width="200" height="120"/></g>
-      <g data-cell-id="pg-groupTitle~core"><text id="grp-title">CORE</text></g>
-      <g data-cell-id="pg-node~a" data-meta-pg-kind="node" data-meta-pg-id="a" data-meta-role="router"><rect id="na" x="10" y="10" width="40" height="30"/><text>A</text></g>
-      <g data-cell-id="pg-node~b" data-meta-pg-kind="node" data-meta-pg-id="b"><rect id="nb" x="100" y="10" width="40" height="30"/><text>B</text></g>
-      <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"><path id="lab" d="M50 25 L100 25" fill="none" stroke="#888"/></g>
-      <g data-cell-id="pg-legend"><rect id="leg" x="10" y="150" width="60" height="30"/></g>
-      <g data-cell-id="chart-1" data-meta-pg-kind="other"><rect id="chart" x="220" y="150" width="60" height="30"/></g>
+      <g data-cell-id="pg-group~core"${bind('pg-group~core')}><rect id="grp" x="5" y="5" width="200" height="120"/></g>
+      <g data-cell-id="pg-groupTitle~core"${bind('pg-groupTitle~core')}><text id="grp-title">CORE</text></g>
+      <g data-cell-id="pg-node~a" data-meta-pg-kind="node" data-meta-pg-id="a" data-meta-role="router"${bind('pg-node~a')}><rect id="na" x="10" y="10" width="40" height="30"/><text>A</text></g>
+      <g data-cell-id="pg-node~b" data-meta-pg-kind="node" data-meta-pg-id="b"${bind('pg-node~b')}><rect id="nb" x="100" y="10" width="40" height="30"/><text>B</text></g>
+      <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"${bind('pg-link~a-b')}><path id="lab" d="M50 25 L100 25" fill="none" stroke="#888"/></g>
+      <g data-cell-id="pg-legend"${bind('pg-legend')}><rect id="leg" x="10" y="150" width="60" height="30"/></g>
+      <g data-cell-id="chart-1" data-meta-pg-kind="other"${bind('chart-1')}><rect id="chart" x="220" y="150" width="60" height="30"/></g>
       <g data-cell-id="pg-icon~a" data-meta-pg-kind="node-icon" data-meta-pg-of="a"><ellipse id="icon-a" cx="20" cy="20" rx="5" ry="5"/></g>
       <g data-cell-id="pg-linkLabel~a-b" data-meta-pg-kind="link-label" data-meta-pg-of="a-b"><rect id="lbl-bg" x="60" y="15" width="20" height="10"/><text id="lbl">uplink</text></g>
     </g>
   </g></svg>`;
-  const roleRow = { kind: 'metadata', label: 'Role', path: 'cell.key' } as const;
-  function structurePanel(select: { ids?: string[] }, over: Partial<Options> = {}) {
-    const config: DiagramConfig = {
-      version: 3,
-      queries: [],
-      widgets: [],
-      overrides: [],
-      patterns: [{ id: 'p', name: 'Cards', select, display: { hover: { rows: [roleRow] } } }],
-    };
+  };
+  const ALL = ['pg-canvas', 'pg-group~core', 'pg-groupTitle~core', 'pg-node~a', 'pg-node~b', 'pg-link~a-b'].concat([
+    'pg-legend',
+    'chart-1',
+  ]);
+  /** A class with one metadata row: the card of each bound cell has that row and nothing else. */
+  const config: ConfigV4 = {
+    version: 4,
+    freshness: '3x',
+    classes: { cards: { match: { key: 'key' }, rows: [{ kind: 'metadata', label: 'Role', text: '${key}' }] } },
+    overrides: {},
+  };
+  function structurePanel(bound: string[], over: Partial<Options> = {}) {
     return props({
       options: {
         ...options,
         config,
-        diagram: { xml: '', svg: structureSvg, hash: `structure-${JSON.stringify([select, over])}`, updatedAt: '' },
+        diagram: {
+          xml: '',
+          svg: structureSvg(bound),
+          hash: `structure-${JSON.stringify([bound, over])}`,
+          updatedAt: '',
+        },
         ...over,
       },
     });
@@ -1576,7 +1118,7 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     fireEvent.pointerMove(await at(id), { pointerType: 'mouse', clientX: 20, clientY: 20 });
 
   it('opens no card for a cell without rows and links, and none for the empty background', async () => {
-    render(<DrawioMapPanel {...structurePanel({ ids: ['a'] })} />);
+    render(<DrawioMapPanel {...structurePanel(['pg-node~a'])} />);
     await hover('na');
     expect((await screen.findByRole('tooltip')).textContent).toContain('Role');
     await hover('nb');
@@ -1586,8 +1128,9 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     await hover('bg');
     expect(screen.queryByTestId('dmap-card')).toBeNull();
   });
+
   it('by default opens cards for nodes, links, ports and other cells, not for the canvas, groups and the legend', async () => {
-    render(<DrawioMapPanel {...structurePanel({})} />);
+    render(<DrawioMapPanel {...structurePanel(ALL)} />);
     await hover('chart');
     expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('chart-1');
     await hover('na');
@@ -1602,17 +1145,9 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
     }
   });
-  it('an element override with hover.enabled false removes the card of that element', async () => {
-    const p = structurePanel({});
-    p.options.config!.overrides.push({ cellId: 'pg-node~a', display: { hover: { enabled: false, rows: [] } } });
-    render(<DrawioMapPanel {...p} />);
-    await hover('na');
-    expect(screen.queryByTestId('dmap-card')).toBeNull();
-    await hover('lab');
-    expect(await screen.findByRole('tooltip')).toBeTruthy();
-  });
+
   it('the icon and the link label open the card of their node and link, not a card of their own', async () => {
-    render(<DrawioMapPanel {...structurePanel({})} />);
+    render(<DrawioMapPanel {...structurePanel(ALL)} />);
     await hover('na');
     const node = (await screen.findByRole('tooltip')).textContent;
     await hover('icon-a');
@@ -1624,10 +1159,9 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     fireEvent.click(await at('icon-a'));
     expect((await screen.findByRole('dialog')).getAttribute('aria-label')).toBe('A');
   });
+
   it('marks only the cells that open a card, and their parts, as interactive buttons', async () => {
-    const p = structurePanel({});
-    p.options.config!.overrides.push({ cellId: 'pg-node~b', display: { hover: { enabled: false, rows: [] } } });
-    const { container } = render(<DrawioMapPanel {...p} />);
+    const { container } = render(<DrawioMapPanel {...structurePanel(ALL.filter((id) => id !== 'pg-node~b'))} />);
     const marked = () =>
       Array.from(container.querySelectorAll('[data-dmap-interactive]'), (el) => el.getAttribute('data-cell-id')).sort();
     await waitFor(() =>
@@ -1640,8 +1174,9 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(group(id).hasAttribute('tabindex')).toBe(false);
     }
   });
+
   it('Hover kinds selects the cells that open a card', async () => {
-    render(<DrawioMapPanel {...structurePanel({}, { hover: { kinds: ['node', 'group'] } })} />);
+    render(<DrawioMapPanel {...structurePanel(ALL, { hover: { kinds: ['node', 'group'] } })} />);
     await hover('lab');
     expect(screen.queryByTestId('dmap-card')).toBeNull();
     await hover('grp');
@@ -1672,6 +1207,7 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
       expect(el).not.toBeNull();
       return el!;
     });
+
   it('a row with a symbol marks the nodes of that symbol and dims the others; leaving restores', async () => {
     const { container } = render(<DrawioMapPanel {...panel(true)} />);
     const el = await row();
@@ -1686,6 +1222,7 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
     await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
     expect(container.querySelector('.dmap-legend-hit, .dmap-legend-member')).toBeNull();
   });
+
   it('a row hover does not render the panel view', async () => {
     const { container } = render(<DrawioMapPanel {...panel(true)} />);
     const el = await row();
@@ -1698,6 +1235,7 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
     await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(false));
     expect(work.viewRenders).toBe(renders);
   });
+
   it('a diagram without pg-symbol does nothing', async () => {
     const { container } = render(<DrawioMapPanel {...panel(false)} />);
     const el = await row();
@@ -1716,6 +1254,7 @@ describe('DrawioMapPanel colour legend', () => {
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
     return r;
   }
+
   it('legend.show false hides it; another corner moves it; the chip opens it outside the stage and opens no card', async () => {
     const { rerender } = await setup(
       props({ options: { ...options, legend: { show: false, corner: 'bottom-right', maxBlocks: 4 } } })
@@ -1734,6 +1273,15 @@ describe('DrawioMapPanel colour legend', () => {
     expect(screen.getByTestId('dmap-stage').contains(legend()!)).toBe(false);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+
+  it('has a block for the status refId and a State block for the cells with no value', async () => {
+    await setup(openLegend());
+    const titles = within(legend()!)
+      .getAllByTestId('dmap-legend-block')
+      .map((b) => b.getAttribute('aria-label'));
+    expect(titles).toEqual(expect.arrayContaining(['up', 'State', 'Link load %']));
+  });
+
   it('hovering an entry highlights the cells in that band and dims the others; leaving clears it', async () => {
     const { container } = await setup(openLegend());
     expect(legend()!.getAttribute('data-dmap-corner')).toBe('bottom-right');
@@ -1755,12 +1303,12 @@ describe('DrawioMapPanel colour legend', () => {
   });
 
   describe('highlight cost', () => {
-    const frame = () => act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+    const nextFrame = () => act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
     /** A settled panel with an open legend: an entry that has cells, and the stage root. */
     async function settled() {
       const r = await setup(openLegend());
-      await frame();
-      await frame();
+      await nextFrame();
+      await nextFrame();
       const block = within(legend()!)
         .getAllByTestId('dmap-legend-block')
         .find((b) => b.getAttribute('aria-label') === 'Link load %')!;
@@ -1797,7 +1345,7 @@ describe('DrawioMapPanel colour legend', () => {
       const { container, entry, root } = await settled();
       fireEvent.click(container.querySelector('polyline.dmap-half')!, { clientX: 50, clientY: 40 });
       const dialog = await screen.findByRole('dialog');
-      await frame();
+      await nextFrame();
       const renders = work.viewRenders;
       fireEvent.pointerEnter(entry, { pointerType: 'mouse' });
       await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
@@ -1814,8 +1362,8 @@ describe('DrawioMapPanel colour legend', () => {
       await waitFor(() => expect(root.classList.contains('dmap-legend-active')).toBe(true));
       const before = hits(container);
       rerender(<DrawioMapPanel {...openLegend()} />);
-      await frame();
-      await frame();
+      await nextFrame();
+      await nextFrame();
       expect(root.classList.contains('dmap-legend-active')).toBe(true);
       expect(hits(container)).toEqual(before);
     });
@@ -1824,7 +1372,7 @@ describe('DrawioMapPanel colour legend', () => {
 
 describe('DrawioMapPanel refresh and freshness', () => {
   const small =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a"><rect width="40" height="30"/><text>A</text></g><g data-cell-id="b"><rect x="50" width="40" height="30"/><text>B</text></g></svg>';
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a" data-meta-bind="dev" data-meta-key="k"><rect width="40" height="30"/><text>A</text></g><g data-cell-id="b"><rect x="50" width="40" height="30"/><text>B</text></g></svg>';
   const diagram = { xml: '<mxfile/>', svg: small, hash: 'popup-panel', updatedAt: '' };
   /** Count the applier calls on the panel stage. */
   const panelApplies = () =>
@@ -1839,7 +1387,7 @@ describe('DrawioMapPanel refresh and freshness', () => {
     const base = props({ id: 61 });
     return {
       ...base.data,
-      series: [frame('A', { job: 'node-isp-a', device: 'pppoe' }, [value]), ...base.data.series.slice(1)],
+      series: [frame('wan_tx', { job: 'node-isp-a', device: 'pppoe' }, [value]), ...base.data.series.slice(1)],
     };
   };
 
@@ -1917,38 +1465,24 @@ describe('DrawioMapPanel refresh and freshness', () => {
     expect(count).toBe(57);
   });
 
-  /** One status element bound to the panel query Q, with a freshness policy of 400 ms. */
-  const freshnessConfig: DiagramConfig = {
-    version: 3,
-    queries: [{ id: 'q', name: 'Q', source: { kind: 'panel', refId: 'Q' } }],
-    patterns: [],
-    widgets: [],
-    overrides: [
-      {
-        cellId: 'a',
-        display: {
-          status: {
-            kind: 'mapping',
-            binding: { queryId: 'q', match: {}, reducer: 'last' },
-            default: { state: 'normal', reason: 'Healthy' },
-            mappings: [{ value: 0, state: 'down', reason: 'Down' }],
-            freshness: { expectedIntervalMs: 100, staleAfterMs: 400 },
-          },
-        },
-      },
-    ],
+  /** One status cell of the class `dev`: the series of the panel target `q`, fresh for 400 ms after its sample. */
+  const freshnessConfig: ConfigV4 = {
+    version: 4,
+    freshness: '400ms',
+    classes: { dev: { match: { key: 'key' }, status: 'q' } },
+    overrides: {},
   };
   const sampleAt = (at: number, value = 1) =>
     toDataFrame({
-      refId: 'Q',
+      refId: 'q',
       fields: [
         { name: 'Time', type: FieldType.time, values: [at] },
-        { name: 'Value', type: FieldType.number, values: [value] },
+        { name: 'Value', type: FieldType.number, values: [value], labels: { key: 'k' } },
       ],
     });
   const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
 
-  it('a panel-source data update with a fresh status sample binds once: the clock causes no bind', async () => {
+  it('a data update with a fresh status sample binds once: the clock causes no bind', async () => {
     const base = props({ id: 62 });
     const saved = { ...options, config: freshnessConfig, diagram };
     const view = render(
@@ -1976,7 +1510,7 @@ describe('DrawioMapPanel refresh and freshness', () => {
     const cell = () => view.container.querySelector('[data-cell-id="a"]');
     await waitFor(() => expect(cell()).toBeTruthy());
     await nextFrame();
-    expect(status()).not.toContain('stale');
+    expect(status()).toBe('');
     const applies = panelApplies();
     // 450 ms later a sample arrives whose deadline lies between the clock read at mount and now: the pass with
     // the stored clock would call it fresh, the correction runs before the applier's animation frame
@@ -1985,7 +1519,8 @@ describe('DrawioMapPanel refresh and freshness', () => {
       <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 401)] }} />
     );
     await nextFrame();
-    expect(status()).toContain('stale');
+    // the band shows the stale cell with its last value
+    expect(status()).toContain('q: 1 cell');
     expect(cell()?.getAttribute('data-dmap-status')).toBe('stale');
     expect(panelApplies()).toBe(applies + 1);
   });

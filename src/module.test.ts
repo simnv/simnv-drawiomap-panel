@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getPanelOptionsWithDefaults } from '@grafana/data';
 import type { Options } from './types';
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads.
@@ -54,6 +55,25 @@ describe('Minimum scale option', () => {
     expect(showIf(zoom('fit-width'))).toBe(true);
     expect(showIf(zoom('original'))).toBe(false);
     expect(showIf(zoom('custom'))).toBe(false);
+  });
+});
+
+describe('Build id option', () => {
+  it('keeps options.build through the defaults and an option change', () => {
+    const saved = { build: 'build-1', config: { version: 4, classes: {}, overrides: {} } } as Partial<Options>;
+    // the plugin has no migration handler that could drop a key
+    expect(plugin.onPanelMigration).toBeUndefined();
+    // the defaults step of Grafana; the stub has no option editors, which this test does not need
+    const { options } = getPanelOptionsWithDefaults({
+      plugin: { defaults: { zoom: { mode: 'fit' } }, fieldConfigDefaults: { defaults: {}, overrides: [] } } as never,
+      currentOptions: saved as Record<string, unknown>,
+      currentFieldConfig: { defaults: {}, overrides: [] },
+      isAfterPluginChange: false,
+    });
+    // an option editor writes its own path; Grafana gives onOptionsChange the whole object
+    const changed = { ...options, zoom: { mode: 'original' } } as unknown as Options;
+    expect(changed.build).toBe('build-1');
+    expect(changed.config).toEqual(saved.config);
   });
 });
 

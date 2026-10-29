@@ -3,7 +3,6 @@ import { createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { ensureOverlay, headSize, linkSplit, renderOverlay, reservedHead } from './overlay';
-import type { PlanCellPatch } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 import { statusColor } from '../binding/color';
 
@@ -82,7 +81,7 @@ describe('status paint of the halves', () => {
     coverage: { available: 1, expected: 1 },
   };
   const round = (view: StatusView | undefined) =>
-    new Map<string, PlanCellPatch>([
+    new Map<string, CellPatch>([
       ['n1', { ...patch('n1', {}), statusView: view }],
       [
         'e1',
@@ -131,7 +130,7 @@ describe('status paint of the halves', () => {
     const image = index.get('n3')!.shape!;
     const red = statusColor({ state: 'down' }, opts.theme);
     const withView = (view: StatusView | undefined) =>
-      new Map<string, PlanCellPatch>([['n3', { ...patch('n3', {}), ...(view ? { statusView: view } : {}) }]]);
+      new Map<string, CellPatch>([['n3', { ...patch('n3', {}), ...(view ? { statusView: view } : {}) }]]);
     renderOverlay(root, index, withView(statusView), opts);
     const border = root.querySelector('rect.dmap-status-border')!;
     expect(border).not.toBeNull();
@@ -287,7 +286,7 @@ describe('renderOverlay keeps its elements across refreshes', () => {
   };
   /** Two links and a status cell; new objects on every call. */
   const round = (a2b: Partial<HalfState> = {}, view: StatusView | null = statusView) =>
-    new Map<string, PlanCellPatch>([
+    new Map<string, CellPatch>([
       ['e1', patch('e1', { link: { a2b: half(a2b), b2a: half({ color: '#ff0000', stepIndex: 2 }) } })],
       ['e2', patch('e2', { link: { a2b: half() } })],
       ['n1', { ...patch('n1', {}), ...(view ? { statusView: view } : {}) }],
@@ -363,7 +362,7 @@ describe('renderOverlay keeps its elements across refreshes', () => {
         c.localName === 'path' ? 'path' : c.getAttribute('class')
       );
     const withStatus = (b2a: boolean) =>
-      new Map<string, PlanCellPatch>([
+      new Map<string, CellPatch>([
         ['e2', { ...patch('e2', { link: { a2b: half(), ...(b2a ? { b2a: half() } : {}) } }), statusView }],
       ]);
     renderOverlay(root, index, withStatus(true), opts);

@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@grafana/data';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { StatusView } from '../binding/status';
-import type { PlanCellPatch } from '../binding/engine';
 import { cellAt, patchAt } from '../interact/hit';
 import { buildCellIndex } from './svgStage';
 import { renderOverlay } from './overlay';
@@ -638,7 +637,7 @@ describe('renderLinkLabels: obstacles', () => {
       queryIds: ['q'],
       coverage: { available: 1, expected: 1 },
     };
-    const down: PlanCellPatch = {
+    const down: CellPatch = {
       cellId: 'n3',
       scope: { cell: {} },
       urls: [],
@@ -666,7 +665,7 @@ describe('renderLinkLabels: obstacles', () => {
       scope: { cell: {} },
       urls: [],
       shape: { color: '#00ff00', target: 'stroke' },
-    } as unknown as PlanCellPatch;
+    } as unknown as CellPatch;
     applyPatches(index, new Map([['n5', patch]]), undefined, undefined, { theme, osDark: false });
     const r = stageObstacles(root, index, new Map(), 10).find((o) => o.kind === 'rect' && o.rect.y === 20);
     expect(r && r.kind === 'rect' && r.clearance).toBeGreaterThanOrEqual(1.25);
@@ -688,7 +687,7 @@ describe('renderLinkLabels: obstacles', () => {
         urls: [],
         shape: { color: '#00ff00', target: 'stroke' },
         statusView: view(state),
-      }) as unknown as PlanCellPatch;
+      }) as unknown as CellPatch;
     const ctx = { theme, osDark: false };
     const grid = stageObstacles(root, index, new Map(), 10);
     const prev = applyPatches(index, new Map([['n6', patch('down')]]), undefined, undefined, ctx);
@@ -731,8 +730,8 @@ describe('renderLinkLabels: obstacles', () => {
       queryIds: ['q'],
       coverage: { available: 1, expected: 1 },
     };
-    const patch: PlanCellPatch = { ...linkPatch('e1', { a2b: half(), labelMode: 'percent' }), statusView };
-    const patches = new Map<string, PlanCellPatch>([['e1', patch]]);
+    const patch: CellPatch = { ...linkPatch('e1', { a2b: half(), labelMode: 'percent' }), statusView };
+    const patches = new Map<string, CellPatch>([['e1', patch]]);
     render(root, index, patches);
     expect(root.querySelector('.dmap-status-marker')).toBeNull();
     // one leg: its label stands at the midpoint of the edge

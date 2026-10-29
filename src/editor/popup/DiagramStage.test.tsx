@@ -46,7 +46,6 @@ function Harness({
       selection={selection}
       onSelect={onSelect ?? (() => {})}
       onBox={onBox}
-      owner="popup:1"
     />
   );
 }

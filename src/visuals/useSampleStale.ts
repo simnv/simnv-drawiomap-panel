@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { staleStatuses, type PlanBindResult } from '../binding/engine';
 import { isPast } from '../binding/status';
-import type { FreshnessPolicy } from '../model/config';
+import type { FreshnessPolicy } from '../model/v4';
 import type { FreshnessPatchMap } from '../binding/freshness';
 
 /** The largest delay a timer takes; a longer wait wakes up and sets the timer again. */
@@ -64,15 +63,9 @@ export function useSampleStale(sampleAt: number | undefined, freshness?: Freshne
 }
 
 /**
- * The bind result at the current clock: the status cells whose sample passed its deadline show their stale view.
- * A tick that crosses no deadline gives the same object, so nothing that depends on the result runs again.
+ * The patches at the current clock: a patch whose relative-range deadline passed shows its stale status. The bind
+ * patches do not change; a tick that crosses no deadline gives the same map.
  */
-export function useStaleStatus(result: PlanBindResult): PlanBindResult {
-  const now = useClock(result.deadlines);
-  return useMemo(() => staleStatuses(result, now), [result, now]);
-}
-
-/** Apply v4 status deadlines with the same clock as v3. Keep the bind patches unchanged. */
 export function useStaleStatusV4<S>(patches: FreshnessPatchMap<S>): FreshnessPatchMap<S> {
   const deadlines = useMemo(
     () => [...patches.values()].flatMap((patch) => (patch.staleStatusV4 ? [patch.staleStatusV4.after] : [])),

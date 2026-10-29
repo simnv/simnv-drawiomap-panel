@@ -7,37 +7,14 @@ import {
   type GrafanaTheme2,
   LinkModel,
 } from '@grafana/data';
-import type { CardContext } from '../types';
-import { resolveTemplate } from '../binding/template';
-import { isAllowedUrl } from '../binding/url';
-import { buildScopedVars, defaultUrlTitle, primaryOf, Primary, resolveLinks } from './links';
-import {
-  halfState,
-  historySeries,
-  metricProblem,
-  type BindingResolver,
-  type HalfContext,
-  type PlanCellPatch,
-} from '../binding/engine';
-import type { BindingDemand } from '../binding/resolve';
-import { inFieldUnit, resolveCapacity, type CapacityDiagnostic } from '../binding/capacity';
-import { INVALID_FRESHNESS_TEXT, type StatusView } from '../binding/status';
+import type { CardContext, CellPatch } from '../types';
+import { defaultUrlTitle } from './links';
+import { halfState, type HalfContext } from '../binding/engine';
+import type { StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
-import {
-  cellPath,
-  diagnosticKey,
-  invalidBounds,
-  invalidFreshness,
-  rowBindings,
-  type CombinedRow,
-  type Diagnostic,
-  type FreshnessPolicy,
-  type HoverRow,
-  type QueryBinding,
-} from '../model/config';
 import { noDataColor } from '../binding/color';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
-import type { BindInputV4, BindResultV4 } from '../binding/bindV4';
+import type { BindInputV4, BindResultV4, PatchV4 } from '../binding/bindV4';
 import { effectiveClass } from '../binding/classes';
 import { cadenceOf, freshnessMs, staleCheck } from '../binding/freshness';
 import { linkFeeds } from '../binding/linkFeeds';
@@ -53,38 +30,29 @@ import type { ChartLine } from '../visuals/SparklineView';
 
 export interface ConfiguredCardRow {
   key: string;
-  kind: HoverRow['kind'] | RowV4['kind'] | 'status';
+  kind: RowV4['kind'] | 'status';
   /** the state of a status row: its word takes the status colour */
   status?: StatusView['state'];
   title: string;
   text: string;
   state: HistoryModel['state'];
-  history?: HistoryModel;
-  sampleAt?: number;
-  freshness?: FreshnessPolicy;
-  href?: string;
-  /** Y range of the sparkline, see yDomain */
-  min?: LowerBound;
-  max?: number;
-  /** a combined up/down row: one entry for each configured direction */
+  /** an `updown` row: one entry for each direction */
   directions?: DirectionRowModel[];
-  /** Y range of a combined row: symmetric around zero when it has both directions */
+  /** the Y range of the chart of the row */
   domain?: [number, number];
-  /** chart height in px, from the row option "height"; see chartHeight for the default */
-  height?: number;
-  /** v4: the lines of a history row, up to MAX_LINES (spec 3.7); a v3 row has `history` and one line through the shim */
+  /** the lines of a history row, up to MAX_LINES (spec 3.7) */
   lines?: ChartLine[];
-  /** v4: the series after the drawn lines ("+N more") */
+  /** the series after the drawn lines ("+N more") */
   more?: number;
-  /** v4: the series of the row are stale at the time of the bind (spec 3.5 step 6) */
+  /** the series of the row are stale at the time of the bind (spec 3.5 step 6) */
   stale?: boolean;
-  /** v4: the row turns stale at this time on a relative range; the card reads the clock again then */
+  /** the row turns stale at this time on a relative range; the card reads the clock again then */
   staleAfter?: number;
-  /** v4: formats a value of a line, with the display processor of the first series and the row unit and decimals */
+  /** formats a value of a line, with the display processor of the first series and the row unit and decimals */
   format?: (value: number) => string;
-  /** v4: the field config of the first series with the row unit and decimals; the chart reads its unit and Min/Max */
+  /** the field config of the first series with the row unit and decimals; the chart reads its unit and Min/Max */
   config?: FieldConfig;
-  /** v4: the reduced value of a `value` row, for the bar gauge of a chart region */
+  /** the reduced value of a `value` row, for the bar gauge of a chart region */
   display?: DisplayValue;
 }
 
@@ -92,174 +60,14 @@ export interface ConfiguredCardRow {
 export const SPARK_HEIGHT = 40;
 
 /**
- * Chart height of a history row in px. The row option "height" wins. Without it, a row with the zero line
- * (up above, down mirrored below) is twice as tall as a plain sparkline, so each half is as tall as one.
+ * Chart height of a history row in px. A row with the zero line (up above, down mirrored below) is twice as tall as
+ * a plain sparkline, so each half is as tall as one.
  */
-export function chartHeight(row: Pick<ConfiguredCardRow, 'height' | 'directions'>): number {
-  return row.height ?? (row.directions?.some((d) => d.mirrored) ? 2 * SPARK_HEIGHT : SPARK_HEIGHT);
-}
-export interface ConfiguredCardModel {
-  title: string;
-  rows: ConfiguredCardRow[];
-  links: LinkModel[];
-  demands: BindingDemand[];
-  diagnostics: Diagnostic[];
+export function chartHeight(row: Pick<ConfiguredCardRow, 'directions'>): number {
+  return row.directions?.some((d) => d.mirrored) ? 2 * SPARK_HEIGHT : SPARK_HEIGHT;
 }
 
-const UNAVAILABLE_TEXT = 'Binding metadata is unavailable';
-
-/** Why a data row cannot show its data, from its own options: a freshness policy or a range that cannot be met. */
-function rowProblem(row: Extract<HoverRow, { kind: 'value' | 'history' | 'combined' }>): string | undefined {
-  return invalidFreshness(row.freshness)
-    ? INVALID_FRESHNESS_TEXT
-    : invalidBounds(row.min, row.max)
-      ? 'Invalid range'
-      : undefined;
-}
-
-export function buildConfiguredCard(
-  patch: PlanCellPatch,
-  resolve: BindingResolver,
-  ctx: CardContext,
-  open = true
-): ConfiguredCardModel {
-  const card: ConfiguredCardModel = { title: titleOf(patch), rows: [], links: [], demands: [], diagnostics: [] };
-  if (!open || patch.hover?.enabled === false) {
-    return card;
-  }
-  const primary = primaryOf(patch);
-  card.links = resolveLinks(patch, primary, ctx.replaceVariables, card.title);
-  // A state that is not normal and its reason come first: the element shows the colour, the card says why.
-  // A normal status adds a row only to a card with no hover rows (the card then has something to show).
-  if (patch.statusView && (patch.statusView.state !== 'normal' || !patch.hover)) {
-    card.rows.push({
-      key: 'status',
-      kind: 'status',
-      status: patch.statusView.state,
-      title: patch.statusView.state,
-      text: patch.statusView.reason,
-      state: 'ready',
-    });
-  }
-  if (!patch.hover) {
-    return card;
-  }
-  patch.hover.rows.forEach((row, i) => {
-    const base = { key: `row-${i}`, kind: row.kind, title: resolveTemplate(row.label, patch.scope).text };
-    if (row.kind === 'metadata') {
-      const value = resolveTemplate(`\${${row.path}}`, patch.scope);
-      card.rows.push({
-        ...base,
-        text: value.unresolved.length ? 'Metadata unavailable' : value.text,
-        state: value.unresolved.length ? 'empty' : 'ready',
-      });
-    } else if (row.kind === 'drilldown') {
-      // A drilldown is a footer link, not a row: a row would show its label as the title and as the value.
-      const href = rowHref(patch, row.url, primary, ctx);
-      if (href === undefined) {
-        card.diagnostics.push({
-          code: 'invalid-url',
-          path: cellPath(patch.cellId, `hover.rows[${i}].url`),
-          message: 'Drilldown URL must use http, https or a relative path.',
-        });
-      } else if (!card.links.some((l) => l.href === href)) {
-        card.links.push({ title: base.title, href, target: '_blank', origin: patch });
-      }
-    } else {
-      // a row that cannot show data: its binding is not usable for the cell, or its own options cannot be met
-      const blocked = patch.unavailableHoverRows?.includes(i) ? UNAVAILABLE_TEXT : rowProblem(row);
-      const parts = rowBindings(row).map(({ binding, path }, j) => {
-        if (blocked === undefined) {
-          card.demands.push({ cellId: patch.cellId, binding, role: 'hover', rowIndex: i, path });
-        }
-        const model: HistoryModel =
-          blocked !== undefined
-            ? { state: 'unsupported', message: blocked }
-            : readBinding(patch, binding, `hover.rows[${i}].${path}`, row.unit, resolve, ctx, card.diagnostics);
-        const series = model.state === 'ready' ? historySeries(model, binding) : undefined;
-        const primary: Primary = {
-          status: model.state === 'ready' ? 'ok' : 'nodata',
-          series,
-          value: model.state === 'ready' ? model.latestValue : undefined,
-          display: model.state === 'ready' ? model.latestDisplayValue : undefined,
-        };
-        return { model, primary };
-      });
-      if (row.kind === 'combined') {
-        const href = rowHref(patch, row.url, (parts.find((p) => p.primary.series) ?? parts[0]).primary, ctx);
-        card.rows.push({
-          ...base,
-          freshness: row.freshness,
-          href,
-          height: row.height,
-          ...(blocked !== undefined
-            ? { state: 'unsupported', text: blocked }
-            : combinedRow(
-                row,
-                parts.map((p) => p.model),
-                ctx,
-                { patch, rowIndex: i, resolve, card }
-              )),
-        });
-        return;
-      }
-      const model = parts[0]?.model ?? { state: 'unsupported', message: UNAVAILABLE_TEXT };
-      card.rows.push({
-        ...base,
-        text: stateText(model),
-        state: model.state,
-        sampleAt: model.state === 'ready' ? model.sampleAt : undefined,
-        freshness: row.freshness,
-        href: rowHref(patch, row.url, parts[0]?.primary ?? { status: 'nodata' }, ctx),
-        min: row.min,
-        max: row.max,
-        ...(row.kind === 'history' ? { history: model, height: row.height } : {}),
-      });
-    }
-  });
-  return card;
-}
-
-/** The current value of a history, or why it has none. */
-function stateText(model: HistoryModel): string {
-  return model.state === 'ready' && model.latestDisplayValue
-    ? formattedValueToString(model.latestDisplayValue)
-    : model.state === 'error' || model.state === 'unsupported'
-      ? model.message
-      : model.state === 'idle' || model.state === 'loading'
-        ? 'Loading data'
-        : NO_DATA_ROW;
-}
-
-/** Resolves one hover binding, reports a missing or failed metric, and applies the unit of the row. */
-function readBinding(
-  patch: PlanCellPatch,
-  binding: QueryBinding,
-  path: string,
-  unit: string | undefined,
-  resolve: BindingResolver,
-  ctx: CardContext,
-  diagnostics: Diagnostic[]
-): HistoryModel {
-  const model = resolve(patch.cellId, binding);
-  const problem = metricProblem(model, binding);
-  if (problem) {
-    diagnostics.push({ ...problem, path: cellPath(patch.cellId, path) });
-  }
-  if (model.state !== 'ready' || unit === undefined) {
-    return model;
-  }
-  // drop the display processor of the original field: it has the old unit
-  const field = { ...model.field, display: undefined, config: { ...model.field.config, unit } };
-  const display = fieldDisplay(field, ctx.theme);
-  return {
-    ...model,
-    field,
-    latestDisplayValue: model.latestValue === undefined ? undefined : display(model.latestValue),
-  };
-}
-
-/** One direction of a combined row. */
+/** One direction of an `updown` row. */
 export interface DirectionRowModel {
   direction: 'up' | 'down';
   /** "↑" or "↓" by default */
@@ -284,163 +92,12 @@ function halfContext(ctx: CardContext): HalfContext {
 }
 
 /**
- * A combined up/down row. Up leaves the subject (tx), down enters it (rx). With both directions, up is above
- * the zero line and down is mirrored below it, in the symmetric range [-M, M]: M is the largest |value|,
- * the capacity or the row max. A single direction stays positive and uses yDomain.
+ * True when the card of the cell has rows or links: a URL, a row of its class, or a status. It reads no series
+ * values, so the panel can call it for all cells once per data update.
  */
-function combinedRow(
-  row: CombinedRow,
-  models: HistoryModel[],
-  ctx: CardContext,
-  at: { patch: PlanCellPatch; rowIndex: number; resolve: BindingResolver; card: ConfiguredCardModel }
-): Pick<ConfiguredCardRow, 'text' | 'state' | 'sampleAt' | 'directions' | 'domain'> {
-  const { patch, card } = at;
-  const rowPath = `hover.rows[${at.rowIndex}]`;
-  // The row capacity sources are resolved once per direction: one report of each problem, one read of each series.
-  const reported = new Set<string>();
-  const report = (d: CapacityDiagnostic) => {
-    const key = diagnosticKey(d);
-    if (!reported.has(key)) {
-      reported.add(key);
-      card.diagnostics.push({ ...d, path: cellPath(patch.cellId, d.path) });
-    }
-  };
-  const reads = new Map<string, HistoryModel>();
-  const read = (binding: QueryBinding, path: string): HistoryModel | undefined => {
-    if (patch.bindings && !patch.bindings.includes(binding)) {
-      return undefined;
-    }
-    const seen = reads.get(path);
-    if (seen) {
-      return seen;
-    }
-    // the demand names the place in the row, as hoverDemands does: `series[j].capacityBinding`
-    card.demands.push({
-      cellId: patch.cellId,
-      binding,
-      role: 'hover',
-      rowIndex: at.rowIndex,
-      path: path.slice(rowPath.length + 1),
-    });
-    const model = readBinding(patch, binding, path, undefined, at.resolve, ctx, card.diagnostics);
-    reads.set(path, model);
-    return model;
-  };
-  const halves = halfContext(ctx);
-  const mirrored = row.series.length === 2;
-  const capacities: Array<number | undefined> = [];
-  const directions = row.series.map((s, j): DirectionRowModel => {
-    const model = models[j];
-    // a direction without data has no unit: it takes the unit of the other direction
-    const unitModel = model.state === 'ready' ? model : models.find((m) => m.state === 'ready');
-    const field = unitModel?.state === 'ready' ? unitModel.field : undefined;
-    const cap = resolveCapacity({
-      own: s,
-      ownPath: `${rowPath}.series[${j}]`,
-      shared: row,
-      sharedPath: rowPath,
-      numberUnit: 'field',
-      scope: patch.scope,
-      field,
-      read,
-    });
-    cap.diagnostics.forEach(report);
-    capacities.push(cap.amount === undefined ? undefined : inFieldUnit(cap.amount, field));
-    const base = {
-      direction: s.direction,
-      label: s.label ?? (s.direction === 'up' ? '↑' : '↓'),
-      mirrored: mirrored && s.direction === 'down',
-      history: model,
-    };
-    if (model.state !== 'ready' || model.latestValue === undefined) {
-      return { ...base, text: stateText(model), color: noDataColor(ctx.theme) };
-    }
-    const half = halfState(model, s.binding, cap, halves);
-    for (const note of new Set(half.notes)) {
-      report({ code: 'unit-not-rate', path: `${rowPath}.series[${j}].binding`, message: note });
-    }
-    return { ...base, text: half.state.label, color: half.state.color };
-  });
-  const ready = models.filter((m): m is Extract<HistoryModel, { state: 'ready' }> => m.state === 'ready');
-  // for max "capacity": the larger capacity of the two directions, in the unit of the values
-  const known = capacities.filter((c): c is number => c !== undefined);
-  const capacity = known.length ? Math.max(...known) : undefined;
-  // One shared scale for both directions: the data, not the capacity, unless the row says so.
-  const top = combinedTop(
-    ready.flatMap((m) => m.values),
-    { max: row.max, capacity }
-  );
-  let domain: [number, number];
-  if (mirrored) {
-    domain = [-top, top];
-  } else {
-    const config = ready[0]?.field.config ?? {};
-    domain = yDomain(ready[0]?.values ?? [], { min: row.min, max: top, fieldMin: config.min, unit: config.unit });
-  }
-  const samples = ready.flatMap((m) => (m.sampleAt === undefined ? [] : [m.sampleAt]));
-  return {
-    text: directions.map((d) => `${d.label} ${d.text}`).join('  '),
-    // the row is ready when one direction has data; the other direction tells why it has none
-    state: ready.length ? 'ready' : models[0].state,
-    // the oldest sample decides if the row is stale
-    sampleAt: samples.length ? Math.min(...samples) : undefined,
-    directions,
-    domain,
-  };
+export function opensCard(patch: CellPatch & Pick<PatchV4, 'rowsV4'>): boolean {
+  return patch.urls.length > 0 || (patch.rowsV4?.length ?? 0) > 0 || patch.statusView !== undefined;
 }
-
-/** Row url: the row template (resolved with the row series labels, encoded), else the display url. */
-function rowHref(
-  patch: PlanCellPatch,
-  tpl: string | undefined,
-  primary: Primary,
-  ctx: CardContext
-): string | undefined {
-  let url: string | undefined = patch.urls[0]?.url;
-  if (tpl !== undefined) {
-    const r = resolveTemplate(tpl, { ...patch.scope, labels: primary.series?.labels ?? {} }, encodeURIComponent);
-    url = !r.unresolved.length && isAllowedUrl(r.text) ? r.text : undefined;
-  }
-  if (url === undefined) {
-    return undefined;
-  }
-  // a dashboard variable can put a scheme into the url, so check the final text again
-  const href = ctx.replaceVariables(url, buildScopedVars(patch, primary));
-  return isAllowedUrl(href) ? href : undefined;
-}
-
-/** The card title: the hover title template of the pattern, else the title of the cell. */
-function titleOf(patch: PlanCellPatch): string {
-  const cell = patch.scope.cell;
-  const fallback = patch.scope.cellTitle || cell.label || cell.key || patch.cellId;
-  const template = patch.hover?.title;
-  if (template === undefined) {
-    return fallback;
-  }
-  const r = resolveTemplate(template, patch.scope);
-  return r.unresolved.length || !r.text.trim() ? fallback : r.text;
-}
-
-/**
- * True when the card of the cell has rows or links. It reads no series values, so the panel can call it for all
- * cells once per data update.
- */
-export function opensCard(patch: PlanCellPatch, ctx: CardContext): boolean {
-  if (patch.hover?.enabled === false) {
-    return false;
-  }
-  const rows = patch.hover?.rows;
-  const primary = primaryOf(patch);
-  if (rows?.some((row) => row.kind !== 'drilldown' || rowHref(patch, row.url, primary, ctx))) {
-    return true;
-  }
-  if (!patch.hover && patch.statusView) {
-    return true;
-  }
-  return resolveLinks(patch, primary, ctx.replaceVariables, '').length > 0;
-}
-
-/* ---------- v4 cards (spec 3.7) ---------- */
 
 /** The most lines of one history chart; the other series give "+N more" (spec 3.7, D9). */
 export const MAX_LINES = 8;
@@ -502,7 +159,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
   }
   const slots = patch.rowsV4 ?? [];
   const status = patch.statusView;
-  // as in v3: a state that is not normal and its reason come first; a normal status shows only on a card with no rows
+  // a state that is not normal and its reason come first; a normal status shows only on a card with no rows
   if (status && (status.state !== 'normal' || !slots.length)) {
     card.rows.push({
       key: 'status',
@@ -528,7 +185,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
       return;
     }
     if (slot.kind === 'drilldown') {
-      // a drilldown is a footer link, as in v3
+      // a drilldown is a footer link, not a row
       const href = slot.url ?? '';
       if (href && !card.links.some((l) => l.href === href)) {
         card.links.push({ title: slot.label ?? defaultUrlTitle(href, title), href, target: '_blank', origin: patch });
@@ -727,7 +384,7 @@ function historyRowV4(
     }
   );
   const format = formatOf(shown, ctx);
-  // one line: its last value, as a v3 history row; N lines: the tooltip gives the values
+  // one line: its last value; N lines: the tooltip gives the values
   const last = lines.length === 1 ? lastValue(lines[0].values) : undefined;
   return {
     ...base,
@@ -834,8 +491,7 @@ function updownRow(
       reduced.state === 'ready'
         ? { ...reduced, field: shownField(reduced.field, row) as typeof reduced.field }
         : reduced;
-    const binding: QueryBinding = { queryId: d.use.refId, match: {}, reducer: 'last' };
-    const half = halfState(history, binding, { source: 'none' }, halves).state;
+    const half = halfState(history, d.use.refId, { source: 'none' }, halves).state;
     return { direction, label, mirrored, history, text: half.label, color: half.color };
   });
   const ready = directions.flatMap((d) => (d.history.state === 'ready' ? [d.history] : []));
@@ -852,13 +508,7 @@ function updownRow(
   };
 }
 
-/**
- * The time after which a row of a card is stale, or undefined. A v4 row gives it (`staleAfter`); the shim of a v3 row
- * gives the sample time plus the stale delay of its freshness policy.
- */
+/** The time after which a row of a card is stale on a relative range (`staleAfter`), or undefined. */
 export function staleDeadline(row: ConfiguredCardRow): number | undefined {
-  if (row.staleAfter !== undefined) {
-    return row.staleAfter;
-  }
-  return row.sampleAt !== undefined && row.freshness ? row.sampleAt + row.freshness.staleAfterMs : undefined;
+  return row.staleAfter;
 }

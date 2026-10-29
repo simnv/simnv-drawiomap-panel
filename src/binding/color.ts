@@ -50,18 +50,12 @@ export function statusTextColor(status: Pick<StatusView, 'state'>, theme: Grafan
       : theme.colors.text.secondary;
 }
 
-/**
- * The colour a status paints its element with. A v4 status (it has a `severity`) paints as `statusPaintV4`. A v3
- * status paints a state that is not normal; a normal status paints nothing.
- */
+/** The colour a status paints its element with (`statusPaintV4`); undefined with no status or the drawn colour. */
 export function statusPaint(
   status: (Pick<StatusView, 'state'> & StatusV4Fields) | undefined,
   theme: GrafanaTheme2
 ): string | undefined {
-  if (status?.severity !== undefined) {
-    return statusPaintV4(status, theme) ?? undefined;
-  }
-  return status && status.state !== 'normal' ? statusColor(status, theme) : undefined;
+  return status ? (statusPaintV4(status, theme) ?? undefined) : undefined;
 }
 
 /**
@@ -84,7 +78,7 @@ export function statusPaintV4(status: Pick<StatusView, 'state'> & StatusV4Fields
  * The status colour of a link's stroke. A painted status wins over the binding colour of the halves. One
  * exception: a missing status on a link with halves paints nothing, because each half shows its own state already
  * (the half with no data is grey; the other keeps the colour of its value). A link without halves takes the grey.
- * A normal v4 status paints its value colour; a normal v3 status paints nothing.
+ * A normal status paints its value colour, or nothing when it has no colour.
  */
 export function linkStatusPaint(
   patch: {

@@ -1,141 +1,117 @@
 import { useMemo } from 'react';
 import type { PanelData } from '@grafana/data';
-import { cardContextFor } from '../binding/context';
-import { bindPlan, type BindingResolver, type PlanBindResult } from '../binding/engine';
-import { resolvePatterns, type BindingPlan } from '../binding/patterns';
-import { demandMap, demandsOf, resolverFrom } from '../binding/resolve';
-import type { DiagramConfig } from '../model/config';
-import type { HistoryFormat } from '../query/frames';
-import type { PanelQueryService } from '../query/panel';
-import type { StoreDemand } from '../query/store';
-import { useBindings } from '../query/useBindings';
-import type { BindContext, CardContext, CellMeta } from '../types';
-import { useStaleStatus } from '../visuals/useSampleStale';
-
-/**
- * The store groups of the demands. With `card`, the rows of the open card are a group of their own: a new open cell
- * changes the card resolver only, and the resolver of the diagram and the bind do not run again (the panel). Without
- * `card`, the hover rows join the `visible` group, and the resolver reads the frame of every group of the owner: the
- * popup stage adds its widget groups there, so a widget binding resolves at its anchor cell (the popup).
- */
-export interface BindGroups {
-  visible: string;
-  card?: string;
-}
+import { bindV4, statusViewOf, type BindResultV4, type PatchV4 } from '../binding/bindV4';
+import type { ReportEntry } from '../binding/report';
+import type { CardContextV4 } from '../interact/cardModel';
+import { validateConfig } from '../model/validate';
+import type { BindContext, CellIndex } from '../types';
+import { useStaleStatusV4 } from '../visuals/useSampleStale';
 
 export interface BoundDiagramInputs {
-  metas: CellMeta[];
-  config: DiagramConfig;
-  service: PanelQueryService | undefined;
-  /** The namespace of the query consumers, for example `panel:3` or `popup:3`. */
-  owner: string;
-  groups: BindGroups;
-  maxDataPoints: number;
+  index: CellIndex;
+  /** the draw.io XML of the diagram: the ends of an ordinary edge come from it (spec 3.8.1) */
+  xml: string | undefined;
+  /** `Options.config`, as saved */
+  config: unknown;
   data: PanelData;
   bindContext: BindContext;
-  /** A memo of the caller. */
-  format: HistoryFormat;
-  /** The cell of the open card: the rows of its card join the demands. */
-  openCellId: string | undefined;
-  /** While paused the store frames are held: an emission renders nothing. */
-  paused: boolean;
-  /**
-   * A resolver layer over the saved resolver of the diagram, for example the editor preview. A memo of the caller.
-   * A card group of its own reads the saved results only.
-   */
-  override?: (saved: BindingResolver, plan: BindingPlan) => BindingResolver;
 }
 
 export interface BoundDiagram {
-  plan: BindingPlan;
-  /** The resolver of the diagram. */
-  resolve: BindingResolver;
-  /** The resolver of the open card. */
-  cardResolve: BindingResolver;
-  /** The bind. It takes no clock: the diagnostics read it, because no diagnostic holds a stale state. */
-  bound: PlanBindResult;
-  /** The bind at the current clock: the patches to paint and the summaries to show. */
-  shown: PlanBindResult;
-  cardContext: CardContext;
+  validated: ReturnType<typeof validateConfig>;
+  /** The bind. It takes no clock: the report reads it, because no report entry holds a stale state. */
+  bound: BindResultV4;
+  /** The patches at the current clock: a status after its deadline is stale (spec 3.5). */
+  patches: Map<string, PatchV4>;
+  /** The inputs of the cards and the chart regions. */
+  cardContext: CardContextV4;
 }
 
-const NO_DEMANDS: StoreDemand[] = [];
-
 /**
- * The bind pipeline of the panel and of the popup: the plan, the demands of each role, the store frames, the
- * resolvers, the bind and the bind at the current clock. The two callers share the code, not the state: each has its
- * own owner in the store. The pause inputs stay with the caller.
+ * The v4 bind pipeline of the panel (spec 3.2): the validation of the config, the bind of the panel data and the
+ * stale pass at the clock. A tick of the clock runs the stale pass over the patches, never the bind. The painter, the
+ * band and the legend read `statusView`, so it follows the stale status.
  */
 export function useBoundDiagram(inputs: BoundDiagramInputs): BoundDiagram {
-  const {
-    metas,
-    config,
-    service,
-    owner,
-    groups,
-    maxDataPoints,
-    data,
-    bindContext,
-    format,
-    openCellId,
-    paused,
-    override,
-  } = inputs;
-  const split = groups.card !== undefined;
-  const plan = useMemo(() => resolvePatterns(metas, config), [metas, config]);
-  const context = service?.context;
-  const visibleDemands = useMemo(
-    () => demandsOf(plan, context, maxDataPoints, 'visible'),
-    [plan, context, maxDataPoints]
+  const { index, xml, config, data, bindContext } = inputs;
+  const validated = useMemo(() => validateConfig(config), [config]);
+  const bound = useMemo(
+    () => bindV4({ index, xml, validated, data, ctx: bindContext }),
+    [index, xml, validated, data, bindContext]
   );
-  const hoverDemands = useMemo(
-    () => demandsOf(plan, context, maxDataPoints, 'hover', openCellId),
-    [plan, context, maxDataPoints, openCellId]
-  );
-  // Only the frame of the whole owner holds the widget groups of the popup stage.
-  const widgetDemands = useMemo(
-    () => (split ? NO_DEMANDS : demandsOf(plan, context, maxDataPoints, 'widget')),
-    [split, plan, context, maxDataPoints]
-  );
-  // With a card group, the visible group keeps its array when the open cell changes: the store sees no change.
-  const ownDemands = useMemo(
-    () => (split ? visibleDemands : [...visibleDemands, ...hoverDemands]),
-    [split, visibleDemands, hoverDemands]
-  );
-  const frame = useBindings(service, owner, groups.visible, ownDemands, paused, split ? 'group' : 'owner');
-  // Without a card group this reader has no store: it watches nothing and reads the empty frame.
-  const cardFrame = useBindings(
-    split ? service : undefined,
-    owner,
-    groups.card ?? '',
-    split ? hoverDemands : NO_DEMANDS,
-    paused
-  );
-  const identities = useMemo(() => demandMap(ownDemands, widgetDemands), [ownDemands, widgetDemands]);
-  const saved = useMemo(
-    () => resolverFrom([frame], identities, plan, data, format),
-    [frame, identities, plan, data, format]
-  );
-  const resolve = useMemo(() => (override ? override(saved, plan) : saved), [override, saved, plan]);
-  // The card reads its own entries first, then the visible ones: a row that reads the query of the link has its data
-  // on the first render, before the card group watches.
-  const cardMap = useMemo(
-    () => (split ? demandMap(hoverDemands, visibleDemands) : identities),
-    [split, hoverDemands, visibleDemands, identities]
-  );
-  const cardResolve = useMemo(() => {
-    if (!split || !hoverDemands.length) {
-      return resolve;
+  // the stale pass keeps each patch, or gives a copy with the stale status: the rows of the patch stay
+  const stale = useStaleStatusV4(bound.patches) as Map<string, PatchV4>;
+  const patches = useMemo(() => {
+    if (stale === bound.patches) {
+      return bound.patches;
     }
-    return resolverFrom([cardFrame, frame], cardMap, plan, data, format);
-  }, [split, hoverDemands.length, resolve, cardFrame, frame, cardMap, plan, data, format]);
-  // The bind takes no clock: a tick of the freshness clock runs the pass over the patches, never the bind.
-  const bound = useMemo(() => bindPlan(plan, resolve, bindContext), [plan, resolve, bindContext]);
-  const shown = useStaleStatus(bound);
+    const shown = new Map(stale);
+    for (const [id, patch] of stale) {
+      if (patch !== bound.patches.get(id) && patch.statusV4) {
+        shown.set(id, { ...patch, statusView: statusViewOf(patch.statusV4) });
+      }
+    }
+    return shown;
+  }, [stale, bound.patches]);
   const { theme, replaceVariables, fieldThresholds } = bindContext;
   const cardContext = useMemo(
-    () => cardContextFor({ theme, replaceVariables, fieldThresholds }),
-    [theme, replaceVariables, fieldThresholds]
+    (): CardContextV4 => ({ theme, replaceVariables, fieldThresholds, index, validated, data }),
+    [theme, replaceVariables, fieldThresholds, index, validated, data]
   );
-  return { plan, resolve, cardResolve, bound, shown, cardContext };
+  return { validated, bound, patches, cardContext };
+}
+
+/** The line of a report entry in the warning list of the panel (spec 4: view mode shows the count). */
+export function reportLine(entry: ReportEntry): string {
+  switch (entry.kind) {
+    case 'schema':
+      return `${entry.path}: ${entry.message}`;
+    case 'yaml':
+      return `line ${entry.line}: ${entry.message}`;
+    case 'outdated-config':
+      return `This configuration has version ${String(entry.version)}. The panel reads version 4 only: write the config again as version 4.`;
+    case 'query-unavailable':
+      return `${entry.refId}: ${entry.message}`;
+    case 'orphan-series':
+      return `${entry.refId}: ${entry.labels.length + entry.more} series select no cell`;
+    case 'many-fields':
+    case 'invalid-series':
+      return `${entry.refId}: ${entry.message}`;
+    case 'duplicate-series':
+      return `${entry.refId}: duplicate series ${JSON.stringify(entry.labels)}`;
+    case 'unknown-ref':
+      return `${entry.path}: no panel query has refId ${entry.refId}`;
+    case 'unknown-class':
+      return `${entry.cellIds.length} cells bind unknown class ${entry.bind}`;
+    case 'unknown-override':
+      return `overrides.${entry.cellId}: the diagram has no such cell`;
+    case 'class-no-cells':
+      return `classes.${entry.cls}: no cell binds this class`;
+    case 'class-no-match':
+      return `classes.${entry.cls}: the class has no match`;
+    case 'class-cycle':
+    case 'class-unknown-parent':
+    case 'class-invalid-parent':
+      return `classes.${entry.cls}: ${entry.kind}`;
+    case 'missing-attr':
+      return `${entry.path}: ${entry.cellIds.length} cells have no attribute ${entry.attr}`;
+    case 'matcher-error':
+      return `${entry.path}: ${entry.message}`;
+    case 'template-unresolved':
+      return `${entry.path}: the template does not resolve for ${entry.cellIds.length} cells`;
+    case 'no-series':
+      return `${entry.use}: ${entry.cellIds.length} cells have no series`;
+    case 'many-series':
+      return `${entry.use}: ${entry.cells.length} cells have more than one series`;
+    case 'unit-mismatch':
+      return `${entry.use}: the units ${entry.units.join(', ')} do not convert`;
+    case 'capacity-fallback':
+      return `classes.${entry.cls}.capacity: ${entry.reason}`;
+    case 'bad-cap':
+      return `cap "${entry.value}" is not a capacity (${entry.cellIds.length} cells)`;
+    case 'no-edge-ends':
+      return `${entry.cellIds.length} edges have no ends: ${entry.reason}`;
+    case 'unused-field':
+      return `classes.${entry.cls}.${entry.field}: not used on ${entry.cellIds.length} cells that are not edges`;
+  }
 }

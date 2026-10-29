@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { baseRevision, hasConflict } from './revision';
-import { EMPTY_CONFIG } from '../model/config';
+import type { ConfigV4 } from '../model/v4';
 
+const EMPTY_CONFIG: ConfigV4 = { version: 4, freshness: '3x', classes: {}, overrides: {} };
 const diagram = (hash: string) => ({ svg: '<svg/>', xml: '<mxfile/>', hash, updatedAt: '2026-10-23T00:00:00Z' });
 
 describe('revision', () => {
@@ -25,9 +26,7 @@ describe('revision', () => {
 
   it('finds a conflict when the config or the diagram changed', () => {
     const base = baseRevision({ diagram: diagram('h1'), config: EMPTY_CONFIG });
-    expect(
-      hasConflict(base, { diagram: diagram('h1'), config: { ...EMPTY_CONFIG, defaultDatasource: { uid: 'x' } } })
-    ).toBe(true);
+    expect(hasConflict(base, { diagram: diagram('h1'), config: { ...EMPTY_CONFIG, freshness: '5m' } })).toBe(true);
     expect(hasConflict(base, { diagram: diagram('h2'), config: EMPTY_CONFIG })).toBe(true);
     expect(hasConflict(base, { config: EMPTY_CONFIG })).toBe(true);
   });

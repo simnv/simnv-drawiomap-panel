@@ -1,33 +1,29 @@
 import { createPortal } from 'react-dom';
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import { PanelProps } from '@grafana/data';
+import type { Field, PanelProps } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
-import { locationService } from '@grafana/runtime';
 import { bindContextFor } from '../binding/context';
-import { buildConfiguredCard, opensCard } from '../interact/cardModel';
+import type { BindResultV4 } from '../binding/bindV4';
+import { buildCardV4, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { useCardInput, useCardState } from '../interact/useCardState';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
-import { cellMetas } from '../render/svgStage';
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
 import { useStage } from '../stage/useStage';
 import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
-import { useBoundDiagram, type BindGroups } from '../stage/useBoundDiagram';
-import { PanelQueryContext, PanelQueryProvider, type PanelQueryService } from '../query/panel';
-import { EMPTY_CONFIG, legacyRulesWarning } from '../model/config';
-import { MAX_DATA_POINTS } from '../query/types';
-import { ChartLayer } from '../visuals/ChartLayer';
-import { bandLayout, StatusBand } from './StatusBand';
+import { reportLine, useBoundDiagram } from '../stage/useBoundDiagram';
+import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
+import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { legendCorners } from './legendCorners';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
-import { buildLegend } from '../legend/model';
+import { buildLegendV4 } from '../legend/model';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
 import { bindSymbolLegend } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
@@ -71,47 +67,46 @@ const styles = {
   `,
 };
 
-/** The store groups of the panel: the visible bindings and the open card. */
-const PANEL_GROUPS: BindGroups = { visible: 'visible', card: 'card' };
-
 /** The sheet goes to document.body: position: fixed does not work below a CSS transform (the Grafana grid item). */
 const portalSheet = (card: React.ReactElement, sheet: boolean) =>
   sheet && typeof document !== 'undefined' ? createPortal(card, document.body) : card;
 
+/** The warning of the saved rules of version 1: the panel does not read them. */
+function legacyRulesWarning(count: number): string {
+  return `The panel ignores ${count} rule${count === 1 ? '' : 's'} of version 1. Write the bindings again as a version 4 config.`;
+}
+
+/**
+ * The field of each status refId, from the first series that a status use selects: the legend takes the title and
+ * the scale of a refId from it (`buildLegendV4`).
+ */
+function statusFields(bound: BindResultV4): Map<string, Field> {
+  const fields = new Map<string, Field>();
+  for (const [cellId, uses] of bound.uses) {
+    for (const use of uses) {
+      if (use.kind === 'status' && !fields.has(use.refId)) {
+        const first = bound.series.get(cellId)?.get(use.path)?.[0];
+        if (first) {
+          fields.set(use.refId, first.field);
+        }
+      }
+    }
+  }
+  return fields;
+}
+
 export function DrawioMapPanel(props: PanelProps<Options>) {
-  // The query session follows the panel on its dashboard: the panel editor, a lazy scroll and a layout change mount
-  // a new component for the same panel, and it must not run every diagram query again.
-  const querySession = `${locationService?.getLocation().pathname ?? ''}#${props.id}`;
+  // Sandbox hosts do not provide a definite percentage-height containing block.
   return (
-    <PanelQueryProvider
-      session={querySession}
-      data={props.data}
-      timeRange={props.timeRange}
-      timeZone={props.timeZone}
-      replaceVariables={props.replaceVariables}
-      defaultDatasource={props.options.config?.defaultDatasource}
-    >
-      {/* Sandbox hosts do not provide a definite percentage-height containing block. */}
-      <div style={{ width: props.width, height: props.height }}>
-        <PanelBody {...props} />
-      </div>
-    </PanelQueryProvider>
+    <div style={{ width: props.width, height: props.height }}>
+      <DrawioMapPanelView {...props} />
+    </div>
   );
 }
 
-function PanelBody(props: PanelProps<Options>) {
-  const queryService = useContext(PanelQueryContext);
-  return <DrawioMapPanelView {...props} queryService={queryService} />;
-}
-
-interface ViewProps extends PanelProps<Options> {
-  queryService: PanelQueryService | undefined;
-}
-
-function DrawioMapPanelView(props: ViewProps) {
-  const { id, options, data, width, height, fieldConfig, replaceVariables, timeZone, timeRange } = props;
+function DrawioMapPanelView(props: PanelProps<Options>) {
+  const { options, data, width, height, fieldConfig, replaceVariables, timeZone, timeRange } = props;
   const theme = useTheme2();
-  const { queryService } = props;
   const opts = withDefaults(options);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
@@ -164,36 +159,29 @@ function DrawioMapPanelView(props: ViewProps) {
       }),
     [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, opts.linkWidth.min, opts.linkWidth.max]
   );
-  const metas = useMemo(() => cellMetas(stage.index), [stage.index]);
-  const format = useMemo(() => ({ theme, timeZone }), [theme, timeZone]);
-  // The visible bindings and the rows of the open card are two groups of the store with one owner. A hover over a
-  // new cell changes the card frame only: the resolver of the diagram, the bind and the patches do not run again.
-  const { plan, cardResolve, bound, shown, cardContext } = useBoundDiagram({
-    metas,
-    config: opts.config ?? EMPTY_CONFIG,
-    service: queryService,
-    owner: `panel:${id}`,
-    groups: PANEL_GROUPS,
-    maxDataPoints: Math.max(1, Math.min(MAX_DATA_POINTS, width - 16)),
+  // The bind runs on new data, a new diagram or a new config; the clock runs only the stale pass (spec 3.5).
+  const { bound, patches, cardContext } = useBoundDiagram({
+    index: stage.index,
+    xml: opts.diagram?.xml,
+    config: options.config,
     data,
     bindContext: bindingContext,
-    format,
-    openCellId: card?.cellId,
-    paused: false,
   });
+  // The bind result at the current clock: the cards and the chart regions read the stale status.
+  const shown = useMemo((): BindResultV4 => ({ ...bound, patches }), [bound, patches]);
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
-    const warnings = bound.diagnostics.map((d) => `${d.path}: ${d.message}`);
+    const warnings = bound.report.map(reportLine);
     if (legacyRules) {
       warnings.unshift(legacyRulesWarning(legacyRules));
     }
-    return { patches: shown.patches, warnings, diagnostics: bound.diagnostics, summaries: shown.summaries };
-  }, [bound, shown, legacyRules]);
+    return { patches: patches as Map<string, CellPatch>, warnings, bandRows: bandRowsV4(patches) };
+  }, [bound, patches, legacyRules]);
 
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);
-  const band = bandLayout(result.summaries.length, opts.summary.maxRows, bandExpanded, height);
+  const band = bandLayout(result.bandRows.length, opts.summary.maxRows, bandExpanded, height);
   const stageHeight = Math.max(1, height - band.height);
   const bandRef = useRef<HTMLElement>(null);
 
@@ -203,9 +191,10 @@ function DrawioMapPanelView(props: ViewProps) {
     // the bindings or the diagram changed and the cell has no patch now
     dispatch({ type: 'stale-cell' });
   }
+  const cardCell = cardPatch ? card?.cellId : undefined;
   const model = useMemo(
-    () => (cardPatch ? buildConfiguredCard(cardPatch, cardResolve, cardContext) : undefined),
-    [cardPatch, cardResolve, cardContext]
+    () => (cardCell === undefined ? undefined : buildCardV4(cardCell, shown, cardContext)),
+    [cardCell, shown, cardContext]
   );
   // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default),
   // and only when the card has rows or links. Computed once per data update: these cells get the hand cursor.
@@ -214,26 +203,25 @@ function DrawioMapPanelView(props: ViewProps) {
     () =>
       interactiveCells(result.patches, stage.index, (p) => {
         const entry = stage.index.get(p.cellId);
-        return !!entry && hoverKinds.includes(hoverKind(entry)) && opensCard(p, cardContext);
+        return !!entry && hoverKinds.includes(hoverKind(entry)) && opensCard(patches.get(p.cellId) ?? p);
       }),
-    [result.patches, stage.index, hoverKinds, cardContext]
+    [result.patches, patches, stage.index, hoverKinds]
   );
   const cardable = (p: CellPatch) => interactive.has(p.cellId);
 
   // The colour legend: the scales of the bound cells. A legend entry under the pointer highlights its cells.
   const legendOptions = opts.legend;
-  const queries = plan.config.queries;
   const legendBlocks = useMemo(() => {
     if (!legendOptions.show) {
       return [];
     }
-    const names = new Map((queries ?? []).map((q) => [q.id, q.name]));
-    return buildLegend(result.patches, {
+    return buildLegendV4(result.patches, statusFields(bound), {
       theme,
       fieldThresholds: fieldConfig.defaults.thresholds,
-      queryName: (id) => names.get(id),
     });
-  }, [legendOptions.show, queries, result.patches, theme, fieldConfig.defaults.thresholds]);
+  }, [legendOptions.show, result.patches, bound, theme, fieldConfig.defaults.thresholds]);
+  // The chart regions: one for each cell whose effective class has a `chart` (spec 3.9).
+  const charts = useMemo(() => chartUsesV4(bound), [bound]);
   const legendMembers = useMemo(() => [...new Set(legendBlocks.flatMap((b) => b.cellIds))], [legendBlocks]);
   // The active entry of the panel legend and the marks of a legend row inside the diagram (portograph rows with a
   // symbol). They are not state: a hover writes the store, and only the highlight effect below reads it, so a hover
@@ -318,7 +306,7 @@ function DrawioMapPanelView(props: ViewProps) {
     wheel: wheelZoom,
     dragPan,
     align,
-    ignore: (t) => cards.inCard(t) || (t instanceof Element && !!t.closest('[data-dmap-widget] a')) || onControl(t),
+    ignore: (t) => cards.inCard(t) || onControl(t),
   });
 
   // The configured view starts at the top-left corner of a stage that scrolls.
@@ -387,7 +375,7 @@ function DrawioMapPanelView(props: ViewProps) {
       {/* Chrome does not carry pan restrictions into a scroll container: the stage needs its own touch-action. */}
       <StatusBand
         ref={bandRef}
-        summaries={result.summaries}
+        rowsV4={result.bandRows}
         layout={band}
         expanded={bandExpanded}
         onToggle={() => setBandExpanded((v) => !v)}
@@ -398,16 +386,15 @@ function DrawioMapPanelView(props: ViewProps) {
         style={{ touchAction, height: stageHeight }}
         data-testid="dmap-stage"
       />
-      {queryService && opts.config ? (
+      {charts.length ? (
         <ChartLayer
           root={stage.root}
           cells={stage.index}
-          plan={plan}
-          service={queryService}
           viewport={viewport}
-          owner={`panel:${id}`}
           revision={`${viewKey}|${stageHeight}${JSON.stringify(view)}`}
-          replaceVariables={replaceVariables}
+          charts={charts}
+          bound={shown}
+          ctx={cardContext}
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}

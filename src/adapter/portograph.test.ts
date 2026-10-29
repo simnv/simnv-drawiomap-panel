@@ -3,14 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sanitizeSvg } from '../render/sanitize';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
-import { resolvePatterns } from '../binding/patterns';
-import { EMPTY_CONFIG } from '../model/config';
 import {
   applyContract,
   attachLinkLabels,
   cellMetaFromAttrs,
-  cellIdentityDiagnostics,
-  cellScope,
   contractWarning,
   hoverKind,
   nodeIcons,
@@ -19,34 +15,6 @@ import {
 } from './portograph';
 
 describe('saved semantic identity', () => {
-  it('diagnoses pasted semantic metadata on real indexed cells until the copied pg-id is repaired', () => {
-    const svg = readFileSync(resolve(__dirname, '../fixtures/authoring.svg'), 'utf8');
-    const root = mountSvg(document.createElement('div'), sanitizeSvg(svg).svg);
-    const copy = root.querySelector('[data-cell-id="device-1"]')!.cloneNode(true) as Element;
-    copy.setAttribute('data-cell-id', 'device-copy');
-    root.append(copy);
-    const plan = () =>
-      resolvePatterns(
-        Array.from(buildCellIndex(root).values(), (cell) => cell.meta),
-        EMPTY_CONFIG
-      );
-    expect(plan().diagnostics).toContainEqual(expect.objectContaining({ code: 'duplicate-semantic-id' }));
-    copy.setAttribute('data-meta-pg-id', 'device-copy');
-    expect(plan().diagnostics).toEqual([]);
-    expect(plan().cells['device-copy'].scope.cell?.label).toBe('Router α');
-    expect(plan().cells['device-1'].scope.cell?.label).toBe('Router α');
-  });
-  it('explains copied pg-id metadata conflicts without falling back to Unicode labels', () => {
-    const cells = [
-      cellMetaFromAttrs('copy-1', { 'pg-id': 'router', 'pg-kind': 'node' }, false, 'Роутер α'),
-      cellMetaFromAttrs('copy-2', { 'pg-id': 'router', 'pg-kind': 'node' }, false, 'Роутер β'),
-    ];
-    expect(cellIdentityDiagnostics(cells)).toEqual([
-      expect.objectContaining({ code: 'duplicate-semantic-id', message: expect.stringMatching(/pg-id.*draw.io/) }),
-    ]);
-    cells[1].key = 'router-copy';
-    expect(cellIdentityDiagnostics(cells)).toEqual([]);
-  });
   it('retains physical IDs, semantic IDs and metric metadata through XML/SVG save and reopen', () => {
     const diagram = JSON.parse(
       JSON.stringify({
@@ -70,7 +38,6 @@ describe('saved semantic identity', () => {
         }
       }
     }
-    expect(cellIdentityDiagnostics([...index.values()].map((entry) => entry.meta))).toEqual([]);
   });
 
   it('retains directional endpoint parameters independently of the display label', () => {
@@ -80,19 +47,14 @@ describe('saved semantic identity', () => {
       true,
       'Same label'
     );
-    expect(cellScope(cell)).toEqual({
-      cell: { ...cell.attrs, id: 'edge-1', key: 'uplink', label: 'Same label' },
-      cellTitle: 'Same label',
-      from: { node: 'router-a', port: 'eth1', ordinal: '2', raw: 'router-a:eth1#2' },
-      to: { node: 'router-b', port: 'eth2', ordinal: '1', raw: 'router-b:eth2' },
-    });
+    expect(cell.labelText).toBe('Same label');
+    expect(cell.from).toEqual({ node: 'router-a', port: 'eth1', ordinal: 2, raw: 'router-a:eth1#2' });
+    expect(cell.to).toEqual({ node: 'router-b', port: 'eth2', ordinal: 1, raw: 'router-b:eth2' });
   });
   it('never overwrites an author metadata key named title', () => {
     const c = cellMetaFromAttrs('n1', { 'pg-kind': 'node', 'pg-id': 'n1', title: 'metric-host' }, false, 'Switch A');
-    c.title = 'Switch A';
-    const scope = cellScope(c);
-    expect(scope.cell.title).toBe('metric-host');
-    expect(scope.cellTitle).toBe('Switch A');
+    expect(c.attrs.title).toBe('metric-host');
+    expect(c.labelText).toBe('Switch A');
   });
 });
 

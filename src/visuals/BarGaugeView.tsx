@@ -1,8 +1,6 @@
 import React from 'react';
 import { formattedValueToString, VizOrientation, type DisplayValue, type FieldConfig } from '@grafana/data';
 import { BarGaugeDisplayMode } from '@grafana/schema';
-import type { FreshnessPolicy } from '../model/config';
-import { useSampleStale } from './useSampleStale';
 import { BarGauge, useTheme2 } from '@grafana/ui';
 
 export function BarGaugeView({
@@ -10,23 +8,17 @@ export function BarGaugeView({
   field,
   width,
   height,
-  sampleAt,
-  freshness,
   stale,
 }: {
   value: DisplayValue;
   field: FieldConfig;
   width: number;
   height: number;
-  /** v3: the sample time and the freshness policy give the stale state */
-  sampleAt?: number;
-  freshness?: FreshnessPolicy;
-  /** v4: the stale state of the chart (spec 3.5 step 6) */
+  /** the stale state of the chart (spec 3.5 step 6) */
   stale?: boolean;
 }) {
   const theme = useTheme2();
-  const expired = useSampleStale(sampleAt, freshness);
-  const hint = stale || expired ? <span role="status">Stale data</span> : null;
+  const hint = stale ? <span role="status">Stale data</span> : null;
   const bounded = Number.isFinite(field.min) && Number.isFinite(field.max) && field.max! > field.min!;
   if (!bounded) {
     return (

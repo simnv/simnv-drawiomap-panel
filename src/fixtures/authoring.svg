@@ -2,18 +2,18 @@
   <defs><clipPath id="chart-clip"><rect x="0" y="0" width="180" height="70"/></clipPath></defs>
   <g data-cell-id="0" data-meta-pg-schema="1">
   <g transform="translate(35 35)">
-    <g data-cell-id="device-1" data-meta-pg-id="device-1" data-meta-pg-kind="node" data-meta-pg-schema="1" data-meta-device="router-1">
+    <g data-cell-id="device-1" data-meta-pg-id="device-1" data-meta-pg-kind="node" data-meta-pg-schema="1" data-meta-device="router-1" data-meta-bind="routers" data-meta-key="router-1">
       <rect width="120" height="55" fill="#d5e8d4" stroke="#82b366"/><text x="12" y="32">Router α</text>
     </g>
-    <g data-cell-id="device-2" data-meta-pg-id="device-2" data-meta-pg-kind="node" data-meta-pg-schema="1" data-meta-device="router-2" transform="translate(250 0)">
+    <g data-cell-id="device-2" data-meta-pg-id="device-2" data-meta-pg-kind="node" data-meta-pg-schema="1" data-meta-device="router-2" transform="translate(250 0)" data-meta-bind="routers" data-meta-key="router-2">
       <rect width="120" height="55" fill="#d5e8d4" stroke="#82b366"/><text x="12" y="32">Router α</text>
     </g>
-    <g data-cell-id="link-1" data-meta-pg-id="link-1" data-meta-pg-kind="link" data-meta-pg-schema="1" data-meta-pg-from="device-1:wan" data-meta-pg-to="device-2:wan" data-meta-capacity_a2b_bps="100000000" data-meta-capacity_b2a_bps="50000000">
+    <g data-cell-id="link-1" data-meta-pg-id="link-1" data-meta-pg-kind="link" data-meta-pg-schema="1" data-meta-pg-from="device-1:wan" data-meta-pg-to="device-2:wan" data-meta-capacity_a2b_bps="100000000" data-meta-capacity_b2a_bps="50000000" data-meta-at="source" data-meta-bind="directional-link" data-meta-cap="100M/50M" data-meta-key="node-rtr-a" data-meta-port="wan1">
       <path d="M120 28 L250 28" fill="none" stroke="#888" pointer-events="stroke"/>
       <path d="M245 23 L250 28 L245 33" fill="none" stroke="#888" pointer-events="all"/>
     </g>
     <g transform="translate(80 120) rotate(12) skewX(8)">
-      <g data-cell-id="chart-1" data-meta-pg-id="chart-1" data-meta-pg-kind="other" data-meta-pg-schema="1" transform="scale(1.2 .9)" style="color:rgb(1,2,3);font-size:99px;font-family:fantasy" clip-path="url(#chart-clip)">
+      <g data-cell-id="chart-1" data-meta-pg-id="chart-1" data-meta-pg-kind="other" data-meta-pg-schema="1" transform="scale(1.2 .9)" style="color:rgb(1,2,3);font-size:99px;font-family:fantasy" clip-path="url(#chart-clip)" data-meta-bind="trend-region" data-meta-key="trend">
         <rect x="0" y="0" width="180" height="70" transform="translate(2 0)" fill="#ffffff" stroke="#666"/>
       </g>
       <rect data-testid="paint-order-sentinel" x="170" y="0" width="10" height="10" fill="#ff0000"/>

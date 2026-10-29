@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTheme, FieldType, getDisplayProcessor, toDataFrame } from '@grafana/data';
-import { fieldDisplay, historyOf } from './frames';
+import { fieldDisplay } from './frames';
+import { shownField } from '../binding/rowData';
 
 describe('fieldDisplay', () => {
   it('uses the display processor of the field, else builds one from the config', () => {
@@ -17,16 +18,8 @@ describe('fieldDisplay', () => {
       ],
     });
     frame.fields[1].display = getDisplayProcessor({ field: frame.fields[1], theme: createTheme() });
-    const model = historyOf(
-      { state: 'ready', frames: [frame], fetchedAt: 0, fromCache: false } as any,
-      { queryId: 'q', match: {}, reducer: 'last' } as any,
-      { unit: 'bps' }
-    );
-    if (model.state !== 'ready') {
-      throw new Error('ready');
-    }
-    expect(model.field.display).toBeUndefined();
-    expect(fieldDisplay(model.field)(2000).suffix).toBe(' kb/s');
-    expect(model.latestDisplayValue?.suffix).toBe(' kb/s');
+    const shown = shownField(frame.fields[1], { unit: 'bps' });
+    expect(shown.display).toBeUndefined();
+    expect(fieldDisplay(shown)(2000).suffix).toBe(' kb/s');
   });
 });

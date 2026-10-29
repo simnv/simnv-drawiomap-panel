@@ -1,8 +1,6 @@
 import { FieldType, type DataFrame, type Labels } from '@grafana/data';
-import { expect, expectTypeOf, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { equalityKey, indexSeries } from './seriesIndex';
-import type { QuerySnapshot } from './snapshot';
-import type { QuerySnapshot as LegacySnapshot } from './types';
 
 const frame = (
   labels: Labels,
@@ -158,10 +156,6 @@ it('encodes equality tuples without collisions and treats absent labels as empty
   expect(equalityKey({ key: 'a', port: 'b' }, ['key', 'port'])).not.toBe(
     equalityKey({ key: 'a', port: 'b' }, ['port', 'key'])
   );
-});
-
-it('keeps the v3 snapshot type available through its former module', () => {
-  expectTypeOf<QuerySnapshot>().toEqualTypeOf<LegacySnapshot>();
 });
 
 it('checks each frame when two frames share one numeric field object', () => {
