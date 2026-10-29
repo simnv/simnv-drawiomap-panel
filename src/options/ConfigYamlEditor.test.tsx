@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { grafanaUpdate, saveOptions } from '../fixtures/grafanaOptions';
 import { writeYaml } from './yamlConfig';
 
 interface Marker {
@@ -155,6 +156,25 @@ describe('ConfigYamlEditor', () => {
     const text = ['version: 4', 'classes:', '  # a comment', '  b: { match: { key: job } }', ''].join('\n');
     type(text);
     rerender(onChange.mock.lastCall?.[0]);
+    expect(editor().value).toBe(text);
+  });
+
+  it('stores an empty class map that stays empty through the Grafana options merge', () => {
+    const { onChange, rerender } = mount();
+    const text = ['version: 4', 'freshness: 7m', 'classes: {}', 'overrides: {}', ''].join('\n');
+    type(text);
+    const options = grafanaUpdate({ config: stored }, 'config', onChange.mock.lastCall?.[0]);
+    rerender(options.config);
+    expect(editor().value).toBe(text);
+    expect(saveOptions(options).config).toEqual({ version: 4, freshness: '7m', classes: {}, overrides: {} });
+  });
+
+  it('does not write the Grafana merge of its own save back over the text', () => {
+    const { onChange, rerender } = mount();
+    // the merge keeps the old key order, so freshness moves to the end
+    const text = ['version: 4', 'freshness: 7m # new', 'classes:', '  b: { match: { key: job } }', ''].join('\n');
+    type(text);
+    rerender(grafanaUpdate({ config: stored }, 'config', onChange.mock.lastCall?.[0]).config);
     expect(editor().value).toBe(text);
   });
 

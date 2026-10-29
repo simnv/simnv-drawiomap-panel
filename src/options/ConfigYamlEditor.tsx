@@ -5,6 +5,7 @@ import { isMap, isNode, isScalar, isSeq, type Document, type Pair } from 'yaml';
 import type { ReportEntry } from '../binding/report';
 import { validateConfig } from '../model/validate';
 import type { Options } from '../types';
+import { configUpdate } from './storedConfig';
 import { readYaml, writeYaml } from './yamlConfig';
 
 type Props = StandardEditorProps<unknown, Record<string, never>, Options>;
@@ -28,6 +29,14 @@ interface Check {
 const OWNER = 'drawiomap-config';
 
 const toYaml = (value: unknown): string => (value === undefined || value === null ? '' : writeYaml(value));
+
+/** The JSON of a value with its map keys sorted. A key with the value `undefined` is not in the JSON. */
+const sortedJson = (value: unknown): string | undefined =>
+  JSON.stringify(value, (_key, item: unknown) =>
+    typeof item === 'object' && item !== null && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : item
+  );
 
 /** The start offset of each line. */
 function lineStarts(text: string): number[] {
@@ -165,7 +174,8 @@ function check(text: string): Check {
 /**
  * The `config` option as YAML (spec 5.0). The box shows the stored JSON as YAML. Each edit parses the YAML and
  * validates it. The errors show as Monaco markers. When the YAML parses and the envelope is valid, the editor stores
- * the JSON. Else the text stays in the box and nothing is stored.
+ * the JSON, with `undefined` for each removed key (see `configUpdate`). Else the text stays in the box and nothing is
+ * stored.
  */
 export default function ConfigYamlEditor({ value, onChange }: Props) {
   const [text, setText] = useState(() => toYaml(value));
@@ -175,7 +185,10 @@ export default function ConfigYamlEditor({ value, onChange }: Props) {
   const [instance, setInstance] = useState<{ editor: MonacoEditor; monaco: Monaco }>();
   /** The text in the box: the editor sends a change event for the text that this component sets. */
   const textRef = useRef(text);
-  /** The stored value that the text gives. A new value from outside writes the text again. */
+  /**
+   * The stored value that the text gives. A new value from outside writes the text again. The Grafana options merge
+   * can change the key order of the stored value, so the compare ignores the key order.
+   */
   const savedRef = useRef(value);
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -183,7 +196,7 @@ export default function ConfigYamlEditor({ value, onChange }: Props) {
   }, [onChange]);
 
   useEffect(() => {
-    if (JSON.stringify(value) === JSON.stringify(savedRef.current)) {
+    if (sortedJson(value) === sortedJson(savedRef.current)) {
       return;
     }
     savedRef.current = value;
@@ -216,8 +229,9 @@ export default function ConfigYamlEditor({ value, onChange }: Props) {
     setResult(checked);
     setUnsaved(!('json' in checked));
     if ('json' in checked) {
+      const update = configUpdate(savedRef.current, checked.json);
       savedRef.current = checked.json;
-      onChangeRef.current(checked.json);
+      onChangeRef.current(update);
     }
   }, []);
 
