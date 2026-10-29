@@ -4,9 +4,9 @@ import type { validateConfig } from '../model/validate';
 import { reduceAcross } from '../query/reduce';
 import { equalityKey, indexSeries } from '../query/seriesIndex';
 import type { QuerySnapshot, Series } from '../query/snapshot';
-import type { BindContext, CapacitySource, CellIndex, CellMeta, HalfState, SeriesInfo, StatusV4Fields } from '../types';
+import type { BindContext, CellIndex, CellMeta, HalfState, SeriesInfo, StatusV4Fields } from '../types';
 import { attrOf as cellAttrs } from './cellAttrs';
-import { capacityV4 } from './capacity';
+import { capacityV4, type LinkCapacity } from './capacity';
 import { effectiveClass, type ResolvedClass } from './classes';
 import { noDataColor } from './color';
 import { edgeEnds, type EndContext } from './edgeEnds';
@@ -587,11 +587,14 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       const r = use ? results.get(use.path)! : undefined;
       return r && !r.problem ? { snapshot: r.snapshot, series: r.series } : { snapshot: NO_TARGET, series: [] };
     };
-    const cellIds = [meta.id];
-    const speed = capacityV4({ capacity: eff.capacity, series: speedSeries, cls, cellIds });
-    const attr =
-      meta.attrs.cap === undefined ? undefined : capacityV4({ cap: meta.attrs.cap, series: speedSeries, cls, cellIds });
-    for (const entry of [...speed.report, ...(attr?.report ?? [])]) {
+    const capacity = capacityV4({
+      capacity: eff.capacity,
+      cap: meta.attrs.cap,
+      series: speedSeries,
+      cls,
+      cellIds: [meta.id],
+    });
+    for (const entry of capacity.report) {
       const { cellIds: _cells, ...rest } = entry as CellsEntry;
       report.cell(rest as CellsFree, meta.id);
     }
@@ -602,14 +605,12 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       if (!use) {
         continue;
       }
-      const amount = speed[dir] ?? attr?.[dir];
-      const source: CapacitySource = speed[dir] !== undefined ? 'series' : amount !== undefined ? 'attr' : 'none';
-      link[dir] = half(results.get(use.path)!, use.refId, { amount, source });
+      link[dir] = half(results.get(use.path)!, use.refId, capacity[dir]);
     }
     return link;
   }
 
-  function half(r: UseResult, refId: string, cap: { amount?: number; source: CapacitySource }): HalfState {
+  function half(r: UseResult, refId: string, cap: LinkCapacity): HalfState {
     if (r.problem || r.mixed) {
       return {
         status: 'unbound',
