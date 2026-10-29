@@ -84,13 +84,16 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
   // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
   useLayoutEffect(() => {
     const row = rowRef.current;
-    if (!showRow || !row || typeof ResizeObserver === 'undefined') {
+    if (!showRow || !row) {
       return;
     }
-    const observer = new ResizeObserver(() => onRowHeight(row.offsetHeight));
-    observer.observe(row);
+    // the first height before the paint, so the legend does not start at the old place for one frame
+    onRowHeight(row.offsetHeight);
+    const observer =
+      typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => onRowHeight(row.offsetHeight));
+    observer?.observe(row);
     return () => {
-      observer.disconnect();
+      observer?.disconnect();
       onRowHeight(0);
     };
   }, [showRow, onRowHeight]);

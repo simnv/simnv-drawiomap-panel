@@ -973,6 +973,40 @@ describe('DrawioMapPanel live zoom', () => {
     await waitFor(() => expect(parseFloat(screen.getByTestId('dmap-legend').style.top)).toBe(rowTop + 68 + 4));
   });
 
+  it('when the corner row gets one line again, the top-left legend moves back up', async () => {
+    let rowPx = 68;
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === 'dmap-corner-row' ? rowPx : 0;
+      },
+    });
+    const resized: Array<() => void> = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          resized.push(cb);
+        }
+        observe() {}
+        disconnect() {}
+      }
+    );
+    onTestFinished(() => {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height);
+      vi.unstubAllGlobals();
+    });
+    await setup(withWarning({ show: true, corner: 'top-left' }));
+    const top = () => parseFloat(screen.getByTestId('dmap-legend').style.top);
+    const rowTop = parseFloat(screen.getByTestId('dmap-corner').style.top);
+    await waitFor(() => expect(top()).toBe(rowTop + 68 + 4));
+    // the panel gets wider: the row is one line of the badge (20 px)
+    rowPx = 20;
+    act(() => resized.forEach((cb) => cb()));
+    await waitFor(() => expect(top()).toBe(rowTop + 20 + 4));
+  });
+
   it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
     const { wrapper } = await setup({
       ...withWarning({ show: true, corner: 'top-right' }),
