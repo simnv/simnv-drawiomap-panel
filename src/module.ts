@@ -7,6 +7,7 @@ import {
 } from '@grafana/data';
 import { DrawioMapPanel } from './components/DrawioMapPanel';
 import { DiagramEditor } from './options/DiagramEditor';
+import { LazyConfigYamlEditor } from './options/LazyConfigYamlEditor';
 import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
@@ -43,6 +44,15 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         name: 'Diagram',
         category: ['Diagram'],
         editor: DiagramEditor,
+      })
+      .addCustomEditor({
+        id: 'config',
+        path: 'config',
+        name: 'Bindings',
+        description:
+          'The classes and overrides as YAML. The panel stores them as JSON, so YAML comments are not kept. An error in the YAML or in the top level stops the save.',
+        category: ['Bindings'],
+        editor: LazyConfigYamlEditor,
       })
       .addRadio({
         path: 'zoom.mode',
