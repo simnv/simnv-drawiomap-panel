@@ -6,7 +6,7 @@ import type { ReportEntry } from '../binding/report';
 import { validateConfig } from '../model/validate';
 import { parsePath, yamlPath } from '../model/yamlPath';
 import type { Options } from '../types';
-import { configUpdate } from './storedConfig';
+import { configUpdate, sortedJson } from './storedConfig';
 import { readYaml, writeYaml } from './yamlConfig';
 
 type Props = StandardEditorProps<unknown, Record<string, never>, Options>;
@@ -30,14 +30,6 @@ interface Check {
 const OWNER = 'drawiomap-config';
 
 export const toYaml = (value: unknown): string => (value === undefined || value === null ? '' : writeYaml(value));
-
-/** The JSON of a value with its map keys sorted. A key with the value `undefined` is not in the JSON. */
-const sortedJson = (value: unknown): string | undefined =>
-  JSON.stringify(value, (_key, item: unknown) =>
-    typeof item === 'object' && item !== null && !Array.isArray(item)
-      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
-      : item
-  );
 
 /** The start offset of each line. */
 function lineStarts(text: string): number[] {

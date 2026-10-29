@@ -162,6 +162,7 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
           timeZone={props.timeZone}
           fieldConfig={props.fieldConfig}
           replaceVariables={props.replaceVariables}
+          onOptionsChange={props.onOptionsChange}
           onClose={closePopup}
         />
       ) : null}

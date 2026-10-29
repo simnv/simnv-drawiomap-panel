@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import type { FieldConfigSource, PanelData, PanelProps } from '@grafana/data';
-import { CodeEditor, useTheme2, type Monaco, type MonacoEditor } from '@grafana/ui';
+import { Alert, Button, CodeEditor, ConfirmModal, useTheme2, type Monaco, type MonacoEditor } from '@grafana/ui';
 import { isMap, isNode, isScalar, type Document } from 'yaml';
 import type { BindResultV4 } from '../../binding/bindV4';
 import { bindContextFor } from '../../binding/context';
@@ -9,6 +9,7 @@ import { edgeEnds, type EndContext } from '../../binding/edgeEnds';
 import { snapshotV4 } from '../../binding/rowData';
 import { check, rangeOf, toYaml } from '../../options/ConfigYamlEditor';
 import { readYaml } from '../../options/yamlConfig';
+import { configUpdate } from '../../options/storedConfig';
 import { indexSeries } from '../../query/seriesIndex';
 import { fitCells, type ViewBox } from '../../render/zoom';
 import { useBoundDiagram } from '../../stage/useBoundDiagram';
@@ -16,6 +17,8 @@ import { useStage } from '../../stage/useStage';
 import { withDefaults, type Diagram, type Options, type PatchMap } from '../../types';
 import { chartUsesV4 } from '../../visuals/ChartLayer';
 import { setCellAttrs } from '../setCellAttrs';
+import { history, pushVersion, redo, undo } from '../history';
+import { baseRevision, hasConflict } from '../revision';
 import { cellsForPath, type CellSet } from '../split/cellsForPath';
 import { classNamesOf, registerCompletion, type CompletionSource } from '../split/completion';
 import { reportCounts } from '../split/reportCounts';
@@ -36,6 +39,9 @@ export interface SplitEditorProps {
   timeZone: string;
   fieldConfig: FieldConfigSource;
   replaceVariables: PanelProps['replaceVariables'];
+  onOptionsChange?: PanelProps<Options>['onOptionsChange'];
+  /** When set, show the editor in a dialog and confirm before dropping a dirty draft. */
+  onClose?: () => void;
 }
 
 /** The editor waits this long after the last cursor move (spec 5.3). */
@@ -100,11 +106,23 @@ interface Instance {
  * 150 ms, lights the cells of the YAML path under the cursor and zooms to them (spec 5.3). A click on a report entry
  * moves the cursor to its path and lights its cells.
  */
-export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVariables }: SplitEditorProps) {
+export function SplitEditor({
+  options,
+  data,
+  timeZone,
+  fieldConfig,
+  replaceVariables,
+  onOptionsChange,
+  onClose,
+}: SplitEditorProps) {
   const theme = useTheme2();
   const opts = withDefaults(options);
   /** The diagram with the writes of the inspector (spec 5.5). The writes go into the draw.io XML and the SVG (D19). */
-  const [diagram, setDiagram] = useState<Diagram | undefined>(opts.diagram);
+  const [versions, setVersions] = useState(() => history<Diagram | undefined>(opts.diagram));
+  const diagram = versions.present;
+  const [base, setBase] = useState(() => baseRevision(options));
+  const [savedText, setSavedText] = useState(() => toYaml(options.config));
+  const [savedDiagram, setSavedDiagram] = useState(options.diagram);
   const [text, setText] = useState(() => toYaml(options.config));
   /** The value of the last text that parsed. */
   const [draft, setDraft] = useState<unknown>(options.config);
@@ -120,7 +138,8 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
       setDraft(read.value);
     }
   }, []);
-  const marks = useMemo(() => check(text).marks, [text]);
+  const checked = useMemo(() => check(text), [text]);
+  const marks = checked.marks;
   const yamlEntries = useMemo(() => readDraft(text).entries, [text]);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -313,7 +332,8 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
         return;
       }
       try {
-        setDiagram(setCellAttrs(diagram, cells));
+        const next = setCellAttrs(diagram, cells);
+        setVersions((old) => pushVersion(old, next));
         setWriteError(undefined);
       } catch (error) {
         setWriteError(error instanceof Error ? error.message : String(error));
@@ -327,7 +347,54 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
   }, []);
   const classNames = useMemo(() => classNamesOf(draft), [draft]);
 
-  return (
+  const conflict = hasConflict(base, options);
+  const dirty = text !== savedText || diagram !== savedDiagram;
+  const [discard, setDiscard] = useState(false);
+  const requestClose = useCallback(() => {
+    if (dirty) {
+      setDiscard(true);
+    } else {
+      onClose?.();
+    }
+  }, [dirty, onClose]);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const keys = usePopupKeys({
+    id: OVERLAY_ID,
+    dialogRef: bodyRef,
+    enabled: !!onClose && !discard,
+    onEscape: requestClose,
+    onUndo: () => setVersions(undo),
+    onRedo: () => setVersions(redo),
+  });
+  const reload = () => {
+    const nextText = toYaml(options.config);
+    clearTimeout(cursorTimer.current);
+    textRef.current = nextText;
+    setText(nextText);
+    setDraft(options.config);
+    setSavedText(nextText);
+    setSavedDiagram(options.diagram);
+    setVersions(history(options.diagram));
+    setBase(baseRevision(options));
+    setSelected([]);
+    setCursorPath(null);
+    setEntryCells(null);
+    setWriteError(undefined);
+    setView(null);
+    lastFit.current = '';
+  };
+  const apply = () => {
+    if (!onOptionsChange || conflict || !('json' in checked)) {
+      return;
+    }
+    const next = { ...options, config: checked.json, diagram };
+    onOptionsChange({ ...next, config: configUpdate(options.config, checked.json) });
+    setBase(baseRevision(next));
+    setSavedText(text);
+    setSavedDiagram(diagram);
+  };
+
+  const layout = (
     <PopupLayout
       code={
         <CodeEditor
@@ -382,9 +449,55 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
       }
     />
   );
+  const body = (
+    <div ref={bodyRef} className={styles.body} data-testid={onClose ? 'dmap-bindings-popup' : undefined} {...keys}>
+      {conflict && (
+        <Alert title="The saved panel changed" severity="warning">
+          <Button variant="secondary" onClick={reload}>
+            Reload
+          </Button>
+          <Button variant="secondary" onClick={() => setBase(baseRevision(options))}>
+            Keep my draft
+          </Button>
+        </Alert>
+      )}
+      <div className={styles.layout}>{layout}</div>
+      <div className={styles.actions}>
+        <Button variant="secondary" disabled={!versions.past.length} onClick={() => setVersions(undo)}>
+          Undo
+        </Button>
+        <Button variant="secondary" disabled={!versions.future.length} onClick={() => setVersions(redo)}>
+          Redo
+        </Button>
+        <Button disabled={!onOptionsChange || conflict || !('json' in checked)} onClick={apply}>
+          Apply
+        </Button>
+      </div>
+      <ConfirmModal
+        isOpen={discard}
+        title="Discard changes?"
+        body="The draft has changes that are not saved."
+        confirmText="Discard"
+        dismissText="Cancel"
+        onConfirm={() => {
+          setDiscard(false);
+          onClose?.();
+        }}
+        onDismiss={() => setDiscard(false)}
+      />
+    </div>
+  );
+  return onClose ? (
+    <PluginDialog title="Edit bindings" onDismiss={requestClose} overlayId={OVERLAY_ID}>
+      {body}
+    </PluginDialog>
+  ) : (
+    body
+  );
 }
 
 export interface BindingsPopupProps extends SplitEditorProps {
+  onOptionsChange: PanelProps<Options>['onOptionsChange'];
   /** Close the popup and drop the draft. */
   onClose: () => void;
 }
@@ -392,21 +505,15 @@ export interface BindingsPopupProps extends SplitEditorProps {
 const OVERLAY_ID = 'bindings-popup';
 
 /** The bindings popup: the split editor in a modal, with the Esc ownership of `usePopupKeys`. */
-export function BindingsPopup({ onClose, ...props }: BindingsPopupProps) {
-  const bodyRef = useRef<HTMLDivElement>(null);
+export function BindingsPopup(props: BindingsPopupProps) {
   useOverlay(OVERLAY_ID);
-  const esc = usePopupKeys({ id: OVERLAY_ID, dialogRef: bodyRef, enabled: true, onEscape: onClose });
-  return (
-    <PluginDialog title="Edit bindings" onDismiss={onClose} overlayId={OVERLAY_ID}>
-      <div ref={bodyRef} className={styles.body} data-testid="dmap-bindings-popup" {...esc}>
-        <SplitEditor {...props} />
-      </div>
-    </PluginDialog>
-  );
+  return <SplitEditor {...props} />;
 }
 
 const styles = {
-  body: css({ flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }),
+  body: css({ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }),
+  layout: css({ flex: 1, minHeight: 0 }),
+  actions: css({ display: 'flex', gap: 8, padding: 8 }),
   code: css({ height: '100%' }),
   // The report and the inspector scroll on their own. A narrow pane puts the inspector below the report.
   below: css({
