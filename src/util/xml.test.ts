@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createXmlElement, parseXml, serializeXml } from './xml';
 
 const FILE =
@@ -55,6 +55,19 @@ describe('serializeXml', () => {
     '<mxGraphModel xmlns="http://www.w3.org/2000/svg"><root/></mxGraphModel>',
   ])('keeps the prolog and the source namespace in %s', (source) => {
     expect(serializeXml(parseXml(source)!)).toBe(source);
+  });
+
+  describe('with a serializer that writes the declaration of the document (Chromium)', () => {
+    afterEach(() => vi.restoreAllMocks());
+    it('writes the declaration once', () => {
+      const plain = XMLSerializer.prototype.serializeToString;
+      vi.spyOn(XMLSerializer.prototype, 'serializeToString').mockImplementation(function (this: XMLSerializer, node) {
+        return '<?xml version="1.0" encoding="UTF-8"?>' + plain.call(this, node);
+      });
+      const source = '<?xml version="1.0" encoding="UTF-8"?>\n<mxfile><diagram/></mxfile>';
+      expect(serializeXml(parseXml(source)!)).toBe(source);
+      expect(serializeXml(parseXml('<mxfile><diagram/></mxfile>')!)).toBe('<mxfile><diagram/></mxfile>');
+    });
   });
 
   it('keeps namespace text inside a root attribute value', () => {

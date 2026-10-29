@@ -3,6 +3,7 @@
 ## 1.2.1 (Unreleased)
 
 - Fixed a false `class-no-cells` warning for a base class when a cell binds a class that extends it, directly or through a chain.
+- Fixed a second XML declaration in the saved diagram after a write in the split editor in Chromium: the browser serializer writes the declaration of the document, and the panel added the saved one again. Draw.io and `gen_drawiomap pull` refuse such a document.
 
 ## 1.2.0 (Unreleased)
 
