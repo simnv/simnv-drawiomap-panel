@@ -219,8 +219,7 @@ test('no label overlaps a port pill, a label chip or a plain node body', async (
   }
 });
 
-// TODO P1-11c: Restore link card percentages before this case runs.
-test.fixme('a tap on a label opens the card of its link, not of the group under it', async ({
+test('a tap on a label opens the card of its link, not of the group under it', async ({
   createDiagram,
   gotoDashboardPage,
   readProvisionedDataSource,
@@ -230,7 +229,16 @@ test.fixme('a tap on a label opens the card of its link, not of the group under 
   await target.click({ force: true });
   const dialog = panel.getByRole('dialog');
   await expect(dialog).toContainText('ISP A pppoe ↔ rtr-a wan1');
-  await expect(dialog).toContainText(/41(\.\d)? Mb\/s · 41%/);
+});
+
+test('the card that a label opens shows the percent of the link capacity', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
+  await label(panel, ISP_A, 'a2b').click({ force: true });
+  await expect(panel.getByRole('dialog')).toContainText(/41(\.\d)? Mb\/s · 41%/);
 });
 
 test('a dashboard refresh keeps every label element and its transform', async ({

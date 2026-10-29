@@ -41,8 +41,7 @@ test('a WAN link has a colour from the continuous scheme of its field, a LAN lin
   await expect(half(LAN)).toHaveAttribute('data-dmap-step', '0');
 });
 
-// TODO P1-11c: Restore link card percentages before this case runs.
-test.fixme('the hover card shows the percent of the cell capacity; the port speed series colours the canvas', async ({
+test('the hover card shows the percent of the cell capacity; the port speed series colours the canvas', async ({
   gotoDashboardPage,
   page,
 }) => {
@@ -64,8 +63,7 @@ test.fixme('the hover card shows the percent of the cell capacity; the port spee
   await expect(card).toContainText(/↑ 480(\.\d)? Mb\/s/);
 });
 
-// TODO P1-11c: Restore link card percentages before this case runs.
-test.fixme('the hand-drawn panel reads the capacity from a cell attribute', async ({ gotoDashboardPage }) => {
+test('the hand-drawn panel reads the capacity from a cell attribute', async ({ gotoDashboardPage }) => {
   const dashboardPage = await gotoDashboardPage({
     uid: 'drawiomap-demo',
     queryParams: new URLSearchParams({ viewPanel: 'panel-2' }),
