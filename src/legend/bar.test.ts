@@ -25,4 +25,10 @@ describe('barTicks', () => {
     expect(barTicks(segments(0.1, 0.5, 2, 10), 100).map((t) => t.text)).toEqual(['0.1%', '2%']);
     expect(barTicks(segments(60, 85), 50).map((t) => t.text)).toEqual(['60%']);
   });
+  it('drops a tick text that goes past an end of the bar', () => {
+    // eight equal segments on 100 px: '0.0001%' at 12.5 px is wider than 25 px, '100%' at 87.5 px fits
+    const ticks = barTicks(segments(0.0001, 0.001, 0.01, 0.1, 1, 10, 100), 100);
+    expect(ticks.map((t) => t.text)).not.toContain('0.0001%');
+    expect(barTicks(segments(1234567), 40)).toEqual([]);
+  });
 });

@@ -12,7 +12,8 @@ const TICK_GAP = 6;
 
 /**
  * The tick texts of the step values that fit under a bar of `width` px, low to high. Each text is centred on its
- * stop. A text that comes nearer than `TICK_GAP` to the last text that shows does not show.
+ * stop. A text that goes past an end of the bar, or comes nearer than `TICK_GAP` to the last text that shows, does not
+ * show.
  */
 export function barTicks(segments: LegendBarSegment[], width = BAR_WIDTH): Array<{ at: number; text: string }> {
   const out: Array<{ at: number; text: string }> = [];
@@ -23,7 +24,7 @@ export function barTicks(segments: LegendBarSegment[], width = BAR_WIDTH): Array
     }
     const half = textWidth(s.tick) / 2;
     const centre = s.from * width;
-    if (centre - half >= right + TICK_GAP) {
+    if (centre - half >= Math.max(0, right + TICK_GAP) && centre + half <= width) {
       out.push({ at: s.from, text: s.tick });
       right = centre + half;
     }
