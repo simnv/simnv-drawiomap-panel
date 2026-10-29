@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 (Unreleased)
+
+- Fixed a false `class-no-cells` warning for a base class when a cell binds a class that extends it, directly or through a chain.
+
 ## 1.2.0 (Unreleased)
 
 The 1.1.0 tag comes first: do not release 1.2.0 before it.

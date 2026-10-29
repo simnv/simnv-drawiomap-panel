@@ -112,6 +112,32 @@ const ok = (count: number) => ({ count, red: false });
 const RED = { count: 0, red: true };
 
 describe('cellsForPath (spec 5.3 "The cells of a path")', () => {
+  it('a base with no direct cells lights its descendants and counts its inherited row on each cell', () => {
+    const r = bound(
+      {
+        version: 4,
+        classes: {
+          base: { match: { key: 'job' }, rows: [{ kind: 'value', query: 'cpu' }] },
+          host: { extends: 'base' },
+          leaf: { extends: 'host' },
+        },
+      },
+      [
+        ['h1', { bind: 'host', key: 'a' }],
+        ['h2', { bind: 'leaf', key: 'b' }],
+      ],
+      [frame('cpu', { job: 'a' })],
+      ['cpu']
+    );
+    const base = cellsForPath('classes.base', r.result, r.classes);
+    expect(base.cells).toEqual([]);
+    expect(base.lighter).toEqual(['h1', 'h2']);
+    const row = cellsForPath('classes.base.rows[0]', r.result, r.classes);
+    expect(row.cells).toEqual(['h1', 'h2']);
+    expect(row.lighter).toEqual([]);
+    expect(Object.fromEntries(row.badges)).toEqual({ h1: ok(1), h2: RED });
+  });
+
   it('classes.<c> and its plain fields: the cells of c and, lighter, the cells of the classes that extend c', () => {
     const device = { cells: ['d1'], lighter: ['e1', 'h1', 'h2', 's1'], badges: {} };
     expect(setAt('classes.device')).toEqual(device);
