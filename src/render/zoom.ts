@@ -1,5 +1,5 @@
 import type { CellIndex, ZoomAlign, ZoomOptions } from '../types';
-import { applyMatrix, relativeMatrix } from './geometry';
+import { applyMatrix, toRoot } from './geometry';
 
 export interface ViewBox {
   x: number;
@@ -179,7 +179,7 @@ function cellBox(group: SVGGElement): { x0: number; y0: number; x1: number; y1: 
   }
   try {
     const b = group.getBBox();
-    const m = relativeMatrix(group, root);
+    const m = toRoot(group, root);
     if (!m || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) {
       return undefined;
     }

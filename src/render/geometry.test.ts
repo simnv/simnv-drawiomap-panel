@@ -10,6 +10,7 @@ import {
   polylineLength,
   relativeMatrix,
   slicePolyline,
+  toRoot,
 } from './geometry';
 
 describe('originalStrokeWidth and drawnStrokeWidth', () => {
@@ -366,5 +367,24 @@ describe('pathGeometry bends', () => {
       getCTM: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
     });
     expect(pathGeometry(p, g).bends).toEqual([200]);
+  });
+});
+
+describe('toRoot', () => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const ident = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  it('maps the user space of an element into root user units with the screen CTMs, or with a CTM of the root read before', () => {
+    const svg = document.createElementNS(NS, 'svg');
+    const g = document.createElementNS(NS, 'g');
+    svg.appendChild(g);
+    Object.assign(svg, { getScreenCTM: () => ({ ...ident, e: 4 }), getCTM: () => ({ ...ident, a: 9, d: 9 }) });
+    Object.assign(g, { getScreenCTM: () => ({ ...ident, a: 2, d: 2 }), getCTM: () => ({ ...ident, a: 9, d: 9 }) });
+    expect(toRoot(g, svg)).toEqual({ a: 2, b: 0, c: 0, d: 2, e: -4, f: 0 });
+    expect(toRoot(g, svg, ident)).toEqual({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+  });
+  it('composes the transform attributes where the engine has no CTM', () => {
+    const svg = document.createElementNS(NS, 'svg');
+    svg.innerHTML = '<g transform="translate(3, 4)"><path/></g>';
+    expect(toRoot(svg.querySelector('path')!, svg)).toEqual({ ...ident, e: 3, f: 4 });
   });
 });
