@@ -16,6 +16,7 @@ const names = [
   'historyOf',
   'mountSvg',
   'sanitizeSvg',
+  'setCellAttrs',
   'validateConfig',
 ];
 const theme = createTheme();
