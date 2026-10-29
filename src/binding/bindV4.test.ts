@@ -820,7 +820,7 @@ describe('bindV4: the engine', () => {
 });
 
 describe('bindV4: the cells of a class and the origin of the match of a cell', () => {
-  it('cells: the ids per class in the order of the index; no cell of an unknown class or of an invalid override', () => {
+  it('cells: the ids per class in the order of the index, also a cell with an invalid override; no cell of an unknown class', () => {
     const r = run(
       hostConfig({ base: { status: 'up' }, host: HOST }, { bad: { bogus: 1 } }),
       [
@@ -835,7 +835,7 @@ describe('bindV4: the cells of a class and the origin of the match of a cell', (
     );
     expect(r.cells).toEqual(
       new Map([
-        ['host', ['a', 'b']],
+        ['host', ['a', 'bad', 'b']],
         ['base', ['z']],
       ])
     );

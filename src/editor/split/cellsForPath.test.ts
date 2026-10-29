@@ -207,3 +207,11 @@ describe('cellsForPath (spec 5.3 "The cells of a path")', () => {
     expect(set.badges.size).toBe(0);
   });
 });
+
+describe('cellsForPath: a cell with an invalid override', () => {
+  it('stays a cell of its class: the class path lights it', () => {
+    const config = { ...CONFIG, overrides: { h2: { bogus: 1 } } };
+    const { result: r, classes: c } = bound(config, CELLS, FRAMES, ['up', 'cpu', 'mem', 'health', 'tx', 'rx']);
+    expect([...cellsForPath('classes.host', r, c).cells].sort()).toEqual(['h1', 'h2']);
+  });
+});

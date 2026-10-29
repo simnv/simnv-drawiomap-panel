@@ -60,7 +60,7 @@ export interface BindResultV4 {
   uses: Map<string, Use[]>;
   /** cell id → use path → the series that the use selects for the cell, in the order of spec 3.7 */
   series: Map<string, Map<UsePath, Series[]>>;
-  /** class name → the ids of the cells that bind to it, in the order of the index (spec 3.2 step 3) */
+  /** class name → the ids of the cells whose `bind` names it, in the order of the index (spec 3.2 step 3), also a cell with an invalid override */
   cells: Map<string, string[]>;
   /** cell id → the YAML path of the `match` of the cell after its override; no entry for a cell that does not bind */
   matchOrigins: Map<string, string>;
@@ -367,6 +367,14 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     const bind = meta.attrs.bind;
     if (bind !== undefined) {
       withCells.add(bind);
+      if (classes.has(bind)) {
+        const ids = out.cells.get(bind);
+        if (ids) {
+          ids.push(meta.id);
+        } else {
+          out.cells.set(bind, [meta.id]);
+        }
+      }
     }
     if (parsed.invalidOverrides.has(meta.id)) {
       unavailable(meta, INVALID_BINDING);
@@ -385,12 +393,6 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       report.cell({ kind: 'unknown-class', bind }, meta.id);
       unavailable(meta, 'Unknown class');
     }
-  }
-  for (const [name, metas] of cellsOf) {
-    out.cells.set(
-      name,
-      metas.map((meta) => meta.id)
-    );
   }
   for (const cellId of [...Object.keys(config.overrides), ...parsed.invalidOverrides.keys()]) {
     if (!index.has(cellId)) {
