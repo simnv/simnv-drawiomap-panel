@@ -40,7 +40,7 @@ async function cornerDashboard(request: APIRequestContext, uid: string, title: s
     ...panel.options,
     config,
     zoom: { mode: 'fit', percent: 100, wheel: false, pan: true, align: 'top' },
-    legend: { show: true, corner, maxBlocks: 4 },
+    legend: { show: true, corner },
   });
   const dashboard = {
     ...demo.dashboard,
@@ -180,8 +180,26 @@ test('in panel edit the edit-bindings button joins the reset button and the badg
     expect(e.x).toBeGreaterThan(b.x);
     expect(e.width).toBeGreaterThanOrEqual(32);
     expect(e.height).toBeGreaterThanOrEqual(32);
-    await edit.hover();
-    await expect(page.getByRole('tooltip').filter({ hasText: 'Edit bindings' })).toBeVisible();
+    // a visible text title, not a tooltip only
+    await expect(edit).toHaveText('Edit bindings');
+    // a narrow panel: the row wraps and every item stays inside the panel
+    await page.setViewportSize({ width: 820, height: 900 });
+    await expect.poll(async () => (await box(panel)).width).toBeLessThan(560);
+    // a new panel size resets the view: zoom again to show the reset button
+    await zoomIn(page, panel.getByTestId('dmap-stage'));
+    await expect(reset).toBeVisible();
+    const narrow = await box(panel);
+    for (const [name, item] of [
+      ['reset', reset],
+      ['badge', badge],
+      ['edit', edit],
+    ] as const) {
+      const b = await box(item);
+      expect(b.x, `${name}: left edge`).toBeGreaterThanOrEqual(narrow.x);
+      expect(b.x + b.width, `${name}: right edge`).toBeLessThanOrEqual(narrow.x + narrow.width);
+    }
+    await panel.screenshot({ path: testInfo.outputPath('corner-narrow.png') });
+    await page.setViewportSize({ width: 1440, height: 900 });
     // the button opens the split editor with the stored config in the code box
     await edit.click();
     const popup = page.getByTestId('dmap-bindings-popup');

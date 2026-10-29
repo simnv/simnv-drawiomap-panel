@@ -365,6 +365,8 @@ function DrawioMapPanelView(props: ViewProps) {
   useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
 
   const corner = useRef<HTMLDivElement>(null);
+  // the drawn height of the top-left row (CornerControls); 0 without layout
+  const [cornerRow, setCornerRow] = useState(0);
   // The controls of the panel: a pointer on them does not pan the view and does not change the card.
   const onControl = (t: EventTarget | null) =>
     t instanceof Node &&
@@ -414,14 +416,14 @@ function DrawioMapPanelView(props: ViewProps) {
   }
 
   const warnings = [...stage.warnings, ...result.warnings];
-  const corners = legendCorners(band.height, cornerRowHeight(panZoom.zoomed || editing, warnings.length), width);
+  const rowHeight = Math.max(cornerRowHeight(panZoom.zoomed || editing, warnings.length), cornerRow);
+  const corners = legendCorners(band.height, rowHeight, width);
   // a saved corner that this version does not know
   const legendCorner: LegendCorner = corners[legendOptions.corner] ? legendOptions.corner : 'bottom-right';
   const legend = legendOptions.show ? (
     <Legend
       ref={legendRef}
       blocks={legendBlocks}
-      maxBlocks={legendOptions.maxBlocks}
       collapsed={legendOptions.collapsed}
       onHighlight={highlight.setLegend}
       style={corners[legendCorner]}
@@ -477,8 +479,10 @@ function DrawioMapPanelView(props: ViewProps) {
         bandHeight={band.height}
         zoomed={panZoom.zoomed}
         editing={editing}
+        width={width}
         warnings={warnings}
         onReset={resetView}
+        onRowHeight={setCornerRow}
         onEditBindings={() => {
           dispatch({ type: 'close' });
           props.onEditBindings();

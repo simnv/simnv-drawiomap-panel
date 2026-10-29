@@ -201,10 +201,11 @@ describe('buildLegendV4', () => {
     expect(blocks.map((b) => [b.key, b.title])).toEqual([['state', 'State']]);
   });
 
-  it('gives the display name from the data source as the title when the config has no display name', () => {
-    const own = new Map([['cpu', field({ displayNameFromDS: 'CPU from DS', thresholds })]]);
+  it('never gives the display name from the data source: it names one series, not the query', () => {
+    // Prometheus sets it per series from the legend format, for example "up node-rtr-a"
+    const own = new Map([['cpu', field({ displayNameFromDS: 'up node-rtr-a', thresholds })]]);
     const patches: PatchMap = new Map([cell('n1', status('cpu', 'normal', named('green'), '12'))]);
-    expect(buildLegendV4(patches, own, ctx)[0].title).toBe('CPU from DS');
+    expect(buildLegendV4(patches, own, ctx)[0].title).toBe('cpu');
   });
 
   it('gives a refId with a continuous colour scheme a gradient over its range', () => {
@@ -223,6 +224,153 @@ describe('buildLegendV4', () => {
     ]);
     const patches: PatchMap = new Map([cell('n1', status('temp', 'normal', named('green'), '12%'))]);
     expect(buildLegendV4(patches, own, ctx)[0].gradient).toMatchObject({ min: '10%', max: '50%' });
+  });
+
+  describe('blocks with the same content', () => {
+    const upDown = [
+      {
+        type: MappingType.ValueToText as const,
+        options: { '0': { text: 'down', color: 'red' }, '1': { text: 'up', color: 'green' } },
+      },
+    ];
+    const updown = (id: string, refId: string, up: boolean) =>
+      cell(id, status(refId, 'normal', named(up ? 'green' : 'red'), up ? 'up' : 'down'));
+    const own = new Map([
+      ['scrape_up', field({ mappings: upDown, color: { mode: FieldColorModeId.Fixed, fixedColor: 'transparent' } })],
+      ['hik_up', field({ mappings: upDown, color: { mode: FieldColorModeId.Fixed, fixedColor: 'transparent' } })],
+      [
+        'dev_health',
+        field({
+          displayName: 'Device health',
+          mappings: upDown,
+          color: { mode: FieldColorModeId.Fixed, fixedColor: 'transparent' },
+        }),
+      ],
+      ['cpu', field({ displayName: 'CPU busy', unit: 'percent', thresholds })],
+    ]);
+
+    it('merge into one block: the titles joined, the cells of every member on the block and on each entry', () => {
+      const patches: PatchMap = new Map([
+        updown('n1', 'scrape_up', true),
+        cell('n2', status('cpu', 'normal', named('green'), '12%')),
+        updown('n3', 'hik_up', false),
+        updown('n4', 'dev_health', true),
+        updown('n5', 'scrape_up', false),
+      ]);
+      const blocks = buildLegendV4(patches, own, ctx);
+      expect(blocks.map((b) => b.title)).toEqual(['scrape_up · hik_up · Device health', 'CPU busy']);
+      const [merged] = blocks;
+      expect(merged.entries.map((e) => [e.label, e.color, e.cellIds])).toEqual([
+        ['down', named('red'), ['n5', 'n3']],
+        ['up', named('green'), ['n1', 'n4']],
+        ['All values', named('transparent'), []],
+      ]);
+      expect([...merged.cellIds].sort()).toEqual(['n1', 'n3', 'n4', 'n5']);
+      // the keys of the blocks are unique and do not change on a refresh with the same members
+      expect(new Set(blocks.map((b) => b.key)).size).toBe(2);
+      expect(
+        buildLegendV4(new Map([...patches].reverse()), own, ctx)
+          .map((b) => b.key)
+          .sort()
+      ).toEqual(blocks.map((b) => b.key).sort());
+    });
+
+    it('keep the entry keys of a merged block when the first member changes', () => {
+      // the same "All values" in green: a fixed colour for one query, one base threshold step for the other
+      const mixed = new Map([
+        ['fixed_q', field({ color: { mode: FieldColorModeId.Fixed, fixedColor: 'green' } })],
+        [
+          'step_q',
+          field({ thresholds: { mode: ThresholdsMode.Absolute, steps: [{ value: -Infinity, color: 'green' }] } }),
+        ],
+      ]);
+      const a = cell('n1', status('fixed_q', 'normal', named('green'), '1'));
+      const b = cell('n2', status('step_q', 'normal', named('green'), '1'));
+      const [ab] = buildLegendV4(new Map([a, b]), mixed, ctx);
+      const [ba] = buildLegendV4(new Map([b, a]), mixed, ctx);
+      expect(ab.title).toBe('fixed_q · step_q');
+      expect([ba.key, ba.entries.map((e) => e.key)]).toEqual([ab.key, ab.entries.map((e) => e.key)]);
+    });
+
+    it('give a merged block a key that no query ID can make', () => {
+      const green = field({ color: { mode: FieldColorModeId.Fixed, fixedColor: 'green' } });
+      const red = field({ color: { mode: FieldColorModeId.Fixed, fixedColor: 'red' } });
+      const tricky = new Map([
+        ['A', green],
+        ['B', green],
+        ['A|status:B', red],
+      ]);
+      const patches: PatchMap = new Map([
+        cell('n1', status('A', 'normal', named('green'), '1')),
+        cell('n2', status('B', 'normal', named('green'), '1')),
+        cell('n3', status('A|status:B', 'normal', named('red'), '1')),
+      ]);
+      const blocks = buildLegendV4(patches, tricky, ctx);
+      expect(blocks.map((b) => b.title)).toEqual(['A · B', 'A|status:B']);
+      expect(new Set(blocks.map((b) => b.key)).size).toBe(2);
+    });
+
+    it('do not merge when one entry has another text or colour, or the gradients differ', () => {
+      const relabelled = [
+        {
+          type: MappingType.ValueToText as const,
+          options: { '0': { text: 'offline', color: 'red' }, '1': { text: 'up', color: 'green' } },
+        },
+      ];
+      const other = new Map([
+        ...own,
+        ['hik_up', field({ mappings: relabelled, color: { mode: FieldColorModeId.Fixed, fixedColor: 'transparent' } })],
+      ]);
+      const patches: PatchMap = new Map([updown('n1', 'scrape_up', true), updown('n2', 'hik_up', true)]);
+      expect(buildLegendV4(patches, other, ctx).map((b) => b.title)).toEqual(['scrape_up', 'hik_up']);
+      const temp = (min: number) =>
+        field({ color: { mode: FieldColorModeId.ContinuousGrYlRd }, min, max: 100, unit: 'percent' });
+      const gradients = new Map([
+        ['t1', temp(0)],
+        ['t2', temp(10)],
+        ['t3', temp(0)],
+      ]);
+      const warm: PatchMap = new Map([
+        cell('n1', status('t1', 'normal', named('green'), '12%')),
+        cell('n2', status('t2', 'normal', named('green'), '12%')),
+        cell('n3', status('t3', 'normal', named('green'), '12%')),
+      ]);
+      expect(buildLegendV4(warm, gradients, ctx).map((b) => b.title)).toEqual(['t1 · t3', 't2']);
+    });
+
+    it('keep the State block and the link load scale apart, unless the link load scale shows the same', () => {
+      const s: SeriesInfo = {
+        refId: 'tx',
+        name: 'Value',
+        labels: {},
+        values: [],
+        field: field({ thresholds }),
+        frame: { fields: [], length: 0 },
+      };
+      const half: HalfState = {
+        status: 'ok',
+        color: named('green'),
+        width: 2,
+        label: '',
+        stepIndex: 0,
+        series: s,
+        percent: 10,
+      };
+      const patches: PatchMap = new Map([
+        updown('n1', 'scrape_up', true),
+        cell('n2', status('hik_up', 'stale')),
+        cell('e1', undefined, { a2b: half }),
+      ]);
+      expect(buildLegendV4(patches, own, ctx).map((b) => b.title)).toEqual(['scrape_up', 'State', 'Link load %']);
+      // the CPU scale has the texts and colours of the link load scale: one block
+      patches.set(...cell('n3', status('cpu', 'normal', named('green'), '12%')));
+      const blocks = buildLegendV4(patches, own, ctx);
+      expect(blocks.map((b) => b.title)).toEqual(['scrape_up', 'CPU busy · Link load %', 'State']);
+      expect(blocks[1].entries.map((e) => [e.label, e.cellIds])).toEqual([
+        ['< 80%', ['n3', 'e1']],
+        ['≥ 80%', []],
+      ]);
+    });
   });
 
   it('ignores a refId with no field', () => {

@@ -3,10 +3,11 @@ import { expect, saveDashboard, test } from './authoring-fixtures';
 
 const PANE_WIDTH = 300;
 
-// Set DMAP_SCREENSHOTS=1 to write docs/images/options-diagram.png.
+// Set DMAP_SCREENSHOTS=1 to write docs/images/options-diagram.png and local/options-bindings.png.
 const SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'docs/images/options-diagram.png' : undefined;
+const BINDINGS_SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'local/options-bindings.png' : undefined;
 
-test('the Diagram option buttons with Edit bindings and the YAML option stay inside the options pane at the narrowest width', async ({
+test('the Diagram option buttons, the Edit bindings button and the YAML option stay inside the options pane at the narrowest width', async ({
   gotoPanelEditPage,
   page,
 }) => {
@@ -44,10 +45,8 @@ test('the Diagram option buttons with Edit bindings and the YAML option stay ins
   };
   await inside(page.getByTestId('dmap-open-editor'), 'Open editor');
   await inside(group.getByRole('button', { name: 'Import .drawio' }), 'Import .drawio');
-  // The "Edit bindings" button opens the split editor (spec 5.1).
-  await inside(page.getByTestId('dmap-edit-bindings-option'), 'Edit bindings');
-  await expect(page.getByTestId('dmap-edit-bindings-option')).toBeEnabled();
   await inside(group.getByRole('button', { name: 'Clear', exact: true }), 'Clear');
+  await expect(group.getByTestId('dmap-edit-bindings-option')).toHaveCount(0);
 
   // The YAML option (spec 5.0) shows the stored config as YAML, inside the same pane width.
   await panelEditPage.getCustomOptions('Bindings').expand();
@@ -59,8 +58,27 @@ test('the Diagram option buttons with Edit bindings and the YAML option stay ins
   expect(codeBox.x, 'YAML option: left edge').toBeGreaterThanOrEqual(bindingsBox.x);
   expect(codeBox.x + codeBox.width, 'YAML option: right edge').toBeLessThanOrEqual(bindingsBox.x + bindingsBox.width);
   expect(bindingsBox.width).toBeLessThanOrEqual(PANE_WIDTH + 10);
+  // The "Edit bindings" button opens the split editor (spec 5.1). It stands in the Bindings option, above the YAML.
+  const edit = bindings.getByTestId('dmap-edit-bindings-option');
+  await expect(edit).toBeVisible();
+  await expect(edit).toBeEnabled();
+  const editBox = (await edit.boundingBox())!;
+  expect(editBox.x, 'Edit bindings: left edge').toBeGreaterThanOrEqual(bindingsBox.x);
+  expect(editBox.x + editBox.width, 'Edit bindings: right edge').toBeLessThanOrEqual(bindingsBox.x + bindingsBox.width);
+  expect(editBox.y + editBox.height, 'Edit bindings: above the YAML').toBeLessThanOrEqual(codeBox.y);
+  expect(codeBox.y - (editBox.y + editBox.height), 'Edit bindings: next to the YAML').toBeLessThan(80);
+  if (BINDINGS_SCREENSHOT) {
+    await edit.scrollIntoViewIfNeeded();
+    const top = Math.max(0, (await edit.boundingBox())!.y - 60);
+    const pane = (await bindings.boundingBox())!;
+    await page.screenshot({
+      path: BINDINGS_SCREENSHOT,
+      clip: { x: pane.x, y: top, width: pane.width, height: Math.min(360, 800 - top) },
+    });
+  }
 
   if (SCREENSHOT) {
+    await page.getByTestId('dmap-diagram-status').scrollIntoViewIfNeeded();
     const paneBox = (await group.boundingBox())!;
     const top = (await page.getByTestId('dmap-diagram-status').boundingBox())!.y - 80;
     await page.screenshot({

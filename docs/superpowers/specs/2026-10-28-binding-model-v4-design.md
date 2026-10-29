@@ -555,12 +555,22 @@ For each series of the status use, the display processor of its field gives `{te
 - **Text.** The hover card and the status band show `text`. The band row is `<text> · <refId>: <n> cells`; today it
   is `state: reason` (`src/components/StatusBand.tsx:129`). A cell with no value (text `–`) gives its `reason` in
   place of the text. The band lists the rows that are not normal, worst first.
-- **Legend.** One block per status refId in use. The block title is the display name of the refId. The entries are
-  the value mappings of its field config (`mappingEntries`, `src/legend/model.ts:137`) and then its threshold steps,
-  each with its exact colour and text, and with the cells that show it. Today the legend collects only the state
-  (`src/legend/model.ts:233-239`) and adds one fixed status block (:280-291); that code is rewritten. A `stale` and a
-  `missing` entry follow when cells have that state. Before them, a `down` entry in the theme red follows when cells
-  have a down status with no value (`missing: down`).
+- **Legend.** One block per status refId in use. The block title is the `displayName` of the field config of the
+  refId, else the refId. The title never uses `displayNameFromDS`: Prometheus sets it for each series from the legend
+  format, so it names one series, not the query (1.3.0). The entries are the value mappings of its field config
+  (`mappingEntries`, `src/legend/model.ts:137`) and then its threshold steps, each with its exact colour and text,
+  and with the cells that show it. Today the legend collects only the state (`src/legend/model.ts:233-239`) and adds
+  one fixed status block (:280-291); that code is rewritten. A `stale` and a `missing` entry follow when cells have
+  that state. Before them, a `down` entry in the theme red follows when cells have a down status with no value
+  (`missing: down`).
+- **Legend groups (1.3.0, owner decision 2026-10-29).** Blocks with the same content become one block: the same
+  entries in the same order, each with the same text and colour, and the same gradient with the same end texts. The
+  title of the block is the titles of its members joined with ` · `; a long title wraps. The cells of the block, and
+  the cells of each entry, are the cells of all members, so a hover or a keyboard focus on an entry highlights the
+  cells of all members. The key of the block is the sorted keys of its members. The `State` block and the link load
+  scale use the same rule: they merge with a status block only when the content is the same. The legend shows all
+  blocks and scrolls (most height: half of the panel). There is no "+N more" line and no option for the number of
+  blocks: 1.3.0 removed `legend.maxBlocks`, and the panel ignores a saved value.
 - **Links.** A link class can set `status`, for example a port state. `linkStatusPaint` keeps its rule: a `missing`
   status on a link with halves paints nothing, because each half shows its own state (`src/binding/color.ts:55-71`).
 

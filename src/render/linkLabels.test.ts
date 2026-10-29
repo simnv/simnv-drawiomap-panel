@@ -16,7 +16,7 @@ import {
   stageObstacles,
   watchLinkLabelFonts,
 } from './linkLabels';
-import { cornersOf } from './labelPlacement';
+import { cornersOf, LINK_LABEL_GEOMETRY } from './labelPlacement';
 import type { Point } from './geometry';
 
 /** The status of a patch, as `statusViewOf` gives it. */
@@ -161,7 +161,7 @@ describe('renderLinkLabels: the layer and its elements', () => {
     expect(a2b.getAttribute('paint-order')).toBe('stroke');
     expect(a2b.getAttribute('stroke-linejoin')).toBe('round');
     expect(a2b.getAttribute('stroke-linecap')).toBe('round');
-    expect(a2b.getAttribute('font-size')).toBe('8');
+    expect(a2b.getAttribute('font-size')).toBe('9');
     expect(a2b.getAttribute('font-family')).toBe('sans-serif');
     expect(a2b.getAttribute('data-dmap-placed-at')).toMatch(/^\d+$/);
   });
@@ -393,10 +393,10 @@ describe('renderLinkLabels: the place of a label', () => {
     render(root, index, both());
     const a = byHalf(root, 'a2b')!;
     expect(a.getAttribute('data-dmap-side')).toBe('line');
-    // the slot 24 plus 1.5 on each end, centred on the anchors 120 and 280; each gap on its own half
+    // the slot 28 plus 1.5 on each end, centred on the anchors 120 and 280; each gap on its own half
     const [h1, h2] = halvesOf(root);
-    expect(gapsOn(h1)).toEqual([[106.5, 133.5]]);
-    expect(gapsOn(h2)).toEqual([[266.5, 293.5]]);
+    expect(gapsOn(h1)).toEqual([[104.5, 135.5]]);
+    expect(gapsOn(h2)).toEqual([[264.5, 295.5]]);
     // the last dash runs past the end of the half: the pattern does not repeat
     const dash = h1.getAttribute('stroke-dasharray')!.split(' ').map(Number);
     expect(dash).toHaveLength(4);
@@ -432,16 +432,17 @@ describe('renderLinkLabels: the place of a label', () => {
   it('the top of a horizontal link is above; the near edge of the box is 2 beyond the drawn stroke edge', () => {
     const { root, index } = build(SVG(strip));
     render(root, index, both());
-    // the drawn width is 4 (HalfState.width): the stroke edge at 98, the box (12 high) from 84 to 96, the centre at 90
-    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('90');
-    expect(byHalf(root, 'b2a')!.getAttribute('y')).toBe('90');
-    // the same half drawn at the widest stroke (linkWidth.max 10): the centre at 87
+    // the drawn width is 4 (HalfState.width): the stroke edge at 98, the box (13.25 high) from 82.75 to 96, the
+    // centre at 89.375
+    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('89.38');
+    expect(byHalf(root, 'b2a')!.getAttribute('y')).toBe('89.38');
+    // the same half drawn at the widest stroke (linkWidth.max 10): the centre at 86.375
     const wide = new Map([
       ['e1', linkPatch('e1', { a2b: half({ width: 10 }), b2a: half({ width: 10 }), labelMode: 'percent' })],
     ]);
     const again = build(SVG(strip));
     render(again.root, again.index, wide);
-    expect(byHalf(again.root, 'a2b')!.getAttribute('y')).toBe('87');
+    expect(byHalf(again.root, 'a2b')!.getAttribute('y')).toBe('86.38');
   });
   it('a width change on refresh moves the label across the link, not along it, and is no move', () => {
     const { root, index } = build(SVG(strip));
@@ -451,9 +452,9 @@ describe('renderLinkLabels: the place of a label', () => {
     const a = byHalf(root, 'a2b')!;
     const stamp = a.getAttribute('data-dmap-placed-at');
     const x = a.getAttribute('x');
-    expect(a.getAttribute('y')).toBe('90');
+    expect(a.getAttribute('y')).toBe('89.38');
     expect(render(root, index, widths(10))).toEqual({ placed: 2, dropped: 0, moved: 0 });
-    expect(a.getAttribute('y')).toBe('87');
+    expect(a.getAttribute('y')).toBe('86.38');
     expect(a.getAttribute('x')).toBe(x);
     expect(a.getAttribute('data-dmap-placed-at')).toBe(stamp);
     expect(a.getAttribute('data-dmap-side')).toBe('top');
@@ -479,16 +480,16 @@ describe('renderLinkLabels: the place of a label', () => {
     render(root, index, widths(4));
     const before = halvesOf(root);
     expect(gapsOf(root)).toEqual([
-      [106.5, 133.5],
-      [266.5, 293.5],
+      [104.5, 135.5],
+      [264.5, 295.5],
     ]);
     // a wider half has a longer head: the b2a half starts later, its pattern follows, the gap does not move
     for (const w of [10, 2, 14]) {
       render(root, index, widths(w));
       expect(halvesOf(root)).toEqual(before);
       expect(gapsOf(root)).toEqual([
-        [106.5, 133.5],
-        [266.5, 293.5],
+        [104.5, 135.5],
+        [264.5, 295.5],
       ]);
     }
   });
@@ -531,8 +532,8 @@ describe('renderLinkLabels: the place of a label', () => {
     render(root, index, both());
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-side')).toBe('bottom');
     expect(byHalf(root, 'b2a')!.getAttribute('data-dmap-side')).toBe('bottom');
-    // the drawn width 4: the centre at 100 + 2 + 2 + 6
-    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('110');
+    // the drawn width 4: the centre at 100 + 2 + 2 + 6.625
+    expect(byHalf(root, 'a2b')!.getAttribute('y')).toBe('110.63');
   });
   it('the cut leaves with a label that has no text and with the labels that are switched off', () => {
     const { root, index } = build();
@@ -613,10 +614,10 @@ describe('renderLinkLabels: the cut follows its label', () => {
     render(root, index, new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]));
     const a = byHalf(root, 'a2b')!;
     expect(a.getAttribute('data-dmap-side')).toBe('line');
-    // the slot of 27 root units is 13.5 units of the group, centred on the label (root x mapped back: (x - 10) / 2)
+    // the slot of 31 root units is 15.5 units of the group, centred on the label (root x mapped back: (x - 10) / 2)
     const centre = (Number(a.getAttribute('x')) - 10) / 2;
     const [[from, to]] = gapsOf(root);
-    expect(to - from).toBeCloseTo(13.5, 2);
+    expect(to - from).toBeCloseTo(15.5, 2);
     expect((from + to) / 2).toBeCloseTo(centre, 2);
     expectNoMask(root);
   });
@@ -628,7 +629,7 @@ describe('renderLinkLabels: the cut follows its label', () => {
     const a = byHalf(root, 'a2b')!;
     expect(a.getAttribute('transform')).toMatch(/rotate\(-90 /);
     const y = Number(a.getAttribute('y'));
-    expect(gapsOf(root, 'e1', 'y')).toEqual([[y - 13.5, y + 13.5]]);
+    expect(gapsOf(root, 'e1', 'y')).toEqual([[y - 15.5, y + 15.5]]);
   });
   it('two panels draw their cuts with no shared id', () => {
     const one = build();
@@ -866,23 +867,24 @@ describe('renderLinkLabels: backgrounds', () => {
       ['e1', linkPatch('e1', { a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
     ]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
-    // one side holds both, as the pair prefers
+    // one side cannot hold both: each box is 30 units along the run (the 28-unit slot and the halo), and the anchors
+    // stand 18 apart, so the halves take the two sides
     expect([byHalf(root, 'a2b')!, byHalf(root, 'b2a')!].map((t) => t.getAttribute('data-dmap-side'))).toEqual([
       'top-head',
-      'top-head',
+      'bottom-head',
     ]);
     // left of the vertical link at x = 200: the wide gap (4) beyond the wing of the drawn head (4: the head of a
-    // half 2 wide is 8 wide) and half the box height (6, the 10-unit slot and the halo), 14 off the line
+    // half 2 wide is 8 wide) and half the box height (6.625, the 11.25-unit text and the halo), 14.625 off the line
     const a = byHalf(root, 'a2b')!;
-    expect(a.getAttribute('transform')).toMatch(/^rotate\(-90 186 /);
+    expect(a.getAttribute('transform')).toMatch(/^rotate\(-90 185.38 /);
     const placedAt = a.getAttribute('data-dmap-placed-at');
-    // the half at linkWidth.max: its head is 24 wide, the text stands 4 + 12 + 6 = 22 off the line, at the same place
+    // the half at linkWidth.max: its head is 24 wide, the text stands 4 + 12 + 6.625 = 22.625 off the line, at the same place
     // along it, and the label is not placed again
     const wide: PatchMap = new Map([
       ['e1', linkPatch('e1', { a2b: half({ width: 10 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
     ]);
     expect(render(root, index, wide)).toEqual({ placed: 2, dropped: 0, moved: 0 });
-    expect(a.getAttribute('transform')).toMatch(/^rotate\(-90 178 /);
+    expect(a.getAttribute('transform')).toMatch(/^rotate\(-90 177.38 /);
     expect(a.getAttribute('data-dmap-placed-at')).toBe(placedAt);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
@@ -1047,11 +1049,11 @@ describe('renderLinkLabels: review cases', () => {
           expect(render(root, index, patches(width)).placed).toBe(1);
           const label = byHalf(root, which)!;
           const [, degrees] = /^rotate\((\S+) /.exec(label.getAttribute('transform')!)!;
-          // the text box of the slot (28 × 10, without the halo) about its centre
+          // the text box of the slot (28 × 11.25, without the halo) about its centre
           const box = cornersOf({
             centre: { x: Number(label.getAttribute('x')), y: Number(label.getAttribute('y')) },
             width: 28,
-            height: 10,
+            height: LINK_LABEL_GEOMETRY.fontSize * 1.25,
             degrees: Number(degrees),
           });
           const head = pointsOf(root.querySelector(`polygon.dmap-arrow[data-dmap-half="${which}"]`)!);
@@ -1064,7 +1066,7 @@ describe('renderLinkLabels: review cases', () => {
     });
   });
   describe('the bend spot', () => {
-    // a run of 31 and a jog of 10: no straight run holds the 26 unit box, so only the last resort can place it
+    // a run of 31 and a jog of 10: no straight run holds the 30 unit box (the 28-unit slot and the halo), so only the last resort can place it
     const bend = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" style="background-color: #1d2d3d">
       <g data-cell-id="e1"><g><path d="M 20 100 L 51 100 L 51 110" fill="none" stroke="#333" pointer-events="stroke"/></g></g></svg>`;
     const one = (): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(), labelMode: 'percent' })]]);
@@ -1306,7 +1308,7 @@ describe('renderLinkLabels: coordinates', () => {
     expect(a.getAttribute('x')).toBe('84');
     expect(a.getAttribute('y')).toBe('0');
     const b = byHalf(root, 'b2a')!;
-    expect(b.getAttribute('transform')).toBe('rotate(-90 200 96)');
+    expect(b.getAttribute('transform')).toBe('rotate(-90 200 100)');
     // a 3-unit stroke in the scaled group: a 6-unit stroke in root units, a 3-unit clearance
     const obstacles = stageObstacles(root, index, patches, 10);
     expect(obstacles).toContainEqual({
@@ -1430,10 +1432,10 @@ describe('setLinkLabelScale', () => {
     sized(root, 1);
     setLinkLabelScale(root);
     expect(layerOf(root)!.getAttribute('visibility')).toBeNull();
-    sized(root, 0.8);
+    sized(root, 0.75);
     setLinkLabelScale(root);
     expect(layerOf(root)!.getAttribute('visibility')).toBe('hidden');
-    sized(root, 7 / 8);
+    sized(root, 7 / 9);
     setLinkLabelScale(root);
     expect(layerOf(root)!.getAttribute('visibility')).toBeNull();
   });

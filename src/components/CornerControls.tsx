@@ -1,10 +1,13 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useLayoutEffect, useRef } from 'react';
 import { css } from '@emotion/css';
-import { IconButton, useTheme2 } from '@grafana/ui';
+import { Button, IconButton, useTheme2 } from '@grafana/ui';
 
 /** Heights in px of the items in the top-left row. */
 const RESET_SIZE = 32;
 const BADGE_HEIGHT = 20;
+
+/** Below this panel width in px the "Edit bindings" button shows only its icon: the text does not fit. */
+export const EDIT_TEXT_MIN_WIDTH = 160;
 
 /** The height of the top-left row: the buttons set it when they show, else the badge. 0: the row is empty. */
 export const cornerRowHeight = (buttons: boolean, warnings: number) =>
@@ -25,8 +28,10 @@ const styles = {
     /* The empty space beside the row is part of the diagram: only the row and the legend catch the pointer. */
     pointer-events: none;
   `,
+  // On a narrow panel the row wraps: the "Edit bindings" button goes to the next line, it never leaves the panel.
   cornerRow: css`
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 4px;
     pointer-events: auto;
@@ -37,6 +42,13 @@ const styles = {
     min-width: 32px;
     min-height: 32px;
     border-radius: 4px;
+  `,
+  // the text button keeps the 32 px touch target of the reset button
+  edit: css`
+    margin: 0;
+    min-width: 32px;
+    min-height: 32px;
+    white-space: nowrap;
   `,
   badge: css`
     font-size: 11px;
@@ -52,17 +64,39 @@ interface Props {
   zoomed: boolean;
   /** Panel edit: the "Edit bindings" button shows. */
   editing: boolean;
+  /** The panel width in px: a narrow panel (a phone in panel edit) gets the icon of the button only. */
+  width: number;
   warnings: string[];
   onReset: () => void;
   onEditBindings: () => void;
+  /** The drawn height of the row in px, also when it wraps to more lines; 0 when there is no row or no layout. */
+  onRowHeight: (height: number) => void;
 }
 
 /** The top-left row holds the reset button, the warning badge and, in panel edit, the "Edit bindings" button. */
 export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerControls(
-  { bandHeight, zoomed, editing, warnings, onReset, onEditBindings },
+  { bandHeight, zoomed, editing, width, warnings, onReset, onEditBindings, onRowHeight },
   ref
 ) {
   const theme = useTheme2();
+  const showRow = !!(zoomed || warnings.length || editing);
+  const rowRef = useRef<HTMLDivElement>(null);
+  // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!showRow || !row) {
+      return;
+    }
+    // the first height before the paint, so the legend does not start at the old place for one frame
+    onRowHeight(row.offsetHeight);
+    const observer =
+      typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => onRowHeight(row.offsetHeight));
+    observer?.observe(row);
+    return () => {
+      observer?.disconnect();
+      onRowHeight(0);
+    };
+  }, [showRow, onRowHeight]);
   const buttonStyle = {
     background: theme.colors.background.primary,
     border: `1px solid ${theme.colors.border.medium}`,
@@ -74,8 +108,8 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
       style={{ left: 4, top: bandHeight + 4, maxHeight: `calc(100% - ${bandHeight + 8}px)` }}
       data-testid="dmap-corner"
     >
-      {zoomed || warnings.length || editing ? (
-        <div className={styles.cornerRow}>
+      {showRow ? (
+        <div ref={rowRef} className={styles.cornerRow} data-testid="dmap-corner-row">
           {zoomed ? (
             <IconButton
               name="search-minus"
@@ -99,16 +133,19 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             </div>
           ) : null}
           {editing ? (
-            <IconButton
-              name="link"
-              size="lg"
-              tooltip="Edit bindings"
-              tooltipPlacement="right"
-              className={styles.reset}
+            <Button
+              icon="link"
+              size="sm"
+              variant="secondary"
+              className={styles.edit}
               style={buttonStyle}
+              aria-label="Edit bindings"
+              tooltip={width < EDIT_TEXT_MIN_WIDTH ? 'Edit bindings' : undefined}
               data-testid="dmap-edit-bindings"
               onClick={onEditBindings}
-            />
+            >
+              {width < EDIT_TEXT_MIN_WIDTH ? null : 'Edit bindings'}
+            </Button>
           ) : null}
         </div>
       ) : null}

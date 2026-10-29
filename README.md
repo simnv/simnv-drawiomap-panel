@@ -107,6 +107,8 @@ A cell with `bind=node-up` and `key=node-rtr-a` shows the series of the target `
 
 The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores the config as JSON in the dashboard. The editor shows the same data as YAML in a fixed key order.
 
+The **Edit bindings** button above the YAML opens the [split editor](#split-editor). It is disabled when the panel has no diagram. Outside the panel editor it shows "Open the panel editor first".
+
 - A YAML comment is not kept. The editor writes the config from the data on each load.
 - An error shows as a marker on its line. A YAML syntax error and an error in the top level (`version`, `freshness`, `classes`, `overrides`) stop the save: the editor keeps your text and stores nothing. An error inside one class or one override does not stop the save. The panel shows the cells of that class or override as **unavailable**: grey, with the reason "Binding is not valid".
 - The editor loads in a separate chunk. View mode and the dashboard do not load the YAML parser.
@@ -114,7 +116,7 @@ The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores 
 
 ### Split editor
 
-In panel edit, select **Edit bindings** in the Diagram options or on the panel. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
+In panel edit, select **Edit bindings** on the panel (top-left corner) or in the Bindings options, above the YAML. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
 
 The preview follows a valid draft. Move the cursor in YAML to highlight the affected cells; select a report entry to move to its YAML path and highlight its cells. Select a cell to open its inspector and move the cursor to its override or class. The inspector shows its attributes, class chain, override, and, for each use, the query, matchers, series count and up to eight label sets and values. For an edge it also shows the ends and the direction of each half.
 
@@ -385,7 +387,7 @@ On each bind the panel collects a **report**. In view mode the warning badge in 
 | `bad-cap`                                                     | The attribute `cap` does not parse.                                                     |
 | `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                      |
 | `unused-field`                                                | A link field on a class whose cells are not links.                                      |
-| `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.       |
+| `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.      |
 
 `no-series` and `orphan-series` are how you find a wrong `match`.
 
@@ -470,7 +472,7 @@ A small legend in a corner of the panel shows each colour that the bound cells c
 
 ![Colour legend of the demo network](docs/images/colour-legend.png)
 
-- One block for each status query in use, in the order of first use. The title is the **Display name** of the field, else the name of the query. The entries are the value mappings of the field config, then its threshold steps, each with its exact colour and text, and with the cells that show it. Then the blocks of the link scales: **Link load %** for links with a capacity, else the query name and the unit symbol, for example `PoE W`. Two different scales with the same title get their queries in brackets.
+- One block for each status query in use, in the order of first use. The title is the **Display name** of the field config, else the name of the query (the refId). The title never uses a name from the series labels or the legend format: such a name tells one series, not the query. The entries are the value mappings of the field config, then its threshold steps, each with its exact colour and text, and with the cells that show it. Then the blocks of the link scales: **Link load %** for links with a capacity, else the query name and the unit symbol, for example `PoE W`. Two different scales with the same title get their queries in brackets.
 - **From thresholds**: one swatch for each step, from low to high: `< 60%`, `≥ 60%`, `≥ 85%`. Links with a capacity show percent. Other values show the field unit.
 - A continuous scheme: a gradient bar from `0%` to `100%` for links with a capacity, else from the field **Min** to **Max**.
 - **Single color** and **Shades**: one swatch, `All values`.
@@ -478,6 +480,9 @@ A small legend in a corner of the panel shows each colour that the bound cells c
 - **Classic palette** (a colour for each series): no block, because the colour does not tell a value.
 - **State**: the block that follows the status blocks. It has `Down, no data` (the theme red of a cell with `missing: down` and no value), `Stale` and `No data`, each with the cells that are in that state.
 - Identical scales merge into one block, also when they come from different queries. An override that changes the thresholds or the scheme of one query gives that query its own block.
+- Blocks with the same content merge into one block: the same entries in the same order, each with the same text and colour, and the same gradient with the same end texts. For example, four `up` queries with the mappings `down` (red) and `up` (green) give one block. Its title lists the titles of the blocks, joined with `·`, and wraps when it is long. An entry of the merged block holds the cells of all its queries, so the pointer or the focus on it shows the cells of all of them. The **State** block and the link load scale merge with a status block only when their content is the same.
+
+The legend shows all blocks. When they do not fit in half of the panel height, the legend scrolls.
 
 Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elements in that band stay visible and the other elements of the legend dim. Move the pointer away, or move the focus, to show all elements again. On a phone, which has no hover, tap an entry to show its elements. Tap the same entry again, or tap anywhere else, to show all elements again. The dim uses one CSS class on the diagram, so it is cheap on a large diagram. It does not change a pinned card or the link colour overlays.
 
@@ -499,19 +504,18 @@ The legend stays in its place when you zoom, pan or scroll the diagram. In the t
 
 The options are in the **Legend** group:
 
-| Option          | Path               | Meaning                                                                    |
-| --------------- | ------------------ | -------------------------------------------------------------------------- |
-| Show legend     | `legend.show`      | Default on.                                                                |
-| Corner          | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`.        |
-| Maximum scales  | `legend.maxBlocks` | The legend shows at most this number of blocks, then `+N more`. Default 4. |
-| Start collapsed | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.              |
+| Option          | Path               | Meaning                                                             |
+| --------------- | ------------------ | ------------------------------------------------------------------- |
+| Show legend     | `legend.show`      | Default on.                                                         |
+| Corner          | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`. |
+| Start collapsed | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.       |
 
-A saved panel without `legend.collapsed` starts collapsed.
+A saved panel without `legend.collapsed` starts collapsed. Version 1.3.0 removed the option **Maximum scales** (`legend.maxBlocks`). The panel ignores a saved `legend.maxBlocks`.
 
 In the panel JSON:
 
 ```json
-{ "legend": { "show": true, "corner": "bottom-right", "maxBlocks": 4, "collapsed": true } }
+{ "legend": { "show": true, "corner": "bottom-right", "collapsed": true } }
 ```
 
 ### Capacity

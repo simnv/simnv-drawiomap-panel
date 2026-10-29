@@ -73,8 +73,8 @@ test('the split editor keeps its draft through two dashboard refreshes', async (
   const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const normal = () => page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]');
   await expect(normal()).toHaveCount(2);
-  // The entry of the options pane (spec 5.1).
-  await panelEditPage.getCustomOptions('Diagram').expand();
+  // The entry of the options pane (spec 5.1), in the Bindings option.
+  await panelEditPage.getCustomOptions('Bindings').expand();
   await page.getByTestId('dmap-edit-bindings-option').click();
   const popup = page.getByTestId('dmap-bindings-popup');
   const code = popup.getByTestId('data-testid Code editor container');

@@ -246,7 +246,20 @@ describe('DrawioMapPanel', () => {
     other.unmount();
     act(() => locationService.partial({ editPanel: 1 }));
     render(<DrawioMapPanel {...props()} />);
-    expect(await screen.findByTestId('dmap-edit-bindings')).toBeTruthy();
+    // a visible text title next to the link icon, not an icon with a tooltip only
+    const button = await screen.findByTestId('dmap-edit-bindings');
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.textContent).toBe('Edit bindings');
+    expect(screen.getByRole('button', { name: 'Edit bindings' })).toBe(button);
+  });
+
+  it('on a panel too narrow for the text, the Edit bindings button shows only its icon', async () => {
+    locationService.partial({ editPanel: 1 });
+    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
+    render(<DrawioMapPanel {...props({ width: 120 })} />);
+    const button = await screen.findByTestId('dmap-edit-bindings');
+    expect(button.textContent).toBe('');
+    expect(screen.getByRole('button', { name: 'Edit bindings' })).toBe(button);
   });
 
   it('keeps the warning count and opens nothing when the badge is clicked in edit mode', async () => {
@@ -929,9 +942,74 @@ describe('DrawioMapPanel live zoom', () => {
     }
   });
 
+  it('a corner row that wraps to two lines pushes the top-left legend below its drawn height', async () => {
+    // jsdom has no layout: the row says it is 68 px high (two lines), and the observer reports at once
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === 'dmap-corner-row' ? 68 : 0;
+      },
+    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private readonly cb: () => void) {}
+        observe() {
+          this.cb();
+        }
+        disconnect() {}
+      }
+    );
+    onTestFinished(() => {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height);
+      vi.unstubAllGlobals();
+    });
+    const { wrapper } = await setup(withWarning({ show: true, corner: 'top-left' }));
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    // the top of the row, the 68 px row and a 4 px gap
+    const rowTop = parseFloat(screen.getByTestId('dmap-corner').style.top);
+    await waitFor(() => expect(parseFloat(screen.getByTestId('dmap-legend').style.top)).toBe(rowTop + 68 + 4));
+  });
+
+  it('when the corner row gets one line again, the top-left legend moves back up', async () => {
+    let rowPx = 68;
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === 'dmap-corner-row' ? rowPx : 0;
+      },
+    });
+    const resized: Array<() => void> = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          resized.push(cb);
+        }
+        observe() {}
+        disconnect() {}
+      }
+    );
+    onTestFinished(() => {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height);
+      vi.unstubAllGlobals();
+    });
+    await setup(withWarning({ show: true, corner: 'top-left' }));
+    const top = () => parseFloat(screen.getByTestId('dmap-legend').style.top);
+    const rowTop = parseFloat(screen.getByTestId('dmap-corner').style.top);
+    await waitFor(() => expect(top()).toBe(rowTop + 68 + 4));
+    // the panel gets wider: the row is one line of the badge (20 px)
+    rowPx = 20;
+    act(() => resized.forEach((cb) => cb()));
+    await waitFor(() => expect(top()).toBe(rowTop + 20 + 4));
+  });
+
   it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
     const { wrapper } = await setup({
-      ...withWarning({ show: true, corner: 'top-right', maxBlocks: 4 }),
+      ...withWarning({ show: true, corner: 'top-right' }),
       width: 400,
     });
     wheel(wrapper, { deltaY: -10, ctrlKey: true });
@@ -949,7 +1027,7 @@ describe('DrawioMapPanel live zoom', () => {
 
   describe.each(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const)('legend in the %s corner', (c) => {
     it('does not cover the reset button, the warning badge or the right-hand menu area', async () => {
-      const { wrapper } = await setup(withWarning({ show: true, corner: c, maxBlocks: 4 }));
+      const { wrapper } = await setup(withWarning({ show: true, corner: c }));
       wheel(wrapper, { deltaY: -10, ctrlKey: true });
       const btn = await screen.findByRole('button', { name: 'Reset zoom' });
       const corner = screen.getByTestId('dmap-corner');
@@ -1361,7 +1439,7 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
 describe('DrawioMapPanel colour legend', () => {
   const legend = () => screen.queryByTestId('dmap-legend');
   const openLegend = () =>
-    props({ options: { ...options, legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false } } });
+    props({ options: { ...options, legend: { show: true, corner: 'bottom-right', collapsed: false } } });
   async function setup(p = props()) {
     const r = render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
@@ -1370,14 +1448,10 @@ describe('DrawioMapPanel colour legend', () => {
 
   it('legend.show false hides it; another corner moves it; the chip opens it outside the stage and opens no card', async () => {
     const { rerender } = await setup(
-      props({ options: { ...options, legend: { show: false, corner: 'bottom-right', maxBlocks: 4 } } })
+      props({ options: { ...options, legend: { show: false, corner: 'bottom-right' } } })
     );
     expect(legend()).toBeNull();
-    rerender(
-      <DrawioMapPanel
-        {...props({ options: { ...options, legend: { show: true, corner: 'top-left', maxBlocks: 4 } } })}
-      />
-    );
+    rerender(<DrawioMapPanel {...props({ options: { ...options, legend: { show: true, corner: 'top-left' } } })} />);
     expect(legend()!.getAttribute('data-dmap-corner')).toBe('top-left');
     const chip = within(legend()!).getByRole('button', { name: 'Legend' });
     fireEvent.click(chip);
@@ -1385,6 +1459,13 @@ describe('DrawioMapPanel colour legend', () => {
     // outside the stage, so zoom, pan and the stage scroll do not move it
     expect(screen.getByTestId('dmap-stage').contains(legend()!)).toBe(false);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('ignores the legend.maxBlocks that 1.2 saved: every block shows, with no "+N more" line', async () => {
+    const legendOld = { show: true, corner: 'bottom-right', collapsed: false, maxBlocks: 1 } as Options['legend'];
+    await setup(props({ options: { ...options, legend: legendOld } }));
+    expect(within(legend()!).getAllByTestId('dmap-legend-block').length).toBeGreaterThan(1);
+    expect(legend()!.textContent).not.toMatch(/\+\d+ more/);
   });
 
   it('has a block for the status refId and a State block for the cells with no value', async () => {

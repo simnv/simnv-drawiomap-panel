@@ -339,13 +339,14 @@ const STATE_ENTRIES_V4: Array<{ key: 'down' | 'stale' | 'missing'; label: string
 
 /**
  * The v4 legend (spec 3.4). First one block for each status refId in use, in the order of first use. The title is
- * the display name of the field of the refId: `displayName`, else `displayNameFromDS` of its config, else the refId. A name from the series labels names one series, not the refId, so it is not used. The
- * entries are its value mappings and then its threshold steps, each with its exact colour and text and the cells
- * that show it. `fields` gives the field of each status refId; a refId with no field has no block. Then one `State`
- * block with a `down`, a `stale` and a `missing` entry, each only when cells have that state: `down` is a down status
- * with no value (`missing: down`), which the painter paints in the theme red; a link half with no data is `missing`,
- * and so is a missing status that the painter paints grey. Then the link load scale of the link halves. A status
- * with no refId (an unavailable cell) is not in this legend.
+ * the `displayName` of the field config of the refId, else the refId. `displayNameFromDS` and a name from the series
+ * labels name one series, not the query, so the title never uses them. The entries are its value mappings and then
+ * its threshold steps, each with its exact colour and text and the cells that show it. `fields` gives the field of
+ * each status refId; a refId with no field has no block. Then one `State` block with a `down`, a `stale` and a
+ * `missing` entry, each only when cells have that state: `down` is a down status with no value (`missing: down`),
+ * which the painter paints in the theme red; a link half with no data is `missing`, and so is a missing status that
+ * the painter paints grey. Then the link load scale of the link halves. A status with no refId (an unavailable cell)
+ * is not in this legend. Last, blocks with the same content merge into one (`mergeSame`).
  */
 export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx: LegendContext): LegendBlock[] {
   const statusItems = new Map<string, Item[]>();
@@ -395,7 +396,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     const config = items[0].field.config;
     const block: LegendBlock = {
       key: `status:${refId}`,
-      title: config.displayName ?? config.displayNameFromDS ?? refId,
+      title: config.displayName || refId,
       entries: scale.entries,
       ...(gradient
         ? { gradient: auto ? { ...gradient, min: auto.format(auto.min), max: auto.format(auto.max) } : gradient }
@@ -422,7 +423,47 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     entries.forEach((e) => e.cellIds.forEach((id) => push(cellIds, id)));
     out.push({ key: 'state', title: 'State', entries, cellIds });
   }
-  return [...out, ...scaleBlocks(links, ctx)];
+  return mergeSame([...out, ...scaleBlocks(links, ctx)]);
+}
+
+/** What a block shows: the text and colour of each entry in order, and the gradient with its end texts. */
+const contentOf = (block: LegendBlock) =>
+  JSON.stringify([block.entries.map((e) => [e.label, e.color]), block.gradient ?? null]);
+
+/**
+ * Blocks with the same content (`contentOf`) become one block at the place of the first. Its title is the titles of
+ * the members joined with ' · '. Its cells, and the cells of each entry, are the cells of all members, so a highlight
+ * shows the cells of every member. Its key is the sorted keys of the members in JSON, and its entry keys are those of
+ * the member with the first key: they do not change when the order of the cells changes, and a query ID with a
+ * separator in it cannot make the same key.
+ */
+function mergeSame(blocks: LegendBlock[]): LegendBlock[] {
+  const groups = new Map<string, LegendBlock[]>();
+  for (const block of blocks) {
+    const content = contentOf(block);
+    groups.set(content, [...(groups.get(content) ?? []), block]);
+  }
+  return [...groups.values()].map((members) => {
+    if (members.length === 1) {
+      return members[0];
+    }
+    const keys = members.map((m) => m.key).sort();
+    const first = members.find((m) => m.key === keys[0])!;
+    const union = (ids: (m: LegendBlock) => string[]) => {
+      const out: string[] = [];
+      members.forEach((m) => ids(m).forEach((id) => push(out, id)));
+      return out;
+    };
+    const titles: string[] = [];
+    members.forEach((m) => m.title && push(titles, m.title));
+    return {
+      key: `merged:${JSON.stringify(keys)}`,
+      title: titles.length ? titles.join(' · ') : undefined,
+      entries: first.entries.map((e, i) => ({ ...e, cellIds: union((m) => m.entries[i].cellIds) })),
+      ...(first.gradient ? { gradient: first.gradient } : {}),
+      cellIds: union((m) => m.cellIds),
+    };
+  });
 }
 
 /** The swatch of the collapsed legend chip: the colours of the first scale, low to high. */

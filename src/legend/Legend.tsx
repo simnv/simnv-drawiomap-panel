@@ -54,8 +54,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
   block: css`
     margin-top: 2px;
   `,
+  // a merged block lists the titles of its members: a long title wraps, also inside a long name
   title: css`
     color: ${theme.colors.text.primary};
+    overflow-wrap: anywhere;
   `,
   entries: css`
     display: flex;
@@ -93,8 +95,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
 });
 
 interface Props {
+  /** All blocks show; the legend scrolls when they do not fit. */
   blocks: LegendBlock[];
-  maxBlocks: number;
   /** The legend starts as a chip. A missing value means collapsed. */
   collapsed?: boolean;
   /** The cells of the entry under the pointer or the focus; null when no entry is active. */
@@ -111,7 +113,7 @@ const plural = (n: number) => `${n} element${n === 1 ? '' : 's'}`;
  * the user can drag it inside its parent (the panel). The place and the state are in this component only.
  */
 export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
-  { blocks, maxBlocks, collapsed = true, onHighlight, style, corner },
+  { blocks, collapsed = true, onHighlight, style, corner },
   ref
 ) {
   const styles = useStyles2(getStyles);
@@ -315,8 +317,6 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
   if (!blocks.length) {
     return null;
   }
-  const shown = blocks.slice(0, Math.max(1, Math.floor(maxBlocks)));
-  const hidden = blocks.length - shown.length;
   // A mouse or a pen: the pointer or the focus shows the entry. A phone has no hover: a tap toggles the entry, and a
   // tap elsewhere ends it. The kind of the last pointer decides, so the focus that a tap gives does not undo the toggle.
   const activate = (key: string) => ({
@@ -388,7 +388,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
         <Icon name={open ? 'angle-up' : 'angle-down'} size="sm" aria-hidden />
       </button>
       {open
-        ? shown.map((b) => (
+        ? blocks.map((b) => (
             <div
               key={b.key}
               className={styles.block}
@@ -419,7 +419,6 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
             </div>
           ))
         : null}
-      {open && hidden > 0 ? <div className={styles.block}>+{hidden} more</div> : null}
     </section>
   );
 });

@@ -422,8 +422,12 @@ describe('obstacleIndex', () => {
 });
 
 describe('labelsVisible', () => {
+  it('draws the labels at 9 user units, the smallest text on the diagram', () => {
+    expect(LINK_LABEL_GEOMETRY.fontSize).toBe(9);
+  });
   it('shows at 7 CSS px per glyph and above', () => {
-    expect(labelsVisible(7 / 8)).toBe(true);
+    expect(labelsVisible(7 / 9)).toBe(true);
+    expect(labelsVisible(7 / 9 - 0.01)).toBe(false);
     expect(labelsVisible(1)).toBe(true);
     expect(labelsVisible(0.2)).toBe(false);
   });

@@ -11,8 +11,7 @@ vi.mock('../editor/popup', () => ({
   },
 }));
 
-const props = () =>
-  ({ onClose: vi.fn() }) as unknown as React.ComponentProps<typeof LazyBindingsPopup>;
+const props = () => ({ onClose: vi.fn() }) as unknown as React.ComponentProps<typeof LazyBindingsPopup>;
 
 describe('LazyBindingsPopup', () => {
   it('shows a loading modal while the chunk loads, then the popup', async () => {
