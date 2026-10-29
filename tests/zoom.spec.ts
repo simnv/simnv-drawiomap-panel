@@ -156,9 +156,8 @@ test.describe('live zoom on the desktop', () => {
       await fits('panel view');
       const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
       await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
-      // P1 has no "Edit bindings" button (spec 5.0): the corner in panel edit holds only its own controls.
-      await expect(page.getByTestId('dmap-corner')).toBeAttached();
-      await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
+      // The corner in panel edit holds the "Edit bindings" button of the split editor (spec 5.1).
+      await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
       await fits('panel edit');
       await page.setViewportSize({ width: 1100, height: 760 });
       await fits('panel edit after a window resize');
@@ -166,6 +165,7 @@ test.describe('live zoom on the desktop', () => {
       await edit.backToDashboard();
       await expect(page).not.toHaveURL(/editPanel=/);
       await expect(page.getByTestId('dmap-panel').first()).toHaveAttribute('data-dmap-cells', /\d+/);
+      await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
       await fits('view after panel edit');
     }
   );

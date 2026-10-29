@@ -6,7 +6,7 @@ const PANE_WIDTH = 300;
 // Set DMAP_SCREENSHOTS=1 to write docs/images/options-diagram.png.
 const SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'docs/images/options-diagram.png' : undefined;
 
-test('the Diagram option buttons and the YAML option stay inside the options pane at the narrowest width', async ({
+test('the Diagram option buttons with Edit bindings and the YAML option stay inside the options pane at the narrowest width', async ({
   gotoPanelEditPage,
   page,
 }) => {
@@ -42,10 +42,11 @@ test('the Diagram option buttons and the YAML option stay inside the options pan
     expect(box.x, `${name}: left edge`).toBeGreaterThanOrEqual(paneBox.x);
     expect(box.x + box.width, `${name}: right edge`).toBeLessThanOrEqual(paneBox.x + paneBox.width);
   };
-  // P1 has no "Edit bindings" button (spec 5.0): the YAML option holds the bindings.
-  await expect(page.getByTestId('dmap-edit-bindings-option')).toHaveCount(0);
   await inside(page.getByTestId('dmap-open-editor'), 'Open editor');
   await inside(group.getByRole('button', { name: 'Import .drawio' }), 'Import .drawio');
+  // The "Edit bindings" button opens the split editor (spec 5.1).
+  await inside(page.getByTestId('dmap-edit-bindings-option'), 'Edit bindings');
+  await expect(page.getByTestId('dmap-edit-bindings-option')).toBeEnabled();
   await inside(group.getByRole('button', { name: 'Clear', exact: true }), 'Clear');
 
   // The YAML option (spec 5.0) shows the stored config as YAML, inside the same pane width.
