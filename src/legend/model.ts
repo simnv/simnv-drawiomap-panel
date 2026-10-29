@@ -77,28 +77,72 @@ const push = (list: string[], id: string) => {
   }
 };
 
-function mappingEntries(mappings: ValueMapping[] | undefined, theme: GrafanaTheme2): LegendEntry[] {
-  const out: LegendEntry[] = [];
-  const add = (label: string, color: string | undefined) => {
-    if (color) {
-      out.push({ key: `map-${out.length}`, label, color: theme.visualization.getColorByName(color), cellIds: [] });
-    }
-  };
+/** One result of the value mappings of a field, in the order of Grafana, with the test of a finite value. */
+interface MappingResult {
+  label: string;
+  color?: string;
+  matches: (value: number) => boolean;
+}
+
+/**
+ * The results of the value mappings, in the order that Grafana tests them (`getValueMappingResult`). A regex and a
+ * special value never match a finite number, which is the only value of a status.
+ */
+function mappingResults(mappings: ValueMapping[] | undefined): MappingResult[] {
+  const out: MappingResult[] = [];
   for (const m of mappings ?? []) {
     if (m.type === MappingType.ValueToText) {
       for (const [value, result] of Object.entries(m.options)) {
-        add(result.text ?? value, result.color);
+        out.push({ label: result.text ?? value, color: result.color, matches: (v) => String(v) === value });
       }
     } else if (m.type === MappingType.RangeToText) {
       const { from, to, result } = m.options;
-      add(result.text ?? `${from ?? '-∞'}–${to ?? '∞'}`, result.color);
+      out.push({
+        label: result.text ?? `${from ?? '-∞'}–${to ?? '∞'}`,
+        color: result.color,
+        matches: (v) => v >= (from ?? -Infinity) && v <= (to ?? Infinity),
+      });
     } else if (m.type === MappingType.RegexToText) {
-      add(m.options.result.text ?? `/${m.options.pattern}/`, m.options.result.color);
+      out.push({
+        label: m.options.result.text ?? `/${m.options.pattern}/`,
+        color: m.options.result.color,
+        matches: () => false,
+      });
     } else if (m.type === MappingType.SpecialValue) {
-      add(m.options.result.text ?? m.options.match, m.options.result.color);
+      out.push({
+        label: m.options.result.text ?? m.options.match,
+        color: m.options.result.color,
+        matches: () => false,
+      });
     }
   }
   return out;
+}
+
+/** The mapping entries: one for each mapping result with a colour, with the key `map-<n>`. */
+function mappingEntries(mappings: ValueMapping[] | undefined, theme: GrafanaTheme2): LegendEntry[] {
+  return mappingResults(mappings)
+    .filter((r) => r.color)
+    .map((r, i) => ({
+      key: `map-${i}`,
+      label: r.label,
+      color: theme.visualization.getColorByName(r.color!),
+      cellIds: [],
+    }));
+}
+
+/**
+ * The key of the mapping entry that a value shows: `map-<n>` for the first mapping result that matches it, when that
+ * result has a colour. Undefined when no result matches or the result has no colour: then a threshold step gives
+ * the colour.
+ */
+function mappingKeyOf(mappings: ValueMapping[] | undefined, value: number): string | undefined {
+  const results = mappingResults(mappings);
+  const index = results.findIndex((r) => r.matches(value));
+  if (index < 0 || !results[index].color) {
+    return undefined;
+  }
+  return `map-${results.slice(0, index).filter((r) => r.color).length}`;
 }
 
 function thresholdEntries(steps: Threshold[], text: (v: number) => string, theme: GrafanaTheme2): LegendEntry[] {
@@ -195,18 +239,22 @@ function entryOf(block: LegendBlock, item: Item): LegendEntry | undefined {
 }
 
 /**
- * The entry of a v4 status cell: the mapping with its text and colour, else the first threshold step with its
- * colour, else the first entry with its colour. A v4 status has no step index and no value, and a mapping can have
- * the colour of a step. Limit: a mapping with a colour and no text, and with the colour of a step, loses its cells to
- * the step.
+ * The entry of a v4 status cell. With the value of the status: the mapping entry of the value (`mappingKeyOf`), else
+ * the first threshold step with its colour, so that a colour-only mapping and a step of the same colour each keep
+ * their cells. With no value: the mapping with its text and colour, else the first threshold step with its colour.
+ * Then, in both cases, the first entry with its colour.
  */
 function entryOfV4(block: LegendBlock, item: Item): LegendEntry | undefined {
   const isMapping = (e: LegendEntry) => e.key.startsWith('map-');
-  return (
-    block.entries.find((e) => isMapping(e) && e.color === item.color && e.label === item.text) ??
-    block.entries.find((e) => !isMapping(e) && e.color === item.color) ??
-    block.entries.find((e) => e.color === item.color)
-  );
+  const byColor = (e: LegendEntry) => e.color === item.color;
+  let mapping: LegendEntry | undefined;
+  if (item.value !== undefined) {
+    const key = mappingKeyOf(item.field.config.mappings, item.value);
+    mapping = key === undefined ? undefined : block.entries.find((e) => e.key === key && byColor(e));
+  } else {
+    mapping = block.entries.find((e) => isMapping(e) && byColor(e) && e.label === item.text);
+  }
+  return mapping ?? block.entries.find((e) => !isMapping(e) && byColor(e)) ?? block.entries.find(byColor);
 }
 
 /**
@@ -335,6 +383,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
         refId: view.refId,
         color: view.color ?? '',
         stepIndex: -1,
+        value: view.value,
         text: view.text,
       });
     }

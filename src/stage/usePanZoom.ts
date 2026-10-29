@@ -189,20 +189,22 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       });
     };
 
-    el.addEventListener('pointerdown', onDown);
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerup', end);
-    el.addEventListener('pointercancel', end);
+    // The capture phase: an element in the diagram that stops a pointer event does not stop the pan. A chart region
+    // is a React portal, and React stops a native event at the portal container, below the wrapper.
+    el.addEventListener('pointerdown', onDown, true);
+    el.addEventListener('pointermove', onMove, true);
+    el.addEventListener('pointerup', end, true);
+    el.addEventListener('pointercancel', end, true);
     el.addEventListener('pointerleave', onLeave);
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => {
-      el.removeEventListener('pointerdown', onDown);
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerup', end);
-      el.removeEventListener('pointercancel', end);
+      el.removeEventListener('pointerdown', onDown, true);
+      el.removeEventListener('pointermove', onMove, true);
+      el.removeEventListener('pointerup', end, true);
+      el.removeEventListener('pointercancel', end, true);
       el.removeEventListener('pointerleave', onLeave);
-      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchmove', onTouchMove, true);
       el.removeEventListener('wheel', onWheel);
       s.pointers.clear();
       s.gesture = null;

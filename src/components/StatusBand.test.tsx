@@ -76,8 +76,22 @@ describe('bandRowsV4', () => {
       '97% · cpu: 1 cell',
       'High · mem: 2 cells',
       '81% · cpu: 1 cell',
-      'Online · up: 1 cell',
+      'Stale · up: 1 cell',
       'Query failed · temp: 1 cell',
+    ]);
+  });
+  it('gives stale cells a Stale row and never groups them under their last fresh text (A10)', () => {
+    const rows = bandRowsV4(
+      patchesOf([
+        ['n1', v4('health', 'stale', 'Healthy', 'Sample is stale')],
+        ['n2', v4('health', 'stale', 'Healthy', 'Sample is stale')],
+        ['n3', v4('health', 'stale', 'Degraded', 'Sample is stale')],
+        ['n4', v4('health', 'warning', 'Healthy')],
+      ])
+    );
+    expect(rows.map((r) => [r.text, r.severity])).toEqual([
+      ['Healthy · health: 1 cell', 'warning'],
+      ['Stale · health: 3 cells', 'stale'],
     ]);
   });
   it('shows the reason when the cell has no value text, and ignores a v3 status', () => {

@@ -242,6 +242,8 @@ export interface StatusV4Fields {
   color?: string;
   text?: string;
   refId?: string;
+  /** the raw value that gives `color` and `text`; the legend finds the mapping of the value with it */
+  value?: number;
 }
 
 export interface CellPatch {

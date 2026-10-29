@@ -1,4 +1,5 @@
 import type { MatchV4, RowV4 } from '../model/v4';
+import { yamlPath } from '../model/yamlPath';
 import type { CellMeta } from '../types';
 import type { ResolvedClass } from './classes';
 import { linkFeeds } from './linkFeeds';
@@ -24,7 +25,7 @@ export const LINK_FIELDS = ['up', 'down', 'capacity', 'linkLabel'] as const;
 
 /** The YAML path of the class or the override that sets a field of the class (`classes.device.status`). */
 export function fieldPath(cls: ResolvedClass, field: string): string {
-  return cls.origins[field] ?? `classes.${cls.name}.${field}`;
+  return cls.origins[field] ?? yamlPath(['classes', cls.name, field]);
 }
 
 /**

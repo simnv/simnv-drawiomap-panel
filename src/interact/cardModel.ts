@@ -391,12 +391,19 @@ function rowTitle(d: UseData, row: RowFields): string {
   return row.label ?? d.series[0]?.field.config.displayName ?? d.use.refId;
 }
 
-/** The label of a line: the display name of the field (spec 3.7). */
+/**
+ * The label of a line (ADR 0003): the labels whose values differ among the first lines. One such label gives its bare
+ * value, as the Grafana legend of a single label; more give `{key="value", …}`. No such label gives the display name
+ * of the field.
+ */
 function lineLabel(d: UseData, s: Series): string {
   const frames = d.snapshot.state === 'ready' ? d.snapshot.frames : [];
   const keys = Object.keys(s.labels)
     .filter((key) => d.series.slice(0, MAX_LINES).some((other) => other.labels[key] !== s.labels[key]))
     .sort();
+  if (keys.length === 1) {
+    return s.labels[keys[0]];
+  }
   return keys.length
     ? `{${keys.map((key) => `${key}=${JSON.stringify(s.labels[key])}`).join(', ')}}`
     : getFieldDisplayName(s.field, frames[s.frameIndex], frames);

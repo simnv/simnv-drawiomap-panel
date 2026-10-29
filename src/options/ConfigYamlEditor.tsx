@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StandardEditorProps } from '@grafana/data';
 import { CodeEditor, type Monaco, type MonacoEditor } from '@grafana/ui';
-import { isMap, isNode, isScalar, isSeq, type Document, type Pair } from 'yaml';
+import { isMap, isNode, isScalar, isSeq, type Document } from 'yaml';
 import type { ReportEntry } from '../binding/report';
 import { validateConfig } from '../model/validate';
+import { parsePath, yamlPath } from '../model/yamlPath';
 import type { Options } from '../types';
 import { configUpdate } from './storedConfig';
 import { readYaml, writeYaml } from './yamlConfig';
@@ -70,46 +71,28 @@ function mark(text: string, starts: number[], from: number, to: number, blocks: 
 }
 
 /**
- * The text range of a report path (`classes.lan.rows[2].query`, `classes.x.match.key.1`). A map key can hold a dot,
- * so the longest key that starts the rest of the path wins. When a part of the path is not in the document, the
- * range of the last part that is in it is the result: a missing field marks its parent key.
+ * The text range of a report path (`classes.lan.rows[2].query`, `overrides["sw.1"].match.key[1]`, see `yamlPath`).
+ * When a part of the path is not in the document, the range of the last part that is in it is the result: a missing
+ * field marks its parent key.
  */
 function rangeOf(doc: Document, path: string): [number, number] {
   let node: unknown = doc.contents;
   let range: [number, number] = isNode(node) && node.range ? [node.range[0], node.range[1]] : [0, 0];
-  let rest = path;
-  while (rest) {
+  for (const part of parsePath(path)) {
     if (isMap(node)) {
-      let best: Pair | undefined;
-      let bestKey = '';
-      for (const pair of node.items) {
-        const key = isScalar(pair.key) ? String(pair.key.value) : undefined;
-        const next = key === undefined ? undefined : rest[key.length];
-        if (
-          key &&
-          rest.startsWith(key) &&
-          (next === undefined || next === '.' || next === '[') &&
-          key.length > bestKey.length
-        ) {
-          best = pair;
-          bestKey = key;
-        }
-      }
-      if (!best || !isNode(best.key) || !best.key.range) {
+      const pair = node.items.find((p) => isScalar(p.key) && String(p.key.value) === String(part));
+      if (!pair || !isNode(pair.key) || !pair.key.range) {
         break;
       }
-      range = [best.key.range[0], best.key.range[1]];
-      node = best.value;
-      rest = rest.slice(bestKey.length).replace(/^\./, '');
-    } else if (isSeq(node)) {
-      const step = /^(?:\[(\d+)\]|(\d+))(?=$|[.[])/.exec(rest);
-      const item: unknown = step ? node.items[Number(step[1] ?? step[2])] : undefined;
-      if (!step || !isNode(item) || !item.range) {
+      range = [pair.key.range[0], pair.key.range[1]];
+      node = pair.value;
+    } else if (isSeq(node) && typeof part === 'number') {
+      const item: unknown = node.items[part];
+      if (!isNode(item) || !item.range) {
         break;
       }
       range = [item.range[0], item.range[1]];
       node = item;
-      rest = rest.slice(step[0].length).replace(/^\./, '');
     } else {
       break;
     }
@@ -127,7 +110,7 @@ function entryPath(entry: ReportEntry): string {
     case 'class-cycle':
     case 'class-unknown-parent':
     case 'class-invalid-parent':
-      return `classes.${entry.cls}.extends`;
+      return yamlPath(['classes', entry.cls, 'extends']);
     default:
       return '';
   }

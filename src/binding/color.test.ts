@@ -176,7 +176,15 @@ describe('tintFill', () => {
     expect(tintFill('#ffffff', 'rgba(0, 0, 0, 0.5)')).toBe('rgb(230, 230, 230)');
   });
   it('gives nothing for a fill that is not an opaque colour, or a status colour that does not parse', () => {
-    const fills = ['none', 'url(#g)', 'rgba(1, 2, 3, 0.5)', 'currentColor', 'transparent', '', 'light-dark(#fff, #000)'];
+    const fills = [
+      'none',
+      'url(#g)',
+      'rgba(1, 2, 3, 0.5)',
+      'currentColor',
+      'transparent',
+      '',
+      'light-dark(#fff, #000)',
+    ];
     for (const fill of fills) {
       expect(tintFill(fill, '#f00'), fill).toBeUndefined();
     }

@@ -135,11 +135,12 @@ test('nine series show eight lines, +1 more and eight values at the hovered time
     // each value differs between the two times, so a value of the latest sample fails the check below
     expect(then.get(line)).toBeDefined();
     expect(then.get(line)).not.toBe(last.get(line));
-    const entry = tooltip.getByTestId('SeriesTableRow').filter({ hasText: `{line="${line}"}` });
+    // one label differs between the lines: the label is its bare value (ADR 0003)
+    const entry = tooltip.getByTestId('SeriesTableRow').filter({ has: page.getByText(line, { exact: true }) });
     await expect(entry).toHaveCount(1);
-    await expect(entry).toContainText(new RegExp(`\\}${then.get(line)}$`));
+    await expect(entry).toContainText(new RegExp(`${line}${then.get(line)!.replace('.', '\\.')}$`));
   }
-  await expect(tooltip.getByText('{line="line-8"}', { exact: true })).toHaveCount(0);
+  await expect(tooltip.getByText('line-8', { exact: true })).toHaveCount(0);
   await expect(tooltip).toContainText('+1 more');
   await screenshot(page.locator('body'), testInfo, 'eight-lines-tooltip');
 });

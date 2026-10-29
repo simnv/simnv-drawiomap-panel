@@ -42,7 +42,11 @@ export const BAD_PLACEHOLDER_MESSAGE =
 export const METADATA_VARIABLE_MESSAGE = 'a metadata text reads no dashboard variable';
 export const GRAFANA_VARIABLE_HINT = 'write $__name for a Grafana variable';
 
-type Placeholder = { kind: 'attr' | 'from' | 'to' | 'labels'; name: string } | { kind: 'value' | 'variable' | 'bad' };
+/** One `${…}` of a text: a cell attribute, an edge end attribute, a status label, the value, a variable or bad. */
+export type Placeholder =
+  { kind: 'attr' | 'from' | 'to' | 'labels'; name: string } | { kind: 'value' | 'variable' | 'bad' };
+/** A part of a text: literal text, or one `${…}` with its source text. */
+export type TemplatePart = string | { placeholder: Placeholder; source: string };
 
 function classify(inner: string, closed: boolean): Placeholder {
   if (!closed) {
@@ -59,16 +63,37 @@ function classify(inner: string, closed: boolean): Placeholder {
 }
 
 /**
+ * The one placeholder scanner of the panel (spec 2.4 step 3, 3.3): the literal text and the `${…}` of a text, in
+ * order. A `${` takes the text up to the next `}`; with no `}` it is `bad` and takes the rest of the text. A `$` that
+ * starts no `${` is literal text. The matchers and the templates read placeholders only through this function.
+ */
+export function scanPlaceholders(text: string): TemplatePart[] {
+  const parts: TemplatePart[] = [];
+  let offset = 0;
+  for (const m of text.matchAll(DOLLAR_BRACE)) {
+    if (m.index > offset) {
+      parts.push(text.slice(offset, m.index));
+    }
+    parts.push({ placeholder: classify(m[1], m[2] !== undefined), source: m[0] });
+    offset = m.index + m[0].length;
+  }
+  if (offset < text.length || parts.length === 0) {
+    parts.push(text.slice(offset));
+  }
+  return parts;
+}
+
+/**
  * The `schema` messages of a template (spec 3.3): a `${` that starts no known form, and a dashboard variable
  * `${<name>:<format>}` in a metadata text, which does not go through replaceVariables.
  */
 export function checkTemplate(text: string, place: 'url' | 'title' | 'metadata'): Array<{ message: string }> {
   const out: Array<{ message: string }> = [];
-  for (const m of text.matchAll(DOLLAR_BRACE)) {
-    const p = classify(m[1], m[2] !== undefined);
-    if (p.kind === 'bad') {
+  for (const part of scanPlaceholders(text)) {
+    const p = typeof part === 'string' ? undefined : part.placeholder;
+    if (p?.kind === 'bad') {
       out.push({ message: BAD_PLACEHOLDER_MESSAGE });
-    } else if (p.kind === 'variable' && place === 'metadata') {
+    } else if (p?.kind === 'variable' && place === 'metadata') {
       out.push({ message: METADATA_VARIABLE_MESSAGE });
     }
   }
@@ -90,8 +115,7 @@ export function resolveTemplateV4(
 ): { text: string; missing: string[]; unresolved: string[] } {
   const missing = new Set<string>();
   const unresolved = new Set<string>();
-  const out = text.replace(DOLLAR_BRACE, (whole, inner: string, close: string | undefined) => {
-    const p = classify(inner, close !== undefined);
+  const substitute = (p: Placeholder, whole: string): string => {
     switch (p.kind) {
       case 'variable':
       case 'bad':
@@ -118,7 +142,10 @@ export function resolveTemplateV4(
         return encode(v);
       }
     }
-  });
+  };
+  const out = scanPlaceholders(text)
+    .map((part) => (typeof part === 'string' ? part : substitute(part.placeholder, part.source)))
+    .join('');
   return { text: out, missing: [...missing], unresolved: [...unresolved] };
 }
 

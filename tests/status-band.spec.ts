@@ -18,6 +18,41 @@ const emptyConfig: ConfigV4 = {
   overrides: {},
 };
 
+test('stale cells get a Stale band row and the Stale legend entry, never their last fresh text', async ({
+  page,
+  createDiagram,
+  gotoDashboardPage,
+}, testInfo) => {
+  // Each device has a value, and a freshness of 1 ms makes each sample stale at once (spec 3.5, A10).
+  const config: ConfigV4 = {
+    ...emptyConfig,
+    classes: { health: { match: { key: 'device' }, status: 'health', freshness: '1ms' } },
+  };
+  const expr = Array.from(
+    { length: COUNT },
+    (_, i) => `label_replace(vector(1), "device", "device-${i}", "", "")`
+  ).join(' or ');
+  const uid = await createDiagram(config, { svg, targets: [promTarget('health', expr)] });
+  await gotoDashboardPage({ uid });
+  const panel = page.getByTestId('dmap-panel');
+  await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="stale"]')).toHaveCount(COUNT);
+  const rows = panel.getByTestId('dmap-status-band').locator('.dmap-status-summary');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveAttribute('title', `Stale · health: ${COUNT} cells`);
+  await expect(rows).toHaveAttribute('data-dmap-state', 'stale');
+  const legend = panel.getByTestId('dmap-legend');
+  const handle = legend.getByRole('button', { name: 'Legend' });
+  await handle.click();
+  await expect(handle).toHaveAttribute('aria-expanded', 'true');
+  const state = legend.getByRole('group', { name: 'State', exact: true });
+  await expect(state.getByTestId('dmap-legend-entry')).toHaveText(['Stale']);
+  // no value block counts a stale cell
+  await expect(legend.getByRole('group')).toHaveCount(1);
+  const screenshot = testInfo.outputPath('band-stale.png');
+  await panel.screenshot({ path: screenshot });
+  await testInfo.attach('band-stale', { path: screenshot, contentType: 'image/png' });
+});
+
 // The narrow panel is the case that can go wrong: the text of the band wraps. The row logic is in unit tests.
 for (const viewport of [{ name: 'narrow', width: 400, height: 800 }]) {
   test.describe(viewport.name, () => {

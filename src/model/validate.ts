@@ -3,6 +3,7 @@ import { parseMatchBlock } from '../binding/matcher';
 import type { ReportEntry } from '../binding/report';
 import { checkTemplate } from '../binding/template';
 import { checkChains, parseConfig, type ClassV4, type MatchV4, type OverrideV4, type ParsedConfig } from './v4';
+import { yamlPath } from './yamlPath';
 
 type Place = Parameters<typeof checkTemplate>[1];
 
@@ -75,14 +76,14 @@ export function validateConfig(raw: unknown): {
     return { parsed, classes: new Map(), report: parsed.report };
   }
   for (const [name, cls] of Object.entries(config.classes)) {
-    const entries = itemEntries(cls, `classes.${name}`);
+    const entries = itemEntries(cls, yamlPath(['classes', name]));
     if (entries.length) {
       parsed.invalidClasses.set(name, [...entries, ...(parsed.invalidClasses.get(name) ?? [])]);
       parsed.report.push(...entries);
     }
   }
   for (const [cellId, override] of Object.entries(config.overrides)) {
-    const entries = itemEntries(override, `overrides.${cellId}`);
+    const entries = itemEntries(override, yamlPath(['overrides', cellId]));
     if (entries.length) {
       parsed.invalidOverrides.set(cellId, entries);
       parsed.report.push(...entries);

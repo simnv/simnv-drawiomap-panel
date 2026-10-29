@@ -38,7 +38,7 @@ function valueStatus(series: Series, { refId, theme, timeZone }: StatusOptions):
   }
   const display = fieldDisplay(series.field, theme, timeZone)(value);
   const severity = severityOf({ text: display.text, color: display.color ?? '' }, theme);
-  return { state: severity, severity, color: display.color, text: formattedValueToString(display), refId };
+  return { state: severity, severity, color: display.color, text: formattedValueToString(display), refId, value };
 }
 
 /**

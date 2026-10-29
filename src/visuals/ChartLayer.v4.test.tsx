@@ -312,14 +312,14 @@ describe('review regressions', () => {
     fireEvent.keyDown(hover, { key: 'ArrowRight' });
     const tip = within(screen.getByTestId('dmap-chart-tooltip'));
     expect(tip.getAllByTestId('hover-row').map((e) => e.textContent)).toEqual([
-      '{core="c0"}=2',
-      '{core="c1"}=No data',
-      '{core="c2"}=4',
-      '{core="c3"}=5',
-      '{core="c4"}=6',
-      '{core="c5"}=7',
-      '{core="c6"}=8',
-      '{core="c7"}=9',
+      'c0=2',
+      'c1=No data',
+      'c2=4',
+      'c3=5',
+      'c4=6',
+      'c5=7',
+      'c6=8',
+      'c7=9',
     ]);
     expect(tip.getByText('+1 more')).toBeTruthy();
   });

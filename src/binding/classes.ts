@@ -1,4 +1,5 @@
 import { classChain, type ClassV4, type OverrideV4, type ParsedConfig, type RowV4 } from '../model/v4';
+import { yamlPath } from '../model/yamlPath';
 
 /** A row with the YAML path of the class or the override that declares it (`classes.device.rows[0]`). */
 export type ResolvedRow = RowV4 & { origin: string };
@@ -47,7 +48,7 @@ export function resolveClasses(parsed: ParsedConfig): Map<string, ResolvedClass>
     const root: ResolvedClass = { name, chain: found.chain, rows: [], abstract: true, origins: {} };
     resolved.set(
       name,
-      found.chain.reduce((cls, link) => applyLayer(cls, classes[link], `classes.${link}`), root)
+      found.chain.reduce((cls, link) => applyLayer(cls, classes[link], yamlPath(['classes', link])), root)
     );
   }
   return resolved;
@@ -55,8 +56,9 @@ export function resolveClasses(parsed: ParsedConfig): Map<string, ResolvedClass>
 
 /**
  * The class of one cell after its override (D6): the override rows append, each other field replaces. The rows of
- * the override get the origin `overrides.<cellId>.rows[i]`, so the call needs the id of the cell.
+ * the override get the origin `overrides.<cellId>.rows[i]` (`overrides["<cellId>"]` for an id with a dot), so the
+ * call needs the id of the cell.
  */
 export function effectiveClass(cls: ResolvedClass, override: OverrideV4 | undefined, cellId: string): ResolvedClass {
-  return override ? applyLayer(cls, override, `overrides.${cellId}`) : cls;
+  return override ? applyLayer(cls, override, yamlPath(['overrides', cellId])) : cls;
 }

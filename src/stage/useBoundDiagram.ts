@@ -4,6 +4,7 @@ import { bindV4, statusViewOf, type BindResultV4, type PatchV4 } from '../bindin
 import type { ReportEntry } from '../binding/report';
 import type { CardContextV4 } from '../interact/cardModel';
 import { validateConfig } from '../model/validate';
+import { yamlPath } from '../model/yamlPath';
 import type { BindContext, CellIndex } from '../types';
 import { useStaleStatusV4 } from '../visuals/useSampleStale';
 
@@ -84,7 +85,7 @@ export function reportLine(entry: ReportEntry): string {
     case 'unknown-class':
       return `${entry.cellIds.length} cells bind unknown class ${entry.bind}`;
     case 'unknown-override':
-      return `overrides.${entry.cellId}: the diagram has no such cell`;
+      return `${yamlPath(['overrides', entry.cellId])}: the diagram has no such cell`;
     case 'class-no-cells':
       return `classes.${entry.cls}: no cell binds this class`;
     case 'class-no-match':
