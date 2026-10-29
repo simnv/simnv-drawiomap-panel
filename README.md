@@ -107,6 +107,8 @@ A cell with `bind=node-up` and `key=node-rtr-a` shows the series of the target `
 
 The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores the config as JSON in the dashboard. The editor shows the same data as YAML in a fixed key order.
 
+The **Edit bindings** button above the YAML opens the [split editor](#split-editor). It is disabled when the panel has no diagram. Outside the panel editor it shows "Open the panel editor first".
+
 - A YAML comment is not kept. The editor writes the config from the data on each load.
 - An error shows as a marker on its line. A YAML syntax error and an error in the top level (`version`, `freshness`, `classes`, `overrides`) stop the save: the editor keeps your text and stores nothing. An error inside one class or one override does not stop the save. The panel shows the cells of that class or override as **unavailable**: grey, with the reason "Binding is not valid".
 - The editor loads in a separate chunk. View mode and the dashboard do not load the YAML parser.
@@ -114,7 +116,7 @@ The option **Bindings** (group **Bindings**) is a YAML editor. The panel stores 
 
 ### Split editor
 
-In panel edit, select **Edit bindings** in the Diagram options or on the panel. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
+In panel edit, select **Edit bindings** on the panel (top-left corner) or in the Bindings options, above the YAML. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
 
 The preview follows a valid draft. Move the cursor in YAML to highlight the affected cells; select a report entry to move to its YAML path and highlight its cells. Select a cell to open its inspector and move the cursor to its override or class. The inspector shows its attributes, class chain, override, and, for each use, the query, matchers, series count and up to eight label sets and values. For an edge it also shows the ends and the direction of each half.
 

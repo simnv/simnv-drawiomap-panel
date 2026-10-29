@@ -1,6 +1,6 @@
 import React, { forwardRef } from 'react';
 import { css } from '@emotion/css';
-import { IconButton, useTheme2 } from '@grafana/ui';
+import { Button, IconButton, useTheme2 } from '@grafana/ui';
 
 /** Heights in px of the items in the top-left row. */
 const RESET_SIZE = 32;
@@ -25,8 +25,10 @@ const styles = {
     /* The empty space beside the row is part of the diagram: only the row and the legend catch the pointer. */
     pointer-events: none;
   `,
+  // On a narrow panel the row wraps: the "Edit bindings" button goes to the next line, it never leaves the panel.
   cornerRow: css`
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 4px;
     pointer-events: auto;
@@ -37,6 +39,12 @@ const styles = {
     min-width: 32px;
     min-height: 32px;
     border-radius: 4px;
+  `,
+  // the text button keeps the 32 px touch target of the reset button
+  edit: css`
+    margin: 0;
+    min-height: 32px;
+    white-space: nowrap;
   `,
   badge: css`
     font-size: 11px;
@@ -99,16 +107,17 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             </div>
           ) : null}
           {editing ? (
-            <IconButton
-              name="link"
-              size="lg"
-              tooltip="Edit bindings"
-              tooltipPlacement="right"
-              className={styles.reset}
+            <Button
+              icon="link"
+              size="sm"
+              variant="secondary"
+              className={styles.edit}
               style={buttonStyle}
               data-testid="dmap-edit-bindings"
               onClick={onEditBindings}
-            />
+            >
+              Edit bindings
+            </Button>
           ) : null}
         </div>
       ) : null}

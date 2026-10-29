@@ -246,7 +246,11 @@ describe('DrawioMapPanel', () => {
     other.unmount();
     act(() => locationService.partial({ editPanel: 1 }));
     render(<DrawioMapPanel {...props()} />);
-    expect(await screen.findByTestId('dmap-edit-bindings')).toBeTruthy();
+    // a visible text title next to the link icon, not an icon with a tooltip only
+    const button = await screen.findByTestId('dmap-edit-bindings');
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.textContent).toBe('Edit bindings');
+    expect(screen.getByRole('button', { name: 'Edit bindings' })).toBe(button);
   });
 
   it('keeps the warning count and opens nothing when the badge is clicked in edit mode', async () => {

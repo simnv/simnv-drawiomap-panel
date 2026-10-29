@@ -180,8 +180,8 @@ test('in panel edit the edit-bindings button joins the reset button and the badg
     expect(e.x).toBeGreaterThan(b.x);
     expect(e.width).toBeGreaterThanOrEqual(32);
     expect(e.height).toBeGreaterThanOrEqual(32);
-    await edit.hover();
-    await expect(page.getByRole('tooltip').filter({ hasText: 'Edit bindings' })).toBeVisible();
+    // a visible text title, not a tooltip only
+    await expect(edit).toHaveText('Edit bindings');
     // the button opens the split editor with the stored config in the code box
     await edit.click();
     const popup = page.getByTestId('dmap-bindings-popup');

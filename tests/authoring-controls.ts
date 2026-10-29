@@ -29,7 +29,7 @@ export async function hoverHalf(half: Locator) {
 }
 
 /**
- * Open the split editor with the "Edit bindings" button of the corner (`corner`) or of the Diagram option (`option`).
+ * Open the split editor with the "Edit bindings" button of the corner (`corner`) or of the Bindings option (`option`).
  * Return the popup body after the code box loaded: Monaco loads lazily and shows "Loading editor" first.
  */
 export async function openSplitEditor(page: Page, entry: 'corner' | 'option' = 'corner') {
@@ -84,47 +84,44 @@ type EditorOp =
  * Playwright sends it to the page as text.
  */
 function onEditor(scope: Locator, request: EditorOp) {
-  return scope.evaluate(
-    (el, request) => {
-      const monaco = (window as unknown as { monaco: MonacoGlobal }).monaco;
-      const editor = monaco.editor.getEditors().find((e) => {
-        const node = e.getDomNode();
-        return !!node && el.contains(node) && e.getModel() !== null;
-      });
-      const model = editor?.getModel();
-      if (!editor || !model) {
-        throw new Error('no Monaco editor');
-      }
-      switch (request.op) {
-        case 'text':
-          return model.getValue();
-        case 'cursor':
-          return editor.getPosition();
-        case 'markers':
-          return monaco.editor
-            .getModelMarkers({ resource: model.uri })
-            .map((m) => ({ line: m.startLineNumber, message: m.message }));
-        case 'replace': {
-          const text = model.getValue();
-          if (!text.includes(request.from)) {
-            throw new Error(`the code has no ${request.from}`);
-          }
-          model.pushStackElement();
-          editor.executeEdits('e2e', [
-            { range: model.getFullModelRange(), text: text.replace(request.from, request.to) },
-          ]);
-          model.pushStackElement();
-          return null;
+  return scope.evaluate((el, request) => {
+    const monaco = (window as unknown as { monaco: MonacoGlobal }).monaco;
+    const editor = monaco.editor.getEditors().find((e) => {
+      const node = e.getDomNode();
+      return !!node && el.contains(node) && e.getModel() !== null;
+    });
+    const model = editor?.getModel();
+    if (!editor || !model) {
+      throw new Error('no Monaco editor');
+    }
+    switch (request.op) {
+      case 'text':
+        return model.getValue();
+      case 'cursor':
+        return editor.getPosition();
+      case 'markers':
+        return monaco.editor
+          .getModelMarkers({ resource: model.uri })
+          .map((m) => ({ line: m.startLineNumber, message: m.message }));
+      case 'replace': {
+        const text = model.getValue();
+        if (!text.includes(request.from)) {
+          throw new Error(`the code has no ${request.from}`);
         }
-        case 'place':
-          editor.setPosition({ lineNumber: request.line, column: 1 });
-          editor.revealLineInCenter(request.line);
-          editor.focus();
-          return null;
+        model.pushStackElement();
+        editor.executeEdits('e2e', [
+          { range: model.getFullModelRange(), text: text.replace(request.from, request.to) },
+        ]);
+        model.pushStackElement();
+        return null;
       }
-    },
-    request
-  );
+      case 'place':
+        editor.setPosition({ lineNumber: request.line, column: 1 });
+        editor.revealLineInCenter(request.line);
+        editor.focus();
+        return null;
+    }
+  }, request);
 }
 
 /** The whole text of the code box. The DOM shows only the visible lines. */
