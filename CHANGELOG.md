@@ -2,6 +2,7 @@
 
 ## 1.2.1 (Unreleased)
 
+- Fixed link value labels that stood far from their link. On a short link a label stands beside the arrow head of its half as it is drawn, not beyond the widest head: at a low load it is 8 units nearer, and it moves out when the head grows. When the text of a link or another obstacle sends one half away from its stroke, the other half stays on its own stroke if it is free there.
 - Fixed a false `class-no-cells` warning for a base class when a cell binds a class that extends it, directly or through a chain.
 - Fixed a second XML declaration in the saved diagram after a write in the split editor in Chromium: the browser serializer writes the declaration of the document, and the panel added the saved one again. Draw.io and `gen_drawiomap pull` refuse such a document.
 

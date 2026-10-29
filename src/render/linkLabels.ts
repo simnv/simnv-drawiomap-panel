@@ -25,6 +25,7 @@ import {
   labelsVisible,
   LABEL_SIDES,
   LINK_LABEL_GEOMETRY,
+  NEAR_SIDES,
   type LabelSide,
   drawnCentre,
   obstacleIndex,
@@ -98,6 +99,8 @@ interface LabelRecord {
   side?: LabelSide;
   /** the drawn stroke width of the half in root units (`HalfState.width` as the overlay draws it) */
   drawn: number;
+  /** the base of the drawn arrow head of the half in root units: a label beside the heads (±3) stands beyond it */
+  head: number;
   /** the box the label holds in the grid */
   obstacle?: Obstacle;
   /** an isolated re-placement found no spot: the label is hidden and tries again on the next call */
@@ -616,13 +619,20 @@ export function stageObstacles(
     }
   }
   // the head of a half grows with its width: the obstacle is the triangle of the head at linkWidth.max (not its box:
-  // a label beside the stroke may stand next to the narrow end), so a refresh needs no new one
+  // a label beside the stroke may stand next to the narrow end), so a refresh needs no new one. It knows its edge and
+  // its half: a label beside the drawn heads moves with the head of its own half.
   root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => {
     const head = reservedHead(a);
     const m = head && toRoot(a, root);
     if (head && m) {
       const [tip, left, right] = head.map((p) => applyMatrix(m, p));
-      out.push({ kind: 'polygon', points: [tip, left, right] });
+      const owner = a.getAttribute('data-dmap-cell');
+      const half = a.getAttribute('data-dmap-half');
+      out.push({
+        kind: 'polygon',
+        points: [tip, left, right],
+        ...(owner && half ? { owner, leg: `${owner}:${half}` } : {}),
+      });
     } else {
       rect(a);
     }
@@ -668,14 +678,20 @@ function nearestOnPolyline(pts: Point[], p: Point): { at: number; point: Point }
   return { at: best.at, point: best.point };
 }
 
-const legOf = (id: string, points: Point[], strokeRoot: number, minRoot: number, headRoot: number): Leg => ({
+const legOf = (
+  id: string,
+  points: Point[],
+  strokeRoot: number,
+  minRoot: number,
+  head: { headRoot: number; headMinRoot: number }
+): Leg => ({
   id,
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
   strokeRoot,
   minRoot,
-  headRoot,
+  ...head,
 });
 
 /**
@@ -701,8 +717,8 @@ function edgeLegs(
   }
   const strokeRoot = max * scaleOf(m);
   const minRoot = Math.min(min, max) * scaleOf(m);
-  // the base of the widest arrow head, through the same scale as the widest stroke
-  const headRoot = headSize(max, max).base * scaleOf(m);
+  // the bases of the widest and of the thinnest arrow head, through the same scale as the widest stroke
+  const head = { headRoot: headSize(max, max).base * scaleOf(m), headMinRoot: headSize(min, max).base * scaleOf(m) };
   if (halves.a2b && halves.b2a) {
     // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
     // then the point in the path's own space, into root units through the same matrix as the vertices
@@ -710,13 +726,13 @@ function edgeLegs(
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
-      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot, headRoot),
-      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot, headRoot),
+      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot, head),
+      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot, head),
     };
   }
   return halves.a2b
-    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot, headRoot) }
-    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot, headRoot) };
+    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot, head) }
+    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot, head) };
 }
 
 /* ---------- the layer and its elements ---------- */
@@ -796,6 +812,8 @@ const SIDE_NAMES = {
   '-2': 'bottom-wide',
   '3': 'top-head',
   '-3': 'bottom-head',
+  '4': 'top-head-wide',
+  '-4': 'bottom-head-wide',
 } as const;
 function position(layout: LabelLayout, rec: LabelRecord, placed: Placed): void {
   const el = ensureElement(layout, rec);
@@ -810,7 +828,7 @@ function draw(rec: LabelRecord, placed: Placed): void {
   if (!el) {
     return;
   }
-  const at = drawnCentre(placed, rec.drawn);
+  const at = drawnCentre(placed, rec.drawn, rec.head);
   const x = fmt(at.x);
   const y = fmt(at.y);
   el.setAttribute('x', x);
@@ -1032,10 +1050,13 @@ function tryPlace(layout: LabelLayout, rec: LabelRecord): boolean {
     rec.obstacle = undefined;
     return false;
   }
-  // an isolated re-placement tries first the side the other half of the link holds (or held before it dropped)
+  // an isolated re-placement tries first the near place the other half of the link holds (or held before it
+  // dropped); a place away from the stroke is the mate's own, it does not pull this half away from its link
   const mate = layout.records.get(`${rec.cellId}:${rec.which === 'a2b' ? 'b2a' : 'a2b'}`)?.side;
   const sides: readonly LabelSide[] =
-    mate === undefined ? LABEL_SIDES : [mate, ...LABEL_SIDES.filter((side) => side !== mate)];
+    mate === undefined || !NEAR_SIDES.includes(mate)
+      ? LABEL_SIDES
+      : [mate, ...LABEL_SIDES.filter((side) => side !== mate)];
   return hold(layout, rec, placeHalfLabel(leg, rec.cellId, layout.grid, sides, true));
 }
 
@@ -1116,7 +1137,7 @@ function fullPlacement(
       mode: slot.mode,
       leg: legs.get(slot.cellId)?.[slot.which],
       slot: slotOf(layout, slot, text),
-      drawn: drawnOf(layout, legs.get(slot.cellId)?.[slot.which], slot.state),
+      ...drawnOf(layout, legs.get(slot.cellId)?.[slot.which], slot.state),
       retry: false,
     };
     layout.records.set(`${slot.cellId}:${slot.which}`, rec);
@@ -1148,11 +1169,15 @@ function fullPlacement(
   return layout;
 }
 
-/** The drawn stroke width of a half in root units: its width in the units of the edge, converted as the widest one is. */
-function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): number {
+/**
+ * The drawn stroke width of a half and the base of its drawn head, in root units: the sizes in the units of the edge,
+ * converted as the widest stroke is.
+ */
+function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): { drawn: number; head: number } {
   // the reservation holds the widths between linkWidth.min and linkWidth.max only
   const width = Math.min(Math.max(state.width, layout.min), layout.max);
-  return leg && layout.max > 0 ? (width * leg.strokeRoot) / layout.max : width;
+  const toRootUnits = (v: number) => (leg && layout.max > 0 ? (v * leg.strokeRoot) / layout.max : v);
+  return { drawn: toRootUnits(width), head: toRootUnits(headSize(width, layout.max).base) };
 }
 
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
@@ -1169,10 +1194,12 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
   for (const slot of slots) {
     const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
     const text = linkLabelText(slot.state, slot.mode);
-    // a changed load changes the drawn width: the text moves across the link, on the same side and place along it
-    const drawn = drawnOf(layout, rec.leg, slot.state);
-    if (drawn !== rec.drawn) {
+    // a changed load changes the drawn width and head: the text moves across the link, on the same side and place
+    // along it
+    const { drawn, head } = drawnOf(layout, rec.leg, slot.state);
+    if (drawn !== rec.drawn || head !== rec.head) {
       rec.drawn = drawn;
+      rec.head = head;
       if (rec.placement && 'centre' in rec.placement) {
         draw(rec, rec.placement);
       }
