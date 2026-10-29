@@ -33,6 +33,7 @@ Changes since review round 3 (revision 4):
 | N1 | major | Only a positively identified v3 deployment (`options.config.version` below 4) is exempt when `options.build` is missing. A v4 panel with no usable base stops `pull` and the deploy gate; nothing replaces `.cells.yml`, and nothing deploys. | 7.3.5, 7.4, 9 (P2 acceptance 2, 9), 10.3 |
 | P1-10 review 4 | minor | A band row of a cell with no value (text `–`) shows the status reason in place of the text, for example `No data · cpu: 1 cell`. A row `– · cpu: 1 cell` gives no cause. | 3.4 |
 | P1-10 review 2 | minor | The legend has a `down` entry ("Down, no data") before `stale` and `missing`, when cells have a down status with no value (`missing: down`). The painter paints such a cell in the theme red, and no value mapping or step explains that colour. | 3.4 |
+| P3-05 review, finding 2 | minor | The panel reads `options.build` only to tell a generated panel apart: the inspector shows the generated-panel note next to the `at` button when the panel has a build id (5.4). The panel never changes the build id, and Apply keeps it. | 5.4, 6.2, 7.3.5 |
 | P1 gate review B, m6 | minor | Line i of a chart takes slot i of `[0, 1, 2, 3, 4, 5, 26, 30]` in the Grafana classic palette, not slot i: slots 6 and 7 repeat the green and yellow shades, so cyan (26) and pink (30) replace them. The order stays fixed. Decided in the P1-11b review; `docs/adr/0003-history-line-labels-colours.md`. | 3.7 |
 
 Changes since review round 2 (revision 3). Amendments:
@@ -1021,7 +1022,7 @@ P1 deletes every module of this table, the v3 popup included (5.0, Astra R2). Af
 | `src/editor/popup/PopupLayout.tsx`, `DiagramStage.tsx` | P3: the split editor. In P1 they have no user; `DiagramStage.tsx:13` follows the P1 type of `ChartLayerProps`, so P1 typechecks. |
 | `src/editor/history.ts`, `src/components/LazyBindingsPopup.tsx`, `src/editor/popup/index.ts` (new in P3) | the split editor (5.1, 5.7) |
 | `src/fixtures/demo-config.ts`, `authoring-config.ts`, `scripts/build-dashboard.ts` | v4 demo configs |
-| `src/module.ts`, `src/types.ts` | `Options.config` type; the YAML option of 5.0; drop the v1 `rules` warning only when 1.0 allows it; `Options.build?: string`, which the generator writes and the panel never reads (7.3.5) |
+| `src/module.ts`, `src/types.ts` | `Options.config` type; the YAML option of 5.0; drop the v1 `rules` warning only when 1.0 allows it; `Options.build?: string`, which the generator writes and the panel reads only to tell a generated panel apart in the inspector (5.4, 7.3.5) |
 | `scripts/check-bundle.sh`, `playwright.config.ts` | the bundle checks of 5.3; `MATRIX_SPECS` (`playwright.config.ts:22-33`) loses `binding-editor` and `query` in P1 and gets `split-editor` in P3 (6.5) |
 | `src/harness.ts` (new) | the stable export for the consumer harness (6.4) |
 
@@ -1190,7 +1191,7 @@ Verdict: yes. The one clash is in the v3 template scope, and v4 replaces that sc
      `diagram.drawio`. In mode B it is the source `.drawio`, which the merge never changes. The build id is the git
      blob id of these bytes (`git hash-object -w`, which also stores the blob in the local repository), and the
      build writes it into the panel as `options.build`. The
-     panel never reads this key. Grafana keeps it in the saved options, the YAML option of 5.0 changes only
+     panel reads this key only to tell a generated panel apart in the inspector (5.4). Grafana keeps it in the saved options, the YAML option of 5.0 changes only
      `config`, and Apply writes `{...options, config, diagram}` (`src/editor/popup/BindingsPopup.tsx:121` today,
      kept in 5.7). P1 acceptance 14 checks that a save keeps it.
    - **The base.** For each sheet, `pull` finds the panel by id, checks its type and reads `options.build`. It loads

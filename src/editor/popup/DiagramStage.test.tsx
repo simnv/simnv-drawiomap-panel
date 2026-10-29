@@ -268,6 +268,31 @@ describe('DiagramStage', () => {
     expect(root.getAttribute('viewBox')).toBe('0 0 640 320');
     expect(screen.queryByTestId('dmap-popup-reset-zoom')).toBeNull();
   });
+
+  it('keeps the view for a new diagram with the same geometry, and fits a diagram with a new geometry', async () => {
+    const view = render(<Harness />);
+    await frame();
+    await act(async () => {
+      fireEvent.wheel(screen.getByTestId('dmap-popup-stage').parentElement!, {
+        deltaY: -100,
+        clientX: 400,
+        clientY: 300,
+      });
+    });
+    await frame();
+    const zoomed = view.container.querySelector('svg')!.getAttribute('viewBox');
+    expect(zoomed).not.toBe('0 0 640 320');
+    // a write of a cell attribute: a new root, the same view box
+    view.rerender(<Harness svg={svg.replace('Router α', 'Router β')} hash="h2" />);
+    await frame();
+    expect(view.container.querySelector('svg')!.textContent).toContain('Router β');
+    expect(view.container.querySelector('svg')!.getAttribute('viewBox')).toBe(zoomed);
+    // a new diagram with another size starts at the fitted view
+    const larger = svg.replace('viewBox="0 0 640 320"', 'viewBox="0 0 1280 640"');
+    view.rerender(<Harness svg={larger} hash="h3" />);
+    await frame();
+    expect(view.container.querySelector('svg')!.getAttribute('viewBox')).toBe('0 0 1280 640');
+  });
 });
 
 describe('DiagramStage box select', () => {
