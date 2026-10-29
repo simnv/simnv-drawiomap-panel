@@ -71,6 +71,16 @@ describe('pathAt (spec 5.3 "The path at an offset")', () => {
     expect(at(withIndent(8))).toBe('classes.lan.status');
   });
 
+  it('on a blank line at the dash column of a list item: the list, not the item (a key stands at dash + 2)', () => {
+    expect(at('rows:\n  - query: rx\n  |\n')).toBe('rows');
+    expect(at('rows:\n  - query: rx\n    |\n')).toBe('rows[0].query');
+  });
+
+  it('on a comment line: the pair above with a key at the column of the offset or to its left', () => {
+    expect(at('rows:\n  - query: rx\n    # note|\n')).toBe('rows[0].query');
+    expect(at('rows:\n  - query: rx\n  |# note\n')).toBe('rows');
+  });
+
   it('on a blank line at the end of the text', () => {
     expect(at(CLASSES + '\n    |')).toBe('overrides["sw.1"].status');
     expect(at(CLASSES + '\n|')).toBe('overrides');
