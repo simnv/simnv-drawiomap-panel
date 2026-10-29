@@ -66,7 +66,13 @@ vi.mock('@grafana/ui', async (importOriginal) => ({
   ),
   BarGauge: () => <div data-testid="grafana-bar" />,
   // The split editor loads Monaco: a text area takes its place.
-  CodeEditor: (props: { value: string }) => <textarea data-testid="code-editor" value={props.value} readOnly />,
+  CodeEditor: (props: { value: string; onChange?: (text: string) => void }) => (
+    <textarea
+      data-testid="code-editor"
+      value={props.value}
+      onChange={(event) => props.onChange?.(event.target.value)}
+    />
+  ),
 }));
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. Set them before the imports run.
@@ -1638,6 +1644,19 @@ describe('DrawioMapPanel bindings popup', () => {
     locationService.partial({ editPanel: id });
     onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
   };
+
+  it('passes the save callback through the lazy popup and saves only on Apply', async () => {
+    inEditor(1);
+    const onOptionsChange = vi.fn();
+    render(<DrawioMapPanel {...props({ onOptionsChange })} />);
+    fireEvent.click(await screen.findByTestId('dmap-edit-bindings'));
+    const code = await screen.findByTestId('code-editor');
+    fireEvent.change(code, { target: { value: 'version: 4\nclasses: {}\n' } });
+    expect(onOptionsChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onOptionsChange).toHaveBeenCalledTimes(1);
+    expect(onOptionsChange.mock.calls[0][0].diagram).toEqual(options.diagram);
+  });
 
   it('opens the split editor from the corner button with the saved config as YAML, and closes it', async () => {
     inEditor(1);

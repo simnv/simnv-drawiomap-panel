@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeYaml } from '../../options/yamlConfig';
 import { CONFIG, editorProps } from './splitTestKit';
+import type { Options } from '../../types';
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. Set them before the imports run.
 vi.hoisted(() => {
@@ -33,7 +34,7 @@ vi.mock('../../render/zoom', async (importOriginal) => {
   return { ...actual, fitCells: zoom.fitCells };
 });
 
-const { SplitEditor } = await import('./SplitEditor');
+const { SplitEditor, BindingsPopup } = await import('./SplitEditor');
 
 const editor = () => screen.getByTestId('code-editor') as HTMLTextAreaElement;
 const type = (text: string) => fireEvent.change(editor(), { target: { value: text } });
@@ -59,9 +60,11 @@ describe('SplitEditor', () => {
     fake.reset();
     zoom.fitCells.mockClear();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
-      () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0 }) as DOMRect
-    );
+    rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(
+        () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0 }) as DOMRect
+      );
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -73,6 +76,151 @@ describe('SplitEditor', () => {
     expect(editor().value).toBe(writeYaml(CONFIG));
     expect(editor().dataset.language).toBe('yaml');
     expect(fake.setModelMarkers).toHaveBeenLastCalledWith(fake.model, expect.any(String), []);
+  });
+
+  const writableProps = () => {
+    const props = editorProps();
+    return {
+      ...props,
+      options: {
+        ...props.options,
+        build: 'demo-build',
+        diagram: {
+          ...props.options.diagram!,
+          xml: '<mxGraphModel><root><object id="a" bind="dev" key="a"><mxCell vertex="1"/></object></root></mxGraphModel>',
+        },
+      },
+    };
+  };
+  const writeKey = (key: string) => {
+    fireEvent.click(cell('a'));
+    fireEvent.change(screen.getByTestId('dmap-inspector-key'), { target: { value: key } });
+    fireEvent.click(screen.getByRole('button', { name: 'Set bind and key' }));
+  };
+
+  it('keeps writes and edits local until Apply, then saves both once and keeps build', async () => {
+    const props = writableProps();
+    const onOptionsChange = vi.fn();
+    render(<SplitEditor {...props} onOptionsChange={onOptionsChange} />);
+    await frame();
+    writeKey('demo-new');
+    type(fake.text.replace('status: up', 'status: down'));
+    expect(onOptionsChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onOptionsChange).toHaveBeenCalledTimes(1);
+    const saved = onOptionsChange.mock.calls[0][0] as Options;
+    expect(saved).toEqual({ ...props.options, config: expect.anything(), diagram: expect.anything() });
+    expect(saved.config).toEqual({
+      ...CONFIG,
+      classes: { ...CONFIG.classes, dev: { ...CONFIG.classes.dev, status: 'down' } },
+    });
+    expect(saved.diagram!.xml).toContain('key="demo-new"');
+    expect(saved.diagram!.svg).toContain('data-meta-key="demo-new"');
+    expect(saved.build).toBe('demo-build');
+  });
+
+  it('sends explicit undefined for removed configuration keys', () => {
+    const onOptionsChange = vi.fn();
+    render(<SplitEditor {...editorProps()} onOptionsChange={onOptionsChange} />);
+    type('version: 4\nclasses: {}\n');
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    const config = onOptionsChange.mock.calls[0][0].config;
+    expect(config.classes).toEqual({ dev: undefined, sw: undefined });
+    expect(Object.hasOwn(config, 'overrides')).toBe(true);
+    expect(config.overrides).toBeUndefined();
+  });
+
+  it('blocks Apply for parse and envelope errors but permits item errors', () => {
+    const onOptionsChange = vi.fn();
+    render(<SplitEditor {...editorProps()} onOptionsChange={onOptionsChange} />);
+    for (const text of ['classes: [', 'version: 3\nclasses: {}', 'version: 4\nclasses: []']) {
+      type(text);
+      const apply = screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement;
+      expect(apply.disabled).toBe(true);
+      fireEvent.click(apply);
+    }
+    expect(onOptionsChange).not.toHaveBeenCalled();
+    type('version: 4\nclasses: {dev: {status: 5}}');
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onOptionsChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads the changed saved revision and drops the text, diagram and undo stack', async () => {
+    const props = writableProps();
+    const onOptionsChange = vi.fn();
+    const view = render(<SplitEditor {...props} onOptionsChange={onOptionsChange} />);
+    await frame();
+    writeKey('draft-key');
+    type('classes: [');
+    const options = {
+      ...props.options,
+      diagram: { ...props.options.diagram!, hash: 'outside' },
+      config: { version: 4, classes: {} },
+    };
+    view.rerender(<SplitEditor {...props} options={options} onOptionsChange={onOptionsChange} />);
+    expect(screen.getByText('The saved panel changed')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(editor().value).toBe(writeYaml(options.config));
+    expect(screen.queryByText('The saved panel changed')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onOptionsChange.mock.calls[0][0].diagram).toBe(options.diagram);
+  });
+
+  it('keeps the draft on conflict and applies it over the latest saved options', () => {
+    const props = editorProps();
+    const onOptionsChange = vi.fn();
+    const view = render(<SplitEditor {...props} onOptionsChange={onOptionsChange} />);
+    type(fake.text.replace('status: up', 'status: down'));
+    const options = {
+      ...props.options,
+      build: 'new-build',
+      config: { ...CONFIG, classes: { ...CONFIG.classes, added: {} } },
+    };
+    view.rerender(<SplitEditor {...props} options={options} onOptionsChange={onOptionsChange} />);
+    expect(screen.getByText('The saved panel changed')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep my draft' }));
+    expect(screen.queryByText('The saved panel changed')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onOptionsChange.mock.calls[0][0].build).toBe('new-build');
+    expect(onOptionsChange.mock.calls[0][0].config.classes.dev.status).toBe('down');
+    expect(onOptionsChange.mock.calls[0][0].config.classes.added).toBeUndefined();
+  });
+
+  it.each(['Escape', 'Close'])('asks to discard invalid text through %s and keeps it on cancel', async (action) => {
+    const onClose = vi.fn();
+    render(<BindingsPopup {...editorProps()} onOptionsChange={vi.fn()} onClose={onClose} />);
+    type('classes: [');
+    const close = () =>
+      action === 'Escape'
+        ? fireEvent.keyDown(screen.getByTestId('dmap-bindings-popup'), { key: 'Escape' })
+        : fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    close();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('Discard changes?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(editor().value).toBe('classes: [');
+    close();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes Ctrl+Z to Monaco in the code box and to diagram history elsewhere', async () => {
+    const onOptionsChange = vi.fn();
+    render(<BindingsPopup {...writableProps()} onOptionsChange={onOptionsChange} onClose={vi.fn()} />);
+    await frame();
+    writeKey('draft-key');
+    const root = screen.getByTestId('dmap-bindings-popup');
+    expect(fireEvent.keyDown(editor(), { key: 'z', ctrlKey: true })).toBe(true);
+    expect(cell('a').getAttribute('data-meta-key')).toBe('draft-key');
+    expect(fireEvent.keyDown(root, { key: 'z', ctrlKey: true })).toBe(false);
+    expect(cell('a').getAttribute('data-meta-key')).toBe('a');
+    fireEvent.keyDown(root, { key: 'z', ctrlKey: true, shiftKey: true });
+    expect(cell('a').getAttribute('data-meta-key')).toBe('draft-key');
   });
 
   it('binds the live diagram with the result per class after an edit', async () => {
@@ -182,4 +330,3 @@ describe('SplitEditor', () => {
     expect(editor().value).toBe(draft);
   });
 });
-
