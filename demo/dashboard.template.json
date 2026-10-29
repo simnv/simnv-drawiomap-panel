@@ -37,7 +37,7 @@
         "overrides": [
           {
             "matcher": { "id": "byFrameRefID", "options": "v4_samples" },
-            "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 0 }, { "id": "min", "value": 0 }, { "id": "max", "value": 100 }]
+            "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 0 }]
           },
           {
             "matcher": { "id": "byFrameRefID", "options": "v4_nine" },

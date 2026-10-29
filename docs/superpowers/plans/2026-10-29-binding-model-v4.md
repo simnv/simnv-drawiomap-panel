@@ -854,7 +854,7 @@ Done: P1.15 passes for all P1-column rows.
   - a `chart: {kind: value}` region draws a bar gauge;
   - the YAML option saves a valid config; a panel with `build: "x"` still holds it after a save of the YAML option;
   - URL encoding with the real `replaceVariables`: `job=a&var-site=b` gives `var-job=a%26var-site%3Db`; `#` gives
-    `%23`; the values `a` and `b` give `a%2Cb` for `$job`; `$__url_time_range` gives `from=…&to=…` unencoded;
+    `%23`; the values `a` and `b` give `%7Ba%2Cb%7D` for `$job` (`percentencode`, Grafana docs "Variable syntax"); `$__url_time_range` gives `from=…&to=…` unencoded;
     `/d/host?${job:queryparam}` gives `/d/host?var-job=a&var-job=b`; a cell with `job=cell-a` and
     `/d/host?var-node=${job}&${job:queryparam}` gives `var-node=cell-a&var-job=a&var-job=b`.
 - [ ] Run the `build` save test also on 12.4 (port 3232) with `--project=plugin --grep build` to check that 12.4

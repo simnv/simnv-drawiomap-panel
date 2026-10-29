@@ -509,8 +509,9 @@ Thus a colon in the braces marks a dashboard variable, and `${<name>}` with no c
      scheme that the check refuses.
 
   Thus `/d/host?var-job=$job` with the value `a&var-site=b` gives `var-job=a%26var-site%3Db`, and a `#` gives `%23`.
-  A multi-value variable in the bare form gives its values joined with a comma and encoded, `a%2Cb` (the Grafana
-  format `percentencode`, Grafana docs "Variable syntax", advanced variable format options). For a dashboard that
+  A multi-value variable in the bare form gives its values as an encoded glob, `%7Ba%2Cb%7D` for `{a,b}` (the
+  Grafana format `percentencode`, Grafana docs "Variable syntax", advanced variable format options: the values
+  `test1.` and `test2` give `%7Btest1.%2Ctest2%7D`). For a dashboard that
   reads a multi-value variable from repeated parameters, write `/d/host?${job:queryparam}`: the values `a` and `b`
   give `var-job=a&var-job=b` (A17). Today `src/interact/links.ts:75-78` calls `replaceVariables(u.url, vars)` with
   no format, so a value can change the query structure; v4 rewrites this call (6.2). A title is text: step 2 and the
@@ -1638,7 +1639,8 @@ P1 acceptance:
     lines at the hovered time. A `chart: {kind: value}` region draws a bar gauge. A panel whose options hold
     `build: "x"` still holds it after a save of the YAML option (7.3.5). URL encoding with the real
     `replaceVariables` (3.3, Astra R7): a dashboard variable `job` with the value `a&var-site=b` gives the link
-    `var-job=a%26var-site%3Db`; a `#` gives `%23`; the values `a` and `b` give `a%2Cb` for `$job`;
+    `var-job=a%26var-site%3Db`; a `#` gives `%23`; the values `a` and `b` give `%7Ba%2Cb%7D` for `$job`
+    (`percentencode`, Grafana docs "Variable syntax");
     `$__url_time_range` gives `from=…&to=…` unencoded. Formatted variables (A17): with the values `a` and `b`,
     `/d/host?${job:queryparam}` gives the link `/d/host?var-job=a&var-job=b`; a cell with the attribute
     `job=cell-a` and the URL `/d/host?var-node=${job}&${job:queryparam}` gives

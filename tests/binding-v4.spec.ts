@@ -43,13 +43,35 @@ test('the v4 demo shows three history lines on one axis and a history chart regi
   const panel = dashboard.getPanelByTitle('demo-lab L3').locator;
   await panel.locator('[data-cell-id="pg-node~rtr-a"] rect').first().click({ force: true });
   const row = panel.getByRole('dialog').getByTestId('dmap-card-row').filter({ hasText: 'Three lines' });
-  // All three lines share one chart box.
   await expect(row.locator('.uplot')).toHaveCount(3);
-  const ranges = await row
-    .locator('[data-state="ready"] > div > div')
-    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
-  expect(ranges).toHaveLength(3);
-  expect(new Set(ranges.map((r) => `${r.x},${r.y},${r.width},${r.height}`)).size).toBe(1);
+  // The lines hold about 20, 40 and 60, and the row sets no min or max. One shared range from zero puts each line
+  // at a height in proportion to its value. A range for each line puts each line near the top of its own chart.
+  const heights = await row.locator('.uplot canvas').evaluateAll((canvases) =>
+    canvases.map((el) => {
+      const canvas = el as HTMLCanvasElement;
+      const { width, height } = canvas;
+      const data = canvas.getContext('2d')!.getImageData(0, 0, width, height).data;
+      // the mean height above the bottom of the top painted pixel of each column
+      let sum = 0;
+      let columns = 0;
+      for (let x = 0; x < width; x++) {
+        for (let y = 0; y < height; y++) {
+          if (data[(y * width + x) * 4 + 3] > 0) {
+            sum += (height - y) / height;
+            columns++;
+            break;
+          }
+        }
+      }
+      return columns ? sum / columns : 0;
+    })
+  );
+  heights.sort((a, b) => a - b);
+  expect(heights[0]).toBeGreaterThan(0);
+  expect(heights[0] / heights[2]).toBeGreaterThan(0.2);
+  expect(heights[0] / heights[2]).toBeLessThan(0.5);
+  expect(heights[1] / heights[2]).toBeGreaterThan(0.5);
+  expect(heights[1] / heights[2]).toBeLessThan(0.8);
   await screenshot(panel, testInfo, 'three-lines');
   const regions = await gotoDashboardPage({
     ...DEMO,
@@ -65,10 +87,13 @@ test('the v4 demo shows three history lines on one axis and a history chart regi
 test('nine series show eight lines, +1 more and eight values at the hovered time', async ({
   gotoDashboardPage,
   page,
+  request,
 }, testInfo) => {
+  // A fixed range in the past: the samples do not change while the test reads them.
+  const to = Math.floor(Date.now() / 5000) * 5000 - 60_000;
   const dashboard = await gotoDashboardPage({
     ...DEMO,
-    queryParams: new URLSearchParams({ viewPanel: 'panel-1', from: 'now-2m', to: 'now' }),
+    queryParams: new URLSearchParams({ viewPanel: 'panel-1', from: String(to - 120_000), to: String(to) }),
   });
   const panel = dashboard.getPanelByTitle('demo-lab L3').locator;
   await panel.locator('[data-cell-id="pg-node~rtr-a"] rect').first().click({ force: true });
@@ -76,15 +101,43 @@ test('nine series show eight lines, +1 more and eight values at the hovered time
   await expect(row).toContainText('+1 more');
   await expect(row.locator('.uplot')).toHaveCount(8);
   const chart = row.getByTestId('dmap-chart-hover');
-  // Keyboard navigation selects a real sample and keeps the tooltip at one time.
+  const tooltip = page.getByTestId('dmap-chart-tooltip');
+  const stamp = tooltip.getByLabel('Timestamp');
+  // the time of the tooltip in ms; the dashboard shows the browser time zone
+  const timeOf = async () => {
+    await expect(stamp).toHaveText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    const text = await stamp.innerText();
+    return page.evaluate((t) => new Date(t.replace(' ', 'T')).getTime(), text);
+  };
+  // the stored values of the nine lines at a time, read from the datasource
+  const stored = async (ms: number) => {
+    const params = new URLSearchParams({ query: 'dmap_v4_nine', time: String(ms / 1000) });
+    const response = await request.get(`/api/datasources/proxy/uid/victoriametrics/api/v1/query?${params}`);
+    expect(response.ok()).toBe(true);
+    const body = await response.json();
+    return new Map<string, string>(
+      body.data.result.map((r: { metric: { line: string }; value: [number, string] }) => [r.metric.line, r.value[1]])
+    );
+  };
+  // Keyboard navigation: the first step selects the latest sample, three more steps a sample before it.
   await chart.focus();
   await page.keyboard.press('ArrowLeft');
-  const tooltip = page.getByTestId('dmap-chart-tooltip');
   await expect(tooltip).toBeVisible();
-  await expect(tooltip).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+  const latest = await timeOf();
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('ArrowLeft');
+  }
+  await expect.poll(timeOf).toBeLessThan(latest);
+  const hovered = await timeOf();
+  const [then, last] = [await stored(hovered), await stored(latest)];
   for (let i = 0; i < 8; i++) {
-    await expect(tooltip.getByText(`{line="line-${i}"}`, { exact: true })).toBeVisible();
-    await expect(tooltip.getByText(String((i + 1) * 10), { exact: true })).toBeVisible();
+    const line = `line-${i}`;
+    // each value differs between the two times, so a value of the latest sample fails the check below
+    expect(then.get(line)).toBeDefined();
+    expect(then.get(line)).not.toBe(last.get(line));
+    const entry = tooltip.getByTestId('SeriesTableRow').filter({ hasText: `{line="${line}"}` });
+    await expect(entry).toHaveCount(1);
+    await expect(entry).toContainText(new RegExp(`\\}${then.get(line)}$`));
   }
   await expect(tooltip.getByText('{line="line-8"}', { exact: true })).toHaveCount(0);
   await expect(tooltip).toContainText('+1 more');
@@ -142,7 +195,7 @@ test('the YAML option saves a valid config and keeps build after save and reload
 for (const scenario of [
   { name: 'query delimiters', values: ['a&var-site=b'], encoded: 'a%26var-site%3Db' },
   { name: 'fragment delimiter', values: ['#'], encoded: '%23' },
-  // Grafana scenes percentencode formats a multi value as an encoded glob (P1-03 interface note).
+  // percentencode formats a multi value as an encoded glob (spec 3.3, Grafana docs "Variable syntax").
   { name: 'multiple values', values: ['a', 'b'], encoded: '%7Ba%2Cb%7D' },
 ]) {
   test(`real Grafana URL formats encode ${scenario.name} and keep the time range raw`, async ({
