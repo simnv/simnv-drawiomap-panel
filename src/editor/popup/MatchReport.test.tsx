@@ -114,6 +114,33 @@ describe('MatchReport in the split editor', () => {
     expect(lit()).toEqual(['c']);
   });
 
+  it('keeps a report entry selected when an earlier cursor timer expires', () => {
+    render(<SplitEditor {...editorProps()} />);
+    act(() => fake.moveTo(fake.text.indexOf('sw:')));
+    act(() => vi.advanceTimersByTime(100));
+    fireEvent.click(within(group('Class dev')).getByRole('button', { name: /cells have no series/ }));
+    expect(lit()).toEqual(['b']);
+    act(() => vi.advanceTimersByTime(150));
+    expect(lit()).toEqual(['b']);
+    expect(fake.editor.setPosition).toHaveBeenLastCalledWith(positionOf('status: up'));
+    expect(zoom.fitCells).toHaveBeenCalledTimes(1);
+    expect(zoom.fitCells.mock.calls[0][1]).toEqual(['b']);
+  });
+
+  it('cancels a pending cursor timer for a report entry without a YAML path', () => {
+    const props = editorProps();
+    const svg = props.options.diagram!.svg.replace('data-meta-bind="dev"', 'data-meta-bind="unknown"');
+    render(<SplitEditor {...props} options={{ ...props.options, diagram: { ...props.options.diagram!, svg } }} />);
+    act(() => fake.moveTo(fake.text.indexOf('sw:')));
+    act(() => vi.advanceTimersByTime(100));
+    fireEvent.click(within(report()).getByRole('button', { name: /unknown class unknown/ }));
+    expect(lit()).toEqual(['a']);
+    act(() => vi.advanceTimersByTime(150));
+    expect(lit()).toEqual(['a']);
+    expect(fake.editor.setPosition).not.toHaveBeenCalled();
+    expect(zoom.fitCells).toHaveBeenCalledTimes(1);
+  });
+
   it('a click on an entry with no cells moves the cursor only', () => {
     const config = { ...CONFIG, classes: { ...CONFIG.classes, spare: { match: { key: 'job' }, status: 'up' } } };
     render(<SplitEditor {...editorProps({ options: { ...editorProps().options, config } })} />);
@@ -130,6 +157,42 @@ describe('MatchReport in the split editor', () => {
 
 describe('MatchReport', () => {
   const empty = { perClass: new Map(), perUse: new Map() };
+
+  it('shows each orphan label set in order and the separate overflow count', () => {
+    const labels = Array.from({ length: 50 }, (_, i) => ({ job: `node-${i}`, site: 'demo' }));
+    render(
+      <MatchReport
+        entries={[{ kind: 'orphan-series', refId: 'up', labels, more: 7 }]}
+        counts={empty}
+        onPick={() => {}}
+      />
+    );
+    const sets = within(report()).getAllByText(/^\{job=/);
+    expect(sets.map((el) => el.textContent)).toEqual(labels.map(({ job, site }) => `{job="${job}", site="${site}"}`));
+    expect(within(report()).getByText('+7 more')).toBeTruthy();
+  });
+
+  it('shows each cell and its own series count for an ambiguous use', () => {
+    render(
+      <MatchReport
+        entries={[
+          {
+            kind: 'many-series',
+            cls: 'dev',
+            use: 'classes.dev.status',
+            cells: [
+              { id: 'a', count: 2 },
+              { id: 'b', count: 20 },
+            ],
+          },
+        ]}
+        counts={empty}
+        onPick={() => {}}
+      />
+    );
+    expect(within(report()).getByText('a: 2 series')).toBeTruthy();
+    expect(within(report()).getByText('b: 20 series')).toBeTruthy();
+  });
 
   it('puts the entries without a class in a group of their own', () => {
     const entries: ReportEntry[] = [

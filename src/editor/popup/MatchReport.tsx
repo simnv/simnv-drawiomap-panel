@@ -171,6 +171,7 @@ export function MatchReport({ entries, counts, onPick }: MatchReportProps) {
                       onClick={() => onPick({ kind: 'entry', ...entryTarget(entry) })}
                     >
                       {reportLine(entry)}
+                      <EntryDetails entry={entry} />
                     </button>
                   </li>
                 ))}
@@ -181,6 +182,33 @@ export function MatchReport({ entries, counts, onPick }: MatchReportProps) {
       })}
     </section>
   );
+}
+
+/** The diagnostic details that the compact panel notice omits (spec 4). */
+function EntryDetails({ entry }: { entry: ReportEntry }) {
+  const styles = useStyles2(getStyles);
+  if (entry.kind === 'orphan-series') {
+    return (
+      <span className={styles.details}>
+        {entry.labels.map((labels, i) => (
+          <span key={i}>{`{${Object.entries(labels)
+            .map(([name, value]) => `${name}=${JSON.stringify(value)}`)
+            .join(', ')}}`}</span>
+        ))}
+        {entry.more > 0 ? <span>+{entry.more} more</span> : null}
+      </span>
+    );
+  }
+  if (entry.kind === 'many-series') {
+    return (
+      <span className={styles.details}>
+        {entry.cells.map(({ id, count }) => (
+          <span key={id}>{`${id}: ${count} series`}</span>
+        ))}
+      </span>
+    );
+  }
+  return null;
 }
 
 function CountRow(props: { label: string; cells?: number; counts: SeriesCounts; onClick: () => void }) {
@@ -215,6 +243,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
   // a count of 0 is a problem: the cells have no series
   zero: css({ color: theme.colors.error.text }),
   entries: css({ listStyle: 'none', margin: theme.spacing(0.5, 0, 0), padding: 0 }),
+  details: css({
+    display: 'block',
+    paddingLeft: theme.spacing(1),
+    overflowWrap: 'anywhere',
+    '& > span': { display: 'block' },
+  }),
   link: css({
     border: 0,
     padding: 0,

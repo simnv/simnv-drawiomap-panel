@@ -162,6 +162,7 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
   }, [source]);
 
   const [instance, setInstance] = useState<Instance>();
+  const cursorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onEditorDidMount = useCallback((editor: MonacoEditor, monaco: Monaco) => setInstance({ editor, monaco }), []);
   useEffect(() => {
     const model = instance?.editor.getModel();
@@ -169,21 +170,20 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
       return;
     }
     const completion = registerCompletion(instance.monaco, model.id, () => sourceRef.current);
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const cursor = instance.editor.onDidChangeCursorPosition((event) => {
+      clearTimeout(cursorTimer.current);
       // A move of the editor itself (a report click) keeps the highlight of that click.
       if (event.source === 'api') {
         return;
       }
-      clearTimeout(timer);
-      timer = setTimeout(() => {
+      cursorTimer.current = setTimeout(() => {
         const value = model.getValue();
         setEntryCells(null);
         setCursorPath(pathAt(readDraft(value).doc, value, model.getOffsetAt(event.position)));
       }, CURSOR_WAIT_MS);
     });
     return () => {
-      clearTimeout(timer);
+      clearTimeout(cursorTimer.current);
       cursor.dispose();
       completion.dispose();
     };
@@ -205,6 +205,7 @@ export function SplitEditor({ options, data, timeZone, fieldConfig, replaceVaria
   /** A click in the report: the cursor goes to the YAML place, and the highlight follows the pick. */
   const onPick = useCallback(
     (pick: ReportPick) => {
+      clearTimeout(cursorTimer.current);
       const editor = instance?.editor;
       const model = editor?.getModel();
       const line = pick.kind === 'entry' ? pick.line : undefined;
