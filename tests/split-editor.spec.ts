@@ -1,4 +1,5 @@
 import { inflateRawSync } from 'node:zlib';
+import { devices } from '@playwright/test';
 import type { APIRequestContext, Locator, Request } from '@playwright/test';
 import type { ConfigV4 } from '../src/model/v4';
 import {
@@ -54,6 +55,8 @@ function wrapperOf(xml: string, id: string) {
 const cellGroupOf = (svg: string, id: string) =>
   attrsOf(new RegExp(`<g ([^>]*data-cell-id="${id}"[^>]*)>`).exec(svg)?.[1]);
 const attrsOf = (text = '') => Object.fromEntries([...text.matchAll(/([\w:-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+// Chromium with the iPhone 13 viewport of `tests/phone-sheet.spec.ts`. The webkit browser of the preset needs a separate worker.
+const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
 const badge = (dialog: Locator, id: string) =>
   dialog.locator(`[data-testid="dmap-cell-badge"][data-dmap-badge="${id}"]`);
 
@@ -504,5 +507,96 @@ test('Esc and the close button ask before a dirty draft goes; the nested dialogs
     await page.keyboard.press('Escape');
     await question.getByRole('button', { name: 'Discard', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
+const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
+/** True when the page has no horizontal scroll and the element is inside the viewport width. */
+const fitsWidth = (el: Locator) =>
+  el.evaluate((node) => {
+    const r = node.getBoundingClientRect();
+    const root = document.scrollingElement ?? document.documentElement;
+    return { pageScroll: root.scrollWidth > root.clientWidth, inside: r.left >= 0 && r.right <= innerWidth };
+  });
+
+test.describe('the split view at 1440×900 (P3.11)', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('the code box, the diagram and the report show side by side', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }) => {
+    const uid = await createDiagram(config);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = await openSplitEditor(page);
+    await expect(dialog.getByTestId('dmap-popup-layout')).toHaveAttribute('data-dmap-layout', 'panes');
+    for (const pane of [codeBox(dialog), popupStage(dialog), matchReport(dialog)]) {
+      await expect(pane).toBeVisible();
+      expect(await fitsWidth(pane)).toEqual({ pageScroll: false, inside: true });
+    }
+    // The cursor in a class lights its cells, so the screenshot shows the link between the text and the diagram.
+    await cursorToLine(dialog, /^ {2}routers:$/);
+    await expect.poll(async () => (await flagged(dialog, 'highlight')).length).toBeGreaterThan(0);
+    if (SHOTS) {
+      await splitDialog(page).screenshot({ path: `${SHOTS}/split-editor.png` });
+    }
+  });
+});
+
+test.describe('the split view on a phone (P3.13)', () => {
+  test.use(iPhone);
+
+  test('the panes are tabs with no horizontal scroll; the focus starts in the code box and stays in the dialog; Esc closes', async ({
+    page,
+    config,
+    createDiagram,
+    gotoPanelEditPage,
+  }) => {
+    const uid = await createDiagram(config);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = await openSplitEditor(page);
+    await expect(dialog.getByTestId('dmap-popup-layout')).toHaveAttribute('data-dmap-layout', 'tabs');
+    const focusIn = (scope: Locator) => scope.evaluate((el) => el.contains(document.activeElement));
+    await expect.poll(() => focusIn(codeBox(dialog))).toBe(true);
+
+    // In the code box Monaco takes Tab and Shift+Tab for the indent, so the focus stays there.
+    const frame = splitDialog(page);
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    expect(await focusIn(codeBox(dialog))).toBe(true);
+
+    for (const [name, pane] of [
+      ['Code', codeBox(dialog)],
+      ['Diagram', popupStage(dialog)],
+      ['Report', matchReport(dialog)],
+    ] as const) {
+      await dialog.getByRole('tab', { name, exact: true }).click();
+      await expect(pane).toBeVisible();
+      expect(await fitsWidth(pane)).toEqual({ pageScroll: false, inside: true });
+      if (SHOTS && name === 'Diagram') {
+        await page.screenshot({ path: `${SHOTS}/split-editor-phone.png` });
+      }
+    }
+
+    // Outside the code box Tab and Shift+Tab move the focus and wrap at the ends, but never leave the dialog.
+    const close = frame.getByRole('button', { name: 'Close', exact: true });
+    await close.focus();
+    await page.keyboard.press('Shift+Tab');
+    expect(await focusIn(frame)).toBe(true);
+    await expect(close).not.toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(close).toBeFocused();
+    const seen = new Set<string>();
+    for (const key of [...Array(8).fill('Tab'), ...Array(8).fill('Shift+Tab')]) {
+      await page.keyboard.press(key);
+      expect(await focusIn(frame)).toBe(true);
+      seen.add(await page.evaluate(() => document.activeElement!.outerHTML.slice(0, 120)));
+    }
+    expect(seen.size).toBeGreaterThan(2);
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
   });
 });

@@ -130,15 +130,19 @@ Results of the v3 runtime (before P1). The P1-G gate replaces them.
 The services of the compose profile `isolation` (see `docker-compose.yaml`). Command:
 `docker compose --profile isolation up -d --wait <service>`, then `GRAFANA_URL=<url> npx playwright test`.
 
-P3 item 12 adds the split-editor Monaco test on `grafana13-csp` and `grafana13-sandbox-csp` (P3-09). Its result goes in this table.
+P3 item 12 adds the split-editor Monaco test on `grafana13-csp` and `grafana13-sandbox-csp` (P3-09). The rows
+"P3-09" below are the v4 runtime with the split editor: the same settings as those services, in two containers with
+the worktree `dist/` on ports 3233 and 3243, all specs of the projects `matrix` and `plugin`, `--workers 1`.
 
-| Grafana | Setting                          | URL                           | Result              |
-| ------- | -------------------------------- | ----------------------------- | ------------------- |
-| 12.4.13 | frontend sandbox                 | http://localhost:3122         | 21 passed, 1 failed |
-| 13.2.4  | frontend sandbox                 | http://localhost:3123         | 21 passed, 1 failed |
-| 13.2.4  | `content_security_policy = true` | http://localhost:3133         | 22 passed           |
-| 13.2.4  | frontend sandbox + CSP           | http://localhost:3143         | 21 passed, 1 failed |
-| 13.2.4  | `app_sub_url = /grafana`         | http://localhost:3153/grafana | 22 passed           |
+| Grafana | Setting                                 | URL                           | Result              |
+| ------- | --------------------------------------- | ----------------------------- | ------------------- |
+| 12.4.13 | frontend sandbox                        | http://localhost:3122         | 21 passed, 1 failed |
+| 13.2.4  | frontend sandbox                        | http://localhost:3123         | 21 passed, 1 failed |
+| 13.2.4  | `content_security_policy = true`        | http://localhost:3133         | 22 passed           |
+| 13.2.4  | frontend sandbox + CSP                  | http://localhost:3143         | 21 passed, 1 failed |
+| 13.2.4  | `app_sub_url = /grafana`                | http://localhost:3153/grafana | 22 passed           |
+| 13.2.4  | P3-09: `content_security_policy = true` | http://localhost:3233         | 97 passed           |
+| 13.2.4  | P3-09: frontend sandbox + CSP           | http://localhost:3243         | 89 passed, 8 failed |
 
 - The sandbox settings are `GF_SECURITY_ENABLE_FRONTEND_SANDBOX_FOR_PLUGINS=simnv-drawiomap-panel` and
   `GF_FEATURE_TOGGLES_ENABLE=pluginsFrontendSandbox`. `/api/frontend/settings` on :3123 shows
@@ -147,3 +151,15 @@ P3 item 12 adds the split-editor Monaco test on `grafana13-csp` and `grafana13-s
 - The failed test in the sandbox is `live zoom on a phone › the fitted diagram is at the top of a tall panel and
 centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The fitted diagram fills the full panel
   height on a phone viewport in the sandbox. This is an open item.
+- P3-09, P3 item 12: `tests/split-editor.spec.ts` passes on both P3-09 rows (11 passed each), with the Monaco test
+  of item 9 (the code box loads, completion opens above the modal, the cursor events fire).
+- P3-09 fixed two faults in the sandbox. The draw.io XML parse gave elements with no namespace; the sandbox reads
+  `style` of each element and throws on them (`src/util/xml.ts`, used by `edgeEnds` and `setCellAttrs`). The
+  sanitizer copied its options with `structuredClone`, which the sandbox cannot do: no diagram showed in view mode.
+  P3-09 also moves the focus into the code box when the split editor opens (P3 item 13), on all variants.
+- The 8 failed tests on 3243 are open items:
+  - 7 chart tooltip tests (`card-tooltip.spec.ts` :92, :145, :213, :252; `visual-regions.spec.ts` :153, :214;
+    `binding-v4.spec.ts` :87): `dmap-chart-tooltip` does not show. `src/visuals/ChartHover.tsx`
+    renders it through the Grafana `Portal`, and in the sandbox the portal container is a mock element.
+  - `panel-edit-requests.spec.ts:121`: after a draft edit in the popup, the panel shows 0 cells with status
+    `normal`, not 2. The cause is not known yet.
