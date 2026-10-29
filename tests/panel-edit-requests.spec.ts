@@ -43,7 +43,9 @@ test('panel edit and the popup run no query again, call no datasource resource o
   createDiagram,
   gotoDashboardPage,
 }) => {
-  const uid = await createDiagram(config);
+  // The test runs no query after the first one, and it runs longer than three samples of 5 s. With the freshness 3x the
+  // routers become stale (spec 3.5) during the test, the slow frontend sandbox first. One hour keeps them normal.
+  const uid = await createDiagram({ ...config, freshness: '1h' });
   const log = observeApi(page);
   // Monaco (the query editors) adds two empty `alert` live regions to the page: a toast has a text.
   const toasts = page.getByRole('alert').filter({ hasText: /\S/ });
