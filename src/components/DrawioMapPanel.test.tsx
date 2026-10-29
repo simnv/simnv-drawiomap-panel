@@ -755,6 +755,8 @@ describe('DrawioMapPanel hover card', () => {
       expect.stringContaining('CPU'),
       expect.stringContaining('state'),
       expect.stringContaining('load 1m'),
+      expect.stringContaining('Three lines'),
+      expect.stringContaining('Nine lines'),
     ]);
     expect(rows[1].textContent).toContain('42%');
     expect(dialog.querySelectorAll('[data-testid="grafana-sparkline"]')).toHaveLength(1);
