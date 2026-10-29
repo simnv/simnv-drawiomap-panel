@@ -9,7 +9,6 @@ const counts = vi.hoisted(() => ({ table: 0 }));
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
   useStyles2: (fn: (theme: ReturnType<typeof createTheme>) => unknown) => fn(createTheme()),
-  Portal: ({ children }: any) => <div data-testid="portal">{children}</div>,
   SeriesTable: ({ timestamp, series }: any) => {
     counts.table++;
     return (
@@ -44,11 +43,15 @@ beforeEach(() => {
   });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
   // jsdom has no ResizeObserver: with this stub the tooltip box takes the observer path and queues no frames of
-  // its own. The real Portal lifecycle is tested in TooltipBox.test.tsx.
+  // its own. Like the browser, it reports the box once it observes it: the portal host is in the document then. The
+  // real portal lifecycle is tested in TooltipBox.test.tsx.
   vi.stubGlobal(
     'ResizeObserver',
     class {
-      observe() {}
+      constructor(private readonly report: () => void) {}
+      observe() {
+        this.report();
+      }
       unobserve() {}
       disconnect() {}
     }
@@ -162,14 +165,15 @@ describe('ChartHover', () => {
 describe('ChartHover keyboard, alignment, width', () => {
   const pair = () =>
     series(history([1, 2, 3], 'short'), { ...history([4, 5, 6], 'short'), timestamps: [0, 60, 100] } as HistoryModel);
-  it('renders the tooltip in a portal', () => {
+  it('renders the tooltip in a plugin host in the body, which the frontend sandbox gives to the plugin', () => {
     render(
       <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
         <i />
       </ChartHover>
     );
     hover(50);
-    expect(screen.getByTestId('portal').querySelector('[data-testid="dmap-chart-tooltip"]')).toBeTruthy();
+    const host = screen.getByTestId('dmap-chart-tooltip').closest('[data-plugin-sandbox]');
+    expect(host?.parentElement).toBe(document.body);
   });
   it('gives the wrapper the width of the chart', () => {
     render(
