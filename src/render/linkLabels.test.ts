@@ -16,6 +16,8 @@ import {
   stageObstacles,
   watchLinkLabelFonts,
 } from './linkLabels';
+import { cornersOf } from './labelPlacement';
+import type { Point } from './geometry';
 
 /** The status of a patch, as `statusViewOf` gives it. */
 type PatchStatus = NonNullable<CellPatch['statusView']>;
@@ -302,6 +304,30 @@ describe('renderLinkLabels: the refresh path', () => {
     render(root, index, value('41 Mb/s', '100 Mb/s'));
     expect(below(byHalf(root, 'a2b')!)).toBe(true);
     expect(below(byHalf(root, 'b2a')!)).toBe(true);
+  });
+  it('a half that its mate cannot join near the stroke stays on its stroke, also when it is placed again', () => {
+    // a chip 14 high on the whole b2a leg blocks its stroke and both sides at the near gap; the wide gap is free
+    const chip = '<g data-cell-id="chip"><g><rect x="210" y="93" width="140" height="14"/></g></g>';
+    const { root, index } = build(SVG(chip));
+    const value = (a: string): PatchMap =>
+      new Map([
+        [
+          'e1',
+          linkPatch('e1', {
+            a2b: half({ display: { text: a, numeric: 0 } }),
+            b2a: half({ display: { text: '10', suffix: ' Mb/s', numeric: 10 } }),
+            labelMode: 'value',
+          }),
+        ],
+      ]);
+    expect(render(root, index, value('41 Mb/s'))).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    expect(byHalf(root, 'b2a')!.getAttribute('data-dmap-side')).toBe('top-wide');
+    // a longer text gives a2b a new slot: it is placed again on its own stroke, not on the far side of its mate
+    expect(render(root, index, value('410 Mb/s')).moved).toBe(1);
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    expect(a.getAttribute('y')).toBe('100');
   });
   it('a changed linkWidth.max, mode or stage places everything again; a theme change repaints only', () => {
     const { root, index } = build();
@@ -601,7 +627,8 @@ describe('renderLinkLabels: obstacles', () => {
     expect(root.querySelector('.dmap-arrow[data-dmap-half="a2b"]')!.getAttribute('points')).toBe(
       '200,100 192,96 192,104'
     );
-    // the triangle itself, not its box: a label beside the stroke may stand next to the narrow end
+    // the triangle itself, not its box: a label beside the stroke may stand next to the narrow end. Each head knows
+    // its edge and the leg of its half.
     const heads = stageObstacles(root, index, patches, 10).filter((o) => o.kind === 'polygon');
     expect(heads).toContainEqual({
       kind: 'polygon',
@@ -610,6 +637,8 @@ describe('renderLinkLabels: obstacles', () => {
         { x: 188, y: 88 },
         { x: 188, y: 112 },
       ],
+      owner: 'e1',
+      leg: 'e1:a2b',
     });
     expect(heads).toContainEqual({
       kind: 'polygon',
@@ -618,6 +647,8 @@ describe('renderLinkLabels: obstacles', () => {
         { x: 212, y: 112 },
         { x: 212, y: 88 },
       ],
+      owner: 'e1',
+      leg: 'e1:b2a',
     });
   });
   it('a plain draw.io node is an obstacle: the label slides towards the end of the link', () => {
@@ -801,7 +832,7 @@ describe('renderLinkLabels: backgrounds', () => {
     const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'value' })]]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
   });
-  it('a link of 36 units keeps both labels beyond the wings of the widest heads', () => {
+  it('a link of 36 units keeps both labels beside the drawn heads; the text moves out when its head grows', () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
       <g data-cell-id="e1"><g><path d="M 200 82 L 200 118" fill="none" pointer-events="stroke"/></g></g></svg>`;
     const { root, index } = build(svg);
@@ -814,9 +845,19 @@ describe('renderLinkLabels: backgrounds', () => {
       'top-head',
       'top-head',
     ]);
-    // left of the vertical link at x = 200: the wide gap (4) beyond the wing of the widest head (12) and half the box
-    // height (6, the 10-unit slot and the halo), 22 off the line
-    expect(byHalf(root, 'a2b')!.getAttribute('transform')).toMatch(/^rotate\(-90 178 /);
+    // left of the vertical link at x = 200: the wide gap (4) beyond the wing of the drawn head (4: the head of a
+    // half 2 wide is 8 wide) and half the box height (6, the 10-unit slot and the halo), 14 off the line
+    const a = byHalf(root, 'a2b')!;
+    expect(a.getAttribute('transform')).toMatch(/^rotate\(-90 186 /);
+    const placedAt = a.getAttribute('data-dmap-placed-at');
+    // the half at linkWidth.max: its head is 24 wide, the text stands 4 + 12 + 6 = 22 off the line, at the same place
+    // along it, and the label is not placed again
+    const wide: PatchMap = new Map([
+      ['e1', linkPatch('e1', { a2b: half({ width: 10 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
+    ]);
+    expect(render(root, index, wide)).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    expect(a.getAttribute('transform')).toMatch(/^rotate\(-90 178 /);
+    expect(a.getAttribute('data-dmap-placed-at')).toBe(placedAt);
   });
   it('a group frame is no obstacle; its title bar is, because a label must not cover the caption', () => {
     const frame = `<g data-cell-id="pg-group~wan"><g><rect x="60" y="40" width="280" height="120"/></g></g>`;
@@ -935,6 +976,66 @@ describe('renderLinkLabels: review cases', () => {
     ]);
     render(root, index, both);
     expect(byHalf(root, 'a2b')!.getAttribute('data-dmap-placed-at')).not.toBe(stamp);
+  });
+  describe('the own head on another run (review of 2026-10-29)', () => {
+    // a one-way link: a jog of 4, a vertical run of 40 and the run of 24 that holds the head, which points left to
+    // (80, 60). Two bodies leave the left of the vertical run as the only spot of the 28-unit percent slot. Before
+    // the fix the head was no obstacle for that spot, and at width 8 it met the text.
+    const svg = (d: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+      <g data-cell-id="e1"><g><path d="${d}" fill="none" pointer-events="stroke"/></g></g>
+      <g data-cell-id="n1"><g><rect x="97" y="41" width="42" height="68" stroke-width="0"/></g></g>
+      <g data-cell-id="n2"><g><rect x="61" y="98" width="78" height="13" stroke-width="0"/></g></g></svg>`;
+    /** a separating-axis test of two convex polygons; touching is free */
+    const convexMeet = (a: Point[], b: Point[]) =>
+      ![a, b].some((poly) =>
+        poly.some((p, i) => {
+          const q = poly[(i + 1) % poly.length];
+          const ax = { x: p.y - q.y, y: q.x - p.x };
+          const span = (pts: Point[]) => pts.map((v) => v.x * ax.x + v.y * ax.y);
+          const [sa, sb] = [span(a), span(b)];
+          return Math.max(...sa) <= Math.min(...sb) + 1e-9 || Math.max(...sb) <= Math.min(...sa) + 1e-9;
+        })
+      );
+    const pointsOf = (el: Element) =>
+      el
+        .getAttribute('points')!
+        .trim()
+        .split(/\s+/)
+        .map((pair) => {
+          const [x, y] = pair.split(',').map(Number);
+          return { x, y };
+        });
+    it.each([
+      ['a2b', 'M 100 100 L 104 100 L 104 60 L 80 60'],
+      ['b2a', 'M 80 60 L 104 60 L 104 100 L 100 100'],
+    ] as const)('%s: the text clears its drawn head at every width, on each refresh', (which, d) => {
+      const length = vi.fn(() => 28);
+      Object.defineProperty(SVGElement.prototype, 'getComputedTextLength', { configurable: true, value: length });
+      try {
+        const { root, index } = build(svg(d));
+        const patches = (width: number): PatchMap =>
+          new Map([
+            ['e1', linkPatch('e1', { [which]: half({ width, percentDisplay: '100%' }), labelMode: 'percent' })],
+          ]);
+        for (const width of [2, 3, 4, 5, 6, 7, 8, 9, 10, 6, 2]) {
+          expect(render(root, index, patches(width)).placed).toBe(1);
+          const label = byHalf(root, which)!;
+          const [, degrees] = /^rotate\((\S+) /.exec(label.getAttribute('transform')!)!;
+          // the text box of the slot (28 × 10, without the halo) about its centre
+          const box = cornersOf({
+            centre: { x: Number(label.getAttribute('x')), y: Number(label.getAttribute('y')) },
+            width: 28,
+            height: 10,
+            degrees: Number(degrees),
+          });
+          const head = pointsOf(root.querySelector(`polygon.dmap-arrow[data-dmap-half="${which}"]`)!);
+          expect(convexMeet(box, head), `width ${width}`).toBe(false);
+        }
+        expect(length).toHaveBeenCalled();
+      } finally {
+        delete (SVGElement.prototype as { getComputedTextLength?: unknown }).getComputedTextLength;
+      }
+    });
   });
   describe('the bend spot', () => {
     // a run of 31 and a jog of 10: no straight run holds the 26 unit box, so only the last resort can place it
