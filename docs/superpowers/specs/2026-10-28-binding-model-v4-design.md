@@ -962,8 +962,13 @@ The popup holds one draft: the YAML text, the last valid config, and the diagram
   (`src/editor/popup/BindingsPopup.tsx:119-125`). Apply is off while the YAML does not parse or the envelope fails.
   Item errors do not block Apply.
 - **Conflict.** The base revision stays (`src/editor/revision.ts:3-16`, `baseRevision`, `hasConflict`). When the saved
-  options change after the draft started (another tab, a dashboard reload), the popup shows "The saved panel
-  changed" with two actions: "Reload" (drop the draft) and "Keep my draft" (the next Apply overwrites).
+  options change after the draft started, the popup shows "The saved panel changed" with two actions: "Reload"
+  (drop the draft) and "Keep my draft" (the next Apply overwrites). Erratum (P3-07): in Grafana 12.4 and 13.2 only an
+  edit in the same tab (for example the YAML option of the options pane) changes the options while the popup is open.
+  A save from another session goes through Grafana Live: with unsaved dashboard changes, Grafana shows its own
+  "Dashboard changed" dialog and the options of the tab stay the same; without them, Grafana loads the dashboard again,
+  the popup closes and its draft is lost (a popup draft does not make the dashboard dirty). The panel cannot change
+  this; a draft that survives the reload is a later task.
 - **Discard.** Escape or close with a dirty draft opens the discard confirmation, as today
   (`src/editor/popup/BindingsPopup.tsx:145-163`). A draft with text that does not parse is dirty.
 - **Undo.** Monaco keeps the undo of the text. The popup keeps a bounded stack (50) of diagram versions for the writes
@@ -1093,7 +1098,7 @@ these modules.
   | Case | P1 | P3 |
   |---|---|---|
   | `bindings-popup.spec.ts` | deleted; the cases of :251-365 wait for P3 | the cases of :251-365 in `split-editor.spec.ts` |
-  | `editor-refresh.spec.ts:6-18`, entry `geometry` (through the popup) | the entry `Diagram option` only | the entry `geometry` through the split editor |
+  | `editor-refresh.spec.ts:6-18`, entry `geometry` (through the popup) | the entry `Diagram option` only | the split editor keeps its dialog, Monaco model and draft through two refreshes; Apply still works (erratum P3-08: the split editor has no geometry entry, 5.1) |
   | `editor.spec.ts:125` (geometry export through the popup) | geometry export through the Diagram option; `bind` and `key` survive the save and the reopen | the chart assignment through the split editor |
   | `options.spec.ts:8-39` (Diagram option buttons at the narrowest width) | the buttons without `dmap-edit-bindings-option`, and the YAML option | with the button |
   | `zoom.spec.ts:138-162` (the corner in panel edit) | the corner without `dmap-edit-bindings` | with the button |
