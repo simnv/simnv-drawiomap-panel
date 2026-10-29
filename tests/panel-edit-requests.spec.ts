@@ -1,41 +1,24 @@
 import type { Page, Request } from '@playwright/test';
-import type { DiagramConfig } from '../src/model/config';
-import { binding, nativeQuery } from '../src/fixtures/authoring-config';
-import { openBindingsPopup, popupInspector, selectStageCell } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
 
 /**
- * Entering panel edit and opening the bindings popup must not run the diagram queries again (Grafana does not run the
- * panel's own queries then either), must not call datasource resources, and must show no error toast. Cancel closes
- * the popup. Regression for the "refresh on panel edit" and "Cancel does nothing" reports.
+ * Entering panel edit must not run the panel queries again (Grafana does not run them then either), must not call
+ * datasource resources besides those of the Grafana query editors, and must show no error toast. Discard closes panel
+ * edit. Regression for the "refresh on panel edit" and "Cancel does nothing" reports. P1 has no bindings popup
+ * (spec 5.0): the draft is an edit in the YAML option, and Discard of the panel editor is the Cancel. The popup part
+ * of this check comes with P3.
  */
 
-/** Three fictional devices with one health query each: scalar bindings whose resolution does not follow the width. */
-function statusConfig(config: DiagramConfig): DiagramConfig {
-  const queries = ['device-1', 'device-2', 'link-1'].map((id) => nativeQuery(`health-${id}`, 'vector(1)'));
-  return {
-    ...config,
-    queries,
-    patterns: [],
-    widgets: [],
-    overrides: queries.map((query, i) => ({
-      cellId: ['device-1', 'device-2', 'link-1'][i],
-      display: {
-        label: 'Saved ${value}',
-        status: {
-          kind: 'mapping',
-          binding: binding(query.id),
-          default: { state: 'normal', reason: 'Healthy' },
-          mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
-        },
-      },
-    })),
-  };
-}
+/**
+ * The resource calls of the Grafana query editors below the panel in panel edit: the TestData scenario list and the
+ * Prometheus metric metadata, labels and series for the code completion. The panel itself calls no resource.
+ */
+const QUERY_EDITOR_RESOURCE =
+  /\/resources\/(?:scenarios|api\/v1\/(?:metadata|labels|label\/[^/]+\/values|series))(?:\?|$)/;
 
-/** The API requests of the page: the diagram queries, the Grafana panel queries and the datasource resource calls. */
+/** The API requests of the page: the panel queries, the other datasource resource calls and the other calls. */
 function observeApi(page: Page) {
-  const log: Array<{ kind: 'diagram' | 'panel' | 'resource' | 'other'; method: string; path: string }> = [];
+  const log: Array<{ kind: 'query' | 'resource' | 'query-editor' | 'other'; method: string; path: string }> = [];
   page.on('request', (request: Request) => {
     const url = new URL(request.url());
     if (!url.pathname.includes('/api/')) {
@@ -43,30 +26,33 @@ function observeApi(page: Page) {
     }
     const path = url.pathname + url.search;
     const kind = path.includes('/api/ds/query')
-      ? path.includes('requestId=drawiomap-')
-        ? 'diagram'
-        : 'panel'
-      : path.includes('/resources/')
-        ? 'resource'
-        : 'other';
+      ? 'query'
+      : QUERY_EDITOR_RESOURCE.test(path)
+        ? 'query-editor'
+        : path.includes('/resources/')
+          ? 'resource'
+          : 'other';
     log.push({ kind, method: request.method(), path });
   });
   return log;
 }
 
-test('panel edit and the popup run no diagram query again, call no datasource resource, and Cancel closes', async ({
+test('panel edit runs no query again, calls no datasource resource of its own, and Discard drops a YAML edit', async ({
   page,
   config,
   createDiagram,
   gotoDashboardPage,
 }) => {
-  const uid = await createDiagram(statusConfig(config));
+  const uid = await createDiagram(config);
   const log = observeApi(page);
-  const toasts = page.getByRole('alert');
+  // Monaco (the query editors) adds two empty `alert` live regions to the page: a toast has a text.
+  const toasts = page.getByRole('alert').filter({ hasText: /\S/ });
   await gotoDashboardPage({ uid });
   const panel = page.getByTestId('dmap-panel');
-  await expect(panel.locator('[data-dmap-status="normal"]')).toHaveCount(3);
-  await expect.poll(() => log.filter((r) => r.kind === 'diagram').length).toBe(3);
+  // The two routers of the authoring config have their status from the `health` target.
+  const normal = () => page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]');
+  await expect(normal()).toHaveCount(2);
+  await expect.poll(() => log.filter((r) => r.kind === 'query').length).toBeGreaterThan(0);
   await page.waitForTimeout(2000);
   const before = log.length;
 
@@ -74,12 +60,14 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   await panel.hover();
   await page.keyboard.press('e');
   await page.waitForURL(/editPanel=1/);
-  await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
-  await expect(page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]')).toHaveCount(3);
+  // P1 has no "Edit bindings" button (spec 5.0); the corner of the panel is there.
+  await expect(page.getByTestId('dmap-corner')).toBeAttached();
+  await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
+  await expect(normal()).toHaveCount(2);
   await page.waitForTimeout(5000);
   const afterEdit = log.slice(before);
   expect(
-    afterEdit.filter((r) => r.kind === 'diagram'),
+    afterEdit.filter((r) => r.kind === 'query'),
     JSON.stringify(afterEdit)
   ).toEqual([]);
   expect(
@@ -88,35 +76,24 @@ test('panel edit and the popup run no diagram query again, call no datasource re
   ).toEqual([]);
   await expect(toasts).toHaveCount(0);
 
-  // The popup shares the panel cache: its draft bindings add no request.
-  const dialog = await openBindingsPopup(page);
-  await expect(dialog.getByTestId('dmap-popup-stage').locator('[data-dmap-status="normal"]')).toHaveCount(3);
-  await page.waitForTimeout(3000);
-  const afterPopup = log.slice(before);
-  expect(
-    afterPopup.filter((r) => r.kind === 'diagram' || r.kind === 'resource'),
-    JSON.stringify(afterPopup)
-  ).toEqual([]);
+  // An edit in the YAML option changes the panel at once: the routers read a refId that no target has.
+  const bindings = page.getByTestId('data-testid Options group Bindings');
+  const toggle = bindings.locator('[aria-expanded]').first();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+  }
+  await bindings
+    .getByTestId('data-testid Code editor container')
+    .locator('.view-line')
+    .filter({ hasText: /status:\s+health/ })
+    .click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('-draft');
+  await expect(normal()).toHaveCount(0);
+  // Discard closes panel edit and drops the edit: the panel shows the saved bindings. 12.4 names the button
+  // "Discard panel changes".
+  await page.getByRole('button', { name: /^Discard( panel changes)?$/ }).click();
+  await expect(page).not.toHaveURL(/editPanel=/);
+  await expect(normal()).toHaveCount(2);
   await expect(toasts).toHaveCount(0);
-
-  // Cancel closes a clean draft at once.
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-
-  // With a dirty draft, Cancel asks first; Keep editing stays, Discard closes. Discard keeps the popup open.
-  const again = await openBindingsPopup(page);
-  await selectStageCell(again, 'device-1');
-  const label = popupInspector(again).getByRole('textbox', { name: 'Label template', exact: true });
-  await label.fill('Draft ${value}');
-  await again.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
-  await expect(again).toBeVisible();
-  await again.getByRole('button', { name: 'Discard', exact: true }).click();
-  await expect(again).toBeVisible();
-  await expect(label).toHaveValue('Saved ${value}');
-  await label.fill('Draft ${value}');
-  await again.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.getByRole('button', { name: 'Discard and close', exact: true }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]')).toHaveCount(3);
 });

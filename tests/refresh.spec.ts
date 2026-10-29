@@ -1,60 +1,31 @@
 import type { Page } from '@playwright/test';
-import type { DiagramConfig, NamedQuery } from '../src/model/config';
-import { binding, nativeQuery } from '../src/fixtures/authoring-config';
-import { openBindingsPopup, closeBindingsPopup } from './authoring-controls';
-import { expect, observeQueries, test } from './authoring-fixtures';
+import type { ConfigV4 } from '../src/model/v4';
+import { expect, observeQueries, promTarget, test, testdataTarget } from './authoring-fixtures';
 
-// Three fictional devices. Each device has its own query and status condition.
+// Three fictional devices. Each device has its own health series; the class `devices` reads them by the key.
 const COUNT = 3;
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="330" height="80" viewBox="0 0 330 80">
   <g data-cell-id="0" data-meta-pg-schema="1">${Array.from(
     { length: COUNT },
     (_, i) =>
-      `<g data-cell-id="device-${i}" data-meta-pg-id="device-${i}" data-meta-pg-kind="node" data-meta-pg-schema="1" transform="translate(${i * 110} 10)"><rect width="80" height="50" fill="#d5e8d4" stroke="#82b366"/><text x="8" y="30">Device ${i}</text></g>`
+      `<g data-cell-id="device-${i}" data-meta-pg-id="device-${i}" data-meta-pg-kind="node" data-meta-pg-schema="1" data-meta-bind="devices" data-meta-key="device-${i}" transform="translate(${i * 110} 10)"><rect width="80" height="50" fill="#d5e8d4" stroke="#82b366"/><text x="8" y="30">Device ${i}</text></g>`
   ).join('')}</g>
 </svg>`;
 
-function statusConfig(config: DiagramConfig, queries: NamedQuery[]): DiagramConfig {
-  return {
-    ...config,
-    queries,
-    patterns: [],
-    widgets: [],
-    overrides: queries.map((query, i) => ({
-      cellId: `device-${i}`,
-      display: {
-        status: {
-          kind: 'mapping',
-          binding: binding(query.id),
-          default: { state: 'normal', reason: 'Healthy' },
-          mappings: [{ value: 0, state: 'down', reason: 'Health check failed' }],
-        },
-      },
-    })),
-  };
-}
-
-const kinds = {
-  // Eager panel targets: the panel query runner keeps the last series while it loads.
-  panel: (prometheus: string) => ({
-    queries: Array.from({ length: COUNT }, (_, i): NamedQuery => ({
-      id: `health-${i}`,
-      name: `health-${i}`,
-      source: { kind: 'panel', refId: `H${i}` },
-    })),
-    targets: Array.from({ length: COUNT }, (_, i) => ({
-      refId: `H${i}`,
-      datasource: { uid: prometheus, type: 'prometheus' },
-      expr: 'vector(1)',
-      range: true,
-    })),
-  }),
-  // Lazy datasource queries: the diagram query controller runs them.
-  datasource: () => ({
-    queries: Array.from({ length: COUNT }, (_, i) => nativeQuery(`health-${i}`, 'vector(1)')),
-    targets: [],
-  }),
+const statusConfig: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: { devices: { match: { key: 'device' }, status: 'health' } },
+  overrides: {},
 };
+/** Eager panel targets: the panel query runner keeps the last series while it loads. */
+const targets = [
+  promTarget(
+    'health',
+    Array.from({ length: COUNT }, (_, i) => `label_replace(vector(1), "device", "device-${i}", "", "")`).join(' or '),
+    { range: true }
+  ),
+];
 
 /** Hold every /api/ds/query request until release() runs. A fixed delay is slower and can end before the assertions. */
 async function holdQueries(page: Page) {
@@ -71,138 +42,108 @@ async function holdQueries(page: Page) {
   return state;
 }
 
-for (const kind of Object.keys(kinds) as Array<keyof typeof kinds>) {
-  test.describe(`${kind} queries`, () => {
-    let uid: string;
-    test.beforeEach(async ({ request, config, readProvisionedDataSource }, testInfo) => {
-      const prometheus = (await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' })).uid;
-      const { queries, targets } = kinds[kind](prometheus);
-      uid = `refresh-${kind}-${testInfo.workerIndex}-${Date.now()}`;
-      const response = await request.post('/api/dashboards/db', {
-        data: {
-          dashboard: {
-            uid,
-            title: uid,
-            schemaVersion: 39,
-            editable: true,
-            time: { from: 'now-1h', to: 'now' },
-            panels: [
-              {
-                id: 1,
-                title: 'Sanitized refresh',
-                type: 'simnv-drawiomap-panel',
-                gridPos: { x: 0, y: 0, w: 24, h: 12 },
-                targets,
-                fieldConfig: { defaults: {}, overrides: [] },
-                options: {
-                  config: statusConfig(config, queries),
-                  diagram: { svg, hash: uid },
-                  zoom: { mode: 'fit', wheel: true, pan: true },
-                },
+// The panel queries only: P1 has no queries of its own (spec 6.5). Grafana renders a panel with eager targets only
+// after their first result, so the panel has no first-load state of its own.
+test.describe('panel queries', () => {
+  let uid: string;
+  test.beforeEach(async ({ request }, testInfo) => {
+    uid = `refresh-panel-${testInfo.workerIndex}-${Date.now()}`;
+    const response = await request.post('/api/dashboards/db', {
+      data: {
+        dashboard: {
+          uid,
+          title: uid,
+          schemaVersion: 39,
+          editable: true,
+          time: { from: 'now-1h', to: 'now' },
+          panels: [
+            {
+              id: 1,
+              title: 'Sanitized refresh',
+              type: 'simnv-drawiomap-panel',
+              gridPos: { x: 0, y: 0, w: 24, h: 12 },
+              targets,
+              fieldConfig: { defaults: {}, overrides: [] },
+              options: {
+                config: statusConfig,
+                diagram: { svg, hash: uid },
+                zoom: { mode: 'fit', wheel: true, pan: true },
               },
-            ],
-          },
+            },
+          ],
         },
-      });
-      expect(response.ok(), await response.text()).toBe(true);
+      },
     });
-    test.afterEach(async ({ request }) => {
-      await request.delete(`/api/dashboards/uid/${uid}`);
-    });
-
-    test('first load shows loading, then the data', async ({ page, gotoDashboardPage }) => {
-      // Grafana renders a panel with eager targets only after their first result.
-      test.skip(kind === 'panel', 'The panel has no first-load state of its own.');
-      const held = await holdQueries(page);
-      try {
-        await gotoDashboardPage({ uid });
-        const panel = page.getByTestId('dmap-panel');
-        await expect(panel.getByTestId('dmap-status-band')).toContainText('Loading data');
-        await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="missing"]')).toHaveCount(COUNT);
-        expect(held.held).toBeGreaterThan(0);
-        held.release();
-        await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
-        await expect(panel.getByTestId('dmap-status-band').locator('.dmap-status-summary')).toHaveCount(0);
-      } finally {
-        held.release();
-      }
-    });
-
-    test('refresh keeps the last data: no missing marker, no band row, no layout shift', async ({
-      page,
-      gotoDashboardPage,
-      selectors,
-    }) => {
-      const dashboard = await gotoDashboardPage({ uid });
-      const panel = page.getByTestId('dmap-panel');
-      const devices = panel.locator('[data-cell-id^="device-"]');
-      await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
-      const rows = panel.getByTestId('dmap-status-band').locator('.dmap-status-summary');
-      await expect(rows).toHaveCount(0);
-      const stage = panel.getByTestId('dmap-stage').locator('svg').first();
-      const before = await stage.boundingBox();
-
-      const held = await holdQueries(page);
-      try {
-        await dashboard.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
-        await expect.poll(() => held.held).toBeGreaterThan(0);
-        // Sample the panel while the responses are pending.
-        const samples: Array<{ missing: number; rows: number; text: string[]; box: unknown }> = [];
-        // A fixed number of samples: a time window gives too few of them on a loaded machine.
-        while (samples.length < 10) {
-          samples.push({
-            missing: await devices.and(panel.locator('[data-dmap-status="missing"]')).count(),
-            rows: await rows.count(),
-            text: await panel.getByTestId('dmap-status-band').allTextContents(),
-            box: await stage.boundingBox(),
-          });
-          await page.waitForTimeout(50);
-        }
-        expect(samples.filter((s) => s.missing || s.rows)).toEqual([]);
-        expect(samples.filter((s) => JSON.stringify(s.box) !== JSON.stringify(before))).toEqual([]);
-      } finally {
-        held.release();
-      }
-      await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
-    });
+    expect(response.ok(), await response.text()).toBe(true);
   });
-}
+  test.afterEach(async ({ request }) => {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  });
 
+  test('refresh keeps the last data: no missing marker, no band row, no layout shift', async ({
+    page,
+    gotoDashboardPage,
+    selectors,
+  }) => {
+    const dashboard = await gotoDashboardPage({ uid });
+    const panel = page.getByTestId('dmap-panel');
+    const devices = panel.locator('[data-cell-id^="device-"]');
+    await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
+    const rows = panel.getByTestId('dmap-status-band').locator('.dmap-status-summary');
+    await expect(rows).toHaveCount(0);
+    const stage = panel.getByTestId('dmap-stage').locator('svg').first();
+    const before = await stage.boundingBox();
+
+    const held = await holdQueries(page);
+    try {
+      await dashboard.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2).click();
+      await expect.poll(() => held.held).toBeGreaterThan(0);
+      // Sample the panel while the responses are pending.
+      const samples: Array<{ missing: number; rows: number; text: string[]; box: unknown }> = [];
+      // A fixed number of samples: a time window gives too few of them on a loaded machine.
+      while (samples.length < 10) {
+        samples.push({
+          missing: await devices.and(panel.locator('[data-dmap-status="missing"]')).count(),
+          rows: await rows.count(),
+          text: await panel.getByTestId('dmap-status-band').allTextContents(),
+          box: await stage.boundingBox(),
+        });
+        await page.waitForTimeout(50);
+      }
+      expect(samples.filter((s) => s.missing || s.rows)).toEqual([]);
+      expect(samples.filter((s) => JSON.stringify(s.box) !== JSON.stringify(before))).toEqual([]);
+    } finally {
+      held.release();
+    }
+    await expect(panel.locator('[data-cell-id^="device-"][data-dmap-status="normal"]')).toHaveCount(COUNT);
+  });
+});
+
+// P3-08: the bindings popup comes back with the split editor (spec 5.0, 6.5). Then this case opens the split editor
+// where it says "P3-08" and runs again.
 test.describe('popup open', () => {
-  test('the panel behind does no work for a refresh while the popup is open and updates once on close', async ({
+  test.fixme('the panel behind does no work for a refresh while the popup is open and updates once on close', async ({
     page,
     config,
     createDiagram,
     gotoPanelEditPage,
-    readProvisionedDataSource,
     selectors,
   }) => {
-    const testdata = await readProvisionedDataSource({ fileName: 'authoring.yaml' });
-    const walk = binding('walk');
-    const live: DiagramConfig = {
+    // The authoring link reads one random walk in both directions; its card shows the value.
+    const live: ConfigV4 = {
       ...config,
-      queries: [{ id: 'walk', name: 'walk', source: { kind: 'panel', refId: 'A' } }],
-      patterns: [
-        {
-          id: 'links',
-          name: 'Links',
-          select: { ids: ['link-1'] },
-          display: {
-            link: { a2b: { binding: walk }, b2a: { binding: walk }, capacity: 100 },
-            hover: { rows: [{ kind: 'value', label: 'Walk', binding: walk }] },
-          },
+      classes: {
+        'directional-link': {
+          match: { key: 'job', port: 'device' },
+          up: 'A',
+          down: 'A',
+          rows: [{ kind: 'value', label: 'Walk', query: 'A' }],
         },
-      ],
-      overrides: [],
-      widgets: [],
+      },
     };
     const uid = await createDiagram(live, {
       targets: [
-        {
-          refId: 'A',
-          datasource: { uid: testdata.uid, type: 'grafana-testdata-datasource' },
-          scenarioId: 'random_walk',
-        },
+        testdataTarget('A', { scenarioId: 'random_walk', seriesCount: 1, labels: 'job=node-rtr-a,device=wan1' }),
       ],
     });
     const requests = observeQueries(page, uid);
@@ -254,7 +195,7 @@ test.describe('popup open', () => {
     await refresh();
     await expect.poll(mutations, { timeout: 10_000 }).toBeGreaterThan(settled);
 
-    await openBindingsPopup(page);
+    // P3-08: open the split editor.
     const before = await snapshot();
     const mutationsBefore = await mutations();
     // Three dashboard refreshes reach the data source while the popup is open.
@@ -279,7 +220,7 @@ test.describe('popup open', () => {
     });
     const pictures = () => page.evaluate(() => (window as unknown as { __dmapPictures: string[] }).__dmapPictures);
     const responsesAtClose = values.length;
-    await closeBindingsPopup(page);
+    // P3-08: close the split editor.
     // The panel renders the latest data: its link halves change.
     await expect.poll(async () => (await snapshot()).halves, { timeout: 15_000 }).not.toEqual(before.halves);
     expect(await mutations()).toBeGreaterThan(mutationsBefore);
