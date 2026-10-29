@@ -72,13 +72,15 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
       };
       const expected = quad(anchor);
       const actual = quad(region);
-      const chart = el.querySelector<HTMLElement>('[data-testid="dmap-chart"]')!;
+      // A region whose cell is off the screen has no chart. After a resize Grafana moves the panel one frame late,
+      // so for that frame the cell can be outside the window.
+      const chart = el.querySelector<HTMLElement>('[data-testid="dmap-chart"]');
       // a point of the region in its own coordinates: is the chart the top element there?
       const hit = (x: number) => {
         const p = new DOMPoint(x, 30).matrixTransform(region.getScreenCTM()!);
         return document.elementFromPoint(p.x, p.y)?.closest('[data-testid="dmap-chart"]') != null;
       };
-      const pixels = [...chart.querySelectorAll('canvas')].some((canvas) => {
+      const pixels = [...(chart?.querySelectorAll('canvas') ?? [])].some((canvas) => {
         const data = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
         return data?.some((v, i) => i % 4 === 3 && v > 0);
       });
@@ -92,8 +94,8 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
         inside: hit(177),
         outside: hit(200),
         parentOffset: region.transform.baseVal.consolidate()!.matrix.e,
-        color: getComputedStyle(chart).color,
-        fontSize: getComputedStyle(chart).fontSize,
+        color: chart && getComputedStyle(chart).color,
+        fontSize: chart && getComputedStyle(chart).fontSize,
         svgOverflow: getComputedStyle(el.querySelector('svg')!).overflow,
         matrix: [ctm.a, ctm.b, ctm.c, ctm.d],
         box: anchor.getBoundingClientRect().toJSON(),
@@ -101,6 +103,7 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
       };
     });
   const verify = async () => {
+    await expect.poll(async () => (await read()).pixels).toBe(true);
     const g = await read();
     expect(g.error).toBeLessThan(0.5);
     expect(g.localWidth).toBe(180);
@@ -109,7 +112,6 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
     expect(g.pixels).toBe(true);
     return g;
   };
-  await expect.poll(async () => (await read()).pixels).toBe(true);
   const fitted = await verify();
   // the anchor is rotated and skewed
   expect(Math.abs(fitted.matrix[1])).toBeGreaterThan(0.01);
