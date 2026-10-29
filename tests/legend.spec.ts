@@ -1,8 +1,11 @@
 import { devices, type APIRequestContext, type Locator } from '@playwright/test';
+import fs from 'node:fs';
 import { expect, test } from './authoring-fixtures';
 
 // Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
 const { defaultBrowserType: _webkit, ...iPhone } = devices['iPhone 13'];
+/** The number of panels of the demo dashboard: all of them are drawiomap panels. */
+const DEMO_PANELS: number = JSON.parse(fs.readFileSync('provisioning/dashboards/demo.json', 'utf8')).panels.length;
 
 /** A copy of the demo dashboard with changed options of the portograph panel (id 1). Returns the uid. */
 async function demoCopy(request: APIRequestContext, uid: string, options: Record<string, unknown>) {
@@ -239,7 +242,7 @@ test.describe('legend taps across panels', () => {
     await page.setViewportSize({ width: 390, height: 2400 });
     await gotoDashboardPage({ uid: 'drawiomap-demo' });
     const [a, b] = [page.getByTestId('dmap-panel').nth(0), page.getByTestId('dmap-panel').nth(1)];
-    await expect(page.getByTestId('dmap-panel')).toHaveCount(3);
+    await expect(page.getByTestId('dmap-panel')).toHaveCount(DEMO_PANELS);
     const tapEntry = async (panel: Locator) => {
       await panel.getByTestId('dmap-legend').getByRole('button', { name: 'Legend' }).tap();
       const entries = panel.getByTestId('dmap-legend').getByTestId('dmap-legend-entry');
