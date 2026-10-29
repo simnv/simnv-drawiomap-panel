@@ -275,6 +275,41 @@ describe('buildLegendV4', () => {
       ).toEqual(blocks.map((b) => b.key).sort());
     });
 
+    it('keep the entry keys of a merged block when the first member changes', () => {
+      // the same "All values" in green: a fixed colour for one query, one base threshold step for the other
+      const mixed = new Map([
+        ['fixed_q', field({ color: { mode: FieldColorModeId.Fixed, fixedColor: 'green' } })],
+        [
+          'step_q',
+          field({ thresholds: { mode: ThresholdsMode.Absolute, steps: [{ value: -Infinity, color: 'green' }] } }),
+        ],
+      ]);
+      const a = cell('n1', status('fixed_q', 'normal', named('green'), '1'));
+      const b = cell('n2', status('step_q', 'normal', named('green'), '1'));
+      const [ab] = buildLegendV4(new Map([a, b]), mixed, ctx);
+      const [ba] = buildLegendV4(new Map([b, a]), mixed, ctx);
+      expect(ab.title).toBe('fixed_q · step_q');
+      expect([ba.key, ba.entries.map((e) => e.key)]).toEqual([ab.key, ab.entries.map((e) => e.key)]);
+    });
+
+    it('give a merged block a key that no query ID can make', () => {
+      const green = field({ color: { mode: FieldColorModeId.Fixed, fixedColor: 'green' } });
+      const red = field({ color: { mode: FieldColorModeId.Fixed, fixedColor: 'red' } });
+      const tricky = new Map([
+        ['A', green],
+        ['B', green],
+        ['A|status:B', red],
+      ]);
+      const patches: PatchMap = new Map([
+        cell('n1', status('A', 'normal', named('green'), '1')),
+        cell('n2', status('B', 'normal', named('green'), '1')),
+        cell('n3', status('A|status:B', 'normal', named('red'), '1')),
+      ]);
+      const blocks = buildLegendV4(patches, tricky, ctx);
+      expect(blocks.map((b) => b.title)).toEqual(['A · B', 'A|status:B']);
+      expect(new Set(blocks.map((b) => b.key)).size).toBe(2);
+    });
+
     it('do not merge when one entry has another text or colour, or the gradients differ', () => {
       const relabelled = [
         {

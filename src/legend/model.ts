@@ -433,8 +433,9 @@ const contentOf = (block: LegendBlock) =>
 /**
  * Blocks with the same content (`contentOf`) become one block at the place of the first. Its title is the titles of
  * the members joined with ' · '. Its cells, and the cells of each entry, are the cells of all members, so a highlight
- * shows the cells of every member. Its key is the sorted keys of the members: it does not change when the order of
- * the cells changes.
+ * shows the cells of every member. Its key is the sorted keys of the members in JSON, and its entry keys are those of
+ * the member with the first key: they do not change when the order of the cells changes, and a query ID with a
+ * separator in it cannot make the same key.
  */
 function mergeSame(blocks: LegendBlock[]): LegendBlock[] {
   const groups = new Map<string, LegendBlock[]>();
@@ -446,7 +447,8 @@ function mergeSame(blocks: LegendBlock[]): LegendBlock[] {
     if (members.length === 1) {
       return members[0];
     }
-    const [first] = members;
+    const keys = members.map((m) => m.key).sort();
+    const first = members.find((m) => m.key === keys[0])!;
     const union = (ids: (m: LegendBlock) => string[]) => {
       const out: string[] = [];
       members.forEach((m) => ids(m).forEach((id) => push(out, id)));
@@ -455,10 +457,7 @@ function mergeSame(blocks: LegendBlock[]): LegendBlock[] {
     const titles: string[] = [];
     members.forEach((m) => m.title && push(titles, m.title));
     return {
-      key: members
-        .map((m) => m.key)
-        .sort()
-        .join('|'),
+      key: `merged:${JSON.stringify(keys)}`,
       title: titles.length ? titles.join(' · ') : undefined,
       entries: first.entries.map((e, i) => ({ ...e, cellIds: union((m) => m.entries[i].cellIds) })),
       ...(first.gradient ? { gradient: first.gradient } : {}),
