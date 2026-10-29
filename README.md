@@ -283,7 +283,7 @@ A use can select more than one series.
 
 **Units.** When the units of the series differ and all are bit or byte rates, the panel converts to the unit of the first series: 1 Mbit/s and 500 kbit/s sum to 1.5 Mbit/s. Other mixed units give `missing` with "Mixed units" and `unit-mismatch`.
 
-**N lines.** A `history` row or chart draws up to 8 lines in one chart with one Y range. A line shows only the labels that differ between the lines; when no label differs, it shows the display name of the field. The 8 lines have 8 distinct colours of the Grafana classic palette, in the fixed order. A series with no value keeps its place and colour and shows "no data" in the tooltip.
+**N lines.** A `history` row or chart draws up to 8 lines in one chart with one Y range. A line shows only the labels that differ between the lines; when no label differs, it shows the display name of the field. The 8 lines have 8 distinct colours of the Grafana classic palette (slots 0–5, 26 and 30), in the fixed order. A series with no value keeps its place and colour and shows "no data" in the tooltip.
 
 ### Rows
 
