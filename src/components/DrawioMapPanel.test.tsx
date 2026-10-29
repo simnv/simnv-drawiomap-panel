@@ -1019,6 +1019,23 @@ describe('DrawioMapPanel live zoom', () => {
     await screen.findByRole('dialog');
   });
 
+  it('a mouse drag pans a zoomed view also when it starts on an element that stops the pointer events', async () => {
+    // A chart region is a React portal in the diagram: a React handler above it that stops an event stops the native
+    // event at the portal container, below the wrapper.
+    const { wrapper, svgEl, half } = await setup();
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    const zoomed = svgEl.getAttribute('viewBox');
+    const target = half(linkId);
+    for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
+      target.addEventListener(type, (e) => e.stopPropagation());
+    }
+    fireEvent.pointerDown(target, { pointerType: 'mouse', button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(target, { pointerType: 'mouse', clientX: 60, clientY: 10 });
+    fireEvent.pointerUp(target, { pointerType: 'mouse', clientX: 60, clientY: 10 });
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(zoomed));
+  });
+
   it('without Drag pan, a mouse drag at the configured view does not pan', async () => {
     const { wrapper, svgEl, base } = await setup();
     fireEvent.pointerDown(wrapper, { pointerType: 'mouse', button: 0, clientX: 10, clientY: 10 });

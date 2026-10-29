@@ -147,6 +147,47 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
   await testInfo.attach('chart-region-geometry', { path: screenshot, contentType: 'image/png' });
 });
 
+test('a drag that starts on a chart region pans the diagram, and a hover still reads the chart', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}) => {
+  const uid = await createDiagram(config);
+  await gotoDashboardPage({ uid });
+  const panel = page.getByTestId('dmap-panel');
+  const chart = panel.getByTestId('dmap-chart');
+  await expect(chart.locator('canvas').first()).toBeVisible();
+  const viewBox = () => panel.locator('svg').first().getAttribute('viewBox');
+  // zoom in first: a fitted diagram has no room to pan
+  const fitted = await viewBox();
+  const box = (await chart.boundingBox())!;
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.wheel(0, -100);
+  await expect.poll(viewBox).not.toBe(fitted);
+  await expect.poll(async () => (await chart.boundingBox())!.width).toBeGreaterThan(box.width);
+  const before = await viewBox();
+  // a hover with no drag reads the chart and does not move the view
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.move(start.x + 5, start.y);
+  await expect(page.getByTestId('dmap-chart-tooltip')).toBeVisible();
+  expect(await viewBox()).toBe(before);
+  // a drag from the chart pans the diagram
+  await page.mouse.down();
+  await page.mouse.move(start.x + 60, start.y + 30, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(viewBox).not.toBe(before);
+  await expect(panel.getByRole('button', { name: 'Reset zoom' })).toBeVisible();
+  // a click with no drag on the chart does not move the view, and the chart still reads the pointer
+  const panned = await viewBox();
+  const moved = (await chart.boundingBox())!;
+  await page.mouse.click(moved.x + moved.width / 2, moved.y + moved.height / 2);
+  await page.mouse.move(moved.x + moved.width / 2 + 5, moved.y + moved.height / 2);
+  await expect(page.getByTestId('dmap-chart-tooltip')).toBeVisible();
+  expect(await viewBox()).toBe(panned);
+});
+
 const STATES = [
   'normal',
   'partial outage',
