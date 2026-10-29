@@ -600,6 +600,55 @@ describe('bindV4: the engine', () => {
     expect(entries(r.report, 'missing-attr')).toEqual([]);
   });
 
+  describe('an end attribute named as an Object.prototype member (gate A1)', () => {
+    const xml =
+      '<mxfile><diagram id="p1" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="c" vertex="1" parent="1"/><mxCell id="s" vertex="1" parent="c"/>' +
+      '<mxCell id="t" vertex="1" parent="1"/>' +
+      '<mxCell id="e" edge="1" source="s" target="t" parent="1"/></root></mxGraphModel></diagram></mxfile>';
+    const wire = { match: { key: 'name=~"${from.constructor}|${to.toString}"' }, status: 'up' };
+
+    it('is missing-attr, not an exception, when no end cell has it', () => {
+      const r = run(
+        hostConfig({ host: HOST, wire }),
+        [
+          ['c', {}],
+          ['s', { key: 'sw-a' }],
+          ['t', { key: 'sw-b' }],
+          ['e', { bind: 'wire', key: 'e' }, true],
+          ['h', { bind: 'host', key: 'h' }],
+        ],
+        [frame('up', { name: 'sw-a' }), frame('up', { job: 'h' })],
+        { xml }
+      );
+      expect(entries(r.report, 'missing-attr')).toEqual([
+        { kind: 'missing-attr', cls: 'wire', path: 'classes.wire.status', attr: 'from.constructor', cellIds: ['e'] },
+      ]);
+      expect(patch(r, 'h').statusView).toMatchObject({ state: 'normal' });
+    });
+
+    it('comes from the container when the container has it as an own attribute', () => {
+      const r = run(
+        hostConfig({ wire }),
+        [
+          ['c', { constructor: 'sw-a' }],
+          ['s', {}],
+          ['t', { toString: 'sw-b' }],
+          ['e', { bind: 'wire', key: 'e' }, true],
+        ],
+        [frame('up', { name: 'sw-a' }), frame('up', { name: 'sw-b' })],
+        { xml }
+      );
+      expect(entries(r.report, 'missing-attr')).toEqual([]);
+      expect(
+        r.series
+          .get('e')
+          ?.get('classes.wire.status')
+          ?.map((s) => s.labels)
+      ).toEqual([{ name: 'sw-a' }, { name: 'sw-b' }]);
+    });
+  });
+
   it('a version: 3 config binds nothing and gives one outdated-config (P1.12)', () => {
     const r = run({ version: 3, patterns: [] }, [['a', { bind: 'host', key: 'a' }]], [frame('up', { job: 'a' })]);
     expect(r.report).toEqual([{ kind: 'outdated-config', version: 3 }]);
