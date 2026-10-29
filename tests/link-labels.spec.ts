@@ -437,7 +437,8 @@ test('a link too short for a spot beside its stroke keeps both labels beside the
   for (const half of ['a2b', 'b2a'] as const) {
     await expect(label(panel, 'edge-ab', half)).toHaveAttribute('data-dmap-side', /^(top|bottom)-head$/);
     // near the link: the text stands the wide gap (4) beyond the wing of the head of its half as it is drawn, plus half
-    // the box height (6), not beyond the widest head (root units; the link is horizontal at y = 110)
+    // the box height (6.625: the 11.25-unit text of font size 9 and the halo 1), not beyond the widest head (root
+    // units; the link is horizontal at y = 110)
     const base = await panel
       .locator(`polygon.dmap-arrow[data-dmap-cell="edge-ab"][data-dmap-half="${half}"]`)
       .evaluate((el) => {
@@ -445,7 +446,7 @@ test('a link too short for a spot beside its stroke keeps both labels beside the
         return Math.hypot(left[0] - right[0], left[1] - right[1]);
       });
     const y = Number(await label(panel, 'edge-ab', half).getAttribute('y'));
-    expect(Math.abs(y - 110)).toBeCloseTo(4 + base / 2 + 6, 1);
+    expect(Math.abs(y - 110)).toBeCloseTo(4 + base / 2 + 6.625, 1);
   }
   // no label stands on a drawn arrow head of the link (the unit tests pin the reserved heads at linkWidth.max)
   const placed = await boxes(panel.locator('text.dmap-link-label[data-dmap-cell="edge-ab"]'));

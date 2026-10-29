@@ -479,6 +479,7 @@ function DrawioMapPanelView(props: ViewProps) {
         bandHeight={band.height}
         zoomed={panZoom.zoomed}
         editing={editing}
+        width={width}
         warnings={warnings}
         onReset={resetView}
         onRowHeight={setCornerRow}

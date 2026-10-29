@@ -6,6 +6,9 @@ import { Button, IconButton, useTheme2 } from '@grafana/ui';
 const RESET_SIZE = 32;
 const BADGE_HEIGHT = 20;
 
+/** Below this panel width in px the "Edit bindings" button shows only its icon: the text does not fit. */
+export const EDIT_TEXT_MIN_WIDTH = 160;
+
 /** The height of the top-left row: the buttons set it when they show, else the badge. 0: the row is empty. */
 export const cornerRowHeight = (buttons: boolean, warnings: number) =>
   buttons ? RESET_SIZE : warnings ? BADGE_HEIGHT : 0;
@@ -43,6 +46,7 @@ const styles = {
   // the text button keeps the 32 px touch target of the reset button
   edit: css`
     margin: 0;
+    min-width: 32px;
     min-height: 32px;
     white-space: nowrap;
   `,
@@ -60,6 +64,8 @@ interface Props {
   zoomed: boolean;
   /** Panel edit: the "Edit bindings" button shows. */
   editing: boolean;
+  /** The panel width in px: a narrow panel (a phone in panel edit) gets the icon of the button only. */
+  width: number;
   warnings: string[];
   onReset: () => void;
   onEditBindings: () => void;
@@ -69,7 +75,7 @@ interface Props {
 
 /** The top-left row holds the reset button, the warning badge and, in panel edit, the "Edit bindings" button. */
 export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerControls(
-  { bandHeight, zoomed, editing, warnings, onReset, onEditBindings, onRowHeight },
+  { bandHeight, zoomed, editing, width, warnings, onReset, onEditBindings, onRowHeight },
   ref
 ) {
   const theme = useTheme2();
@@ -130,10 +136,12 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
               variant="secondary"
               className={styles.edit}
               style={buttonStyle}
+              aria-label="Edit bindings"
+              tooltip={width < EDIT_TEXT_MIN_WIDTH ? 'Edit bindings' : undefined}
               data-testid="dmap-edit-bindings"
               onClick={onEditBindings}
             >
-              Edit bindings
+              {width < EDIT_TEXT_MIN_WIDTH ? null : 'Edit bindings'}
             </Button>
           ) : null}
         </div>

@@ -253,6 +253,15 @@ describe('DrawioMapPanel', () => {
     expect(screen.getByRole('button', { name: 'Edit bindings' })).toBe(button);
   });
 
+  it('on a panel too narrow for the text, the Edit bindings button shows only its icon', async () => {
+    locationService.partial({ editPanel: 1 });
+    onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
+    render(<DrawioMapPanel {...props({ width: 120 })} />);
+    const button = await screen.findByTestId('dmap-edit-bindings');
+    expect(button.textContent).toBe('');
+    expect(screen.getByRole('button', { name: 'Edit bindings' })).toBe(button);
+  });
+
   it('keeps the warning count and opens nothing when the badge is clicked in edit mode', async () => {
     locationService.partial({ editPanel: 1 });
     onTestFinished(() => act(() => locationService.partial({ editPanel: null })));
