@@ -53,7 +53,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     const { panel, half } = await openPanel(gotoDashboardPage, 'demo-lab L3', RADIO);
     await hoverHalf(half);
     const card = panel.getByRole('tooltip');
-    await expect(card).toContainText('radio ↔ rtr-a');
+    await expect(card).toContainText('dhcp ↔ rtr-a wan2');
     // the hover card ignores the pointer, so the chart under it gets no pointer event
     await expect(card.getByTestId('dmap-chart-hover')).toHaveCount(0);
     await expect(page.getByTestId('dmap-chart-tooltip')).toHaveCount(0);
@@ -67,7 +67,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     await pointOnHalf(half);
     await half.click({ force: true });
     const dialog = panel.getByRole('dialog');
-    await expect(dialog).toContainText('radio ↔ rtr-a');
+    await expect(dialog).toContainText('dhcp ↔ rtr-a wan2');
     const chart = dialog.getByTestId('dmap-chart-hover').first();
     const tooltip = page.getByTestId('dmap-chart-tooltip');
     const crosshair = chart.getByTestId('dmap-chart-crosshair');
@@ -150,7 +150,7 @@ test.describe('tooltip on the charts of the pinned card', () => {
     await expect(tooltip).toBeInViewport({ ratio: 1 });
   });
 
-  test('a click on the chart still follows the row link and the card stays pinned', async ({
+  test('a click on the chart keeps the card pinned; the drilldown link follows its URL', async ({
     gotoDashboardPage,
     page,
   }) => {
@@ -161,16 +161,16 @@ test.describe('tooltip on the charts of the pinned card', () => {
     const node = panel.locator('[data-cell-id="pg-node~rtr-a"]');
     await node.locator('rect').first().click({ force: true });
     await expect(dialog).toContainText('CPU');
+    // v4: a history row has no URL; the drilldown row of the class is a footer link
     const cpu = dialog.getByTestId('dmap-card-row').filter({ hasText: 'CPU' });
-    await expect(cpu).toHaveAttribute('href', /var-job=node-rtr-a&var-metric=cpu/);
-    const [popup] = await Promise.all([
-      page.waitForEvent('popup'),
-      (async () => {
-        await moveOnChart(page, cpu.getByTestId('dmap-chart-hover'), 0.5);
-        await page.mouse.down();
-        await page.mouse.up();
-      })(),
-    ]);
+    await moveOnChart(page, cpu.getByTestId('dmap-chart-hover'), 0.5);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute('data-pinned', 'true');
+    const details = dialog.getByTestId('dmap-card-link').filter({ hasText: 'CPU details' });
+    await expect(details).toHaveAttribute('href', /var-job=node-rtr-a&var-metric=cpu/);
+    const [popup] = await Promise.all([page.waitForEvent('popup'), details.click()]);
     await popup.waitForLoadState('domcontentloaded');
     expect(popup.url()).toMatch(/\/d\/drawiomap-demo.*var-job=node-rtr-a&var-metric=cpu/);
     await popup.close();
