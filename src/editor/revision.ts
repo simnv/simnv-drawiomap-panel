@@ -1,4 +1,5 @@
 import type { Options } from '../types';
+import { sortedJson } from '../options/storedConfig';
 
 /** The saved state that a draft started from. The popup pins it when it opens and after each Apply. */
 export interface BaseRevision {
@@ -7,7 +8,7 @@ export interface BaseRevision {
 }
 
 export function baseRevision(options: Pick<Options, 'diagram' | 'config'>): BaseRevision {
-  return { hash: options.diagram?.hash, config: JSON.stringify(options.config ?? null) };
+  return { hash: options.diagram?.hash, config: sortedJson(options.config ?? null) ?? 'null' };
 }
 
 /** True when the saved options changed since the draft started, for example in another browser tab. */

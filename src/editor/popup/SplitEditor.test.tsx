@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeYaml } from '../../options/yamlConfig';
+import { grafanaUpdate } from '../../fixtures/grafanaOptions';
 import { CONFIG, editorProps } from './splitTestKit';
 import type { Options } from '../../types';
 
@@ -130,6 +131,25 @@ describe('SplitEditor', () => {
     expect(config.overrides).toBeUndefined();
   });
 
+  it('accepts its Apply after Grafana merges the config in a different key order', () => {
+    const props = editorProps();
+    const options = { ...props.options, config: { version: 4, classes: {} } };
+    const onOptionsChange = vi.fn();
+    const view = render(<SplitEditor {...props} options={options} onOptionsChange={onOptionsChange} />);
+    const text = 'version: 4\nfreshness: 7m\nclasses: {}\n';
+    type(text);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    const update = onOptionsChange.mock.calls[0][0] as Options;
+    const merged = { ...update, config: grafanaUpdate(options, 'config', update.config).config };
+    expect(Object.keys(merged.config!)).toEqual(['version', 'classes', 'freshness']);
+    view.rerender(<SplitEditor {...props} options={merged} onOptionsChange={onOptionsChange} />);
+    expect(screen.queryByText('The saved panel changed')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(editor().value).toBe(text);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onOptionsChange).toHaveBeenCalledTimes(2);
+  });
+
   it('blocks Apply for parse and envelope errors but permits item errors', () => {
     const onOptionsChange = vi.fn();
     render(<SplitEditor {...editorProps()} onOptionsChange={onOptionsChange} />);
@@ -189,10 +209,25 @@ describe('SplitEditor', () => {
     expect(onOptionsChange.mock.calls[0][0].config.classes.added).toBeUndefined();
   });
 
-  it.each(['Escape', 'Close'])('asks to discard invalid text through %s and keeps it on cancel', async (action) => {
+  it.each([
+    ['Escape', 'invalid text'],
+    ['Close', 'invalid text'],
+    ['Escape', 'valid YAML'],
+    ['Close', 'valid YAML'],
+    ['Escape', 'diagram'],
+    ['Close', 'diagram'],
+  ])('asks to discard through %s with a %s draft and keeps it on cancel', async (action, draft) => {
     const onClose = vi.fn();
-    render(<BindingsPopup {...editorProps()} onOptionsChange={vi.fn()} onClose={onClose} />);
-    type('classes: [');
+    const onOptionsChange = vi.fn();
+    render(<BindingsPopup {...writableProps()} onOptionsChange={onOptionsChange} onClose={onClose} />);
+    await frame();
+    if (draft === 'diagram') {
+      writeKey('draft-key');
+    } else {
+      type(draft === 'invalid text' ? 'classes: [' : fake.text.replace('status: up', 'status: down'));
+    }
+    const draftText = editor().value;
+    const draftSvg = screen.getByTestId('dmap-popup-stage').querySelector('svg')!.outerHTML;
     const close = () =>
       action === 'Escape'
         ? fireEvent.keyDown(screen.getByTestId('dmap-bindings-popup'), { key: 'Escape' })
@@ -201,12 +236,33 @@ describe('SplitEditor', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText('Discard changes?')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(editor().value).toBe('classes: [');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(editor().value).toBe(draftText);
+    expect(screen.getByTestId('dmap-popup-stage').querySelector('svg')!.outerHTML).toBe(draftSvg);
     close();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOptionsChange).not.toHaveBeenCalled();
+  });
+
+  it.each(['Escape', 'Close'])('closes cleanly through %s after undo restores the saved diagram', async (action) => {
+    const onClose = vi.fn();
+    const onOptionsChange = vi.fn();
+    render(<BindingsPopup {...writableProps()} onOptionsChange={onOptionsChange} onClose={onClose} />);
+    await frame();
+    writeKey('draft-key');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(cell('a').getAttribute('data-meta-key')).toBe('a');
+    if (action === 'Escape') {
+      fireEvent.keyDown(screen.getByTestId('dmap-bindings-popup'), { key: 'Escape' });
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    }
+    expect(screen.queryByText('Discard changes?')).toBeNull();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOptionsChange).not.toHaveBeenCalled();
   });
 
   it('routes Ctrl+Z to Monaco in the code box and to diagram history elsewhere', async () => {
