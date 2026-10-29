@@ -96,10 +96,11 @@ describe('Build id option', () => {
 });
 
 describe('Legend options', () => {
-  it('shows the legend in the bottom-right corner with at most four blocks by default', () => {
+  it('shows the legend in the bottom-right corner by default, with no limit on the blocks', () => {
     expect(option('legend.show')).toMatchObject({ kind: 'addBooleanSwitch', defaultValue: true });
     expect(option('legend.corner')).toMatchObject({ kind: 'addRadio', defaultValue: 'bottom-right' });
-    expect(option('legend.maxBlocks')).toMatchObject({ kind: 'addNumberInput', defaultValue: 4 });
+    // 1.3.0 removed "Maximum scales": the legend shows all blocks and scrolls
+    expect(option('legend.maxBlocks')).toBeUndefined();
     expect(option('legend.collapsed')).toMatchObject({ kind: 'addBooleanSwitch', defaultValue: true });
     expect(option('legend.collapsed')?.showIf?.({ legend: { show: false } } as Options)).toBe(false);
     expect(option('legend.corner')?.showIf?.({ legend: { show: false } } as Options)).toBe(false);

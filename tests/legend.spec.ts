@@ -35,7 +35,8 @@ test('the demo shows the colour legend in the bottom-right corner', async ({ pag
   await expect(legend).toHaveAttribute('data-dmap-corner', 'bottom-right');
   await openLegend(legend);
   await expect(legend.getByRole('group', { name: /^Link load %/ }).first()).toBeVisible();
-  const status = legend.getByRole('group', { name: 'node-net-a', exact: true });
+  // the title is the query (refId), not the legend format of one series ("node-net-a")
+  const status = legend.getByRole('group', { name: 'up', exact: true });
   for (const [text, color] of [
     ['< 1.0', 'rgb(242, 73, 92)'],
     ['≥ 1.0', 'rgb(115, 191, 105)'],
@@ -48,6 +49,76 @@ test('the demo shows the colour legend in the bottom-right corner', async ({ pag
   const l = await box(legend);
   expect(p.x + p.width - (l.x + l.width)).toBeLessThan(12);
   expect(p.y + p.height - (l.y + l.height)).toBeLessThan(12);
+});
+
+test('blocks with the same content merge: one title for both queries, one highlight for their cells', async ({
+  page,
+  request,
+  gotoDashboardPage,
+}, testInfo) => {
+  // The router nodes take their status from `up_b`, a copy of `up` with the same field config.
+  const demo = await (await request.get('/api/dashboards/uid/drawiomap-demo')).json();
+  const panel = demo.dashboard.panels.find((p: { id: number }) => p.id === 1);
+  const up = panel.targets.find((t: { refId: string }) => t.refId === 'up');
+  type Override = { matcher: { id: string; options: string } };
+  const upOverrides = panel.fieldConfig.overrides.filter((o: Override) => o.matcher.options === 'up');
+  const config = panel.options.config;
+  const uid = `legend-merge-${testInfo.workerIndex}-${Date.now()}`;
+  const dashboard = {
+    ...demo.dashboard,
+    id: null,
+    uid,
+    title: uid,
+    refresh: '',
+    panels: [
+      {
+        ...panel,
+        targets: [...panel.targets, { ...up, refId: 'up_b' }],
+        fieldConfig: {
+          ...panel.fieldConfig,
+          overrides: [
+            ...panel.fieldConfig.overrides,
+            ...upOverrides.map((o: Override) => ({ ...o, matcher: { ...o.matcher, options: 'up_b' } })),
+          ],
+        },
+        options: {
+          ...panel.options,
+          legend: { show: true, corner: 'bottom-right', collapsed: false },
+          config: {
+            ...config,
+            classes: { ...config.classes, 'router-cpu': { ...config.classes['router-cpu'], status: 'up_b' } },
+          },
+        },
+      },
+    ],
+  };
+  const response = await request.post('/api/dashboards/db', { data: { dashboard, overwrite: true } });
+  expect(response.ok(), await response.text()).toBe(true);
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await gotoDashboardPage({ uid });
+    const view = page.getByTestId('dmap-panel');
+    const legend = view.getByTestId('dmap-legend');
+    const merged = legend.getByRole('group', { name: /^(up · up_b|up_b · up)$/ });
+    await expect(merged).toBeVisible();
+    await expect(legend.getByRole('group', { name: 'up', exact: true })).toHaveCount(0);
+    await expect(legend.getByRole('group', { name: 'up_b', exact: true })).toHaveCount(0);
+    await expect(legend).not.toContainText(/\+\d+ more/);
+    // the entry of the up value holds the cells of both queries: routers (up_b) and the other nodes (up)
+    const entry = merged.getByTestId('dmap-legend-entry').filter({ hasText: '≥ 1.0' });
+    const count = Number(/: (\d+) elements?$/.exec((await entry.getAttribute('aria-label'))!)![1]);
+    await entry.hover();
+    const hits = view.locator('g.dmap-legend-hit[data-cell-id^="pg-node~"]');
+    await expect(hits).toHaveCount(count);
+    const ids = await hits.evaluateAll((els) => els.map((e) => e.getAttribute('data-cell-id')!));
+    expect(ids.some((id) => id.startsWith('pg-node~rtr-'))).toBe(true);
+    expect(ids.some((id) => !id.startsWith('pg-node~rtr-'))).toBe(true);
+    if (process.env.DMAP_SCREENSHOTS) {
+      await legend.screenshot({ path: 'local/legend-merged.png' });
+    }
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
 });
 
 test('hovering a legend entry highlights the cells in that band', async ({ page, gotoDashboardPage }) => {

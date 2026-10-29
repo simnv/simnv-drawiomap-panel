@@ -421,7 +421,6 @@ function DrawioMapPanelView(props: ViewProps) {
     <Legend
       ref={legendRef}
       blocks={legendBlocks}
-      maxBlocks={legendOptions.maxBlocks}
       collapsed={legendOptions.collapsed}
       onHighlight={highlight.setLegend}
       style={corners[legendCorner]}

@@ -38,7 +38,7 @@ const blocks: LegendBlock[] = [
 
 const view = (over: Partial<React.ComponentProps<typeof Legend>> = {}) => {
   const onHighlight = vi.fn();
-  const r = render(<Legend blocks={blocks} maxBlocks={4} collapsed={false} onHighlight={onHighlight} {...over} />);
+  const r = render(<Legend blocks={blocks} collapsed={false} onHighlight={onHighlight} {...over} />);
   return { ...r, onHighlight, legend: screen.getByTestId('dmap-legend') };
 };
 
@@ -99,8 +99,8 @@ describe('Legend', () => {
     const b = vi.fn();
     render(
       <>
-        <Legend blocks={blocks} maxBlocks={4} collapsed={false} onHighlight={a} />
-        <Legend blocks={blocks} maxBlocks={4} collapsed={false} onHighlight={b} />
+        <Legend blocks={blocks} collapsed={false} onHighlight={a} />
+        <Legend blocks={blocks} collapsed={false} onHighlight={b} />
       </>
     );
     const [legendA, legendB] = screen.getAllByTestId('dmap-legend');
@@ -134,10 +134,11 @@ describe('Legend', () => {
     fireEvent.focus(high);
     expect(onHighlight).toHaveBeenLastCalledWith(['l2', 'l3']);
   });
-  it('shows at most maxBlocks blocks and tells how many it hides', () => {
-    const { legend } = view({ maxBlocks: 2 });
-    expect(within(legend).getAllByTestId('dmap-legend-block')).toHaveLength(2);
-    expect(legend.textContent).toContain('+1 more');
+  it('shows every block with no "+N more" line: the legend scrolls instead', () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ ...blocks[0], key: `b${i}`, title: `Block ${i}` }));
+    const { legend } = view({ blocks: many });
+    expect(within(legend).getAllByTestId('dmap-legend-block')).toHaveLength(7);
+    expect(legend.textContent).not.toMatch(/more/);
   });
   it('is a collapsed chip by default that opens and closes on a click', () => {
     const { legend } = view({ collapsed: undefined });
@@ -154,12 +155,12 @@ describe('Legend', () => {
   it('is open when the option Start collapsed is false, and shows nothing without blocks', () => {
     const { legend } = view({ collapsed: false });
     expect(within(legend).getByRole('button', { name: 'Legend' }).getAttribute('aria-expanded')).toBe('true');
-    const { container } = render(<Legend blocks={[]} maxBlocks={4} collapsed={false} onHighlight={() => {}} />);
+    const { container } = render(<Legend blocks={[]} collapsed={false} onHighlight={() => {}} />);
     expect(container.innerHTML).toBe('');
   });
   it('follows a change of the option', () => {
     const { legend, rerender, onHighlight } = view({ collapsed: false });
-    rerender(<Legend blocks={blocks} maxBlocks={4} collapsed onHighlight={onHighlight} />);
+    rerender(<Legend blocks={blocks} collapsed onHighlight={onHighlight} />);
     expect(within(legend).getByRole('button', { name: 'Legend' }).getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -340,7 +341,7 @@ describe('Legend', () => {
   });
   it('points the forwarded ref at the current element when the blocks come late or come back', () => {
     const ref = createRef<HTMLElement>();
-    const props = { maxBlocks: 4, collapsed: false, onHighlight: () => {} };
+    const props = { collapsed: false, onHighlight: () => {} };
     const { rerender } = render(<Legend ref={ref} blocks={[]} {...props} />);
     expect(ref.current).toBeNull();
     rerender(<Legend ref={ref} blocks={blocks} {...props} />);
@@ -362,7 +363,7 @@ describe('Legend', () => {
     }
     vi.stubGlobal('ResizeObserver', Observer);
     try {
-      const props = { maxBlocks: 4, collapsed: false, onHighlight: () => {} };
+      const props = { collapsed: false, onHighlight: () => {} };
       const { rerender } = render(<Legend blocks={[]} {...props} />);
       expect(observed).toHaveLength(0);
       rerender(<Legend blocks={blocks} {...props} />);
@@ -382,7 +383,7 @@ describe('Legend', () => {
         ? { ...b, entries: b.entries.map((e) => ({ ...e, cellIds: e.key === 'step-1' ? ['l1'] : [] })) }
         : b
     );
-    rerender(<Legend blocks={moved} maxBlocks={4} collapsed={false} onHighlight={onHighlight} />);
+    rerender(<Legend blocks={moved} collapsed={false} onHighlight={onHighlight} />);
     expect(onHighlight).toHaveBeenLastCalledWith(['l1']);
   });
   it('clears the highlight when the legend collapses', () => {

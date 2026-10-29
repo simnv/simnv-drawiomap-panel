@@ -387,7 +387,7 @@ On each bind the panel collects a **report**. In view mode the warning badge in 
 | `bad-cap`                                                     | The attribute `cap` does not parse.                                                     |
 | `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                      |
 | `unused-field`                                                | A link field on a class whose cells are not links.                                      |
-| `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.       |
+| `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.      |
 
 `no-series` and `orphan-series` are how you find a wrong `match`.
 
@@ -472,7 +472,7 @@ A small legend in a corner of the panel shows each colour that the bound cells c
 
 ![Colour legend of the demo network](docs/images/colour-legend.png)
 
-- One block for each status query in use, in the order of first use. The title is the **Display name** of the field, else the name of the query. The entries are the value mappings of the field config, then its threshold steps, each with its exact colour and text, and with the cells that show it. Then the blocks of the link scales: **Link load %** for links with a capacity, else the query name and the unit symbol, for example `PoE W`. Two different scales with the same title get their queries in brackets.
+- One block for each status query in use, in the order of first use. The title is the **Display name** of the field config, else the name of the query (the refId). The title never uses a name from the series labels or the legend format: such a name tells one series, not the query. The entries are the value mappings of the field config, then its threshold steps, each with its exact colour and text, and with the cells that show it. Then the blocks of the link scales: **Link load %** for links with a capacity, else the query name and the unit symbol, for example `PoE W`. Two different scales with the same title get their queries in brackets.
 - **From thresholds**: one swatch for each step, from low to high: `< 60%`, `≥ 60%`, `≥ 85%`. Links with a capacity show percent. Other values show the field unit.
 - A continuous scheme: a gradient bar from `0%` to `100%` for links with a capacity, else from the field **Min** to **Max**.
 - **Single color** and **Shades**: one swatch, `All values`.
@@ -480,6 +480,9 @@ A small legend in a corner of the panel shows each colour that the bound cells c
 - **Classic palette** (a colour for each series): no block, because the colour does not tell a value.
 - **State**: the block that follows the status blocks. It has `Down, no data` (the theme red of a cell with `missing: down` and no value), `Stale` and `No data`, each with the cells that are in that state.
 - Identical scales merge into one block, also when they come from different queries. An override that changes the thresholds or the scheme of one query gives that query its own block.
+- Blocks with the same content merge into one block: the same entries in the same order, each with the same text and colour, and the same gradient with the same end texts. For example, four `up` queries with the mappings `down` (red) and `up` (green) give one block. Its title lists the titles of the blocks, joined with `·`, and wraps when it is long. An entry of the merged block holds the cells of all its queries, so the pointer or the focus on it shows the cells of all of them. The **State** block and the link load scale merge with a status block only when their content is the same.
+
+The legend shows all blocks. When they do not fit in half of the panel height, the legend scrolls.
 
 Move the pointer on a swatch or a gradient bar, or focus it with Tab: the elements in that band stay visible and the other elements of the legend dim. Move the pointer away, or move the focus, to show all elements again. On a phone, which has no hover, tap an entry to show its elements. Tap the same entry again, or tap anywhere else, to show all elements again. The dim uses one CSS class on the diagram, so it is cheap on a large diagram. It does not change a pinned card or the link colour overlays.
 
@@ -501,19 +504,18 @@ The legend stays in its place when you zoom, pan or scroll the diagram. In the t
 
 The options are in the **Legend** group:
 
-| Option          | Path               | Meaning                                                                    |
-| --------------- | ------------------ | -------------------------------------------------------------------------- |
-| Show legend     | `legend.show`      | Default on.                                                                |
-| Corner          | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`.        |
-| Maximum scales  | `legend.maxBlocks` | The legend shows at most this number of blocks, then `+N more`. Default 4. |
-| Start collapsed | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.              |
+| Option          | Path               | Meaning                                                             |
+| --------------- | ------------------ | ------------------------------------------------------------------- |
+| Show legend     | `legend.show`      | Default on.                                                         |
+| Corner          | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`. |
+| Start collapsed | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.       |
 
-A saved panel without `legend.collapsed` starts collapsed.
+A saved panel without `legend.collapsed` starts collapsed. Version 1.3.0 removed the option **Maximum scales** (`legend.maxBlocks`). The panel ignores a saved `legend.maxBlocks`.
 
 In the panel JSON:
 
 ```json
-{ "legend": { "show": true, "corner": "bottom-right", "maxBlocks": 4, "collapsed": true } }
+{ "legend": { "show": true, "corner": "bottom-right", "collapsed": true } }
 ```
 
 ### Capacity

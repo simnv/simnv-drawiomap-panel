@@ -174,15 +174,6 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         },
         showIf: (o) => o.legend?.show !== false,
       })
-      .addNumberInput({
-        path: 'legend.maxBlocks',
-        name: 'Maximum scales',
-        description: 'More colour scales go into a "+N more" line.',
-        category: ['Legend'],
-        defaultValue: DEFAULT_OPTIONS.legend.maxBlocks,
-        settings: { min: 1, integer: true },
-        showIf: (o) => o.legend?.show !== false,
-      })
       .addBooleanSwitch({
         path: 'legend.collapsed',
         name: 'Start collapsed',

@@ -935,7 +935,7 @@ describe('DrawioMapPanel live zoom', () => {
 
   it('on a narrow panel the top-right legend goes below the reset button and the badge', async () => {
     const { wrapper } = await setup({
-      ...withWarning({ show: true, corner: 'top-right', maxBlocks: 4 }),
+      ...withWarning({ show: true, corner: 'top-right' }),
       width: 400,
     });
     wheel(wrapper, { deltaY: -10, ctrlKey: true });
@@ -953,7 +953,7 @@ describe('DrawioMapPanel live zoom', () => {
 
   describe.each(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const)('legend in the %s corner', (c) => {
     it('does not cover the reset button, the warning badge or the right-hand menu area', async () => {
-      const { wrapper } = await setup(withWarning({ show: true, corner: c, maxBlocks: 4 }));
+      const { wrapper } = await setup(withWarning({ show: true, corner: c }));
       wheel(wrapper, { deltaY: -10, ctrlKey: true });
       const btn = await screen.findByRole('button', { name: 'Reset zoom' });
       const corner = screen.getByTestId('dmap-corner');
@@ -1365,7 +1365,7 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
 describe('DrawioMapPanel colour legend', () => {
   const legend = () => screen.queryByTestId('dmap-legend');
   const openLegend = () =>
-    props({ options: { ...options, legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: false } } });
+    props({ options: { ...options, legend: { show: true, corner: 'bottom-right', collapsed: false } } });
   async function setup(p = props()) {
     const r = render(<DrawioMapPanel {...p} />);
     await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
@@ -1374,12 +1374,12 @@ describe('DrawioMapPanel colour legend', () => {
 
   it('legend.show false hides it; another corner moves it; the chip opens it outside the stage and opens no card', async () => {
     const { rerender } = await setup(
-      props({ options: { ...options, legend: { show: false, corner: 'bottom-right', maxBlocks: 4 } } })
+      props({ options: { ...options, legend: { show: false, corner: 'bottom-right' } } })
     );
     expect(legend()).toBeNull();
     rerender(
       <DrawioMapPanel
-        {...props({ options: { ...options, legend: { show: true, corner: 'top-left', maxBlocks: 4 } } })}
+        {...props({ options: { ...options, legend: { show: true, corner: 'top-left' } } })}
       />
     );
     expect(legend()!.getAttribute('data-dmap-corner')).toBe('top-left');
@@ -1389,6 +1389,13 @@ describe('DrawioMapPanel colour legend', () => {
     // outside the stage, so zoom, pan and the stage scroll do not move it
     expect(screen.getByTestId('dmap-stage').contains(legend()!)).toBe(false);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('ignores the legend.maxBlocks that 1.2 saved: every block shows, with no "+N more" line', async () => {
+    const legendOld = { show: true, corner: 'bottom-right', collapsed: false, maxBlocks: 1 } as Options['legend'];
+    await setup(props({ options: { ...options, legend: legendOld } }));
+    expect(within(legend()!).getAllByTestId('dmap-legend-block').length).toBeGreaterThan(1);
+    expect(legend()!.textContent).not.toMatch(/\+\d+ more/);
   });
 
   it('has a block for the status refId and a State block for the cells with no value', async () => {

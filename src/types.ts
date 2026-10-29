@@ -130,7 +130,7 @@ export interface Options {
   summary?: { maxRows: number };
   /** The cells that open a hover or pinned card. Default: node, link, port, other. */
   hover?: { kinds: HoverKind[] };
-  /** The colour legend in a corner of the panel. Default: shown, collapsed, bottom-right, at most 4 blocks. */
+  /** The colour legend in a corner of the panel. Default: shown, collapsed, bottom-right. */
   legend?: LegendOptions;
 }
 
@@ -139,8 +139,6 @@ export type LegendCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-ri
 export interface LegendOptions {
   show: boolean;
   corner: LegendCorner;
-  /** More colour scales go into a "+N more" line. */
-  maxBlocks: number;
   /** The legend starts as a small chip. A missing key means collapsed. */
   collapsed?: boolean;
 }
@@ -157,7 +155,7 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
   hover: { kinds: ['node', 'link', 'port', 'other'] },
-  legend: { show: true, corner: 'bottom-right', maxBlocks: 4, collapsed: true },
+  legend: { show: true, corner: 'bottom-right', collapsed: true },
 };
 
 /**

@@ -40,7 +40,7 @@ async function cornerDashboard(request: APIRequestContext, uid: string, title: s
     ...panel.options,
     config,
     zoom: { mode: 'fit', percent: 100, wheel: false, pan: true, align: 'top' },
-    legend: { show: true, corner, maxBlocks: 4 },
+    legend: { show: true, corner },
   });
   const dashboard = {
     ...demo.dashboard,
