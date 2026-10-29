@@ -1,5 +1,5 @@
 import { devices } from '@playwright/test';
-import type { DiagramConfig } from '../src/model/config';
+import type { ConfigV4 } from '../src/model/v4';
 import { expect, test } from './authoring-fixtures';
 
 // Chromium with the iPhone 13 viewport, touch and no hover. The webkit browser of the preset needs a separate worker.
@@ -11,45 +11,36 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="390" height="2000" v
     <g data-cell-id="pg-node~top" data-meta-pg-kind="node" data-meta-pg-id="top"><rect x="20" y="40" width="120" height="60" fill="#d5e8d4" stroke="#82b366"/><text x="30" y="75">top</text></g>
     <g data-cell-id="pg-node~a" data-meta-pg-kind="node" data-meta-pg-id="a"><rect x="20" y="970" width="100" height="60" fill="#d5e8d4" stroke="#82b366"/><text x="30" y="1005">rtr-a</text></g>
     <g data-cell-id="pg-node~b" data-meta-pg-kind="node" data-meta-pg-id="b"><rect x="270" y="970" width="100" height="60" fill="#d5e8d4" stroke="#82b366"/><text x="280" y="1005">rtr-b</text></g>
-    <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"><path d="M120 1000 L270 1000" fill="none" stroke="#888" stroke-width="10" pointer-events="stroke"/></g>
+    <g data-cell-id="pg-link~a-b" data-meta-bind="link" data-meta-key="a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"><path d="M120 1000 L270 1000" fill="none" stroke="#888" stroke-width="10" pointer-events="stroke"/></g>
   </g>
 </svg>`;
 
-function linkCard(config: DiagramConfig): DiagramConfig {
-  return {
-    ...config,
-    queries: [],
-    widgets: [],
-    overrides: [],
-    patterns: [
-      {
-        id: 'link',
-        name: 'Link',
-        select: { ids: ['a-b'] },
-        display: {
-          hover: {
-            rows: [
-              { kind: 'metadata', label: 'From', path: 'from.node' },
-              { kind: 'metadata', label: 'To', path: 'to.node' },
-            ],
-          },
-        },
-      },
-    ],
-  };
-}
+/** A card of two metadata rows on the link. */
+const linkCard: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: {
+    link: {
+      match: { key: 'job' },
+      rows: [
+        { kind: 'metadata', label: 'From', text: 'rtr-a' },
+        { kind: 'metadata', label: 'To', text: 'rtr-b' },
+      ],
+    },
+  },
+  overrides: {},
+};
 
 test.describe('sheet on a phone', () => {
   test.use(iPhone);
 
   test('a tap on a link in a 2000 px tall panel opens the sheet inside the viewport', async ({
     page,
-    config,
     createDiagram,
     gotoDashboardPage,
   }, testInfo) => {
     // 53 grid rows: about 2000 px
-    const uid = await createDiagram(linkCard(config), { svg, height: 53 });
+    const uid = await createDiagram(linkCard, { svg, height: 53, targets: [] });
     await gotoDashboardPage({ uid });
     const panel = page.getByTestId('dmap-panel');
     expect((await panel.boundingBox())!.height).toBeGreaterThan(1900);
