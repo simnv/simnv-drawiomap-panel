@@ -51,7 +51,8 @@ test('view mode loads no draw.io code', async ({ gotoDashboardPage, page }) => {
   await expect(panel.locator.locator('polyline.dmap-half').first()).toBeAttached();
   const offenders = urls.filter((u) => /diagrams\.net|viewer-static|mxgraph|\/drawio\//i.test(u));
   expect(offenders).toEqual([]);
-  // The bindings popup is a panel editor feature: view mode loads neither its chunk nor its entry button.
+  // The bindings popup is a panel editor feature: view mode loads neither its chunk nor its entry button. No P1 build
+  // emits a `bindings-popup` chunk; the guard stays for the popup of P3.
   expect(urls.filter((u) => /bindings-popup/.test(new URL(u).pathname))).toEqual([]);
   await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
   // The YAML option editor and its parser are lazy chunks of panel edit (spec 5.0, 5.3): view mode requests neither.

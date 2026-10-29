@@ -1,5 +1,6 @@
 import type { Field } from '@grafana/data';
 import type { QuerySnapshot, Series } from '../query/snapshot';
+import type { CapacitySource } from '../types';
 import type { ReportEntry } from './report';
 import { toBitsPerSecond } from './units';
 
@@ -86,13 +87,20 @@ function speedOf(result: { snapshot: QuerySnapshot; series: Series[] }): { bits:
   return rate.unknownUnit === undefined ? { bits: rate.bits } : { reason: 'not a rate' };
 }
 
+/** The capacity of one direction of a link in bit/s and where it comes from. */
+export interface LinkCapacity {
+  amount?: number;
+  source: CapacitySource;
+}
+
 /**
  * The v4 capacity of a link, per geometric direction (spec 3.8.4): the `capacity` refId of the class, else the cell
- * attribute `cap`, else none (the half shows the raw rate and no percent). A speed that falls through gives
- * `capacity-fallback` with the reason; a `cap` that does not parse gives `bad-cap`. The capacities follow the geometry:
- * `at=target` changes only the feeds (`linkFeeds`), not this result (A4).
+ * attribute `cap`, else none (the half shows the raw rate and no percent). The one place of this chain: the bind and
+ * the card read it from here. A speed that falls through gives `capacity-fallback` with the reason; a `cap` that does
+ * not parse gives `bad-cap`. The capacities follow the geometry: `at=target` changes only the feeds (`linkFeeds`), not
+ * this result (A4).
  */
-export function capacityV4(input: CapacityV4Input): { a2b?: number; b2a?: number; report: ReportEntry[] } {
+export function capacityV4(input: CapacityV4Input): { a2b: LinkCapacity; b2a: LinkCapacity; report: ReportEntry[] } {
   const report: ReportEntry[] = [];
   const cls = input.cls ?? '';
   const cellIds = input.cellIds ?? [];
@@ -111,9 +119,16 @@ export function capacityV4(input: CapacityV4Input): { a2b?: number; b2a?: number
     }
     return speeds.get(refId);
   };
+  const bySpeed = { a2b: speed(refs?.a2b), b2a: speed(refs?.b2a) };
   const cap = input.cap === undefined ? undefined : parseCap(input.cap);
   if (input.cap !== undefined && cap === undefined) {
     report.push({ kind: 'bad-cap', value: input.cap, cellIds });
   }
-  return { a2b: speed(refs?.a2b) ?? cap?.a2b, b2a: speed(refs?.b2a) ?? cap?.b2a, report };
+  const of = (dir: 'a2b' | 'b2a'): LinkCapacity =>
+    bySpeed[dir] !== undefined
+      ? { amount: bySpeed[dir], source: 'series' }
+      : cap
+        ? { amount: cap[dir], source: 'attr' }
+        : { source: 'none' };
+  return { a2b: of('a2b'), b2a: of('b2a'), report };
 }

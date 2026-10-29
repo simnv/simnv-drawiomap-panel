@@ -1036,6 +1036,36 @@ describe('DrawioMapPanel live zoom', () => {
     await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(zoomed));
   });
 
+  it('on a zoomed view one finger on a chart scrubs the chart; a mouse drag and two fingers still move the view', async () => {
+    const { wrapper, svgEl, half } = await setup();
+    wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    const zoomed = svgEl.getAttribute('viewBox');
+    // the hover surface of a chart region (ChartHover)
+    const chart = half(linkId);
+    chart.setAttribute('data-testid', 'dmap-chart-hover');
+    const t = (type: string, id: number, x: number, y: number, pointerType = 'touch') =>
+      fireEvent[type as 'pointerDown'](chart, { pointerType, pointerId: id, button: 0, clientX: x, clientY: y });
+    t('pointerDown', 1, 100, 100);
+    t('pointerMove', 1, 160, 100);
+    t('pointerUp', 1, 160, 100);
+    expect(svgEl.getAttribute('viewBox')).toBe(zoomed);
+
+    t('pointerDown', 1, 100, 100);
+    t('pointerDown', 2, 200, 100);
+    t('pointerMove', 1, 50, 100);
+    t('pointerMove', 2, 250, 100);
+    t('pointerUp', 1, 50, 100);
+    t('pointerUp', 2, 250, 100);
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(zoomed));
+
+    const pinched = svgEl.getAttribute('viewBox');
+    t('pointerDown', 4, 10, 10, 'mouse');
+    t('pointerMove', 4, 60, 10, 'mouse');
+    t('pointerUp', 4, 60, 10, 'mouse');
+    await waitFor(() => expect(svgEl.getAttribute('viewBox')).not.toBe(pinched));
+  });
+
   it('without Drag pan, a mouse drag at the configured view does not pan', async () => {
     const { wrapper, svgEl, base } = await setup();
     fireEvent.pointerDown(wrapper, { pointerType: 'mouse', button: 0, clientX: 10, clientY: 10 });

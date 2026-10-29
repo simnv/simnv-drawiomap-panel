@@ -3,8 +3,10 @@ import { createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { ensureOverlay, headSize, linkSplit, renderOverlay, reservedHead } from './overlay';
-import type { StatusView } from '../binding/status';
 import { statusColor } from '../binding/color';
+
+/** The status of a patch, as `statusViewOf` gives it. */
+type PatchStatus = NonNullable<CellPatch['statusView']>;
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
   <g><g data-cell-id="n1"><g><rect x="10" y="10" width="50" height="30"/></g></g>
@@ -73,14 +75,16 @@ const opts = { theme: createTheme(), maxWidth: 10 };
 const before = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
 describe('status paint of the halves', () => {
-  const statusView: StatusView = {
+  const statusView: PatchStatus = {
     state: 'down',
+    severity: 'down',
+    refId: 'up',
     reason: 'Device down',
     conditionKey: 'health-zero',
     queryIds: ['up'],
     coverage: { available: 1, expected: 1 },
   };
-  const round = (view: StatusView | undefined) =>
+  const round = (view: PatchStatus | undefined) =>
     new Map<string, CellPatch>([
       ['n1', { ...patch('n1', {}), statusView: view }],
       [
@@ -129,7 +133,7 @@ describe('status paint of the halves', () => {
     const { root, index } = build();
     const image = index.get('n3')!.shape!;
     const red = statusColor({ state: 'down' }, opts.theme);
-    const withView = (view: StatusView | undefined) =>
+    const withView = (view: PatchStatus | undefined) =>
       new Map<string, CellPatch>([['n3', { ...patch('n3', {}), ...(view ? { statusView: view } : {}) }]]);
     renderOverlay(root, index, withView(statusView), opts);
     const border = root.querySelector('rect.dmap-status-border')!;
@@ -277,15 +281,17 @@ describe('renderOverlay', () => {
 });
 
 describe('renderOverlay keeps its elements across refreshes', () => {
-  const statusView: StatusView = {
+  const statusView: PatchStatus = {
     state: 'down',
+    severity: 'down',
+    refId: 'up',
     reason: 'Device down',
     conditionKey: 'k',
     queryIds: ['q'],
     coverage: { available: 1, expected: 1 },
   };
   /** Two links and a status cell; new objects on every call. */
-  const round = (a2b: Partial<HalfState> = {}, view: StatusView | null = statusView) =>
+  const round = (a2b: Partial<HalfState> = {}, view: PatchStatus | null = statusView) =>
     new Map<string, CellPatch>([
       ['e1', patch('e1', { link: { a2b: half(a2b), b2a: half({ color: '#ff0000', stepIndex: 2 }) } })],
       ['e2', patch('e2', { link: { a2b: half() } })],

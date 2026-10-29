@@ -47,7 +47,7 @@ const v4 = (refId: string, severity: StatusView['state'], text: string, reason =
   refId,
   text,
 });
-const patchesOf = (list: Array<[string, V4Status | StatusView]>): PatchMap =>
+const patchesOf = (list: Array<[string, V4Status]>): PatchMap =>
   new Map(list.map(([cellId, statusView]) => [cellId, { cellId, scope: { cell: {} }, urls: [], statusView }]));
 
 describe('bandRowsV4', () => {
@@ -94,15 +94,8 @@ describe('bandRowsV4', () => {
       ['Stale · health: 3 cells', 'stale'],
     ]);
   });
-  it('shows the reason when the cell has no value text, and ignores a v3 status', () => {
-    const v3: StatusView = { ...v4('cpu', 'critical', ''), reason: 'old' };
-    delete (v3 as V4Status).severity;
-    const rows = bandRowsV4(
-      patchesOf([
-        ['n1', v4('cpu', 'down', '–', 'No data')],
-        ['n2', v3],
-      ])
-    );
+  it('shows the reason when the cell has no value text', () => {
+    const rows = bandRowsV4(patchesOf([['n1', v4('cpu', 'down', '–', 'No data')]]));
     expect(rows.map((r) => r.text)).toEqual(['No data · cpu: 1 cell']);
   });
 });

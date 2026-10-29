@@ -45,8 +45,6 @@ export interface LegendContext {
   theme: GrafanaTheme2;
   /** The panel default thresholds. They apply when a field has none (as in colorFor). */
   fieldThresholds?: ThresholdsConfig;
-  /** The name of a query from its id (the refId of a series). */
-  queryName?: (refId: string) => string | undefined;
 }
 
 interface Item {
@@ -217,11 +215,11 @@ function scaleOf(item: Item, ctx: LegendContext): Draft | undefined {
     // one colour per series (classic palette): no value scale
     return undefined;
   }
-  const name = ctx.queryName?.(item.refId ?? '') ?? (item.kind === 'link' ? 'Link' : 'Node');
+  const name = item.kind === 'link' ? 'Link' : 'Node';
   const symbol = unitSymbol(config.unit);
   const title = capacity ? 'Link load %' : (config.displayName ?? (symbol ? `${name} ${symbol}` : name));
   const key = JSON.stringify([entries.map((e) => [e.label, e.color]), gradient]);
-  const source = ctx.queryName?.(item.refId ?? '') ?? item.refId ?? '';
+  const source = item.refId ?? '';
   return { key, title, titles: [title], sources: source ? [source] : [], entries, gradient, auto, cellIds: [] };
 }
 
@@ -341,14 +339,13 @@ const STATE_ENTRIES_V4: Array<{ key: 'down' | 'stale' | 'missing'; label: string
 
 /**
  * The v4 legend (spec 3.4). First one block for each status refId in use, in the order of first use. The title is
- * the display name of the field of the refId: `displayName`, else `displayNameFromDS` of its config, else the query
- * name, else the refId. A name from the series labels names one series, not the refId, so it is not used. The
+ * the display name of the field of the refId: `displayName`, else `displayNameFromDS` of its config, else the refId. A name from the series labels names one series, not the refId, so it is not used. The
  * entries are its value mappings and then its threshold steps, each with its exact colour and text and the cells
  * that show it. `fields` gives the field of each status refId; a refId with no field has no block. Then one `State`
  * block with a `down`, a `stale` and a `missing` entry, each only when cells have that state: `down` is a down status
  * with no value (`missing: down`), which the painter paints in the theme red; a link half with no data is `missing`,
  * and so is a missing status that the painter paints grey. Then the link load scale of the link halves. A status
- * without a `severity` is not in this legend.
+ * with no refId (an unavailable cell) is not in this legend.
  */
 export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx: LegendContext): LegendBlock[] {
   const statusItems = new Map<string, Item[]>();
@@ -358,7 +355,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     addItem(links, states.missing, patch.cellId, 'link', patch.link?.a2b);
     addItem(links, states.missing, patch.cellId, 'link', patch.link?.b2a);
     const view = patch.statusView;
-    if (view?.severity === undefined || !view.refId) {
+    if (!view?.refId) {
       continue;
     }
     if (view.state === 'stale' || view.state === 'missing') {
@@ -398,7 +395,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     const config = items[0].field.config;
     const block: LegendBlock = {
       key: `status:${refId}`,
-      title: config.displayName ?? config.displayNameFromDS ?? ctx.queryName?.(refId) ?? refId,
+      title: config.displayName ?? config.displayNameFromDS ?? refId,
       entries: scale.entries,
       ...(gradient
         ? { gradient: auto ? { ...gradient, min: auto.format(auto.min), max: auto.format(auto.max) } : gradient }

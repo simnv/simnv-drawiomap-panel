@@ -283,7 +283,7 @@ A use can select more than one series.
 
 **Units.** When the units of the series differ and all are bit or byte rates, the panel converts to the unit of the first series: 1 Mbit/s and 500 kbit/s sum to 1.5 Mbit/s. Other mixed units give `missing` with "Mixed units" and `unit-mismatch`.
 
-**N lines.** A `history` row or chart draws up to 8 lines in one chart with one Y range. A line shows only the labels that differ between the lines; when no label differs, it shows the display name of the field. The 8 lines have 8 distinct colours of the Grafana classic palette, in the fixed order. A series with no value keeps its place and colour and shows "no data" in the tooltip.
+**N lines.** A `history` row or chart draws up to 8 lines in one chart with one Y range. A line shows only the labels that differ between the lines; when no label differs, it shows the display name of the field. The 8 lines have 8 distinct colours of the Grafana classic palette (slots 0–5, 26 and 30), in the fixed order. A series with no value keeps its place and colour and shows "No data" in the tooltip.
 
 ### Rows
 
@@ -560,7 +560,7 @@ The canvas shows only colours. The values show in a card:
 | Tab to a cell, then Enter or Space | The card opens pinned. Esc closes it and the focus goes back to the cell.                            |
 | Move over a chart in a pinned card | A crosshair and the Grafana tooltip show the time and the value of each series (see below).          |
 
-**Chart tooltip.** In a pinned card, move the pointer over a chart: a crosshair follows the pointer and the standard Grafana tooltip shows the time of the nearest sample, and the colour, name and value of each series. The values use the unit and decimals of the field. A gap shows "–". An `updown` row shows both directions in one tooltip. A row with N lines lists the lines (at most 8) and then "+N more"; a line with no value shows "no data". On a phone, tap or drag on a chart in the sheet; the tooltip stays until you tap outside the chart. With the keyboard, Tab to the chart in a pinned card, then use the left and right arrow keys to move the sample; Esc hides the tooltip (a second Esc closes the card). The tooltip does not change the Y range. The hover card that is not pinned shows no tooltip.
+**Chart tooltip.** In a pinned card, move the pointer over a chart: a crosshair follows the pointer and the standard Grafana tooltip shows the time of the nearest sample, and the colour, name and value of each series. The values use the unit and decimals of the field. A gap shows "–". An `updown` row shows both directions in one tooltip. A row with N lines lists the lines (at most 8) and then "+N more"; a line with no value shows "No data". On a phone, tap or drag on a chart in the sheet; the tooltip stays until you tap outside the chart. With the keyboard, Tab to the chart in a pinned card, then use the left and right arrow keys to move the sample; Esc hides the tooltip (a second Esc closes the card). The tooltip does not change the Y range. The hover card that is not pinned shows no tooltip.
 
 The card stays inside the panel. It scrolls when it is too long. In a panel narrower than 480 px (a phone), the card is a sheet at the bottom of the screen, with the width of the panel. The sheet stays visible also in a panel that is taller than the screen. It is at most 60% of the screen height, scrolls when it is too long, and keeps clear of the home indicator (the safe-area inset). The sheet is above the Grafana menus. ✕, Esc or a tap outside the panel and the sheet closes it. The page does not move when the sheet opens.
 
@@ -642,14 +642,14 @@ In the **View** group of the panel options:
 
 You can zoom and pan the view of the panel. The live zoom does not change the saved panel options.
 
-| Gesture                            | Result                                                                       |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| Pinch with two fingers             | Zooms around the point between the fingers. A move of the two fingers pans.  |
-| One finger, at the configured zoom | Scrolls the page, or the panel when it scrolls. A tap opens the card.        |
-| One finger, when zoomed            | Pans the view. A tap (less than 6 px of movement) opens the card.            |
-| Trackpad pinch (Ctrl+wheel)        | Zooms around the pointer. This is always on.                                 |
-| Mouse wheel                        | Zooms only when **Wheel zoom** is on. Else it scrolls the panel or the page. |
-| Mouse drag                         | Pans when the view is zoomed, or at all times when **Drag pan** is on.       |
+| Gesture                            | Result                                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Pinch with two fingers             | Zooms around the point between the fingers. A move of the two fingers pans.                                                       |
+| One finger, at the configured zoom | Scrolls the page, or the panel when it scrolls. A tap opens the card.                                                             |
+| One finger, when zoomed            | Pans the view. A tap (less than 6 px of movement) opens the card. On a chart region, it reads the chart values and does not pan.  |
+| Trackpad pinch (Ctrl+wheel)        | Zooms around the pointer. This is always on.                                                                                      |
+| Mouse wheel                        | Zooms only when **Wheel zoom** is on. Else it scrolls the panel or the page.                                                      |
+| Mouse drag                         | Pans when the view is zoomed, or at all times when **Drag pan** is on. This also applies to a drag that starts on a chart region. |
 
 The scale stays between 0.2× and 10× of the configured zoom. When the view is not at the configured zoom, a **Reset zoom** button shows in the top-left corner of the panel, below the status band and above the legend (top-left corner). The top-right corner stays free for the Grafana panel menu button. The warning badge is next to the button. Click or tap it to go back to the configured zoom; a panel that scrolls goes back to its top-left corner. A new panel size or a new **Zoom** option also resets the view.
 

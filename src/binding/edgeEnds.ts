@@ -155,9 +155,10 @@ export function endAttr(cellId: string, end: 'from' | 'to', name: string, ctx: E
   const seen = new Set<string>();
   for (let id = start; id !== undefined && !seen.has(id); id = ctx.parents.get(id)) {
     seen.add(id);
-    const value = ctx.index.get(id)?.meta.attrs[name];
-    if (value !== undefined) {
-      return value;
+    const attrs = ctx.index.get(id)?.meta.attrs;
+    // own names only: `constructor` must not resolve to the inherited function
+    if (attrs && Object.hasOwn(attrs, name)) {
+      return attrs[name];
     }
   }
   return undefined;

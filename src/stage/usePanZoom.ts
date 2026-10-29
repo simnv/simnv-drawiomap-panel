@@ -22,10 +22,14 @@ interface Args {
   align: ZoomAlign;
   /** Events on these targets (the card) are not gestures. */
   ignore: (t: EventTarget | null) => boolean;
+  /** One finger on these targets (a chart region) scrubs the chart: it does not pan. Two fingers still pinch. */
+  scrub?: (t: EventTarget | null) => boolean;
 }
 
 interface Pointer {
   type: string;
+  /** a finger that went down on a `scrub` target */
+  scrub: boolean;
   x: number;
   y: number;
   x0: number;
@@ -55,13 +59,14 @@ const distOf = (pts: Pointer[]) => (pts.length > 1 ? Math.hypot(pts[0].x - pts[1
  * - Two fingers: the pinch zooms around the midpoint, a move of the midpoint pans.
  * - One finger: at the configured view the hook does not capture it, so the page scrolls and a tap pins
  *   a card. When the view is zoomed, one finger pans; a tap (less than 6 px of movement) still pins a card.
- * - Mouse or pen: a drag pans when the view is zoomed or "Drag pan" is on.
+ *   One finger on a chart region never pans: it scrubs the chart.
+ * - Mouse or pen: a drag pans when the view is zoomed or "Drag pan" is on, also from a chart region.
  * - Ctrl+wheel (a trackpad pinch) zooms. The plain wheel zooms only when "Wheel zoom" is on.
  */
-export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragPan, align, ignore }: Args) {
-  const latest = useRef({ view, wheel, dragPan, align, ignore });
+export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragPan, align, ignore, scrub }: Args) {
+  const latest = useRef({ view, wheel, dragPan, align, ignore, scrub });
   useLayoutEffect(() => {
-    latest.current = { view, wheel, dragPan, align, ignore };
+    latest.current = { view, wheel, dragPan, align, ignore, scrub };
   });
   const state = useRef({
     pointers: new Map<number, Pointer>(),
@@ -86,7 +91,7 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       const one = pts[0];
       const pans =
         pts.length > 1 ||
-        (pts.length === 1 && (one.type === 'touch' ? isZoomed() : latest.current.dragPan || isZoomed()));
+        (pts.length === 1 && (one.type === 'touch' ? !one.scrub && isZoomed() : latest.current.dragPan || isZoomed()));
       if (!pans) {
         s.gesture = null;
         return;
@@ -121,7 +126,15 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
         s.applied = false;
         s.suppressClick = false;
       }
-      s.pointers.set(e.pointerId, { type: e.pointerType, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY });
+      const scrub = e.pointerType === 'touch' && !!latest.current.scrub?.(e.target);
+      s.pointers.set(e.pointerId, {
+        type: e.pointerType,
+        scrub,
+        x: e.clientX,
+        y: e.clientY,
+        x0: e.clientX,
+        y0: e.clientY,
+      });
       begin();
     };
     const onMove = (e: PointerEvent) => {

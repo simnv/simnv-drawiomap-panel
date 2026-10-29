@@ -319,15 +319,10 @@ function readerOf(cellId: string, bound: BindResultV4, ctx: CardContextV4): UseR
       ? { snapshot: d.snapshot, series: d.series }
       : { snapshot: { state: 'empty' as const, fetchedAt: 0, fromCache: false }, series: [] };
   };
-  const speed = meta?.isEdge ? capacityV4({ capacity: eff?.capacity, series: speedSeries }) : undefined;
-  const attr = meta?.isEdge ? capacityV4({ cap: meta.attrs.cap, series: speedSeries }) : undefined;
-  const capacityOf: UseReader['capacityOf'] = (direction) => {
-    const amount = speed?.[direction] ?? attr?.[direction];
-    return {
-      amount,
-      source: speed?.[direction] !== undefined ? 'series' : amount !== undefined ? 'attr' : 'none',
-    };
-  };
+  const capacity = meta?.isEdge
+    ? capacityV4({ capacity: eff?.capacity, cap: meta.attrs.cap, series: speedSeries })
+    : undefined;
+  const capacityOf: UseReader['capacityOf'] = (direction) => capacity?.[direction] ?? { source: 'none' };
 
   /** Spec 3.5 step 6: the row is stale when one of its series is stale. A relative range gives a deadline. */
   const staleOf = (data: UseData[]): { stale: boolean; staleAfter?: number } => {

@@ -33,6 +33,7 @@ Changes since review round 3 (revision 4):
 | N1 | major | Only a positively identified v3 deployment (`options.config.version` below 4) is exempt when `options.build` is missing. A v4 panel with no usable base stops `pull` and the deploy gate; nothing replaces `.cells.yml`, and nothing deploys. | 7.3.5, 7.4, 9 (P2 acceptance 2, 9), 10.3 |
 | P1-10 review 4 | minor | A band row of a cell with no value (text `–`) shows the status reason in place of the text, for example `No data · cpu: 1 cell`. A row `– · cpu: 1 cell` gives no cause. | 3.4 |
 | P1-10 review 2 | minor | The legend has a `down` entry ("Down, no data") before `stale` and `missing`, when cells have a down status with no value (`missing: down`). The painter paints such a cell in the theme red, and no value mapping or step explains that colour. | 3.4 |
+| P1 gate review B, m6 | minor | Line i of a chart takes slot i of `[0, 1, 2, 3, 4, 5, 26, 30]` in the Grafana classic palette, not slot i: slots 6 and 7 repeat the green and yellow shades, so cyan (26) and pink (30) replace them. The order stays fixed. Decided in the P1-11b review; `docs/adr/0003-history-line-labels-colours.md`. | 3.7 |
 
 Changes since review round 2 (revision 3). Amendments:
 
@@ -610,7 +611,7 @@ The state of a use comes from the snapshot of its refId (`src/query/panelSnapsho
 - Coverage, as `src/binding/status.ts:44-65`: two series, one with the value 1 and one with no value, give the worst
   of `normal` and `missing`, which is `missing` with the reason "1 of 2 series have no value".
 - A link half with no series is grey; the other half keeps its colour (`src/binding/color.ts:55-71`). The text of a
-  cell with no data is "–". The hover row shows "no data".
+  cell with no data is "–". The hover row shows "No data".
 
 ### 3.7 Several series
 
@@ -652,10 +653,11 @@ default of `CODING_STANDARDS.md:21` stays: a range without negative values start
 give the range 0 to 51, not 49 to 51. `min: auto` starts at the data minimum, as in v3, but `yDomain` keeps a span
 of at least 10 % of the top, centred on the data (`src/visuals/domain.ts:49-59`): lines at 49 and 51 give 47.45 to
 52.55. This spec does not change the helper.
-Line i takes colour i of the Grafana classic palette (`theme.visualization.palette`). The order of this section
+Line i takes slot i of `[0, 1, 2, 3, 4, 5, 26, 30]` in the Grafana classic palette (`theme.visualization.palette`),
+so the eight lines have distinct hues (0.1, ADR 0003). The order of this section
 fixes the colour and the label of each line, so a new frame order changes neither. The line label is the display
 name of the field. A series with no finite value keeps its place, its colour and its label; it draws no line, and
-the tooltip shows "no data" for it. The pinned tooltip lists all drawn lines at the hovered time, then "+N more".
+the tooltip shows "No data" for it. The pinned tooltip lists all drawn lines at the hovered time, then "+N more".
 Today a card row holds one history
 (`src/interact/cardModel.ts:33-51`), `Card` passes one model (`src/interact/Card.tsx:242-262`), and `SparklineView`
 takes one model (`src/visuals/SparklineView.tsx:9-23`). These files are rewritten (6.2).
@@ -1621,7 +1623,7 @@ P1 acceptance:
    R5): a range frame at 0, 60 and 120 s and an instant frame at 125 s with equal labels give four points in both
    frame orders, and the history row keeps all four; two values at one timestamp give `duplicate-series`. N lines
    (3.7): 9 series give 8 lines and "+1 more"; after a reorder of the frames each line keeps its colour and label;
-   a series with no finite value keeps its colour slot and shows "no data" in the tooltip model; two lines at 49 and
+   a series with no finite value keeps its colour slot and shows "No data" in the tooltip model; two lines at 49 and
    51 give the Y range 0 to 51 (Astra R8), and `min: auto` gives 47.45 to 52.55, the result of the retained
    `yDomain` (`src/visuals/domain.ts:49-59`: a span of at least 10 % of the top, centred on the data).
 10. Unit: links: a→b = `up`; `at=target` flips the halves, the label and the card row; capacity from the refId,

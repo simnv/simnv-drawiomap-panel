@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@grafana/data';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import type { StatusView } from '../binding/status';
 import { cellAt, patchAt } from '../interact/hit';
 import { buildCellIndex } from './svgStage';
 import { renderOverlay } from './overlay';
@@ -17,6 +16,9 @@ import {
   stageObstacles,
   watchLinkLabelFonts,
 } from './linkLabels';
+
+/** The status of a patch, as `statusViewOf` gives it. */
+type PatchStatus = NonNullable<CellPatch['statusView']>;
 
 /*
  * A plain diagram: two nodes and one edge of 320 units between them. The split is at x = 200; the a2b leg runs
@@ -630,8 +632,10 @@ describe('renderLinkLabels: obstacles', () => {
   it('the clearance of a node body is half its drawn stroke: a status border of 12 reserves 6 (R5)', () => {
     const node = `<g data-cell-id="n3"><g><rect x="100" y="20" width="40" height="30" stroke-width="8"/></g></g>`;
     const { root, index } = build(SVG(node));
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'down',
+      severity: 'down',
+      refId: 'up',
       reason: 'Down',
       conditionKey: 'k',
       queryIds: ['q'],
@@ -673,8 +677,10 @@ describe('renderLinkLabels: obstacles', () => {
   it('a stroke binding keeps the reserve of the grid through down and normal (the widest stroke is fixed)', () => {
     const node = `<g data-cell-id="n6"><g><rect x="100" y="20" width="40" height="30" stroke-width="1.5"/></g></g>`;
     const { root, index } = build(SVG(node));
-    const view = (state: 'down' | 'normal'): StatusView => ({
+    const view = (state: 'down' | 'normal'): PatchStatus => ({
       state,
+      severity: state,
+      refId: 'up',
       reason: state,
       conditionKey: 'k',
       queryIds: ['q'],
@@ -723,8 +729,10 @@ describe('renderLinkLabels: obstacles', () => {
   });
   it('a status on a patched edge reserves no room: the obstacles are the stroke pieces and the node bodies', () => {
     const { root, index } = build();
-    const statusView: StatusView = {
+    const statusView: PatchStatus = {
       state: 'down',
+      severity: 'down',
+      refId: 'up',
       reason: 'Down',
       conditionKey: 'k',
       queryIds: ['q'],

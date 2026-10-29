@@ -83,9 +83,9 @@ describe('buildLegendV4', () => {
     ]);
   });
 
-  it('gives the query name as the title when the field has no display name', () => {
-    const blocks = buildLegendV4(new Map([offline('n1')]), fields, { theme, queryName: () => 'Exporter up' });
-    expect(blocks[0].title).toBe('Exporter up');
+  it('gives the refId as the title when the field has no display name', () => {
+    const blocks = buildLegendV4(new Map([offline('n1')]), fields, ctx);
+    expect(blocks[0].title).toBe('scrape_up');
   });
 
   it('adds a stale and a missing entry only when cells have them', () => {
@@ -204,7 +204,7 @@ describe('buildLegendV4', () => {
   it('gives the display name from the data source as the title when the config has no display name', () => {
     const own = new Map([['cpu', field({ displayNameFromDS: 'CPU from DS', thresholds })]]);
     const patches: PatchMap = new Map([cell('n1', status('cpu', 'normal', named('green'), '12'))]);
-    expect(buildLegendV4(patches, own, { theme, queryName: () => 'Query' })[0].title).toBe('CPU from DS');
+    expect(buildLegendV4(patches, own, ctx)[0].title).toBe('CPU from DS');
   });
 
   it('gives a refId with a continuous colour scheme a gradient over its range', () => {
@@ -225,9 +225,8 @@ describe('buildLegendV4', () => {
     expect(buildLegendV4(patches, own, ctx)[0].gradient).toMatchObject({ min: '10%', max: '50%' });
   });
 
-  it('ignores a v3 status and a refId with no field', () => {
-    const v3: Status = { ...status('scrape_up', 'critical'), severity: undefined };
-    const patches: PatchMap = new Map([cell('n1', v3), cell('n2', status('nope', 'normal', named('green'), '1'))]);
+  it('ignores a refId with no field', () => {
+    const patches: PatchMap = new Map([cell('n2', status('nope', 'normal', named('green'), '1'))]);
     expect(buildLegendV4(patches, fields, ctx)).toEqual([]);
   });
 });

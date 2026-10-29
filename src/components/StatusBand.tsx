@@ -63,18 +63,18 @@ const STALE_TEXT = 'Stale';
  * The rows of the v4 band (spec 3.4): one row for each severity, text and refId of the cells that are not normal.
  * The row text is `<text> · <refId>: <n> cells`. A status with no value text ("–") gives its reason as the text.
  * A stale status gives "Stale", not its last value text, so all stale cells of a refId share one row (A10).
- * The order is worst first, then the most cells first. A status without a `severity` gives no row.
+ * The order is worst first, then the most cells first.
  */
 export function bandRowsV4(patches: PatchMap): BandRowV4[] {
   const groups = new Map<string, { label: string; refId: string; severity: StatusView['state']; cellIds: string[] }>();
   for (const { cellId, statusView: status } of patches.values()) {
-    const severity = status?.severity;
-    if (!status || severity === undefined || severity === 'normal') {
+    if (!status || status.severity === 'normal') {
       continue;
     }
+    const { severity } = status;
     const label =
       severity === 'stale' ? STALE_TEXT : status.text && status.text !== NO_DATA_TEXT ? status.text : status.reason;
-    const refId = status.refId ?? '';
+    const { refId } = status;
     const key = JSON.stringify([severity, label, refId]);
     const group = groups.get(key) ?? { label, refId, severity, cellIds: [] };
     groups.set(key, group);
