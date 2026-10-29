@@ -60,6 +60,10 @@ export interface BindResultV4 {
   uses: Map<string, Use[]>;
   /** cell id → use path → the series that the use selects for the cell, in the order of spec 3.7 */
   series: Map<string, Map<UsePath, Series[]>>;
+  /** class name → the ids of the cells that bind to it, in the order of the index (spec 3.2 step 3) */
+  cells: Map<string, string[]>;
+  /** cell id → the YAML path of the `match` of the cell after its override; no entry for a cell that does not bind */
+  matchOrigins: Map<string, string>;
   report: ReportEntry[];
   /** the sorted unique moments after which a status turns stale; the clock reads again after each */
   deadlines: number[];
@@ -227,7 +231,15 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   const { index, data, ctx } = input;
   const { parsed, classes } = input.validated;
   const report = new Report(input.validated.report);
-  const out: BindResultV4 = { patches: new Map(), uses: new Map(), series: new Map(), report: [], deadlines: [] };
+  const out: BindResultV4 = {
+    patches: new Map(),
+    uses: new Map(),
+    series: new Map(),
+    cells: new Map(),
+    matchOrigins: new Map(),
+    report: [],
+    deadlines: [],
+  };
   const config = parsed.config;
   if (!config) {
     out.report = report.entries;
@@ -374,6 +386,12 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       unavailable(meta, 'Unknown class');
     }
   }
+  for (const [name, metas] of cellsOf) {
+    out.cells.set(
+      name,
+      metas.map((meta) => meta.id)
+    );
+  }
   for (const cellId of [...Object.keys(config.overrides), ...parsed.invalidOverrides.keys()]) {
     if (!index.has(cellId)) {
       report.once({ kind: 'unknown-override', cellId });
@@ -400,6 +418,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
           }
         }
       }
+      out.matchOrigins.set(meta.id, eff.origins.match);
       bindCell(meta, eff);
     }
   }

@@ -1,7 +1,7 @@
 import type { BindResultV4 } from '../../binding/bindV4';
 import type { ResolvedClass } from '../../binding/classes';
 import type { UsePath } from '../../binding/report';
-import { badgeOf, cellsByClass, firstUses } from './cellsForPath';
+import { badgeOf, firstUses } from './cellsForPath';
 
 /** The number of cells with 0, 1 and more series. */
 export interface SeriesCounts {
@@ -32,7 +32,7 @@ export function reportCounts(
 ): { perClass: Map<string, SeriesCounts & { cells: number }>; perUse: Map<UsePath, SeriesCounts> } {
   const perClass = new Map([...classes.keys()].map((name) => [name, { cells: 0, zero: 0, one: 0, many: 0 }]));
   const perUse = new Map<UsePath, SeriesCounts>();
-  for (const [name, cells] of cellsByClass(bound)) {
+  for (const [name, cells] of bound.cells) {
     const counts = perClass.get(name);
     if (!counts) {
       continue;

@@ -818,3 +818,41 @@ describe('bindV4: the engine', () => {
     ]);
   });
 });
+
+describe('bindV4: the cells of a class and the origin of the match of a cell', () => {
+  it('cells: the ids per class in the order of the index; no cell of an unknown class or of an invalid override', () => {
+    const r = run(
+      hostConfig({ base: { status: 'up' }, host: HOST }, { bad: { bogus: 1 } }),
+      [
+        ['a', { bind: 'host', key: 'a' }],
+        ['n', { bind: 'nope' }],
+        ['bad', { bind: 'host', key: 'bad' }],
+        ['b', { bind: 'host', key: 'b' }],
+        ['z', { bind: 'base', key: 'z' }],
+        ['x', {}],
+      ],
+      [frame('up', { job: 'a' })]
+    );
+    expect(r.cells).toEqual(
+      new Map([
+        ['host', ['a', 'b']],
+        ['base', ['z']],
+      ])
+    );
+  });
+
+  it('matchOrigins: the YAML path that gives the match of the cell, the override path for an override match', () => {
+    const r = run(
+      hostConfig({ base: { status: 'up' }, host: HOST }, { b: { match: { key: 'name' } } }),
+      [
+        ['a', { bind: 'host', key: 'a' }],
+        ['b', { bind: 'host', key: 'b' }],
+        ['z', { bind: 'base', key: 'z' }],
+      ],
+      [frame('up', { job: 'a' })]
+    );
+    expect(r.matchOrigins.get('a')).toBe('classes.host.match');
+    expect(r.matchOrigins.get('b')).toBe('overrides.b.match');
+    expect(r.matchOrigins.has('z')).toBe(false);
+  });
+});
