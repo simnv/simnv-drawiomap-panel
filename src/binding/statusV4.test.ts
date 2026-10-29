@@ -58,6 +58,7 @@ describe('statusOfUse: the value of a series', () => {
       color: theme.visualization.getColorByName('magenta'),
       text: 'Offline',
       refId: 'up',
+      value: 0,
     });
   });
   it('gives down for the mapping text Down, whatever its colour', () => {

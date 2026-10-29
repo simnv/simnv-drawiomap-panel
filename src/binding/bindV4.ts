@@ -74,7 +74,7 @@ const NO_TARGET: QuerySnapshot = { state: 'empty', fetchedAt: 0, fromCache: fals
 
 /** The status of the painter, the band and the legend from a v4 status. */
 export function statusViewOf(status: StatusV4): StatusView & StatusV4Fields {
-  const { state, severity, color, text, refId, reason } = status;
+  const { state, severity, color, text, refId, reason, value } = status;
   return {
     state,
     reason: reason ?? '',
@@ -85,6 +85,7 @@ export function statusViewOf(status: StatusV4): StatusView & StatusV4Fields {
     color,
     text,
     refId,
+    ...(value === undefined ? {} : { value }),
   };
 }
 

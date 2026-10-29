@@ -156,6 +156,20 @@ describe('buildLegendV4', () => {
     expect(buildLegendV4(withHalves, fields, ctx).map((b) => b.key)).not.toContain('state');
   });
 
+  it('puts a value of a colour-only mapping on the mapping, not on a step of the same colour', () => {
+    const red = [{ type: MappingType.ValueToText as const, options: { '0': { color: 'red' } } }];
+    const own = new Map([['cpu', field({ unit: 'percent', mappings: red, thresholds })]]);
+    const patches: PatchMap = new Map([
+      cell('n1', { ...status('cpu', 'critical', named('red'), '93%'), value: 93 }),
+      cell('n2', { ...status('cpu', 'critical', named('red'), '0%'), value: 0 }),
+    ]);
+    expect(buildLegendV4(patches, own, ctx)[0].entries.map((e) => [e.label, e.cellIds])).toEqual([
+      ['0', ['n2']],
+      ['< 80%', []],
+      ['≥ 80%', ['n1']],
+    ]);
+  });
+
   it('puts a value with a step colour on the step, not on a mapping of the same colour', () => {
     const red = [{ type: MappingType.ValueToText as const, options: { '0': { text: 'Offline', color: 'red' } } }];
     const own = new Map([['cpu', field({ unit: 'percent', mappings: red, thresholds })]]);
