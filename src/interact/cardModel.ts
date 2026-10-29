@@ -13,6 +13,7 @@ import { halfState, type HalfContext } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import { noDataColor } from '../binding/color';
+import { capacityV4 } from '../binding/capacity';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 import type { BindInputV4, BindResultV4, PatchV4 } from '../binding/bindV4';
 import { effectiveClass } from '../binding/classes';
@@ -261,7 +262,7 @@ function queryRowV4(
   if (kind === 'updown') {
     const a2b = reader.dataOf(`${path}.a2b`);
     const b2a = reader.dataOf(`${path}.b2a`);
-    return a2b && b2a ? updownRow(key, [a2b, b2a], reader.at, ctx, reader.staleOf([a2b, b2a])) : undefined;
+    return a2b && b2a ? updownRow(key, [a2b, b2a], reader, ctx, reader.staleOf([a2b, b2a])) : undefined;
   }
   const d = reader.dataOf(path);
   if (!d) {
@@ -277,6 +278,7 @@ interface UseReader {
   /** the `at` attribute of the cell: which end the key names (spec 3.8.2) */
   at?: string;
   dataOf(path: string): UseData | undefined;
+  capacityOf(direction: 'a2b' | 'b2a'): Parameters<typeof halfState>[2];
   staleOf(data: UseData[]): { stale: boolean; staleAfter?: number };
 }
 
@@ -310,6 +312,23 @@ function readerOf(cellId: string, bound: BindResultV4, ctx: CardContextV4): UseR
     return { use, snapshot, series };
   };
 
+  const speedSeries = (refId: string) => {
+    const use = uses.find((u) => u.kind === 'capacity' && u.refId === refId);
+    const d = use ? dataOf(use.path) : undefined;
+    return d && !d.problem
+      ? { snapshot: d.snapshot, series: d.series }
+      : { snapshot: { state: 'empty' as const, fetchedAt: 0, fromCache: false }, series: [] };
+  };
+  const speed = meta?.isEdge ? capacityV4({ capacity: eff?.capacity, series: speedSeries }) : undefined;
+  const attr = meta?.isEdge ? capacityV4({ cap: meta.attrs.cap, series: speedSeries }) : undefined;
+  const capacityOf: UseReader['capacityOf'] = (direction) => {
+    const amount = speed?.[direction] ?? attr?.[direction];
+    return {
+      amount,
+      source: speed?.[direction] !== undefined ? 'series' : amount !== undefined ? 'attr' : 'none',
+    };
+  };
+
   /** Spec 3.5 step 6: the row is stale when one of its series is stale. A relative range gives a deadline. */
   const staleOf = (data: UseData[]): { stale: boolean; staleAfter?: number } => {
     let stale = false;
@@ -331,7 +350,7 @@ function readerOf(cellId: string, bound: BindResultV4, ctx: CardContextV4): UseR
     }
     return staleAfter === undefined ? { stale } : { stale, staleAfter };
   };
-  return { at: meta?.attrs.at, dataOf, staleOf };
+  return { at: meta?.attrs.at, dataOf, capacityOf, staleOf };
 }
 
 /** The fields of a row that format and bound a value: the `show` fields, `reduce`, `min` and `max`. */
@@ -475,12 +494,12 @@ function valueRowV4(
 function updownRow(
   key: string,
   data: [UseData, UseData],
-  at: string | undefined,
+  reader: UseReader,
   ctx: CardContext,
   stale: { stale: boolean; staleAfter?: number }
 ): CardRowV4 {
   const row = (data[0].use.row ?? {}) as RowFields & { up?: string; down?: string };
-  const feeds = linkFeeds(at, 'up', 'down');
+  const feeds = linkFeeds(reader.at, 'up', 'down');
   const byDirection = { [feeds.a2b]: data[0], [feeds.b2a]: data[1] } as Record<'up' | 'down', UseData>;
   const allSeries = data.flatMap((d) => d.series);
   const units = unitFactors(allSeries);
@@ -528,7 +547,12 @@ function updownRow(
       reduced.state === 'ready'
         ? { ...reduced, field: shownField(reduced.field, row) as typeof reduced.field }
         : reduced;
-    const half = halfState(history, d.use.refId, { source: 'none' }, halves).state;
+    const capacity = reader.capacityOf(feeds.a2b === direction ? 'a2b' : 'b2a');
+    // Keep the source unit for utilization; the row overrides only the display processor.
+    const half = halfState(reduced, d.use.refId, capacity, {
+      ...halves,
+      display: (series, value) => halves.display({ ...series, field: shownField(series.field, row) }, value),
+    }).state;
     return { direction, label, mirrored, history, text: half.label, color: half.color };
   });
   const ready = directions.flatMap((d) => (d.history.state === 'ready' ? [d.history] : []));
