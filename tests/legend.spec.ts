@@ -32,6 +32,15 @@ test('the demo shows the colour legend in the bottom-right corner', async ({ pag
   await expect(legend).toHaveAttribute('data-dmap-corner', 'bottom-right');
   await openLegend(legend);
   await expect(legend.getByRole('group', { name: /^Link load %/ }).first()).toBeVisible();
+  const status = legend.getByRole('group', { name: 'node-net-a', exact: true });
+  for (const [text, color] of [
+    ['< 1.0', 'rgb(242, 73, 92)'],
+    ['≥ 1.0', 'rgb(115, 191, 105)'],
+  ]) {
+    const entry = status.getByTestId('dmap-legend-entry').filter({ hasText: text });
+    await expect(entry).toHaveText(text);
+    await expect(entry.locator('[data-dmap-swatch]')).toHaveCSS('background-color', color);
+  }
   const p = await box(panel);
   const l = await box(legend);
   expect(p.x + p.width - (l.x + l.width)).toBeLessThan(12);
@@ -42,7 +51,7 @@ test('hovering a legend entry highlights the cells in that band', async ({ page,
   await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = page.getByTestId('dmap-panel').first();
   await openLegend(panel.getByTestId('dmap-legend'));
-  const block = panel.getByTestId('dmap-legend').getByRole('group', { name: 'Link load % (A)' });
+  const block = panel.getByTestId('dmap-legend').getByRole('group', { name: /^Link load % \(lan_rx, lan_tx\)$/ });
   // the first threshold entry that has cells now
   const entries = block.getByTestId('dmap-legend-entry');
   await expect(entries.first()).toBeVisible();

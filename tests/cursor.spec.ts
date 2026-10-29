@@ -1,5 +1,5 @@
-import type { DiagramConfig } from '../src/model/config';
-import { expect, test } from './authoring-fixtures';
+import type { ConfigV4 } from '../src/model/v4';
+import { expect, test, testdataTarget } from './authoring-fixtures';
 
 // A fictional portograph sheet: canvas, a group, two nodes with an icon, a link with a label and a legend.
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360" viewBox="0 0 600 360">
@@ -15,29 +15,22 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360" vi
       <g data-cell-id="pg-legend"><rect x="460" y="260" width="120" height="80" fill="#fff" stroke="#999"/><text x="470" y="290">Legend</text></g>
     </g>
   </g>
-</svg>`;
+</svg>`.replace(
+  /data-cell-id="([^"]+)"/g,
+  (tag, id: string) => `${tag} data-meta-bind="${id === 'pg-node~rtr-b' ? 'plain' : 'cards'}" data-meta-key="${id}"`
+);
 
-test('the hand cursor shows only on cells that open a card', async ({
-  page,
-  config,
-  createDiagram,
-  gotoDashboardPage,
-}) => {
-  // Every cell has a card row; rtr-b turns its card off.
-  const cards: DiagramConfig = {
-    ...config,
-    queries: [],
-    widgets: [],
-    overrides: [{ cellId: 'pg-node~rtr-b', display: { hover: { enabled: false, rows: [] } } }],
-    patterns: [
-      {
-        id: 'all',
-        name: 'All cells',
-        select: {},
-        display: { hover: { rows: [{ kind: 'metadata', label: 'Element', path: 'cell.id' }] } },
-      },
-    ],
-  };
+const cards: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: {
+    cards: { match: { key: 'job' }, rows: [{ kind: 'metadata', label: 'Element', text: '${id}' }] },
+    plain: { match: { key: 'job' }, rows: [] },
+  },
+  overrides: {},
+};
+
+test('the hand cursor shows only on cells that open a card', async ({ page, createDiagram, gotoDashboardPage }) => {
   const uid = await createDiagram(cards, { svg });
   await gotoDashboardPage({ uid });
   const panel = page.getByTestId('dmap-panel');
@@ -57,38 +50,19 @@ test('the hand cursor shows only on cells that open a card', async ({
 
 test('in panel edit mode only the cells that open a card show the hand cursor; Tab reaches every cell after a refresh', async ({
   page,
-  config,
   createDiagram,
   gotoPanelEditPage,
   selectors,
 }) => {
-  const cards: DiagramConfig = {
-    ...config,
-    queries: [],
-    widgets: [],
-    overrides: [{ cellId: 'pg-node~rtr-b', display: { hover: { enabled: false, rows: [] } } }],
-    patterns: [
-      {
-        id: 'all',
-        name: 'All cells',
-        select: {},
-        display: { hover: { rows: [{ kind: 'metadata', label: 'Element', path: 'cell.id' }] } },
-      },
-    ],
-  };
-  // A Grafana panel query: a dashboard refresh gives the panel new data, and the panel applies its patches again.
-  const testdata = config.queries.find((q) => q.id === 'trend')!.source;
-  const datasource = testdata.kind === 'datasource' ? testdata.datasource : undefined;
   const uid = await createDiagram(cards, {
     svg,
-    targets: [{ refId: 'A', datasource, scenarioId: 'random_walk' }],
+    targets: [testdataTarget('A', { scenarioId: 'random_walk' })],
   });
   const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
   const panel = page.getByTestId('dmap-panel');
   const shape = (id: string) => panel.locator(`[data-cell-id="${id}"] > :is(rect, path, ellipse)`).first();
   const cursor = (id: string) => shape(id).evaluate((el) => getComputedStyle(el).cursor);
-  // Panel edit shows the panel as the viewer sees it: the editor lives in the popup, so a cell without a card
-  // is no button and keeps the default cursor, and a click selects nothing.
+  // Panel edit keeps the view interactions. A cell without a card keeps its default cursor; a click selects nothing.
   await shape('pg-node~rtr-a').click();
   await page.keyboard.press('Escape');
   await expect(panel.locator('[data-dmap-selected="true"]')).toHaveCount(0);

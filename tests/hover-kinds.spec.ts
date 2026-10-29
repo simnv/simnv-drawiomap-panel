@@ -1,4 +1,4 @@
-import type { DiagramConfig } from '../src/model/config';
+import type { ConfigV4 } from '../src/model/v4';
 import type { Locator } from '@playwright/test';
 import { expect, test } from './authoring-fixtures';
 
@@ -17,25 +17,16 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360" vi
       <g data-cell-id="pg-legend"><rect x="460" y="260" width="120" height="80" fill="#fff" stroke="#999"/><text x="470" y="290">Legend</text></g>
     </g>
   </g>
-</svg>`;
+</svg>`.replace(/data-cell-id="([^"]+)"/g, '$& data-meta-bind="cards" data-meta-key="$1"');
 
-function cardsForAll(config: DiagramConfig): DiagramConfig {
-  return {
-    ...config,
-    queries: [],
-    widgets: [],
-    overrides: [],
-    // every cell has a card row, so only Hover kinds decides
-    patterns: [
-      {
-        id: 'all',
-        name: 'All cells',
-        select: {},
-        display: { hover: { rows: [{ kind: 'metadata', label: 'Element', path: 'cell.id' }] } },
-      },
-    ],
-  };
-}
+const cards: ConfigV4 = {
+  version: 4,
+  freshness: '3x',
+  classes: {
+    cards: { match: { key: 'job' }, rows: [{ kind: 'metadata', label: 'Element', text: '${id}' }] },
+  },
+  overrides: {},
+};
 
 /** Moves the mouse to a point of the element box, as fractions of its width and height. */
 async function hoverAt(locator: Locator, fx = 0.5, fy = 0.5) {
@@ -45,11 +36,10 @@ async function hoverAt(locator: Locator, fx = 0.5, fy = 0.5) {
 
 test('the canvas, a group and the legend open no card; nodes and links do', async ({
   page,
-  config,
   createDiagram,
   gotoDashboardPage,
 }) => {
-  const uid = await createDiagram(cardsForAll(config), { svg });
+  const uid = await createDiagram(cards, { svg, targets: [] });
   await gotoDashboardPage({ uid });
   const panel = page.getByTestId('dmap-panel');
   const card = panel.getByTestId('dmap-card');
