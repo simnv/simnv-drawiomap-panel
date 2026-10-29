@@ -224,8 +224,19 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     expect(MAX_LINES).toBe(8);
     expect(row.lines).toHaveLength(8);
     expect(row.more).toBe(1);
-    expect(row.lines.map((l) => l.label)).toEqual(Array.from({ length: 8 }, (_, i) => `{ssid="s${i}"}`));
+    expect(row.lines.map((l) => l.label)).toEqual(Array.from({ length: 8 }, (_, i) => `s${i}`));
     expect(row.lines.map((l) => l.color)).toEqual(Array.from({ length: 8 }, (_, i) => palette(i)));
+  });
+
+  it('gives the bare value when one label differs, and all differing labels when more differ (ADR 0003)', () => {
+    const one = historyRow(card(clients([{ kind: 'history', query: 'clients' }]), ssidFrames(2)));
+    expect(one.lines.map((l) => l.label)).toEqual(['s0', 's1']);
+    const frames = [
+      frame('clients', { job: 'ap-1', ssid: 'a', band: '2g' }, [1, 2, 3]),
+      frame('clients', { job: 'ap-1', ssid: 'b', band: '5g' }, [4, 5, 6]),
+    ];
+    const two = historyRow(card(clients([{ kind: 'history', query: 'clients' }]), frames));
+    expect(two.lines.map((l) => l.label)).toEqual(['{band="2g", ssid="a"}', '{band="5g", ssid="b"}']);
   });
 
   it('keeps the colour and the label of each line after a frame reorder', () => {
@@ -245,16 +256,16 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     ];
     const row = historyRow(card(clients([{ kind: 'history', query: 'clients' }]), frames));
     expect(row.lines.map((l) => [l.label, l.color, l.noData])).toEqual([
-      ['{ssid="a"}', palette(0), false],
-      ['{ssid="b"}', palette(1), true],
-      ['{ssid="c"}', palette(2), false],
+      ['a', palette(0), false],
+      ['b', palette(1), true],
+      ['c', palette(2), false],
     ]);
     expect(lineTooltip(row, 120_000)).toEqual({
       time: 120_000,
       list: [
-        { label: '{ssid="a"}', color: palette(0), value: '3' },
-        { label: '{ssid="b"}', color: palette(1), value: 'No data' },
-        { label: '{ssid="c"}', color: palette(2), value: '6' },
+        { label: 'a', color: palette(0), value: '3' },
+        { label: 'b', color: palette(1), value: 'No data' },
+        { label: 'c', color: palette(2), value: '6' },
       ],
       more: 0,
     });
