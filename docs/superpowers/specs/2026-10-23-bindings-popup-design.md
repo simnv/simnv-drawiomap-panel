@@ -1,5 +1,7 @@
 # Bindings popup: design and implementation spec
 
+Status: superseded by the binding model v4 (`2026-10-28-binding-model-v4-design.md`), 2026-10-29. The bindings popup is deleted; the YAML option replaces it, and a split editor is planned (v4 spec, section 5).
+
 Date: 2026-10-23. Baseline: `9154966` (branch `main`). Grafana 12.4.13 and 13.2.4; `@grafana/*` 12.4.13 installed.
 Status: approved product decisions (grilling session), design checked against the code, revised after the consilium
 review (section 11). Workers implement it in three phases (`docs/superpowers/plans/2026-10-23-bindings-popup-phase-{1,2,3}.md`).
