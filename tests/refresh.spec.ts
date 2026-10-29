@@ -119,10 +119,10 @@ test.describe('panel queries', () => {
   });
 });
 
-// P3-08: the bindings popup comes back with the split editor (spec 5.0, 6.5). Then this case opens the split editor
-// where it says "P3-08" and runs again.
+// The split editor reads the data of the panel and runs no query (spec 5.1). v4 has no hold of the panel behind the
+// popup: a refresh updates the panel and the popup stage, and the draft stays.
 test.describe('popup open', () => {
-  test.fixme('the panel behind does no work for a refresh while the popup is open and updates once on close', async ({
+  test('a refresh while the split editor is open runs only the panel query, updates both stages and keeps the draft', async ({
     page,
     config,
     createDiagram,
@@ -173,61 +173,69 @@ test.describe('popup open', () => {
       await expect.poll(() => values.length).toBeGreaterThan(answered);
     };
     const panel = page.getByTestId('dmap-panel');
-    const halves = panel.locator('polyline.dmap-half');
-    await expect(halves.first()).toBeAttached();
-    const snapshot = async () => ({
-      halves: await halves.evaluateAll((els) => els.map((el) => el.outerHTML)),
-      patched: await panel.getAttribute('data-dmap-patched'),
-    });
-    // Count every change under the panel: an attribute, a node, a text. The applier writes at least one per refresh.
-    await panel.evaluate((el) => {
-      const w = window as unknown as { __dmapMutations: number };
-      w.__dmapMutations = 0;
-      new MutationObserver((records) => {
-        w.__dmapMutations += records.length;
-      }).observe(el, { attributes: true, childList: true, subtree: true, characterData: true });
-    });
-    const mutations = () => page.evaluate(() => (window as unknown as { __dmapMutations: number }).__dmapMutations);
+    await expect(panel.locator('polyline.dmap-half').first()).toBeAttached();
 
-    // Control: without the popup, a refresh changes the panel.
+    await page.getByTestId('dmap-edit-bindings').click();
+    const popup = page.getByTestId('dmap-bindings-popup');
+    const lines = popup.getByTestId('data-testid Code editor container').locator('.view-lines');
+    await expect(lines).toContainText('version: 4', { timeout: 30_000 });
+    const popupStage = popup.getByTestId('dmap-popup-stage');
+    await expect(popupStage.locator('polyline.dmap-half').first()).toBeAttached();
+    // A draft: a comment on the first line. The stored form has no comments, so the text differs from the saved one.
+    await lines.locator('.view-line').first().click();
+    await page.keyboard.press('Home');
+    await page.keyboard.type('# draft');
+    await page.keyboard.press('Enter');
+    await expect(lines.locator('.view-line').first()).toHaveText('# draft');
+    // A mark on the dialog: a new dialog would not have it.
+    await popup.evaluate((el) => el.setAttribute('data-dmap-test-mark', 'before-refresh'));
+
+    // Count every change under the panel and under the popup stage: an attribute, a node, a text.
+    for (const [name, stage] of [
+      ['panel', panel],
+      ['popup', popupStage],
+    ] as const) {
+      await stage.evaluate((el, key) => {
+        const w = window as unknown as Record<string, number>;
+        w[key] = 0;
+        new MutationObserver((records) => {
+          w[key] += records.length;
+        }).observe(el, { attributes: true, childList: true, subtree: true, characterData: true });
+      }, `__dmapMutations_${name}`);
+    }
+    const mutations = (name: 'panel' | 'popup') =>
+      page.evaluate((key) => (window as unknown as Record<string, number>)[key], `__dmapMutations_${name}`);
     await page.waitForTimeout(1000);
-    const settled = await mutations();
-    await refresh();
-    await expect.poll(mutations, { timeout: 10_000 }).toBeGreaterThan(settled);
+    const requestsAtOpen = requests.length;
+    const valuesAtOpen = values.at(-1)!;
+    const panelBefore = await mutations('panel');
+    const popupBefore = await mutations('popup');
 
-    // P3-08: open the split editor.
-    const before = await snapshot();
-    const mutationsBefore = await mutations();
     // Three dashboard refreshes reach the data source while the popup is open.
     for (let i = 0; i < 3; i++) {
       await refresh();
     }
-    expect(await snapshot()).toEqual(before);
-    expect(await mutations()).toBe(mutationsBefore);
+    // Each refresh sends the panel query and nothing else: the popup sends none.
+    expect(requests.slice(requestsAtOpen).map((r) => r.queries.map((q) => q.refId))).toEqual([['A'], ['A'], ['A']]);
+    // The panel behind and the popup stage both render the new data.
+    await expect.poll(() => mutations('panel'), { timeout: 10_000 }).toBeGreaterThan(panelBefore);
+    await expect.poll(() => mutations('popup'), { timeout: 10_000 }).toBeGreaterThan(popupBefore);
+    // The draft stays: the same dialog with the same text.
+    await expect(popup).toHaveAttribute('data-dmap-test-mark', 'before-refresh');
+    await expect(lines.locator('.view-line').first()).toHaveText('# draft');
 
-    const valuesAtOpen = values.at(-1)!;
-    // Record each distinct picture of the link halves from the close on.
-    await panel.evaluate((el) => {
-      const w = window as unknown as { __dmapPictures: string[] };
-      w.__dmapPictures = [];
-      const read = () => Array.from(el.querySelectorAll('polyline.dmap-half'), (half) => half.outerHTML).join('\n');
-      new MutationObserver(() => {
-        const picture = read();
-        if (w.__dmapPictures.at(-1) !== picture) {
-          w.__dmapPictures.push(picture);
-        }
-      }).observe(el, { attributes: true, childList: true, subtree: true });
-    });
-    const pictures = () => page.evaluate(() => (window as unknown as { __dmapPictures: string[] }).__dmapPictures);
-    const responsesAtClose = values.length;
-    // P3-08: close the split editor.
-    // The panel renders the latest data: its link halves change.
-    await expect.poll(async () => (await snapshot()).halves, { timeout: 15_000 }).not.toEqual(before.halves);
-    expect(await mutations()).toBeGreaterThan(mutationsBefore);
-    await page.waitForTimeout(1200);
-    // One update with the latest result: one new picture, plus one for each refresh that arrived after the close.
-    expect((await pictures()).length).toBeLessThanOrEqual(1 + (values.length - responsesAtClose));
-    // The hover card shows the latest value, not the one from before the pause.
+    // The draft is dirty: Close asks first, Discard closes.
+    await page
+      .getByRole('dialog', { name: 'Edit bindings' })
+      .getByRole('button', { name: 'Close', exact: true })
+      .click();
+    await page
+      .getByRole('dialog', { name: 'Discard changes?' })
+      .getByRole('button', { name: 'Discard', exact: true })
+      .click();
+    await expect(popup).toHaveCount(0);
+    // The hover card of the panel shows the latest value, not the one from before the refreshes.
+    const halves = panel.locator('polyline.dmap-half');
     const at = await halves.first().evaluate((el) => {
       const r = el.getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 };

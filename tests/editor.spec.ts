@@ -182,3 +182,60 @@ test('geometry export through the Diagram option keeps bind and key through dash
   await expect(stage).toHaveAttribute('data-dmap-hash', options.diagram.hash);
   await bound();
 });
+
+test('a chart assignment through the split editor survives Apply, dashboard save and reopen', async ({
+  page,
+  request,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  const uid = await createDiagram(config);
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const stage = page.getByTestId('dmap-panel');
+  // `ordinary-chart` is a bare mxCell with no bind: it has no chart region.
+  await expect(stage.locator('[data-dmap-chart="chart-1"]')).toBeAttached();
+  await expect(stage.locator('[data-dmap-chart="ordinary-chart"]')).toHaveCount(0);
+
+  await page.getByTestId('dmap-edit-bindings').click();
+  const popup = page.getByTestId('dmap-bindings-popup');
+  const popupStage = popup.getByTestId('dmap-popup-stage');
+  await popupStage.locator('[data-cell-id="ordinary-chart"]').click();
+  const inspector = popup.getByTestId('dmap-inspector');
+  await expect(inspector.getByTestId('dmap-inspector-id')).toHaveText('ordinary-chart');
+  // Write 1 of spec 5.5: the cell gets the chart class and the key of the trend series.
+  await inspector.getByTestId('dmap-inspector-bind').fill('trend-region');
+  await inspector.getByTestId('dmap-inspector-key').fill('trend');
+  await inspector.getByRole('button', { name: 'Set bind and key', exact: true }).click();
+  // The write is a draft: the popup stage shows the chart region, the panel behind waits for Apply.
+  await expect(popupStage.locator('[data-dmap-chart="ordinary-chart"]')).toBeAttached();
+  await expect(stage.locator('[data-dmap-chart="ordinary-chart"]')).toHaveCount(0);
+  await popup.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(stage.locator('[data-dmap-chart="ordinary-chart"]')).toBeAttached();
+  await expect(stage.locator('[data-dmap-chart="ordinary-chart"] canvas')).toBeVisible();
+  // After Apply the draft is clean: Close closes at once.
+  await page.getByRole('dialog', { name: 'Edit bindings' }).getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(popup).toHaveCount(0);
+
+  await saveDashboard(page, panelEditPage);
+  const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
+  const options = saved.dashboard.panels[0].options;
+  const encoded = /<diagram[^>]*>([^<]+)<\/diagram>/.exec(options.diagram.xml)?.[1];
+  const decoded = encoded
+    ? decodeURIComponent(inflateRawSync(Buffer.from(encoded, 'base64')).toString())
+    : options.diagram.xml;
+  // The bare mxCell now has the <object> wrapper that holds the attributes (spec 5.5).
+  expect(decoded).toMatch(/<object [^>]*id="ordinary-chart"[^>]*bind="trend-region"[^>]*key="trend"/);
+  expect(decoded).not.toMatch(/<mxCell [^>]*id="ordinary-chart"/);
+  expect(options.diagram.svg).toMatch(/data-cell-id="ordinary-chart"[^>]*data-meta-bind="trend-region"/);
+  // The assignment is a diagram write: the config stays as it was.
+  expect(options.config).toEqual(config);
+
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  await expect(stage).toHaveAttribute('data-dmap-hash', options.diagram.hash);
+  await expect(stage.locator('[data-dmap-chart="ordinary-chart"] canvas')).toBeVisible();
+  await page.getByTestId('dmap-edit-bindings').click();
+  await popupStage.locator('[data-cell-id="ordinary-chart"]').click();
+  await expect(inspector.getByTestId('dmap-inspector-chain')).toHaveText('trend-region');
+  await expect(inspector.getByTestId('dmap-inspector-use').getByTestId('dmap-inspector-refid')).toHaveText('trend');
+});
