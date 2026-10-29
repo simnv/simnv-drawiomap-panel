@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { expect, test } from './authoring-fixtures';
 
 const PANE_WIDTH = 300;
@@ -5,7 +6,7 @@ const PANE_WIDTH = 300;
 // Set DMAP_SCREENSHOTS=1 to write docs/images/options-diagram.png.
 const SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'docs/images/options-diagram.png' : undefined;
 
-test('the Diagram option buttons stay inside the options pane at the narrowest width', async ({
+test('the Diagram option buttons and the YAML option stay inside the options pane at the narrowest width', async ({
   gotoPanelEditPage,
   page,
 }) => {
@@ -34,19 +35,29 @@ test('the Diagram option buttons stay inside the options pane at the narrowest w
   const pane = await group.boundingBox();
   expect(pane!.width).toBeLessThanOrEqual(PANE_WIDTH + 10);
 
-  const buttons = [
-    page.getByTestId('dmap-open-editor'),
-    page.getByTestId('dmap-edit-bindings-option'),
-    group.getByRole('button', { name: 'Import .drawio' }),
-    group.getByRole('button', { name: 'Clear', exact: true }),
-  ];
-  for (const button of buttons) {
-    await expect(button).toBeVisible();
-    const box = (await button.boundingBox())!;
+  const inside = async (element: Locator, name: string) => {
+    await expect(element, name).toBeVisible();
+    const box = (await element.boundingBox())!;
     const paneBox = (await group.boundingBox())!;
-    expect(box.x, 'left edge').toBeGreaterThanOrEqual(paneBox.x);
-    expect(box.x + box.width, 'right edge').toBeLessThanOrEqual(paneBox.x + paneBox.width);
-  }
+    expect(box.x, `${name}: left edge`).toBeGreaterThanOrEqual(paneBox.x);
+    expect(box.x + box.width, `${name}: right edge`).toBeLessThanOrEqual(paneBox.x + paneBox.width);
+  };
+  // P1 has no "Edit bindings" button (spec 5.0): the YAML option holds the bindings.
+  await expect(page.getByTestId('dmap-edit-bindings-option')).toHaveCount(0);
+  await inside(page.getByTestId('dmap-open-editor'), 'Open editor');
+  await inside(group.getByRole('button', { name: 'Import .drawio' }), 'Import .drawio');
+  await inside(group.getByRole('button', { name: 'Clear', exact: true }), 'Clear');
+
+  // The YAML option (spec 5.0) shows the stored config as YAML, inside the same pane width.
+  await panelEditPage.getCustomOptions('Bindings').expand();
+  const bindings = page.getByTestId('data-testid Options group Bindings');
+  const code = bindings.getByTestId('data-testid Code editor container');
+  await expect(code.locator('.view-lines')).toContainText('version: 4', { timeout: 30_000 });
+  const codeBox = (await code.boundingBox())!;
+  const bindingsBox = (await bindings.boundingBox())!;
+  expect(codeBox.x, 'YAML option: left edge').toBeGreaterThanOrEqual(bindingsBox.x);
+  expect(codeBox.x + codeBox.width, 'YAML option: right edge').toBeLessThanOrEqual(bindingsBox.x + bindingsBox.width);
+  expect(bindingsBox.width).toBeLessThanOrEqual(PANE_WIDTH + 10);
 
   if (SCREENSHOT) {
     const paneBox = (await group.boundingBox())!;

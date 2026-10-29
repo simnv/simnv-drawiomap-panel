@@ -23,11 +23,11 @@ test.describe('live zoom on the desktop', () => {
     const uid = await createDiagram(config);
     await gotoDashboardPage({ uid });
     const panel = page.getByTestId('dmap-panel');
-    await expect(panel.locator('[data-dmap-widget] canvas')).toBeVisible();
+    await expect(panel.locator('[data-dmap-chart] canvas')).toBeVisible();
     const read = () =>
       panel.evaluate((el) => {
         const shape = el.querySelector<SVGGraphicsElement>('[data-cell-id="chart-1"] rect')!;
-        const portal = el.querySelector<SVGForeignObjectElement>('[data-dmap-widget="trend-region"]')!;
+        const portal = el.querySelector<SVGForeignObjectElement>('[data-dmap-chart="chart-1"]')!;
         const corners = (node: SVGGraphicsElement) => {
           const b = node.getBBox(),
             m = node.getScreenCTM()!;
@@ -81,8 +81,11 @@ test.describe('live zoom on the desktop', () => {
     await page.mouse.wheel(0, -100);
     await expect.poll(async () => (await read()).viewBox).not.toBe(resized.viewBox);
     const zoomed = await verify();
+    // The v4 chart region takes the pointer for its hover (spec 3.9), so the drag starts on an empty part of the panel.
+    const from = { x: box.x + box.width * 0.2, y: box.y + box.height * 0.8 };
+    await page.mouse.move(from.x, from.y);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 35, box.y + box.height / 2 + 20, { steps: 5 });
+    await page.mouse.move(from.x + 35, from.y + 20, { steps: 5 });
     await page.mouse.up();
     await expect.poll(async () => (await read()).viewBox).not.toBe(zoomed.viewBox);
     await verify();
@@ -152,14 +155,17 @@ test.describe('live zoom on the desktop', () => {
       await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
       await fits('panel view');
       const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
-      await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
       await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+      // P1 has no "Edit bindings" button (spec 5.0): the corner in panel edit holds only its own controls.
+      await expect(page.getByTestId('dmap-corner')).toBeAttached();
+      await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
       await fits('panel edit');
       await page.setViewportSize({ width: 1100, height: 760 });
       await fits('panel edit after a window resize');
       await page.setViewportSize({ width: 1440, height: 900 });
       await edit.backToDashboard();
-      await expect(page.getByTestId('dmap-edit-bindings')).toHaveCount(0);
+      await expect(page).not.toHaveURL(/editPanel=/);
+      await expect(page.getByTestId('dmap-panel').first()).toHaveAttribute('data-dmap-cells', /\d+/);
       await fits('view after panel edit');
     }
   );
