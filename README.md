@@ -59,7 +59,7 @@ The panel uses these cell attributes to find cells:
 - Portograph diagrams use the `pg-*` attributes (`pg-id`, `pg-kind`, `pg-from`, `pg-to`). The contract is in `docs/research/portograph-contract.md`.
 - For a hand-drawn diagram, a cell has its draw.io `id`, its label text and the attributes that you add (see [Cell attributes](#cell-attributes)). See `handDrawnConfigV4` in `src/fixtures/demo-config.ts`.
 
-Only page 1 of a multi-page diagram is shown, and only page 1 is bound. The panel shows a warning.
+Only page 1 of a multi-page diagram is shown, and only page 1 is bound. The **Diagram** options show a warning when you import or paste a file with several pages.
 
 ## Bindings (v4)
 
@@ -389,7 +389,7 @@ Only the Prometheus and TestData plugins of the [tested matrix](docs/research/au
 
 ### Old configs
 
-The plugin is not released as 1.0, so there is no migration code.
+This plugin has no migration code.
 
 - **Version 3 and older.** A config with `"version": 3` or lower loads, the diagram renders, the panel binds nothing and shows one note: `This configuration has version 3. The panel reads version 4 only: write the config again as version 4.` Write the config again as version 4, or regenerate it.
 - **Rules of version 1.** The option `rules` of version 1 is gone. A dashboard that still has it loads. The panel ignores the rules and shows one warning: `The panel ignores N rules of version 1. Write the bindings again as a version 4 config.` The saved value stays in the dashboard JSON until you remove it.
@@ -764,7 +764,7 @@ Authoring evidence: 2026-10-18, in `docs/research/authoring-compatibility.md`. T
 - No rules embedded in the diagram (`pg-rules`).
 - No animated flow.
 - No diagrams loaded from a URL.
-- No multi-page diagrams. The panel renders page 1 and binds page 1 only; it shows a warning.
+- No multi-page diagrams. The panel renders page 1 and binds page 1 only. The **Diagram** options show a warning when you import or paste a file with several pages.
 - The panel reads the portograph contract version 1 only (`pg-schema="1"` on the root cell). A diagram with a higher version shows a warning in the **Diagram** options; the panel reads its cells as version 1. A diagram without `pg-schema` is not a portograph export: the panel ignores its `pg-kind`, `pg-id`, `pg-from` and `pg-to` attributes. The cells join a class with `bind`, and the ends of its edges come from the `source` and `target` of the stored XML.
 - Consult the authoring compatibility matrix for current browser and sandbox evidence.
 - Panel edit can run the panel queries many times. This is not the panel: in the VictoriaMetrics datasource plugin (seen with 0.26.1), each query editor calls `onRunQuery` when it mounts and starts a label lookup. A panel with N VictoriaMetrics targets runs all its queries N+1 times when panel edit opens. The target JSON has no workaround.

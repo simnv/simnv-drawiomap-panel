@@ -7,6 +7,16 @@ describe('importDiagram', () => {
     expect(r.xml).toContain('<mxfile');
     expect(r.warnings[0]).toMatch(/2 pages/);
   });
+  it('warns that the panel renders page 1 only when the file has two pages', () => {
+    const r = importDiagram(
+      '<mxfile><diagram id="a"><mxGraphModel/></diagram><diagram id="b"><mxGraphModel/></diagram></mxfile>'
+    );
+    expect(r.warnings).toEqual(['2 pages found. The panel renders page 1 only.']);
+  });
+  it('gives no warning for a file with one page', () => {
+    const r = importDiagram('<mxfile><diagram id="a"><mxGraphModel/></diagram></mxfile>');
+    expect(r.warnings).toEqual([]);
+  });
   it('wraps a bare mxGraphModel', () => {
     const r = importDiagram('<mxGraphModel><root/></mxGraphModel>');
     expect(r.xml).toMatch(/^<mxfile><diagram[^>]*><mxGraphModel>/);
