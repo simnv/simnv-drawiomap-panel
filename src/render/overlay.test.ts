@@ -316,12 +316,11 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     expect(same(before, strokes(root, 'e1'))).toBe(true);
     expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(3);
   });
-  it('a colour and width change updates the same elements in place and keeps the mask', () => {
+  it('a colour and width change updates the same elements in place and keeps the cut of the labels', () => {
     const { root, index } = build();
     renderOverlay(root, index, round(), opts);
     const [line, arrow] = strokes(root, 'e1');
-    line.setAttribute('mask', 'url(#dmap-lm-1-0)');
-    arrow.setAttribute('mask', 'url(#dmap-lm-1-0)');
+    line.setAttribute('stroke-dasharray', '10 5 100 0');
     const observer = observe(root);
     renderOverlay(root, index, round({ color: '#0000ff', width: 7, stepIndex: 3, status: 'ok' }), opts);
     const records = observer.takeRecords();
@@ -331,9 +330,8 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     expect(line.getAttribute('stroke')).toBe('#0000ff');
     expect(line.getAttribute('stroke-width')).toBe('7');
     expect(line.getAttribute('data-dmap-step')).toBe('3');
-    expect(line.getAttribute('mask')).toBe('url(#dmap-lm-1-0)');
+    expect(line.getAttribute('stroke-dasharray')).toBe('10 5 100 0');
     expect(arrow.getAttribute('fill')).toBe('#0000ff');
-    expect(arrow.getAttribute('mask')).toBe('url(#dmap-lm-1-0)');
     // the other link is not touched
     expect(same(strokes(root, 'e2'), strokes(root, 'e2'))).toBe(true);
   });

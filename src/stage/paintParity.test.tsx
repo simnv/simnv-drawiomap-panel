@@ -168,9 +168,9 @@ const CONSUMER_ATTRS = [
 function painted(root: SVGSVGElement): string {
   const copy = root.cloneNode(true) as SVGSVGElement;
   copy.querySelectorAll('*').forEach((el) => CONSUMER_ATTRS.forEach((name) => el.removeAttribute(name)));
-  // The mask ids and the placement stamps count up per document, not per stage.
+  // The placement stamps count up per document, not per stage.
   copy.querySelectorAll('[data-dmap-placed-at]').forEach((el) => el.removeAttribute('data-dmap-placed-at'));
-  return copy.innerHTML.replace(/dmap-lm-\d+-/g, 'dmap-lm-#-');
+  return copy.innerHTML;
 }
 const halves = (root: SVGSVGElement, which: 'a2b' | 'b2a') =>
   root.querySelectorAll(`polyline.dmap-half[data-dmap-half="${which}"]`).length;
@@ -266,15 +266,15 @@ describe('the paint of the panel and the popup stage', () => {
     const glyphs = (width: number) =>
       roots.forEach((root) =>
         root.querySelectorAll('text.dmap-link-label').forEach((t) => {
+          const x = Number(t.getAttribute('x'));
           (t as unknown as { getBBox: () => DOMRect }).getBBox = () =>
-            ({ x: -width / 2, y: 0, width, height: 10 }) as DOMRect;
+            ({ x: x - width / 2, y: 0, width, height: 10 }) as DOMRect;
         })
       );
     const cuts = () =>
       roots.map((root) =>
-        Array.from(root.querySelectorAll('defs.dmap-link-label-defs mask[data-dmap-cell="link-1"] rect'))
-          .filter((r) => r.getAttribute('fill') === 'black')
-          .map((r) => r.getAttribute('width'))
+        Array.from(root.querySelectorAll('polyline.dmap-half[data-dmap-cell="link-1"]'))
+          .map((h) => h.getAttribute('stroke-dasharray') ?? '')
           .join(',')
       );
     glyphs(20);
@@ -329,7 +329,8 @@ describe('the paint of the panel and the popup stage', () => {
       await frame();
     }
     const counts = { panel: panel(), popup: popup() };
-    // the width change of a2b also rewrites the points of the half and of its head (the head grows with the width)
-    expect(counts).toEqual({ panel: 96, popup: 112 });
+    // the width change of a2b also rewrites the points of the half and of its head (the head grows with the width);
+    // the cut under a label is one attribute of a half (no mask element to build again)
+    expect(counts).toEqual({ panel: 90, popup: 106 });
   });
 });

@@ -1,0 +1,319 @@
+import fs from 'node:fs';
+import type { Locator, Page, Route } from '@playwright/test';
+import type { ConfigV4 } from '../src/model/v4';
+import { demoConfigV4 } from '../src/fixtures/demo-config';
+import { expect, promTarget, test, type PanelTarget } from './authoring-fixtures';
+
+/*
+ * A labelled panel stays open through many refreshes: stale and fresh status, a refresh that loads, a refresh that
+ * fails and a return from a hidden page. After each step every link half is drawn, in the DOM and on the screen, and
+ * no half wears a mask (the links that Safari stopped painting were the ones whose halves wore one).
+ */
+
+test.use({ viewport: { width: 1600, height: 1000 } });
+const demoSvg = fs.readFileSync('fixtures/demo/svg/demo-l3.svg', 'utf8');
+const demoPanel: { targets: PanelTarget[]; fieldConfig: { defaults: Record<string, unknown>; overrides: unknown[] } } =
+  JSON.parse(fs.readFileSync('provisioning/dashboards/demo.json', 'utf8')).panels[0];
+
+/** The WAN links carry percent labels and a status from their transmit series that is stale 1 s after its sample. */
+function strokeConfig(): ConfigV4 {
+  const config = structuredClone(demoConfigV4);
+  config.freshness = '1s';
+  config.classes.wan = { ...config.classes.wan, linkLabel: 'percent', status: 'wan_tx' };
+  config.classes['lan-speed'] = { ...config.classes['lan-speed'], linkLabel: 'percent' };
+  return config;
+}
+
+interface HalfDraw {
+  id: string;
+  stroke: string;
+  width: number;
+  points: number;
+  hidden: boolean;
+  masked: boolean;
+  /**
+   * Screen points on the inner part of the half, outside its cuts, relative to the panel: each with a point beside
+   * the stroke, whose pixel is the background that a translucent stroke mixes with.
+   */
+  samples: Array<[number, number, number, number]>;
+}
+
+/** The drawn state of every half of the panel, read in the page. */
+function readHalves(
+  panel: Locator
+): Promise<{ halves: HalfDraw[]; width: number; masks: number; urls: number; cut: number }> {
+  return panel.evaluate((el) => {
+    const svg = el.querySelector<SVGSVGElement>('[data-testid="dmap-stage"] svg')!;
+    const box = el.getBoundingClientRect();
+    const halves = Array.from(svg.querySelectorAll<SVGPolylineElement>('g.dmap-overlay polyline.dmap-half')).map(
+      (h) => {
+        const cs = getComputedStyle(h);
+        const pts = (h.getAttribute('points') ?? '')
+          .trim()
+          .split(/\s+/)
+          .map((p) => p.split(',').map(Number));
+        const dash = (h.getAttribute('stroke-dasharray') ?? '').split(' ').filter(Boolean).map(Number);
+        // the arc intervals that the dash pattern cuts out
+        const gaps: Array<[number, number]> = [];
+        for (let i = 0, at = 0; i + 1 < dash.length; i += 2) {
+          at += dash[i];
+          gaps.push([at - 2, at + dash[i + 1] + 2]);
+          at += dash[i + 1];
+        }
+        const m = h.getScreenCTM()!;
+        const samples: Array<[number, number, number, number]> = [];
+        const toScreen = ([x, y]: number[]) => [m.a * x + m.c * y + m.e - box.x, m.b * x + m.d * y + m.f - box.y];
+        const aside = (Number(h.getAttribute('stroke-width')) / 2) * Math.hypot(m.a, m.b) + 5;
+        let arc = 0;
+        pts.forEach(([x, y], i) => {
+          if (i > 0) {
+            arc += Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]);
+          }
+          // the inner points only: the ends stand under port pills and arrow heads
+          if (i < 2 || i > pts.length - 4 || gaps.some(([a, b]) => arc >= a && arc <= b)) {
+            return;
+          }
+          const [sx, sy] = toScreen([x, y]);
+          const [px, py] = toScreen(pts[i - 1]);
+          const len = Math.hypot(sx - px, sy - py) || 1;
+          samples.push([sx, sy, sx - ((sy - py) / len) * aside, sy + ((sx - px) / len) * aside]);
+        });
+        return {
+          id: `${h.getAttribute('data-dmap-cell')}:${h.getAttribute('data-dmap-half')}`,
+          stroke: cs.stroke,
+          width: Number(h.getAttribute('stroke-width')),
+          points: pts.length,
+          hidden: cs.visibility !== 'visible' || cs.display === 'none' || Number(cs.opacity) === 0,
+          masked: h.hasAttribute('mask') || (cs.mask !== '' && cs.mask !== 'none'),
+          samples,
+        };
+      }
+    );
+    return {
+      halves,
+      width: box.width,
+      masks: svg.querySelectorAll('mask').length,
+      urls: (svg.outerHTML.match(/url\(#/g) ?? []).length,
+      cut: svg.querySelectorAll('polyline.dmap-half[stroke-dasharray]').length,
+    };
+  });
+}
+
+/** The share of the samples of each half that show its stroke colour in a screenshot of the panel. */
+async function shownShares(
+  page: Page,
+  panel: Locator,
+  halves: HalfDraw[],
+  width: number
+): Promise<Record<string, number>> {
+  const shot = await panel.screenshot();
+  if (process.env.DMAP_SCREENSHOTS) {
+    fs.writeFileSync(`${process.env.DMAP_SCREENSHOTS}/link-strokes.png`, shot);
+  }
+  const png = shot.toString('base64');
+  return page.evaluate(
+    async ({ png, halves, width }) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${png}`;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const g = canvas.getContext('2d')!;
+      g.drawImage(img, 0, 0);
+      const px = g.getImageData(0, 0, img.width, img.height).data;
+      const k = img.width / width;
+      const out: Record<string, number> = {};
+      for (const h of halves) {
+        const [r, gr, b, alpha = 1] = (h.stroke.match(/[\d.]+/g) ?? []).map(Number);
+        const at = (x: number, y: number) => (Math.round(y * k) * img.width + Math.round(x * k)) * 4;
+        let hit = 0;
+        for (const [x, y, bx, by] of h.samples) {
+          // a translucent stroke shows its colour mixed with the background beside it
+          const j = at(bx, by);
+          const want = [r, gr, b].map((c, n) => alpha * c + (1 - alpha) * px[j + n]);
+          let ok = false;
+          for (let dx = -1; dx <= 1 && !ok; dx++) {
+            for (let dy = -1; dy <= 1 && !ok; dy++) {
+              const i = at(x + dx / k, y + dy / k);
+              // the stroke colour, or a colour that the background beside it does not have: a status can change the
+              // colour of a half between the read and the paint, a half that is gone shows the background
+              ok =
+                Math.abs(px[i] - want[0]) + Math.abs(px[i + 1] - want[1]) + Math.abs(px[i + 2] - want[2]) < 60 ||
+                Math.abs(px[i] - px[j]) + Math.abs(px[i + 1] - px[j + 1]) + Math.abs(px[i + 2] - px[j + 2]) > 90;
+            }
+          }
+          hit += ok ? 1 : 0;
+        }
+        out[h.id] = h.samples.length ? hit / h.samples.length : 1;
+      }
+      return out;
+    },
+    { png, halves, width }
+  );
+}
+
+/**
+ * Every half is drawn: in the DOM (stroke, width, points, no mask) and on the screen. Other cells can cover a half
+ * (an edge label with a background): the screen check compares each half with the first paint (`seen`), where most
+ * halves must show.
+ */
+async function expectAllDrawn(page: Page, panel: Locator, step: string, count: number, seen: Map<string, number>) {
+  // the paint runs in an animation frame after the data
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const state = await readHalves(panel);
+  expect(state.halves.length, `${step}: halves`).toBe(count);
+  expect(state.masks, `${step}: no mask element`).toBe(0);
+  expect(state.urls, `${step}: no url() reference`).toBe(0);
+  for (const h of state.halves) {
+    expect(h.points, `${step}: ${h.id} points`).toBeGreaterThanOrEqual(2);
+    expect(h.width, `${step}: ${h.id} width`).toBeGreaterThan(0);
+    expect(h.hidden, `${step}: ${h.id} hidden`).toBe(false);
+    expect(h.masked, `${step}: ${h.id} masked`).toBe(false);
+    expect(h.stroke, `${step}: ${h.id} stroke`).toMatch(/^rgba?\(/);
+    expect(h.stroke, `${step}: ${h.id} transparent`).not.toMatch(/rgba\([^)]*,\s*0\)/);
+  }
+  // a colour can change between the read and the screenshot (a status turns stale): read again until it holds
+  let shares: Record<string, number> = {};
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const read = await readHalves(panel);
+    shares = await shownShares(page, panel, read.halves, read.width);
+    const again = await readHalves(panel);
+    if (JSON.stringify(again.halves) === JSON.stringify(read.halves)) {
+      break;
+    }
+  }
+  if (!seen.size) {
+    Object.entries(shares).forEach(([id, share]) => seen.set(id, share));
+    const shown = [...seen.values()].filter((share) => share >= 0.5).length;
+    expect(shown, `${step}: halves on screen ${JSON.stringify(shares)}`).toBeGreaterThanOrEqual(0.75 * count);
+  }
+  for (const [id, share] of Object.entries(shares)) {
+    if ((seen.get(id) ?? 0) >= 0.5) {
+      expect(share, `${step}: ${id} on screen`).toBeGreaterThanOrEqual(0.25);
+    }
+  }
+  return state;
+}
+
+/** Holds the next query requests until the returned release runs; `fail` aborts them instead. */
+async function gateQueries(page: Page, fail: boolean) {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  let held = 0;
+  const handler = async (route: Route) => {
+    held++;
+    if (fail) {
+      await route.abort('failed').catch(() => {});
+      return;
+    }
+    await gate;
+    await route.continue().catch(() => {});
+  };
+  await page.route('**/api/ds/query*', handler);
+  return {
+    held: () => held,
+    release: async () => {
+      await page.unroute('**/api/ds/query*', handler);
+      open();
+    },
+  };
+}
+
+/** The page goes hidden: no animation frame runs and the document reports `hidden` until `show` runs. */
+async function hidePage(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as Record<string, unknown>;
+    const queue = new Map<number, FrameRequestCallback>();
+    let n = 1e6;
+    w.__dmapFrames = { real: window.requestAnimationFrame, cancel: window.cancelAnimationFrame, queue };
+    window.requestAnimationFrame = (cb) => {
+      queue.set(++n, cb);
+      return n;
+    };
+    window.cancelAnimationFrame = (id) => {
+      queue.delete(id);
+    };
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  return () =>
+    page.evaluate(() => {
+      const w = window as unknown as {
+        __dmapFrames: {
+          real: typeof requestAnimationFrame;
+          cancel: typeof cancelAnimationFrame;
+          queue: Map<number, FrameRequestCallback>;
+        };
+      };
+      const { real, cancel, queue } = w.__dmapFrames;
+      window.requestAnimationFrame = real;
+      window.cancelAnimationFrame = cancel;
+      Reflect.deleteProperty(document, 'visibilityState');
+      Reflect.deleteProperty(document, 'hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      const pending = [...queue.values()];
+      queue.clear();
+      real((t) => pending.forEach((cb) => cb(t)));
+    });
+}
+
+test('every link half stays drawn through refreshes, stale status, a loading and a failed refresh and a hidden page', async ({
+  page,
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  test.setTimeout(240_000);
+  const prom = await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' });
+  const datasource = { uid: prom.uid, type: prom.type };
+  const config = strokeConfig();
+  const uid = await createDiagram(config, {
+    panels: [{ config, svg: demoSvg, title: 'strokes L3' }],
+    targets: demoPanel.targets.map((t) => promTarget(t.refId, String(t.expr), { ...t, datasource })),
+    fieldConfig: demoPanel.fieldConfig,
+    height: 18,
+    zoom: { mode: 'fit', wheel: false, pan: false },
+    refresh: '5s',
+  });
+  const dashboardPage = await gotoDashboardPage({ uid });
+  const panel = (await dashboardPage.getPanelByTitle('strokes L3')).locator;
+  await expect(panel.locator('text.dmap-link-label').first()).toHaveAttribute('data-dmap-placed-at', /\d+/);
+  const count = await panel.locator('g.dmap-overlay polyline.dmap-half').count();
+  expect(count).toBeGreaterThan(4);
+  const seen = new Map<string, number>();
+  const nextQuery = () => page.waitForResponse((r) => r.url().includes('/api/ds/query'), { timeout: 30_000 });
+
+  const first = await expectAllDrawn(page, panel, 'first paint', count, seen);
+  // the WAN labels stand on their strokes: the cut is in the test
+  expect(first.cut).toBeGreaterThan(0);
+
+  for (let round = 0; round < 2; round++) {
+    // a refresh, then the status goes stale 1 s after its sample: the halves take the stale colour
+    await nextQuery();
+    await expect(panel.locator('[data-dmap-status="stale"]').first()).toBeAttached();
+    await expectAllDrawn(page, panel, `round ${round}: stale`, count, seen);
+    // a refresh that loads: the requests are held
+    const loading = await gateQueries(page, false);
+    await expect.poll(loading.held, { timeout: 30_000 }).toBeGreaterThan(0);
+    await expectAllDrawn(page, panel, `round ${round}: loading`, count, seen);
+    await loading.release();
+    await nextQuery();
+    await expectAllDrawn(page, panel, `round ${round}: loaded`, count, seen);
+    // a refresh that fails
+    const failing = await gateQueries(page, true);
+    await expect.poll(failing.held, { timeout: 30_000 }).toBeGreaterThan(0);
+    await expectAllDrawn(page, panel, `round ${round}: failed`, count, seen);
+    await failing.release();
+    await nextQuery();
+    await expectAllDrawn(page, panel, `round ${round}: back`, count, seen);
+    // a hidden page for longer than two refresh periods (Grafana holds the refresh while hidden), then the return
+    const show = await hidePage(page);
+    await page.waitForTimeout(12_000);
+    const refreshed = nextQuery();
+    await show();
+    await refreshed;
+    await expectAllDrawn(page, panel, `round ${round}: shown again`, count, seen);
+  }
+});
