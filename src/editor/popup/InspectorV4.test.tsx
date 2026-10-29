@@ -230,6 +230,7 @@ describe('InspectorV4', () => {
     fireEvent.click(cell('e'));
     const note = field('generated');
     expect(note.textContent).toMatch(/generated/i);
+    expect(note.textContent).toContain('the catalogue family (mode A) or the source generator (mode B)');
     expect(note.parentElement).toBe(field('at').parentElement);
   });
 
@@ -254,6 +255,63 @@ describe('InspectorV4', () => {
     await frame();
     expect(cell('d').hasAttribute('data-meta-key')).toBe(false);
     expect(cell('d').getAttribute('data-meta-bind')).toBe('sw');
+  });
+
+  it('keeps the zoom of the stage after a write', async () => {
+    render(<SplitEditor {...props()} />);
+    await frame();
+    await act(async () => {
+      fireEvent.wheel(stage().parentElement!, { deltaY: -100, clientX: 400, clientY: 300 });
+    });
+    await frame();
+    const zoomed = stage().querySelector('svg')!.getAttribute('viewBox');
+    expect(zoomed).not.toBe('0 0 300 100');
+    fireEvent.click(cell('d'));
+    fireEvent.change(field('bind'), { target: { value: 'sw' } });
+    fireEvent.click(within(inspector()).getByRole('button', { name: 'Set bind and key' }));
+    await frame();
+    expect(stage().getAttribute('data-dmap-hash')).not.toBe('inspect-1');
+    expect(cell('d').getAttribute('data-meta-bind')).toBe('sw');
+    expect(stage().querySelector('svg')!.getAttribute('viewBox')).toBe(zoomed);
+  });
+
+  it('adds the cells of a Shift + drag band to the selection', async () => {
+    rect.mockRestore();
+    // the band touches a (x 10..50) and b (x 60..100); c, d and e sit far away
+    const boxes: Record<string, [number, number, number, number]> = { a: [10, 10, 50, 40], b: [60, 10, 100, 40] };
+    rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const [left, top, right, bottom] = boxes[this.getAttribute('data-cell-id') ?? ''] ?? [0, 0, 800, 600];
+      const far = this.hasAttribute('data-cell-id') && !boxes[this.getAttribute('data-cell-id')!];
+      return (
+        far
+          ? { left: 3000, top: 3000, right: 3010, bottom: 3010, width: 10, height: 10, x: 3000, y: 3000 }
+          : { left, top, right, bottom, width: right - left, height: bottom - top, x: left, y: top }
+      ) as DOMRect;
+    });
+    const capture = { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn(), hasPointerCapture: () => true };
+    Object.assign(HTMLElement.prototype, capture);
+    try {
+      render(<SplitEditor {...props()} />);
+      await frame();
+      fireEvent.click(cell('e'));
+      const wrapper = stage().parentElement!;
+      const mouse = { pointerType: 'mouse', pointerId: 1, button: 0 };
+      fireEvent.pointerDown(wrapper, { ...mouse, shiftKey: true, clientX: 5, clientY: 5 });
+      fireEvent.pointerMove(wrapper, { ...mouse, clientX: 110, clientY: 50 });
+      fireEvent.pointerUp(wrapper, { ...mouse, clientX: 110, clientY: 50 });
+      // the band adds to the selection: `e` stays
+      expect(within(inspector()).getByText('3 cells selected')).toBeTruthy();
+      expect(['a', 'b', 'c', 'e'].map((id) => cell(id).getAttribute('data-dmap-selected'))).toEqual([
+        'true',
+        'true',
+        'false',
+        'true',
+      ]);
+    } finally {
+      for (const name of Object.keys(capture)) {
+        Reflect.deleteProperty(HTMLElement.prototype, name);
+      }
+    }
   });
 
   it('assigns a class to a multi-select and keeps the key of each cell', async () => {

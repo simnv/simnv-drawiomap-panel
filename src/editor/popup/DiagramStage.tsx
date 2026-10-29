@@ -65,6 +65,9 @@ interface BadgePlace {
 
 const FIT: ZoomOptions = { ...DEFAULT_OPTIONS.zoom, mode: 'fit', percent: 100, align: 'center', minScale: 0 };
 
+const sameBox = (a: ViewBox | undefined, b: ViewBox | undefined) =>
+  !!a && !!b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+
 /**
  * The centre pane of the bindings popup: a second instance of the diagram with the draft bindings, pan and zoom,
  * and a click to select a cell. It never touches the DOM of the panel behind the popup.
@@ -99,14 +102,18 @@ export function DiagramStage({
   const view = controlled.setView ? (controlled.view ?? null) : ownView;
   const setView = controlled.setView ?? setOwnView;
 
-  // A new diagram starts at the fitted view.
-  const viewRoot = useRef(stage.root);
+  // A new diagram starts at the fitted view. A new root with the same geometry (a write of a cell attribute, spec 5.5)
+  // keeps the view.
+  const viewRoot = useRef({ root: stage.root, base: stage.base });
   useLayoutEffect(() => {
-    if (viewRoot.current !== stage.root) {
-      viewRoot.current = stage.root;
-      setView(null);
+    const old = viewRoot.current;
+    if (old.root !== stage.root) {
+      viewRoot.current = { root: stage.root, base: stage.base };
+      if (!sameBox(old.base, stage.base)) {
+        setView(null);
+      }
     }
-  }, [stage.root, setView]);
+  }, [stage.root, stage.base, setView]);
 
   // The size of the pane. The fitted layout follows it.
   useLayoutEffect(() => {

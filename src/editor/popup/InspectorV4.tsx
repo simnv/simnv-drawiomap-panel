@@ -1,11 +1,11 @@
-import React, { useId, useMemo, useState } from 'react';
+import React, { useId, useState } from 'react';
 import { css } from '@emotion/css';
 import { formattedValueToString, getDisplayProcessor, type GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, Input, useStyles2, useTheme2 } from '@grafana/ui';
 import type { BindResultV4 } from '../../binding/bindV4';
 import { attrOf } from '../../binding/cellAttrs';
 import { effectiveClass } from '../../binding/classes';
-import { edgeEnds, type EndContext } from '../../binding/edgeEnds';
+import type { EndContext } from '../../binding/edgeEnds';
 import { linkFeeds } from '../../binding/linkFeeds';
 import { createRegexCache, parseMatchBlock, resolveBlock } from '../../binding/matcher';
 import { shownField, type Show } from '../../binding/rowData';
@@ -24,8 +24,8 @@ export interface InspectorV4Props {
   /** The selected cells. The last one is the primary cell. */
   cellIds: string[];
   index: CellIndex;
-  /** The draw.io XML of the draft diagram: the ends of an ordinary edge come from it (spec 3.8.1). */
-  xml?: string;
+  /** The edge ends of the draft diagram (spec 3.8.1), read once per diagram. */
+  ends: EndContext;
   bound: BindResultV4;
   validated: ReturnType<typeof validateConfig>;
   /** The class names of the draft: the items of the bind field (spec 5.6). */
@@ -94,11 +94,7 @@ function resolvedText(use: Use, meta: CellMeta, ends: EndContext): string {
  */
 export function InspectorV4(props: InspectorV4Props) {
   const styles = useStyles2(getStyles);
-  const { cellIds, index, xml, onClose, error } = props;
-  const ends = useMemo((): EndContext => {
-    const found = edgeEnds(xml, index);
-    return { index, ends: found.ends, parents: found.parents };
-  }, [xml, index]);
+  const { cellIds, index, onClose, error } = props;
   const listId = useId();
   const cells = cellIds.flatMap((id) => {
     const meta = index.get(id)?.meta;
@@ -127,7 +123,7 @@ export function InspectorV4(props: InspectorV4Props) {
       {cells.length > 1 ? (
         <AssignClass key={cells.map((c) => c.id).join('\n')} cells={cells} listId={listId} onWrite={props.onWrite} />
       ) : (
-        <CellDetails {...props} meta={primary} ends={ends} listId={listId} />
+        <CellDetails {...props} meta={primary} listId={listId} />
       )}
     </section>
   );
@@ -160,7 +156,7 @@ function AssignClass(props: { cells: CellMeta[]; listId: string; onWrite: Inspec
   );
 }
 
-function CellDetails(props: InspectorV4Props & { meta: CellMeta; ends: EndContext; listId: string }) {
+function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string }) {
   const styles = useStyles2(getStyles);
   const { meta, ends, bound, validated, listId, onWrite } = props;
   const { bind, key, ...others } = meta.attrs;
@@ -248,7 +244,7 @@ function BindKey(props: { meta: CellMeta; listId: string; onWrite: InspectorV4Pr
 }
 
 /** The ends of an edge, the end that the key names and the feed of each half (spec 3.8, 5.4). Write 3 of spec 5.5. */
-function EdgeEnds(props: InspectorV4Props & { meta: CellMeta; ends: EndContext }) {
+function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   const styles = useStyles2(getStyles);
   const { meta, ends, validated, generated, onWrite } = props;
   const at = meta.attrs.at;
@@ -283,8 +279,8 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta; ends: EndContext }
         </Button>
         {generated ? (
           <span className={styles.note} data-testid="dmap-inspector-generated">
-            This panel is generated. The next build writes <code>at</code> from the catalogue family of the link. To
-            change it, change the family.
+            This panel is generated. The next build writes <code>at</code> from the source of the link: the catalogue
+            family (mode A) or the source generator (mode B). To change it, change that source.
           </span>
         ) : null}
       </div>
