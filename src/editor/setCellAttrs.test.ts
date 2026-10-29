@@ -126,6 +126,26 @@ describe('setCellAttrs', () => {
     expect(() => setCellAttrs(input, [{ id: 'host-a', attrs: { bind: 'host' } }])).toThrow(/page 1/);
   });
 
+  it('changes only the target attribute semantically across all pages', () => {
+    const prolog = '<?xml version="1.0" encoding="UTF-8"?>';
+    const comment = '<!-- xmlns="http://www.w3.org/2000/svg" -->';
+    const page = model.replace('label="Host A"', 'label="Host &#65;"').replace('vertex="1"/>', 'vertex="1"></mxCell>');
+    const input = diagram(`${prolog}${comment}<mxfile><diagram>${page}</diagram><diagram>${page}</diagram></mxfile>`);
+    const result = setCellAttrs(input, [{ id: 'host-a', attrs: { key: 'new-key' } }]);
+    expect(result.xml.startsWith(prolog + comment + '<mxfile>')).toBe(true);
+    const before = Array.from(parse(input.xml).querySelectorAll('*'));
+    const after = Array.from(parse(result.xml).querySelectorAll('*'));
+    expect(after).toHaveLength(before.length);
+    before.forEach((element, index) => {
+      const attrs = Object.fromEntries(Array.from(element.attributes, ({ name, value }) => [name, value]));
+      if (element === before.find((cell) => cell.getAttribute('id') === 'host-a')) {
+        attrs.key = 'new-key';
+      }
+      expect(after[index].tagName).toBe(element.tagName);
+      expect(Object.fromEntries(Array.from(after[index].attributes, ({ name, value }) => [name, value]))).toEqual(attrs);
+    });
+  });
+
   it('refuses a compressed first page with the specified recovery message', () => {
     expect(() =>
       setCellAttrs(diagram('<mxfile><diagram>compressed</diagram></mxfile>'), [

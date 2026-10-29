@@ -342,6 +342,32 @@ describe('SplitEditor', () => {
     expect(badges).toEqual({ a: ['1', 'false'], b: ['0', 'true'] });
   });
 
+  it.each(['path-only', 'no target'])('replaces the previous report highlight for an entry with %s', async (target) => {
+    const props = editorProps();
+    render(
+      <SplitEditor
+        {...props}
+        options={{
+          ...props.options,
+          config: { ...CONFIG, classes: { ...CONFIG.classes, sw: { ...CONFIG.classes.sw, status: 'missing' } } },
+        }}
+      />
+    );
+    await frame();
+    fireEvent.click(screen.getByRole('button', { name: 'classes.dev.status: 1 cells have no series' }));
+    expect(lit()).toEqual(['b']);
+    if (target === 'path-only') {
+      fireEvent.click(screen.getByRole('button', { name: 'classes.sw.status: no panel query has refId missing' }));
+      expect(fake.editor.setPosition).toHaveBeenLastCalledWith(
+        fake.model.getPositionAt(fake.text.indexOf('status: missing'))
+      );
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: /up: 1 series select no cell/ }));
+    }
+    act(() => vi.advanceTimersByTime(150));
+    expect(lit()).toEqual(target === 'path-only' ? ['c'] : []);
+  });
+
   it('does not zoom again when the cell set stays the same', () => {
     render(<SplitEditor {...editorProps()} />);
     cursorAt('dev:');

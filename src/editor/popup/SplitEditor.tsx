@@ -299,12 +299,8 @@ export function SplitEditor({
         editor.revealLineInCenter(position.lineNumber);
         editor.focus();
       }
-      if (pick.kind === 'path') {
-        setEntryCells(null);
-        setCursorPath(pick.path);
-      } else if (pick.cells.length) {
-        setEntryCells(pick.cells);
-      }
+      setEntryCells(pick.kind === 'entry' && pick.cells.length ? pick.cells : null);
+      setCursorPath(pick.path ?? null);
     },
     [instance]
   );

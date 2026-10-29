@@ -141,7 +141,7 @@ describe('MatchReport in the split editor', () => {
     expect(zoom.fitCells).toHaveBeenCalledTimes(1);
   });
 
-  it('a click on an entry with no cells moves the cursor only', () => {
+  it('a click on an entry for a class with no cells clears the previous highlight', () => {
     const config = { ...CONFIG, classes: { ...CONFIG.classes, spare: { match: { key: 'job' }, status: 'up' } } };
     render(<SplitEditor {...editorProps({ options: { ...editorProps().options, config } })} />);
     act(() => fake.moveTo(fake.text.indexOf('dev:')));
@@ -150,7 +150,7 @@ describe('MatchReport in the split editor', () => {
     expect(zoom.fitCells).toHaveBeenCalledTimes(1);
     fireEvent.click(within(group('Class spare')).getByRole('button', { name: /no cell binds this class/ }));
     expect(fake.editor.setPosition).toHaveBeenCalledWith(positionOf('spare:'));
-    expect(lit()).toEqual(['a', 'b']);
+    expect(lit()).toEqual([]);
     expect(zoom.fitCells).toHaveBeenCalledTimes(1);
   });
 });
