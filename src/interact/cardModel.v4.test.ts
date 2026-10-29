@@ -4,6 +4,7 @@ import {
   dateTime,
   FieldType,
   LoadingState,
+  ThresholdsMode,
   type DataFrame,
   type DataQueryRequest,
   type FieldConfig,
@@ -102,6 +103,120 @@ const clients = (rows: unknown[], extra: Record<string, unknown> = {}) => ({
 });
 const ssidFrames = (n: number, values: (i: number) => Array<number | null> = (i) => [i, i + 1, i + 2]) =>
   Array.from({ length: n }, (_, i) => frame('clients', { job: 'ap-1', ssid: `s${i}` }, values(i)));
+
+describe('buildCardV4: link row capacity (spec 3.8, A4)', () => {
+  const traffic = [
+    frame('tx', { job: 'ap-1' }, [8e6], { unit: 'bps' }),
+    frame('rx', { job: 'ap-1' }, [2e6], { unit: 'bps' }),
+  ];
+  const linkRow = (
+    attrs: Record<string, string> = {},
+    extra: Record<string, unknown> = {},
+    frames = traffic,
+    isEdge = true
+  ) => {
+    const index = indexOf([['ap', { bind: 'ap', key: 'ap-1', ...attrs }, isEdge]]);
+    const validated = validateConfig({
+      version: 4,
+      classes: clients([{ kind: 'updown', up: 'tx', down: 'rx' }], { up: 'tx', down: 'rx', ...extra }),
+    });
+    const data = panelData(frames);
+    const xml = '<mxGraphModel><root><mxCell id="ap" edge="1" source="a" target="b"/></root></mxGraphModel>';
+    const bound = bindV4({ index, validated, data, xml, ctx: bindCtx });
+    return buildCardV4('ap', bound, { theme, replaceVariables: (s) => s, index, validated, data }).rows[0];
+  };
+  const texts = (row: ReturnType<typeof linkRow>) => row.directions!.map((d) => d.text);
+
+  it('shows the rate and percent of the cap attribute', () => {
+    expect(texts(linkRow({ cap: '10M' }))).toEqual(['8 Mb/s · 80% of 10 Mb/s', '2 Mb/s · 20% of 10 Mb/s']);
+  });
+
+  it('keeps utilization and threshold colours equal to the link halves when a row overrides the rate unit', () => {
+    const index = indexOf([['ap', { bind: 'ap', key: 'ap-1', cap: '10M' }, true]]);
+    const validated = validateConfig({
+      version: 4,
+      classes: clients([{ kind: 'updown', up: 'tx', down: 'rx', unit: 'Mbits', decimals: 2 }], {
+        up: 'tx',
+        down: 'rx',
+      }),
+    });
+    const data = panelData(
+      traffic.map((f) => ({
+        ...f,
+        fields: f.fields.map((field) => ({
+          ...field,
+          config: {
+            ...field.config,
+            color: { mode: 'thresholds' },
+            thresholds: {
+              mode: ThresholdsMode.Absolute,
+              steps: [
+                { value: -Infinity, color: 'green' },
+                { value: 90, color: 'red' },
+              ],
+            },
+          },
+        })),
+      }))
+    );
+    const bound = bindV4({ index, validated, data, ctx: bindCtx });
+    const link = bound.patches.get('ap')!.link!;
+    expect(link.a2b).toMatchObject({ percent: 80, color: theme.visualization.getColorByName('green') });
+    expect(link.b2a).toMatchObject({ percent: 20, color: theme.visualization.getColorByName('green') });
+    const row = buildCardV4('ap', bound, { theme, replaceVariables: (s) => s, index, validated, data }).rows[0];
+    expect(row.directions!.map((d) => d.color)).toEqual([link.a2b!.color, link.b2a!.color]);
+    expect(texts(row)).toEqual(['8.00 Tb/s · 80% of 10 Tb/s', '2.00 Tb/s · 20% of 10 Tb/s']);
+    expect(data.series[0].fields[1].config.unit).toBe('bps');
+  });
+
+  it('uses the class speed refId before cap, with the class match and the speed field unit', () => {
+    const frames = [
+      ...traffic,
+      frame('speed', { job: 'ap-1' }, [20], { unit: 'Mbits' }),
+      frame('speed', { job: 'ap-2' }, [100], { unit: 'Mbits' }),
+    ];
+    expect(texts(linkRow({ cap: '10M' }, { capacity: 'speed' }, frames))).toEqual([
+      '8 Mb/s · 40% of 20 Mb/s',
+      '2 Mb/s · 10% of 20 Mb/s',
+    ]);
+  });
+
+  it.each([
+    ['source', ['8 Mb/s · 16% of 50 Mb/s', '2 Mb/s · 20% of 10 Mb/s']],
+    ['target', ['8 Mb/s · 80% of 10 Mb/s', '2 Mb/s · 4% of 50 Mb/s']],
+  ])('keeps asymmetric cap on the geometry with at=%s', (at, expected) => {
+    expect(texts(linkRow({ cap: '50M/10M', at }))).toEqual(expected);
+  });
+
+  it('resolves each capacity refId by geometry and falls back to cap for an invalid speed', () => {
+    const frames = [
+      ...traffic,
+      frame('ab_speed', { job: 'ap-1' }, [40e6], { unit: 'bps' }),
+      frame('ba_speed', { job: 'ap-1' }, [0], { unit: 'bps' }),
+    ];
+    const row = linkRow({ cap: '50M/10M', at: 'target' }, { capacity: { a2b: 'ab_speed', b2a: 'ba_speed' } }, frames);
+    expect(texts(row)).toEqual(['8 Mb/s · 80% of 10 Mb/s', '2 Mb/s · 5% of 40 Mb/s']);
+  });
+
+  it('keeps one scale and converts byte rates before it computes the percent', () => {
+    const row = linkRow({ cap: '10M' }, {}, [traffic[0], frame('rx', { job: 'ap-1' }, [250_000], { unit: 'Bps' })]);
+    expect(texts(row)).toEqual(['8 Mb/s · 80% of 10 Mb/s', '2 Mb/s · 20% of 10 Mb/s']);
+    expect(row.domain).toEqual([-8.8e6, 8.8e6]);
+  });
+
+  it('shows raw rates without capacity, even when the field has Max', () => {
+    const frames = traffic.map((f) => ({
+      ...f,
+      fields: f.fields.map((field) => ({ ...field, config: { ...field.config, max: 10e6 } })),
+    }));
+    expect(texts(linkRow({}, {}, frames))).toEqual(['8 Mb/s', '2 Mb/s']);
+  });
+
+  it('keeps node rows raw despite a cap attribute and class capacity', () => {
+    const frames = [...traffic, frame('speed', { job: 'ap-1' }, [10e6], { unit: 'bps' })];
+    expect(texts(linkRow({ cap: '10M' }, { capacity: 'speed' }, frames, false))).toEqual(['8 Mb/s', '2 Mb/s']);
+  });
+});
 
 describe('buildCardV4: N lines (spec 3.7)', () => {
   it('draws 8 of 9 series and gives "+1 more"', () => {

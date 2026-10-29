@@ -1,6 +1,6 @@
 # Simplify step 4: a bind without time, a freshness pass over the status cells
 
-- Status: draft 2026-10-25. Design only; no code in this change.
+- Status: superseded by the binding model v4 (`2026-10-28-binding-model-v4-design.md`), 2026-10-29. Draft 2026-10-25. Design only; no code in this change.
 - Scope: `src/binding/engine.ts` (`bindPlan`, a new `staleStatuses`), `src/binding/status.ts` (`evaluateStatus`),
   `src/visuals/useSampleStale.ts` (one clock hook, a new `useStaleStatus`), `src/editor/preview.ts` (`usePreviewTime`
   and `statusDeadlines` go), `src/components/DrawioMapPanel.tsx`, `src/editor/BindingEditor.tsx`, their tests.

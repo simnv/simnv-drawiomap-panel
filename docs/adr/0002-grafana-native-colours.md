@@ -41,3 +41,12 @@ field config of the matched series, with the overrides applied (`getDisplayProce
 ## More information
 
 README, "How colours and thresholds work" and "Capacity". `tests/color.spec.ts`.
+
+## Update: binding model v4 (2026-10-29)
+
+The decision stays: the colours come from the Grafana field config. Version 4 of the binding model (`docs/superpowers/specs/2026-10-28-binding-model-v4-design.md`, amendment A1 and decision D15) changes two details of this record.
+
+- The `status` of a class names a query (a refId). The field config of that refId gives the colour and the text of the cell: the thresholds, the value mappings and the colour scheme. The cell shows the exact colour and text of the winning series. The severity (down, critical, warning, normal) decides only the worst of N series, the status band and the legend.
+- The capacity of a link half comes from the first source that gives a value: a `capacity` query (a refId, one for both directions or one for each), then the cell attribute `cap`, then none. The field **Max** is no longer a capacity source, and a number in the config is gone. The line "a series, a cell attribute, a number, the field Max" above describes version 3.
+
+The sections "Decision outcome" and "Consequences" about rules and patterns describe the removed version 1 and version 3 configs. ADR 0001 (the bundled editor in an opaque-origin frame) is not changed.
