@@ -161,6 +161,25 @@ const isChainEntry = (entry: ReportEntry): entry is Extract<ReportEntry, { kind:
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/**
+ * A copy of the value with no map key that has the value `undefined`, as in the dashboard JSON. A live options update
+ * of Grafana removes a key with an explicit `undefined` (see `configUpdate`).
+ */
+function withoutUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(withoutUndefined);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  // fromEntries makes own keys: a `__proto__` key stays a key
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, withoutUndefined(item)])
+  );
+}
+
 /** A YAML path from its parts: `classes.lan.rows[2].query`. */
 const yamlPath = (parts: ReadonlyArray<string | number>): string =>
   parts.reduce<string>(
@@ -233,7 +252,8 @@ export function checkChains(parsed: ParsedConfig): void {
  * Parse a v4 config (spec 2.5): the envelope first, then each class and each override on its own, then the class
  * chains. An item that fails is invalid; the other items apply. The input does not change.
  */
-export function parseConfig(raw: unknown): ParsedConfig {
+export function parseConfig(input: unknown): ParsedConfig {
+  const raw = withoutUndefined(input);
   const result: ParsedConfig = { config: null, invalidClasses: new Map(), invalidOverrides: new Map(), report: [] };
   if (isRecord(raw) && typeof raw.version === 'number' && raw.version < 4) {
     result.report.push({ kind: 'outdated-config', version: raw.version }); // D22

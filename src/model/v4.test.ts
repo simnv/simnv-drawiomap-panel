@@ -28,6 +28,26 @@ describe('parseConfig (S2.5)', () => {
     expect(parsed.invalidOverrides.size).toBe(0);
   });
 
+  it('reads a key with the value undefined as no key, as the dashboard JSON does', () => {
+    // a live options update of Grafana removes a key with an explicit undefined (configUpdate)
+    const parsed = parseConfig({
+      version: 4,
+      freshness: undefined,
+      unknown: undefined,
+      classes: { lan: { match: { key: 'job', value: undefined }, status: 'up', colour: undefined }, wan: undefined },
+      overrides: { 'cell-1': undefined },
+    });
+    expect(parsed.report).toEqual([]);
+    expect(parsed.config).toEqual({
+      version: 4,
+      freshness: '3x',
+      classes: { lan: { match: { key: 'job' }, status: 'up' } },
+      overrides: {},
+    });
+    expect(Object.keys(parsed.config?.classes ?? {})).toEqual(['lan']);
+    expect(Object.keys(parsed.config?.classes.lan.match ?? {})).toEqual(['key']);
+  });
+
   it('gives schema entries and no config when the envelope does not parse', () => {
     const parsed = parseConfig({ version: 4, classes: {}, colours: {} });
     expect(parsed.config).toBeNull();

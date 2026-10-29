@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { expect, test } from './authoring-fixtures';
+import { expect, saveDashboard, test } from './authoring-fixtures';
 
 const PANE_WIDTH = 300;
 
@@ -67,4 +67,38 @@ test('the Diagram option buttons and the YAML option stay inside the options pan
       clip: { x: paneBox.x, y: Math.max(0, top), width: paneBox.width, height: 360 },
     });
   }
+});
+
+// Grafana merges an options update into the old options key by key, so a removed class came back (P1-14b).
+test('the YAML option saves an empty class map as empty', async ({
+  createDiagram,
+  config,
+  gotoPanelEditPage,
+  page,
+  request,
+  selectors,
+}) => {
+  expect(Object.keys(config.classes)).toContain('routers');
+  const uid = await createDiagram(config);
+  const editor = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  await editor.getCustomOptions('Bindings').expand();
+  const lines = editor.getByGrafanaSelector(selectors.components.CodeEditor.container).locator('.view-lines');
+  await expect(lines).toContainText('routers');
+  await lines.click();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.press('Backspace');
+  await expect(lines).toHaveText('');
+  const empty = { version: 4, freshness: '7m', classes: {}, overrides: {} };
+  await page.keyboard.insertText(JSON.stringify(empty));
+  await expect(lines).toContainText('7m');
+  await expect(lines).not.toContainText('routers');
+  await saveDashboard(page, editor);
+  const response = await request.get(`/api/dashboards/uid/${uid}`);
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).dashboard.panels[0].options.config).toEqual(empty);
+  const reloaded = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  await reloaded.getCustomOptions('Bindings').expand();
+  const reloadedLines = reloaded.getByGrafanaSelector(selectors.components.CodeEditor.container).locator('.view-lines');
+  await expect(reloadedLines).toContainText('7m');
+  await expect(reloadedLines).not.toContainText('routers');
 });
