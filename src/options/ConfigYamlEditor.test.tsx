@@ -50,7 +50,10 @@ vi.mock('@grafana/ui', () => ({
     <button onClick={onClick}>{children}</button>
   ),
   Spinner: () => <span />,
+  useTheme2: () => ({ spacing: () => '8px' }),
 }));
+// The button has its own tests (LazyConfigYamlEditor.test.tsx); its bus loads @grafana/runtime.
+vi.mock('./EditBindingsButton', () => ({ EditBindingsButton: () => null }));
 
 const { default: ConfigYamlEditor } = await import('./ConfigYamlEditor');
 const { LazyConfigYamlEditor } = await import('./LazyConfigYamlEditor');
