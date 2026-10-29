@@ -182,46 +182,61 @@ interface Scalar {
   end: number;
   style: Style;
   content: string;
-  /** `at[k]`: the text offset of content char k; `at[content.length]`: the offset after the content. */
+  /** `at[k]`: the text offset of content code unit k; `at[content.length]`: the offset after the content. */
   at: number[];
   /** The content index of the offset. */
   cursor: number;
+  /** True when a quoted scalar has its closing quote. */
+  closed: boolean;
 }
 
 const DOUBLE_ESCAPES: Record<string, string> = { n: '\n', t: '\t', r: '\r', '0': '\0', '\\': '\\', '"': '"', '/': '/' };
 const HEX_LENGTH: Record<string, number> = { x: 2, u: 4, U: 8 };
 
 /** The content of a scalar from `from` to `to`, the quotes of the style not included. */
-function decode(text: string, from: number, to: number, style: Style): Pick<Scalar, 'content' | 'at'> {
+function decode(text: string, from: number, to: number, style: Style): Pick<Scalar, 'content' | 'at' | 'closed'> {
   let content = '';
+  let closed = false;
   const at: number[] = [];
+  const add = (chars: string, offset: number) => {
+    content += chars;
+    for (let k = 0; k < chars.length; k++) {
+      at.push(offset);
+    }
+  };
   let i = style === 'plain' ? from : from + 1;
   while (i < to) {
     const c = text[i];
     if (style === "'" && c === "'") {
       if (text[i + 1] !== "'" || i + 1 >= to) {
+        closed = true;
         break;
       }
-      at.push(i);
-      content += "'";
+      add("'", i);
       i += 2;
     } else if (style === '"' && c === '"') {
+      closed = true;
       break;
     } else if (style === '"' && c === '\\') {
       const kind = text[i + 1] ?? '';
       const hex = HEX_LENGTH[kind] ?? 0;
-      const code = hex ? Number.parseInt(text.slice(i + 2, i + 2 + hex), 16) : NaN;
-      at.push(i);
-      content += hex && !Number.isNaN(code) ? String.fromCodePoint(code) : (DOUBLE_ESCAPES[kind] ?? kind);
-      i += 2 + hex;
+      const digits = text.slice(i + 2, i + 2 + hex);
+      const code = hex && digits.length === hex && /^[0-9a-fA-F]+$/.test(digits) ? Number.parseInt(digits, 16) : NaN;
+      if (code <= 0x10ffff) {
+        add(String.fromCodePoint(code), i);
+        i += 2 + hex;
+      } else {
+        // a malformed escape stands for its letter; the digits that follow are plain chars
+        add(DOUBLE_ESCAPES[kind] ?? kind, i);
+        i += 2;
+      }
     } else {
-      at.push(i);
-      content += c;
+      add(c, i);
       i++;
     }
   }
   at.push(Math.min(i, to));
-  return { content, at };
+  return { content, at, closed };
 }
 
 /** The end of the text that a plain scalar can hold, from `from` on: not past the line, a comment, `: ` or flow chars. */
@@ -277,9 +292,9 @@ function scalarAt(text: string, offset: number, lexed: Lexed): Scalar {
   } else {
     end = offset;
   }
-  const { content, at } = decode(text, start, end, style);
+  const { content, at, closed } = decode(text, start, end, style);
   const cursor = at.findIndex((o) => o >= offset);
-  return { start, end, style, content, at, cursor: cursor === -1 ? content.length : cursor };
+  return { start, end, style, content, at, closed, cursor: cursor === -1 ? content.length : cursor };
 }
 
 // ---- the place of the offset: a key of a map, or a value, with its path ----
@@ -624,7 +639,9 @@ function scalarItems(values: readonly string[], kind: CompletionKind, ctx: Conte
   const range = columns(ctx, scalar.at[0], scalar.at[scalar.content.length]);
   return values.map((value) => {
     if (scalar.style !== 'plain') {
-      return { label: value, insertText: encode(value, scalar.style), range, kind };
+      // an open quoted scalar gets its closing quote, so the draft stays valid YAML
+      const close = scalar.closed ? '' : scalar.style;
+      return { label: value, insertText: encode(value, scalar.style) + close, range, kind };
     }
     return plainOk(value, ctx.inFlow)
       ? { label: value, insertText: value, range, kind }

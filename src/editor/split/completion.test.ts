@@ -189,6 +189,37 @@ describe('itemsAt: class names and refIds', () => {
       expect.objectContaining({ insertText: "it''s", range: { startColumn: 14, endColumn: 15 } }),
     ]);
   });
+
+  it.each([
+    ['a malformed 32-bit escape', '"\\UFFFFFFFF|"'],
+    ['a surrogate escape', '"\\ud800|"'],
+    ['an escape with no hex digit', '"\\u12|"'],
+  ])('does not throw on %s in a double-quoted value', (_name, value) => {
+    const items = complete(`classes:\n  host:\n    status: ${value}\n`, 'classes.host.status', { refIds: ['up'] });
+    expect(items).toHaveLength(1);
+    expect(Number.isFinite(items[0].range.startColumn)).toBe(true);
+    expect(Number.isFinite(items[0].range.endColumn)).toBe(true);
+  });
+
+  it('maps every code unit of an astral escape to the source offset', () => {
+    const items = complete('classes:\n  host:\n    status: "a\\U0001F600|b"\n', 'classes.host.status', {
+      refIds: ['up'],
+    });
+    expect(items).toEqual([expect.objectContaining({ insertText: 'up', range: { startColumn: 14, endColumn: 26 } })]);
+  });
+
+  it.each([
+    ['double', '"', '"u|', 'up"'],
+    ['single', "'", "'u|", "up'"],
+  ])('adds the missing closing %s quote to an open quoted value', (_name, _quote, value, insertText) => {
+    const items = complete(`classes:\n  host:\n    status: ${value}\n`, 'classes.host.status', { refIds: ['up'] });
+    expect(items).toEqual([expect.objectContaining({ insertText, range: { startColumn: 14, endColumn: 15 } })]);
+  });
+
+  it.each(['"u|"', "'u|'", 'u|'])('adds no quote when the value %s is closed or plain', (value) => {
+    const items = complete(`classes:\n  host:\n    status: ${value}\n`, 'classes.host.status', { refIds: ['up'] });
+    expect(items[0].insertText).toBe('up');
+  });
 });
 
 describe('itemsAt: matchers', () => {
