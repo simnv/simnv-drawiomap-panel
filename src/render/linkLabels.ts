@@ -1,5 +1,5 @@
 import { formattedValueToString, type GrafanaTheme2 } from '@grafana/data';
-import type { LinkLabelMode } from '../model/v4';
+import type { ArrowStyle, LinkLabelMode } from '../model/v4';
 import { hoverKind } from '../adapter/portograph';
 import type { CellEntry, CellIndex, HalfState, PatchMap } from '../types';
 import {
@@ -75,7 +75,7 @@ export interface LinkLabelCounts {
 
 type Half = 'a2b' | 'b2a';
 type LabelMode = Exclude<LinkLabelMode, 'none'>;
-type Leg = Omit<LegInput, 'size'> & { id: string };
+type Leg = Omit<LegInput, 'size'> & { id: string; arrow: ArrowStyle };
 type EdgeLegs = { a2b?: Leg; b2a?: Leg };
 interface Slot {
   cellId: string;
@@ -165,7 +165,7 @@ export function renderLinkLabels(
     .sort()
     .map((id) => {
       const { a2b, b2a } = halvesOf(patches, id);
-      return `${id}:${a2b ? 'a' : ''}${b2a ? 'b' : ''}`;
+      return `${id}:${a2b ? 'a' : ''}${b2a ? 'b' : ''}:${patches.get(id)?.link?.arrow ?? 'point'}`;
     });
   const key = [
     slots.map((s) => `${s.cellId}:${s.which}:${s.mode}`).join('\n'),
@@ -572,7 +572,9 @@ export function stageObstacles(
         const unit = scaleOf(m);
         const own =
           legs.get(cellId) ??
-          (hasHalves(patches, cellId) ? edgeLegs(entry, root, max, halvesOf(patches, cellId)) : undefined);
+          (hasHalves(patches, cellId)
+            ? edgeLegs(entry, root, max, halvesOf(patches, cellId), max, patches.get(cellId)?.link?.arrow)
+            : undefined);
         if (own) {
           [own.a2b, own.b2a].forEach((leg) => leg && strokes(cellId, leg.points, leg.strokeRoot / 2, leg.id));
         } else {
@@ -618,12 +620,11 @@ export function stageObstacles(
     const head = reservedHead(a);
     const m = head && toRoot(a, root);
     if (head && m) {
-      const [tip, left, right] = head.map((p) => applyMatrix(m, p));
       const owner = a.getAttribute('data-dmap-cell');
       const half = a.getAttribute('data-dmap-half');
       out.push({
         kind: 'polygon',
-        points: [tip, left, right],
+        points: head.map((p) => applyMatrix(m, p)),
         ...(owner && half ? { owner, leg: `${owner}:${half}` } : {}),
       });
     } else {
@@ -676,9 +677,11 @@ const legOf = (
   points: Point[],
   strokeRoot: number,
   minRoot: number,
-  head: { headRoot: number; headMinRoot: number }
+  head: { headRoot: number; headMinRoot: number },
+  arrow: ArrowStyle
 ): Leg => ({
   id,
+  arrow,
   points,
   bends: bendLengths(points),
   length: polylineLength(points),
@@ -696,7 +699,8 @@ function edgeLegs(
   root: SVGSVGElement,
   max: number,
   halves: { a2b: boolean; b2a: boolean },
-  min = max
+  min = max,
+  arrow: ArrowStyle = 'point'
 ): EdgeLegs {
   const line = entry.line!;
   const id = entry.meta.id;
@@ -711,7 +715,10 @@ function edgeLegs(
   const strokeRoot = max * scaleOf(m);
   const minRoot = Math.min(min, max) * scaleOf(m);
   // the bases of the widest and of the thinnest arrow head, through the same scale as the widest stroke
-  const head = { headRoot: headSize(max, max).base * scaleOf(m), headMinRoot: headSize(min, max).base * scaleOf(m) };
+  const head = {
+    headRoot: headSize(max, max, arrow).base * scaleOf(m),
+    headMinRoot: headSize(min, max, arrow).base * scaleOf(m),
+  };
   if (halves.a2b && halves.b2a) {
     // the split in path-local arc length, as the overlay computes it against its own layer (a sibling of the path),
     // then the point in the path's own space, into root units through the same matrix as the vertices
@@ -719,13 +726,13 @@ function edgeLegs(
     const local = pathGeometry(line, line).pointAt(mid);
     const { at, point } = nearestOnPolyline(pts, applyMatrix(m, { x: local.x, y: local.y }));
     return {
-      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot, head),
-      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot, head),
+      a2b: legOf(`${id}:a2b`, [...pts.slice(0, at + 1), point], strokeRoot, minRoot, head, arrow),
+      b2a: legOf(`${id}:b2a`, [...pts.slice(at + 1).reverse(), point], strokeRoot, minRoot, head, arrow),
     };
   }
   return halves.a2b
-    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot, head) }
-    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot, head) };
+    ? { a2b: legOf(`${id}:a2b`, pts, strokeRoot, minRoot, head, arrow) }
+    : { b2a: legOf(`${id}:b2a`, [...pts].reverse(), strokeRoot, minRoot, head, arrow) };
 }
 
 /* ---------- the layer and its elements ---------- */
@@ -1096,7 +1103,14 @@ function fullPlacement(
     if (!legs.has(slot.cellId)) {
       legs.set(
         slot.cellId,
-        edgeLegs(index.get(slot.cellId)!, root, opts.linkWidth.max, halvesOf(patches, slot.cellId), opts.linkWidth.min)
+        edgeLegs(
+          index.get(slot.cellId)!,
+          root,
+          opts.linkWidth.max,
+          halvesOf(patches, slot.cellId),
+          opts.linkWidth.min,
+          patches.get(slot.cellId)?.link?.arrow
+        )
       );
     }
   }
@@ -1151,7 +1165,7 @@ function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): {
   // the reservation holds the widths between linkWidth.min and linkWidth.max only
   const width = Math.min(Math.max(state.width, layout.min), layout.max);
   const toRootUnits = (v: number) => (leg && layout.max > 0 ? (v * leg.strokeRoot) / layout.max : v);
-  return { drawn: toRootUnits(width), head: toRootUnits(headSize(width, layout.max).base) };
+  return { drawn: toRootUnits(width), head: toRootUnits(headSize(width, layout.max, leg?.arrow ?? 'point').base) };
 }
 
 /** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */

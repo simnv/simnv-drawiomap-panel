@@ -85,6 +85,25 @@ describe('MatchReport in the split editor', () => {
     expect(counts(group('Class dev'), 'dev, first use')).toEqual(['2', '2', '0', '0']);
   });
 
+  it('reports arrow on a node class and selects its YAML field', () => {
+    const props = editorProps();
+    render(
+      <SplitEditor
+        {...props}
+        options={{
+          ...props.options,
+          config: { ...CONFIG, classes: { ...CONFIG.classes, dev: { ...CONFIG.classes.dev, arrow: 'none' } } },
+        }}
+      />
+    );
+    const entry = within(group('Class dev')).getByRole('button', {
+      name: 'classes.dev.arrow: not used on 2 cells that are not edges',
+    });
+    fireEvent.click(entry);
+    expect(fake.editor.setPosition).toHaveBeenLastCalledWith(positionOf('arrow: none'));
+    expect(lit()).toEqual(['a', 'b']);
+  });
+
   it('a click on an entry highlights its cells and moves the cursor to its path', () => {
     render(<SplitEditor {...editorProps()} />);
     fireEvent.click(within(group('Class dev')).getByRole('button', { name: /cells have no series/ }));

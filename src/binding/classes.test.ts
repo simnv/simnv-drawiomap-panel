@@ -80,6 +80,17 @@ describe('resolveClasses (S2.3, S3.2 step 2)', () => {
     });
   });
 
+  it('inherits arrow through the chain and keeps the origin of an explicit replacement', () => {
+    const { parsed, resolved } = resolve({
+      base: { arrow: 'triangle' },
+      child: { extends: 'base', match: { key: 'job' } },
+      leaf: { extends: 'child', arrow: 'none' },
+    });
+    expect(parsed.report).toEqual([]);
+    expect(resolved.get('child')).toMatchObject({ arrow: 'triangle', origins: { arrow: 'classes.base.arrow' } });
+    expect(resolved.get('leaf')).toMatchObject({ arrow: 'none', origins: { arrow: 'classes.leaf.arrow' } });
+  });
+
   it('gives class-cycle for each class in a cycle and for the classes below it', () => {
     const { parsed, resolved } = resolve({
       a: { extends: 'c', match: { key: 'job' } },
@@ -204,6 +215,20 @@ describe('effectiveClass (S2.3 overrides, D6)', () => {
 
   it('returns the class when there is no override', () => {
     expect(effectiveClass(lan(), undefined, 'c1')).toEqual(lan());
+  });
+
+  it.each(['point', 'triangle', 'none'] as const)('lets override arrow %s replace the inherited style', (arrow) => {
+    const { resolved } = resolve({ base: { arrow: 'triangle' }, link: { extends: 'base', match: { key: 'job' } } });
+    const cls = resolved.get('link')!;
+    expect(effectiveClass(cls, { arrow }, 'edge.1')).toMatchObject({
+      arrow,
+      origins: { arrow: 'overrides["edge.1"].arrow' },
+    });
+    expect(effectiveClass(cls, { linkLabel: 'value' }, 'edge.1')).toMatchObject({
+      arrow: 'triangle',
+      origins: { arrow: 'classes.base.arrow' },
+    });
+    expect(cls.arrow).toBe('triangle');
   });
 
   it('appends the override rows with their override path', () => {

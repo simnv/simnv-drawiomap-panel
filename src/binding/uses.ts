@@ -21,7 +21,7 @@ export interface Use {
 }
 
 /** The fields that apply only to an edge cell (spec 3.8.6). */
-export const LINK_FIELDS = ['up', 'down', 'capacity', 'linkLabel'] as const;
+export const LINK_FIELDS = ['up', 'down', 'capacity', 'linkLabel', 'arrow'] as const;
 
 /** The YAML path of the class or the override that sets a field of the class (`classes.device.status`). */
 export function fieldPath(cls: ResolvedClass, field: string): string {

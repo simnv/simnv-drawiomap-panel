@@ -1,6 +1,6 @@
 {
   "name": "simnv-drawiomap-panel",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "scripts": {
     "build": "./scripts/vendor-drawio.sh --if-missing && webpack -c ./webpack.config.ts --env production",
     "dev": "./scripts/vendor-drawio.sh --if-missing && webpack -w -c ./webpack.config.ts --env development",

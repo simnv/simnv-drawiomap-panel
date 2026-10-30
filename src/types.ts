@@ -1,5 +1,5 @@
 import type { DataFrame, DisplayValue, Field, GrafanaTheme2, ScopedVars, ThresholdsConfig } from '@grafana/data';
-import type { LinkLabelMode } from './model/v4';
+import type { ArrowStyle, LinkLabelMode } from './model/v4';
 import type { StatusView } from './binding/status';
 
 /* ---------- cells (from the SVG) ---------- */
@@ -251,7 +251,7 @@ export interface CellPatch {
   cellId: string;
   scope: TemplateScope;
   /** `labelMode`: what the value label of each half shows (`display.link.label.mode`, `none` when absent) */
-  link?: { a2b?: HalfState; b2a?: HalfState; labelMode?: LinkLabelMode };
+  link?: { a2b?: HalfState; b2a?: HalfState; labelMode?: LinkLabelMode; arrow?: ArrowStyle };
   shape?: ShapeState;
   /**
    * The cell is configured but nothing binds: an item that touched it was skipped, or its id is ambiguous. The

@@ -16,6 +16,7 @@ const FIELDS = [
   'down',
   'capacity',
   'linkLabel',
+  'arrow',
 ];
 const ROW = [
   'kind',

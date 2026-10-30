@@ -15,6 +15,146 @@ const demoSvg = fs.readFileSync('fixtures/demo/svg/demo-l3.svg', 'utf8');
 const demoPanel: { targets: PanelTarget[]; fieldConfig: { defaults: Record<string, unknown>; overrides: unknown[] } } =
   JSON.parse(fs.readFileSync('provisioning/dashboards/demo.json', 'utf8')).panels[0];
 
+for (const scale of [1, 2]) {
+  test(`arrow styles keep their geometry and point heads stay inside the stroke band at ${scale}x`, async ({
+    page,
+    createDiagram,
+    gotoDashboardPage,
+  }) => {
+    const styles = ['point', 'triangle', 'none'] as const;
+    const config: ConfigV4 = {
+      version: 4,
+      classes: Object.fromEntries(
+        styles.map((arrow) => [
+          arrow,
+          {
+            match: { key: 'job' },
+            up: 'load',
+            down: 'load',
+            arrow,
+          },
+        ])
+      ),
+    };
+    config.classes['point-bent'] = { match: { key: 'job' }, up: 'load', arrow: 'point' };
+    config.classes['none-bent'] = { match: { key: 'job' }, up: 'load', down: 'load', arrow: 'none' };
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 300">${styles
+      .map(
+        (arrow, i) =>
+          `<text x="40" y="${30 + i * 70}" fill="#ccc">${arrow}</text><g data-cell-id="${arrow}" data-meta-bind="${arrow}" data-meta-key="arrow-demo"><path d="M 40 ${50 + i * 70} L 560 ${50 + i * 70}" fill="none" stroke="#333" pointer-events="stroke"/></g>`
+      )
+      .join(
+        ''
+      )}<text x="400" y="210" fill="#ccc">point to port</text><g data-cell-id="point-bent" data-meta-bind="point-bent" data-meta-key="arrow-demo"><path d="M 400 230 L 480 230 L 480 250 L 486 250" fill="none" stroke="#333" pointer-events="stroke"/></g><text x="40" y="210" fill="#ccc">none at a bend</text><g data-cell-id="none-bent" data-meta-bind="none-bent" data-meta-key="arrow-demo"><path d="M 40 230 L 100 230 L 100 290" fill="none" stroke="#333" pointer-events="stroke"/></g></svg>`;
+    const uid = await createDiagram(config, {
+      svg,
+      height: 18,
+      zoom: { mode: 'custom', percent: scale * 100, wheel: false, pan: false },
+      targets: [promTarget('load', 'label_replace(vector(40), "job", "arrow-demo", "", "")')],
+      fieldConfig: { defaults: { unit: 'bps', color: { mode: 'fixed', fixedColor: '#00ff00' } }, overrides: [] },
+      options: { linkWidth: { min: 10, max: 10 }, legend: { show: false } },
+    });
+    await gotoDashboardPage({ uid });
+    const panel = page.getByTestId('dmap-panel');
+    await expect(panel.locator('polyline.dmap-half')).toHaveCount(9);
+    for (const style of styles) {
+      const overlay = panel.locator(`g.dmap-overlay[data-dmap-cell="${style}"]`);
+      await expect(overlay.locator('polygon')).toHaveCount(style === 'none' ? 0 : 2);
+      const geometry = await overlay.evaluate((el) => {
+        const points = (p: Element) => (p.getAttribute('points') ?? '').split(' ').map((v) => v.split(',').map(Number));
+        const lines = Array.from(el.querySelectorAll('polyline'), points);
+        const heads = Array.from(el.querySelectorAll('polygon'), points);
+        return { bases: heads.map(([, a, b]) => Math.hypot(a[0] - b[0], a[1] - b[1])), lines };
+      });
+      expect(geometry.bases).toEqual(style === 'none' ? [] : style === 'point' ? [10, 10] : [24, 24]);
+      if (style === 'none') {
+        expect(geometry.lines[0].at(-1)).toEqual(geometry.lines[1][0]);
+      }
+    }
+    const noneBent = panel.locator('g.dmap-overlay[data-dmap-cell="none-bent"]');
+    await expect(noneBent.locator('polygon')).toHaveCount(0);
+    const noneLines = await noneBent
+      .locator('polyline')
+      .evaluateAll((lines) => lines.map((line) => line.getAttribute('points')!.split(' ')));
+    expect(noneLines[0].at(-1)).toBe('84,230');
+    expect(noneLines[1][0]).toBe('84,230');
+    const bent = panel.locator('polygon.dmap-arrow[data-dmap-cell="point-bent"]');
+    await expect(bent).toHaveCount(1);
+    const bentPoints = (await bent.getAttribute('points'))!.split(' ');
+    expect(bentPoints[0]).toBe('486,250');
+    expect(bentPoints).toContain('485,244');
+    expect(bentPoints).toContain('475,244');
+    expect(bentPoints.length).toBeGreaterThan(3);
+    const bentLine = panel.locator('polyline.dmap-half[data-dmap-cell="point-bent"]');
+    expect((await bentLine.getAttribute('points'))!.split(' ').at(-1)).toBe('480,244.1');
+    const region = await panel
+      .locator('polygon.dmap-arrow[data-dmap-cell="point"]')
+      .first()
+      .evaluate((head) => {
+        const parent = head.closest('[data-testid="dmap-panel"]')!;
+        const box = parent.getBoundingClientRect();
+        const m = (head as SVGGraphicsElement).getScreenCTM()!;
+        const point = new DOMPoint(300, 50).matrixTransform(m);
+        const bentBase = new DOMPoint(480, 244).matrixTransform(m);
+        return {
+          x: point.x - box.x,
+          y: point.y - box.y,
+          scale: Math.hypot(m.a, m.b),
+          width: box.width,
+          bentX: bentBase.x - box.x,
+          bentY: bentBase.y - box.y,
+        };
+      });
+    expect(region.scale).toBeCloseTo(scale, 2);
+    const shot = await panel.screenshot();
+    fs.mkdirSync('local', { recursive: true });
+    fs.writeFileSync(scale === 1 ? 'local/arrows-point.png' : 'local/arrows-triangle-none.png', shot);
+    const pixels = await page.evaluate(
+      async ({ png, region }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${png}`;
+        await img.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+        const px = ctx.getImageData(0, 0, img.width, img.height).data;
+        const k = img.width / region.width;
+        const at = (x: number, y: number) => {
+          const i = (Math.round(y * k) * img.width + Math.round(x * k)) * 4;
+          return px[i + 1] > 180 && px[i] < 70 && px[i + 2] < 70;
+        };
+        let outside = 0;
+        let seam = 0;
+        let samples = 0;
+        for (let x = -15 * region.scale; x <= 15 * region.scale; x++) {
+          for (const side of [-1, 1]) {
+            for (let y = 5 * region.scale + 1.5; y <= 13 * region.scale; y++) {
+              outside += Number(at(region.x + x, region.y + side * y));
+            }
+          }
+        }
+        // The middle of each base must have solid colour across the stroke/head join.
+        for (const side of [-1, 1]) {
+          for (let x = -2 * region.scale; x <= 2 * region.scale; x++) {
+            samples++;
+            seam += Number(at(region.x + side * 12 * region.scale + x, region.y));
+          }
+        }
+        for (let y = -2 * region.scale; y <= 2 * region.scale; y++) {
+          samples++;
+          seam += Number(at(region.bentX, region.bentY + y));
+        }
+        return { outside, seam, samples };
+      },
+      { png: shot.toString('base64'), region }
+    );
+    expect(pixels.outside, 'point heads add no colour outside the stroke band').toBe(0);
+    expect(pixels.seam, 'both stroke/head joins stay solid').toBe(pixels.samples);
+  });
+}
+
 /** The WAN links carry percent labels and a status from their transmit series that is stale 1 s after its sample. */
 function strokeConfig(): ConfigV4 {
   const config = structuredClone(demoConfigV4);

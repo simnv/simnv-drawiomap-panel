@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 (Unreleased)
+
+- Added the class and cell override field `arrow`: `point`, `triangle` or `none`. A subclass inherits the style through `extends`.
+- Changed the default link head to `point`. Its base equals the drawn stroke width and has no wings. Saved configs that omit `arrow` use this default.
+- Set `arrow: triangle` to keep the head with wings used before 1.4.0. Set `arrow: none` for a flat end with no direction mark.
+- The split editor completes the `arrow` key and its values. Hover text explains each style and the default.
+- The match report flags `arrow` on a node class. Link labels reserve the selected head shape, including a bent point.
+
 ## 1.3.1 (Unreleased)
 
 - Changed the link load scale of the colour legend: its threshold steps show as one bar with a segment of the same width for each step, hard colour stops between the segments and the step values under the bar. Before, each step was a separate swatch (`< 60%`, `≥ 60%`, `≥ 85%`). Each segment still highlights the links of its step on hover, on focus and on a tap. The collapsed chip shows the same hard stops. The link load bar no longer merges with a status block that has the same steps.

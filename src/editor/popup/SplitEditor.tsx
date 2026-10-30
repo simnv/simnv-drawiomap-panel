@@ -20,7 +20,7 @@ import { setCellAttrs } from '../setCellAttrs';
 import { history, pushVersion, redo, undo } from '../history';
 import { baseRevision, hasConflict } from '../revision';
 import { cellsForPath, type CellSet } from '../split/cellsForPath';
-import { classNamesOf, registerCompletion, type CompletionSource } from '../split/completion';
+import { classNamesOf, registerCompletion, registerHover, type CompletionSource } from '../split/completion';
 import { reportCounts } from '../split/reportCounts';
 import { pathAt, readDraft } from '../split/yamlPath';
 import { DiagramStage, type StageSelection } from './DiagramStage';
@@ -215,7 +215,7 @@ export function SplitEditor({
     }
   }, [fitKey, fitIds, stage.index, stage.base]);
 
-  // The completion provider reads the latest sources (spec 5.6): the draft, the targets, the cells and the frames.
+  // Both Monaco providers read the latest sources: the draft, the targets, the cells and the frames.
   const source = useMemo(
     (): CompletionSource => ({
       pathAt: (value, offset) => pathAt(readDraft(value).doc, value, offset),
@@ -252,6 +252,7 @@ export function SplitEditor({
       return;
     }
     const completion = registerCompletion(instance.monaco, model.id, () => sourceRef.current);
+    const hover = registerHover(instance.monaco, model.id, () => sourceRef.current);
     const cursor = instance.editor.onDidChangeCursorPosition((event) => {
       clearTimeout(cursorTimer.current);
       // A move of the editor itself (a report click) keeps the highlight of that click.
@@ -268,6 +269,7 @@ export function SplitEditor({
       clearTimeout(cursorTimer.current);
       cursor.dispose();
       completion.dispose();
+      hover.dispose();
     };
   }, [instance]);
 

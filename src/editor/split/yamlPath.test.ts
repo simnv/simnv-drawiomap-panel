@@ -43,6 +43,8 @@ describe('pathAt (spec 5.3 "The path at an offset")', () => {
     expect(at(mark('status: u'))).toBe('classes.lan.status');
     expect(at(mark('label: I'))).toBe('classes.lan.rows[0].label');
     expect(at(mark('text: '))).toBe('classes.lan.rows[1].text');
+    expect(at('classes:\n  lan:\n    arrow: tri|angle\n')).toBe('classes.lan.arrow');
+    expect(at('overrides:\n  edge.1:\n    arr|ow: none\n')).toBe('overrides["edge.1"].arrow');
   });
 
   it('a key that needs brackets gives a bracket path', () => {

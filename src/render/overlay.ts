@@ -1,6 +1,7 @@
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import { arrowAnchor, PathGeom, pathGeometry, Point } from './geometry';
+import type { ArrowStyle } from '../model/v4';
+import { arrowAnchor, PathGeom, pathGeometry, Point, polylineLength, slicePolyline } from './geometry';
 import { linkStatusPaint, statusBorderWidth, statusPaint } from '../binding/color';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
@@ -27,9 +28,12 @@ export interface HeadSize {
  * Above, each unit of width adds 2 to the base and 0.5 to the length: the base stays at least twice the stroke (each
  * wing at least 3 units beyond the stroke edge), and the head takes little of a short half from its value label.
  */
-export function headSize(width: number, maxWidth: number): HeadSize {
+export function headSize(width: number, maxWidth: number, style: ArrowStyle = 'triangle'): HeadSize {
+  if (style === 'none') {
+    return { length: 0, base: 0 };
+  }
   const extra = Math.max(0, Math.min(width, maxWidth) - THIN);
-  return { length: ARROW_SIZE + extra / 2, base: ARROW_SIZE + 2 * extra };
+  return { length: ARROW_SIZE + extra / 2, base: style === 'point' ? width : ARROW_SIZE + 2 * extra };
 }
 
 /**
@@ -101,11 +105,12 @@ interface HalfPlace {
   tip: number;
   forward: boolean;
   maxWidth: number;
+  style: ArrowStyle;
 }
 /** The elements of one drawn half, with the key of the state they show and the width their points are drawn for. */
 interface HalfDrawn {
   line: SVGPolylineElement;
-  arrow: SVGPolygonElement;
+  arrow?: SVGPolygonElement;
   key: string;
   width: number;
   place: HalfPlace;
@@ -178,13 +183,14 @@ const halfKey = (s: HalfState) => `${s.status}|${s.color}|${s.width}|${s.stepInd
  * paints (`linkStatusPaint`: a status that is not normal wins over the binding colour). `status` and `stepIndex`
  * stay the binding's: the data attributes and the legend highlight read them.
  */
-function drawnHalves(patch: CellPatch, theme: GrafanaTheme2): { a2b?: HalfState; b2a?: HalfState } {
+function drawnHalves(patch: CellPatch, theme: GrafanaTheme2): NonNullable<CellPatch['link']> {
   const link = patch.link ?? {};
   const color = linkStatusPaint(patch, theme);
   if (!color) {
     return link;
   }
   return {
+    arrow: link.arrow,
     ...(link.a2b ? { a2b: { ...link.a2b, color } } : {}),
     ...(link.b2a ? { b2a: { ...link.b2a, color } } : {}),
   };
@@ -203,6 +209,104 @@ function headTriangle(place: HalfPlace, size: HeadSize): [Point, Point, Point] {
   ];
 }
 
+/** Keep the turns of the sampled path and remove duplicate or collinear points. */
+function turns(points: Point[]): Point[] {
+  const out: Point[] = [];
+  for (const p of points) {
+    const b = out.at(-1);
+    if (b && Math.hypot(p.x - b.x, p.y - b.y) < 1e-8) {
+      continue;
+    }
+    const a = out.at(-2);
+    if (
+      a &&
+      b &&
+      Math.abs((b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x)) < 1e-8 &&
+      (b.x - a.x) * (p.x - b.x) + (b.y - a.y) * (p.y - b.y) >= 0
+    ) {
+      out.pop();
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+/** A point tapers along the terminal path. Bevels at its turns stay inside the round stroke join. */
+function pointHalf(place: HalfPlace, width: number): { line: Point[]; head: Point[] } {
+  const { geo, from, to, forward } = place;
+  const stops = [from, ...geo.bends.filter((d) => d > from && d < to), to];
+  const path = turns(stops.slice(1).flatMap((end, i) => geo.polyline(stops[i], end)));
+  if (!forward) {
+    path.reverse();
+  }
+  if (path.length < 2) {
+    return { line: path, head: [] };
+  }
+  const length = polylineLength(path);
+  const base = Math.max(0, length - headSize(width, place.maxWidth, 'point').length);
+  const taper = turns(slicePolyline(path, base, length));
+  const taperLength = length - base;
+  const radii = taper.map((_, i) => {
+    const at = polylineLength(taper.slice(0, i + 1));
+    return taperLength > 0 ? (width / 2) * (1 - at / taperLength) : 0;
+  });
+  const side = (sign: number) => {
+    const out: Point[] = [];
+    const offset = (i: number, segment: number): Point => {
+      const a = taper[segment];
+      const b = taper[segment + 1];
+      const radius = (radii[i] * sign) / Math.hypot(b.x - a.x, b.y - a.y);
+      return { x: taper[i].x + (b.y - a.y) * radius, y: taper[i].y - (b.x - a.x) * radius };
+    };
+    for (let i = 0; i < taper.length - 1; i++) {
+      if (i === 0) {
+        out.push(offset(0, 0));
+        continue;
+      }
+      const a = offset(i - 1, i - 1);
+      const b = offset(i, i - 1);
+      const c = offset(i, i);
+      const d = offset(i + 1, i);
+      const p = taper[i - 1],
+        q = taper[i],
+        r = taper[i + 1];
+      const turn = (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x);
+      const denominator = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+      if (turn * sign < 0 && Math.abs(denominator) > 1e-8) {
+        // The inner offset edges intersect. A bevel here would cross itself and leave a notch.
+        const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / denominator;
+        out.push({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+      } else {
+        out.push(b, c);
+      }
+    }
+    return out;
+  };
+  // The shaft overlaps the base by 0.1 units to prevent an antialias seam.
+  const line = slicePolyline(path, 0, Math.min(length, base + 0.1));
+  return { line: forward ? line : line.reverse(), head: [taper.at(-1)!, ...side(1).reverse(), ...side(-1)] };
+}
+
+/** A convex hull reserves a bent taper without a concave-polygon collision test. */
+function headHull(points: Point[]): Point[] {
+  if (points.length <= 3) {
+    return points;
+  }
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (a: Point, b: Point, c: Point) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const chain = (pts: Point[]) => {
+    const out: Point[] = [];
+    for (const p of pts) {
+      while (out.length > 1 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) {
+        out.pop();
+      }
+      out.push(p);
+    }
+    return out.slice(0, -1);
+  };
+  return [...chain(sorted), ...chain(sorted.reverse())];
+}
+
 /**
  * The points of a half and of its head at a drawn width. A butt-capped stroke that runs to the tip sticks out of the
  * narrow end of the triangle, so the stroke stops at the middle of the head, where the triangle is half its base wide
@@ -211,22 +315,28 @@ function headTriangle(place: HalfPlace, size: HeadSize): [Point, Point, Point] {
  */
 function halfPoints(place: HalfPlace, width: number): { line: Point[]; head: Point[] } {
   const { geo, from, to, tip, forward } = place;
-  const size = headSize(width, place.maxWidth);
+  if (place.style === 'none') {
+    return { line: geo.polyline(from, to), head: [] };
+  }
+  if (place.style === 'point') {
+    return pointHalf(place, width);
+  }
+  const size = headSize(width, place.maxWidth, place.style);
   const cut = size.length / 2 / geo.unit;
   const atEnd = Math.abs((forward ? to : from) - tip) < 1e-6;
   const [a, b] = !atEnd ? [from, to] : forward ? [from, Math.max(from, to - cut)] : [Math.min(to, from + cut), to];
   return { line: geo.polyline(a, b), head: headTriangle(place, size) };
 }
 
-/** The reserved head of each drawn head: the triangle at `maxWidth`, with the same tip and direction. */
-const reserved = new WeakMap<Element, [Point, Point, Point]>();
+/** The reserved head at `maxWidth`. A bent point uses its convex hull. */
+const reserved = new WeakMap<Element, Point[]>();
 
 /**
  * The head at the widest width that the arrow head `arrow` can grow to, in the user space of the overlay layer (the
  * space of the polygon). The label placement reserves it, so a width change on a refresh never puts a head under a
  * label. Undefined for an element that the overlay did not draw.
  */
-export function reservedHead(arrow: Element): [Point, Point, Point] | undefined {
+export function reservedHead(arrow: Element): Point[] | undefined {
   return reserved.get(arrow);
 }
 
@@ -254,17 +364,22 @@ function drawHalf(
       'pointer-events': 'stroke',
     })
   );
-  const arrow = layer.appendChild(
-    el('polygon', {
-      class: 'dmap-arrow',
-      'data-dmap-cell': cellId,
-      'data-dmap-half': which,
-      points: pointsAttr(pts.head),
-      fill: state.color,
-      'pointer-events': 'none',
-    })
-  );
-  reserved.set(arrow, headTriangle(place, headSize(place.maxWidth, place.maxWidth)));
+  const arrow =
+    pts.head.length < 3
+      ? undefined
+      : layer.appendChild(
+          el('polygon', {
+            class: 'dmap-arrow',
+            'data-dmap-cell': cellId,
+            'data-dmap-half': which,
+            points: pointsAttr(pts.head),
+            fill: state.color,
+            'pointer-events': 'none',
+          })
+        );
+  if (arrow) {
+    reserved.set(arrow, headHull(halfPoints(place, place.maxWidth).head));
+  }
   return { line, arrow, key: halfKey(state), width: state.width, place };
 }
 
@@ -282,20 +397,16 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   drawn.line.setAttribute('data-dmap-step', String(state.stepIndex));
   drawn.line.setAttribute('stroke', state.color);
   drawn.line.setAttribute('stroke-width', String(state.width));
-  drawn.arrow.setAttribute('fill', state.color);
+  drawn.arrow?.setAttribute('fill', state.color);
   if (drawn.width !== state.width) {
     drawn.width = state.width;
     const pts = halfPoints(drawn.place, state.width);
     drawn.line.setAttribute('points', pointsAttr(pts.line));
-    drawn.arrow.setAttribute('points', pointsAttr(pts.head));
+    drawn.arrow?.setAttribute('points', pointsAttr(pts.head));
   }
 }
 
-function drawLink(
-  entry: CellEntry,
-  link: { a2b?: HalfState; b2a?: HalfState },
-  maxWidth: number
-): LinkDrawn | undefined {
+function drawLink(entry: CellEntry, link: NonNullable<CellPatch['link']>, maxWidth: number): LinkDrawn | undefined {
   if (!entry.line || (!link.a2b && !link.b2a)) {
     return undefined;
   }
@@ -308,6 +419,7 @@ function drawLink(
     return undefined;
   }
   const id = entry.meta.id;
+  const style = link.arrow ?? 'point';
   const drawn: LinkDrawn = { layer, combo: comboOf(link) };
   // An arrow stands on one straight run, away from the bends: the widest triangle must not stick out past a corner.
   const clear = tipClearance(maxWidth) / geo.unit;
@@ -318,21 +430,35 @@ function drawLink(
     tip,
     forward,
     maxWidth,
+    style,
   });
   if (link.a2b && link.b2a) {
     const mid = linkSplit(geo, maxWidth);
     drawn.a2b = drawHalf(layer, id, 'a2b', place(0, mid, mid, true), link.a2b);
     drawn.b2a = drawHalf(layer, id, 'b2a', place(mid, L, mid, false), link.b2a);
   } else if (link.a2b) {
-    drawn.a2b = drawHalf(layer, id, 'a2b', place(0, L, arrowAnchor(geo.bends, L, L, clear), true), link.a2b);
+    drawn.a2b = drawHalf(
+      layer,
+      id,
+      'a2b',
+      place(0, L, style === 'point' ? L : arrowAnchor(geo.bends, L, L, clear), true),
+      link.a2b
+    );
   } else if (link.b2a) {
-    drawn.b2a = drawHalf(layer, id, 'b2a', place(0, L, arrowAnchor(geo.bends, L, 0, clear), false), link.b2a);
+    drawn.b2a = drawHalf(
+      layer,
+      id,
+      'b2a',
+      place(0, L, style === 'point' ? 0 : arrowAnchor(geo.bends, L, 0, clear), false),
+      link.b2a
+    );
   }
   return drawn;
 }
 
 /** Which halves a link has: the geometry of the overlay depends on this and the path only. */
-const comboOf = (link: { a2b?: HalfState; b2a?: HalfState }) => `${link.a2b ? 'a' : ''}${link.b2a ? 'b' : ''}`;
+const comboOf = (link: NonNullable<CellPatch['link']>) =>
+  `${link.a2b ? 'a' : ''}${link.b2a ? 'b' : ''}:${link.arrow ?? 'point'}`;
 
 /**
  * Draws the overlay of the patches under `root` and keeps it across calls. A link whose set of halves did not change

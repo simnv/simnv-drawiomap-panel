@@ -425,8 +425,10 @@ test('a link too short for a spot beside its stroke keeps both labels beside the
   // edge-ab of the hand-drawn diagram as a straight link of 36 units in the empty middle of the sheet
   const shortSvg = handSvg.replace('M 120 30 L 220 30 L 220 60 L 320 60', 'M 200 110 L 236 110');
   expect(shortSvg).not.toBe(handSvg);
-  const uid = await createDiagram(handDrawnConfig('percent'), {
-    panels: [{ config: handDrawnConfig('percent'), svg: shortSvg, title: 'labels short' }],
+  const config = handDrawnConfig('percent');
+  config.classes['hand-links'].arrow = 'triangle';
+  const uid = await createDiagram(config, {
+    panels: [{ config, svg: shortSvg, title: 'labels short' }],
     targets: demoTargets(datasource),
     fieldConfig,
     height: 12,

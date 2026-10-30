@@ -127,6 +127,67 @@ function render(root: SVGSVGElement, index: CellIndex, patches: PatchMap, o = op
 afterEach(() => document.body.replaceChildren());
 
 describe('renderLinkLabels: the layer and its elements', () => {
+  it('keeps labels on the stage when another point link collapses under scale(0)', () => {
+    const extra =
+      '<g data-cell-id="e2"><path d="M 0 0 L 100 0" transform="scale(0)" fill="none" pointer-events="stroke"/></g>';
+    const { root, index } = build(SVG(extra));
+    Object.assign(index.get('e2')!.line!, {
+      getTotalLength: () => 100,
+      getPointAtLength: (d: number) => ({ x: d, y: 0 }),
+      getCTM: () => ({ a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 }),
+    });
+    const patches = new Map([
+      ['e1', linkPatch('e1', { arrow: 'point', a2b: half(), labelMode: 'percent' })],
+      ['e2', linkPatch('e2', { arrow: 'point', a2b: half() })],
+    ]);
+    expect(render(root, index, patches).placed).toBe(1);
+    expect(root.querySelectorAll('.dmap-arrow[data-dmap-cell="e2"]')).toHaveLength(0);
+  });
+
+  it('reserves the full convex hull of a bent point at maximum width', () => {
+    const { root, index } = build(SVG().replace('M 40 100 L 360 100', 'M 40 100 L 200 100 L 200 150 L 206 150'));
+    const patches = new Map([
+      ['e1', linkPatch('e1', { arrow: 'point', a2b: half({ width: 2 }), labelMode: 'percent' })],
+    ]);
+    expect(render(root, index, patches).placed).toBe(1);
+    const heads = stageObstacles(root, index, patches, 10).filter((o) => o.kind === 'polygon');
+    expect(heads).toHaveLength(1);
+    expect(heads[0]).toMatchObject({ owner: 'e1', leg: 'e1:a2b' });
+    expect(heads[0].points.length).toBeGreaterThan(3);
+    expect(heads[0].points).toEqual(
+      expect.arrayContaining([
+        { x: 195, y: 144 },
+        { x: 205, y: 144 },
+        { x: 206, y: 150 },
+      ])
+    );
+  });
+
+  it('reserves the head shape of each style and rebuilds placement when the style changes', () => {
+    const { root, index } = build();
+    const labelElements: SVGTextElement[] = [];
+    for (const [arrow, base] of [
+      ['triangle', 24],
+      ['point', 10],
+      ['none', 0],
+    ] as const) {
+      const patches = new Map([['e1', linkPatch('e1', { arrow, a2b: half(), b2a: half(), labelMode: 'percent' })]]);
+      expect(render(root, index, patches).placed).toBe(2);
+      const heads = stageObstacles(root, index, patches, 10).filter((o) => o.kind === 'polygon');
+      expect(heads).toHaveLength(base ? 2 : 0);
+      if (heads[0]?.kind === 'polygon') {
+        expect(heads[0].points).toEqual([
+          { x: 200, y: 100 },
+          { x: 188, y: 100 - base / 2 },
+          { x: 188, y: 100 + base / 2 },
+        ]);
+        expect(heads[0]).toMatchObject({ owner: 'e1', leg: 'e1:a2b' });
+      }
+      labelElements.push(labels(root)[0]);
+    }
+    expect(new Set(labelElements).size).toBe(3);
+  });
+
   it('draws one text per labelled half in a layer that is the last child of the root; the overlays stay by their edges', () => {
     const { root, index } = build();
     sized(root, 1);
@@ -202,7 +263,7 @@ describe('renderLinkLabels: the refresh path', () => {
     a: Partial<HalfState> = {},
     b: Partial<HalfState> = {},
     mode: 'percent' | 'value' = 'percent'
-  ): PatchMap => new Map([['e1', linkPatch('e1', { a2b: half(a), b2a: half(b), labelMode: mode })]]);
+  ): PatchMap => new Map([['e1', linkPatch('e1', { arrow: 'triangle', a2b: half(a), b2a: half(b), labelMode: mode })]]);
   it('a half that gets wide grows its head on a refresh; no label moves and the cuts stay', () => {
     const { root, index } = build();
     render(root, index, two({ width: 2 }, { width: 2 }));
@@ -241,7 +302,9 @@ describe('renderLinkLabels: the refresh path', () => {
     const stamp = a.getAttribute('data-dmap-placed-at');
     expect(render(root, index, two({ percentDisplay: '>999%' })).moved).toBe(0);
     expect(a.getAttribute('data-dmap-placed-at')).toBe(stamp);
-    const gone: PatchMap = new Map([['e1', linkPatch('e1', { a2b: nodata(), b2a: half(), labelMode: 'percent' })]]);
+    const gone: PatchMap = new Map([
+      ['e1', linkPatch('e1', { arrow: 'triangle', a2b: nodata(), b2a: half(), labelMode: 'percent' })],
+    ]);
     expect(render(root, index, gone)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(byHalf(root, 'a2b')).toBe(a);
     expect(a.getAttribute('visibility')).toBe('hidden');
@@ -647,7 +710,10 @@ describe('renderLinkLabels: obstacles', () => {
   it('the obstacle of an arrow head is the head of the widest half, also while the half is thin', () => {
     const { root, index } = build();
     const patches: PatchMap = new Map([
-      ['e1', linkPatch('e1', { a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
+      [
+        'e1',
+        linkPatch('e1', { arrow: 'triangle', a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' }),
+      ],
     ]);
     render(root, index, patches);
     // the drawn heads are 8 by 8; the reserved ones 12 long and 24 wide (linkWidth.max 10), both tips at x = 200
@@ -864,7 +930,10 @@ describe('renderLinkLabels: backgrounds', () => {
       <g data-cell-id="e1"><g><path d="M 200 82 L 200 118" fill="none" pointer-events="stroke"/></g></g></svg>`;
     const { root, index } = build(svg);
     const patches: PatchMap = new Map([
-      ['e1', linkPatch('e1', { a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
+      [
+        'e1',
+        linkPatch('e1', { arrow: 'triangle', a2b: half({ width: 2 }), b2a: half({ width: 2 }), labelMode: 'percent' }),
+      ],
     ]);
     expect(render(root, index, patches)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     // one side cannot hold both: each box is 30 units along the run (the 28-unit slot and the halo), and the anchors
@@ -881,7 +950,10 @@ describe('renderLinkLabels: backgrounds', () => {
     // the half at linkWidth.max: its head is 24 wide, the text stands 4 + 12 + 6.625 = 22.625 off the line, at the same place
     // along it, and the label is not placed again
     const wide: PatchMap = new Map([
-      ['e1', linkPatch('e1', { a2b: half({ width: 10 }), b2a: half({ width: 2 }), labelMode: 'percent' })],
+      [
+        'e1',
+        linkPatch('e1', { arrow: 'triangle', a2b: half({ width: 10 }), b2a: half({ width: 2 }), labelMode: 'percent' }),
+      ],
     ]);
     expect(render(root, index, wide)).toEqual({ placed: 2, dropped: 0, moved: 0 });
     expect(a.getAttribute('transform')).toMatch(/^rotate\(-90 177.38 /);

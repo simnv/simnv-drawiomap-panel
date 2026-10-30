@@ -20,6 +20,14 @@
 - Privacy: the pilot examples keep the real metric names, label names and refIds. Host names and job values are
   names from the demo network (`fixtures/demo/`), because the real device names are on the private denylist.
 
+## Superseded decisions
+
+| Date | Previous decision | Owner decision | Sections |
+| --- | --- | --- | --- |
+| 2026-10-30, panel 1.4.0 | Every link half uses the head with wings. | Add the optional class and cell override field `arrow: point\|triangle\|none`. The default is `point`, also for saved configs that omit the field. There is no panel option. | 2.2, 2.3, 3.8 |
+
+The owner note "Arrow style" of 2026-10-30 records this decision. This row overrides the previous head style.
+
 ## 0. Changes since the reviews
 
 ### 0.1 Changes since review rounds 2 and 3
@@ -259,6 +267,7 @@ const fields = {
   down: refId.optional(),
   capacity: capacity.optional(),                         // D15, A4
   linkLabel: z.enum(['none', 'value', 'percent']).optional(), // A13 (Q8). Default: none.
+  arrow: z.enum(['point', 'triangle', 'none']).optional(), // 1.4.0. Rendering default: point.
 };
 const klass = z.object({ extends: ident.optional(), ...fields }).strict();
 const override = z.object(fields).strict();               // D6
@@ -335,6 +344,18 @@ name, unit, decimals). A row can override them. Rows of different units in one c
 **Links (D13–D15, A4).** `up`, `down` and `capacity` apply to an edge cell. Section 3.8 gives the rules.
 
 **Link labels (A13).** `linkLabel: none|value|percent`. The default is `none`. The generator sets `percent`.
+
+**Arrow style (1.4.0).** `arrow: point|triangle|none` applies to links only. The field is optional on a class and a cell override.
+The default is `point`. A subclass inherits the style through `extends`. A cell override replaces the style for that cell.
+The schema leaves an omitted field absent. The panel applies the default after class and override resolution.
+Both link halves use the same style. There is no panel option.
+The point base equals the drawn stroke width. Its length is the length from `headSize()`.
+On a one-way link, the point tapers along the final path to the port, including a bend.
+The stroke stops at the taper base with a small overlap to prevent a seam.
+The label layer reserves the point at the maximum width. A bent taper uses its conservative convex hull.
+The own-head exemption applies only to a straight head on the same run as the label.
+The triangle keeps the earlier geometry, including a tip that moves back from a bend and the full stroke past that tip.
+The `none` style draws no head and reserves no head obstacle. Its flat halves meet at the split or end at the port.
 
 **Legend (D12, A1).** There are no legend options in the config. The legend shows one block per status refId in use,
 from its field config, and the link load scale (3.4).
@@ -728,8 +749,12 @@ range query share the step of the query, so their timestamps agree.
    capacities (A4). Example: `cap=50M/10M`, `at=target`, rx 8 Mbit/s: a→b shows 8 Mbit/s and 16 %.
 5. **Colour and width.** As today: with a capacity, the colour input is the percent; without, the raw value
    (`colorFor`, `src/binding/color.ts:176-201`; ADR 0002).
-6. **Node classes.** `up`, `down`, `capacity` and `linkLabel` on a class whose cells are not edges give one
+6. **Node classes.** `up`, `down`, `capacity`, `linkLabel` and `arrow` on a class whose cells are not edges give one
    `unused-field` entry (Fable b.10).
+7. **Arrow style (1.4.0).** `point` has a base equal to the drawn stroke width, with no wings.
+   `triangle` keeps the head with wings used before 1.4.0. Both styles use the length from `headSize()`.
+   `none` has no head or direction mark. Its stroke ends flat at the split or port.
+   A head obstacle follows the selected style. `none` adds no head obstacle.
 
 ### 3.9 Chart regions (A9)
 
