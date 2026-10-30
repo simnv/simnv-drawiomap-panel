@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
-import { useStyles2 } from '@grafana/ui';
+import { Tab, TabsBar, useStyles2 } from '@grafana/ui';
 import type { ReportEntry, UsePath } from '../../binding/report';
 import { parsePath, yamlPath } from '../../model/yamlPath';
 import { reportLine } from '../../stage/useBoundDiagram';
@@ -69,7 +69,7 @@ export function entryTarget(entry: ReportEntry): EntryTarget {
 }
 
 /** The class of a path: `classes.<c>…` gives `c`. */
-function classOfPath(path: string | undefined): string | undefined {
+export function classOfPath(path: string | undefined): string | undefined {
   if (!path) {
     return undefined;
   }
@@ -80,11 +80,21 @@ function classOfPath(path: string | undefined): string | undefined {
 /** The class of an entry: its `cls`, else the class of its path. */
 const classOf = (entry: ReportEntry) => ('cls' in entry ? entry.cls : classOfPath(entryTarget(entry).path));
 
+/**
+ * A request to open the tab of a group: a class name, or null for the entries without a class. Each new object opens
+ * the tab again, also for the same group: the user can open another tab between two requests.
+ */
+export interface ReportFollow {
+  group: string | null;
+}
+
 export interface MatchReportProps {
   /** The `yaml` entries of the code box, then the report of the bind. */
   entries: ReportEntry[];
   counts: ReturnType<typeof reportCounts>;
   onPick: (pick: ReportPick) => void;
+  /** The group of the cursor or of the clicked cell. A group with no tab keeps the tab. */
+  follow?: ReportFollow;
 }
 
 interface Group {
@@ -119,68 +129,164 @@ function groupsOf({ entries, counts }: Pick<MatchReportProps, 'entries' | 'count
   return other ? [...groups.values(), other] : [...groups.values()];
 }
 
+/** The key of the tab of a group: the class name, or null for the entries without a class. */
+const keyOf = (group: Group) => group.cls ?? null;
+
 /**
- * The match report below the code box (spec 4): per class, the number of cells and the cells with 0, 1 and more
- * series of their first use, the same counts per use, and the entries of the class. A click on a row moves the cursor
- * to its YAML place (spec 5.3).
+ * The match report below the code box (spec 4): one tab per class (in the order of the config), then a tab for the
+ * entries without a class. A tab shows the number of cells and the cells with 0, 1 and more series of their first use,
+ * the same counts per use, and the entries of the class; the label of the tab counts the entries. A click on a row
+ * moves the cursor to its YAML place (spec 5.3). The tab follows `follow`; it starts at the first tab with entries.
  */
-export function MatchReport({ entries, counts, onPick }: MatchReportProps) {
+export function MatchReport({ entries, counts, onPick, follow }: MatchReportProps) {
   const styles = useStyles2(getStyles);
   const groups = groupsOf({ entries, counts });
+  const id = useId();
+  // The tab of the user or of the last follow request; undefined: no choice yet.
+  const [chosen, setChosen] = useState<string | null | undefined>(follow?.group);
+  const [seen, setSeen] = useState(follow);
+  // A request for a class that has no tab yet (a class that the user types now): its tab opens when it comes.
+  const [pending, setPending] = useState<string | null | undefined>();
+  const hasTab = (key: string | null) => groups.some((g) => keyOf(g) === key);
+  if (seen !== follow) {
+    setSeen(follow);
+    if (follow) {
+      const now = hasTab(follow.group);
+      if (now) {
+        setChosen(follow.group);
+      }
+      setPending(now ? undefined : follow.group);
+    }
+  } else if (pending !== undefined && hasTab(pending)) {
+    setChosen(pending);
+    setPending(undefined);
+  }
+  const choose = (key: string | null) => {
+    setChosen(key);
+    setPending(undefined);
+  };
+  const current =
+    groups.find((g) => chosen !== undefined && keyOf(g) === chosen) ??
+    groups.find((g) => g.entries.length) ??
+    groups[0];
+  const tabRefs = useRef<Array<HTMLElement | null>>([]);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  // Grafana Tab overwrites tabIndex props. Update the DOM after each render, including changes to the classes.
+  useLayoutEffect(() => {
+    for (const el of tabsRef.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []) {
+      el.tabIndex = el.getAttribute('aria-selected') === 'true' ? 0 : -1;
+    }
+  });
+  // The arrow keys, Home and End open the next, the previous, the first and the last tab and focus it.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    // A follow request can change the open tab while focus stays on another tab.
+    const focused = tabRefs.current.findIndex((el) => !!el && el.contains(e.target as Node));
+    const at = focused >= 0 ? focused : current ? groups.indexOf(current) : -1;
+    const next =
+      e.key === 'ArrowRight'
+        ? (at + 1) % groups.length
+        : e.key === 'ArrowLeft'
+          ? (at - 1 + groups.length) % groups.length
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? groups.length - 1
+              : -1;
+    if (next < 0 || !groups.length) {
+      return;
+    }
+    e.preventDefault();
+    choose(keyOf(groups[next]));
+    tabRefs.current[next]?.focus();
+  };
+  const nameOf = (group: Group) => (group.cls === undefined ? 'Not in a class' : `Class ${group.cls}`);
+  const panelId = `${id}-panel`;
   return (
     <section aria-label="Match report" className={styles.report} data-testid="dmap-match-report">
       {groups.length === 0 ? <p className={styles.empty}>The config has no classes.</p> : null}
-      {groups.map((group) => {
-        const name = group.cls === undefined ? 'Not in a class' : `Class ${group.cls}`;
-        return (
-          <section key={name} aria-label={name} className={styles.group}>
-            <h3 className={styles.title}>{name}</h3>
-            {group.cells || group.uses.length ? (
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th scope="col">Path</th>
-                    <th scope="col">Cells</th>
-                    <th scope="col">0 series</th>
-                    <th scope="col">1 series</th>
-                    <th scope="col">More</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.cells && group.cls !== undefined ? (
-                    <CountRow
-                      label={`${group.cls}, first use`}
-                      cells={group.cells.cells}
-                      counts={group.cells}
-                      onClick={() => onPick({ kind: 'path', path: classPath(group.cls!) })}
-                    />
-                  ) : null}
-                  {group.uses.map(([use, of]) => (
-                    <CountRow key={use} label={use} counts={of} onClick={() => onPick({ kind: 'path', path: use })} />
-                  ))}
-                </tbody>
-              </table>
-            ) : null}
-            {group.entries.length ? (
-              <ul className={styles.entries}>
-                {group.entries.map((entry, i) => (
-                  <li key={i}>
-                    <button
-                      type="button"
-                      className={styles.link}
-                      onClick={() => onPick({ kind: 'entry', ...entryTarget(entry) })}
-                    >
-                      {reportLine(entry)}
-                      <EntryDetails entry={entry} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        );
-      })}
+      {groups.length ? (
+        <div ref={tabsRef} className={styles.tabs} onKeyDown={onKeyDown}>
+          <TabsBar>
+            {groups.map((group, i) => (
+              <Tab
+                key={nameOf(group)}
+                ref={(el: HTMLElement | null) => {
+                  tabRefs.current[i] = el;
+                }}
+                id={`${id}-tab-${i}`}
+                aria-controls={group === current ? panelId : undefined}
+                label={group.cls ?? 'Not in a class'}
+                counter={group.entries.length || undefined}
+                active={group === current}
+                onChangeTab={() => choose(keyOf(group))}
+              />
+            ))}
+          </TabsBar>
+        </div>
+      ) : null}
+      {current ? (
+        <div
+          role="tabpanel"
+          id={panelId}
+          aria-label={nameOf(current)}
+          className={styles.group}
+          data-testid="dmap-match-report-panel"
+        >
+          <GroupBody group={current} onPick={onPick} />
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+/** The counts and the entries of one group. */
+function GroupBody({ group, onPick }: { group: Group; onPick: (pick: ReportPick) => void }) {
+  const styles = useStyles2(getStyles);
+  return (
+    <>
+      {group.cells || group.uses.length ? (
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th scope="col">Path</th>
+              <th scope="col">Cells</th>
+              <th scope="col">0 series</th>
+              <th scope="col">1 series</th>
+              <th scope="col">More</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.cells && group.cls !== undefined ? (
+              <CountRow
+                label={`${group.cls}, first use`}
+                cells={group.cells.cells}
+                counts={group.cells}
+                onClick={() => onPick({ kind: 'path', path: classPath(group.cls!) })}
+              />
+            ) : null}
+            {group.uses.map(([use, of]) => (
+              <CountRow key={use} label={use} counts={of} onClick={() => onPick({ kind: 'path', path: use })} />
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {group.entries.length ? (
+        <ul className={styles.entries}>
+          {group.entries.map((entry, i) => (
+            <li key={i}>
+              <button
+                type="button"
+                className={styles.link}
+                onClick={() => onPick({ kind: 'entry', ...entryTarget(entry) })}
+              >
+                {reportLine(entry)}
+                <EntryDetails entry={entry} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
   );
 }
 
@@ -230,10 +336,17 @@ function CountRow(props: { label: string; cells?: number; counts: SeriesCounts; 
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
-  report: css({ padding: theme.spacing(1), fontSize: theme.typography.bodySmall.fontSize }),
+  report: css({ padding: theme.spacing(0, 1, 1), fontSize: theme.typography.bodySmall.fontSize }),
   empty: css({ color: theme.colors.text.secondary }),
+  // The tabs stay at the top while the panel scrolls.
+  tabs: css({
+    position: 'sticky',
+    top: 0,
+    zIndex: 1,
+    background: theme.colors.background.primary,
+    marginBottom: theme.spacing(0.5),
+  }),
   group: css({ marginBottom: theme.spacing(1.5) }),
-  title: css({ fontSize: theme.typography.h6.fontSize, margin: theme.spacing(0, 0, 0.5) }),
   table: css({
     borderCollapse: 'collapse',
     '& th, & td': { padding: theme.spacing(0.25, 1), textAlign: 'left', fontWeight: 'normal' },

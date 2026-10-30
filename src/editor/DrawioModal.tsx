@@ -14,6 +14,7 @@ import {
   ProtocolState,
 } from './protocol';
 import { useOverlay } from './popup/overlayStack';
+import { DIALOG_SHEET_MEDIA, DIALOG_VH, DIALOG_VW } from './dialogSize';
 import { parseFileRequest, readEditorFile } from './files';
 import { bundledEditorBase, editorTarget } from './target';
 import { EditorLoad, HELLO_TIMEOUT_MS, nextLoad, probeEditor } from './availability';
@@ -24,16 +25,16 @@ const styles = {
     && {
       top: 50%;
       transform: translateY(-50%);
-      width: 96vw;
-      max-width: 96vw;
-      height: 94vh;
-      height: 94dvh;
-      max-height: 94vh;
-      max-height: 94dvh;
+      width: ${DIALOG_VW}vw;
+      max-width: ${DIALOG_VW}vw;
+      height: ${DIALOG_VH}vh;
+      height: ${DIALOG_VH}dvh;
+      max-height: ${DIALOG_VH}vh;
+      max-height: ${DIALOG_VH}dvh;
       display: flex;
       flex-direction: column;
     }
-    @media (max-width: 600px) {
+    ${DIALOG_SHEET_MEDIA} {
       && {
         top: 0;
         transform: none;
@@ -214,8 +215,17 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
         <div className={styles.titleRow}>
           <h2>{heading}</h2>
           {mode === 'edit' && (
-            <Toggletip content={<span data-testid="dmap-editor-help-text">{HELP}</span>} placement="bottom" closeButton={false}>
-              <button type="button" className={styles.help} aria-label="About this editor" data-testid="dmap-editor-help">
+            <Toggletip
+              content={<span data-testid="dmap-editor-help-text">{HELP}</span>}
+              placement="bottom"
+              closeButton={false}
+            >
+              <button
+                type="button"
+                className={styles.help}
+                aria-label="About this editor"
+                data-testid="dmap-editor-help"
+              >
                 <Icon name="info-circle" />
               </button>
             </Toggletip>

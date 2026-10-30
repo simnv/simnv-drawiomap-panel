@@ -26,6 +26,7 @@ interface Item {
   kind: string;
   path: string;
   name: string;
+  category?: string[];
   description?: string;
   defaultValue?: unknown;
   showIf?: (options: Options) => boolean;
@@ -98,11 +99,76 @@ describe('Build id option', () => {
 describe('Legend options', () => {
   it('shows the legend in the bottom-right corner by default, with no limit on the blocks', () => {
     expect(option('legend.show')).toMatchObject({ kind: 'addBooleanSwitch', defaultValue: true });
-    expect(option('legend.corner')).toMatchObject({ kind: 'addRadio', defaultValue: 'bottom-right' });
+    expect(option('legend.corner')).toMatchObject({ kind: 'addCustomEditor', defaultValue: 'bottom-right' });
     // 1.3.0 removed "Maximum scales": the legend shows all blocks and scrolls
     expect(option('legend.maxBlocks')).toBeUndefined();
     expect(option('legend.collapsed')).toMatchObject({ kind: 'addBooleanSwitch', defaultValue: true });
     expect(option('legend.collapsed')?.showIf?.({ legend: { show: false } } as Options)).toBe(false);
     expect(option('legend.corner')?.showIf?.({ legend: { show: false } } as Options)).toBe(false);
+  });
+});
+
+describe('Last data timestamp option', () => {
+  it('is a Legend switch that is on by default and shows also without the legend', () => {
+    expect(option('legend.timestamp')).toMatchObject({
+      kind: 'addBooleanSwitch',
+      name: 'Show last data timestamp',
+      category: ['Legend'],
+      defaultValue: true,
+    });
+    expect(option('legend.timestamp')?.showIf).toBeUndefined();
+  });
+});
+
+describe('Compact icon options', () => {
+  /** Renders the editor of an option and gives its radio buttons. */
+  function radios(path: string, value: string) {
+    const item = option(path)!;
+    const onChange = vi.fn();
+    const view = render(
+      React.createElement(item.editor!, { value, onChange, context: {}, item: item as unknown as object })
+    );
+    return { item, onChange, view, radios: screen.getAllByRole('radio') };
+  }
+  const settings = (path: string) =>
+    (option(path) as Item & { settings: { options: Array<{ value: string; description: string }> } }).settings;
+
+  it('Zoom is a row of icons with a tooltip and a label each; the saved values do not change', () => {
+    expect(option('zoom.mode')).toMatchObject({ kind: 'addCustomEditor', defaultValue: 'fit', category: ['View'] });
+    const { radios: buttons, onChange, view } = radios('zoom.mode', 'fit');
+    expect(screen.getByRole('radiogroup', { name: 'Zoom' })).toBeTruthy();
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Fit', 'Fit width', 'Original', 'Custom']);
+    expect(settings('zoom.mode').options.map((o) => o.value)).toEqual(['fit', 'fit-width', 'original', 'custom']);
+    // the tooltip is the description; the native title of the label shows it too
+    expect(settings('zoom.mode').options.every((o) => /^\w[\w ]*: /.test(o.description))).toBe(true);
+    expect(view.container.querySelector('label')!.title).toBe('Fit: the whole diagram fits in the panel');
+    // icons, no text
+    expect(view.container.textContent!.trim()).toBe('');
+    fireEvent.click(screen.getByRole('radio', { name: 'Fit width' }));
+    expect(onChange).toHaveBeenCalledWith('fit-width');
+  });
+
+  it('Align is a row of icons with a tooltip and a label each; the saved values do not change', () => {
+    expect(option('zoom.align')).toMatchObject({ kind: 'addCustomEditor', defaultValue: 'top' });
+    expect(option('zoom.align')?.showIf?.({ zoom: { mode: 'fit-width' } } as Options)).toBe(false);
+    const { radios: buttons, onChange } = radios('zoom.align', 'top');
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Top', 'Center']);
+    expect(settings('zoom.align').options.map((o) => o.value)).toEqual(['top', 'center']);
+    fireEvent.click(screen.getByRole('radio', { name: 'Center' }));
+    expect(onChange).toHaveBeenCalledWith('center');
+  });
+
+  it('Corner is a picker of the four corners that saves the same values', () => {
+    const { radios: buttons, onChange } = radios('legend.corner', 'bottom-right');
+    expect(screen.getByRole('radiogroup', { name: 'Legend corner' })).toBeTruthy();
+    expect(buttons.map((c) => c.getAttribute('aria-label'))).toEqual([
+      'Top left',
+      'Top right',
+      'Bottom left',
+      'Bottom right',
+    ]);
+    expect(screen.getByRole('radio', { name: 'Bottom right' })).toHaveProperty('checked', true);
+    fireEvent.click(screen.getByRole('radio', { name: 'Top left' }));
+    expect(onChange).toHaveBeenCalledWith('top-left');
   });
 });

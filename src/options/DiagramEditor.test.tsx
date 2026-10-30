@@ -57,3 +57,13 @@ describe('DiagramEditor Edit bindings button', () => {
     expect(screen.getByTestId('dmap-open-editor')).toBeTruthy();
   });
 });
+
+describe('DiagramEditor editor button', () => {
+  it('says "Edit in draw.io" for a saved diagram and "New diagram" without one', () => {
+    const { unmount } = renderEditor(diagram('1'));
+    expect(screen.getByTestId('dmap-open-editor').textContent).toBe('Edit in draw.io');
+    unmount();
+    renderEditor(undefined);
+    expect(screen.getByTestId('dmap-open-editor').textContent).toBe('New diagram');
+  });
+});

@@ -5,7 +5,7 @@ import { Icon, useStyles2 } from '@grafana/ui';
 import type { LegendCorner } from '../types';
 import { BarRow } from './BarRow';
 import { chipSwatch, type LegendBlock, type LegendEntry, plural } from './model';
-import { clampPoint, isDrag, keyMove, type Point } from './position';
+import { clampPoint, isDrag, keyMove, type Box, type Point } from './position';
 
 const getStyles = (theme: GrafanaTheme2) => ({
   // Outside the stage, above the diagram, below the corner buttons (z-index 2) and the cards (z-index 3).
@@ -105,6 +105,11 @@ interface Props {
   /** The place before the first move: the CSS of the corner. */
   style?: React.CSSProperties;
   corner?: LegendCorner;
+  /**
+   * The drawn box of the legend at its corner, in px from the top-left of the parent; null when the legend shows
+   * nothing. A moved legend reports nothing: the last box of its corner holds.
+   */
+  onCornerBox?: (box: Box | null) => void;
 }
 
 /**
@@ -112,7 +117,7 @@ interface Props {
  * the user can drag it inside its parent (the panel). The place and the state are in this component only.
  */
 export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
-  { blocks, collapsed = true, onHighlight, style, corner },
+  { blocks, collapsed = true, onHighlight, style, corner, onCornerBox },
   ref
 ) {
   const styles = useStyles2(getStyles);
@@ -186,11 +191,15 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     const p = posRef.current;
     if (p === null) {
       const top = typeof style?.top === 'number' ? style.top : null;
-      const maxHeight = Math.max(24, Math.min(m.area.height / 2, m.area.height - (top ?? 4) - 4));
+      const maxHeight = Math.max(
+        0,
+        Math.min(m.area.height - 8, Math.max(24, Math.min(m.area.height / 2, m.area.height - (top ?? 4) - 4)))
+      );
       // the top offset (the reset button, the status band) never pushes the legend out of a short panel
       const height = Math.min(Math.max(m.box.height, rootRef.current?.scrollHeight ?? 0), maxHeight);
       const fitTop = top === null ? null : Math.max(0, Math.min(top, m.area.height - height));
       setCornerFit((c) => (c?.maxHeight === maxHeight && c.top === fitTop ? c : { maxHeight, top: fitTop }));
+      onCornerBox?.({ ...m.origin, ...m.box });
       return;
     }
     setCornerFit(null);
@@ -198,10 +207,18 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     if (c.x !== p.x || c.y !== p.y) {
       setPos(c);
     }
-  }, [measure, style?.top]);
+  }, [measure, style?.top, onCornerBox]);
+  // A new corner moves the legend with no change of its size: measure again, so the corner box is new too.
   useLayoutEffect(() => {
     reclamp();
-  }, [reclamp, pos, open, blocks, el]);
+  }, [reclamp, pos, open, blocks, el, corner]);
+  // No blocks: the legend shows nothing and leaves its corner.
+  useLayoutEffect(() => {
+    if (!el) {
+      onCornerBox?.(null);
+    }
+  }, [el, onCornerBox]);
+  useLayoutEffect(() => () => onCornerBox?.(null), [onCornerBox]);
   useEffect(() => {
     if (!el || !el.parentElement || typeof ResizeObserver === 'undefined') {
       return;

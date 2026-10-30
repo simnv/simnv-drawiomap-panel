@@ -117,3 +117,27 @@ export function indexFrames(frames: DataFrame[]): FrameIndex {
   indexes.set(frames, index);
   return index;
 }
+
+/** The largest time in ms that a Date can hold. A time field in ns or µs gives larger values. */
+const MAX_DATE_MS = 8.64e15;
+
+/**
+ * The newest time of all time fields of all frames: the time of the last data of the panel. Undefined: no time.
+ * A value that is not a time in ms (not finite, or out of the Date range) does not count.
+ */
+export function lastSampleTime(frames: DataFrame[]): number | undefined {
+  let last: number | undefined;
+  for (const frame of frames) {
+    for (const field of frame.fields) {
+      if (field.type !== FieldType.time) {
+        continue;
+      }
+      for (const time of field.values) {
+        if (typeof time === 'number' && Math.abs(time) <= MAX_DATE_MS && (last === undefined || time > last)) {
+          last = time;
+        }
+      }
+    }
+  }
+  return last;
+}

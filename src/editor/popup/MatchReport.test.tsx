@@ -37,7 +37,18 @@ const { SplitEditor } = await import('./SplitEditor');
 const { entryTarget, MatchReport } = await import('./MatchReport');
 
 const report = () => screen.getByTestId('dmap-match-report');
-const group = (name: string) => within(report()).getByRole('region', { name });
+const tabs = () => within(report()).getAllByRole('tab');
+/** The tab of a group: its label is the class name, or "Not in a class"; a count of entries can follow it. */
+const tabOf = (name: string) => {
+  const label = name.replace(/^Class /, '');
+  return tabs().find((t) => new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d*$`).test(t.textContent!))!;
+};
+/** Opens the tab of a group and gives its panel. */
+const group = (name: string) => {
+  fireEvent.click(tabOf(name));
+  return within(report()).getByRole('tabpanel', { name });
+};
+const active = () => tabs().find((t) => t.getAttribute('aria-selected') === 'true')?.textContent;
 /** The cells of a count row: cells, 0 series, 1 series, more. The first column is the button of the row. */
 const counts = (scope: HTMLElement, label: string) =>
   Array.from(within(scope).getByRole('button', { name: label }).closest('tr')!.querySelectorAll('td')).map(
@@ -81,7 +92,7 @@ describe('MatchReport in the split editor', () => {
     expect(within(group('Class dev')).getByRole('button', { name: 'classes.dev.status: 2 cells have no series' }));
     // a YAML error is an entry of its own, and the counts stay at the last valid draft
     type('version: 4\nclasses: [\n');
-    expect(within(report()).getByRole('button', { name: /^line \d+: / })).toBeTruthy();
+    expect(within(group('Not in a class')).getByRole('button', { name: /^line \d+: / })).toBeTruthy();
     expect(counts(group('Class dev'), 'dev, first use')).toEqual(['2', '2', '0', '0']);
   });
 
@@ -152,12 +163,36 @@ describe('MatchReport in the split editor', () => {
     render(<SplitEditor {...props} options={{ ...props.options, diagram: { ...props.options.diagram!, svg } }} />);
     act(() => fake.moveTo(fake.text.indexOf('sw:')));
     act(() => vi.advanceTimersByTime(100));
-    fireEvent.click(within(report()).getByRole('button', { name: /unknown class unknown/ }));
+    fireEvent.click(within(group('Not in a class')).getByRole('button', { name: /unknown class unknown/ }));
     expect(lit()).toEqual(['a']);
     act(() => vi.advanceTimersByTime(150));
     expect(lit()).toEqual(['a']);
     expect(fake.editor.setPosition).not.toHaveBeenCalled();
     expect(zoom.fitCells).toHaveBeenCalledTimes(1);
+  });
+
+  it('the active tab follows the class at the cursor and the class of a clicked cell', () => {
+    render(<SplitEditor {...editorProps()} />);
+    expect(tabs().map((t) => t.textContent)).toEqual(['dev1', 'sw']);
+    // the first tab with entries
+    expect(active()).toBe('dev1');
+    act(() => fake.moveTo(fake.text.indexOf('sw:')));
+    act(() => vi.advanceTimersByTime(150));
+    expect(active()).toBe('sw');
+    expect(within(report()).getAllByRole('tabpanel')).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('dmap-popup-stage').querySelector('[data-cell-id="a"]')!);
+    expect(active()).toBe('dev1');
+    // the user opens another tab; the next cursor move in a class takes the tab back to that class
+    fireEvent.click(tabOf('sw'));
+    expect(active()).toBe('sw');
+    act(() => fake.moveTo(fake.text.indexOf('dev:')));
+    act(() => vi.advanceTimersByTime(150));
+    expect(active()).toBe('dev1');
+    // a click on a report row keeps the tab
+    fireEvent.click(tabOf('sw'));
+    fireEvent.click(within(report()).getByRole('button', { name: 'sw, first use' }));
+    act(() => vi.advanceTimersByTime(150));
+    expect(active()).toBe('sw');
   });
 
   it('a click on an entry for a class with no cells clears the previous highlight', () => {
@@ -176,6 +211,45 @@ describe('MatchReport in the split editor', () => {
 
 describe('MatchReport', () => {
   const empty = { perClass: new Map(), perUse: new Map() };
+
+  it('puts only the active tab before the report controls in the tab order', () => {
+    const perClass = new Map([
+      ['dev', { cells: 2, zero: 1, one: 1, many: 0 }],
+      ['sw', { cells: 1, zero: 0, one: 1, many: 0 }],
+      ['lan', { cells: 1, zero: 0, one: 1, many: 0 }],
+    ]);
+    render(
+      <MatchReport entries={[]} counts={{ perClass, perUse: new Map() }} onPick={() => {}} follow={{ group: 'sw' }} />
+    );
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    const stops = Array.from(report().querySelectorAll<HTMLButtonElement>('button')).filter((el) => el.tabIndex >= 0);
+    expect(stops).toEqual([tabOf('sw'), within(report()).getByRole('button', { name: 'sw, first use' })]);
+  });
+
+  it('keeps one tab stop when classes appear, move, disappear, and return', () => {
+    const cells = { cells: 1, zero: 0, one: 1, many: 0 };
+    const view = (classes: string[]) => (
+      <MatchReport
+        entries={[]}
+        counts={{ perClass: new Map(classes.map((cls) => [cls, cells])), perUse: new Map() }}
+        onPick={() => {}}
+      />
+    );
+    const { rerender } = render(view(['dev', 'sw']));
+    fireEvent.click(tabOf('sw'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    rerender(view(['dev', 'sw', 'lan']));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    rerender(view(['sw', 'lan', 'dev']));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+    rerender(view(['lan', 'dev']));
+    expect(active()).toBe('lan');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1]);
+    rerender(view([]));
+    expect(within(report()).queryAllByRole('tab')).toHaveLength(0);
+    rerender(view(['dev', 'lan']));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1]);
+  });
 
   it('shows each orphan label set in order and the separate overflow count', () => {
     const labels = Array.from({ length: 50 }, (_, i) => ({ job: `node-${i}`, site: 'demo' }));
@@ -220,7 +294,7 @@ describe('MatchReport', () => {
       { kind: 'unknown-class', cellIds: ['a'], bind: 'nope' },
     ];
     render(<MatchReport entries={entries} counts={empty} onPick={() => {}} />);
-    const other = within(report()).getByRole('region', { name: 'Not in a class' });
+    const other = group('Not in a class');
     expect(within(other).getAllByRole('listitem')).toHaveLength(3);
   });
 
@@ -260,5 +334,112 @@ describe('MatchReport', () => {
     expect(onPick).toHaveBeenLastCalledWith({ kind: 'path', path: 'classes.dev.status' });
     fireEvent.click(screen.getByRole('button', { name: 'dev, first use' }));
     expect(onPick).toHaveBeenLastCalledWith({ kind: 'path', path: 'classes.dev' });
+  });
+
+  it('shows one tab per class with the count of its entries, then the tab of the entries without a class', () => {
+    const entries: ReportEntry[] = [
+      { kind: 'no-series', cls: 'dev', use: 'classes.dev.status', cellIds: ['b'] },
+      { kind: 'unknown-class', cellIds: ['a'], bind: 'nope' },
+      { kind: 'orphan-series', refId: 'up', labels: [{ job: 'x' }], more: 0 },
+    ];
+    const perClass = new Map([
+      ['dev', { cells: 2, zero: 1, one: 1, many: 0 }],
+      ['sw', { cells: 1, zero: 0, one: 1, many: 0 }],
+    ]);
+    render(<MatchReport entries={entries} counts={{ perClass, perUse: new Map() }} onPick={() => {}} />);
+    expect(screen.getByRole('tablist')).toBeTruthy();
+    expect(tabs().map((t) => t.textContent)).toEqual(['dev1', 'sw', 'Not in a class2']);
+    expect(active()).toBe('dev1');
+    const panel = within(report()).getByRole('tabpanel');
+    expect(panel.getAttribute('aria-label')).toBe('Class dev');
+    expect(tabOf('dev').getAttribute('aria-controls')).toBe(panel.id);
+    fireEvent.click(tabOf('Not in a class'));
+    expect(within(within(report()).getByRole('tabpanel')).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('moves between the tabs with the arrow keys, Home and End', () => {
+    const perClass = new Map([
+      ['dev', { cells: 2, zero: 1, one: 1, many: 0 }],
+      ['sw', { cells: 1, zero: 0, one: 1, many: 0 }],
+      ['lan', { cells: 1, zero: 0, one: 1, many: 0 }],
+    ]);
+    render(<MatchReport entries={[]} counts={{ perClass, perUse: new Map() }} onPick={() => {}} />);
+    expect(active()).toBe('dev');
+    act(() => tabOf('dev').focus());
+    fireEvent.keyDown(tabOf('dev'), { key: 'ArrowRight' });
+    expect(active()).toBe('sw');
+    expect(document.activeElement).toBe(tabOf('sw'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    fireEvent.keyDown(tabOf('sw'), { key: 'End' });
+    expect(active()).toBe('lan');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
+    fireEvent.keyDown(tabOf('lan'), { key: 'ArrowRight' });
+    expect(active()).toBe('dev');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+    fireEvent.keyDown(tabOf('dev'), { key: 'ArrowLeft' });
+    expect(active()).toBe('lan');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
+    fireEvent.keyDown(tabOf('lan'), { key: 'Home' });
+    expect(active()).toBe('dev');
+    expect(document.activeElement).toBe(tabOf('dev'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+  });
+
+  it('opens the tab of each new follow request, also for the same class again', () => {
+    const perClass = new Map([
+      ['dev', { cells: 2, zero: 1, one: 1, many: 0 }],
+      ['sw', { cells: 1, zero: 0, one: 1, many: 0 }],
+    ]);
+    const counts = { perClass, perUse: new Map() };
+    const entries: ReportEntry[] = [{ kind: 'unknown-override', cellId: 'gone' }];
+    const { rerender } = render(
+      <MatchReport entries={entries} counts={counts} onPick={() => {}} follow={{ group: 'sw' }} />
+    );
+    expect(active()).toBe('sw');
+    fireEvent.click(tabOf('dev'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+    rerender(<MatchReport entries={entries} counts={counts} onPick={() => {}} follow={{ group: 'sw' }} />);
+    expect(active()).toBe('sw');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    // null: the tab of the entries without a class
+    rerender(<MatchReport entries={entries} counts={counts} onPick={() => {}} follow={{ group: null }} />);
+    expect(active()).toBe('Not in a class1');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
+    // a class with no tab keeps the tab
+    rerender(<MatchReport entries={entries} counts={counts} onPick={() => {}} follow={{ group: 'nope' }} />);
+    expect(active()).toBe('Not in a class1');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
+  });
+
+  it('an arrow key moves from the focused tab, also when it is not the open tab', () => {
+    const perClass = new Map([
+      ['dev', { cells: 2, zero: 1, one: 1, many: 0 }],
+      ['sw', { cells: 1, zero: 0, one: 1, many: 0 }],
+      ['lan', { cells: 1, zero: 0, one: 1, many: 0 }],
+    ]);
+    render(<MatchReport entries={[]} counts={{ perClass, perUse: new Map() }} onPick={() => {}} />);
+    expect(active()).toBe('dev');
+    act(() => tabOf('sw').focus());
+    fireEvent.keyDown(tabOf('sw'), { key: 'ArrowRight' });
+    expect(active()).toBe('lan');
+  });
+
+  it('opens the tab of a follow request when the class gets its tab later', () => {
+    const dev = { cells: 2, zero: 1, one: 1, many: 0 };
+    const before = { perClass: new Map([['dev', dev]]), perUse: new Map() };
+    const after = {
+      perClass: new Map([
+        ['dev', dev],
+        ['new', dev],
+      ]),
+      perUse: new Map(),
+    };
+    const follow = { group: 'new' };
+    const { rerender } = render(<MatchReport entries={[]} counts={before} onPick={() => {}} />);
+    rerender(<MatchReport entries={[]} counts={before} onPick={() => {}} follow={follow} />);
+    expect(active()).toBe('dev');
+    rerender(<MatchReport entries={[]} counts={after} onPick={() => {}} follow={follow} />);
+    expect(active()).toBe('new');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
   });
 });

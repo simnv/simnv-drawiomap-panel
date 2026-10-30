@@ -22,6 +22,9 @@ import { reportLine, useBoundDiagram } from '../stage/useBoundDiagram';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { legendCorners } from './legendCorners';
+import { LastDataStamp } from './LastDataStamp';
+import { lastSampleTime } from '../query/frames';
+import type { Box } from '../legend/position';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
 import { buildLegendV4 } from '../legend/model';
@@ -300,6 +303,20 @@ function DrawioMapPanelView(props: ViewProps) {
   // does not render the view.
   const [highlight] = useState(createHighlightStore);
   const legendRef = useRef<HTMLElement>(null);
+  // The last data timestamp shares the bottom row with the legend: it reads the box of the legend at its corner.
+  const [legendBox, setLegendBox] = useState<Box | null>(null);
+  const onLegendBox = useCallback(
+    (b: Box | null) =>
+      setLegendBox((old) =>
+        old && b && old.x === b.x && old.y === b.y && old.width === b.width && old.height === b.height ? old : b
+      ),
+    []
+  );
+  const stampRef = useRef<HTMLElement>(null);
+  const lastTime = useMemo(
+    () => (legendOptions.timestamp === false ? undefined : lastSampleTime(data.series)),
+    [legendOptions.timestamp, data.series]
+  );
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
 
@@ -370,7 +387,10 @@ function DrawioMapPanelView(props: ViewProps) {
   // The controls of the panel: a pointer on them does not pan the view and does not change the card.
   const onControl = (t: EventTarget | null) =>
     t instanceof Node &&
-    (!!corner.current?.contains(t) || !!bandRef.current?.contains(t) || !!legendRef.current?.contains(t));
+    (!!corner.current?.contains(t) ||
+      !!bandRef.current?.contains(t) ||
+      !!legendRef.current?.contains(t) ||
+      !!stampRef.current?.contains(t));
   const panZoom = usePanZoom({
     wrapperRef,
     root: stage.root,
@@ -428,6 +448,7 @@ function DrawioMapPanelView(props: ViewProps) {
       onHighlight={highlight.setLegend}
       style={corners[legendCorner]}
       corner={legendCorner}
+      onCornerBox={onLegendBox}
     />
   ) : null;
   // At the configured view one finger scrolls the page and the page does not pinch-zoom over the panel.
@@ -488,6 +509,16 @@ function DrawioMapPanelView(props: ViewProps) {
           props.onEditBindings();
         }}
       />
+      {lastTime === undefined ? null : (
+        <LastDataStamp
+          ref={stampRef}
+          time={lastTime}
+          timeZone={timeZone}
+          corner={legendCorner}
+          legend={legendOptions.show ? legendBox : null}
+          area={{ width, height }}
+        />
+      )}
       {legend}
       {open && model && card
         ? portalSheet(

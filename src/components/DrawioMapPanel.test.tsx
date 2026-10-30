@@ -1564,6 +1564,130 @@ describe('DrawioMapPanel colour legend', () => {
   });
 });
 
+describe('DrawioMapPanel last data timestamp', () => {
+  const stamp = () => screen.queryByTestId('dmap-last-data');
+  // the newest sample of the demo series is in the cpu frame; another frame ends later
+  const LAST = Date.UTC(2026, 9, 29, 9, 32, 5);
+  const late = toDataFrame({
+    refId: 'late',
+    fields: [
+      { name: 'Time', type: FieldType.time, values: [LAST - 60000, LAST] },
+      { name: 'Value', type: FieldType.number, values: [1, 2] },
+    ],
+  });
+  const withData = (over: Partial<PanelProps<Options>> = {}) =>
+    props({
+      timeZone: 'Asia/Tokyo',
+      data: { series: [...demoSeries(), late], state: LoadingState.Done, timeRange: getDefaultTimeRange() },
+      ...over,
+    });
+  async function setup(p = withData()) {
+    const r = render(<DrawioMapPanel {...p} />);
+    await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
+    return r;
+  }
+
+  it('shows the newest sample time of all frames in the dashboard time zone; old options without the switch show it', async () => {
+    const demoLast = Math.max(...demoSeries().flatMap((f) => f.fields[0].values as number[]));
+    const late2 = toDataFrame({
+      refId: 'late',
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [demoLast + 3_600_000] },
+        { name: 'Value', type: FieldType.number, values: [1] },
+      ],
+    });
+    // `options` has no legend key: an old saved panel
+    await setup(
+      withData({
+        data: { series: [...demoSeries(), late2], state: LoadingState.Done, timeRange: getDefaultTimeRange() },
+      })
+    );
+    const at = new Date(demoLast + 3_600_000);
+    expect(stamp()!.textContent).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \+09:00$/);
+    expect(stamp()!.getAttribute('datetime')).toBe(at.toISOString());
+  });
+
+  it('formats a fixed time with the year, the clock time and the offset', async () => {
+    await setup(withData({ data: { series: [late], state: LoadingState.Done, timeRange: getDefaultTimeRange() } }));
+    expect(stamp()!.textContent).toBe('2026-10-29 18:32:05 +09:00');
+  });
+
+  it('the switch turns it off; a panel with no data shows none', async () => {
+    const { rerender } = await setup(
+      withData({ options: { ...options, legend: { show: true, corner: 'bottom-right', timestamp: false } } })
+    );
+    expect(stamp()).toBeNull();
+    rerender(
+      <DrawioMapPanel
+        {...withData({ data: { series: [], state: LoadingState.Done, timeRange: getDefaultTimeRange() } })}
+      />
+    );
+    expect(stamp()).toBeNull();
+    rerender(<DrawioMapPanel {...withData()} />);
+    expect(stamp()).not.toBeNull();
+  });
+
+  it('a pointer or the focus shows the tooltip in a sandbox host; a tap toggles it; it opens no card', async () => {
+    await setup(withData({ data: { series: [late], state: LoadingState.Done, timeRange: getDefaultTimeRange() } }));
+    const el = stamp()!;
+    expect(el.getAttribute('aria-label')).toBe('Last data timestamp: 2026-10-29 18:32:05 +09:00 (Asia/Tokyo)');
+    const tip = () => screen.queryByTestId('dmap-last-data-tooltip');
+    fireEvent.pointerEnter(el, { pointerType: 'mouse' });
+    expect(tip()!.textContent).toMatch(/^Last data timestamp: 2026-10-29 18:32:05 \+09:00 \(Asia\/Tokyo, .+ ago\)$/);
+    expect(tip()!.closest('[data-plugin-sandbox]')?.parentElement).toBe(document.body);
+    expect(el.getAttribute('aria-describedby')).toBe(tip()!.id);
+    fireEvent.pointerLeave(el, { pointerType: 'mouse' });
+    expect(tip()).toBeNull();
+    act(() => el.focus());
+    expect(tip()).not.toBeNull();
+    act(() => el.blur());
+    expect(tip()).toBeNull();
+    fireEvent.pointerDown(el, { pointerType: 'touch' });
+    fireEvent.click(el);
+    expect(tip()).not.toBeNull();
+    fireEvent.click(el);
+    expect(tip()).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a scroll of the page closes the tooltip; after a tap and a blur, the focus shows it again', async () => {
+    await setup(withData({ data: { series: [late], state: LoadingState.Done, timeRange: getDefaultTimeRange() } }));
+    const el = stamp()!;
+    const tip = () => screen.queryByTestId('dmap-last-data-tooltip');
+    // a tap gives the focus, then the click
+    fireEvent.pointerDown(el, { pointerType: 'touch' });
+    act(() => el.focus());
+    expect(tip()).toBeNull();
+    fireEvent.click(el);
+    expect(tip()).not.toBeNull();
+    fireEvent.scroll(window);
+    expect(tip()).toBeNull();
+    act(() => el.blur());
+    act(() => el.focus());
+    expect(tip()).not.toBeNull();
+  });
+
+  it('sits directly left of a bottom-right legend, in the same row', async () => {
+    // jsdom has no layout: the panel is 800 x 600, the legend chip 90 x 28 at its corner, the timestamp 160 px wide
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const box = (x: number, y: number, width: number, height: number) =>
+        ({ x, y, left: x, top: y, width, height, right: x + width, bottom: y + height, toJSON: () => ({}) }) as DOMRect;
+      const id = (this as HTMLElement).dataset?.testid;
+      if (id === 'dmap-legend') {
+        return box(800 - 4 - 90, 600 - 4 - 28, 90, 28);
+      }
+      if (id === 'dmap-last-data') {
+        return box(0, 0, 160, 28);
+      }
+      return box(0, 0, 800, 600);
+    });
+    onTestFinished(() => rect.mockRestore());
+    await setup();
+    await waitFor(() => expect(stamp()!.style.right).toBe(`${4 + 90 + 4}px`));
+    expect(stamp()!.style.bottom).toBe('4px');
+  });
+});
+
 describe('DrawioMapPanel refresh and freshness', () => {
   const small =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><g data-cell-id="a" data-meta-bind="dev" data-meta-key="k"><rect width="40" height="30"/><text>A</text></g><g data-cell-id="b"><rect x="50" width="40" height="30"/><text>B</text></g></svg>';

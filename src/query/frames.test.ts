@@ -1,6 +1,6 @@
 import { FieldType, type DataFrame } from '@grafana/data';
 import { describe, expect, it } from 'vitest';
-import { indexFrames } from './frames';
+import { indexFrames, lastSampleTime } from './frames';
 
 const frame = (): DataFrame => ({
   length: 3,
@@ -143,5 +143,32 @@ describe('the index cache', () => {
     const frames = [f];
     expect(indexFrames(frames).candidates[0].unsupported).toEqual(expect.stringContaining('finite'));
     expect(indexFrames(frames).candidates[0].unsupported).toEqual(expect.stringContaining('finite'));
+  });
+});
+
+describe('lastSampleTime', () => {
+  const timed = (times: unknown[]): DataFrame => ({
+    length: times.length,
+    fields: [{ name: 'Time', type: FieldType.time, config: {}, values: times }],
+  });
+
+  it('gives the newest time of all time fields of all frames', () => {
+    expect(lastSampleTime([frame(), timed([500, 4500, 2500]), timed([])])).toBe(4500);
+  });
+
+  it('skips values that are not finite times', () => {
+    expect(lastSampleTime([timed([1000, null, NaN, Infinity, '9000'])])).toBe(1000);
+  });
+
+  it('skips values outside the range of a Date: a time field in ns or µs', () => {
+    expect(lastSampleTime([timed([1000, 1.7e18, -1.7e18, 8.64e15])])).toBe(8.64e15);
+  });
+
+  it('gives undefined when no frame has a time', () => {
+    expect(lastSampleTime([])).toBeUndefined();
+    expect(lastSampleTime([timed([])])).toBeUndefined();
+    expect(
+      lastSampleTime([{ length: 1, fields: [{ name: 'v', type: FieldType.number, config: {}, values: [1] }] }])
+    ).toBeUndefined();
   });
 });

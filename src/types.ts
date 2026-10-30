@@ -130,7 +130,7 @@ export interface Options {
   summary?: { maxRows: number };
   /** The cells that open a hover or pinned card. Default: node, link, port, other. */
   hover?: { kinds: HoverKind[] };
-  /** The colour legend in a corner of the panel. Default: shown, collapsed, bottom-right. */
+  /** The colour legend in a corner of the panel and the last data timestamp. Default: shown, collapsed, bottom-right. */
   legend?: LegendOptions;
 }
 
@@ -141,6 +141,8 @@ export interface LegendOptions {
   corner: LegendCorner;
   /** The legend starts as a small chip. A missing key means collapsed. */
   collapsed?: boolean;
+  /** The time of the newest sample shows at the bottom, beside the legend. A missing key means shown. */
+  timestamp?: boolean;
 }
 
 /** The options after the defaults: the panel reads these. Internal, never saved. */
@@ -155,7 +157,7 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
   hover: { kinds: ['node', 'link', 'port', 'other'] },
-  legend: { show: true, corner: 'bottom-right', collapsed: true },
+  legend: { show: true, corner: 'bottom-right', collapsed: true, timestamp: true },
 };
 
 /**

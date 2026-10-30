@@ -26,8 +26,9 @@ export default defineConfig({
     css: false,
     // Only the logic project uses threads. Vitest reads this pool option from the root, not from a project.
     poolOptions: { threads: { isolate: false } },
-    // @grafana/* ESM builds import CJS moment-timezone and extensionless @rc-component files.
-    server: { deps: { inline: [/@rc-component/, /@grafana\//, /moment/] } },
+    // @grafana/* ESM builds import extensionless @rc-component files. moment and moment-timezone stay external: inlined,
+    // the ESM moment and the moment that moment-timezone requires are two instances, and `moment().tz` is missing.
+    server: { deps: { inline: [/@rc-component/, /@grafana\//] } },
     projects: [
       {
         extends: true,

@@ -288,6 +288,26 @@ describe('Legend', () => {
       expect(at(legend)).toEqual({ x: 300, y: 200 });
       expect(handle.getAttribute('aria-expanded')).toBe('false');
     });
+    it('reports its box at the corner; a moved legend keeps the last corner box; no blocks report null', () => {
+      const onCornerBox = vi.fn();
+      const { legend, rerender, onHighlight } = view({ collapsed: true, onCornerBox });
+      expect(onCornerBox).toHaveBeenLastCalledWith({ x: 290, y: 250, width: 100, height: 40 });
+      const calls = onCornerBox.mock.calls.length;
+      drag(within(legend).getByRole('button', { name: 'Legend' }), [300, 260], [250, 200]);
+      expect(at(legend)).toEqual({ x: 240, y: 190 });
+      expect(onCornerBox.mock.calls.slice(calls).every(([b]) => b?.x === 290)).toBe(true);
+      rerender(<Legend blocks={[]} collapsed onHighlight={onHighlight} onCornerBox={onCornerBox} />);
+      expect(onCornerBox).toHaveBeenLastCalledWith(null);
+    });
+    it('reports its box again when the corner changes between the bottom corners', () => {
+      const onCornerBox = vi.fn();
+      const { rerender, onHighlight } = view({ collapsed: true, corner: 'bottom-right', onCornerBox });
+      const calls = onCornerBox.mock.calls.length;
+      rerender(
+        <Legend blocks={blocks} collapsed onHighlight={onHighlight} corner="bottom-left" onCornerBox={onCornerBox} />
+      );
+      expect(onCornerBox.mock.calls.length).toBeGreaterThan(calls);
+    });
     it('goes back to the corner on a double click or Home', () => {
       const { legend } = view({ collapsed: true });
       const handle = within(legend).getByRole('button', { name: 'Legend' });
@@ -372,6 +392,12 @@ describe('Legend', () => {
       fireEvent.doubleClick(handle);
       expect(legend.style.top).toBe('56px');
     });
+    it('caps the legend below its usual minimum in a panel shorter than 24 px', () => {
+      PANEL.h = 20;
+      const { legend } = view({ collapsed: false, corner: 'bottom-right', style: { right: 4, bottom: 4 } });
+      expect(parseFloat(legend.style.maxHeight)).toBeLessThanOrEqual(PANEL.h - 8);
+    });
+
     it('keeps the entries highlight working in an open legend that moved', () => {
       const { legend, onHighlight } = view({ collapsed: false });
       drag(within(legend).getByRole('button', { name: 'Legend' }), [300, 260], [200, 160]);
