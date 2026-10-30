@@ -8,6 +8,9 @@ export interface Size {
   height: number;
 }
 
+/** A box in px from the top-left corner of its parent. */
+export type Box = Point & Size;
+
 /** Keep a box of `box` size inside a content box of `area` size. A box larger than the area sits at 0. */
 export function clampPoint(p: Point, box: Size, area: Size): Point {
   const within = (v: number, room: number) => Math.min(Math.max(0, room), Math.max(0, v));

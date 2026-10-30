@@ -12,6 +12,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
 import { useSandboxHost } from '../../util/sandboxHost';
+import { DIALOG_VH, DIALOG_VW } from '../dialogSize';
 import { isTop, pop, push } from './overlayStack';
 import { usePopupKeys } from './usePopupKeys';
 
@@ -262,12 +263,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
   dialog: css`
     position: fixed;
     z-index: ${theme.zIndex.modal - 1};
-    top: 5vh;
-    top: 5dvh;
-    left: 2.5vw;
-    width: 95vw;
-    height: 90vh;
-    height: 90dvh;
+    top: ${(100 - DIALOG_VH) / 2}vh;
+    top: ${(100 - DIALOG_VH) / 2}dvh;
+    left: ${(100 - DIALOG_VW) / 2}vw;
+    width: ${DIALOG_VW}vw;
+    height: ${DIALOG_VH}vh;
+    height: ${DIALOG_VH}dvh;
     max-width: 100%;
     display: flex;
     flex-direction: column;

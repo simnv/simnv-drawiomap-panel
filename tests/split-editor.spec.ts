@@ -142,15 +142,22 @@ test('the cursor lights the cells of its path and zooms; a report entry lights i
     await expect(badge(dialog, id)).toHaveAttribute('data-dmap-red', 'true');
   }
 
-  // Another class: other cells and another zoom.
+  // Another class: other cells and another zoom. The report shows the tab of the class.
   await cursorToLine(dialog, /^ {2}trend-region:$/);
   await expect.poll(() => flagged(dialog, 'highlight')).toEqual(['chart-1']);
+  await expect(matchReport(dialog).getByRole('tab', { name: /^trend-region/ })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
   await expect.poll(() => viewBox(dialog)).not.toBe(zoomed);
   await expect(dialog.getByTestId('dmap-cell-badge')).toHaveCount(0);
 
   // A click on a report entry lights its cells and moves the cursor to its path: the start of the row.
   const rowLines = await codeLines(dialog, /^ {6}- kind:/);
   const rowStart = Math.max(...rowLines.filter((line) => line < txLine));
+  await matchReport(dialog)
+    .getByRole('tab', { name: /^routers/ })
+    .click();
   await matchReport(dialog)
     .getByRole('button', { name: /^classes\.routers\.rows\[2\]: 2 cells have no series/ })
     .click();
@@ -308,6 +315,7 @@ test('a schema error marks its line; invalid YAML keeps the last valid draft and
   await replaceCode(dialog, 'status: health', 'status: 42');
   const [statusLine] = await codeLines(dialog, /^ {4}status: 42$/);
   await expect.poll(async () => (await codeMarkers(dialog)).map((m) => m.line)).toContain(statusLine);
+  await report.getByRole('tab', { name: /^routers/ }).click();
   await expect(report.getByRole('button', { name: /^classes\.routers\.status: / })).toBeVisible();
   await expect(apply).toBeEnabled();
   // The draft binds: the routers lose the status of the saved config.
@@ -318,6 +326,7 @@ test('a schema error marks its line; invalid YAML keeps the last valid draft and
   await replaceCode(dialog, 'freshness: 3x', 'freshness: [3x');
   await expect(apply).toBeDisabled();
   await expect.poll(async () => (await codeMarkers(dialog)).length).toBeGreaterThan(0);
+  await report.getByRole('tab', { name: /^Not in a class/ }).click();
   await expect(report.getByRole('button', { name: /^line \d+: / }).first()).toBeVisible();
   expect(await popupCell(dialog, 'device-1').getAttribute('data-dmap-status')).toBe(draftStatus);
 
@@ -536,11 +545,42 @@ test.describe('the split view at 1440×900 (P3.11)', () => {
       await expect(pane).toBeVisible();
       expect(await fitsWidth(pane)).toEqual({ pageScroll: false, inside: true });
     }
-    // The cursor in a class lights its cells, so the screenshot shows the link between the text and the diagram.
+    // The dialog has the geometry of the draw.io dialog: 96 % x 94 % of the viewport, in the middle.
+    const frame = (await splitDialog(page).boundingBox())!;
+    expect(Math.abs(frame.width - 0.96 * 1440)).toBeLessThan(2);
+    expect(Math.abs(frame.height - 0.94 * 900)).toBeLessThan(2);
+    expect(Math.abs(frame.x - (1440 - frame.width) / 2)).toBeLessThan(2);
+    expect(Math.abs(frame.y - (900 - frame.height) / 2)).toBeLessThan(2);
+    // The report has one tab per class. The cursor in a class lights its cells and opens the tab of the class, so the
+    // screenshot shows the link between the text, the diagram and the report.
+    const report = matchReport(dialog);
+    // the classes in the order of the stored config, then maybe the tab of the entries without a class; a count of
+    // entries can follow the name
+    const tabNames = async () => (await report.getByRole('tab').allTextContents()).map((t) => t.replace(/\d+$/, ''));
+    await expect
+      .poll(async () => (await tabNames()).slice(0, 3).sort())
+      .toEqual(['directional-link', 'routers', 'trend-region']);
+    const names = await tabNames();
+    const afterRouters = names[(names.indexOf('routers') + 1) % names.length];
+    // a click on a cell opens the tab of its class
+    await popupCell(dialog, 'device-1').click();
+    await expect(report.getByRole('tab', { name: /^routers/ })).toHaveAttribute('aria-selected', 'true');
+    // the keyboard: the arrow keys move between the tabs
+    await report.getByRole('tab', { name: /^routers/ }).focus();
+    await page.keyboard.press('ArrowRight');
+    const next = report.getByRole('tab', { name: new RegExp(`^${afterRouters}\\d*$`) });
+    await expect(next).toHaveAttribute('aria-selected', 'true');
+    await expect(next).toBeFocused();
+    await cursorToLine(dialog, /^ {2}trend-region:$/);
+    await expect(report.getByRole('tab', { name: /^trend-region/ })).toHaveAttribute('aria-selected', 'true');
     await cursorToLine(dialog, /^ {2}routers:$/);
     await expect.poll(async () => (await flagged(dialog, 'highlight')).length).toBeGreaterThan(0);
+    await expect(report.getByRole('tab', { name: /^routers/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(report.getByRole('tabpanel', { name: 'Class routers' })).toBeVisible();
     if (SHOTS) {
       await splitDialog(page).screenshot({ path: `${SHOTS}/split-editor.png` });
+      await page.screenshot({ path: 'local/split-editor-size.png' });
+      await dialog.getByTestId('dmap-pane-report').screenshot({ path: 'local/split-editor-tabs.png' });
     }
   });
 });

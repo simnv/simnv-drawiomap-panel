@@ -11,7 +11,7 @@ import {
 import { SeriesTable, useStyles2, useTheme2 } from '@grafana/ui';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import { alignedSamples, nearestIndex, sampleTimes, timeAt, tooltipRows } from './hoverSample';
-import { placeTooltip } from './tooltipPlace';
+import { placeTooltip, TOOLTIP_OFFSET } from './tooltipPlace';
 import { SandboxPortal } from '../util/sandboxHost';
 
 /** One series of the tooltip. */
@@ -100,19 +100,27 @@ const PLACE_RETRIES = 10;
 export function TooltipBox({
   x,
   y,
+  anchorHeight = 0,
   live,
   className,
+  id,
+  testId = 'dmap-chart-tooltip',
   children,
 }: {
   x: number;
   y: number;
+  /** the height of the anchor box below (x, y): the box goes below it or above it, never over it */
+  anchorHeight?: number;
   live: boolean;
   className: string;
+  /** the id that the `aria-describedby` of the anchor points to */
+  id?: string;
+  testId?: string;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // the anchor of the latest commit, for a size report or a viewport change later
-  const anchor = useRef({ x, y });
+  const anchor = useRef({ x, y, height: anchorHeight });
   // Places the box from its current size. True when the box is in the document and has a size.
   const place = useCallback(() => {
     const el = ref.current;
@@ -129,7 +137,10 @@ export function TooltipBox({
       w,
       h,
       root.clientWidth || window.innerWidth,
-      root.clientHeight || window.innerHeight
+      root.clientHeight || window.innerHeight,
+      TOOLTIP_OFFSET,
+      TOOLTIP_OFFSET,
+      anchor.current.height
     );
     el.style.transform = `translate(${p.x}px, ${p.y}px)`;
     if (w > 0 && h > 0) {
@@ -141,7 +152,7 @@ export function TooltipBox({
   const observed = typeof ResizeObserver === 'function';
   // Each commit: a new anchor or new content. Without a ResizeObserver, frames retry until the box has a size.
   useLayoutEffect(() => {
-    anchor.current = { x, y };
+    anchor.current = { x, y, height: anchorHeight };
     if (place() || observed) {
       return;
     }
@@ -184,7 +195,9 @@ export function TooltipBox({
       ref={ref}
       className={className}
       style={{ visibility: 'hidden' }}
-      data-testid="dmap-chart-tooltip"
+      id={id}
+      role={id ? 'tooltip' : undefined}
+      data-testid={testId}
       aria-live={live ? 'polite' : undefined}
       aria-atomic="true"
     >

@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { expect, saveDashboard, test } from './authoring-fixtures';
 
 const PANE_WIDTH = 300;
@@ -7,17 +7,9 @@ const PANE_WIDTH = 300;
 const SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'docs/images/options-diagram.png' : undefined;
 const BINDINGS_SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'local/options-bindings.png' : undefined;
 
-test('the Diagram option buttons, the Edit bindings button and the YAML option stay inside the options pane at the narrowest width', async ({
-  gotoPanelEditPage,
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '2' });
-  await panelEditPage.getCustomOptions('Diagram').expand();
-  const group = page.getByTestId('data-testid Options group Diagram');
-  await expect(page.getByTestId('dmap-diagram-status')).toBeVisible();
-
-  // Drag the vertical splitter between the panel and the options pane to the right: the pane gets about 300 px.
+/** Drag the vertical splitter between the panel and the options pane to the right: the pane gets about 300 px. */
+async function narrowPane(page: Page) {
+  await expect(page.locator('[role=separator]').first()).toBeVisible();
   const splitters = await page.locator('[role=separator]').all();
   let vertical;
   for (const s of splitters) {
@@ -32,6 +24,19 @@ test('the Diagram option buttons, the Edit bindings button and the YAML option s
   await page.mouse.down();
   await page.mouse.move(1280 - PANE_WIDTH - vertical!.width / 2, y, { steps: 10 });
   await page.mouse.up();
+}
+
+test('the Diagram option buttons, the Edit bindings button and the YAML option stay inside the options pane at the narrowest width', async ({
+  gotoPanelEditPage,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '2' });
+  await panelEditPage.getCustomOptions('Diagram').expand();
+  const group = page.getByTestId('data-testid Options group Diagram');
+  await expect(page.getByTestId('dmap-diagram-status')).toBeVisible();
+
+  await narrowPane(page);
 
   const pane = await group.boundingBox();
   expect(pane!.width).toBeLessThanOrEqual(PANE_WIDTH + 10);
@@ -43,7 +48,8 @@ test('the Diagram option buttons, the Edit bindings button and the YAML option s
     expect(box.x, `${name}: left edge`).toBeGreaterThanOrEqual(paneBox.x);
     expect(box.x + box.width, `${name}: right edge`).toBeLessThanOrEqual(paneBox.x + paneBox.width);
   };
-  await inside(page.getByTestId('dmap-open-editor'), 'Open editor');
+  await expect(page.getByTestId('dmap-open-editor')).toHaveText('Edit in draw.io');
+  await inside(page.getByTestId('dmap-open-editor'), 'Edit in draw.io');
   await inside(group.getByRole('button', { name: 'Import .drawio' }), 'Import .drawio');
   await inside(group.getByRole('button', { name: 'Clear', exact: true }), 'Clear');
   await expect(group.getByTestId('dmap-edit-bindings-option')).toHaveCount(0);
@@ -86,6 +92,83 @@ test('the Diagram option buttons, the Edit bindings button and the YAML option s
       clip: { x: paneBox.x, y: Math.max(0, top), width: paneBox.width, height: 360 },
     });
   }
+});
+
+test('Zoom, Align and the legend Corner are rows of icons with tooltips that fit the narrowest options pane', async ({
+  gotoPanelEditPage,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1600 });
+  const panelEditPage = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
+  await expect(page.getByTestId('dmap-panel')).toBeVisible();
+  await narrowPane(page);
+  await panelEditPage.getCustomOptions('View').expand();
+  await panelEditPage.getCustomOptions('Legend').expand();
+  const view = page.getByTestId('data-testid Options group View');
+  const legend = page.getByTestId('data-testid Options group Legend');
+  const zoom = view.getByRole('radiogroup').filter({ has: page.getByRole('radio', { name: 'Fit width' }) });
+  const align = view.getByRole('radiogroup').filter({ has: page.getByRole('radio', { name: 'Center' }) });
+  const corner = legend.getByRole('radiogroup', { name: 'Legend corner' });
+  for (const [name, group, pane, count] of [
+    ['Zoom', zoom, view, 4],
+    ['Align', align, view, 2],
+    ['Corner', corner, legend, 4],
+  ] as const) {
+    await expect(group, name).toBeVisible();
+    const labels = await group.locator('label').all();
+    expect(labels, name).toHaveLength(count);
+    const paneBox = (await pane.boundingBox())!;
+    expect(paneBox.width).toBeLessThanOrEqual(PANE_WIDTH + 10);
+    const boxes = await Promise.all(labels.map(async (l) => (await l.boundingBox())!));
+    for (const b of boxes) {
+      // one row, no wrap, inside the pane
+      expect(Math.abs(b.y - boxes[0].y), `${name}: one row`).toBeLessThan(1);
+      expect(b.x, `${name}: left edge`).toBeGreaterThanOrEqual(paneBox.x);
+      expect(b.x + b.width, `${name}: right edge`).toBeLessThanOrEqual(paneBox.x + paneBox.width);
+    }
+  }
+  await expect(zoom.getByRole('radio', { name: 'Fit', exact: true })).toBeChecked();
+  await expect(align.getByRole('radio', { name: 'Top' })).toBeChecked();
+  await expect(corner.getByRole('radio', { name: 'Bottom right' })).toBeChecked();
+  if (process.env.DMAP_SCREENSHOTS) {
+    // the Zoom and Align options, and the legend options: two parts of the pane, one above the other
+    const part = async (from: Locator, to: Locator) => {
+      await from.scrollIntoViewIfNeeded();
+      await to.scrollIntoViewIfNeeded();
+      const a = (await from.boundingBox())!;
+      const b = (await to.boundingBox())!;
+      const paneBox = (await legend.boundingBox())!;
+      const top = a.y - 32;
+      return page.screenshot({
+        clip: { x: paneBox.x, y: top, width: paneBox.width, height: b.y + b.height + 12 - top },
+      });
+    };
+    const shots = [await part(zoom, align), await part(legend.getByText('Show legend', { exact: true }), corner)];
+    const sheet = await page.context().newPage();
+    await sheet.setContent(
+      `<body style="margin:0;background:#111217"><div id="sheet" style="display:inline-block">${shots
+        .map((png) => `<img style="display:block" src="data:image/png;base64,${png.toString('base64')}">`)
+        .join('<hr style="margin:0;border:0;border-top:1px dashed #555">')}</div></body>`
+    );
+    await sheet.locator('#sheet').screenshot({ path: 'local/options-icons.png' });
+    await sheet.close();
+  }
+  // each icon has a Grafana tooltip: the pointer on the icon shows it
+  for (const [group, name, tip] of [
+    [zoom, 'Fit width', /^Fit width: /],
+    [align, 'Center', /^Center: /],
+    [corner, 'Top left', /^Top left$/],
+  ] as const) {
+    // Grafana 13 lays the radio input over the label, Grafana 12 hides it: hover the button box
+    await group.getByRole('radio', { name }).hover({ force: true });
+    await expect(page.getByRole('tooltip').filter({ hasText: tip })).toBeVisible();
+  }
+  // the saved values do not change: a click on a corner moves the legend of the panel
+  await corner.getByRole('radio', { name: 'Top left' }).click({ force: true });
+  await expect(page.getByTestId('dmap-panel').getByTestId('dmap-legend')).toHaveAttribute(
+    'data-dmap-corner',
+    'top-left'
+  );
 });
 
 // Grafana merges an options update into the old options key by key, so a removed class came back (P1-14b).

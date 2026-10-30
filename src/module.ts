@@ -6,6 +6,7 @@ import {
   ThresholdsMode,
 } from '@grafana/data';
 import { DrawioMapPanel } from './components/DrawioMapPanel';
+import { IconRadioEditor, LEGEND_CORNERS, ZOOM_ALIGNS, ZOOM_MODES } from './options/IconRadioEditor';
 import { DiagramEditor } from './options/DiagramEditor';
 import { LazyConfigYamlEditor } from './options/LazyConfigYamlEditor';
 import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
@@ -54,19 +55,15 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['Bindings'],
         editor: LazyConfigYamlEditor,
       })
-      .addRadio({
+      // icons only: four labels do not fit the narrowest options pane
+      .addCustomEditor({
+        id: 'zoom.mode',
         path: 'zoom.mode',
         name: 'Zoom',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.zoom.mode,
-        settings: {
-          options: [
-            { value: 'fit', label: 'Fit' },
-            { value: 'fit-width', label: 'Fit width' },
-            { value: 'original', label: 'Original' },
-            { value: 'custom', label: 'Custom' },
-          ],
-        },
+        editor: IconRadioEditor,
+        settings: ZOOM_MODES,
       })
       .addNumberInput({
         path: 'zoom.percent',
@@ -84,18 +81,15 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         settings: { min: 0, step: 0.1 },
         showIf: (o) => ['fit', 'fit-width'].includes(o.zoom?.mode ?? 'fit'),
       })
-      .addRadio({
+      .addCustomEditor({
+        id: 'zoom.align',
         path: 'zoom.align',
         name: 'Align',
         description: 'Where the fitted diagram goes when the panel has a different shape',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.zoom.align,
-        settings: {
-          options: [
-            { value: 'top', label: 'Top' },
-            { value: 'center', label: 'Center' },
-          ],
-        },
+        editor: IconRadioEditor,
+        settings: ZOOM_ALIGNS,
         showIf: (o) => (o.zoom?.mode ?? 'fit') === 'fit',
       })
       .addBooleanSwitch({
@@ -159,19 +153,14 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['Legend'],
         defaultValue: DEFAULT_OPTIONS.legend.show,
       })
-      .addRadio({
+      .addCustomEditor({
+        id: 'legend.corner',
         path: 'legend.corner',
         name: 'Corner',
         category: ['Legend'],
         defaultValue: DEFAULT_OPTIONS.legend.corner,
-        settings: {
-          options: [
-            { value: 'top-left', label: 'Top left' },
-            { value: 'top-right', label: 'Top right' },
-            { value: 'bottom-left', label: 'Bottom left' },
-            { value: 'bottom-right', label: 'Bottom right' },
-          ],
-        },
+        editor: IconRadioEditor,
+        settings: LEGEND_CORNERS,
         showIf: (o) => o.legend?.show !== false,
       })
       .addBooleanSwitch({
@@ -181,5 +170,13 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['Legend'],
         defaultValue: DEFAULT_OPTIONS.legend.collapsed,
         showIf: (o) => o.legend?.show !== false,
+      })
+      .addBooleanSwitch({
+        path: 'legend.timestamp',
+        name: 'Show last data timestamp',
+        description:
+          'The time of the newest sample of the panel data, in the dashboard time zone. It shows at the bottom, beside the legend.',
+        category: ['Legend'],
+        defaultValue: DEFAULT_OPTIONS.legend.timestamp,
       })
   );

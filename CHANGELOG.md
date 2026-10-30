@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0 (Unreleased)
+
+- Added the last data timestamp: the time of the newest sample of the panel data, at the bottom of the panel beside the legend. The text has the date with the year, the time and the UTC offset in the dashboard time zone, for example `2026-10-31 14:32:05 +01:00`. Its tooltip says "Last data timestamp" and gives the time zone name and the age. The new option **Show last data timestamp** (`legend.timestamp`, group **Legend**) is on by default, also for saved panels without it. The timestamp and the legend share the bottom row and never overlap at their start places, also on a narrow panel and on a phone.
+- Changed the **Zoom**, **Align** and legend **Corner** options to rows of icon buttons with tooltips. They fit the narrowest options pane. The saved values do not change.
+- Renamed the **Open editor** button of the **Diagram** options to **Edit in draw.io**. A panel without a diagram still shows **New diagram**.
+- Changed the match report of the split editor: one tab for each class, and a tab **Not in a class** for the other entries. The tab label counts the entries. The cursor in a class and a selected cell open the tab of their class. The arrow keys, Home and End move between the tabs.
+- Changed the size of the **Edit bindings** dialog to the size of the draw.io dialog: 96 % of the window width and 94 % of its height, in the middle. A phone still shows a full-screen sheet.
+
 ## 1.4.0 (Unreleased)
 
 - Added the class and cell override field `arrow`: `point`, `triangle` or `none`. A subclass inherits the style through `extends`.

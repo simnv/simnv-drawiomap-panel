@@ -138,6 +138,17 @@ describe('PluginDialog', () => {
     mock.remove();
   });
 
+  it('has the geometry of the draw.io dialog: 96 % of the viewport width and 94 % of its height, in the middle', () => {
+    mount();
+    const style = getComputedStyle(screen.getByRole('dialog', { name: 'Edit bindings' }));
+    expect({ top: style.top, left: style.left, width: style.width, height: style.height }).toEqual({
+      top: '3dvh',
+      left: '2vw',
+      width: '96vw',
+      height: '94dvh',
+    });
+  });
+
   it('closes through the header button', () => {
     const { onDismiss } = mount();
     fireEvent.click(buttonNamed('Close'));

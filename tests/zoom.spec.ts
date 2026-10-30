@@ -1,6 +1,8 @@
 import { devices, type Locator, type Page } from '@playwright/test';
 import { type DashboardPage } from '@grafana/plugin-e2e';
 import { expect, test } from './authoring-fixtures';
+// The screenshots show the timestamp in the browser time zone: a fixed zone keeps the zone of the test machine out.
+test.use({ timezoneId: 'Europe/Berlin' });
 
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 

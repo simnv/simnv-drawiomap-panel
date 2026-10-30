@@ -23,9 +23,10 @@ import { cellsForPath, type CellSet } from '../split/cellsForPath';
 import { classNamesOf, registerCompletion, registerHover, type CompletionSource } from '../split/completion';
 import { reportCounts } from '../split/reportCounts';
 import { pathAt, readDraft } from '../split/yamlPath';
+import { parsePath } from '../../model/yamlPath';
 import { DiagramStage, type StageSelection } from './DiagramStage';
 import { InspectorV4, type CellWrite } from './InspectorV4';
-import { MatchReport, type ReportPick } from './MatchReport';
+import { classOfPath, MatchReport, type ReportFollow, type ReportPick } from './MatchReport';
 import { PluginDialog } from './PluginDialog';
 import { PopupLayout } from './PopupLayout';
 import { useOverlay } from './overlayStack';
@@ -70,6 +71,15 @@ function keyStart(doc: Document, parts: string[]): number | undefined {
     node = pair.value;
   }
   return start;
+}
+
+/** The report tab of a YAML path: the tab of its class, the tab without a class for `overrides…`, else none. */
+function followOf(path: string | null): ReportFollow | undefined {
+  const cls = classOfPath(path ?? undefined);
+  if (cls !== undefined) {
+    return { group: cls };
+  }
+  return path && parsePath(path)[0] === 'overrides' ? { group: null } : undefined;
 }
 
 /**
@@ -179,6 +189,8 @@ export function SplitEditor({
   // The highlight: the cells of the path under the cursor, or the cells of the report entry of the last click.
   const [cursorPath, setCursorPath] = useState<string | null>(null);
   const [entryCells, setEntryCells] = useState<string[] | null>(null);
+  // The report tab follows the class at the cursor and the class of a clicked cell.
+  const [follow, setFollow] = useState<ReportFollow>();
   const pathCells = useMemo(
     () => (cursorPath ? cellsForPath(cursorPath, bound, validated.classes) : NO_CELLS),
     [cursorPath, bound, validated.classes]
@@ -261,8 +273,13 @@ export function SplitEditor({
       }
       cursorTimer.current = setTimeout(() => {
         const value = model.getValue();
+        const path = pathAt(readDraft(value).doc, value, model.getOffsetAt(event.position));
         setEntryCells(null);
-        setCursorPath(pathAt(readDraft(value).doc, value, model.getOffsetAt(event.position)));
+        setCursorPath(path);
+        const next = followOf(path);
+        if (next) {
+          setFollow(next);
+        }
       }, CURSOR_WAIT_MS);
     });
     return () => {
@@ -315,9 +332,13 @@ export function SplitEditor({
         return;
       }
       setSelected([id]);
+      const bind = stage.index.get(id)?.meta.attrs.bind;
+      if (bind !== undefined) {
+        setFollow({ group: bind });
+      }
       const editor = instance?.editor;
       const model = editor?.getModel();
-      const offset = cellPlace(textRef.current, id, stage.index.get(id)?.meta.attrs.bind);
+      const offset = cellPlace(textRef.current, id, bind);
       if (editor && model && offset !== undefined) {
         clearTimeout(cursorTimer.current);
         const position = model.getPositionAt(offset);
@@ -434,7 +455,7 @@ export function SplitEditor({
       below={
         <div className={styles.below}>
           <div className={styles.report}>
-            <MatchReport entries={entries} counts={counts} onPick={onPick} />
+            <MatchReport entries={entries} counts={counts} onPick={onPick} follow={follow} />
           </div>
           {selected.length ? (
             <div className={styles.inspector}>

@@ -49,3 +49,12 @@ describe('placeTooltip', () => {
     expect(placeTooltip(99, 99, 10, 10, 100, 100, 4)).toEqual({ x: 85, y: 85 });
   });
 });
+
+describe('placeTooltip with an anchor box', () => {
+  it('sits below the bottom of the anchor box, or above its top: it never covers the box', () => {
+    // a 28 px high anchor at y 50: below it at 50 + 28 + 10
+    expect(placeTooltip(100, 50, W, H, VW, VH, 10, 10, 28)).toEqual({ x: 110, y: 88 });
+    // at the bottom of the view: above the top of the box
+    expect(placeTooltip(100, 760, W, H, VW, VH, 10, 10, 28)).toEqual({ x: 110, y: 670 });
+  });
+});

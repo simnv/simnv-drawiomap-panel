@@ -52,7 +52,7 @@ Open the panel editor and go to **Diagram**. There are three ways to add a diagr
 
 1. **Import .drawio.** Choose a `.drawio` file, for example a portograph export. The panel loads the file in the editor modal. The editor exports the SVG and the modal closes. The panel stores the XML and the SVG.
 2. **Paste draw.io XML.** Paste the XML (from **Extras > Edit Diagram** in draw.io) and select **Apply pasted XML**. The panel accepts an `<mxfile>`, an `<mxGraphModel>`, or an SVG that has an embedded copy of the diagram.
-3. **Open editor.** Draw or change the diagram in the real draw.io editor. **Save** and **Save & Exit** store the XML and the SVG.
+3. **Edit in draw.io.** Draw or change the diagram in the real draw.io editor. A panel without a diagram shows **New diagram** instead. **Save** and **Save & Exit** store the XML and the SVG.
 
 The panel uses these cell attributes to find cells:
 
@@ -116,7 +116,7 @@ The **Edit bindings** button above the YAML opens the [split editor](#split-edit
 
 ### Split editor
 
-In panel edit, select **Edit bindings** on the panel (top-left corner) or in the Bindings options, above the YAML. The split editor shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
+In panel edit, select **Edit bindings** on the panel (top-left corner) or in the Bindings options, above the YAML. The split editor opens in a dialog of 96 % of the window width and 94 % of its height, in the middle of the window, the same size as the draw.io editor. On a phone it fills the screen. It shows YAML on the left, a live diagram on the right, and the match report below. On a narrow screen, use the Code, Diagram and Report tabs. Drag the handles to resize the panes. The panel keeps their sizes in the browser.
 
 The preview follows a valid draft. Move the cursor in YAML to highlight the affected cells; select a report entry to move to its YAML path and highlight its cells. Select a cell to open its inspector and move the cursor to its override or class. The inspector shows its attributes, class chain, override, and, for each use, the query, matchers, series count and up to eight label sets and values. For an edge it also shows the ends and the direction of each half.
 
@@ -144,7 +144,7 @@ Cell attribute names use ASCII lowercase; `setCellAttrs` lowercases written name
 The inspector can write `bind` and `key`, and can set or clear `at=target` on an edge. For other attributes:
 
 - The generator or the `meta` of the portograph source writes them.
-- You set them in draw.io with **Edit Data** (Ctrl+M) in the embedded editor: **Diagram → Open editor**, select the cell, press Ctrl+M, add the attribute, then **Save**.
+- You set them in draw.io with **Edit Data** (Ctrl+M) in the embedded editor: **Diagram → Edit in draw.io**, select the cell, press Ctrl+M, add the attribute, then **Save**.
 
 A dashboard that a generator wrote is **generator-owned**. The generator writes its classes, its overrides and its attributes again at each build. A hand edit of them in the panel is lost at the next deploy, unless the generator reads it back first (its `pull` step). Change a generated panel in the generator source.
 
@@ -168,7 +168,7 @@ A class is a map. Every field is optional.
 | `up`, `down` | A link only. The refIds of the transmit and the receive counter.                                                                                                                                         |
 | `capacity`   | A link only. A refId of the port speed, or `{ a2b, b2a }` for one refId for each direction.                                                                                                              |
 | `linkLabel`  | A link only. `none` (the default), `value` or `percent` (see [Link value labels](#link-value-labels)).                                                                                                   |
-| `arrow`      | A link only. `point` (the default), `triangle` or `none` (see [Arrow styles](#arrow-styles)). |
+| `arrow`      | A link only. `point` (the default), `triangle` or `none` (see [Arrow styles](#arrow-styles)).                                                                                                            |
 
 `up`, `down`, `capacity`, `linkLabel` and `arrow` on a class whose cells are not links give one `unused-field` entry.
 
@@ -364,6 +364,8 @@ A class with `up`, `down` or `capacity` applies to a link (an edge cell).
 
 On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the count, and its tooltip lists the entries. In panel edit, use **Edit bindings** to open the split editor and its report. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
 
+The report of the split editor has one tab for each class, in the order of the config. A tab shows the cell counts of the class and its entries. The number after the class name is the number of entries. The entries that have no class (for example a YAML error, `unknown-class`, `unknown-override` or `orphan-series`) are in the last tab, **Not in a class**. The report opens the first tab that has entries. When you move the cursor into a class, or select a cell, the report opens the tab of that class. The cursor in `overrides` opens **Not in a class**. To move between the tabs with the keyboard, focus a tab and use the arrow keys, Home and End.
+
 | Entry                                                         | Meaning                                                                                 |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `schema`                                                      | A field has a wrong name, type or form. The entry gives the YAML path.                  |
@@ -500,25 +502,38 @@ You can move the legend, closed or open, to any place in the panel:
 - With the focus on the legend, the arrow keys move it by 10 px. Shift with an arrow key moves it by 50 px.
 - Double-click the header, or press Home, to put it back in its corner.
 
-The legend never leaves the panel, also when you make the panel smaller. The **Corner** option sets the place where it starts. The place and the open or closed state are not saved: a reload shows the legend again as the options say.
+The legend never leaves the panel, also when you make the panel smaller. The **Corner** option sets the place where it starts. The four buttons of the option show the four corners. The place and the open or closed state are not saved: a reload shows the legend again as the options say.
 
 The legend stays in its place when you zoom, pan or scroll the diagram. In the top-left corner, it starts below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it starts below the area of the Grafana panel menu button. It catches the pointer only inside its own box. It is above the diagram and below the hover cards.
 
 The options are in the **Legend** group:
 
-| Option          | Path               | Meaning                                                             |
-| --------------- | ------------------ | ------------------------------------------------------------------- |
-| Show legend     | `legend.show`      | Default on.                                                         |
-| Corner          | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`. |
-| Start collapsed | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.       |
+| Option                   | Path               | Meaning                                                                                   |
+| ------------------------ | ------------------ | ----------------------------------------------------------------------------------------- |
+| Show legend              | `legend.show`      | Default on.                                                                               |
+| Corner                   | `legend.corner`    | `bottom-right` (default), `bottom-left`, `top-left` or `top-right`.                       |
+| Start collapsed          | `legend.collapsed` | Default on: the legend starts as a chip. Off: it starts open.                             |
+| Show last data timestamp | `legend.timestamp` | Default on. See [Last data timestamp](#last-data-timestamp). It does not need the legend. |
 
-A saved panel without `legend.collapsed` starts collapsed. Version 1.3.0 removed the option **Maximum scales** (`legend.maxBlocks`). The panel ignores a saved `legend.maxBlocks`.
+A saved panel without `legend.collapsed` starts collapsed. A saved panel without `legend.timestamp` shows the timestamp. Version 1.3.0 removed the option **Maximum scales** (`legend.maxBlocks`). The panel ignores a saved `legend.maxBlocks`.
 
 In the panel JSON:
 
 ```json
-{ "legend": { "show": true, "corner": "bottom-right", "collapsed": true } }
+{ "legend": { "show": true, "corner": "bottom-right", "collapsed": true, "timestamp": true } }
 ```
+
+### Last data timestamp
+
+The panel shows the time of its newest sample at the bottom: the latest value of all time fields of all query results. The text has the date with the year, the time and the UTC offset, in the time zone of the dashboard, for example `2026-10-31 14:32:05 +01:00`. The offset is the offset at that time, so a time before a daylight saving change shows the old offset. A panel without data shows no timestamp.
+
+![Last data timestamp beside the legend, with its tooltip](docs/images/last-data-timestamp.png)
+
+- With the legend in a bottom corner, the timestamp is beside the legend, on the side of the panel middle: left of a bottom-right legend, right of a bottom-left legend. When the panel is too narrow for both in one row, the timestamp goes above the legend. When the legend opens, the timestamp moves with it.
+- With the legend in a top corner, or with no legend, the timestamp is in the bottom-right corner. When a long legend goes down to that corner, the timestamp goes to the bottom-left corner.
+- When you move the legend with the mouse or the keyboard, the timestamp stays in its place. A moved legend can cover it.
+- Move the pointer on the timestamp, focus it with Tab, or tap it on a phone, to show the tooltip, for example `Last data timestamp: 2026-10-31 14:32:05 +01:00 (Europe/Berlin, 12 seconds ago)`. The tooltip gives the name of the time zone (`UTC`, or the IANA name; for the browser zone, the zone of the browser) and the age of the sample. A tap or a click on the timestamp does not open a card.
+- To hide it, turn off **Show last data timestamp** in the **Legend** group.
 
 ### Capacity
 
@@ -546,11 +561,11 @@ The demo dashboard uses both sources: the LAN links take the port speed series `
 
 The `arrow` field selects the head of both link halves. The default is `point`, including saved configs that omit `arrow`.
 
-| Style | Head |
-| ----- | ---- |
-| `point` | A tip with a base equal to the drawn stroke width. It has no wings. |
-| `triangle` | The head with wings used before 1.4.0. Its base is wider than the stroke. |
-| `none` | No head. The stroke has a flat end at the split or port. It shows no direction mark. |
+| Style      | Head                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------ |
+| `point`    | A tip with a base equal to the drawn stroke width. It has no wings.                  |
+| `triangle` | The head with wings used before 1.4.0. Its base is wider than the stroke.            |
+| `none`     | No head. The stroke has a flat end at the split or port. It shows no direction mark. |
 
 The `point` and `triangle` heads have the same length. Their length is 8 units up to a 2-unit stroke. Each extra unit of stroke width adds 0.5 units of length.
 The `triangle` base is 8 units up to a 2-unit stroke. Each extra unit of stroke width adds 2 units to its base.
@@ -673,21 +688,21 @@ The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button
 
 ## Zoom options
 
-In the **View** group of the panel options:
+The options are in the **View** group of the panel options. **Zoom** and **Align** are rows of icon buttons, so that they fit in a narrow options pane. Move the pointer on an icon, or focus it, to see its name and meaning.
 
-| Option               | Meaning                                                                                                                                                                                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                                                                                    |
-| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                                                                               |
-| Zoom: Original       | The diagram has its original size.                                                                                                                                                                                                           |
-| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                                                                                            |
-| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                                                                               |
-| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally.                                                              |
-| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                                                                              |
-| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                                                                                 |
-| Link width min, max  | The range of the link width in pixels. The width grows with the load. The head size follows the width and the class field `arrow`. See [Arrow styles](#arrow-styles). |
-| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                                                                                 |
-| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-band)). Default 3. 0 hides the band.                                                                                                           |
+| Option               | Meaning                                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                       |
+| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                  |
+| Zoom: Original       | The diagram has its original size.                                                                                                                                              |
+| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                               |
+| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                  |
+| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally. |
+| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                 |
+| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                    |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load. The head size follows the width and the class field `arrow`. See [Arrow styles](#arrow-styles).           |
+| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                    |
+| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-band)). Default 3. 0 hides the band.                                              |
 
 ### Live zoom
 

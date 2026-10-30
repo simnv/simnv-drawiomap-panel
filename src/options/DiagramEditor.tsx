@@ -80,7 +80,7 @@ export function DiagramEditor({ value, onChange }: Props) {
             setModal('edit');
           }}
         >
-          {value?.xml ? 'Open editor' : 'New diagram'}
+          {value?.xml ? 'Edit in draw.io' : 'New diagram'}
         </Button>
         <Button variant="secondary" icon="upload" onClick={() => fileRef.current?.click()}>
           Import .drawio
