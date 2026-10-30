@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import { classSchema, overrideSchema } from '../../model/v4';
-import { itemsAt, registerCompletion, type CompletionSource } from './completion';
+import { itemsAt, registerCompletion, registerHover, type CompletionSource } from './completion';
+import { pathAt, readDraft } from './yamlPath';
 
 const BASE = `version: 4
 classes:
@@ -70,6 +71,13 @@ const labels = (items: ReturnType<typeof itemsAt>) => items.map((item) => item.l
 const keysOf = (shape: object) => Object.keys(shape);
 
 describe('itemsAt: schema keys', () => {
+  it.each(['classes', 'overrides'])('offers arrow next to linkLabel in %s', (root) => {
+    const items = complete(`${root}:\n  link:\n    arr|\n`, `${root}.link.arr`);
+    const names = labels(items);
+    expect(names[names.indexOf('linkLabel') + 1]).toBe('arrow');
+    expect(items.find((item) => item.label === 'arrow')).toMatchObject({ insertText: 'arrow: ', kind: 'key' });
+  });
+
   it('gives the keys of a class on a blank line in the class', () => {
     const items = complete(`${BASE.split('  link:')[0]}    |\n`, 'classes.host.text');
     expect(labels(items)).toEqual(keysOf(classSchema.shape));
@@ -343,11 +351,12 @@ describe('itemsAt: templates', () => {
   });
 });
 
-describe('registerCompletion', () => {
+describe('Monaco completion and hover providers', () => {
   type Provider = monacoTypes.languages.CompletionItemProvider;
 
   function fakeMonaco() {
     const providers: Provider[] = [];
+    const hovers: monacoTypes.languages.HoverProvider[] = [];
     const monaco = {
       languages: {
         CompletionItemKind: { Property: 9, Value: 13, Field: 3, Class: 5, Variable: 4, Constant: 14 },
@@ -355,9 +364,13 @@ describe('registerCompletion', () => {
           providers.push(provider);
           return { dispose: () => providers.splice(providers.indexOf(provider), 1) };
         }),
+        registerHoverProvider: vi.fn((_language: string, provider: monacoTypes.languages.HoverProvider) => {
+          hovers.push(provider);
+          return { dispose: () => hovers.splice(hovers.indexOf(provider), 1) };
+        }),
       },
     };
-    return { monaco: monaco as unknown as typeof monacoTypes, providers };
+    return { monaco: monaco as unknown as typeof monacoTypes, providers, hovers };
   }
 
   function modelOf(id: string, marked: string) {
@@ -378,6 +391,138 @@ describe('registerCompletion', () => {
     );
     return result?.suggestions ?? [];
   }
+
+  async function hover(provider: monacoTypes.languages.HoverProvider, id: string, marked: string) {
+    const { model, position } = modelOf(id, marked);
+    return provider.provideHover(model, position, {} as monacoTypes.CancellationToken);
+  }
+
+  it.each([
+    ['classes', '    ar|row: point', 3, 5, 10],
+    ['overrides', '    arrow: tri|angle', 3, 12, 20],
+    ['classes', '    arrow: "no|ne"', 3, 12, 18],
+    ['overrides', '    arrow: po|int', 3, 12, 17],
+  ])('shows arrow docs in %s at %s', async (root, line, lineNumber, startColumn, endColumn) => {
+    const { monaco, providers, hovers } = fakeMonaco();
+    const source = () =>
+      sourceFor('', {
+        pathAt: (value, at) => pathAt(readDraft(value).doc, value, at),
+      });
+    registerCompletion(monaco, 'model-a', source);
+    registerHover(monaco, 'model-a', source);
+    expect(monaco.languages.registerHoverProvider).toHaveBeenCalledWith('yaml', expect.anything());
+    const [key] = (await ask(providers[0], 'model-a', `${root}:\n  "link.part":\n    arr|\n`)).filter(
+      (item) => item.label === 'arrow'
+    );
+    const result = await hover(hovers[0], 'model-a', `${root}:\n  "link.part":\n${line}\n`);
+    expect(result).toEqual({
+      contents: [key.documentation],
+      range: { startLineNumber: lineNumber, endLineNumber: lineNumber, startColumn, endColumn },
+    });
+  });
+
+  it('scopes hover to its model and removes only its own provider on dispose', async () => {
+    const { monaco, hovers } = fakeMonaco();
+    const path = vi.fn((value: string, at: number) => pathAt(readDraft(value).doc, value, at));
+    let current = sourceFor('', { pathAt: () => null });
+    const first = registerHover(monaco, 'model-a', () => current);
+    registerHover(monaco, 'model-b', () => sourceFor('', { pathAt: path }));
+    const [a, b] = hovers;
+    const marked = 'classes:\n  link:\n    arrow: po|int\n';
+    expect(await hover(a, 'model-a', marked)).toBeNull();
+    current = sourceFor('', { pathAt: path });
+    expect(await hover(a, 'model-b', marked)).toBeNull();
+    expect(await hover(b, 'model-a', marked)).toBeNull();
+    expect(path).not.toHaveBeenCalled();
+    expect(await hover(a, 'model-a', marked)).not.toBeNull();
+    expect(path).toHaveBeenCalledWith(mark(marked).text, mark(marked).offset);
+    expect(await hover(b, 'model-b', marked)).not.toBeNull();
+    first.dispose();
+    expect(hovers).toEqual([b]);
+  });
+
+  it.each(['classes:\n  link: {ar|row: point}\n', 'overrides:\n  e-1: {arrow: no|ne}\n'])(
+    'shows arrow docs in a flow mapping: %s',
+    async (marked) => {
+      const { monaco, hovers } = fakeMonaco();
+      registerHover(monaco, 'model-a', () =>
+        sourceFor('', {
+          pathAt: (value, at) => pathAt(readDraft(value).doc, value, at),
+        })
+      );
+      const result = await hover(hovers[0], 'model-a', marked);
+      expect(result?.contents[0].value).toContain('`point` is the default and has no wings.');
+    }
+  );
+
+  it.each([
+    'classes:\n  link:\n    arrow: point # ar|row\n',
+    'classes:\n  link:\n    arrow: point\n    # ar|row\n',
+    'classes:\n  link:\n    arrow: point\n    |\n',
+    'classes:\n  link:\n    arrow: point   |\n',
+    'classes:\n  link:\n    arrow: |\n',
+    'classes:\n  link:\n    linkLabel: no|ne\n',
+    'classes:\n  link:\n    match:\n      arrow: po|int\n',
+    'classes:\n  link:\n    rows:\n      - kind: value\n        arrow: po|int\n',
+    'classes:\n  link:\n    text:\n      arrow: po|int\n',
+    'settings:\n  link:\n    arrow: po|int\n',
+    'arrow: po|int\n',
+  ])('gives no arrow hover outside an arrow key or value: %s', async (marked) => {
+    const { monaco, hovers } = fakeMonaco();
+    registerHover(monaco, 'model-a', () =>
+      sourceFor('', {
+        pathAt: (value, at) => pathAt(readDraft(value).doc, value, at),
+      })
+    );
+    expect(await hover(hovers[0], 'model-a', marked)).toBeNull();
+  });
+
+  it.each([
+    ['classes', '    arrow: |', 'point'],
+    ['overrides', '    arrow: tr|iangle', 'triangle'],
+    ['classes', '    arrow: "po|int"', 'point'],
+    ['overrides', "    arrow: 'no|ne'", 'none'],
+    ['classes', '    arrow: "po|', 'point'],
+  ])('offers the arrow values in %s at %s', async (root, line, selected) => {
+    const { monaco, providers } = fakeMonaco();
+    const marked = `${root}:\n  link:\n${line}\n`;
+    const { text, offset } = mark(marked);
+    registerCompletion(monaco, 'model-a', () =>
+      sourceFor(text, {
+        pathAt: (value, at) => pathAt(readDraft(value).doc, value, at),
+      })
+    );
+    const suggestions = await ask(providers[0], 'model-a', marked);
+    expect(suggestions.map((item) => item.label)).toEqual(['point', 'triangle', 'none']);
+    const item = suggestions.find((item) => item.label === selected)!;
+    expect(item.kind).toBe(monaco.languages.CompletionItemKind.Constant);
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+    const range = 'replace' in item.range ? item.range.replace : item.range;
+    const replaced =
+      text.slice(0, lineStart + range.startColumn - 1) + item.insertText + text.slice(lineStart + range.endColumn - 1);
+    expect(parseDocument(replaced).toJS()).toEqual({ [root]: { link: { arrow: selected } } });
+  });
+
+  it.each(['classes', 'overrides'])('documents the arrow key and values in %s', async (root) => {
+    const { monaco, providers } = fakeMonaco();
+    registerCompletion(monaco, 'model-a', () =>
+      sourceFor('', {
+        pathAt: (value, at) => pathAt(readDraft(value).doc, value, at),
+      })
+    );
+    const keys = await ask(providers[0], 'model-a', `${root}:\n  link:\n    arr|\n`);
+    const docs = keys.find((item) => item.label === 'arrow')?.documentation;
+    expect(docs).toEqual({
+      value:
+        '`point` is the default and has no wings. `triangle` uses the old triangular wings. ' +
+        '`none` uses flat ends. This field applies to links. ' +
+        'A child class inherits the arrow style from its parent class. A cell override replaces the class arrow style.',
+    });
+    const values = await ask(providers[0], 'model-a', `${root}:\n  link: {arrow: |}\n`);
+    expect(values.map((item) => item.label)).toEqual(['point', 'triangle', 'none']);
+    expect(values.map((item) => item.documentation)).toEqual([docs, docs, docs]);
+    expect(keys.find((item) => item.label === 'linkLabel')?.documentation).toBeUndefined();
+  });
 
   it('registers one yaml provider that answers only for its model', async () => {
     const { monaco, providers } = fakeMonaco();

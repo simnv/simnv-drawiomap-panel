@@ -168,8 +168,9 @@ A class is a map. Every field is optional.
 | `up`, `down` | A link only. The refIds of the transmit and the receive counter.                                                                                                                                         |
 | `capacity`   | A link only. A refId of the port speed, or `{ a2b, b2a }` for one refId for each direction.                                                                                                              |
 | `linkLabel`  | A link only. `none` (the default), `value` or `percent` (see [Link value labels](#link-value-labels)).                                                                                                   |
+| `arrow`      | A link only. `point` (the default), `triangle` or `none` (see [Arrow styles](#arrow-styles)). |
 
-`up`, `down`, `capacity` and `linkLabel` on a class whose cells are not links give one `unused-field` entry.
+`up`, `down`, `capacity`, `linkLabel` and `arrow` on a class whose cells are not links give one `unused-field` entry.
 
 ### Extends and overrides
 
@@ -541,6 +542,39 @@ A direction with no series is its own grey half, "no data"; the other half keeps
 
 The demo dashboard uses both sources: the LAN links take the port speed series `speed`, and the WAN and tunnel links carry `cap=100M`.
 
+### Arrow styles
+
+The `arrow` field selects the head of both link halves. The default is `point`, including saved configs that omit `arrow`.
+
+| Style | Head |
+| ----- | ---- |
+| `point` | A tip with a base equal to the drawn stroke width. It has no wings. |
+| `triangle` | The head with wings used before 1.4.0. Its base is wider than the stroke. |
+| `none` | No head. The stroke has a flat end at the split or port. It shows no direction mark. |
+
+The `point` and `triangle` heads have the same length. Their length is 8 units up to a 2-unit stroke. Each extra unit of stroke width adds 0.5 units of length.
+The `triangle` base is 8 units up to a 2-unit stroke. Each extra unit of stroke width adds 2 units to its base.
+On a one-way link, a point tapers along the final path to the port, including a bend.
+The stroke stops at the taper base. A triangle keeps the earlier tip position near a bend.
+A path that folds back through the taper can require a narrower base. A retraced path can require a shorter taper.
+The point tip stays at the port.
+
+```yaml
+classes:
+  link:
+    match: { key: name }
+    arrow: triangle
+  access:
+    extends: link
+    arrow: point
+overrides:
+  edge-demo:
+    arrow: none
+```
+
+A subclass inherits `arrow` unless it sets its own style. A cell override replaces the inherited style for that cell.
+The field applies to links only. There is no panel option.
+
 ### Link value labels
 
 Each link half can show its load as a small text beside the stroke, in the middle of its own half, turned to follow the edge. The text is the one the hover card shows for that direction. The labels are off by default; the class field `linkLabel` turns them on:
@@ -651,7 +685,7 @@ In the **View** group of the panel options:
 | Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally.                                                              |
 | Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                                                                              |
 | Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                                                                                 |
-| Link width min, max  | The range of the link width in pixels. The width grows with the load. The arrow head grows with the width: 8 by 8 units up to a 2-unit half; above, each unit of width adds 2 to its base and 0.5 to its length (24 wide and 12 long at 10). |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load. The head size follows the width and the class field `arrow`. See [Arrow styles](#arrow-styles). |
 | Hover kinds          | The cell kinds that open a card (see [Which cells open a card](#which-cells-open-a-card)). Default: node, link, port, other.                                                                                                                 |
 | Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](#status-band)). Default 3. 0 hides the band.                                                                                                           |
 

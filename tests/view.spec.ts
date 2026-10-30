@@ -119,7 +119,7 @@ for (const [theme, osScheme, dark] of [
   );
 }
 
-test('link arrows stand away from the bends of the link path and stand out of their stroke', async ({
+test('link arrows stand away from the bends of the link path, and a point head is as wide as its stroke', async ({
   gotoDashboardPage,
 }) => {
   // edge-ab of the hand-drawn panel has a 30 px jog exactly at the arc-length middle of the path.
@@ -169,8 +169,9 @@ test('link arrows stand away from the bends of the link path and stand out of th
     // the split keeps the longest head to the bends, at least 16 (the head is 12 long at the panel's linkWidth.max 10)
     expect(result.nearest).toBeGreaterThanOrEqual(16 - 0.01);
     expect(result.nearest).toBeGreaterThanOrEqual(result.arrowSize - 0.01);
-    // each head is at least twice as wide as the drawn stroke of its half, at any load
+    // the default arrow is `point`: the base of the head is the drawn stroke width of its half, no wings
+    // (the triangle head with wings is checked in link-strokes.spec.ts)
     expect(result.width).toBeGreaterThan(0);
-    expect(result.base).toBeGreaterThanOrEqual(2 * result.width - 0.01);
+    expect(result.base).toBeCloseTo(result.width, 1);
   }
 });

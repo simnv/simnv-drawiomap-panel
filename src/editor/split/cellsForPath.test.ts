@@ -143,6 +143,7 @@ describe('cellsForPath (spec 5.3 "The cells of a path")', () => {
     expect(setAt('classes.device')).toEqual(device);
     expect(setAt('classes.switch')).toEqual({ cells: ['s1'], lighter: ['e1'], badges: {} });
     expect(setAt('classes.switch.url')).toEqual({ cells: ['s1'], lighter: ['e1'], badges: {} });
+    expect(setAt('classes.switch.arrow')).toEqual({ cells: ['s1'], lighter: ['e1'], badges: {} });
     expect(setAt('classes.edge-sw.extends')).toEqual({ cells: ['e1'], lighter: [], badges: {} });
     expect(setAt('classes.switch.rows')).toEqual({ cells: ['s1'], lighter: ['e1'], badges: {} });
   });

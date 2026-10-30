@@ -576,6 +576,22 @@ describe('bindV4: the engine', () => {
       ['l', { bind: 'lan', key: 'sw-a', port: '3', ...(at ? { at } : {}) }, true],
     ];
 
+    it('passes the default, inherited and overridden arrow style to the renderer', () => {
+      const config = netL2Pilot();
+      expect(patch(run(config, cells(), frames), 'l').link?.arrow).toBe('point');
+      const inherited = {
+        ...config,
+        classes: {
+          ...config.classes,
+          baseArrow: { arrow: 'triangle' },
+          lan: { ...config.classes.lan, extends: 'baseArrow' },
+        },
+      };
+      expect(patch(run(inherited, cells(), frames), 'l').link?.arrow).toBe('triangle');
+      const overridden = { ...inherited, overrides: { l: { arrow: 'none' } } };
+      expect(patch(run(overridden, cells(), frames), 'l').link?.arrow).toBe('none');
+    });
+
     it('a→b takes up, b→a takes down, with the capacity of the speed refId', () => {
       const r = run(netL2Pilot(), cells(), frames);
       const l = patch(r, 'l').link!;

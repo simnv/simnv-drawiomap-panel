@@ -101,6 +101,7 @@ const fields = {
   down: refId.optional(),
   capacity: capacity.optional(), // D15, A4
   linkLabel: z.enum(['none', 'value', 'percent']).optional(), // A13 (Q8). Default: none.
+  arrow: z.enum(['point', 'triangle', 'none']).optional(), // Links only. Rendering default: point.
 };
 const klass = z.object({ extends: ident.optional(), ...fields }).strict();
 const override = z.object(fields).strict(); // D6
@@ -131,6 +132,8 @@ export type LowerBound = z.infer<typeof lowerBound>;
 export type RangeMax = number | 'auto' | 'capacity';
 /** The value label beside each link half (A13). */
 export type LinkLabelMode = NonNullable<ClassV4['linkLabel']>;
+/** The head style of each link half. */
+export type ArrowStyle = NonNullable<ClassV4['arrow']>;
 
 // ---- the parse (spec 2.5) ----
 

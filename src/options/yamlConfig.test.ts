@@ -7,6 +7,24 @@ import { localImports, SRC } from '../importGraph';
 import { readYaml, writeYaml } from './yamlConfig';
 
 describe('the YAML config writer', () => {
+  it('writes arrow after linkLabel and before unknown fields in classes and overrides', () => {
+    const text = writeYaml({
+      version: 4,
+      classes: { link: { future: true, arrow: 'triangle', linkLabel: 'percent' } },
+      overrides: { edge: { future: true, arrow: 'none', linkLabel: 'none' } },
+    });
+    expect(text).toBe(
+      'version: 4\nclasses:\n  link:\n    linkLabel: percent\n    arrow: triangle\n    future: true\n' +
+        'overrides:\n  edge:\n    linkLabel: none\n    arrow: none\n    future: true\n'
+    );
+    const read = readYaml(text);
+    expect(read.ok && read.value).toEqual({
+      version: 4,
+      classes: { link: { linkLabel: 'percent', arrow: 'triangle', future: true } },
+      overrides: { edge: { linkLabel: 'none', arrow: 'none', future: true } },
+    });
+  });
+
   it.each([
     ['demo-network', netL2Pilot],
     ['demo-enclosure', boilerPilot],

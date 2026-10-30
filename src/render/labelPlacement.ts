@@ -56,11 +56,11 @@ export type Obstacle =
   /** a cell body, a pill, a chip, a dot, an arrowhead of draw.io, the room of a status marker or a placed label */
   | { kind: 'rect'; rect: Rect; clearance: number }
   /**
-   * A convex polygon (the reserved arrowhead of an overlay half: a triangle); no clearance. `owner` is the cell id of
+   * A convex polygon, the reserved head or the hull of a bent taper, with no clearance. `owner` is the cell id of
    * the edge and `leg` the id of the leg whose half draws the head, when known: a label on the sides ±3 of a run of
    * that leg moves with the head, so the head is no obstacle for it when its centreline lies on the line of that run.
    */
-  | { kind: 'polygon'; points: [Point, Point, Point]; owner?: string; leg?: string }
+  | { kind: 'polygon'; points: Point[]; owner?: string; leg?: string }
   /** a piece of a drawn edge; `owner` is the cell id of the edge, `piece` its place in a leg polyline, when known */
   | { kind: 'segment'; a: Point; b: Point; clearance: number; owner: string; piece?: { leg: string; index: number } };
 
@@ -424,7 +424,12 @@ function segmentHits(box: OrientedBox, a: Point, b: Point, clearance: number): b
  * True when the centreline of a head (from its tip to the middle of its base) lies on the line through `a` and `b`.
  * The slack is far below the wide gap that the text keeps beyond the wing.
  */
-function headOnLine([tip, left, right]: readonly [Point, Point, Point], a: Point, b: Point): boolean {
+function headOnLine(points: readonly Point[], a: Point, b: Point): boolean {
+  // A hull with more than three vertices belongs to a bent taper. Keep it as an obstacle on every run.
+  if (points.length !== 3) {
+    return false;
+  }
+  const [tip, left, right] = points;
   const length = Math.hypot(b.x - a.x, b.y - a.y);
   const off = (p: Point) => Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / length;
   const base = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };

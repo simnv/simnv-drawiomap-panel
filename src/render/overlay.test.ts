@@ -4,6 +4,7 @@ import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { ensureOverlay, headSize, linkSplit, renderOverlay, reservedHead } from './overlay';
 import { statusColor } from '../binding/color';
+import { parsePathPoints, polylineLength, slicePolyline, type Point } from './geometry';
 
 /** The status of a patch, as `statusViewOf` gives it. */
 type PatchStatus = NonNullable<CellPatch['statusView']>;
@@ -69,10 +70,207 @@ const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
   scope: { cell: {} },
   urls: [],
   ...p,
+  // Keep the existing geometry checks on the triangle style.
+  ...(p.link ? { link: { arrow: 'triangle', ...p.link } } : {}),
 });
 const opts = { theme: createTheme(), maxWidth: 10 };
 
 const before = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+describe('arrow styles', () => {
+  it('defaults to a point with no wings and follows the drawn width on refresh', () => {
+    const { root, index } = build('M 0 0 L 200 0');
+    let arrow: Element | null = null;
+    for (const [width, length] of [
+      [2, 8],
+      [4, 9],
+      [10, 12],
+      [2, 8],
+    ]) {
+      renderOverlay(
+        root,
+        index,
+        new Map([['e1', patch('e1', { link: { arrow: undefined, a2b: half({ width }), b2a: half() } })]]),
+        opts
+      );
+      const next = root.querySelector('.dmap-arrow[data-dmap-half="a2b"]')!;
+      expect(next.getAttribute('points')).toBe(`100,0 ${100 - length},${-width / 2} ${100 - length},${width / 2}`);
+      if (arrow) {
+        expect(next).toBe(arrow);
+      }
+      arrow = next;
+      const end = root.querySelector('.dmap-half[data-dmap-half="a2b"]')!.getAttribute('points')!.split(' ').at(-1)!;
+      // The shaft stops at the full-width base.
+      expect(Number(end.split(',')[0])).toBeCloseTo(100 - length);
+      expect(reservedHead(next)).toEqual([
+        { x: 100, y: 0 },
+        { x: 88, y: -5 },
+        { x: 88, y: 5 },
+      ]);
+    }
+  });
+
+  it('draws no head for none and joins the flat halves at the split', () => {
+    const { root, index } = build('M 0 0 L 200 0');
+    const link = { arrow: 'none' as const, a2b: half(), b2a: half() };
+    renderOverlay(root, index, new Map([['e1', patch('e1', { link })]]), opts);
+    expect(root.querySelectorAll('.dmap-arrow')).toHaveLength(0);
+    const lines = Array.from(root.querySelectorAll('.dmap-half'));
+    expect(lines.map((p) => p.getAttribute('points'))).toEqual(['0,0 100,0', '100,0 200,0']);
+    expect(lines.map((p) => p.getAttribute('stroke-linecap'))).toEqual(['butt', 'butt']);
+    renderOverlay(root, index, new Map([['e1', patch('e1', { link: { ...link, b2a: undefined } })]]), opts);
+    expect(root.querySelector('.dmap-half')!.getAttribute('points')).toBe('0,0 200,0');
+  });
+
+  it('joins flat none halves on a straight run when the path midpoint is a bend', () => {
+    const { root, index } = build('M 0 0 L 100 0 L 100 100');
+    renderOverlay(
+      root,
+      index,
+      new Map([['e1', patch('e1', { link: { arrow: 'none', a2b: half(), b2a: half() } })]]),
+      opts
+    );
+    const lines = Array.from(root.querySelectorAll('.dmap-half'), (line) => line.getAttribute('points')!.split(' '));
+    expect(lines[0].at(-1)).toBe('84,0');
+    expect(lines[1][0]).toBe('84,0');
+    expect(root.querySelector('.dmap-arrow')).toBeNull();
+  });
+
+  it('keeps the point stroke joined to its base under a non-uniform path transform', () => {
+    const { root, index } = build('M 0 0 L 200 0');
+    index.get('e1')!.line!.setAttribute('transform', 'scale(2,1)');
+    Object.assign(index.get('e1')!.line!, {
+      getTotalLength: () => 200,
+      getPointAtLength: (d: number) => ({ x: d, y: 0 }),
+      getCTM: () => ({ a: 2, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+    });
+    renderOverlay(
+      root,
+      index,
+      new Map([['e1', patch('e1', { link: { arrow: 'point', a2b: half({ width: 10 }), b2a: half({ width: 10 }) } })]]),
+      opts
+    );
+    const end = root.querySelector('.dmap-half[data-dmap-half="a2b"]')!.getAttribute('points')!.split(' ').at(-1)!;
+    expect(end).toBe('188,0');
+  });
+
+  it.each(['a2b', 'b2a'] as const)('tapers %s through a short terminal run to the port', (which) => {
+    const d = which === 'a2b' ? 'M 0 0 L 100 0 L 100 50 L 106 50' : 'M 106 50 L 100 50 L 100 0 L 0 0';
+    const { root, index } = build(d);
+    renderOverlay(
+      root,
+      index,
+      new Map([['e1', patch('e1', { link: { arrow: 'point', [which]: half({ width: 10 }) } })]]),
+      opts
+    );
+    const head = root.querySelector('.dmap-arrow')!;
+    const points = head.getAttribute('points')!.split(' ');
+    expect(points[0]).toBe('106,50');
+    expect(points).toContain('105,44');
+    expect(points).toContain('95,44');
+    expectSimple(readPoints(head));
+    const line = root.querySelector('.dmap-half')!.getAttribute('points')!.split(' ');
+    expect(which === 'a2b' ? line.at(-1) : line[0]).toBe('100,44');
+    expect(reservedHead(head)?.length).toBeGreaterThan(3);
+  });
+
+  it.each(['a2b', 'b2a'] as const)('keeps the complete %s taper inside the stroke envelope', (which) => {
+    for (const d of ['M0 0 L4 0 L0 1', 'M0 0 L10 0 L10 4 L14 4', 'M400 230 L480 230 L480 250 L486 250']) {
+      const { root, index } = build(d);
+      renderOverlay(
+        root,
+        index,
+        new Map([['e1', patch('e1', { link: { arrow: 'point', [which]: half({ width: 10 }) } })]]),
+        opts
+      );
+      const path = parsePathPoints(d);
+      const head = readPoints(root.querySelector('.dmap-arrow')!);
+      expectSimple(head);
+      for (const p of head) {
+        expect(distanceToPath(p, path), `${d}: ${JSON.stringify(p)}`).toBeLessThanOrEqual(5.008);
+      }
+    }
+  });
+
+  it.each(['a2b', 'b2a'] as const)('omits the %s shaft when the point takes the whole half', (which) => {
+    for (const length of [0.0001, 0.01, 0.05, 0.1, 1, 7]) {
+      const { root, index } = build(`M0 0 L${length} 0`);
+      renderOverlay(
+        root,
+        index,
+        new Map([['e1', patch('e1', { link: { arrow: 'point', [which]: half({ width: 10 }) } })]]),
+        opts
+      );
+      expect(root.querySelector('.dmap-half')!.getAttribute('points')).toBe('');
+      const head = readPoints(root.querySelector('.dmap-arrow')!);
+      expect(head[0]).toEqual({ x: which === 'a2b' ? length : 0, y: 0 });
+      expect(Math.hypot(head[1].x - head[2].x, head[1].y - head[2].y)).toBe(10);
+    }
+  });
+
+  it('keeps both very short halves pointed and rejects a zero-length path', () => {
+    for (const length of [0, 0.04]) {
+      const { root, index } = build(`M0 0 L${length} 0`);
+      renderOverlay(
+        root,
+        index,
+        new Map([['e1', patch('e1', { link: { arrow: 'point', a2b: half(), b2a: half() } })]]),
+        opts
+      );
+      expect(root.querySelectorAll('.dmap-arrow')).toHaveLength(length ? 2 : 0);
+      for (const shaft of root.querySelectorAll('.dmap-half')) {
+        expect(shaft.getAttribute('points')).toBe('');
+      }
+    }
+  });
+
+  it('uses paired offsets with matching arc positions at a bent point', () => {
+    const d = 'M400 230 L480 230 L480 250 L486 250';
+    const { root, index } = build(d);
+    renderOverlay(
+      root,
+      index,
+      new Map([['e1', patch('e1', { link: { arrow: 'point', a2b: half({ width: 10 }) } })]]),
+      opts
+    );
+    const head = readPoints(root.querySelector('.dmap-arrow')!);
+    expectPaired(
+      head,
+      slicePolyline(parsePathPoints(d), polylineLength(parsePathPoints(d)) - 12, polylineLength(parsePathPoints(d))),
+      10
+    );
+  });
+
+  it('keeps the bend in a subpixel point and preserves its full-width base', () => {
+    const { root, index } = build('M0 0 L0.00002 0 L0.00002 0.00001');
+    renderOverlay(
+      root,
+      index,
+      new Map([['e1', patch('e1', { link: { arrow: 'point', a2b: half({ width: 10 }) } })]]),
+      opts
+    );
+    const head = readPoints(root.querySelector('.dmap-arrow')!);
+    expect(head.length).toBeGreaterThan(3);
+    expectPaired(head, parsePathPoints('M0 0 L0.00002 0 L0.00002 0.00001'), 10);
+    const n = (head.length - 1) / 2;
+    expect(head[n]).toEqual({ x: 0, y: -5 });
+    expect(head[n + 1]).toEqual({ x: 0, y: 5 });
+  });
+
+  it('rebuilds a retained link when its arrow style changes', () => {
+    const { root, index } = build('M 0 0 L 200 0');
+    for (const style of ['triangle', 'none', 'point'] as const) {
+      renderOverlay(root, index, new Map([['e1', patch('e1', { link: { arrow: style, a2b: half() } })]]), opts);
+      const heads = Array.from(root.querySelectorAll('.dmap-arrow'));
+      expect(heads).toHaveLength(style === 'none' ? 0 : 1);
+      if (heads[0]) {
+        expect(heads[0].getAttribute('points')).toBe(
+          style === 'triangle' ? '200,0 191,-6 191,6' : '200,0 191,-2 191,2'
+        );
+      }
+    }
+  });
+});
 
 describe('status paint of the halves', () => {
   const statusView: PatchStatus = {
@@ -341,7 +539,7 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     const e1 = strokes(root, 'e1');
     const e2 = strokes(root, 'e2');
     const next = round();
-    next.get('e1')!.link = { a2b: half() };
+    next.get('e1')!.link = { arrow: 'triangle', a2b: half() };
     renderOverlay(root, index, next, opts);
     const after = strokes(root, 'e1');
     expect(after).toHaveLength(2);
@@ -635,3 +833,58 @@ describe('the arrow head grows with the drawn width', () => {
     expect(pts(head(root, 'a2b'))[0]).toEqual([78, 0]);
   });
 });
+
+function readPoints(el: Element): Point[] {
+  return el
+    .getAttribute('points')!
+    .split(' ')
+    .filter(Boolean)
+    .map((p) => {
+      const [x, y] = p.split(',').map(Number);
+      return { x, y };
+    });
+}
+
+function distanceToPath(p: Point, path: Point[]): number {
+  return Math.min(
+    ...path.slice(1).map((b, i) => {
+      const a = path[i];
+      const dx = b.x - a.x,
+        dy = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+      return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+    })
+  );
+}
+
+function expectSimple(polygon: Point[]): void {
+  const cross = (a: Point, b: Point, c: Point) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i],
+      b = polygon[(i + 1) % polygon.length];
+    for (let j = i + 2; j < polygon.length; j++) {
+      if (i === 0 && j === polygon.length - 1) {
+        continue;
+      }
+      const c = polygon[j],
+        d = polygon[(j + 1) % polygon.length];
+      expect(
+        cross(a, b, c) * cross(a, b, d) < -1e-10 && cross(c, d, a) * cross(c, d, b) < -1e-10,
+        `crossed edges ${i},${j}`
+      ).toBe(false);
+    }
+  }
+}
+
+function expectPaired(head: Point[], taper: Point[], width: number): void {
+  expect(head.length % 2).toBe(1);
+  const pairs = (head.length - 1) / 2;
+  expect(Math.hypot(head[pairs].x - head[pairs + 1].x, head[pairs].y - head[pairs + 1].y)).toBeCloseTo(width, 2);
+  for (let i = 1; i <= pairs; i++) {
+    const a = head[i],
+      b = head[head.length - i];
+    const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    expect(distanceToPath(middle, taper)).toBeLessThanOrEqual(0.008);
+    expect(Math.hypot(a.x - middle.x, a.y - middle.y)).toBeCloseTo(Math.hypot(b.x - middle.x, b.y - middle.y), 6);
+  }
+}

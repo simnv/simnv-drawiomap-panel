@@ -94,9 +94,13 @@ interface Provider {
   provideCompletionItems: (model: unknown, position: Position) => { suggestions: unknown[] };
 }
 
+interface HoverProvider {
+  provideHover: (model: unknown, position: Position) => unknown;
+}
+
 /**
  * A fake Monaco for the split editor tests. The Grafana `CodeEditor` loads Monaco; the fake is a text area with the
- * same props, a model that follows the text, cursor events, markers and completion providers.
+ * same props, a model that follows the text, cursor events, markers and Monaco providers.
  */
 export function createFakeMonaco() {
   const fake = {
@@ -105,6 +109,7 @@ export function createFakeMonaco() {
     dom: null as HTMLTextAreaElement | null,
     cursor: new Set<(event: CursorEvent) => void>(),
     providers: [] as Array<{ language: string; provider: Provider; dispose: ReturnType<typeof vi.fn> }>,
+    hovers: [] as Array<{ language: string; provider: HoverProvider; dispose: ReturnType<typeof vi.fn> }>,
     setModelMarkers: vi.fn<(model: unknown, owner: string, markers: Array<{ severity: number; message: string }>) => void>(),
     model: {
       id: 'split-model-1',
@@ -139,6 +144,11 @@ export function createFakeMonaco() {
           fake.providers.push({ language, provider, dispose });
           return { dispose };
         },
+        registerHoverProvider: (language: string, provider: HoverProvider) => {
+          const dispose = vi.fn();
+          fake.hovers.push({ language, provider, dispose });
+          return { dispose };
+        },
       },
     },
     /** Sends a cursor event, as a click or a key in the code box does. */
@@ -155,6 +165,7 @@ export function createFakeMonaco() {
       fake.text = '';
       fake.cursor.clear();
       fake.providers.length = 0;
+      fake.hovers.length = 0;
       fake.setModelMarkers.mockClear();
       fake.editor.setPosition.mockClear();
       fake.editor.revealLineInCenter.mockClear();

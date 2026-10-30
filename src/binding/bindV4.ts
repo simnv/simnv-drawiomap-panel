@@ -623,7 +623,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       report.cell(rest as CellsFree, meta.id);
     }
     const feeds = linkFeeds(meta.attrs.at, 'up', 'down');
-    const link: NonNullable<PatchV4['link']> = { labelMode: eff.linkLabel ?? 'none' };
+    const link: NonNullable<PatchV4['link']> = { labelMode: eff.linkLabel ?? 'none', arrow: eff.arrow ?? 'point' };
     for (const dir of ['a2b', 'b2a'] as const) {
       const use = uses.find((u) => u.kind === feeds[dir]);
       if (!use) {

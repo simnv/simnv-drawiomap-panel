@@ -3,7 +3,15 @@ import type { z } from 'zod';
 
 import type { ReportEntry } from '../binding/report';
 import { boilerPilot, netL2Pilot } from '../fixtures/pilots-v4';
-import { classSchema, envelopeSchema, overrideSchema, parseConfig, type MatchV4, type ParsedConfig } from './v4';
+import {
+  classSchema,
+  envelopeSchema,
+  overrideSchema,
+  parseConfig,
+  type ArrowStyle,
+  type MatchV4,
+  type ParsedConfig,
+} from './v4';
 
 const schemaEntries = (entries: ReportEntry[] | undefined) => (entries ?? []).filter((e) => e.kind === 'schema');
 
@@ -136,6 +144,33 @@ describe('parseConfig (S2.5)', () => {
     expect(parsed.invalidClasses.has('a')).toBe(true);
   });
 
+  it.each(['point', 'triangle', 'none'])('accepts arrow %s on a class and a cell override', (arrow) => {
+    const parsed = parseConfig({ version: 4, classes: { link: { arrow } }, overrides: { edge: { arrow } } });
+    expect(parsed.report).toEqual([]);
+    expect(parsed.config?.classes.link).toEqual({ arrow });
+    expect(parsed.config?.overrides.edge).toEqual({ arrow });
+  });
+
+  it.each(['wings', '', null, 1, true, {}])('reports an invalid arrow %j at its YAML path', (arrow) => {
+    const parsed = parseConfig({
+      version: 4,
+      classes: { good: {}, bad: { arrow }, child: { extends: 'bad' } },
+      overrides: { good: {}, 'edge.1': { arrow } },
+    });
+    expect(parsed.report).toEqual([
+      { kind: 'schema', path: 'classes.bad.arrow', message: expect.any(String) },
+      { kind: 'schema', path: 'overrides["edge.1"].arrow', message: expect.any(String) },
+      { kind: 'class-invalid-parent', cls: 'child' },
+    ]);
+    expect(parsed.config?.classes.good).toEqual({});
+    expect(parsed.config?.overrides.good).toEqual({});
+  });
+
+  it('keeps an omitted arrow absent so a child or override preserves the inherited style', () => {
+    expect(classSchema.parse({})).not.toHaveProperty('arrow');
+    expect(overrideSchema.parse({})).not.toHaveProperty('arrow');
+  });
+
   it('accepts min auto on a history row and a chart region', () => {
     const raw = {
       version: 4,
@@ -190,6 +225,12 @@ describe('parseConfig (S2.5)', () => {
 });
 
 describe('the schema types', () => {
+  it('exports the arrow styles and keeps the class and override fields optional', () => {
+    expectTypeOf<ArrowStyle>().toEqualTypeOf<'point' | 'triangle' | 'none'>();
+    expectTypeOf<z.infer<typeof classSchema>['arrow']>().toEqualTypeOf<ArrowStyle | undefined>();
+    expectTypeOf<z.infer<typeof overrideSchema>['arrow']>().toEqualTypeOf<ArrowStyle | undefined>();
+  });
+
   it('types the match schema as MatchV4', () => {
     expectTypeOf<z.infer<typeof overrideSchema>['match']>().toEqualTypeOf<MatchV4 | undefined>();
     expectTypeOf<z.infer<typeof classSchema>['match']>().toEqualTypeOf<MatchV4 | undefined>();

@@ -29,7 +29,15 @@ export interface CompletionItem {
   kind: CompletionKind;
   /** The text that Monaco compares with the text from the range start to the cursor, when it is not the label. */
   filterText?: string;
+  documentation?: { value: string };
 }
+
+const ARROW_DOCS = {
+  value:
+    '`point` is the default and has no wings. `triangle` uses the old triangular wings. ' +
+    '`none` uses flat ends. This field applies to links. ' +
+    'A child class inherits the arrow style from its parent class. A cell override replaces the class arrow style.',
+};
 
 // ---- the schema keys (spec 5.6: "from classSchema") ----
 
@@ -759,6 +767,12 @@ function valueItems(path: PathPart[], ctx: Context): CompletionItem[] {
   if (rest.length === 2 && rest[0] === 'match') {
     return matcherItems(owner, ctx);
   }
+  if (owner.sub.length === 0 && rest.length === 1 && rest[0] === 'arrow') {
+    return scalarItems(classSchema.shape.arrow.unwrap().options, 'value', ctx).map((item) => ({
+      ...item,
+      documentation: ARROW_DOCS,
+    }));
+  }
   if (owner.root === 'classes' && owner.sub.length === 0 && rest.length === 1 && rest[0] === 'extends') {
     return scalarItems(
       classNamesOf(ctx.source.draft).filter((name) => name !== owner.name),
@@ -793,7 +807,13 @@ function keyItems(path: PathPart[], ctx: Context): CompletionItem[] {
   }
   const colon = /^[ \t]*:/.test(text.slice(scalar.end));
   const range = columns(ctx, scalar.start, scalar.end);
-  return names.map((name) => ({ label: name, insertText: colon ? name : `${name}: `, range, kind }));
+  return names.map((name) => ({
+    label: name,
+    insertText: colon ? name : `${name}: `,
+    range,
+    kind,
+    ...(name === 'arrow' && kind === 'key' ? { documentation: ARROW_DOCS } : {}),
+  }));
 }
 
 /**
@@ -862,6 +882,7 @@ export function registerCompletion(
           kind: kindOf[item.kind],
           insertText: item.insertText,
           filterText: item.filterText,
+          documentation: item.documentation,
           range: {
             startLineNumber: position.lineNumber,
             endLineNumber: position.lineNumber,
@@ -869,6 +890,48 @@ export function registerCompletion(
             endColumn: item.range.endColumn,
           },
         })),
+      };
+    },
+  });
+}
+
+/** Registers arrow documentation for one code box. Dispose it with the completion provider. */
+export function registerHover(
+  monaco: typeof monacoTypes,
+  modelId: string,
+  source: () => CompletionSource
+): monacoTypes.IDisposable {
+  return monaco.languages.registerHoverProvider('yaml', {
+    provideHover(model, position) {
+      if (model.id !== modelId) {
+        return null;
+      }
+      const text = model.getValue();
+      const offset = model.getOffsetAt(position);
+      const path = source().pathAt(text, offset);
+      const lexed = lex(text, offset);
+      if (path === null || lexed.comment) {
+        return null;
+      }
+      const scalar = scalarAt(text, offset, lexed);
+      const end = scalar.style === 'plain' ? plainEnd(text, scalar.start, lexed.flow.length > 0) : scalar.end;
+      if (!scalar.content.trim() || offset > end) {
+        return null;
+      }
+      const place = placeAt(path, text, offset, lexed, scalar);
+      const parts = place.side === 'key' ? [...place.path, scalar.content] : place.path;
+      if (parts.length !== 3 || (parts[0] !== 'classes' && parts[0] !== 'overrides') || parts[2] !== 'arrow') {
+        return null;
+      }
+      const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+      return {
+        contents: [ARROW_DOCS],
+        range: {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: scalar.start - lineStart + 1,
+          endColumn: end - lineStart + 1,
+        },
       };
     },
   });
