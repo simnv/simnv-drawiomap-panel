@@ -1,7 +1,8 @@
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import type { ArrowStyle } from '../model/v4';
-import { arrowAnchor, PathGeom, pathGeometry, Point, polylineLength, slicePolyline } from './geometry';
+import { arrowAnchor, PathGeom, pathGeometry, Point } from './geometry';
+import { pointTaper } from './pointTaper';
 import { linkStatusPaint, statusBorderWidth, statusPaint } from '../binding/color';
 
 export const OVERLAY_CLASS = 'dmap-overlay';
@@ -92,7 +93,11 @@ function el<K extends keyof SVGElementTagNameMap>(
 
 /** A coordinate for an attribute: two decimals, as draw.io writes them. */
 export const fmt = (n: number) => String(Math.round(n * 100) / 100);
-const pointsAttr = (pts: Point[]) => pts.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(' ');
+const pointsAttr = (pts: Point[], point = false) => {
+  // Keep subpixel taper samples distinct. Triangle attributes retain the existing two-decimal format.
+  const coordinate = point ? String : fmt;
+  return pts.map((p) => `${coordinate(p.x)},${coordinate(p.y)}`).join(' ');
+};
 
 /**
  * Where a half lies on its path (arc lengths in the units of `geo.length`): its run `from` to `to` and the tip of its
@@ -214,14 +219,15 @@ function turns(points: Point[]): Point[] {
   const out: Point[] = [];
   for (const p of points) {
     const b = out.at(-1);
-    if (b && Math.hypot(p.x - b.x, p.y - b.y) < 1e-8) {
+    if (b && p.x === b.x && p.y === b.y) {
       continue;
     }
     const a = out.at(-2);
     if (
       a &&
       b &&
-      Math.abs((b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x)) < 1e-8 &&
+      Math.abs((b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x)) <=
+        16 * Number.EPSILON * Math.hypot(b.x - a.x, b.y - a.y) * Math.hypot(p.x - b.x, p.y - b.y) &&
       (b.x - a.x) * (p.x - b.x) + (b.y - a.y) * (p.y - b.y) >= 0
     ) {
       out.pop();
@@ -231,7 +237,7 @@ function turns(points: Point[]): Point[] {
   return out;
 }
 
-/** A point tapers along the terminal path. Bevels at its turns stay inside the round stroke join. */
+/** A point tapers along the terminal path, with paired offsets through each turn. */
 function pointHalf(place: HalfPlace, width: number): { line: Point[]; head: Point[] } {
   const { geo, from, to, forward } = place;
   const stops = [from, ...geo.bends.filter((d) => d > from && d < to), to];
@@ -242,49 +248,8 @@ function pointHalf(place: HalfPlace, width: number): { line: Point[]; head: Poin
   if (path.length < 2) {
     return { line: path, head: [] };
   }
-  const length = polylineLength(path);
-  const base = Math.max(0, length - headSize(width, place.maxWidth, 'point').length);
-  const taper = turns(slicePolyline(path, base, length));
-  const taperLength = length - base;
-  const radii = taper.map((_, i) => {
-    const at = polylineLength(taper.slice(0, i + 1));
-    return taperLength > 0 ? (width / 2) * (1 - at / taperLength) : 0;
-  });
-  const side = (sign: number) => {
-    const out: Point[] = [];
-    const offset = (i: number, segment: number): Point => {
-      const a = taper[segment];
-      const b = taper[segment + 1];
-      const radius = (radii[i] * sign) / Math.hypot(b.x - a.x, b.y - a.y);
-      return { x: taper[i].x + (b.y - a.y) * radius, y: taper[i].y - (b.x - a.x) * radius };
-    };
-    for (let i = 0; i < taper.length - 1; i++) {
-      if (i === 0) {
-        out.push(offset(0, 0));
-        continue;
-      }
-      const a = offset(i - 1, i - 1);
-      const b = offset(i, i - 1);
-      const c = offset(i, i);
-      const d = offset(i + 1, i);
-      const p = taper[i - 1],
-        q = taper[i],
-        r = taper[i + 1];
-      const turn = (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x);
-      const denominator = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
-      if (turn * sign < 0 && Math.abs(denominator) > 1e-8) {
-        // The inner offset edges intersect. A bevel here would cross itself and leave a notch.
-        const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / denominator;
-        out.push({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
-      } else {
-        out.push(b, c);
-      }
-    }
-    return out;
-  };
-  // The shaft overlaps the base by 0.1 units to prevent an antialias seam.
-  const line = slicePolyline(path, 0, Math.min(length, base + 0.1));
-  return { line: forward ? line : line.reverse(), head: [taper.at(-1)!, ...side(1).reverse(), ...side(-1)] };
+  const { line, head } = pointTaper(path, width, headSize(width, place.maxWidth, 'point').length);
+  return { line: forward ? line : line.reverse(), head };
 }
 
 /** A convex hull reserves a bent taper without a concave-polygon collision test. */
@@ -355,7 +320,7 @@ function drawHalf(
       'data-dmap-half': which,
       'data-dmap-status': state.status,
       'data-dmap-step': state.stepIndex,
-      points: pointsAttr(pts.line),
+      points: pointsAttr(pts.line, place.style === 'point'),
       fill: 'none',
       stroke: state.color,
       'stroke-width': state.width,
@@ -372,7 +337,7 @@ function drawHalf(
             class: 'dmap-arrow',
             'data-dmap-cell': cellId,
             'data-dmap-half': which,
-            points: pointsAttr(pts.head),
+            points: pointsAttr(pts.head, place.style === 'point'),
             fill: state.color,
             'pointer-events': 'none',
           })
@@ -401,8 +366,8 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   if (drawn.width !== state.width) {
     drawn.width = state.width;
     const pts = halfPoints(drawn.place, state.width);
-    drawn.line.setAttribute('points', pointsAttr(pts.line));
-    drawn.arrow?.setAttribute('points', pointsAttr(pts.head));
+    drawn.line.setAttribute('points', pointsAttr(pts.line, drawn.place.style === 'point'));
+    drawn.arrow?.setAttribute('points', pointsAttr(pts.head, drawn.place.style === 'point'));
   }
 }
 
@@ -420,7 +385,7 @@ function drawLink(entry: CellEntry, link: NonNullable<CellPatch['link']>, maxWid
   }
   const id = entry.meta.id;
   const style = link.arrow ?? 'point';
-  const drawn: LinkDrawn = { layer, combo: comboOf(link) };
+  const drawn: LinkDrawn = { layer, combo: linkGeometryKey(link) };
   // An arrow stands on one straight run, away from the bends: the widest triangle must not stick out past a corner.
   const clear = tipClearance(maxWidth) / geo.unit;
   const place = (from: number, to: number, tip: number, forward: boolean): HalfPlace => ({
@@ -456,9 +421,9 @@ function drawLink(entry: CellEntry, link: NonNullable<CellPatch['link']>, maxWid
   return drawn;
 }
 
-/** Which halves a link has: the geometry of the overlay depends on this and the path only. */
-const comboOf = (link: NonNullable<CellPatch['link']>) =>
-  `${link.a2b ? 'a' : ''}${link.b2a ? 'b' : ''}:${link.arrow ?? 'point'}`;
+/** The half presence and arrow style that both overlay and label geometry depend on. */
+export const linkGeometryKey = (link: CellPatch['link']) =>
+  `${link?.a2b ? 'a' : ''}${link?.b2a ? 'b' : ''}:${link?.arrow ?? 'point'}`;
 
 /**
  * Draws the overlay of the patches under `root` and keeps it across calls. A link whose set of halves did not change
@@ -483,7 +448,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
     const link = drawnHalves(patch, opts.theme);
     liveLinks.add(id);
     const drawn = state.links.get(id);
-    if (drawn && drawn.combo === comboOf(link) && drawn.layer.parentNode) {
+    if (drawn && drawn.combo === linkGeometryKey(link) && drawn.layer.parentNode) {
       if (link.a2b && drawn.a2b) {
         updateHalf(drawn.a2b, link.a2b);
       }

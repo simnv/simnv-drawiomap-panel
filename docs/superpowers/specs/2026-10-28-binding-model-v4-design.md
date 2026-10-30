@@ -25,8 +25,9 @@
 | Date | Previous decision | Owner decision | Sections |
 | --- | --- | --- | --- |
 | 2026-10-30, panel 1.4.0 | Every link half uses the head with wings. | Add the optional class and cell override field `arrow: point\|triangle\|none`. The default is `point`, also for saved configs that omit the field. There is no panel option. | 2.2, 2.3, 3.8 |
+| 2026-10-30, review correction | Every point retains its full base on every path. | A degenerate fold keeps a simple outline inside the stroke envelope and a tip at the port. Its base width or symmetry can change. | 2.3, 3.8 |
 
-The owner note "Arrow style" of 2026-10-30 records this decision. This row overrides the previous head style.
+The owner note "Arrow style" of 2026-10-30 records this decision. The rows override the previous head style and define the fold exception.
 
 ## 0. Changes since the reviews
 
@@ -351,7 +352,11 @@ The schema leaves an omitted field absent. The panel applies the default after c
 Both link halves use the same style. There is no panel option.
 The point base equals the drawn stroke width. Its length is the length from `headSize()`.
 On a one-way link, the point tapers along the final path to the port, including a bend.
-The stroke stops at the taper base with a small overlap to prevent a seam.
+The stroke stops at the taper base without overlap. A taper that takes the whole half omits the shaft.
+Both taper boundaries use paired offsets at the same arc positions. Each offset stays within half the drawn width of the centreline.
+A degenerate fold crosses the full-width base again, crosses a nonadjacent centreline segment, or retraces an adjacent segment.
+For these paths only, the renderer can reduce the base width or symmetry to keep a simple, contained outline.
+An exact retrace can use a shorter taper on its final segment. The tip stays at the port.
 The label layer reserves the point at the maximum width. A bent taper uses its conservative convex hull.
 The own-head exemption applies only to a straight head on the same run as the label.
 The triangle keeps the earlier geometry, including a tip that moves back from a bend and the full stroke past that tip.

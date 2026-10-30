@@ -40,7 +40,7 @@ import {
   type Rect,
 } from './labelPlacement';
 import { alphaOf, maxBodyWidth, statusBorderWidth } from '../binding/color';
-import { fmt, headSize, linkSplit, OVERLAY_CLASS, reservedHead } from './overlay';
+import { fmt, headSize, linkGeometryKey, linkSplit, OVERLAY_CLASS, reservedHead } from './overlay';
 import { readViewBox, viewScaleOf } from './zoom';
 
 /*
@@ -163,10 +163,7 @@ export function renderLinkLabels(
   // the obstacles depend on every patched cell (its arrows, its stroke, the split of its halves)
   const patched = Array.from(patches.keys())
     .sort()
-    .map((id) => {
-      const { a2b, b2a } = halvesOf(patches, id);
-      return `${id}:${a2b ? 'a' : ''}${b2a ? 'b' : ''}:${patches.get(id)?.link?.arrow ?? 'point'}`;
-    });
+    .map((id) => `${id}:${linkGeometryKey(patches.get(id)?.link)}`);
   const key = [
     slots.map((s) => `${s.cellId}:${s.which}:${s.mode}`).join('\n'),
     patched.join('\n'),

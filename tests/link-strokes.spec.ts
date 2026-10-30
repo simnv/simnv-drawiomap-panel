@@ -86,7 +86,7 @@ for (const scale of [1, 2]) {
     expect(bentPoints).toContain('475,244');
     expect(bentPoints.length).toBeGreaterThan(3);
     const bentLine = panel.locator('polyline.dmap-half[data-dmap-cell="point-bent"]');
-    expect((await bentLine.getAttribute('points'))!.split(' ').at(-1)).toBe('480,244.1');
+    expect((await bentLine.getAttribute('points'))!.split(' ').at(-1)).toBe('480,244');
     const region = await panel
       .locator('polygon.dmap-arrow[data-dmap-cell="point"]')
       .first()
@@ -103,6 +103,8 @@ for (const scale of [1, 2]) {
           width: box.width,
           bentX: bentBase.x - box.x,
           bentY: bentBase.y - box.y,
+          elbowX: new DOMPoint(480, 250).matrixTransform(m).x - box.x,
+          elbowY: new DOMPoint(480, 250).matrixTransform(m).y - box.y,
         };
       });
     expect(region.scale).toBeCloseTo(scale, 2);
@@ -146,10 +148,41 @@ for (const scale of [1, 2]) {
           samples++;
           seam += Number(at(region.bentX, region.bentY + y));
         }
-        return { outside, seam, samples };
+        // The old outer bevel paints below the elbow, beside the short run to the port.
+        let spur = 0;
+        for (const x of [0, 0.5, 1]) {
+          spur += Number(at(region.elbowX + x * region.scale, region.elbowY + 2 * region.scale));
+        }
+        // Sample both sides of the tip. Its narrow end must stay on the final centreline.
+        let tipOutside = 0;
+        for (const x of [4.5, 5, 5.5]) {
+          for (const sign of [-1, 1]) {
+            tipOutside += Number(at(region.elbowX + x * region.scale, region.elbowY + sign * 1.75 * region.scale));
+          }
+        }
+        const crop = document.createElement('canvas');
+        const size = 24 * region.scale * k;
+        crop.width = crop.height = Math.round(size * 4);
+        const cropContext = crop.getContext('2d')!;
+        cropContext.imageSmoothingEnabled = false;
+        cropContext.drawImage(
+          canvas,
+          (region.elbowX - 9 * region.scale) * k,
+          (region.elbowY - 12 * region.scale) * k,
+          size,
+          size,
+          0,
+          0,
+          crop.width,
+          crop.height
+        );
+        return { outside, seam, samples, spur, tipOutside, crop: crop.toDataURL('image/png').split(',')[1] };
       },
       { png: shot.toString('base64'), region }
     );
+    fs.writeFileSync(`local/arrows-port-end-${scale}x-crop-4x.png`, Buffer.from(pixels.crop, 'base64'));
+    expect(pixels.spur, 'the bent point has no elbow spur beside the port').toBe(0);
+    expect(pixels.tipOutside, 'both sides of the port tip remain in the taper').toBe(0);
     expect(pixels.outside, 'point heads add no colour outside the stroke band').toBe(0);
     expect(pixels.seam, 'both stroke/head joins stay solid').toBe(pixels.samples);
   });

@@ -556,6 +556,8 @@ The `point` and `triangle` heads have the same length. Their length is 8 units u
 The `triangle` base is 8 units up to a 2-unit stroke. Each extra unit of stroke width adds 2 units to its base.
 On a one-way link, a point tapers along the final path to the port, including a bend.
 The stroke stops at the taper base. A triangle keeps the earlier tip position near a bend.
+A path that folds back through the taper can require a narrower base. A retraced path can require a shorter taper.
+The point tip stays at the port.
 
 ```yaml
 classes:
