@@ -51,17 +51,14 @@ export function stampCorner(corner: LegendCorner, legend: Box | null, stamp: Siz
     { right: EDGE, bottom: EDGE },
     { left: EDGE, bottom: EDGE },
   ];
-  if (!legend) {
-    return corners[0];
-  }
   let candidates = corners;
-  if (corner === 'bottom-right') {
+  if (legend && corner === 'bottom-right') {
     const right = area.width - legend.x + EDGE;
     candidates = [
       { right, bottom: EDGE },
       { right: EDGE, bottom: area.height - legend.y + EDGE },
     ];
-  } else if (corner === 'bottom-left') {
+  } else if (legend && corner === 'bottom-left') {
     candidates = [
       { left: legend.x + legend.width + EDGE, bottom: EDGE },
       { left: EDGE, bottom: area.height - legend.y + EDGE },
@@ -73,10 +70,12 @@ export function stampCorner(corner: LegendCorner, legend: Box | null, stamp: Siz
   };
   const inside = (b: Box) =>
     b.x >= EDGE && b.y >= EDGE && b.x + b.width <= area.width - EDGE && b.y + b.height <= area.height - EDGE;
-  // In a tiny panel no place fits: a place that leaves the panel is better than one that covers the legend.
+  // Keep the measured box when hidden, so a larger panel can show the timestamp again.
   return (
-    candidates.find((c) => inside(box(c)) && !overlaps(box(c), legend)) ??
-    candidates.find((c) => !overlaps(box(c), legend)) ??
-    candidates[0]
+    candidates.find((c) => inside(box(c)) && (!legend || !overlaps(box(c), legend))) ?? {
+      right: EDGE,
+      bottom: EDGE,
+      visibility: 'hidden',
+    }
   );
 }

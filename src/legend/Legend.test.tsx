@@ -392,6 +392,12 @@ describe('Legend', () => {
       fireEvent.doubleClick(handle);
       expect(legend.style.top).toBe('56px');
     });
+    it('caps the legend below its usual minimum in a panel shorter than 24 px', () => {
+      PANEL.h = 20;
+      const { legend } = view({ collapsed: false, corner: 'bottom-right', style: { right: 4, bottom: 4 } });
+      expect(parseFloat(legend.style.maxHeight)).toBeLessThanOrEqual(PANEL.h - 8);
+    });
+
     it('keeps the entries highlight working in an open legend that moved', () => {
       const { legend, onHighlight } = view({ collapsed: false });
       drag(within(legend).getByRole('button', { name: 'Legend' }), [300, 260], [200, 160]);

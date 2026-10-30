@@ -191,7 +191,10 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     const p = posRef.current;
     if (p === null) {
       const top = typeof style?.top === 'number' ? style.top : null;
-      const maxHeight = Math.max(24, Math.min(m.area.height / 2, m.area.height - (top ?? 4) - 4));
+      const maxHeight = Math.max(
+        0,
+        Math.min(m.area.height - 8, Math.max(24, Math.min(m.area.height / 2, m.area.height - (top ?? 4) - 4)))
+      );
       // the top offset (the reset button, the status band) never pushes the legend out of a short panel
       const height = Math.min(Math.max(m.box.height, rootRef.current?.scrollHeight ?? 0), maxHeight);
       const fitTop = top === null ? null : Math.max(0, Math.min(top, m.area.height - height));

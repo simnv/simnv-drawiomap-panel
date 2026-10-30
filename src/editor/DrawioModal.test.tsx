@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DrawioModal } from './DrawioModal';
 import { HELLO_TIMEOUT_MS } from './availability';
+import { PluginDialog } from './popup/PluginDialog';
 
 vi.hoisted(() => {
   if (!window.localStorage) {
@@ -55,6 +56,52 @@ async function settle(ms = 0) {
     await vi.advanceTimersByTimeAsync(ms);
   });
 }
+
+describe('editor dialog responsive geometry', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => notFound())
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(['draw.io', 'Edit bindings'])('%s fills narrow and short landscape viewports', async (editor) => {
+    const view = render(
+      editor === 'draw.io' ? (
+        <DrawioModal xml="" title="t" mode="edit" isDark={false} onSave={() => {}} onClose={() => {}} />
+      ) : (
+        <PluginDialog title="Edit bindings" onDismiss={() => {}}>
+          <button>Binding</button>
+        </PluginDialog>
+      )
+    );
+    if (editor === 'draw.io') {
+      await screen.findByRole('alert');
+    }
+    const dialog = screen.getByRole('dialog');
+    // jsdom does not evaluate media queries. Inspect the emitted rules that target the actual dialog instead.
+    const rules = Array.from(document.styleSheets).flatMap((sheet) => Array.from(sheet.cssRules));
+    const fullscreen = rules
+      .filter((rule): rule is CSSMediaRule => 'media' in rule)
+      .flatMap((media) =>
+        Array.from(media.cssRules)
+          .filter((rule): rule is CSSStyleRule => 'selectorText' in rule)
+          .filter((rule) => dialog.matches(rule.selectorText) && ['100%', '100vw'].includes(rule.style.width))
+          .map((rule) => ({ media: media.media.mediaText, style: rule.style }))
+      );
+    expect(fullscreen).toHaveLength(1);
+    // The comma is OR: includes 620x800, the 640px/480px boundaries and landscape phones such as 844x390.
+    expect(fullscreen[0].media).toBe('(max-width: 640px), (max-height: 480px)');
+    expect(fullscreen[0].style.height).toBe('100dvh');
+    expect(fullscreen[0].style.getPropertyValue('border-radius')).toBe('0');
+    const desktop = rules
+      .filter((rule): rule is CSSStyleRule => 'selectorText' in rule)
+      .find((rule) => dialog.matches(rule.selectorText) && rule.style.width === '96vw');
+    expect(desktop?.style.height).toBe('94dvh');
+    view.unmount();
+  });
+});
 
 describe('DrawioModal start-up', () => {
   const onClose = vi.fn();

@@ -212,6 +212,45 @@ describe('MatchReport in the split editor', () => {
 describe('MatchReport', () => {
   const empty = { perClass: new Map(), perUse: new Map() };
 
+  it('puts only the active tab before the report controls in the tab order', () => {
+    const perClass = new Map([
+      ['dev', { cells: 2, zero: 1, one: 1, many: 0 }],
+      ['sw', { cells: 1, zero: 0, one: 1, many: 0 }],
+      ['lan', { cells: 1, zero: 0, one: 1, many: 0 }],
+    ]);
+    render(
+      <MatchReport entries={[]} counts={{ perClass, perUse: new Map() }} onPick={() => {}} follow={{ group: 'sw' }} />
+    );
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    const stops = Array.from(report().querySelectorAll<HTMLButtonElement>('button')).filter((el) => el.tabIndex >= 0);
+    expect(stops).toEqual([tabOf('sw'), within(report()).getByRole('button', { name: 'sw, first use' })]);
+  });
+
+  it('keeps one tab stop when classes appear, move, disappear, and return', () => {
+    const cells = { cells: 1, zero: 0, one: 1, many: 0 };
+    const view = (classes: string[]) => (
+      <MatchReport
+        entries={[]}
+        counts={{ perClass: new Map(classes.map((cls) => [cls, cells])), perUse: new Map() }}
+        onPick={() => {}}
+      />
+    );
+    const { rerender } = render(view(['dev', 'sw']));
+    fireEvent.click(tabOf('sw'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    rerender(view(['dev', 'sw', 'lan']));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    rerender(view(['sw', 'lan', 'dev']));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+    rerender(view(['lan', 'dev']));
+    expect(active()).toBe('lan');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1]);
+    rerender(view([]));
+    expect(within(report()).queryAllByRole('tab')).toHaveLength(0);
+    rerender(view(['dev', 'lan']));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1]);
+  });
+
   it('shows each orphan label set in order and the separate overflow count', () => {
     const labels = Array.from({ length: 50 }, (_, i) => ({ job: `node-${i}`, site: 'demo' }));
     render(
@@ -330,15 +369,20 @@ describe('MatchReport', () => {
     fireEvent.keyDown(tabOf('dev'), { key: 'ArrowRight' });
     expect(active()).toBe('sw');
     expect(document.activeElement).toBe(tabOf('sw'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
     fireEvent.keyDown(tabOf('sw'), { key: 'End' });
     expect(active()).toBe('lan');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
     fireEvent.keyDown(tabOf('lan'), { key: 'ArrowRight' });
     expect(active()).toBe('dev');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
     fireEvent.keyDown(tabOf('dev'), { key: 'ArrowLeft' });
     expect(active()).toBe('lan');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
     fireEvent.keyDown(tabOf('lan'), { key: 'Home' });
     expect(active()).toBe('dev');
     expect(document.activeElement).toBe(tabOf('dev'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
   });
 
   it('opens the tab of each new follow request, also for the same class again', () => {
@@ -353,14 +397,18 @@ describe('MatchReport', () => {
     );
     expect(active()).toBe('sw');
     fireEvent.click(tabOf('dev'));
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
     rerender(<MatchReport entries={entries} counts={counts} onPick={() => {}} follow={{ group: 'sw' }} />);
     expect(active()).toBe('sw');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
     // null: the tab of the entries without a class
     rerender(<MatchReport entries={entries} counts={counts} onPick={() => {}} follow={{ group: null }} />);
     expect(active()).toBe('Not in a class1');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
     // a class with no tab keeps the tab
     rerender(<MatchReport entries={entries} counts={counts} onPick={() => {}} follow={{ group: 'nope' }} />);
     expect(active()).toBe('Not in a class1');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
   });
 
   it('an arrow key moves from the focused tab, also when it is not the open tab', () => {
@@ -392,5 +440,6 @@ describe('MatchReport', () => {
     expect(active()).toBe('dev');
     rerender(<MatchReport entries={[]} counts={after} onPick={() => {}} follow={follow} />);
     expect(active()).toBe('new');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
   });
 });

@@ -554,6 +554,8 @@ test.describe('the split view at 1440×900 (P3.11)', () => {
     // The report has one tab per class. The cursor in a class lights its cells and opens the tab of the class, so the
     // screenshot shows the link between the text, the diagram and the report.
     const report = matchReport(dialog);
+    const tabStops = report.locator('[role="tab"][tabindex="0"]');
+    await expect(tabStops).toHaveCount(1);
     // the classes in the order of the stored config, then maybe the tab of the entries without a class; a count of
     // entries can follow the name
     const tabNames = async () => (await report.getByRole('tab').allTextContents()).map((t) => t.replace(/\d+$/, ''));
@@ -571,6 +573,13 @@ test.describe('the split view at 1440×900 (P3.11)', () => {
     const next = report.getByRole('tab', { name: new RegExp(`^${afterRouters}\\d*$`) });
     await expect(next).toHaveAttribute('aria-selected', 'true');
     await expect(next).toBeFocused();
+    await expect(tabStops).toHaveCount(1);
+    await expect(next).toHaveAttribute('tabindex', '0');
+    // Tab leaves the class tabs; Shift+Tab returns to the selected class.
+    await page.keyboard.press('Tab');
+    expect(await report.getByRole('tablist').evaluate((el) => el.contains(document.activeElement))).toBe(false);
+    await page.keyboard.press('Shift+Tab');
+    await expect(next).toBeFocused();
     await cursorToLine(dialog, /^ {2}trend-region:$/);
     await expect(report.getByRole('tab', { name: /^trend-region/ })).toHaveAttribute('aria-selected', 'true');
     await cursorToLine(dialog, /^ {2}routers:$/);
@@ -583,6 +592,53 @@ test.describe('the split view at 1440×900 (P3.11)', () => {
       await dialog.getByTestId('dmap-pane-report').screenshot({ path: 'local/split-editor-tabs.png' });
     }
   });
+});
+
+test('bindings and draw.io dialogs share viewport geometry at both phone breakpoints', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const uid = await createDiagram(config);
+  const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const dialog = await openSplitEditor(page);
+  const viewports = [
+    { width: 641, height: 800 },
+    { width: 640, height: 800 },
+    { width: 620, height: 800 },
+    { width: 844, height: 390 },
+  ];
+  const frames = [];
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    const full = viewport.width <= 640 || viewport.height <= 480;
+    await expect
+      .poll(async () => (await splitDialog(page).boundingBox())!.width)
+      .toBeCloseTo(viewport.width * (full ? 1 : 0.96), 0);
+    const frame = (await splitDialog(page).boundingBox())!;
+    expect(Math.abs(frame.height - viewport.height * (full ? 1 : 0.94))).toBeLessThan(2);
+    frames.push(frame);
+  }
+  await splitDialog(page).getByRole('button', { name: 'Close', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await edit.getCustomOptions('Diagram').expand();
+  await page.getByTestId('dmap-open-editor').click();
+  const drawio = page.getByRole('dialog').filter({ has: page.getByTestId('dmap-editor-modal') });
+  await expect(drawio).toBeVisible();
+  for (const [i, viewport] of viewports.entries()) {
+    await page.setViewportSize(viewport);
+    await expect.poll(async () => (await drawio.boundingBox())!.width).toBeCloseTo(frames[i].width, 0);
+    const frame = (await drawio.boundingBox())!;
+    for (const dimension of ['x', 'y', 'width', 'height'] as const) {
+      expect(
+        Math.abs(frame[dimension] - frames[i][dimension]),
+        `${viewport.width}x${viewport.height} ${dimension}`
+      ).toBeLessThan(2);
+    }
+  }
+  await drawio.screenshot({ path: 'local/ux-fixes-drawio-landscape.png' });
 });
 
 test.describe('the split view on a phone (P3.13)', () => {

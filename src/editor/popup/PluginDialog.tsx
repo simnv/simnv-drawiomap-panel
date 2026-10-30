@@ -12,7 +12,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { IconButton, useStyles2 } from '@grafana/ui';
 import { useSandboxHost } from '../../util/sandboxHost';
-import { DIALOG_VH, DIALOG_VW } from '../dialogSize';
+import { DIALOG_SHEET_MEDIA, DIALOG_VH, DIALOG_VW } from '../dialogSize';
 import { isTop, pop, push } from './overlayStack';
 import { usePopupKeys } from './usePopupKeys';
 
@@ -28,10 +28,6 @@ import { usePopupKeys } from './usePopupKeys';
  */
 
 const noop = () => {};
-
-/** Below this viewport width, or height, the dialog is a full-screen sheet. */
-export const SHEET_BELOW = 640;
-export const SHEET_BELOW_HEIGHT = 480;
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
@@ -280,7 +276,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border: 1px solid ${theme.colors.border.weak};
     background-clip: padding-box;
     outline: none;
-    @media (max-width: ${SHEET_BELOW}px), (max-height: ${SHEET_BELOW_HEIGHT}px) {
+    ${DIALOG_SHEET_MEDIA} {
       inset: 0;
       width: 100%;
       height: 100vh;
@@ -308,7 +304,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     minWidth: 0,
     display: 'flex',
     padding: theme.spacing(0, 2, 2),
-    [`@media (max-width: ${SHEET_BELOW}px), (max-height: ${SHEET_BELOW_HEIGHT}px)`]: {
+    [DIALOG_SHEET_MEDIA]: {
       padding: theme.spacing(0, 1, 1),
     },
   }),

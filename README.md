@@ -531,6 +531,7 @@ The panel shows the time of its newest sample at the bottom: the latest value of
 
 - With the legend in a bottom corner, the timestamp is beside the legend, on the side of the panel middle: left of a bottom-right legend, right of a bottom-left legend. When the panel is too narrow for both in one row, the timestamp goes above the legend. When the legend opens, the timestamp moves with it.
 - With the legend in a top corner, or with no legend, the timestamp is in the bottom-right corner. When a long legend goes down to that corner, the timestamp goes to the bottom-left corner.
+- In a narrow panel, the timestamp wraps onto two lines: the date, then the time and offset. If neither place fits inside the panel, the timestamp hides until there is space.
 - When you move the legend with the mouse or the keyboard, the timestamp stays in its place. A moved legend can cover it.
 - Move the pointer on the timestamp, focus it with Tab, or tap it on a phone, to show the tooltip, for example `Last data timestamp: 2026-10-31 14:32:05 +01:00 (Europe/Berlin, 12 seconds ago)`. The tooltip gives the name of the time zone (`UTC`, or the IANA name; for the browser zone, the zone of the browser) and the age of the sample. A tap or a click on the timestamp does not open a card.
 - To hide it, turn off **Show last data timestamp** in the **Legend** group.

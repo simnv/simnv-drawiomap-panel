@@ -84,12 +84,20 @@ describe('stampCorner', () => {
     expect(stampCorner('top-right', at('top-right', 200, 80, short), stamp, short)).toEqual({ left: 4, bottom: 4 });
   });
 
-  it('never covers the legend, also when no place fits in the panel', () => {
+  it('hides the timestamp when neither place fits beside a short expanded legend', () => {
+    const short = { width: 375, height: 64 };
+    expect(stampCorner('bottom-right', at('bottom-right', 280, 32, short), stamp, short).visibility).toBe('hidden');
+  });
+
+  it('hides the timestamp when no legend shows and the timestamp cannot fit inside the panel', () => {
+    expect(stampCorner('bottom-right', null, stamp, { width: 120, height: 100 }).visibility).toBe('hidden');
+    expect(stampCorner('bottom-right', null, stamp, { width: 200, height: 20 }).visibility).toBe('hidden');
+  });
+
+  it('hides the timestamp when no place fits in the panel', () => {
     const tiny = { width: 200, height: 60 };
     const legend = at('bottom-right', 190, 50, tiny);
     const place = stampCorner('bottom-right', legend, stamp, tiny);
-    // left of the legend, out of the panel on the left
-    expect(place).toEqual({ right: 200 - legend.x + 4, bottom: 4 });
-    expect(200 - Number(place.right) - stamp.width + stamp.width).toBeLessThanOrEqual(legend.x);
+    expect(place.visibility).toBe('hidden');
   });
 });

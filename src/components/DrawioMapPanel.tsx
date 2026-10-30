@@ -21,10 +21,10 @@ import { useStagePaint } from '../stage/useStagePaint';
 import { reportLine, useBoundDiagram } from '../stage/useBoundDiagram';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
-import { legendCorners, stampCorner } from './legendCorners';
+import { legendCorners } from './legendCorners';
 import { LastDataStamp } from './LastDataStamp';
 import { lastSampleTime } from '../query/frames';
-import type { Box, Size } from '../legend/position';
+import type { Box } from '../legend/position';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
 import { buildLegendV4 } from '../legend/model';
@@ -312,11 +312,6 @@ function DrawioMapPanelView(props: ViewProps) {
       ),
     []
   );
-  const [stampSize, setStampSize] = useState<Size>({ width: 0, height: 0 });
-  const onStampSize = useCallback(
-    (z: Size) => setStampSize((old) => (old.width === z.width && old.height === z.height ? old : z)),
-    []
-  );
   const stampRef = useRef<HTMLElement>(null);
   const lastTime = useMemo(
     () => (legendOptions.timestamp === false ? undefined : lastSampleTime(data.series)),
@@ -519,8 +514,9 @@ function DrawioMapPanelView(props: ViewProps) {
           ref={stampRef}
           time={lastTime}
           timeZone={timeZone}
-          style={stampCorner(legendCorner, legendOptions.show ? legendBox : null, stampSize, { width, height })}
-          onSize={onStampSize}
+          corner={legendCorner}
+          legend={legendOptions.show ? legendBox : null}
+          area={{ width, height }}
         />
       )}
       {legend}

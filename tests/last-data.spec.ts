@@ -18,11 +18,16 @@ test.use({ timezoneId: 'Europe/Berlin' });
 const STAMP = /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d [+-]\d\d:\d\d$/;
 
 /** A copy of the demo dashboard with changed options of the portograph panel (id 1). Returns the uid. */
-async function demoCopy(request: APIRequestContext, uid: string, options: Record<string, unknown>) {
+async function demoCopy(
+  request: APIRequestContext,
+  uid: string,
+  options: Record<string, unknown>,
+  gridPos?: { x: number; y: number; w: number; h: number }
+) {
   const demo = await (await request.get('/api/dashboards/uid/drawiomap-demo')).json();
   const dashboard = { ...demo.dashboard, id: null, uid, title: uid, refresh: '', panels: [] as unknown[] };
   const panel = demo.dashboard.panels.find((p: { id: number }) => p.id === 1);
-  dashboard.panels = [{ ...panel, options: { ...panel.options, ...options } }];
+  dashboard.panels = [{ ...panel, ...(gridPos ? { gridPos } : {}), options: { ...panel.options, ...options } }];
   const response = await request.post('/api/dashboards/db', { data: { dashboard, overwrite: true } });
   expect(response.ok(), await response.text()).toBe(true);
   return uid;
@@ -34,6 +39,7 @@ async function apart(page: Page) {
   const stamp = panel.getByTestId('dmap-last-data');
   const legend = panel.getByTestId('dmap-legend');
   await expect(stamp).toHaveText(STAMP);
+  await expect(stamp).toBeVisible();
   await expect(legend).toBeVisible();
   // the stamp follows the legend size in the next frame
   await expect.poll(async () => overlaps(await box(stamp), await box(legend))).toBe(false);
@@ -120,6 +126,90 @@ test('the timestamp and an open legend do not overlap in a narrow panel', async 
       await gotoDashboardPage({ uid });
       await apart(page);
     }
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});
+
+test('a hidden legend lets a narrow timestamp wrap, then hide when neither line fits', async ({
+  page,
+  request,
+  gotoDashboardPage,
+}, testInfo) => {
+  const uid = await demoCopy(
+    request,
+    `last-data-wrap-${testInfo.workerIndex}-${Date.now()}`,
+    {
+      legend: { show: false },
+    },
+    { x: 0, y: 0, w: 4, h: 6 }
+  );
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await gotoDashboardPage({ uid });
+    const panel = page.getByTestId('dmap-panel').first();
+    const stamp = panel.getByTestId('dmap-last-data');
+    await expect(stamp).toBeVisible();
+    await expect(stamp).toHaveText(STAMP);
+    await expect.poll(async () => inside(await box(stamp), await box(panel))).toBe(true);
+    expect((await box(stamp)).height).toBeGreaterThan(28);
+    await stamp.screenshot({ path: 'local/ux-fixes-timestamp-wrap.png' });
+    // Two grid columns cannot hold the time and offset, even on separate lines.
+    await demoCopy(request, uid, { legend: { show: false } }, { x: 0, y: 0, w: 2, h: 6 });
+    await gotoDashboardPage({ uid });
+    await expect(stamp).toBeHidden();
+    // Grafana stacks the panel at this viewport width. The hidden timestamp must recover after the resize.
+    await page.setViewportSize({ width: 700, height: 900 });
+    await expect(stamp).toBeVisible();
+    expect((await box(stamp)).height).toBe(28);
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});
+
+test('a short panel keeps the expanded legend inside and hides a timestamp with no room', async ({
+  page,
+  request,
+  gotoDashboardPage,
+}, testInfo) => {
+  const uid = await demoCopy(
+    request,
+    `last-data-short-${testInfo.workerIndex}-${Date.now()}`,
+    {
+      legend: { show: true, corner: 'bottom-right', collapsed: false },
+    },
+    { x: 0, y: 0, w: 8, h: 2 }
+  );
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await gotoDashboardPage({ uid });
+    const panel = page.getByTestId('dmap-panel').first();
+    const legend = panel.getByTestId('dmap-legend');
+    await expect(legend).toBeVisible();
+    await expect.poll(async () => inside(await box(legend), await box(panel))).toBe(true);
+    await expect(panel.getByTestId('dmap-last-data')).toBeHidden();
+    await panel.screenshot({ path: 'local/ux-fixes-short-panel.png' });
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});
+
+test('a short panel wraps the timestamp beside an expanded legend when two lines fit', async ({
+  page,
+  request,
+  gotoDashboardPage,
+}, testInfo) => {
+  const uid = await demoCopy(
+    request,
+    `last-data-side-wrap-${testInfo.workerIndex}-${Date.now()}`,
+    { legend: { show: true, corner: 'bottom-right', collapsed: false } },
+    { x: 0, y: 0, w: 10, h: 3 }
+  );
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await gotoDashboardPage({ uid });
+    const { stamp } = await apart(page);
+    expect((await box(stamp)).height).toBeGreaterThan(28);
   } finally {
     await request.delete(`/api/dashboards/uid/${uid}`);
   }

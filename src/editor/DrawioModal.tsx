@@ -14,7 +14,7 @@ import {
   ProtocolState,
 } from './protocol';
 import { useOverlay } from './popup/overlayStack';
-import { DIALOG_VH, DIALOG_VW } from './dialogSize';
+import { DIALOG_SHEET_MEDIA, DIALOG_VH, DIALOG_VW } from './dialogSize';
 import { parseFileRequest, readEditorFile } from './files';
 import { bundledEditorBase, editorTarget } from './target';
 import { EditorLoad, HELLO_TIMEOUT_MS, nextLoad, probeEditor } from './availability';
@@ -34,7 +34,7 @@ const styles = {
       display: flex;
       flex-direction: column;
     }
-    @media (max-width: 600px) {
+    ${DIALOG_SHEET_MEDIA} {
       && {
         top: 0;
         transform: none;

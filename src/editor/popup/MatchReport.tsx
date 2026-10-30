@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Tab, TabsBar, useStyles2 } from '@grafana/ui';
@@ -170,9 +170,16 @@ export function MatchReport({ entries, counts, onPick, follow }: MatchReportProp
     groups.find((g) => g.entries.length) ??
     groups[0];
   const tabRefs = useRef<Array<HTMLElement | null>>([]);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  // Grafana Tab overwrites tabIndex props. Update the DOM after each render, including changes to the classes.
+  useLayoutEffect(() => {
+    for (const el of tabsRef.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []) {
+      el.tabIndex = el.getAttribute('aria-selected') === 'true' ? 0 : -1;
+    }
+  });
   // The arrow keys, Home and End open the next, the previous, the first and the last tab and focus it.
   const onKeyDown = (e: React.KeyboardEvent) => {
-    // from the focused tab: every tab is in the Tab order, so the focus can be on a tab that is not open
+    // A follow request can change the open tab while focus stays on another tab.
     const focused = tabRefs.current.findIndex((el) => !!el && el.contains(e.target as Node));
     const at = focused >= 0 ? focused : current ? groups.indexOf(current) : -1;
     const next =
@@ -198,7 +205,7 @@ export function MatchReport({ entries, counts, onPick, follow }: MatchReportProp
     <section aria-label="Match report" className={styles.report} data-testid="dmap-match-report">
       {groups.length === 0 ? <p className={styles.empty}>The config has no classes.</p> : null}
       {groups.length ? (
-        <div className={styles.tabs} onKeyDown={onKeyDown}>
+        <div ref={tabsRef} className={styles.tabs} onKeyDown={onKeyDown}>
           <TabsBar>
             {groups.map((group, i) => (
               <Tab
