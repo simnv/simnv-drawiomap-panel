@@ -2,7 +2,6 @@ import {
   FieldType,
   createTheme,
   getDisplayProcessor,
-  getFieldDisplayName,
   type DataFrame,
   type DisplayProcessor,
   type DisplayValue,
@@ -38,7 +37,6 @@ export function fieldDisplay(field: Field, theme: GrafanaTheme2 = createTheme(),
 interface Candidate {
   field: Field;
   frame: DataFrame;
-  displayName: string;
   /** the one time field of the frame; undefined when the frame has none or several */
   timeField?: Field<number>;
   /** why the field cannot be a history, from the checks that run once per field */
@@ -102,7 +100,6 @@ export function indexFrames(frames: DataFrame[]): FrameIndex {
       candidates.push({
         field,
         frame,
-        displayName: getFieldDisplayName(field, frame, frames),
         timeField,
         unsupported: check(frame, field, timeField),
         lastNumeric,

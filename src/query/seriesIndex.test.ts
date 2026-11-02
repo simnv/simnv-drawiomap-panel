@@ -171,3 +171,86 @@ it('treats an inherited object property as an absent label', () => {
     equalityKey({ constructor: '', ['__proto__']: '' }, ['constructor', '__proto__'])
   );
 });
+
+/** The general path as it was before the single-frame fast path: every key goes through a Map and a sort. */
+function mergeReference(frames: DataFrame[], refId: string) {
+  const merged = new Map<
+    string,
+    { frame: number; labels: Labels; field: DataFrame['fields'][number]; samples: Map<number, number | null> }
+  >();
+  frames.forEach((f, frameIndex) => {
+    const field = f.fields.find((x) => x.type === FieldType.number);
+    const time = f.fields.find((x) => x.type === FieldType.time);
+    if (f.refId !== refId || !field || !time) {
+      return;
+    }
+    const labels = field.labels ?? {};
+    const key = JSON.stringify([
+      Object.keys(labels)
+        .sort()
+        .map((n) => [n, labels[n]]),
+      field.name,
+    ]);
+    const entry = merged.get(key) ?? { frame: frameIndex, labels, field, samples: new Map() };
+    merged.set(key, entry);
+    time.values.forEach((t, i) => entry.samples.set(t, field.values[i] as number | null));
+  });
+  return [...merged.values()]
+    .map((e) => {
+      const times = [...e.samples.keys()].sort((a, b) => a - b);
+      return { labels: e.labels, frameIndex: e.frame, times, values: times.map((t) => e.samples.get(t)!) };
+    })
+    .sort((a, b) => a.frameIndex - b.frameIndex);
+}
+
+const shape = (series: ReturnType<typeof indexSeries>['series']) =>
+  series.map((s) => ({ labels: s.labels, frameIndex: s.frameIndex, times: s.times, values: s.values }));
+
+it.each([
+  ['one frame per key', [frame({ a: '1' }), frame({ a: '2' }, [0, 1000], [5, null]), frame({ a: '3' }, [], [])]],
+  ['trailing null and leading null', [frame({ a: '1' }, [0, 1, 2], [null, 4, null])]],
+  ['an empty frame', [frame({ a: '1' }, [], [])]],
+  ['duplicate keys with distinct times', [frame({ a: '1' }, [0, 2], [1, 3]), frame({ a: '1' }, [1, 3], [2, 4])]],
+  [
+    'single and duplicate keys together',
+    [frame({ a: '1' }, [0, 2], [1, 3]), frame({ a: '2' }), frame({ a: '1' }, [1], [9]), frame({ a: '3' }, [7], [null])],
+  ],
+  ['repeated times inside one frame', [frame({ a: '1' }, [0, 1, 1, 2], [1, 2, 2, 3])]],
+])('gives the same series from the fast path and the merge: %s', (_name, frames) => {
+  const { series, report } = indexSeries(frames, 'rate');
+  expect(shape(series)).toEqual(mergeReference(frames, 'rate'));
+  expect(report).toEqual([]);
+});
+
+it('uses the arrays of a one-frame key as they are, and copies the arrays of a merged key', () => {
+  const single = frame({ a: '1' });
+  const [one] = indexSeries([single], 'rate').series;
+  expect(one.times).toBe(single.fields[0].values);
+  expect(one.values).toBe(single.fields[1].values);
+  const pair = [frame({ a: '1' }, [0, 2], [1, 3]), frame({ a: '1' }, [1], [2])];
+  const [merged] = indexSeries(pair, 'rate').series;
+  expect(merged.times).toEqual([0, 1, 2]);
+  expect(merged.times).not.toBe(pair[0].fields[0].values);
+});
+
+it('keeps the reports of the merge for a frame with repeated times and for an unsupported frame', () => {
+  const clash = frame({ a: '1' }, [0, 1, 1], [1, 2, 3]);
+  expect(indexSeries([clash], 'rate').report).toEqual([
+    { kind: 'duplicate-series', refId: 'rate', labels: { a: '1' } },
+  ]);
+  const unordered = frame({ a: '1' }, [2, 1, 0], [1, 2, 3]);
+  const { series, report } = indexSeries([unordered, frame({ a: '2' })], 'rate');
+  expect(report).toEqual([
+    { kind: 'invalid-series', refId: 'rate', message: 'History timestamps must be finite milliseconds in time order.' },
+  ]);
+  expect(series.map((s) => [s.labels, s.times])).toEqual([
+    [{ a: '1' }, []],
+    [{ a: '2' }, [0, 60000, 120000]],
+  ]);
+});
+
+it('keeps the report order: many-fields comes before the invalid-series of the same frame', () => {
+  const wide = frame({ a: '1' }, [1, 0], [1, 2]);
+  wide.fields.push({ name: 'Second', type: FieldType.number, config: {}, values: [1, 2] });
+  expect(indexSeries([wide], 'rate').report.map((r) => r.kind)).toEqual(['many-fields', 'invalid-series']);
+});

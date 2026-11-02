@@ -64,21 +64,30 @@ export function directionHistory(
   }
   const first = r.series[0];
   const how = reduce ?? defaultReduce(first.field.config.unit);
-  const reduced = reduceAcross(r.series, how);
-  const latest = 'mismatch' in reduced || reduced.value === null ? undefined : reduced.value;
-  const aligned = alignUpdown(r.series, how);
-  let last = aligned.values.length - 1;
-  while (last >= 0 && aligned.values[last] === null) {
+  // One series needs no align: indexSeries gives rising times and finite or null values.
+  let aligned: { times: number[]; values: Array<number | null> } = first;
+  let latest: number | undefined;
+  if (r.series.length > 1) {
+    const reduced = reduceAcross(r.series, how);
+    latest = 'mismatch' in reduced || reduced.value === null ? undefined : reduced.value;
+    aligned = alignUpdown(r.series, how);
+  }
+  const { times, values } = aligned;
+  let last = values.length - 1;
+  while (last >= 0 && values[last] === null) {
     last--;
+  }
+  if (r.series.length === 1 && last >= 0) {
+    latest = values[last] as number;
   }
   return {
     state: 'ready',
-    field: { ...first.field, values: aligned.values } as Field<number | null>,
-    timeField: { name: 'Time', type: FieldType.time, config: {}, values: aligned.times },
-    timestamps: aligned.times,
-    values: aligned.values,
+    field: { ...first.field, values } as Field<number | null>,
+    timeField: { name: 'Time', type: FieldType.time, config: {}, values: times },
+    timestamps: times,
+    values,
     latestValue: latest,
-    sampleAt: last >= 0 ? aligned.times[last] : undefined,
+    sampleAt: last >= 0 ? times[last] : undefined,
     fetchedAt: r.snapshot.fetchedAt,
     fromCache: r.snapshot.fromCache,
   };

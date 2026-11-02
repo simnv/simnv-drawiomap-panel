@@ -21,4 +21,22 @@ describe('reduceValues', () => {
     expect(reduceValues(history, 'min')).toBe(1);
     expect(history).toEqual([null, 1, 2]);
   });
+
+  it('last equals the last value of the filtered list for gaps and bad values at either end', () => {
+    const cases: Array<Array<number | null | undefined>> = [
+      [],
+      [null],
+      [NaN, null, undefined],
+      [1, 2, 3],
+      [1, 2, null],
+      [1, null, NaN, Infinity, -Infinity, undefined],
+      [null, NaN, 5],
+      [0, -0, 0],
+      [-3, null, null],
+    ];
+    for (const values of cases) {
+      const finite = values.filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
+      expect(reduceValues(values, 'last')).toBe(finite.length ? finite[finite.length - 1] : undefined);
+    }
+  });
 });

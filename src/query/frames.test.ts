@@ -30,7 +30,6 @@ it('gives one checked candidate for a numeric field, with its time field and its
   expect(candidate.field).toBe(f.fields[1]);
   expect(candidate.frame).toBe(f);
   expect(candidate.timeField).toBe(f.fields[0]);
-  expect(candidate.displayName).toBe('CPU node-rtr-a');
   expect(candidate.unsupported).toBeUndefined();
   expect(candidate.lastNumeric).toBe(2);
 });
