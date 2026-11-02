@@ -534,6 +534,29 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     expect(drawnWidth(4.1, { min: 2, max: 10 })).toBe(4);
     expect(drawnWidth(2.13, { min: 2.13, max: 2.13 })).toBe(2.13);
   });
+  it('an endpoint that the quarter grid would round inward stays exact; a width just inside it is on the grid', () => {
+    const { root, index } = build();
+    const inward = { theme: opts.theme, minWidth: 1.2, maxWidth: 2.1 };
+    renderOverlay(root, index, round({ width: 1.2 }), inward);
+    const [line] = strokes(root, 'e1');
+    expect(line.getAttribute('stroke-width')).toBe('1.2');
+    renderOverlay(root, index, round({ width: 2.1 }), inward);
+    expect(line.getAttribute('stroke-width')).toBe('2.1');
+    // just inside each endpoint: the nearest quarter, which lies inside the range
+    renderOverlay(root, index, round({ width: 1.21 }), inward);
+    expect(line.getAttribute('stroke-width')).toBe('1.25');
+    renderOverlay(root, index, round({ width: 2.09 }), inward);
+    expect(line.getAttribute('stroke-width')).toBe('2');
+    expect(drawnWidth(1.2, { min: 1.2, max: 10 })).toBe(1.2);
+    expect(drawnWidth(2.1, { min: 0.1, max: 2.1 })).toBe(2.1);
+    expect(drawnWidth(1.21, { min: 1.2, max: 2.1 })).toBe(1.25);
+    expect(drawnWidth(2.09, { min: 1.2, max: 2.1 })).toBe(2);
+    // a width beyond an endpoint, or one the grid would take past an endpoint, is the endpoint
+    expect(drawnWidth(0.5, { min: 1.2, max: 2.1 })).toBe(1.2);
+    expect(drawnWidth(2.5, { min: 1.2, max: 2.1 })).toBe(2.1);
+    expect(drawnWidth(1.31, { min: 1.3, max: 1.4 })).toBe(1.3);
+    expect(drawnWidth(1.39, { min: 1.3, max: 1.4 })).toBe(1.4);
+  });
   it('a colour and width change updates the same elements in place and keeps the cut of the labels', () => {
     const { root, index } = build();
     renderOverlay(root, index, round(), opts);

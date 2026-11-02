@@ -109,16 +109,22 @@ function el<K extends keyof SVGElementTagNameMap>(
 const WIDTH_STEPS = 4;
 
 /**
- * The width the overlay draws for a half of `width`: the nearest quarter unit inside the configured range. The
- * endpoints of the range stay exact (`linkWidth.min` and `max` take any number: a min of 0.1 or a max of 2.13 draws
- * as it is), and a width above zero is never drawn as zero.
+ * The width the overlay draws for a half of `width`: a width at or beyond an endpoint of the configured range is that
+ * endpoint, exactly (`linkWidth.min` and `max` take any number: a min of 1.2 or a max of 2.1 draws as it is); a width
+ * strictly inside is the nearest quarter unit, held inside the range. A width above zero is never drawn as zero.
  */
 export function drawnWidth(width: number, range: WidthRange): number {
   const lo = Math.min(range.min, range.max);
   const hi = Math.max(range.min, range.max);
+  if (width <= lo) {
+    return lo;
+  }
+  if (width >= hi) {
+    return hi;
+  }
   const quarter = Math.round(width * WIDTH_STEPS) / WIDTH_STEPS;
   const held = Math.min(hi, Math.max(lo, quarter));
-  return held > 0 || !(width > 0) ? held : Math.min(hi, width);
+  return held > 0 ? held : width;
 }
 
 /** A coordinate for an attribute: two decimals, as draw.io writes them. */
