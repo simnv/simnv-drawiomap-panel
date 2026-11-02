@@ -115,6 +115,7 @@ export function usePanZoom({
     const isZoomed = () => !isDefaultView(liveView(), base);
     // The view of a gesture: written now, committed when the gesture ends (`commit`), when the wheel settles, and
     // at once when it leaves or returns to the configured view (the reset button and the touch action follow).
+    // A commit that has not rendered yet is refreshed by every later move, so the render carries the newest view.
     const commit = () => {
       clearTimeout(s.settle);
       s.settle = undefined;
@@ -132,9 +133,10 @@ export function usePanZoom({
         return;
       }
       const flipped = isDefaultView(next, base) !== isDefaultView(current.current.committed, base);
+      const inFlight = current.current.committed !== latest.current.view;
       current.current.view = next;
       writer(next);
-      if (flipped) {
+      if (flipped || inFlight) {
         commit();
       }
     };

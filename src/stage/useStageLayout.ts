@@ -15,7 +15,9 @@ import type { Stage } from './useStage';
  *
  * Returns `live`: writes a view of a gesture in progress (the view box and the label scale, nothing else changes
  * during a gesture) without a render. The gesture commits its view to `view` when it ends; the effect then writes the
- * same layout again.
+ * same layout again. Until then the live view is the newest view: a layout pass during the gesture (a new stage
+ * height) and a commit older than the live view (one batched behind later moves) keep it. A reset (`view` null) ends
+ * the live view.
  */
 export function useStageLayout(
   stage: Stage,
@@ -29,6 +31,8 @@ export function useStageLayout(
   const rect = useRef<StageRect>();
   // the size of the svg the known rect belongs to: the layout sizes (percent or pixels) and the box they resolve in
   const sized = useRef<string>();
+  // the view of the gesture in progress; the gesture commits the same object to `view`
+  const pending = useRef<ViewBox>();
   useEffect(() => {
     const root = stage.root;
     rect.current = undefined;
@@ -53,7 +57,10 @@ export function useStageLayout(
     if (!stage.root || !stage.base || width === undefined || height === undefined) {
       return;
     }
-    const layout = viewBoxFor(zoom, stage.base, { width, height }, view ?? stage.base);
+    if (view === null || view === pending.current) {
+      pending.current = undefined;
+    }
+    const layout = viewBoxFor(zoom, stage.base, { width, height }, pending.current ?? view ?? stage.base);
     applyLayout(stage.root, layout);
     const size = `${layout.width}|${layout.height}|${width}|${height}`;
     const known = size === sized.current ? rect.current : undefined;
@@ -69,6 +76,7 @@ export function useStageLayout(
       if (!root) {
         return;
       }
+      pending.current = next;
       root.setAttribute('viewBox', `${next.x} ${next.y} ${next.w} ${next.h}`);
       setLinkLabelScale(root, rect.current);
     },
