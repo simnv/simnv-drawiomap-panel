@@ -22,20 +22,66 @@ export function mountSvg(container: HTMLElement, svgText: string): SVGSVGElement
   return root;
 }
 
-/** True when `el` sits inside a nested cell group below `group`. */
-function insideNestedCell(el: Element, group: Element): boolean {
-  let p = el.parentElement;
-  while (p && p !== group) {
-    if (p.hasAttribute('data-cell-id')) {
-      return true;
-    }
-    p = p.parentElement;
-  }
-  return false;
+/** The elements of one cell group that belong to it, not to a nested cell. Every list keeps document order. */
+interface OwnElements {
+  path: Element[];
+  /** `ellipse` and `circle`. */
+  round: Element[];
+  /** Every tag of SHAPE_TAGS. */
+  shape: Element[];
+  text: Element[];
+  foreignObject: Element[];
 }
 
-function ownDescendants(group: Element, selector: string): Element[] {
-  return Array.from(group.querySelectorAll(selector)).filter((el) => !insideNestedCell(el, group));
+const OWNED_SELECTOR = ['path', 'ellipse', 'circle', ...SHAPE_TAGS, 'text', 'foreignObject'].join(',');
+const NO_ELEMENTS: OwnElements = { path: [], round: [], shape: [], text: [], foreignObject: [] };
+
+/**
+ * One pass over the SVG. Put each relevant element in the bucket of its nearest cell ancestor.
+ * An element below a nested cell goes to the nested cell only. A wrapper group never scans its subtree.
+ */
+function bucketByOwner(root: Element): Map<Element, OwnElements> {
+  const buckets = new Map<Element, OwnElements>();
+  // The owner depends on the parent only. Elements with the same parent share one walk.
+  const ownerOfParent = new Map<Element, Element | null>();
+  const ownerOf = (parent: Element | null): Element | null => {
+    if (!parent) {
+      return null;
+    }
+    let owner = ownerOfParent.get(parent);
+    if (owner === undefined) {
+      owner = parent.hasAttribute('data-cell-id') ? parent : ownerOf(parent.parentElement);
+      ownerOfParent.set(parent, owner);
+    }
+    return owner;
+  };
+  for (const el of Array.from(root.querySelectorAll(OWNED_SELECTOR))) {
+    const owner = ownerOf(el.parentElement);
+    if (!owner) {
+      continue;
+    }
+    let bucket = buckets.get(owner);
+    if (!bucket) {
+      bucket = { path: [], round: [], shape: [], text: [], foreignObject: [] };
+      buckets.set(owner, bucket);
+    }
+    // Local names are exact. This is right for sanitised input. A raw HTML-namespace element inside a foreignObject
+    // would not match 'foreignObject' here. sanitizeSvg removes such elements. See svgStage.equivalence.test.tsx.
+    const tag = el.localName;
+    if (tag === 'path') {
+      bucket.path.push(el);
+    } else if (tag === 'ellipse' || tag === 'circle') {
+      bucket.round.push(el);
+    } else if (tag === 'text') {
+      bucket.text.push(el);
+    } else if (tag === 'foreignObject') {
+      bucket.foreignObject.push(el);
+    }
+    if (SHAPE_TAGS.has(tag)) {
+      bucket.shape.push(el);
+    }
+  }
+  return buckets;
 }
 
 function metaAttrs(group: Element): Record<string, string> {
@@ -48,8 +94,8 @@ function metaAttrs(group: Element): Record<string, string> {
   return attrs;
 }
 
-function labelOf(group: Element): { el?: Element; text: string } {
-  const text = ownDescendants(group, 'text')[0];
+function labelOf(own: OwnElements): { el?: Element; text: string } {
+  const text = own.text[0];
   if (text) {
     // A plain-text label of several lines is one <text> per line inside one draw.io label <g>, which
     // holds nothing else but an optional background <rect>. Only that <g> becomes the label.
@@ -72,7 +118,7 @@ function labelOf(group: Element): { el?: Element; text: string } {
         .trim(),
     };
   }
-  const fo = ownDescendants(group, 'foreignObject')[0];
+  const fo = own.foreignObject[0];
   if (fo) {
     return { el: fo, text: (fo.textContent ?? '').replace(/\s+/g, ' ').trim() };
   }
@@ -81,30 +127,30 @@ function labelOf(group: Element): { el?: Element; text: string } {
 
 export function buildCellIndex(root: SVGSVGElement): CellIndex {
   const index: CellIndex = new Map();
+  const buckets = bucketByOwner(root);
   for (const group of Array.from(root.querySelectorAll('g[data-cell-id]')) as SVGGElement[]) {
     const id = group.getAttribute('data-cell-id')!;
     if (index.has(id)) {
       throw new Error(`Cell ${id} is duplicated. Assign each pasted cell a unique identity in draw.io.`);
     }
-    const paths = ownDescendants(group, 'path') as SVGPathElement[];
+    const own = buckets.get(group) ?? NO_ELEMENTS;
+    const paths = own.path as SVGPathElement[];
     // draw.io edge polylines carry fill="none" AND pointer-events="stroke"; stencil outlines have fill="none" only.
     const line = paths.find((p) => p.getAttribute('fill') === 'none' && p.getAttribute('pointer-events') === 'stroke');
     const arrows = line ? paths.filter((p) => p !== line && p.getAttribute('pointer-events') === 'all') : [];
     // Only the dot of a bare end: its centre lies on the first or the last point of the path. A circular label
     // background or a decoration on a waypoint is not an end marker.
     const ends = line
-      ? ownDescendants(group, 'ellipse, circle').flatMap((el) => {
+      ? own.round.flatMap((el) => {
           const end = el.closest('switch, foreignObject') ? undefined : markerEnd(line, el as SVGGraphicsElement);
           return end ? [{ el: el as SVGGraphicsElement, end }] : [];
         })
       : [];
     let shape: SVGGraphicsElement | undefined;
     if (!line) {
-      shape = ownDescendants(group, Array.from(SHAPE_TAGS).join(',')).find(
-        (el) => SHAPE_TAGS.has(el.localName) && !el.closest('switch, foreignObject')
-      ) as SVGGraphicsElement | undefined;
+      shape = own.shape.find((el) => !el.closest('switch, foreignObject')) as SVGGraphicsElement | undefined;
     }
-    const label = labelOf(group);
+    const label = labelOf(own);
     const meta = cellMetaFromAttrs(id, metaAttrs(group), !!line, label.text || undefined);
     const entry: CellEntry = {
       meta,
