@@ -72,10 +72,13 @@ export function viewBoxFor(
 
 /**
  * Pixels per user unit of the rendered svg: the `meet` scale of its viewBox in its own rendered rect (not the panel:
- * `minScale` and the Custom mode make the svg larger than the panel). 0 for an svg without a size.
+ * `minScale` and the Custom mode make the svg larger than the panel). 0 for an svg without a size. `rect` is the
+ * rendered size when the caller knows it (a `ResizeObserver` keeps it); else the read forces a layout.
  */
-export function viewScaleOf(root: SVGSVGElement): number {
-  const rect = root.getBoundingClientRect();
+export function viewScaleOf(
+  root: SVGSVGElement,
+  rect: { width: number; height: number } = root.getBoundingClientRect()
+): number {
   const vb = readViewBox(root);
   return Math.min(rect.width / vb.w, rect.height / vb.h);
 }

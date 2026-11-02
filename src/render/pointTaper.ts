@@ -29,13 +29,36 @@ function intersects(a: Point, b: Point, c: Point, d: Point): boolean {
   return t >= -1e-10 && t <= 1 + 1e-10 && u >= -1e-10 && u <= 1 + 1e-10;
 }
 
+/** The margin of the box test below: wider than the tolerance of `intersects`, so no touching pair is skipped. */
+const BOX_EPS = 1e-6;
+
+/**
+ * True when no two nonadjacent segments of the closed outline meet. Every pair is tested, but a pair whose boxes do
+ * not meet skips the segment test: the outline is a long ribbon of short segments, so most pairs stop at the boxes.
+ */
 function simple(points: Point[]): boolean {
-  for (let i = 0; i < points.length; i++) {
-    for (let j = i + 2; j < points.length; j++) {
-      if (i === 0 && j === points.length - 1) {
+  const n = points.length;
+  const x0 = new Float64Array(n);
+  const x1 = new Float64Array(n);
+  const y0 = new Float64Array(n);
+  const y1 = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    x0[i] = Math.min(a.x, b.x) - BOX_EPS;
+    x1[i] = Math.max(a.x, b.x) + BOX_EPS;
+    y0[i] = Math.min(a.y, b.y) - BOX_EPS;
+    y1[i] = Math.max(a.y, b.y) + BOX_EPS;
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) {
         continue;
       }
-      if (intersects(points[i], points[(i + 1) % points.length], points[j], points[(j + 1) % points.length])) {
+      if (x0[i] > x1[j] || x0[j] > x1[i] || y0[i] > y1[j] || y0[j] > y1[i]) {
+        continue;
+      }
+      if (intersects(points[i], points[(i + 1) % n], points[j], points[(j + 1) % n])) {
         return false;
       }
     }

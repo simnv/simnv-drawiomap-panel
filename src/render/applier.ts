@@ -160,27 +160,42 @@ function paints(m: SVGElement, prop: 'fill' | 'stroke'): boolean {
   return [`${prop}-opacity`, 'opacity'].every((o) => alphaOf(effective(m, o, '1')) > 0);
 }
 
+/** The end markers (the dot of a bare end) of a link with the paint properties each one shows (`paints`). */
+type EndPaints = Array<{ marker: SVGElement; end: 'start' | 'end'; props: Array<'fill' | 'stroke'> }>;
+
+/** Reads which paint properties the end markers of `entry` show; empty when the link paints no end. */
+function endPaints(entry: CellEntry, patch: CellPatch, status: string | undefined): EndPaints {
+  const l = patch.link;
+  if (!status && !(l?.a2b || l?.b2a)) {
+    return [];
+  }
+  return (entry.ends ?? []).map(({ el, end }) => {
+    const marker = el as SVGElement;
+    return { marker, end, props: (['fill', 'stroke'] as const).filter((prop) => paints(marker, prop)) };
+  });
+}
+
 /**
- * Paints the end markers (the dot of a bare end) with the colour that `colourAt` gives for their end: the colour of
- * the half that they close, or the status colour of the link when its status paints (`linkStatusPaint`).
+ * Paints the end markers with the colour that `colourAt` gives for their end: the colour of the half that they
+ * close, or the status colour of the link when its status paints (`linkStatusPaint`).
  */
-function paintEnds(entry: CellEntry, colourAt: (end: 'start' | 'end') => string | undefined): void {
-  for (const { el: marker, end } of entry.ends ?? []) {
-    const m = marker as SVGElement;
+function paintEnds(ends: EndPaints, colourAt: (end: 'start' | 'end') => string | undefined): void {
+  for (const { marker, end, props } of ends) {
     const colour = colourAt(end);
     if (!colour) {
       continue;
     }
-    for (const prop of ['fill', 'stroke'] as const) {
-      if (paints(m, prop)) {
-        writeStyle(m, prop, colour);
-      }
+    for (const prop of props) {
+      writeStyle(marker, prop, colour);
     }
   }
 }
 
-/** The halves of a link, or the status colour of a link without halves (`status` is `linkStatusPaint`). */
-function applyLink(entry: CellEntry, patch: CellPatch, status: string | undefined): void {
+/**
+ * The halves of a link, or the status colour of a link without halves (`status` is `linkStatusPaint`; `ends` what
+ * the end markers show, read before the writes of the pass).
+ */
+function applyLink(entry: CellEntry, patch: CellPatch, status: string | undefined, ends: EndPaints): void {
   const l = patch.link;
   if (!l || (!l.a2b && !l.b2a)) {
     // a status rule on an edge with no link binding: the stroke and the end dots take the status colour, as the
@@ -189,11 +204,11 @@ function applyLink(entry: CellEntry, patch: CellPatch, status: string | undefine
       if (entry.line) {
         writeStyle(entry.line, 'stroke', status);
       }
-      paintEnds(entry, () => status);
+      paintEnds(ends, () => status);
     }
     return;
   }
-  paintEnds(entry, (end) => status ?? (end === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b))?.color);
+  paintEnds(ends, (end) => status ?? (end === 'start' ? (l.a2b ?? l.b2a) : (l.b2a ?? l.a2b))?.color);
   if (entry.line) {
     entry.line.style.strokeOpacity = '0';
   }
@@ -225,21 +240,25 @@ function tintedFill(shape: SVGElement, status: string): string | undefined {
 }
 
 /**
- * A device whose status paints (`statusPaint`: a status with an opaque value colour, normal included, or a status with
- * no value colour that is not normal): a border in the status colour, wider than the stroke the shape had
- * (`width`, read before the shape binding wrote its own), and a light tint of the fill it shows now. It runs after
- * `applyShape`, so the border wins over a `stroke` target and the tint goes over a `shape` target. A bitmap device
- * (an `<image>`) takes no fill and no stroke: the overlay draws its border (`renderOverlay`).
+ * The status border of a device: the status colour, when the status paints (`statusPaint`: a status with an opaque
+ * value colour, normal included, or a status with no value colour that is not normal) and the shape takes a stroke. A
+ * bitmap device (an `<image>`) takes no fill and no stroke: the overlay draws its border (`renderOverlay`).
  */
-function applyStatus(entry: CellEntry, patch: CellPatch, width: number, theme: GrafanaTheme2): void {
+function statusBorder(entry: CellEntry, patch: CellPatch, theme: GrafanaTheme2): string | undefined {
   const shape = entry.shape as SVGElement | undefined;
-  const paint = entry.line || shape?.localName === 'image' ? undefined : statusPaint(patch.statusView, theme);
-  if (!shape || !paint) {
-    return;
-  }
+  return !shape || entry.line || shape.localName === 'image' ? undefined : statusPaint(patch.statusView, theme);
+}
+
+/**
+ * A device whose status paints: a border in the status colour, wider than the stroke the shape had (`width`, read
+ * before the shape binding wrote its own), and a light tint (`tint`, read after `applyShape` wrote the fill) of the
+ * fill it shows now. It runs after `applyShape`, so the border wins over a `stroke` target and the tint goes over a
+ * `shape` target.
+ */
+function applyStatus(entry: CellEntry, paint: string, width: number, tint: string | undefined): void {
+  const shape = entry.shape as SVGElement;
   writeStyle(shape, 'stroke', paint);
   writeStyle(shape, 'stroke-width', String(statusBorderWidth(width)));
-  const tint = tintedFill(shape, paint);
   if (tint) {
     writeStyle(shape, 'fill', tint);
   }
@@ -449,6 +468,12 @@ export function applyPatches(
       reset(entry, index);
     }
   }
+  // The writes of the pass in two rounds with the reads between them: the texts and the binding colours first, then
+  // the computed fill of each shape whose status paints and the paints of the end markers (one style recalc for the
+  // pass: a read after a write of the same pass forces one per cell), then the status borders, the tints and the
+  // links.
+  const pending: Array<{ entry: CellEntry; patch: CellPatch; width: number; target?: string; interactive: boolean }> =
+    [];
   for (const [id, patch] of patches) {
     const entry = changed.has(id) ? index.get(id) : undefined;
     if (!entry) {
@@ -458,10 +483,26 @@ export function applyPatches(
     const width = entry.shape && !entry.line ? originalStrokeWidth(entry.shape, entry.original.strokeWidth) : 0;
     const target = applyShape(entry, patch, index);
     applyUnavailable(entry, patch);
-    applyLink(entry, patch, linkStatusPaint(patch, ctx.theme));
-    applyStatus(entry, patch, width, ctx.theme);
-    tag(entry, patch, target, !interactive || interactive.has(id));
+    pending.push({ entry, patch, width, target, interactive: !interactive || interactive.has(id) });
   }
+  const reads = pending.map(({ entry, patch }) => {
+    const status = linkStatusPaint(patch, ctx.theme);
+    const border = statusBorder(entry, patch, ctx.theme);
+    return {
+      status,
+      border,
+      tint: border ? tintedFill(entry.shape as SVGElement, border) : undefined,
+      ends: endPaints(entry, patch, status),
+    };
+  });
+  pending.forEach(({ entry, patch, width, target, interactive: button }, i) => {
+    const { status, border, tint, ends } = reads[i];
+    applyLink(entry, patch, status, ends);
+    if (border) {
+      applyStatus(entry, border, width, tint);
+    }
+    tag(entry, patch, target, button);
+  });
   return { index, scheme, keys };
 }
 
