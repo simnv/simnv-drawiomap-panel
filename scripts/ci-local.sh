@@ -14,9 +14,36 @@ if [ "${SKIP_INSTALL:-0}" != 1 ]; then
   step "npm ci"
   npm ci
 fi
-step "typecheck"; npm run typecheck
-step "lint"; npm run lint
-step "unit tests"; npm test
+
+# The checks do not use each other's output: they run at the same time, each one with its output in a file. The
+# output prints for each step, in a fixed order, after all steps end. One failed step fails the script.
+# ESLint runs without `npm run lint`: that script also runs the import guards (check:imports), and the full unit
+# suite runs the same two test files.
+check_names=("typecheck" "eslint" "unit tests")
+check_cmds=("npm run typecheck" "npx eslint --cache ." "npm test")
+check_logs=$(mktemp -d)
+trap 'rm -rf "$check_logs"' EXIT
+check_pids=()
+for i in "${!check_names[@]}"; do
+  bash -c "${check_cmds[$i]}" >"$check_logs/$i.log" 2>&1 &
+  check_pids+=("$!")
+done
+checks_failed=0
+for i in "${!check_names[@]}"; do
+  if wait "${check_pids[$i]}"; then
+    step "${check_names[$i]}: ok"
+  else
+    step "${check_names[$i]}: FAILED"
+    checks_failed=1
+  fi
+  cat "$check_logs/$i.log"
+done
+if [ "$checks_failed" != 0 ]; then
+  echo
+  echo "ci:local FAILED: a check failed, see above"
+  exit 1
+fi
+
 step "build"; npm run build
 step "check:bundle"; npm run check:bundle
 step "package"; npm run package
