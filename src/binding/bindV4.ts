@@ -116,6 +116,8 @@ type CellsFree = CellsEntry extends infer E ? (E extends CellsEntry ? Omit<E, 'c
 class Report {
   readonly entries: ReportEntry[];
   private readonly byKey = new Map<string, ReportEntry>();
+  /** the cells of each entry that has cells: the check for a repeat is O(1) */
+  private readonly cellsOf = new Map<ReportEntry, Set<string>>();
 
   constructor(first: ReportEntry[]) {
     this.entries = [...first];
@@ -136,8 +138,11 @@ class Report {
       found = { ...entry, cellIds: [] } as CellsEntry;
       this.byKey.set(key, found);
       this.entries.push(found);
+      this.cellsOf.set(found, new Set());
     }
-    if (!found.cellIds.includes(cellId)) {
+    const seen = this.cellsOf.get(found)!;
+    if (!seen.has(cellId)) {
+      seen.add(cellId);
       found.cellIds.push(cellId);
     }
   }
@@ -160,6 +165,8 @@ interface Query {
   series: Series[];
   /** the series that at least one cell selects */
   selected: Set<Series>;
+  /** the cadence of the refId, found on first use: without a request step it scans every sample of every series */
+  cadence?: { ms: number | undefined };
 }
 
 /** A match block of one refId, parsed once per bind, with its label-tuple map built on first use. */
@@ -284,6 +291,11 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
     queries.set(refId, found);
     return found;
+  };
+
+  const cadenceOfQuery = (refId: string, q: Query): number | undefined => {
+    q.cadence ??= { ms: cadenceOf(refId, data.request, q.series) };
+    return q.cadence.ms;
   };
 
   const blockOf = (use: Use): Block => {
@@ -552,7 +564,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     const check = staleCheck(r.series, {
       timeRange: data.timeRange,
       request: data.request,
-      freshnessMs: freshnessMs(eff.freshness ?? config!.freshness, cadenceOf(use.refId, data.request, q.series)),
+      freshnessMs: freshnessMs(eff.freshness ?? config!.freshness, cadenceOfQuery(use.refId, q)),
       instant: isInstant(data, use.refId),
     });
     if (check.reason !== undefined) {

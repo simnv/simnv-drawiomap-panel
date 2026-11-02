@@ -9,8 +9,17 @@ export function reduceValues(
   values: ReadonlyArray<number | null | undefined>,
   reducer: ReducerName
 ): number | undefined {
+  if (reducer === 'last') {
+    // The last finite value: scan from the end and stop at the first hit.
+    for (let i = values.length - 1; i >= 0; i--) {
+      const v = values[i];
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        return v;
+      }
+    }
+    return undefined;
+  }
   let count = 0;
-  let last = 0;
   let sum = 0;
   let max = -Infinity;
   let min = Infinity;
@@ -19,7 +28,6 @@ export function reduceValues(
       continue;
     }
     count++;
-    last = v;
     sum += v;
     max = v > max ? v : max;
     min = v < min ? v : min;
@@ -28,8 +36,6 @@ export function reduceValues(
     return undefined;
   }
   switch (reducer) {
-    case 'last':
-      return last;
     case 'mean':
       return sum / count;
     case 'max':

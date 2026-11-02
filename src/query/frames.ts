@@ -1,4 +1,5 @@
 import {
+  FieldColorModeId,
   FieldType,
   createTheme,
   getDisplayProcessor,
@@ -38,7 +39,6 @@ export function fieldDisplay(field: Field, theme: GrafanaTheme2 = createTheme(),
 interface Candidate {
   field: Field;
   frame: DataFrame;
-  displayName: string;
   /** the one time field of the frame; undefined when the frame has none or several */
   timeField?: Field<number>;
   /** why the field cannot be a history, from the checks that run once per field */
@@ -99,10 +99,14 @@ export function indexFrames(frames: DataFrame[]): FrameIndex {
       while (lastNumeric >= 0 && field.values[lastNumeric] === null) {
         lastNumeric--;
       }
+      if (field.config.color?.mode === FieldColorModeId.PaletteClassicByName) {
+        // The only reader of `field.state.displayName` here is the colour by series name of Grafana. The call fills it,
+        // and it costs O(frames) per field when all series share one label key, so it runs for this mode only.
+        getFieldDisplayName(field, frame, frames);
+      }
       candidates.push({
         field,
         frame,
-        displayName: getFieldDisplayName(field, frame, frames),
         timeField,
         unsupported: check(frame, field, timeField),
         lastNumeric,
