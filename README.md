@@ -823,7 +823,7 @@ The steps do not use the docker socket, volumes, privileged mode or secrets. The
 
 `npm run ci:woodpecker` runs both workflows with `woodpecker-cli exec` (image `woodpeckerci/woodpecker-cli:v3`) on the local docker. It copies the files of the working tree (without ignored files) to `~/.cache/wp-ci/repo`, so `node_modules` and `dist/` of your checkout do not change. `npm run ci:woodpecker -- .woodpecker/build.yaml` runs one workflow only. `e2e.yaml` runs only together with `build.yaml`: `woodpecker-cli exec` removes a workflow when its `depends_on` workflow is not in the same run.
 
-`npm run ci:local` runs the same steps without Woodpecker. It runs typecheck, ESLint and the unit tests at the same time and prints the output of each step after all of them end. ESLint runs without the import guards: the unit suite runs them. Its e2e steps use the compose stack. `SKIP_INSTALL=1` keeps `node_modules`. `SKIP_E2E=1` stops after the package step. The e2e steps stop the compose stack at the end (`docker compose down -v`).
+`npm run ci:local` runs the same steps without Woodpecker. It runs typecheck, ESLint and the unit tests at the same time and prints the output of each step in a fixed order, as soon as that step ends. ESLint runs without the import guards: the unit suite runs them. Its e2e steps use the compose stack. `SKIP_INSTALL=1` keeps `node_modules`. `SKIP_E2E=1` stops after the package step. The e2e steps stop the compose stack at the end (`docker compose down -v`).
 
 ## Known limits
 
