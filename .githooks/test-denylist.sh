@@ -344,10 +344,10 @@ git add fc.txt
 mkdir -p "$root/shim"
 printf '#!/bin/sh\nexit 1\n' > "$root/shim/awk"
 chmod +x "$root/shim/awk"
-out="$root/fc1.out"; PATH="$root/shim:$PATH" hook > "$out" 2>&1; rc=$?
+out="$root/fc1.out"; env PATH="$root/shim:$PATH" sh "$hooks/check-denylist.sh" > "$out" 2>&1; rc=$?
 check "fc: a failing awk blocks a clean staged change" test $rc -eq 2
 git commit -qm fc
-out="$root/fc2.out"; PATH="$root/shim:$PATH" hook --all > "$out" 2>&1; rc=$?
+out="$root/fc2.out"; env PATH="$root/shim:$PATH" sh "$hooks/check-denylist.sh" --all > "$out" 2>&1; rc=$?
 check "fc: a failing awk blocks a clean --all scan" test $rc -eq 2
 if [ "$(id -u)" -ne 0 ]; then
   chmod 000 fc.txt
@@ -358,8 +358,71 @@ fi
 rm -f "$root/shim/awk"
 printf '#!/bin/sh\nexit 1\n' > "$root/shim/xargs"
 chmod +x "$root/shim/xargs"
-out="$root/fc4.out"; PATH="$root/shim:$PATH" hook --all > "$out" 2>&1; rc=$?
+out="$root/fc4.out"; env PATH="$root/shim:$PATH" sh "$hooks/check-denylist.sh" --all > "$out" 2>&1; rc=$?
 check "fc: a failing xargs blocks --all" test $rc -eq 2
+
+# Fault injection: fail ONE call of one tool at a time (exit 3, no output). The next stage of the scan
+# still runs and succeeds on empty input. Every such fault must end the scan with exit 2.
+# POSIX sh has no pipefail, so a failed left-hand stage of a pipeline would pass silently.
+sweep_tools="tr cut sort paste wc cmp grep awk"
+shimdir="$root/sweepshim"
+counts="$root/sweepcounts"
+mkdir -p "$shimdir"
+for t in $sweep_tools; do
+  real=$(command -v "$t")
+  cat > "$shimdir/$t" <<SHIM
+#!/bin/sh
+c="\$SHIM_COUNTS/$t"
+n=\$(cat "\$c" 2> /dev/null || echo 0)
+n=\$((n + 1))
+echo "\$n" > "\$c"
+[ "\${FAIL_AT:-}" = "$t:\$n" ] && exit 3
+exec $real "\$@"
+SHIM
+  chmod +x "$shimdir/$t"
+done
+
+faulty() { # fail-spec, hook arguments...
+  spec=$1; shift
+  rm -rf "$counts"; mkdir -p "$counts"
+  FAIL_AT="$spec" SHIM_COUNTS="$counts" PATH="$shimdir:$PATH" sh "$hooks/check-denylist.sh" "$@"
+}
+
+sweep() { # description, expected normal exit code, hook arguments...
+  desc=$1; want=$2; shift 2
+  out="$root/sweep.out"
+  faulty none "$@" > "$out" 2>&1; rc=$?
+  check "sweep $desc: normal run exits $want (got $rc)" test $rc -eq "$want"
+  rm -rf "$counts.base"; cp -R "$counts" "$counts.base"
+  bad="$root/sweep.bad"; : > "$bad"
+  covered=yes
+  for t in $sweep_tools; do
+    total=$(cat "$counts.base/$t" 2> /dev/null || echo 0)
+    [ "$total" -gt 0 ] || covered="no ($t)"
+    k=1
+    while [ "$k" -le "$total" ]; do
+      faulty "$t:$k" "$@" > "$out" 2>&1; rc=$?
+      [ $rc -eq 2 ] || echo "$t call $k exit $rc" >> "$bad"
+      grep -qF leakword "$out" && echo "$t call $k leaked content" >> "$bad"
+      k=$((k + 1))
+    done
+  done
+  check "sweep $desc: every tool is called" test "$covered" = yes
+  out="$bad"
+  check "sweep $desc: every single failed call exits 2" test ! -s "$bad"
+}
+
+newrepo sw
+h1=/Users
+p1=10.99
+dm=10.10.0
+printf 'leakword SYNTHTERM\np %s/someone/x\nip %s.5 and %s.1.2\nok\n' "$h1" "$dm" "$p1" > sw.txt
+printf 'p %s/someone/y\n' "$h1" > package-lock.json
+git add -A
+sweep "staged" 1
+git commit -qm sw
+sweep "--commit" 1 --commit HEAD
+sweep "--all" 1 --all
 
 echo "$n checks, $fails failed"
 [ "$fails" -eq 0 ]
