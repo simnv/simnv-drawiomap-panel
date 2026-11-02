@@ -1,5 +1,5 @@
 import type { Page, Request } from '@playwright/test';
-import { expect, test } from './authoring-fixtures';
+import { expect, quietNetwork, test } from './authoring-fixtures';
 
 /**
  * Entering panel edit must not run the panel queries again (Grafana does not run them then either), must not call
@@ -64,7 +64,7 @@ test('panel edit and the popup run no query again, call no datasource resource o
   await expect(normal()).toHaveCount(2);
   await expect.poll(() => log.filter((r) => r.kind === 'query').length).toBeGreaterThan(0);
   // The first load is done when the network is quiet: later requests belong to panel edit.
-  await page.waitForLoadState('networkidle');
+  await quietNetwork(page);
   const before = log.length;
 
   // Enter panel edit in the app, as the panel menu does: the panel component mounts again in the editor.
@@ -77,7 +77,7 @@ test('panel edit and the popup run no query again, call no datasource resource o
   // versions). A query that panel edit would run again comes with them. Wait for the first call, then for a quiet
   // network, then observe.
   await expect.poll(() => log.slice(before).some((r) => r.kind === 'query-editor')).toBe(true);
-  await page.waitForLoadState('networkidle');
+  await quietNetwork(page);
   await page.waitForTimeout(NO_REQUEST_WINDOW_MS);
   const afterEdit = log.slice(before);
   expect(

@@ -124,6 +124,10 @@ test('the timestamp and an open legend do not overlap in a narrow panel', async 
     await gotoDashboardPage({ uid });
     for (const width of [1280, 700, 420]) {
       await page.setViewportSize({ width, height: 900 });
+      // the grid reflows after the resize: check the geometry only when the panel has the new width
+      await expect
+        .poll(async () => (await box(page.getByTestId('dmap-panel').first())).width)
+        .toBeLessThanOrEqual(width);
       await apart(page);
     }
   } finally {

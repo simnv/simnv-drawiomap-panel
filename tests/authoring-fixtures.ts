@@ -197,6 +197,23 @@ export const test = base.extend<{
   },
 });
 
+/**
+ * Resolves when the page has sent no request for `ms`, counted from the call. Unlike `waitForLoadState('networkidle')`
+ * it cannot be satisfied by an earlier quiet period, so call it after the trigger.
+ */
+export async function quietNetwork(page: Page, ms = 500) {
+  let last = Date.now();
+  const onRequest = () => {
+    last = Date.now();
+  };
+  page.on('request', onRequest);
+  try {
+    await expect.poll(() => Date.now() - last >= ms).toBe(true);
+  } finally {
+    page.off('request', onRequest);
+  }
+}
+
 export function observeQueries(page: Page, dashboardUid?: string) {
   const requests: Array<{
     queries: Array<{ refId: string; datasource: { uid: string; type: string }; expr?: string }>;

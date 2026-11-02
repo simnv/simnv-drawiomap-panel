@@ -295,60 +295,59 @@ test(
   }
 );
 
-test('a schema error marks its line; invalid YAML keeps the last valid draft and turns Apply off; Ctrl+Z undoes in its own place (P3.8)', async ({
-  page,
-  config,
-  createDiagram,
-  gotoPanelEditPage,
-}) => {
-  const uid = await createDiagram(config);
-  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-  const dialog = await openSplitEditor(page);
-  const apply = dialog.getByRole('button', { name: 'Apply', exact: true });
-  const report = matchReport(dialog);
-  await expect(popupCell(dialog, 'device-1')).toHaveAttribute('data-dmap-status', 'normal');
+test(
+  'a schema error marks its line; invalid YAML keeps the last valid draft and turns Apply off; Ctrl+Z undoes in its own place (P3.8)',
+  { tag: '@matrix' },
+  async ({ page, config, createDiagram, gotoPanelEditPage }) => {
+    const uid = await createDiagram(config);
+    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const dialog = await openSplitEditor(page);
+    const apply = dialog.getByRole('button', { name: 'Apply', exact: true });
+    const report = matchReport(dialog);
+    await expect(popupCell(dialog, 'device-1')).toHaveAttribute('data-dmap-status', 'normal');
 
-  // An item error: a marker on its line and a report entry. It does not block Apply.
-  await replaceCode(dialog, 'status: health', 'status: 42');
-  const [statusLine] = await codeLines(dialog, /^ {4}status: 42$/);
-  await expect.poll(async () => (await codeMarkers(dialog)).map((m) => m.line)).toContain(statusLine);
-  await report.getByRole('tab', { name: /^routers/ }).click();
-  await expect(report.getByRole('button', { name: /^classes\.routers\.status: / })).toBeVisible();
-  await expect(apply).toBeEnabled();
-  // The draft binds: the routers lose the status of the saved config.
-  await expect(popupCell(dialog, 'device-1')).not.toHaveAttribute('data-dmap-status', 'normal');
-  const draftStatus = await popupCell(dialog, 'device-1').getAttribute('data-dmap-status');
+    // An item error: a marker on its line and a report entry. It does not block Apply.
+    await replaceCode(dialog, 'status: health', 'status: 42');
+    const [statusLine] = await codeLines(dialog, /^ {4}status: 42$/);
+    await expect.poll(async () => (await codeMarkers(dialog)).map((m) => m.line)).toContain(statusLine);
+    await report.getByRole('tab', { name: /^routers/ }).click();
+    await expect(report.getByRole('button', { name: /^classes\.routers\.status: / })).toBeVisible();
+    await expect(apply).toBeEnabled();
+    // The draft binds: the routers lose the status of the saved config.
+    await expect(popupCell(dialog, 'device-1')).not.toHaveAttribute('data-dmap-status', 'normal');
+    const draftStatus = await popupCell(dialog, 'device-1').getAttribute('data-dmap-status');
 
-  // YAML that does not parse: a marker, a `yaml` entry, Apply off. The diagram keeps the last valid draft.
-  await replaceCode(dialog, 'freshness: 3x', 'freshness: [3x');
-  await expect(apply).toBeDisabled();
-  await expect.poll(async () => (await codeMarkers(dialog)).length).toBeGreaterThan(0);
-  await report.getByRole('tab', { name: /^Not in a class/ }).click();
-  await expect(report.getByRole('button', { name: /^line \d+: / }).first()).toBeVisible();
-  expect(await popupCell(dialog, 'device-1').getAttribute('data-dmap-status')).toBe(draftStatus);
+    // YAML that does not parse: a marker, a `yaml` entry, Apply off. The diagram keeps the last valid draft.
+    await replaceCode(dialog, 'freshness: 3x', 'freshness: [3x');
+    await expect(apply).toBeDisabled();
+    await expect.poll(async () => (await codeMarkers(dialog)).length).toBeGreaterThan(0);
+    await report.getByRole('tab', { name: /^Not in a class/ }).click();
+    await expect(report.getByRole('button', { name: /^line \d+: / }).first()).toBeVisible();
+    expect(await popupCell(dialog, 'device-1').getAttribute('data-dmap-status')).toBe(draftStatus);
 
-  // A diagram write: a new key on device-2.
-  await popupCell(dialog, 'device-2').click();
-  await inspector(dialog).getByTestId('dmap-inspector-key').fill('router-x');
-  await inspector(dialog).getByRole('button', { name: 'Set bind and key', exact: true }).click();
-  await expect(popupCell(dialog, 'device-2')).toHaveAttribute('data-meta-key', 'router-x');
+    // A diagram write: a new key on device-2.
+    await popupCell(dialog, 'device-2').click();
+    await inspector(dialog).getByTestId('dmap-inspector-key').fill('router-x');
+    await inspector(dialog).getByRole('button', { name: 'Set bind and key', exact: true }).click();
+    await expect(popupCell(dialog, 'device-2')).toHaveAttribute('data-meta-key', 'router-x');
 
-  // Ctrl+Z in the code box undoes the last text edit of Monaco. The diagram write stays. The browser of the tests
-  // tells a Windows user agent (the Playwright device "Desktop Chrome"), so Monaco binds undo to Ctrl+Z on each host.
-  await cursorToLine(dialog, /^freshness:/);
-  await page.keyboard.press('Control+z');
-  await expect.poll(() => codeText(dialog)).toContain('\nfreshness: 3x\n');
-  expect(await codeText(dialog)).toContain('status: 42');
-  await expect(apply).toBeEnabled();
-  await expect(popupCell(dialog, 'device-2')).toHaveAttribute('data-meta-key', 'router-x');
+    // Ctrl+Z in the code box undoes the last text edit of Monaco. The diagram write stays. The browser of the tests
+    // tells a Windows user agent (the Playwright device "Desktop Chrome"), so Monaco binds undo to Ctrl+Z on each host.
+    await cursorToLine(dialog, /^freshness:/);
+    await page.keyboard.press('Control+z');
+    await expect.poll(() => codeText(dialog)).toContain('\nfreshness: 3x\n');
+    expect(await codeText(dialog)).toContain('status: 42');
+    await expect(apply).toBeEnabled();
+    await expect(popupCell(dialog, 'device-2')).toHaveAttribute('data-meta-key', 'router-x');
 
-  // Ctrl+Z on the stage undoes the last diagram write. The text stays.
-  await popupCell(dialog, 'device-1').focus();
-  await page.keyboard.press('Control+z');
-  await expect(popupCell(dialog, 'device-2')).toHaveAttribute('data-meta-key', 'router-2');
-  expect(await codeText(dialog)).toContain('status: 42');
-  expect(await codeText(dialog)).toContain('\nfreshness: 3x\n');
-});
+    // Ctrl+Z on the stage undoes the last diagram write. The text stays.
+    await popupCell(dialog, 'device-1').focus();
+    await page.keyboard.press('Control+z');
+    await expect(popupCell(dialog, 'device-2')).toHaveAttribute('data-meta-key', 'router-2');
+    expect(await codeText(dialog)).toContain('status: 42');
+    expect(await codeText(dialog)).toContain('\nfreshness: 3x\n');
+  }
+);
 
 test(
   'the saved panel changes under the draft: "Reload" drops the draft, "Keep my draft" applies over it (P3.8)',
@@ -434,85 +433,83 @@ test(
   }
 );
 
-test('Esc and the close button ask before a dirty draft goes; the nested dialogs own the focus; a refresh keeps the draft', async ({
-  page,
-  selectors,
-  config,
-  createDiagram,
-  gotoPanelEditPage,
-}) => {
-  const uid = await createDiagram(config);
-  const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-  const question = page.getByRole('dialog', { name: 'Discard changes?' });
-  const focusIn = (scope: Locator) => scope.evaluate((el) => el.contains(document.activeElement));
+test(
+  'Esc and the close button ask before a dirty draft goes; the nested dialogs own the focus; a refresh keeps the draft',
+  { tag: '@matrix' },
+  async ({ page, selectors, config, createDiagram, gotoPanelEditPage }) => {
+    const uid = await createDiagram(config);
+    const edit = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+    const question = page.getByRole('dialog', { name: 'Discard changes?' });
+    const focusIn = (scope: Locator) => scope.evaluate((el) => el.contains(document.activeElement));
 
-  await test.step('a clean draft closes on Esc, and the focus returns to the opener', async () => {
-    const dialog = await openSplitEditor(page);
-    expect(await focusIn(splitDialog(page))).toBe(true);
-    await popupCell(dialog, 'device-1').focus();
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('dmap-bindings-popup')).toHaveCount(0);
-    await expect(page.getByTestId('dmap-edit-bindings')).toBeFocused();
-  });
+    await test.step('a clean draft closes on Esc, and the focus returns to the opener', async () => {
+      const dialog = await openSplitEditor(page);
+      expect(await focusIn(splitDialog(page))).toBe(true);
+      await popupCell(dialog, 'device-1').focus();
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('dmap-bindings-popup')).toHaveCount(0);
+      await expect(page.getByTestId('dmap-edit-bindings')).toBeFocused();
+    });
 
-  await test.step('a dirty draft asks first; the question takes the focus; Esc in it keeps editing', async () => {
-    const dialog = await openSplitEditor(page, 'option');
-    await replaceCode(dialog, 'freshness: 3x', 'freshness: 4x');
-    await popupCell(dialog, 'device-1').focus();
-    await page.keyboard.press('Escape');
-    await expect(question).toBeVisible();
-    await expect.poll(() => focusIn(question)).toBe(true);
-    await page.keyboard.press('Escape');
-    await expect(question).toHaveCount(0);
-    await expect(dialog).toBeVisible();
-    await expect.poll(() => focusIn(splitDialog(page))).toBe(true);
-    // The close button asks too; Cancel keeps the draft.
-    await splitDialog(page).getByRole('button', { name: 'Close', exact: true }).click();
-    await expect(question).toBeVisible();
-    await question.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(question).toHaveCount(0);
-    expect(await codeText(dialog)).toContain('\nfreshness: 4x\n');
-  });
+    await test.step('a dirty draft asks first; the question takes the focus; Esc in it keeps editing', async () => {
+      const dialog = await openSplitEditor(page, 'option');
+      await replaceCode(dialog, 'freshness: 3x', 'freshness: 4x');
+      await popupCell(dialog, 'device-1').focus();
+      await page.keyboard.press('Escape');
+      await expect(question).toBeVisible();
+      await expect.poll(() => focusIn(question)).toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(question).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+      await expect.poll(() => focusIn(splitDialog(page))).toBe(true);
+      // The close button asks too; Cancel keeps the draft.
+      await splitDialog(page).getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(question).toBeVisible();
+      await question.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(question).toHaveCount(0);
+      expect(await codeText(dialog)).toContain('\nfreshness: 4x\n');
+    });
 
-  await test.step('text that does not parse is a dirty draft too', async () => {
-    const dialog = page.getByTestId('dmap-bindings-popup');
-    await replaceCode(dialog, 'freshness: 4x', 'freshness: [4x');
-    await popupCell(dialog, 'device-1').focus();
-    await page.keyboard.press('Escape');
-    await expect(question).toBeVisible();
-    await question.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await replaceCode(dialog, 'freshness: [4x', 'freshness: 4x');
-  });
+    await test.step('text that does not parse is a dirty draft too', async () => {
+      const dialog = page.getByTestId('dmap-bindings-popup');
+      await replaceCode(dialog, 'freshness: 4x', 'freshness: [4x');
+      await popupCell(dialog, 'device-1').focus();
+      await page.keyboard.press('Escape');
+      await expect(question).toBeVisible();
+      await question.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await replaceCode(dialog, 'freshness: [4x', 'freshness: 4x');
+    });
 
-  await test.step('two dashboard refreshes keep the popup and the draft', async () => {
-    const dialog = page.getByTestId('dmap-bindings-popup');
-    // The popup covers the Refresh button, so send the click event to it directly, as a keyboard shortcut would.
-    // Grafana skips a refresh while the queries of the last one still run, so each refresh waits for its answers.
-    const refresh = edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2);
-    const isQuery = (r: Request) => new URL(r.url()).pathname.endsWith('/api/ds/query');
-    let running = 0;
-    page.on('request', (r) => isQuery(r) && running++);
-    page.on('requestfinished', (r) => isQuery(r) && running--);
-    page.on('requestfailed', (r) => isQuery(r) && running--);
-    for (let i = 0; i < 2; i++) {
-      const queried = page.waitForRequest(isQuery);
-      await refresh.dispatchEvent('click');
-      await queried;
-      await expect.poll(() => running).toBe(0);
-    }
-    await expect(dialog).toBeVisible();
-    expect(await codeText(dialog)).toContain('\nfreshness: 4x\n');
-    await expect(dialog.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
-    await expect(dialog.getByRole('alert').filter({ hasText: 'The saved panel changed' })).toHaveCount(0);
-  });
+    await test.step('two dashboard refreshes keep the popup and the draft', async () => {
+      const dialog = page.getByTestId('dmap-bindings-popup');
+      // The popup covers the Refresh button, so send the click event to it directly, as a keyboard shortcut would.
+      // Grafana skips a refresh while the queries of the last one still run, so each refresh waits for its answers.
+      const refresh = edit.getByGrafanaSelector(selectors.components.RefreshPicker.runButtonV2);
+      const isQuery = (r: Request) => new URL(r.url()).pathname.endsWith('/api/ds/query');
+      let running = 0;
+      page.on('request', (r) => isQuery(r) && running++);
+      page.on('requestfinished', (r) => isQuery(r) && running--);
+      page.on('requestfailed', (r) => isQuery(r) && running--);
+      for (let i = 0; i < 2; i++) {
+        const queried = page.waitForRequest(isQuery);
+        await refresh.dispatchEvent('click');
+        await queried;
+        await expect.poll(() => running).toBe(0);
+      }
+      await expect(dialog).toBeVisible();
+      expect(await codeText(dialog)).toContain('\nfreshness: 4x\n');
+      await expect(dialog.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+      await expect(dialog.getByRole('alert').filter({ hasText: 'The saved panel changed' })).toHaveCount(0);
+    });
 
-  await test.step('Discard closes the dirty draft', async () => {
-    await popupCell(page.getByTestId('dmap-bindings-popup'), 'device-1').focus();
-    await page.keyboard.press('Escape');
-    await question.getByRole('button', { name: 'Discard', exact: true }).click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-  });
-});
+    await test.step('Discard closes the dirty draft', async () => {
+      await popupCell(page.getByTestId('dmap-bindings-popup'), 'device-1').focus();
+      await page.keyboard.press('Escape');
+      await question.getByRole('button', { name: 'Discard', exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+  }
+);
 
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 /** True when the page has no horizontal scroll and the element is inside the viewport width. */
@@ -641,55 +638,54 @@ test('bindings and draw.io dialogs share viewport geometry at both phone breakpo
 test.describe('the split view on a phone (P3.13)', () => {
   test.use(iPhone);
 
-  test('the panes are tabs with no horizontal scroll; the focus starts in the code box and stays in the dialog; Esc closes', async ({
-    page,
-    config,
-    createDiagram,
-    gotoPanelEditPage,
-  }) => {
-    const uid = await createDiagram(config);
-    await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    const dialog = await openSplitEditor(page);
-    await expect(dialog.getByTestId('dmap-popup-layout')).toHaveAttribute('data-dmap-layout', 'tabs');
-    const focusIn = (scope: Locator) => scope.evaluate((el) => el.contains(document.activeElement));
-    await expect.poll(() => focusIn(codeBox(dialog))).toBe(true);
+  test(
+    'the panes are tabs with no horizontal scroll; the focus starts in the code box and stays in the dialog; Esc closes',
+    { tag: '@matrix' },
+    async ({ page, config, createDiagram, gotoPanelEditPage }) => {
+      const uid = await createDiagram(config);
+      await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+      const dialog = await openSplitEditor(page);
+      await expect(dialog.getByTestId('dmap-popup-layout')).toHaveAttribute('data-dmap-layout', 'tabs');
+      const focusIn = (scope: Locator) => scope.evaluate((el) => el.contains(document.activeElement));
+      await expect.poll(() => focusIn(codeBox(dialog))).toBe(true);
 
-    // In the code box Monaco takes Tab and Shift+Tab for the indent, so the focus stays there.
-    const frame = splitDialog(page);
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Shift+Tab');
-    expect(await focusIn(codeBox(dialog))).toBe(true);
+      // In the code box Monaco takes Tab and Shift+Tab for the indent, so the focus stays there.
+      const frame = splitDialog(page);
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Shift+Tab');
+      expect(await focusIn(codeBox(dialog))).toBe(true);
 
-    for (const [name, pane] of [
-      ['Code', codeBox(dialog)],
-      ['Diagram', popupStage(dialog)],
-      ['Report', matchReport(dialog)],
-    ] as const) {
-      await dialog.getByRole('tab', { name, exact: true }).click();
-      await expect(pane).toBeVisible();
-      expect(await fitsWidth(pane)).toEqual({ pageScroll: false, inside: true });
-      if (SHOTS && name === 'Diagram') {
-        await page.screenshot({ path: `${SHOTS}/split-editor-phone.png` });
+      for (const [name, pane] of [
+        ['Code', codeBox(dialog)],
+        ['Diagram', popupStage(dialog)],
+        ['Report', matchReport(dialog)],
+      ] as const) {
+        await dialog.getByRole('tab', { name, exact: true }).click();
+        await expect(pane).toBeVisible();
+        expect(await fitsWidth(pane)).toEqual({ pageScroll: false, inside: true });
+        if (SHOTS && name === 'Diagram') {
+          await page.screenshot({ path: `${SHOTS}/split-editor-phone.png` });
+        }
       }
-    }
 
-    // Outside the code box Tab and Shift+Tab move the focus and wrap at the ends, but never leave the dialog.
-    const close = frame.getByRole('button', { name: 'Close', exact: true });
-    await close.focus();
-    await page.keyboard.press('Shift+Tab');
-    expect(await focusIn(frame)).toBe(true);
-    await expect(close).not.toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(close).toBeFocused();
-    const seen = new Set<string>();
-    for (const key of [...Array(8).fill('Tab'), ...Array(8).fill('Shift+Tab')]) {
-      await page.keyboard.press(key);
+      // Outside the code box Tab and Shift+Tab move the focus and wrap at the ends, but never leave the dialog.
+      const close = frame.getByRole('button', { name: 'Close', exact: true });
+      await close.focus();
+      await page.keyboard.press('Shift+Tab');
       expect(await focusIn(frame)).toBe(true);
-      seen.add(await page.evaluate(() => document.activeElement!.outerHTML.slice(0, 120)));
-    }
-    expect(seen.size).toBeGreaterThan(2);
+      await expect(close).not.toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(close).toBeFocused();
+      const seen = new Set<string>();
+      for (const key of [...Array(8).fill('Tab'), ...Array(8).fill('Shift+Tab')]) {
+        await page.keyboard.press(key);
+        expect(await focusIn(frame)).toBe(true);
+        seen.add(await page.evaluate(() => document.activeElement!.outerHTML.slice(0, 120)));
+      }
+      expect(seen.size).toBeGreaterThan(2);
 
-    await page.keyboard.press('Escape');
-    await expect(dialog).toHaveCount(0);
-  });
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+    }
+  );
 });
