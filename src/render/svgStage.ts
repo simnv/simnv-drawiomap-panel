@@ -65,6 +65,8 @@ function bucketByOwner(root: Element): Map<Element, OwnElements> {
       bucket = { path: [], round: [], shape: [], text: [], foreignObject: [] };
       buckets.set(owner, bucket);
     }
+    // Local names are exact. This is right for sanitised input. A raw HTML-namespace element inside a foreignObject
+    // would not match 'foreignObject' here. sanitizeSvg removes such elements. See svgStage.equivalence.test.tsx.
     const tag = el.localName;
     if (tag === 'path') {
       bucket.path.push(el);

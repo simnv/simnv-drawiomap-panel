@@ -227,10 +227,51 @@ describe('buildCellIndex equals the per-group scan on nested groups', () => {
       '<g data-cell-id="pg-layer~diagram"><g data-cell-id="pg-group~g1" data-meta-pg-id="g1">' +
         '<g data-cell-id="pg-node~n1" data-meta-pg-id="n1" data-meta-pg-kind="node"><rect/><text>node 1</text></g></g></g>'
     ),
+    'image before rect in one cell': svg(
+      '<g data-cell-id="img"><image id="im" x="0" y="0" width="4" height="4"/><rect id="r"/></g>'
+    ),
+    'cell inside foreignObject': svg(
+      '<g data-cell-id="outer"><rect id="o1"/><foreignObject><g data-cell-id="in-fo"><rect id="f1"/></g></foreignObject></g>'
+    ),
+    'cells inside a, switch, use, symbol, defs, clipPath, mask and marker wrappers': svg(
+      '<g data-cell-id="outer"><rect id="o1"/>' +
+        '<a><g data-cell-id="in-a"><rect id="a1"/></g><rect id="a2"/></a>' +
+        '<switch><g data-cell-id="in-switch"><rect id="s1"/></g><text>switch text</text></switch>' +
+        '<use href="#sym"><g data-cell-id="in-use"><rect id="u1"/></g></use>' +
+        '<symbol id="sym"><g data-cell-id="in-symbol"><rect id="y1"/></g><circle id="y2"/></symbol>' +
+        '<defs><g data-cell-id="in-defs"><rect id="d1"/></g><path id="d2" d="M0 0L1 1"/></defs>' +
+        '<clipPath id="cp"><g data-cell-id="in-clip"><rect id="c1"/></g><rect id="c2"/></clipPath>' +
+        '<mask id="mk"><g data-cell-id="in-mask"><rect id="m1"/></g><rect id="m2"/></mask>' +
+        '<marker id="mr"><g data-cell-id="in-marker"><rect id="r1"/></g><path id="r2" d="M0 0L1 1"/></marker>' +
+        '</g>'
+    ),
+    'the root svg has a data-cell-id': `<svg xmlns="http://www.w3.org/2000/svg" data-cell-id="root"><rect id="r0"/><g data-cell-id="a"><rect id="ra"/></g></svg>`,
   };
-  it.each(Object.entries(cases))('%s', (_name, markup) => {
-    const root = mount(markup);
-    expectSameIndex(root);
+  describe.each([
+    ['raw', (markup: string) => markup],
+    ['sanitised', (markup: string) => sanitizeSvg(markup).svg],
+  ])('%s input', (_mode, prepare) => {
+    it.each(Object.entries(cases))('%s', (_name, markup) => {
+      const root = mount(prepare(markup));
+      expectSameIndex(root);
+    });
+    it('indexes the group elements of the mounted document', () => {
+      const root = mount(prepare(cases['the root svg has a data-cell-id']));
+      const index = buildCellIndex(root);
+      expect(Array.from(index.keys())).toEqual(['a']);
+      expect(index.get('a')!.group).toBe(root.querySelector('g[data-cell-id="a"]'));
+      expect(index.get('a')!.shape?.id).toBe('ra');
+    });
+    it('takes the image as the shape when it comes before a rect', () => {
+      const root = mount(prepare(cases['image before rect in one cell']));
+      const shape = buildCellIndex(root).get('img')!.shape;
+      expect(shape?.localName).toBe('image');
+      expect(shape?.id).toBe('im');
+    });
+    it('keeps a cell inside a foreignObject out of its parent cell', () => {
+      const index = buildCellIndex(mount(prepare(cases['cell inside foreignObject'])));
+      expect(index.get('outer')!.shape?.id).toBe('o1');
+    });
   });
   it('checks the nested-cell cases against hand-written expectations', () => {
     const index = buildCellIndex(
@@ -242,6 +283,25 @@ describe('buildCellIndex equals the per-group scan on nested groups', () => {
     expect(index.get('outer')!.label).toBeUndefined();
     expect(index.get('inner')!.shape?.id).toBe('i1');
     expect(index.get('inner')!.original.text).toBe('inner');
+  });
+  // PRECONDITION: buildCellIndex expects sanitised input. In a raw HTML parse, an element inside a foreignObject is
+  // an HTML element with a lower-case local name. The old selector 'foreignObject' matched it. The new local name
+  // compare does not. sanitizeSvg removes such a group, so on the production path both algorithms agree.
+  describe('raw HTML-namespace counterexample', () => {
+    const markup =
+      '<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="outer"><foreignObject>' +
+      '<g xmlns="http://www.w3.org/1999/xhtml" data-cell-id="html-cell"><foreignObject>HTML label</foreignObject></g>' +
+      '</foreignObject></g></svg>';
+    it('differs on raw input: the old selector finds the HTML foreignobject, the new compare does not', () => {
+      const root = mount(markup);
+      expect(oracleBuildCellIndex(root).get('html-cell')?.original.text).toBe('HTML label');
+      expect(buildCellIndex(root).get('html-cell')?.original.text).toBe('');
+    });
+    it('agrees on sanitised input, where the group is gone', () => {
+      const root = mount(sanitizeSvg(markup).svg);
+      expect(root.querySelector('[data-cell-id="html-cell"]')).toBeNull();
+      expectSameIndex(root);
+    });
   });
   it('keeps the duplicate-identity error', () => {
     const markup = svg('<g data-cell-id="x"><rect/></g><g data-cell-id="x"><rect/></g>');
