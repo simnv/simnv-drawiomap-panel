@@ -26,16 +26,33 @@ test('visible health becomes stale without another response or network request',
   createDiagram,
   gotoDashboardPage,
 }) => {
-  // An instant query is never stale (spec 3.5). The range query has a step of at most 15 s, so its last sample is
-  // fresh at the first load and stale 20 s after it.
-  config.classes.routers.freshness = '20s';
+  // An instant query is never stale (spec 3.5). A range query has a step of 5 s at least (the datasource `timeInterval`),
+  // so its last sample is up to 5 s old at the first load. The route moves the last sample of each series to the
+  // moment of the response: it is fresh at the first load and stale 3 s later, with no dependence on the step.
+  config.classes.routers.freshness = '3s';
   const uid = await createDiagram(config);
+  await page.route('**/api/ds/query*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    type Frame = { schema: { fields: Array<{ type: string }> }; data: { values: number[][] } };
+    for (const result of Object.values<{ frames?: Frame[] }>(body.results ?? {})) {
+      for (const frame of result.frames ?? []) {
+        const times = frame.data.values[0];
+        if (frame.schema.fields[0]?.type !== 'time' || !times?.length) {
+          continue;
+        }
+        const shift = Date.now() - times[times.length - 1];
+        frame.data.values[0] = times.map((time) => time + shift);
+      }
+    }
+    await route.fulfill({ response, json: body });
+  });
   const requests = observeQueries(page);
   await gotoDashboardPage({ uid });
   const device = page.getByTestId('dmap-panel').locator('[data-cell-id="device-1"]');
   await expect(device).toHaveAttribute('data-dmap-status', 'normal');
   const count = requests.length;
-  await expect(device).toHaveAttribute('data-dmap-status', 'stale', { timeout: 40_000 });
+  await expect(device).toHaveAttribute('data-dmap-status', 'stale', { timeout: 15_000 });
   expect(requests).toHaveLength(count);
 });
 
@@ -242,10 +259,15 @@ test.describe('a chart region on a phone', () => {
     );
     await expect.poll(viewBox).not.toBe(fitted);
     await expect(panel).toHaveCSS('touch-action', 'none');
-    // the view settles after the pinch
+    // the view settles after the pinch: the panel writes the view in an animation frame, so three frames show a change
     await expect(async () => {
       const before = await viewBox();
-      await page.waitForTimeout(500);
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+          )
+      );
       expect(await viewBox()).toBe(before);
     }).toPass();
     const zoomed = await viewBox();
@@ -351,6 +373,10 @@ for (const theme of ['light', 'dark'] as const) {
           return panel;
         };
         const shoot = async (panel: Awaited<ReturnType<typeof open>>, name: string) => {
+          // A review aid: each PNG costs a screenshot of an 11 MP page and an attachment in the report.
+          if (!process.env.DMAP_SCREENSHOTS) {
+            return;
+          }
           const screenshot = testInfo.outputPath(`${name}-${theme}.png`);
           await panel.screenshot({ path: screenshot });
           await testInfo.attach(`${name}-${theme}`, { path: screenshot, contentType: 'image/png' });

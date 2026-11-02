@@ -790,6 +790,10 @@ The acceptance results are in `docs/acceptance.md`. The decision records are in 
 
 `npm run e2e:12` runs `matrix`; `npm run e2e:13` runs `matrix` and `plugin`; `npm run e2e:release` runs both projects on both versions and then the WebKit check. Pass a spec file after `--` to run one spec, for example `npm run e2e:13 -- tests/links.spec.ts`. Use `--project=name` with an equals sign: `--project name` takes the next file name as a project.
 
+The compose stack and the CI workflow set `GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s`, so a test dashboard can refresh every second. Grafana runs a refresh only when its interval is in the dashboard list `timepicker.refresh_intervals`: the `createDiagram` option `refresh` writes it. Tests that wait for a timer use this interval, not the default 5 s.
+
+A test that writes a screenshot for review into `local/` does it only when `DMAP_SCREENSHOTS` is set. A normal run writes nothing into `local/`.
+
 Playwright does not call a vertical or horizontal link half visible, because its polyline has no width or height. Use `hoverHalf` and `pointOnHalf` from `tests/authoring-controls.ts` to hover or click a half. They wait for a layout box and use the mouse.
 
 ### Unit test projects

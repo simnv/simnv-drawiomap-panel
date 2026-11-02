@@ -120,10 +120,14 @@ test('the timestamp and an open legend do not overlap in a narrow panel', async 
     legend: { show: true, corner: 'bottom-right', collapsed: false },
   });
   try {
-    // below 769 px Grafana stacks the panels at the full width
+    // below 769 px Grafana stacks the panels at the full width; the grid reflows live (see the next test)
+    await gotoDashboardPage({ uid });
     for (const width of [1280, 700, 420]) {
       await page.setViewportSize({ width, height: 900 });
-      await gotoDashboardPage({ uid });
+      // the grid reflows after the resize: check the geometry only when the panel has the new width
+      await expect
+        .poll(async () => (await box(page.getByTestId('dmap-panel').first())).width)
+        .toBeLessThanOrEqual(width);
       await apart(page);
     }
   } finally {
@@ -153,7 +157,9 @@ test('a hidden legend lets a narrow timestamp wrap, then hide when neither line 
     await expect(stamp).toHaveText(STAMP);
     await expect.poll(async () => inside(await box(stamp), await box(panel))).toBe(true);
     expect((await box(stamp)).height).toBeGreaterThan(28);
-    await stamp.screenshot({ path: 'local/ux-fixes-timestamp-wrap.png' });
+    if (process.env.DMAP_SCREENSHOTS) {
+      await stamp.screenshot({ path: 'local/ux-fixes-timestamp-wrap.png' });
+    }
     // Two grid columns cannot hold the time and offset, even on separate lines.
     await demoCopy(request, uid, { legend: { show: false } }, { x: 0, y: 0, w: 2, h: 6 });
     await gotoDashboardPage({ uid });
@@ -188,7 +194,9 @@ test('a short panel keeps the expanded legend inside and hides a timestamp with 
     await expect(legend).toBeVisible();
     await expect.poll(async () => inside(await box(legend), await box(panel))).toBe(true);
     await expect(panel.getByTestId('dmap-last-data')).toBeHidden();
-    await panel.screenshot({ path: 'local/ux-fixes-short-panel.png' });
+    if (process.env.DMAP_SCREENSHOTS) {
+      await panel.screenshot({ path: 'local/ux-fixes-short-panel.png' });
+    }
   } finally {
     await request.delete(`/api/dashboards/uid/${uid}`);
   }

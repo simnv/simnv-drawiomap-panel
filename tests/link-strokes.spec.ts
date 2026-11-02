@@ -109,8 +109,11 @@ for (const scale of [1, 2]) {
       });
     expect(region.scale).toBeCloseTo(scale, 2);
     const shot = await panel.screenshot();
-    fs.mkdirSync('local', { recursive: true });
-    fs.writeFileSync(scale === 1 ? 'local/arrows-point.png' : 'local/arrows-triangle-none.png', shot);
+    // The pixel checks below read `shot`. The files are a review aid: a normal run writes nothing into local/.
+    if (process.env.DMAP_SCREENSHOTS) {
+      fs.mkdirSync('local', { recursive: true });
+      fs.writeFileSync(scale === 1 ? 'local/arrows-point.png' : 'local/arrows-triangle-none.png', shot);
+    }
     const pixels = await page.evaluate(
       async ({ png, region }) => {
         const img = new Image();
@@ -180,7 +183,9 @@ for (const scale of [1, 2]) {
       },
       { png: shot.toString('base64'), region }
     );
-    fs.writeFileSync(`local/arrows-port-end-${scale}x-crop-4x.png`, Buffer.from(pixels.crop, 'base64'));
+    if (process.env.DMAP_SCREENSHOTS) {
+      fs.writeFileSync(`local/arrows-port-end-${scale}x-crop-4x.png`, Buffer.from(pixels.crop, 'base64'));
+    }
     expect(pixels.spur, 'the bent point has no elbow spur beside the port').toBe(0);
     expect(pixels.tipOutside, 'both sides of the port tip remain in the taper').toBe(0);
     expect(pixels.outside, 'point heads add no colour outside the stroke band').toBe(0);
@@ -188,10 +193,13 @@ for (const scale of [1, 2]) {
   });
 }
 
-/** The WAN links carry percent labels and a status from their transmit series that is stale 1 s after its sample. */
+/**
+ * The WAN links carry percent labels and a status from their transmit series that is stale 500 ms after its sample.
+ * The dashboard of the refresh test refreshes every 1 s, so a sample is already stale before the next refresh.
+ */
 function strokeConfig(): ConfigV4 {
   const config = structuredClone(demoConfigV4);
-  config.freshness = '1s';
+  config.freshness = '500ms';
   config.classes.wan = { ...config.classes.wan, linkLabel: 'percent', status: 'wan_tx' };
   config.classes['lan-speed'] = { ...config.classes['lan-speed'], linkLabel: 'percent' };
   return config;
@@ -432,6 +440,9 @@ async function hidePage(page: Page) {
     });
 }
 
+const REFRESH = '1s';
+const REFRESH_MS = 1000;
+
 test('every link half stays drawn through refreshes, stale status, a loading and a failed refresh and a hidden page', async ({
   page,
   createDiagram,
@@ -448,7 +459,8 @@ test('every link half stays drawn through refreshes, stale status, a loading and
     fieldConfig: demoPanel.fieldConfig,
     height: 18,
     zoom: { mode: 'fit', wheel: false, pan: false },
-    refresh: '5s',
+    // 1 s is the minimum that the test stack allows (GF_DASHBOARDS_MIN_REFRESH_INTERVAL in docker-compose.yaml).
+    refresh: REFRESH,
   });
   const dashboardPage = await gotoDashboardPage({ uid });
   const panel = (await dashboardPage.getPanelByTitle('strokes L3')).locator;
@@ -463,7 +475,7 @@ test('every link half stays drawn through refreshes, stale status, a loading and
   expect(first.cut).toBeGreaterThan(0);
 
   for (let round = 0; round < 2; round++) {
-    // a refresh, then the status goes stale 1 s after its sample: the halves take the stale colour
+    // a refresh, then the status goes stale 500 ms after its sample: the halves take the stale colour
     await nextQuery();
     await expect(panel.locator('[data-dmap-status="stale"]').first()).toBeAttached();
     await expectAllDrawn(page, panel, `round ${round}: stale`, count, seen);
@@ -483,7 +495,7 @@ test('every link half stays drawn through refreshes, stale status, a loading and
     await expectAllDrawn(page, panel, `round ${round}: back`, count, seen);
     // a hidden page for longer than two refresh periods (Grafana holds the refresh while hidden), then the return
     const show = await hidePage(page);
-    await page.waitForTimeout(12_000);
+    await page.waitForTimeout(3 * REFRESH_MS);
     const refreshed = nextQuery();
     await show();
     await refreshed;

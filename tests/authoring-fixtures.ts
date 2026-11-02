@@ -86,7 +86,10 @@ export const test = base.extend<{
       options?: Record<string, unknown>;
       /** Several panels with their own config, one below the other. Replaces `clones`. */
       panels?: DiagramPanel[];
-      /** Dashboard auto refresh, for example `5s`; default: off */
+      /**
+       * Dashboard auto refresh, for example `5s`; default: off. Grafana runs a refresh only when its interval is in the
+       * dashboard list `timepicker.refresh_intervals` and not below `min_refresh_interval` (the stack sets 1 s).
+       */
       refresh?: string;
     }
   ) => Promise<string>;
@@ -135,7 +138,12 @@ export const test = base.extend<{
             title: uid,
             schemaVersion: 39,
             editable: true,
-            ...(settings.refresh ? { refresh: settings.refresh } : {}),
+            ...(settings.refresh
+              ? {
+                  refresh: settings.refresh,
+                  timepicker: { refresh_intervals: [...new Set(['1s', '5s', settings.refresh])] },
+                }
+              : {}),
             time: { from: 'now-1h', to: 'now' },
             templating: {
               list: [
@@ -188,6 +196,23 @@ export const test = base.extend<{
     for (const uid of dashboards) await request.delete(`/api/dashboards/uid/${uid}`);
   },
 });
+
+/**
+ * Resolves when the page has sent no request for `ms`, counted from the call. Unlike `waitForLoadState('networkidle')`
+ * it cannot be satisfied by an earlier quiet period, so call it after the trigger.
+ */
+export async function quietNetwork(page: Page, ms = 500) {
+  let last = Date.now();
+  const onRequest = () => {
+    last = Date.now();
+  };
+  page.on('request', onRequest);
+  try {
+    await expect.poll(() => Date.now() - last >= ms).toBe(true);
+  } finally {
+    page.off('request', onRequest);
+  }
+}
 
 export function observeQueries(page: Page, dashboardUid?: string) {
   const requests: Array<{

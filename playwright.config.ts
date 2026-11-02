@@ -28,7 +28,6 @@ const MATRIX_SPECS = [
   'panel-edit-requests',
   'refresh',
   'reset-corner',
-  'split-editor',
 ];
 const matrixOnly = new RegExp(`@matrix|(^|[ /])(${MATRIX_SPECS.join('|')})\\.spec\\.ts`);
 const webkit = process.env.PW_WEBKIT

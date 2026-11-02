@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { ConfigV4 } from '../src/model/v4';
-import { expect, observeQueries, promTarget, test, testdataTarget } from './authoring-fixtures';
+import { expect, observeQueries, promTarget, quietNetwork, test, testdataTarget } from './authoring-fixtures';
 
 // Three fictional devices. Each device has its own health series; the class `devices` reads them by the key.
 const COUNT = 3;
@@ -205,7 +205,8 @@ test.describe('popup open', () => {
     }
     const mutations = (name: 'panel' | 'popup') =>
       page.evaluate((key) => (window as unknown as Record<string, number>)[key], `__dmapMutations_${name}`);
-    await page.waitForTimeout(1000);
+    // Late calls of the query editors and the popup mount end here: the network is quiet for 500 ms.
+    await quietNetwork(page);
     const requestsAtOpen = requests.length;
     const valuesAtOpen = values.at(-1)!;
     const panelBefore = await mutations('panel');

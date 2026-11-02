@@ -198,7 +198,9 @@ test('in panel edit the edit-bindings button joins the reset button and the badg
       expect(b.x, `${name}: left edge`).toBeGreaterThanOrEqual(narrow.x);
       expect(b.x + b.width, `${name}: right edge`).toBeLessThanOrEqual(narrow.x + narrow.width);
     }
-    await panel.screenshot({ path: testInfo.outputPath('corner-narrow.png') });
+    if (process.env.DMAP_SCREENSHOTS) {
+      await panel.screenshot({ path: testInfo.outputPath('corner-narrow.png') });
+    }
     await page.setViewportSize({ width: 1440, height: 900 });
     // the button opens the split editor with the stored config in the code box
     await edit.click();
