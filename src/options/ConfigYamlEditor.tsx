@@ -28,11 +28,6 @@ interface Check {
 }
 
 const OWNER = 'drawiomap-config';
-/**
- * The editor waits this long after the last keystroke, then reads the text: the markers, the notice and the stored value
- * come from it. A blur, Ctrl+S and the unmount read the text at once.
- */
-export const SETTLE_MS = 150;
 
 export const toYaml = (value: unknown): string => (value === undefined || value === null ? '' : writeYaml(value));
 
@@ -174,18 +169,12 @@ export default function ConfigYamlEditor({ value, onChange }: Props) {
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
-  /** True after a keystroke that the editor did not read yet. */
-  const pendingRef = useRef(false);
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (sortedJson(value) === sortedJson(savedRef.current)) {
       return;
     }
     savedRef.current = value;
-    // A new value from outside replaces the box text, with the keystrokes that wait.
-    clearTimeout(settleTimer.current);
-    pendingRef.current = false;
     textRef.current = toYaml(value);
     setText(textRef.current);
     setResult(check(textRef.current));
@@ -205,43 +194,21 @@ export default function ConfigYamlEditor({ value, onChange }: Props) {
     );
   }, [instance, result]);
 
-  /**
-   * Read the text of the box: the markers, the notice and the stored value come from it. The timer, a blur, Ctrl+S
-   * and the unmount call it. The unmount does not set the state.
-   */
-  const settle = useCallback((show = true) => {
-    clearTimeout(settleTimer.current);
-    if (!pendingRef.current) {
+  const onEdit = useCallback((next: string) => {
+    if (next === textRef.current) {
       return;
     }
-    pendingRef.current = false;
-    const checked = check(textRef.current);
-    if (show) {
-      setResult(checked);
-      setUnsaved(!('json' in checked));
-    }
+    textRef.current = next;
+    setText(next);
+    const checked = check(next);
+    setResult(checked);
+    setUnsaved(!('json' in checked));
     if ('json' in checked) {
       const update = configUpdate(savedRef.current, checked.json);
       savedRef.current = checked.json;
       onChangeRef.current(update);
     }
   }, []);
-
-  const onEdit = useCallback(
-    (next: string) => {
-      if (next === textRef.current) {
-        return;
-      }
-      textRef.current = next;
-      setText(next);
-      pendingRef.current = true;
-      clearTimeout(settleTimer.current);
-      settleTimer.current = setTimeout(settle, SETTLE_MS);
-    },
-    [settle]
-  );
-  // The last keystrokes reach the stored value when the editor closes.
-  useEffect(() => () => settle(false), [settle]);
 
   const onEditorDidMount = useCallback((editor: MonacoEditor, monaco: Monaco) => setInstance({ editor, monaco }), []);
 
@@ -254,8 +221,6 @@ export default function ConfigYamlEditor({ value, onChange }: Props) {
         showLineNumbers
         showMiniMap={false}
         onChange={onEdit}
-        onBlur={() => settle()}
-        onSave={() => settle()}
         onEditorDidMount={onEditorDidMount}
       />
       {unsaved && (

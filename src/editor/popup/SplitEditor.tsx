@@ -7,7 +7,7 @@ import type { BindResultV4 } from '../../binding/bindV4';
 import { bindContextFor } from '../../binding/context';
 import { edgeEnds, type EndContext } from '../../binding/edgeEnds';
 import { snapshotV4 } from '../../binding/rowData';
-import { check, rangeOf, SETTLE_MS, toYaml } from '../../options/ConfigYamlEditor';
+import { check, rangeOf, toYaml } from '../../options/ConfigYamlEditor';
 import { readYaml } from '../../options/yamlConfig';
 import { configUpdate } from '../../options/storedConfig';
 import { indexSeries } from '../../query/seriesIndex';
@@ -47,8 +47,13 @@ export interface SplitEditorProps {
 
 /** The editor waits this long after the last cursor move (spec 5.3). */
 export const CURSOR_WAIT_MS = 150;
-/** The editor waits this long after the last keystroke, then reads the text (see `ConfigYamlEditor`). */
-export { SETTLE_MS };
+/**
+ * The editor waits this long after the last keystroke, then reads the text: the draft, the markers, the report and the
+ * bind. A blur, Apply, Ctrl+S and a close read the text at once. The draft reaches the host only through Apply, which
+ * reads the text first, so the wait never hides a keystroke from a save. (`ConfigYamlEditor` does not wait: Grafana
+ * reads its value at the start of a save, with no blur before.)
+ */
+export const SETTLE_MS = 150;
 /** The margin around the highlighted cells when the stage zooms to them, as a share of the larger side of the diagram. */
 const FIT_MARGIN = 0.03;
 const MARKER_OWNER = 'drawiomap-split-editor';
