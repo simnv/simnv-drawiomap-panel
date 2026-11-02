@@ -116,6 +116,8 @@ type CellsFree = CellsEntry extends infer E ? (E extends CellsEntry ? Omit<E, 'c
 class Report {
   readonly entries: ReportEntry[];
   private readonly byKey = new Map<string, ReportEntry>();
+  /** the cells of each entry that has cells: the check for a repeat is O(1) */
+  private readonly cellsOf = new Map<ReportEntry, Set<string>>();
 
   constructor(first: ReportEntry[]) {
     this.entries = [...first];
@@ -136,8 +138,11 @@ class Report {
       found = { ...entry, cellIds: [] } as CellsEntry;
       this.byKey.set(key, found);
       this.entries.push(found);
+      this.cellsOf.set(found, new Set());
     }
-    if (!found.cellIds.includes(cellId)) {
+    const seen = this.cellsOf.get(found)!;
+    if (!seen.has(cellId)) {
+      seen.add(cellId);
       found.cellIds.push(cellId);
     }
   }

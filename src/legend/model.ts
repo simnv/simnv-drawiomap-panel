@@ -95,8 +95,18 @@ interface Draft extends LegendBlock {
 
 const GRADIENT_STOPS = 5;
 
+/** The ids of each list that `push` fills: a list is only ever changed by `push`, so its set stays equal to it. */
+const members = new WeakMap<string[], Set<string>>();
+
+/** Add an id to a list once, in the order of the first add. The set makes a block of N cells O(N), not O(N^2). */
 const push = (list: string[], id: string) => {
-  if (!list.includes(id)) {
+  let seen = members.get(list);
+  if (!seen) {
+    seen = new Set(list);
+    members.set(list, seen);
+  }
+  if (!seen.has(id)) {
+    seen.add(id);
     list.push(id);
   }
 };

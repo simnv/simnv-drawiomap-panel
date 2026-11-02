@@ -62,6 +62,18 @@ const legendOf = (cells: Array<[string, CellPatch]>, f: Field, refId: string, co
   buildLegendV4(new Map(cells) as PatchMap, new Map([[refId, f]]), context);
 
 describe('buildLegendV4: link load scales', () => {
+  it('lists each cell once, in the order of the cells, for 1,000 links with two halves each', () => {
+    const s = series({ thresholds });
+    const ids = Array.from({ length: 1000 }, (_, i) => `l${i}`);
+    const [block] = buildLegendV4(
+      new Map(ids.map((id) => link(id, half(s, { percent: 10 }), half(s, { percent: 20 })))),
+      new Map(),
+      ctx
+    );
+    expect(block.cellIds).toEqual(ids);
+    expect(block.entries[0].cellIds).toEqual(ids);
+    expect(block.entries[1].cellIds).toEqual([]);
+  });
   it('makes one block for links with a capacity, with percent labels in order and the cells of each step', () => {
     const s = series({ thresholds });
     const blocks = buildLegendV4(

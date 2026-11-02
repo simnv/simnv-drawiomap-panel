@@ -51,6 +51,25 @@ const patchesOf = (list: Array<[string, V4Status]>): PatchMap =>
   new Map(list.map(([cellId, statusView]) => [cellId, { cellId, scope: { cell: {} }, urls: [], statusView }]));
 
 describe('bandRowsV4', () => {
+  it('counts a cell once when its patch repeats under two keys, and sorts by the count of cells', () => {
+    const patches: PatchMap = new Map([
+      ...patchesOf([
+        ['a', v4('scrape_up', 'down', 'Offline')],
+        ['b', v4('scrape_up', 'down', 'Offline')],
+        ['c', v4('scrape_up', 'down', 'Offline')],
+        ['d', v4('scrape_up', 'down', 'Degraded')],
+        ['e', v4('scrape_up', 'down', 'Degraded')],
+      ]),
+      ...[...patchesOf([['a', v4('scrape_up', 'down', 'Offline')]])].map(([, patch]): [string, typeof patch] => [
+        'again',
+        patch,
+      ]),
+    ]);
+    expect(bandRowsV4(patches).map((r) => [r.text, r.count])).toEqual([
+      ['Offline · scrape_up: 3 cells', 3],
+      ['Degraded · scrape_up: 2 cells', 2],
+    ]);
+  });
   it('gives one row per text and refId, with the band text of spec 3.4', () => {
     const rows = bandRowsV4(
       patchesOf([

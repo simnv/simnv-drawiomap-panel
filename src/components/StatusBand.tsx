@@ -66,7 +66,10 @@ const STALE_TEXT = 'Stale';
  * The order is worst first, then the most cells first.
  */
 export function bandRowsV4(patches: PatchMap): BandRowV4[] {
-  const groups = new Map<string, { label: string; refId: string; severity: StatusView['state']; cellIds: string[] }>();
+  const groups = new Map<
+    string,
+    { label: string; refId: string; severity: StatusView['state']; cellIds: Set<string> }
+  >();
   for (const { cellId, statusView: status } of patches.values()) {
     if (!status || status.severity === 'normal') {
       continue;
@@ -76,18 +79,16 @@ export function bandRowsV4(patches: PatchMap): BandRowV4[] {
       severity === 'stale' ? STALE_TEXT : status.text && status.text !== NO_DATA_TEXT ? status.text : status.reason;
     const { refId } = status;
     const key = JSON.stringify([severity, label, refId]);
-    const group = groups.get(key) ?? { label, refId, severity, cellIds: [] };
+    const group = groups.get(key) ?? { label, refId, severity, cellIds: new Set<string>() };
     groups.set(key, group);
-    if (!group.cellIds.includes(cellId)) {
-      group.cellIds.push(cellId);
-    }
+    group.cellIds.add(cellId);
   }
   return [...groups.values()]
-    .sort((a, b) => STATUS_SEVERITY[a.severity] - STATUS_SEVERITY[b.severity] || b.cellIds.length - a.cellIds.length)
+    .sort((a, b) => STATUS_SEVERITY[a.severity] - STATUS_SEVERITY[b.severity] || b.cellIds.size - a.cellIds.size)
     .map(({ label, refId, severity, cellIds }) => ({
-      text: `${label} · ${refId}: ${cells(cellIds.length)}`,
+      text: `${label} · ${refId}: ${cells(cellIds.size)}`,
       refId,
-      count: cellIds.length,
+      count: cellIds.size,
       severity,
     }));
 }
