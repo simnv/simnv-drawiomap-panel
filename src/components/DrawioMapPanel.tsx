@@ -379,7 +379,7 @@ function DrawioMapPanelView(props: ViewProps) {
     () => ({ ...DEFAULT_OPTIONS.zoom, mode: zoomMode, percent: zoomPercent, align, minScale }),
     [zoomMode, zoomPercent, align, minScale]
   );
-  useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
+  const { live } = useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
 
   const corner = useRef<HTMLDivElement>(null);
   // the drawn height of the top-left row (CornerControls); 0 without layout
@@ -397,6 +397,7 @@ function DrawioMapPanelView(props: ViewProps) {
     base: stage.base,
     view,
     setView,
+    live,
     wheel: wheelZoom,
     dragPan,
     align,

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { setLinkLabelScale, type StageRect } from '../render/linkLabels';
 import { applyLayout, viewBoxFor, type ViewBox } from '../render/zoom';
 import type { ZoomOptions } from '../types';
@@ -10,8 +10,12 @@ import type { Stage } from './useStage';
  * layout. `zoom` must keep its identity while its values stay the same.
  *
  * The scale of the value labels needs the rendered size of the svg. A `ResizeObserver` on the root keeps it, so a
- * pan or a zoom (a new view box on every pointer move) reads no layout; a layout that changes the size of the svg
- * (a new zoom mode, a new box) reads it once, before the observer reports the new size.
+ * pan or a zoom reads no layout; a layout that changes the size of the svg (a new zoom mode, a new box) reads it
+ * once, before the observer reports the new size.
+ *
+ * Returns `live`: writes a view of a gesture in progress (the view box and the label scale, nothing else changes
+ * during a gesture) without a render. The gesture commits its view to `view` when it ends; the effect then writes the
+ * same layout again.
  */
 export function useStageLayout(
   stage: Stage,
@@ -19,7 +23,7 @@ export function useStageLayout(
   box: { width: number; height: number } | undefined,
   view: ViewBox | null,
   containerRef: React.RefObject<HTMLDivElement>
-): void {
+): { live: (next: ViewBox) => void } {
   const width = box?.width;
   const height = box?.height;
   const rect = useRef<StageRect>();
@@ -59,4 +63,16 @@ export function useStageLayout(
       containerRef.current.style.overflow = layout.overflow;
     }
   }, [stage.root, stage.base, zoom, width, height, view, containerRef]);
+  const root = stage.root;
+  const live = useCallback(
+    (next: ViewBox) => {
+      if (!root) {
+        return;
+      }
+      root.setAttribute('viewBox', `${next.x} ${next.y} ${next.w} ${next.h}`);
+      setLinkLabelScale(root, rect.current);
+    },
+    [root]
+  );
+  return { live };
 }

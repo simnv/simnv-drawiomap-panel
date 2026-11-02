@@ -14,6 +14,12 @@ interface Args {
   base?: ViewBox;
   view: ViewBox | null;
   setView: React.Dispatch<React.SetStateAction<ViewBox | null>>;
+  /**
+   * Writes a view of a gesture in progress without a render (`useStageLayout().live`). With it, a move writes the
+   * view box only; the state commits when the gesture ends, when the wheel settles, and when `zoomed` flips.
+   * Without it, every move commits.
+   */
+  live?: (next: ViewBox) => void;
   /** The "Wheel zoom" option: the plain wheel zooms. Ctrl+wheel (a trackpad pinch) always zooms. */
   wheel: boolean;
   /** The "Drag pan" option: a mouse drag pans also at the configured view. */
@@ -44,6 +50,9 @@ interface Gesture {
   align: ZoomAlign;
 }
 
+/** A wheel stream with no event for this long has ended: its view commits. */
+const WHEEL_SETTLE_MS = 120;
+
 const rectOf = (el: Element): Rect => {
   const r = el.getBoundingClientRect();
   return { left: r.left, top: r.top, width: r.width, height: r.height };
@@ -63,10 +72,28 @@ const distOf = (pts: Pointer[]) => (pts.length > 1 ? Math.hypot(pts[0].x - pts[1
  * - Mouse or pen: a drag pans when the view is zoomed or "Drag pan" is on, also from a chart region.
  * - Ctrl+wheel (a trackpad pinch) zooms. The plain wheel zooms only when "Wheel zoom" is on.
  */
-export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragPan, align, ignore, scrub }: Args) {
-  const latest = useRef({ view, wheel, dragPan, align, ignore, scrub });
+export function usePanZoom({
+  wrapperRef,
+  root,
+  base,
+  view,
+  setView,
+  live,
+  wheel,
+  dragPan,
+  align,
+  ignore,
+  scrub,
+}: Args) {
+  const latest = useRef({ view, wheel, dragPan, align, ignore, scrub, live });
+  // the view as it is written: the committed one, or the one of the gesture in progress
+  const current = useRef<{ committed: ViewBox | null; view: ViewBox | null }>({ committed: view, view });
   useLayoutEffect(() => {
-    latest.current = { view, wheel, dragPan, align, ignore, scrub };
+    latest.current = { view, wheel, dragPan, align, ignore, scrub, live };
+    // a new committed view (a reset, a new box, the end of a gesture) is the view
+    if (current.current.committed !== view) {
+      current.current = { committed: view, view };
+    }
   });
   const state = useRef({
     pointers: new Map<number, Pointer>(),
@@ -74,6 +101,7 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
     moved: false,
     applied: false,
     suppressClick: false,
+    settle: undefined as ReturnType<typeof setTimeout> | undefined,
   });
   const zoomed = !!base && !isDefaultView(view, base);
 
@@ -83,7 +111,33 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       return;
     }
     const s = state.current;
-    const isZoomed = () => !isDefaultView(latest.current.view, base);
+    const liveView = () => current.current.view;
+    const isZoomed = () => !isDefaultView(liveView(), base);
+    // The view of a gesture: written now, committed when the gesture ends (`commit`), when the wheel settles, and
+    // at once when it leaves or returns to the configured view (the reset button and the touch action follow).
+    const commit = () => {
+      clearTimeout(s.settle);
+      s.settle = undefined;
+      const next = current.current.view;
+      if (next !== current.current.committed) {
+        current.current.committed = next;
+        setView(next);
+      }
+    };
+    const apply = (next: ViewBox) => {
+      const writer = latest.current.live;
+      if (!writer) {
+        current.current = { committed: next, view: next };
+        setView(next);
+        return;
+      }
+      const flipped = isDefaultView(next, base) !== isDefaultView(current.current.committed, base);
+      current.current.view = next;
+      writer(next);
+      if (flipped) {
+        commit();
+      }
+    };
 
     // Start (or restart) the gesture from the pointers that are down now.
     const begin = () => {
@@ -96,7 +150,7 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
         s.gesture = null;
         return;
       }
-      const start = latest.current.view ?? base;
+      const start = liveView() ?? base;
       const rect = rectOf(root);
       const mid = midOf(pts);
       const anchor = clientToView(start, rect, mid.x, mid.y, latest.current.align);
@@ -115,6 +169,7 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       s.gesture = null;
       s.moved = false;
       s.applied = false;
+      commit();
     };
 
     const onDown = (e: PointerEvent) => {
@@ -164,7 +219,7 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       const pts = [...s.pointers.values()];
       const ratio = g.dist && pts.length > 1 ? distOf(pts) / g.dist : 1;
       s.applied = true;
-      setView(pinchView(g.start, base, g.rect, g.anchor, midOf(pts), ratio, g.align));
+      apply(pinchView(g.start, base, g.rect, g.anchor, midOf(pts), ratio, g.align));
     };
     // A mouse that leaves the panel without capture does not send pointerup to the panel.
     const onLeave = (e: PointerEvent) => {
@@ -195,11 +250,13 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       }
       e.preventDefault();
       const rect = rectOf(root);
-      setView((v) => {
-        const cur = v ?? base;
-        const c = clientToView(cur, rect, e.clientX, e.clientY, latest.current.align);
-        return zoomAt(cur, clampFactor(cur, factor, base), c.x, c.y);
-      });
+      const cur = liveView() ?? base;
+      const c = clientToView(cur, rect, e.clientX, e.clientY, latest.current.align);
+      apply(zoomAt(cur, clampFactor(cur, factor, base), c.x, c.y));
+      if (latest.current.live) {
+        clearTimeout(s.settle);
+        s.settle = setTimeout(commit, WHEEL_SETTLE_MS);
+      }
     };
 
     // The capture phase: an element in the diagram that stops a pointer event does not stop the pan. A chart region
@@ -221,6 +278,8 @@ export function usePanZoom({ wrapperRef, root, base, view, setView, wheel, dragP
       el.removeEventListener('wheel', onWheel);
       s.pointers.clear();
       s.gesture = null;
+      clearTimeout(s.settle);
+      s.settle = undefined;
     };
   }, [wrapperRef, root, base, setView]);
 

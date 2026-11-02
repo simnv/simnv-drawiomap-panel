@@ -247,6 +247,88 @@ describe('ChartLayer', () => {
     unmount();
     s.host.remove();
   });
+  it('one observer serves every region, a mutation runs only the regions under it, and a pass reads each ancestor once', async () => {
+    // two chart cells and a plain cell; the nodes above a shape are shared, so a pass reads them once for both
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = mountSvg(
+      host,
+      '<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="a" data-meta-bind="host" data-meta-key="node-rtr-a"><rect width="180" height="70"/></g>' +
+        '<g data-cell-id="b" data-meta-bind="host" data-meta-key="node-rtr-b"><rect width="180" height="70"/></g>' +
+        '<g data-cell-id="other"><rect width="10" height="10"/></g></svg>'
+    );
+    const cells = buildCellIndex(root);
+    const shapes = ['a', 'b'].map((id) => cells.get(id)!.shape!);
+    for (const shape of shapes) {
+      Object.assign(shape.parentElement!, { getCTM: () => identity });
+      Object.assign(shape, {
+        getCTM: () => ({ ...identity, e: 12, f: 5 }),
+        getBBox: () => ({ x: 0, y: 0, width: 180, height: 70 }),
+        getBoundingClientRect: () => ({ left: 20, top: 20, right: 200, bottom: 90, width: 180, height: 70 }),
+      });
+    }
+    Object.assign(host, {
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 400, bottom: 200, width: 400, height: 200 }),
+    });
+    const validated = validateConfig({ version: 4, classes: { host: { match: { key: 'job' }, ...historyClass } } });
+    const data = panelData([frame('cpu', { job: 'node-rtr-a' }, [1, 2, 3]), frame('cpu', { job: 'node-rtr-b' }, [1, 2, 3])]);
+    const bound = bindV4({ index: cells, validated, data, ctx: bindCtx });
+    const ctx: CardContextV4 = { theme, replaceVariables: (v) => v, index: cells, validated, data };
+    const Original = MutationObserver;
+    let observers = 0;
+    let callbacks = 0;
+    vi.stubGlobal(
+      'MutationObserver',
+      class extends Original {
+        constructor(cb: MutationCallback) {
+          super((records, observer) => {
+            callbacks++;
+            cb(records, observer);
+          });
+          observers++;
+        }
+      }
+    );
+    const original = window.getComputedStyle;
+    let styles = 0;
+    vi.stubGlobal('getComputedStyle', (...args: Parameters<typeof original>) => {
+      styles++;
+      return original(...args);
+    });
+    try {
+      const { unmount } = render(
+        <ChartLayer root={root} cells={cells} viewport={host} charts={chartUsesV4(bound)} bound={bound} ctx={ctx} />
+      );
+      expect(root.querySelectorAll('[data-testid="dmap-chart"]')).toHaveLength(2);
+      expect(observers).toBe(1);
+      // the pass of the mount: each node on the paths from the shapes to the document, once
+      const nodes = new Set<Element>();
+      for (const shape of shapes) {
+        for (let node: Element | null = shape; node; node = node.parentElement) {
+          nodes.add(node);
+        }
+      }
+      expect(styles).toBe(nodes.size);
+      // a hover class on the plain cell reaches no region: nothing is read
+      styles = 0;
+      callbacks = 0;
+      await act(async () => {
+        cells.get('other')!.group.setAttribute('class', 'dmap-hover');
+      });
+      expect(callbacks).toBe(1);
+      expect(styles).toBe(0);
+      // a class on the cell of one chart runs that region only: its own nodes, once
+      await act(async () => {
+        cells.get('a')!.group.setAttribute('class', 'dmap-hover');
+      });
+      expect(styles).toBeGreaterThan(0);
+      expect(styles).toBeLessThan(nodes.size);
+      unmount();
+    } finally {
+      vi.unstubAllGlobals();
+      host.remove();
+    }
+  });
   it('explains an invalid anchor without drawing the chart', () => {
     const s = setup(historyClass, cpu());
     Object.assign(s.rect, { getCTM: () => null });
@@ -268,13 +350,13 @@ describe('ChartLayer', () => {
     expect(region.getAttribute('width')).toBe('180');
     expect(region.style.pointerEvents).toBe('none');
     expect(drawn(s)).toBeTruthy();
+    // a pan or a zoom writes the viewBox and settles with a new revision of the layer: the clipped chart releases
     s.move(500);
-    await act(async () => {
-      s.root.setAttribute('viewBox', '0 0 100 100');
-    });
+    s.root.setAttribute('viewBox', '0 0 100 100');
+    rerender(layer(s, { revision: 2 }));
     expect(drawn(s)).toBeNull();
     s.move(20);
-    rerender(layer(s, { revision: 2 }));
+    rerender(layer(s, { revision: 3 }));
     expect(drawn(s)).toBeTruthy();
     unmount();
     expect(s.root.querySelector('foreignObject')).toBeNull();
