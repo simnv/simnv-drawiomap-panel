@@ -14,40 +14,12 @@ import {
   ProtocolState,
 } from './protocol';
 import { useOverlay } from './popup/overlayStack';
-import { DIALOG_SHEET_MEDIA, DIALOG_VH, DIALOG_VW } from './dialogSize';
+import { dialogModalClass } from './dialogSize';
 import { parseFileRequest, readEditorFile } from './files';
 import { bundledEditorBase, editorTarget } from './target';
 import { EditorLoad, HELLO_TIMEOUT_MS, initialLoad, nextLoad, probeEditor, rememberProbe } from './availability';
 
 const styles = {
-  // The doubled selector wins over the Grafana Modal rules (top 10%, max-height 80%, margins and padding).
-  modal: css`
-    && {
-      top: 50%;
-      transform: translateY(-50%);
-      width: ${DIALOG_VW}vw;
-      max-width: ${DIALOG_VW}vw;
-      height: ${DIALOG_VH}vh;
-      height: ${DIALOG_VH}dvh;
-      max-height: ${DIALOG_VH}vh;
-      max-height: ${DIALOG_VH}dvh;
-      display: flex;
-      flex-direction: column;
-    }
-    ${DIALOG_SHEET_MEDIA} {
-      && {
-        top: 0;
-        transform: none;
-        width: 100vw;
-        max-width: 100vw;
-        height: 100vh;
-        height: 100dvh;
-        max-height: 100vh;
-        max-height: 100dvh;
-        border-radius: 0;
-      }
-    }
-  `,
   content: css`
     && {
       flex: 1;
@@ -243,7 +215,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
       }
       ariaLabel={heading}
       onDismiss={onClose}
-      className={styles.modal}
+      className={dialogModalClass}
       contentClassName={styles.content}
       closeOnBackdropClick={false}
     >

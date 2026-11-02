@@ -6,9 +6,7 @@ import {
   ThresholdsMode,
 } from '@grafana/data';
 import { DrawioMapPanel } from './components/DrawioMapPanel';
-import { IconRadioEditor, LEGEND_CORNERS, ZOOM_ALIGNS, ZOOM_MODES } from './options/IconRadioEditor';
-import { DiagramEditor } from './options/DiagramEditor';
-import { LazyConfigYamlEditor } from './options/LazyConfigYamlEditor';
+import { ConfigYamlEditor, DiagramEditor, IconRadioEditor } from './options/lazyEditors';
 import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
@@ -53,7 +51,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         description:
           'The classes and overrides as YAML. The panel stores them as JSON, so YAML comments are not kept. An error in the YAML or in the top level stops the save.',
         category: ['Bindings'],
-        editor: LazyConfigYamlEditor,
+        editor: ConfigYamlEditor,
       })
       // icons only: four labels do not fit the narrowest options pane
       .addCustomEditor({
@@ -63,7 +61,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.zoom.mode,
         editor: IconRadioEditor,
-        settings: ZOOM_MODES,
+        settings: { choices: 'zoom.mode' },
       })
       .addNumberInput({
         path: 'zoom.percent',
@@ -89,7 +87,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.zoom.align,
         editor: IconRadioEditor,
-        settings: ZOOM_ALIGNS,
+        settings: { choices: 'zoom.align' },
         showIf: (o) => (o.zoom?.mode ?? 'fit') === 'fit',
       })
       .addBooleanSwitch({
@@ -160,7 +158,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['Legend'],
         defaultValue: DEFAULT_OPTIONS.legend.corner,
         editor: IconRadioEditor,
-        settings: LEGEND_CORNERS,
+        settings: { choices: 'legend.corner' },
         showIf: (o) => o.legend?.show !== false,
       })
       .addBooleanSwitch({
