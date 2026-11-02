@@ -160,6 +160,8 @@ interface Query {
   series: Series[];
   /** the series that at least one cell selects */
   selected: Set<Series>;
+  /** the cadence of the refId, found on first use: without a request step it scans every sample of every series */
+  cadence?: { ms: number | undefined };
 }
 
 /** A match block of one refId, parsed once per bind, with its label-tuple map built on first use. */
@@ -284,6 +286,11 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
     queries.set(refId, found);
     return found;
+  };
+
+  const cadenceOfQuery = (refId: string, q: Query): number | undefined => {
+    q.cadence ??= { ms: cadenceOf(refId, data.request, q.series) };
+    return q.cadence.ms;
   };
 
   const blockOf = (use: Use): Block => {
@@ -552,7 +559,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     const check = staleCheck(r.series, {
       timeRange: data.timeRange,
       request: data.request,
-      freshnessMs: freshnessMs(eff.freshness ?? config!.freshness, cadenceOf(use.refId, data.request, q.series)),
+      freshnessMs: freshnessMs(eff.freshness ?? config!.freshness, cadenceOfQuery(use.refId, q)),
       instant: isInstant(data, use.refId),
     });
     if (check.reason !== undefined) {
