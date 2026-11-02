@@ -1,6 +1,6 @@
 import React, { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { buttonNamed } from '../testUtils';
 import pluginJson from '../../plugin.json';
 import { PluginDialog } from './PluginDialog';
@@ -28,6 +28,20 @@ function mount(extra?: React.ReactNode, onDismiss = vi.fn()) {
 afterEach(() => {
   document.body.style.overflow = '';
 });
+
+/**
+ * Takes the animation frames of the focus guard under test control. Only frames: waitFor needs the real timers.
+ * Call it before the dialog mounts.
+ */
+function controlFrames() {
+  vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+}
+
+/** Runs the mutation observer callbacks and then more frames than the guard needs: a full observation window. */
+const runFrames = () => act(() => vi.advanceTimersByTimeAsync(100));
 
 describe('PluginDialog', () => {
   it('renders into a host in the body that carries the sandbox attribute, and removes it on unmount', () => {
@@ -206,6 +220,7 @@ describe('PluginDialog', () => {
     });
 
     it('lets the focus stay in a body-level popover of another library outside #reactRoot', async () => {
+      controlFrames();
       push('guard-test');
       guarded(<button>one</button>);
       const root = document.createElement('div');
@@ -214,7 +229,7 @@ describe('PluginDialog', () => {
       const popover = document.createElement('input');
       document.body.appendChild(popover);
       act(() => popover.focus());
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await runFrames();
       expect(document.activeElement).toBe(popover);
       popover.remove();
       root.remove();
@@ -222,6 +237,7 @@ describe('PluginDialog', () => {
     });
 
     it('lets the focus stay in the Grafana portal container and in another dialog', async () => {
+      controlFrames();
       push('guard-test');
       guarded(<button>one</button>);
       const portal = document.createElement('div');
@@ -230,20 +246,21 @@ describe('PluginDialog', () => {
       portal.appendChild(inner);
       document.body.appendChild(portal);
       act(() => inner.focus());
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await runFrames();
       expect(document.activeElement).toBe(inner);
       portal.remove();
       pop('guard-test');
     });
 
     it('does nothing while another overlay is on top', async () => {
+      controlFrames();
       push('guard-test');
       push('nested');
       guarded(<button>one</button>);
       const outside = document.createElement('button');
       document.body.appendChild(outside);
       act(() => outside.focus());
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await runFrames();
       expect(document.activeElement).toBe(outside);
       outside.remove();
       pop('nested');

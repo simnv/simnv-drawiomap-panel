@@ -1430,8 +1430,13 @@ describe('DrawioMapPanel legend rows of the diagram', () => {
   it('a diagram without pg-symbol does nothing', async () => {
     const { container } = render(<DrawioMapPanel {...panel(false)} />);
     const el = await row();
+    // The paint runs in an animation frame: the test advances the frames, so the whole window is observed at once.
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     fireEvent(el, Object.assign(new Event('pointerover', { bubbles: true }), { pointerType: 'mouse' }));
-    await new Promise((r) => setTimeout(r, 50));
+    await act(() => vi.advanceTimersByTimeAsync(100));
     expect(container.querySelector('svg.dmap-legend-active')).toBeNull();
   });
 });
@@ -1809,15 +1814,30 @@ describe('DrawioMapPanel refresh and freshness', () => {
     await waitFor(() => expect(view.container.querySelector('[data-cell-id="a"]')).toBeTruthy());
     await nextFrame();
     const binds = work.binds;
+    // The timers and the clock are under test control from here: the window below ends after the 400 ms deadline
+    // of the new sample, so the tick of the clock is inside it. Animation frames stay real.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     view.rerender(
       <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now(), 2)] }} />
     );
     await nextFrame();
-    await new Promise((r) => setTimeout(r, 30));
+    expect(work.binds - binds).toBe(1);
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    await nextFrame();
+    // the clock ticked: the cell is stale now, and the tick caused no bind
+    expect(view.container.querySelector('[data-cell-id="a"]')?.getAttribute('data-dmap-status')).toBe('stale');
     expect(work.binds - binds).toBe(1);
   });
 
   it('a status sample that is already stale on arrival shows stale in the first applier call', async () => {
+    // Only Date is under test control: the panel reads the clock at mount and the test moves it by 450 ms at once.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const base = props({ id: 63 });
     const saved = { ...options, config: freshnessConfig, diagram };
     // the first sample is far in the future: the clock of the panel is read at mount and no deadline moves it
@@ -1832,7 +1852,7 @@ describe('DrawioMapPanel refresh and freshness', () => {
     const applies = panelApplies();
     // 450 ms later a sample arrives whose deadline lies between the clock read at mount and now: the pass with
     // the stored clock would call it fresh, the correction runs before the applier's animation frame
-    await new Promise((r) => setTimeout(r, 450));
+    vi.setSystemTime(Date.now() + 450);
     view.rerender(
       <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 401)] }} />
     );
