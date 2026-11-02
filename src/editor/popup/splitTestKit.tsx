@@ -151,6 +151,8 @@ export function createFakeMonaco() {
         },
       },
     },
+    /** Ctrl+S in the code box. */
+    save: () => {},
     /** Sends a cursor event, as a click or a key in the code box does. */
     fire(position: Position, source = 'mouse') {
       for (const listener of [...fake.cursor]) {
@@ -177,10 +179,14 @@ export function createFakeMonaco() {
     value: string;
     language: string;
     onChange?: (text: string) => void;
+    onBlur?: (text: string) => void;
+    onSave?: (text: string) => void;
     onEditorDidMount?: (editor: unknown, monaco: unknown) => void;
   }) {
     fake.text = props.value;
     const { onEditorDidMount } = props;
+    // Ctrl+S in Grafana calls `onSave` with the text of the editor.
+    fake.save = () => props.onSave?.(fake.text);
     // Grafana calls the mount callback once, after Monaco loads.
     const mounted = React.useRef(false);
     React.useEffect(() => {
@@ -201,6 +207,7 @@ export function createFakeMonaco() {
           fake.text = e.target.value;
           props.onChange?.(e.target.value);
         }}
+        onBlur={() => props.onBlur?.(fake.text)}
       />
     );
   }

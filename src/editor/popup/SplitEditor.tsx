@@ -47,6 +47,13 @@ export interface SplitEditorProps {
 
 /** The editor waits this long after the last cursor move (spec 5.3). */
 export const CURSOR_WAIT_MS = 150;
+/**
+ * The editor waits this long after the last keystroke, then reads the text: the draft, the markers, the report and the
+ * bind. A blur, Apply, Ctrl+S and a close read the text at once. The draft reaches the host only through Apply, which
+ * reads the text first, so the wait never hides a keystroke from a save. (`ConfigYamlEditor` does not wait: Grafana
+ * reads its value at the start of a save, with no blur before.)
+ */
+export const SETTLE_MS = 150;
 /** The margin around the highlighted cells when the stage zooms to them, as a share of the larger side of the diagram. */
 const FIT_MARGIN = 0.03;
 const MARKER_OWNER = 'drawiomap-split-editor';
@@ -133,24 +140,45 @@ export function SplitEditor({
   const [base, setBase] = useState(() => baseRevision(options));
   const [savedText, setSavedText] = useState(() => toYaml(options.config));
   const [savedDiagram, setSavedDiagram] = useState(options.diagram);
+  /** The text in the code box. It follows each keystroke. */
   const [text, setText] = useState(() => toYaml(options.config));
+  /** The last text that the editor read: the markers, the report and the draft come from it. */
+  const [settledText, setSettledText] = useState(text);
   /** The value of the last text that parsed. */
   const [draft, setDraft] = useState<unknown>(options.config);
   const textRef = useRef(text);
-  const onEdit = useCallback((next: string) => {
-    if (next === textRef.current) {
+  const settledRef = useRef(text);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Read the text now. The timer, a blur, Apply, Ctrl+S and a close call it. */
+  const settle = useCallback(() => {
+    clearTimeout(settleTimer.current);
+    const next = textRef.current;
+    if (next === settledRef.current) {
       return;
     }
-    textRef.current = next;
-    setText(next);
+    settledRef.current = next;
+    setSettledText(next);
     const read = readYaml(next);
     if (read.ok) {
       setDraft(read.value);
     }
   }, []);
-  const checked = useMemo(() => check(text), [text]);
+  const onEdit = useCallback(
+    (next: string) => {
+      if (next === textRef.current) {
+        return;
+      }
+      textRef.current = next;
+      setText(next);
+      clearTimeout(settleTimer.current);
+      settleTimer.current = setTimeout(settle, SETTLE_MS);
+    },
+    [settle]
+  );
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
+  const checked = useMemo(() => check(settledText), [settledText]);
   const marks = checked.marks;
-  const yamlEntries = useMemo(() => readDraft(text).entries, [text]);
+  const yamlEntries = useMemo(() => readDraft(settledText).entries, [settledText]);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const stage = useStage(stageRef, diagram?.svg, diagram?.hash);
@@ -245,6 +273,14 @@ export function SplitEditor({
   useEffect(() => {
     sourceRef.current = source;
   }, [source]);
+  /** The source with the draft of the text in the box: a keystroke that waits for the read still shows in a completion. */
+  const sourceNow = useCallback((): CompletionSource => {
+    if (settledRef.current === textRef.current) {
+      return sourceRef.current;
+    }
+    const read = readYaml(textRef.current);
+    return read.ok ? { ...sourceRef.current, draft: read.value } : sourceRef.current;
+  }, []);
 
   const [instance, setInstance] = useState<Instance>();
   const cursorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -263,8 +299,8 @@ export function SplitEditor({
     if (!instance || !model) {
       return;
     }
-    const completion = registerCompletion(instance.monaco, model.id, () => sourceRef.current);
-    const hover = registerHover(instance.monaco, model.id, () => sourceRef.current);
+    const completion = registerCompletion(instance.monaco, model.id, sourceNow);
+    const hover = registerHover(instance.monaco, model.id, sourceNow);
     const cursor = instance.editor.onDidChangeCursorPosition((event) => {
       clearTimeout(cursorTimer.current);
       // A move of the editor itself (a report click) keeps the highlight of that click.
@@ -288,7 +324,7 @@ export function SplitEditor({
       completion.dispose();
       hover.dispose();
     };
-  }, [instance]);
+  }, [instance, sourceNow]);
 
   useEffect(() => {
     const model = instance?.editor.getModel();
@@ -379,12 +415,13 @@ export function SplitEditor({
   const dirty = text !== savedText || diagram !== savedDiagram;
   const [discard, setDiscard] = useState(false);
   const requestClose = useCallback(() => {
+    settle();
     if (dirty) {
       setDiscard(true);
     } else {
       onClose?.();
     }
-  }, [dirty, onClose]);
+  }, [dirty, onClose, settle]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const keys = usePopupKeys({
     id: OVERLAY_ID,
@@ -397,8 +434,11 @@ export function SplitEditor({
   const reload = () => {
     const nextText = toYaml(options.config);
     clearTimeout(cursorTimer.current);
+    clearTimeout(settleTimer.current);
     textRef.current = nextText;
+    settledRef.current = nextText;
     setText(nextText);
+    setSettledText(nextText);
     setDraft(options.config);
     setSavedText(nextText);
     setSavedDiagram(options.diagram);
@@ -411,14 +451,19 @@ export function SplitEditor({
     setView(null);
     lastFit.current = '';
   };
+  // A keystroke that the editor did not read yet.
+  const pending = settledText !== text;
   const apply = () => {
-    if (!onOptionsChange || conflict || !('json' in checked)) {
+    // Apply saves the text in the box, not the text of the last read: the last keystroke is never lost.
+    const final = settledText === textRef.current ? checked : check(textRef.current);
+    settle();
+    if (!onOptionsChange || conflict || !('json' in final)) {
       return;
     }
-    const next = { ...options, config: checked.json, diagram };
-    onOptionsChange({ ...next, config: configUpdate(options.config, checked.json) });
+    const next = { ...options, config: final.json, diagram };
+    onOptionsChange({ ...next, config: configUpdate(options.config, final.json) });
     setBase(baseRevision(next));
-    setSavedText(text);
+    setSavedText(textRef.current);
     setSavedDiagram(diagram);
   };
 
@@ -433,6 +478,8 @@ export function SplitEditor({
           showLineNumbers
           showMiniMap={false}
           onChange={onEdit}
+          onBlur={settle}
+          onSave={settle}
           onEditorDidMount={onEditorDidMount}
         />
       }
@@ -497,7 +544,7 @@ export function SplitEditor({
         <Button variant="secondary" disabled={!versions.future.length} onClick={() => setVersions(redo)}>
           Redo
         </Button>
-        <Button disabled={!onOptionsChange || conflict || !('json' in checked)} onClick={apply}>
+        <Button disabled={!onOptionsChange || conflict || (!pending && !('json' in checked))} onClick={apply}>
           Apply
         </Button>
       </div>

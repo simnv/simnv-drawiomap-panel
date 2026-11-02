@@ -204,6 +204,17 @@ describe('ConfigYamlEditor', () => {
     expect(editor().value).toBe(text);
   });
 
+  it('stores a valid value at the keystroke, with no wait, no blur and no Ctrl+S', () => {
+    // Grafana reads the options when the user starts to save, with no blur before: the value must be current at once.
+    const { onChange } = mount();
+    type(['version: 4', 'classes:', '  a: { match: { key: job }, status: up }', ''].join('\n'));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.lastCall?.[0].classes).toEqual({ 'node-up': undefined, a: expect.anything() });
+    type(['version: 4', 'classes:', '  a: { match: { key: job }, status: down }', ''].join('\n'));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(onChange.mock.lastCall?.[0])).toContain('down');
+  });
+
   it('writes a new stored value from outside as YAML', () => {
     const { rerender } = mount();
     const next = { version: 4, classes: {}, overrides: { 'cell-1': { status: 'up' } } };
