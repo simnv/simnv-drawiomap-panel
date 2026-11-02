@@ -477,5 +477,32 @@ git commit -qm op
 opensweep "--commit" --commit HEAD
 opensweep "--all" --all
 
+# The hooks directory comes from a checked dirname. A failing dirname must not make the scan read
+# privacy-allow.txt from the current directory (here a file that allows every address).
+newrepo dn
+p1=10.99
+printf 'ip %s.1.2\n' "$p1" > dn.txt
+printf '.*\n' > privacy-allow.txt
+git add -A
+mkdir -p "$root/dnshim"
+printf '#!/bin/sh\nexit 2\n' > "$root/dnshim/dirname"
+chmod +x "$root/dnshim/dirname"
+mkdir -p "$root/dnshim0"
+printf '#!/bin/sh\nexit 0\n' > "$root/dnshim0/dirname"
+chmod +x "$root/dnshim0/dirname"
+out="$root/dn0.out"; hook > "$out" 2>&1; rc=$?
+check "dn: normal staged scan blocks the address" test $rc -eq 1
+out="$root/dn1.out"; env PATH="$root/dnshim:$PATH" sh "$hooks/check-denylist.sh" > "$out" 2>&1; rc=$?
+check "dn: a failing dirname exits 2 (staged)" test $rc -eq 2
+out="$root/dn2.out"; env PATH="$root/dnshim0:$PATH" sh "$hooks/check-denylist.sh" > "$out" 2>&1; rc=$?
+check "dn: a dirname with empty output exits 2 (staged)" test $rc -eq 2
+git commit -qm dn
+out="$root/dn3.out"; env PATH="$root/dnshim:$PATH" sh "$hooks/check-denylist.sh" --all > "$out" 2>&1; rc=$?
+check "dn: a failing dirname exits 2 (--all)" test $rc -eq 2
+out="$root/dn4.out"; env PATH="$root/dnshim:$PATH" sh "$hooks/check-denylist.sh" --commit HEAD > "$out" 2>&1; rc=$?
+check "dn: a failing dirname exits 2 (--commit)" test $rc -eq 2
+out="$root/dn5.out"; hook --commit HEAD > "$out" 2>&1; rc=$?
+check "dn: normal --commit scan blocks the address" test $rc -eq 1
+
 echo "$n checks, $fails failed"
 [ "$fails" -eq 0 ]

@@ -25,10 +25,19 @@ GIT_LITERAL_PATHSPECS=1
 export GIT_LITERAL_PATHSPECS
 
 DENYLIST="${SIMNV_PANEL_DENYLIST:-$HOME/.config/simnv-drawiomap-panel/denylist}"
-dir=$(cd "$(dirname "$0")" && pwd)
 tab=$(printf '\t')
 
 fail() { echo "privacy: $1" >&2; exit 2; }
+
+# Find the hooks directory in checked steps. A failed dirname must not fall back to the current
+# directory, because then the allowlist would come from the caller's repository.
+dir_name=$(dirname "$0") || fail "cannot find the hooks directory"
+[ -n "$dir_name" ] || fail "cannot find the hooks directory"
+dir=$(cd "$dir_name" && pwd) || fail "cannot find the hooks directory"
+[ -n "$dir" ] && [ -d "$dir" ] || fail "cannot find the hooks directory"
+# The directory must hold this script and the allowlist.
+[ -f "$dir/check-denylist.sh" ] && [ -f "$dir/privacy-allow.txt" ] || fail "cannot find the hooks directory"
+[ -n "$tab" ] || fail "scan failed"
 
 mode=staged
 range=
