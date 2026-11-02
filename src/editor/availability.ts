@@ -2,7 +2,8 @@
  * Start-up of the bundled editor. The host cannot see script errors in the editor frame: the frame has an opaque
  * origin, so the browser blocks the 404 responses (ORB) and the frame stays empty. Without these checks the modal
  * waits for the channel hello for ever. Thus the panel (same origin as the plugin files) reads js/main.js before it
- * makes the frame, and the modal stops to wait for the hello after HELLO_TIMEOUT_MS.
+ * makes the frame, and the modal stops to wait for the hello after HELLO_TIMEOUT_MS. A good probe holds for the
+ * session (initialLoad): the next modal of the same base makes the frame at once.
  */
 
 /** Time for the channel hello. js/dmap-shim.js sends it before draw.io loads, so it comes quickly. */
@@ -14,11 +15,25 @@ export const PROBE_TIMEOUT_MS = 10_000;
 /** ok: the editor files are there. missing: dist/drawio is not in the plugin build. unreachable: network error. */
 export type EditorProbe = 'ok' | 'missing' | 'unreachable';
 
-/** Start-up state of the editor. missing, unreachable and timeout are final: there is no retry. */
-export type EditorLoad = 'probing' | 'starting' | 'ready' | 'missing' | 'unreachable' | 'timeout';
+/**
+ * Start-up state of the editor. ready: the channel hello came. running: draw.io sent its init through the channel,
+ * so its scripts ran; a late probe result or timeout does not touch the frame. missing, unreachable and timeout are
+ * final: there is no retry.
+ */
+export type EditorLoad = 'probing' | 'starting' | 'ready' | 'running' | 'missing' | 'unreachable' | 'timeout';
 
-/** reload: the frame gets a new srcdoc document (theme change) and must send a new hello. */
-export type EditorLoadEvent = 'probe-ok' | 'probe-missing' | 'probe-unreachable' | 'hello' | 'timeout' | 'reload';
+/**
+ * init: the init message of draw.io came through the channel of the frame. reload: the frame gets a new srcdoc
+ * document (theme change) and must send a new hello.
+ */
+export type EditorLoadEvent =
+  | 'probe-ok'
+  | 'probe-missing'
+  | 'probe-unreachable'
+  | 'hello'
+  | 'init'
+  | 'timeout'
+  | 'reload';
 
 const JS_TYPE = /\b(?:java|ecma)script\b/i;
 
@@ -66,6 +81,42 @@ export async function probeEditor(
   }
 }
 
+// Bases with a good probe in this session. A failed probe or a failed start drops the base: the next modal waits for
+// its probe again.
+const goodBases = new Set<string>();
+
+/**
+ * First start-up state of a modal: starting when an earlier modal of this session had a good probe of base (the
+ * files were there, so the frame comes at once), else probing. The modal probes in both cases: a probe that fails
+ * after a fast start still ends in missing or unreachable (nextLoad).
+ */
+export function initialLoad(base: string): EditorLoad {
+  return goodBases.has(base) ? 'starting' : 'probing';
+}
+
+/** Keeps a good probe of base for the session. A failed probe drops the base. */
+export function rememberProbe(base: string, probe: EditorProbe): void {
+  if (probe === 'ok') {
+    goodBases.add(base);
+  } else {
+    goodBases.delete(base);
+  }
+}
+
+/** Drops base: the next modal waits for its probe (a failed start). */
+export function forgetProbe(base: string): void {
+  goodBases.delete(base);
+}
+
+/** Drops the kept probes. For tests. */
+export function forgetProbes(): void {
+  goodBases.clear();
+}
+
+function failedProbe(event: EditorLoadEvent): EditorLoad | undefined {
+  return event === 'probe-missing' ? 'missing' : event === 'probe-unreachable' ? 'unreachable' : undefined;
+}
+
 /** Next start-up state. */
 export function nextLoad(load: EditorLoad, event: EditorLoadEvent): EditorLoad {
   switch (load) {
@@ -77,9 +128,14 @@ export function nextLoad(load: EditorLoad, event: EditorLoadEvent): EditorLoad {
           : event === 'probe-unreachable'
             ? 'unreachable'
             : load;
+    // The probe of a fast start (initialLoad) can fail after the frame is there: the files went away.
     case 'starting':
-      return event === 'hello' ? 'ready' : event === 'timeout' ? 'timeout' : load;
+      return event === 'hello' ? 'ready' : event === 'timeout' ? 'timeout' : failedProbe(event) ?? load;
     case 'ready':
+      return event === 'init' ? 'running' : event === 'reload' ? 'starting' : (failedProbe(event) ?? load);
+    // The editor works: a late result of the probe (the files went away after draw.io loaded, or the probe hung)
+    // must not remove it. The probe still drops the base for the next modal (rememberProbe).
+    case 'running':
       return event === 'reload' ? 'starting' : load;
     default:
       return load;

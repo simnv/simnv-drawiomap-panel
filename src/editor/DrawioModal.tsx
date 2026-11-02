@@ -14,40 +14,20 @@ import {
   ProtocolState,
 } from './protocol';
 import { useOverlay } from './popup/overlayStack';
-import { DIALOG_SHEET_MEDIA, DIALOG_VH, DIALOG_VW } from './dialogSize';
+import { dialogModalClass } from './dialogSize';
 import { parseFileRequest, readEditorFile } from './files';
 import { bundledEditorBase, editorTarget } from './target';
-import { EditorLoad, HELLO_TIMEOUT_MS, nextLoad, probeEditor } from './availability';
+import {
+  EditorLoad,
+  forgetProbe,
+  HELLO_TIMEOUT_MS,
+  initialLoad,
+  nextLoad,
+  probeEditor,
+  rememberProbe,
+} from './availability';
 
 const styles = {
-  // The doubled selector wins over the Grafana Modal rules (top 10%, max-height 80%, margins and padding).
-  modal: css`
-    && {
-      top: 50%;
-      transform: translateY(-50%);
-      width: ${DIALOG_VW}vw;
-      max-width: ${DIALOG_VW}vw;
-      height: ${DIALOG_VH}vh;
-      height: ${DIALOG_VH}dvh;
-      max-height: ${DIALOG_VH}vh;
-      max-height: ${DIALOG_VH}dvh;
-      display: flex;
-      flex-direction: column;
-    }
-    ${DIALOG_SHEET_MEDIA} {
-      && {
-        top: 0;
-        transform: none;
-        width: 100vw;
-        max-width: 100vw;
-        height: 100vh;
-        height: 100dvh;
-        max-height: 100vh;
-        max-height: 100dvh;
-        border-radius: 0;
-      }
-    }
-  `,
   content: css`
     && {
       flex: 1;
@@ -115,12 +95,12 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stateRef = useRef<ProtocolState>(initialState(xml));
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');
-  const [load, dispatchLoad] = useReducer(nextLoad, 'probing');
   // A new token for each modal. The bundled editor sends it back in its channel hello.
   const [token] = useState(newChannelToken);
   const base = useMemo(() => bundledEditorBase(), []);
+  const [load, dispatchLoad] = useReducer(nextLoad, base, initialLoad);
   // The frame and its srcdoc document come only after a good probe of the editor files.
-  const started = load === 'starting' || load === 'ready';
+  const started = load === 'starting' || load === 'ready' || load === 'running';
   const target = useMemo(() => (started ? editorTarget(isDark, token) : undefined), [started, isDark, token]);
   const failure = FAILURES[load];
   // The port of the accepted channel hello. It stays open while the modal is open.
@@ -138,6 +118,10 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
       const step = handleMessage(stateRef.current, msg, opts);
       stateRef.current = step.state;
       setPhase(step.state.phase);
+      if (msg.event === 'init') {
+        // draw.io runs in the frame of the accepted hello: the probe of this modal cannot remove it any more.
+        dispatchLoad('init');
+      }
       step.send.forEach(reply);
       if (step.result) {
         onSave(step.result);
@@ -187,12 +171,28 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     }
   }, [target]);
 
-  // One probe for each modal. A failure is final: the user closes the modal and opens it again.
+  // One probe for each modal. After a good probe of the base in this session the frame is there from the start
+  // (initialLoad), and the probe confirms that the files are still there: the shim sends its hello before draw.io
+  // loads, so without the probe a missing main.js would leave the modal in ready without an error. A failure is
+  // final: the user closes the modal and opens it again. Once draw.io sent its init (running), a late failure of the
+  // probe only drops the base for the next modal.
   useEffect(() => {
     const ctrl = new AbortController();
-    probeEditor(base, fetch, ctrl.signal).then((probe) => !ctrl.signal.aborted && dispatchLoad(`probe-${probe}`));
+    probeEditor(base, fetch, ctrl.signal).then((probe) => {
+      if (!ctrl.signal.aborted) {
+        rememberProbe(base, probe);
+        dispatchLoad(`probe-${probe}`);
+      }
+    });
     return () => ctrl.abort();
   }, [base]);
+
+  // A failed start drops the base: the next modal waits for its probe again.
+  useEffect(() => {
+    if (load === 'timeout') {
+      forgetProbe(base);
+    }
+  }, [load, base]);
 
   useEffect(() => {
     if (load !== 'starting') {
@@ -234,7 +234,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
       }
       ariaLabel={heading}
       onDismiss={onClose}
-      className={styles.modal}
+      className={dialogModalClass}
       contentClassName={styles.content}
       closeOnBackdropClick={false}
     >
@@ -252,7 +252,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
             </Button>
           </Alert>
         )}
-        {!failure && (load !== 'ready' || phase === 'init') && (
+        {!failure && ((load !== 'ready' && load !== 'running') || phase === 'init') && (
           <div role="status" className={styles.status}>
             <Spinner inline /> Loading the draw.io editor…
           </div>

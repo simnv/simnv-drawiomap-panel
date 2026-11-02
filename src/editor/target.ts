@@ -58,6 +58,30 @@ function escapeAttr(s: string): string {
 }
 
 /**
+ * Scripts that draw.io adds to the document after js/bootstrap.js, in load order. bootstrap.js adds js/PreConfig.js,
+ * then js/app.min.js (10 MB) and js/PostConfig.js. App.main adds the shapes, the stencils and the extensions (10 MB)
+ * after the text resources. Without preloads each stage waits for the one before it. A preload link for each script
+ * starts its download at once; the script elements that draw.io adds later take the response from the preload cache.
+ * The names come from the vendored draw.io (scripts/vendor-drawio.sh). target.test.ts checks them against
+ * .drawio/webapp. A stale name costs one 404 and changes nothing else.
+ */
+export const EDITOR_PRELOADS = [
+  'js/PreConfig.js',
+  'js/app.min.js',
+  'js/PostConfig.js',
+  'js/shapes-14-6-5.min.js',
+  'js/stencils.min.js',
+  'js/extensions.min.js',
+];
+
+/**
+ * The text resource that App.main reads first (mxResources, the default bundle). The vendor script converts it to a
+ * script file that calls dmapVfs.put. The srcdoc loads that script directly, so the shim answers the request of
+ * draw.io from memory, without a request in the middle of the start-up.
+ */
+export const EDITOR_RESOURCE_SCRIPT = 'resources/dia.txt.js';
+
+/**
  * Document for the bundled editor. Grafana sends X-Frame-Options: deny for plugin files (allow_embedding = false),
  * so the iframe cannot load drawio/index.html. A srcdoc document is not subject to X-Frame-Options. <base> resolves
  * the draw.io scripts and resources to dist/drawio by absolute URL. In the sandboxed frame the document has an
@@ -66,19 +90,25 @@ function escapeAttr(s: string): string {
  * script files, and sends the channel hello with the token of <meta name="dmap-channel">.
  * The patched bootstrap.js reads the URL parameters from <meta name="dmap-search">.
  * The srcdoc document inherits the Grafana CSP. With content_security_policy = true the policy has
- * 'strict-dynamic' and a nonce: the script tags need the nonce, draw.io adds its other scripts from them.
- * The CSP <meta> (editorCsp) only adds restrictions.
+ * 'strict-dynamic' and a nonce: the script tags and the preload links need the nonce, draw.io adds its other
+ * scripts from them. The CSP <meta> (editorCsp) only adds restrictions.
+ * The document loads the same draw.io files as before, in the same order of execution: the preload links
+ * (EDITOR_PRELOADS) and the early resource script (EDITOR_RESOURCE_SCRIPT) only move the downloads to the start.
  */
 export function buildEditorSrcdoc(base: string, search: string, opts: { token: string; nonce?: string }): string {
   const n = opts.nonce ? ` nonce="${escapeAttr(opts.nonce)}"` : '';
+  const preloads = EDITOR_PRELOADS.map((src) => `<link${n} rel="preload" as="script" href="${src}">`).join('');
   return (
     '<!DOCTYPE html><html><head><meta charset="utf-8">' +
     `<meta http-equiv="Content-Security-Policy" content="${escapeAttr(editorCsp(base))}">` +
     `<base href="${escapeAttr(base)}">` +
     `<meta name="dmap-search" content="${escapeAttr(search)}">` +
     `<meta name="${CHANNEL_META}" content="${escapeAttr(opts.token)}">` +
+    preloads +
     '<link rel="stylesheet" type="text/css" href="styles/grapheditor.css">' +
     `<script${n} src="js/dmap-shim.js"></script>` +
+    // defer: the resource script runs after the parser, before the load event that starts App.main.
+    `<script${n} defer src="${EDITOR_RESOURCE_SCRIPT}"></script>` +
     `<script${n} src="js/bootstrap.js"></script>` +
     '</head><body class="geEditor geClassic"><div id="geInfo"><div id="geStatus"></div></div>' +
     `<script${n} src="js/main.js"></script></body></html>`

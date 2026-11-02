@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { getPanelOptionsWithDefaults } from '@grafana/data';
 import type { Options } from './types';
+import { iconChoices, type IconChoices } from './options/IconRadioEditor';
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads.
 vi.hoisted(() => {
@@ -80,7 +81,7 @@ describe('Build id option', () => {
     });
     expect(options).toMatchObject(saved);
   });
-  it('keeps options.build when the custom editor of the plugin changes an option: it gives only its own value', () => {
+  it('keeps options.build when the custom editor of the plugin changes an option: it gives only its own value', async () => {
     const onOptionsChange = vi.fn();
     const item = option('diagram')!;
     const Editor = item.editor!;
@@ -90,7 +91,8 @@ describe('Build id option', () => {
     render(
       React.createElement(Editor, { value: saved.diagram, onChange, context: { data: [], options: saved }, item })
     );
-    fireEvent.click(screen.getByText('Clear'));
+    // the editor comes from a lazy chunk
+    fireEvent.click(await screen.findByText('Clear'));
     expect(onOptionsChange).toHaveBeenCalledTimes(1);
     expect(onOptionsChange.mock.calls[0][0]).toEqual({ build: 'build-1', config: saved.config, diagram: undefined });
   });
@@ -121,21 +123,22 @@ describe('Last data timestamp option', () => {
 });
 
 describe('Compact icon options', () => {
-  /** Renders the editor of an option and gives its radio buttons. */
-  function radios(path: string, value: string) {
+  /** Renders the editor of an option (a lazy chunk) and gives its radio buttons. */
+  async function radios(path: string, value: string) {
     const item = option(path)!;
     const onChange = vi.fn();
     const view = render(
       React.createElement(item.editor!, { value, onChange, context: {}, item: item as unknown as object })
     );
-    return { item, onChange, view, radios: screen.getAllByRole('radio') };
+    return { item, onChange, view, radios: await screen.findAllByRole('radio') };
   }
+  /** The buttons that the settings of the option name in the chunk. */
   const settings = (path: string) =>
-    (option(path) as Item & { settings: { options: Array<{ value: string; description: string }> } }).settings;
+    iconChoices((option(path) as Item & { settings: { choices: IconChoices } }).settings.choices);
 
-  it('Zoom is a row of icons with a tooltip and a label each; the saved values do not change', () => {
+  it('Zoom is a row of icons with a tooltip and a label each; the saved values do not change', async () => {
     expect(option('zoom.mode')).toMatchObject({ kind: 'addCustomEditor', defaultValue: 'fit', category: ['View'] });
-    const { radios: buttons, onChange, view } = radios('zoom.mode', 'fit');
+    const { radios: buttons, onChange, view } = await radios('zoom.mode', 'fit');
     expect(screen.getByRole('radiogroup', { name: 'Zoom' })).toBeTruthy();
     expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Fit', 'Fit width', 'Original', 'Custom']);
     expect(settings('zoom.mode').options.map((o) => o.value)).toEqual(['fit', 'fit-width', 'original', 'custom']);
@@ -148,18 +151,18 @@ describe('Compact icon options', () => {
     expect(onChange).toHaveBeenCalledWith('fit-width');
   });
 
-  it('Align is a row of icons with a tooltip and a label each; the saved values do not change', () => {
+  it('Align is a row of icons with a tooltip and a label each; the saved values do not change', async () => {
     expect(option('zoom.align')).toMatchObject({ kind: 'addCustomEditor', defaultValue: 'top' });
     expect(option('zoom.align')?.showIf?.({ zoom: { mode: 'fit-width' } } as Options)).toBe(false);
-    const { radios: buttons, onChange } = radios('zoom.align', 'top');
+    const { radios: buttons, onChange } = await radios('zoom.align', 'top');
     expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Top', 'Center']);
     expect(settings('zoom.align').options.map((o) => o.value)).toEqual(['top', 'center']);
     fireEvent.click(screen.getByRole('radio', { name: 'Center' }));
     expect(onChange).toHaveBeenCalledWith('center');
   });
 
-  it('Corner is a picker of the four corners that saves the same values', () => {
-    const { radios: buttons, onChange } = radios('legend.corner', 'bottom-right');
+  it('Corner is a picker of the four corners that saves the same values', async () => {
+    const { radios: buttons, onChange } = await radios('legend.corner', 'bottom-right');
     expect(screen.getByRole('radiogroup', { name: 'Legend corner' })).toBeTruthy();
     expect(buttons.map((c) => c.getAttribute('aria-label'))).toEqual([
       'Top left',

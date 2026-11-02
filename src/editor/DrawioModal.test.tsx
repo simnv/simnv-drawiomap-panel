@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DrawioModal } from './DrawioModal';
-import { HELLO_TIMEOUT_MS } from './availability';
+import { forgetProbes, HELLO_TIMEOUT_MS, initialLoad, PROBE_TIMEOUT_MS } from './availability';
 import { PluginDialog } from './popup/PluginDialog';
 
 vi.hoisted(() => {
@@ -115,6 +115,7 @@ describe('DrawioModal start-up', () => {
     vi.stubGlobal('fetch', fetchFn);
     onClose.mockReset();
     fetchFn.mockReset();
+    forgetProbes();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -123,6 +124,129 @@ describe('DrawioModal start-up', () => {
 
   const open = () =>
     render(<DrawioModal xml="" title="t" mode="edit" isDark={false} onSave={() => {}} onClose={onClose} />);
+
+  it('makes the frame at once in the next modal of the session after a good probe, and probes in the background', async () => {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    expect(probes()).toHaveLength(1);
+    first.unmount();
+    open();
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('starting');
+    await settle();
+    expect(probes()).toHaveLength(2);
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('starting');
+    // The hello timeout runs from the mount.
+    await settle(HELLO_TIMEOUT_MS);
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('timeout');
+  });
+
+  it('shows the missing-editor error after a fast start when js/main.js went away, also after the hello', async () => {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    hello();
+    first.unmount();
+    // An incomplete plugin build: the shim still loads and sends its hello, main.js answers 404.
+    fetchFn.mockImplementation(async () => notFound());
+    const second = open();
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    hello();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('ready');
+    await settle();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('missing');
+    expect(screen.getByRole('alert').textContent).toContain(MISSING);
+    expect(screen.queryByTitle('draw.io')).toBeNull();
+    await settle(10 * HELLO_TIMEOUT_MS);
+    expect(screen.getByRole('alert').textContent).toContain(MISSING);
+    expect(probes()).toHaveLength(2);
+    // The base is dropped: the next modal waits for its probe.
+    second.unmount();
+    open();
+    expect(screen.queryByTitle('draw.io')).toBeNull();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('probing');
+  });
+
+  /** Whether the base of the modal is kept for the session (the next modal starts at once). */
+  const kept = () =>
+    initialLoad(new URL('public/plugins/simnv-drawiomap-panel/drawio/', document.baseURI).href) === 'starting';
+
+  /** A fast start (kept base) whose probe answers only when the test says so. */
+  async function openWithLateProbe() {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    first.unmount();
+    let answer!: (r: Response) => void;
+    fetchFn.mockImplementation(() => new Promise<Response>((resolve) => (answer = resolve)));
+    const view = open();
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    const port = hello();
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'init' }) }));
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'load' }) }));
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('running');
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-phase')).toBe('loaded');
+    expect(screen.queryByRole('status')).toBeNull();
+    return { view, answer: (r: Response) => answer(r) };
+  }
+
+  const editorStays = () => {
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('running');
+  };
+
+  it('keeps a working editor when the probe fails after the init of draw.io, and drops the base for the next modal', async () => {
+    const { view, answer } = await openWithLateProbe();
+    expect(kept()).toBe(true);
+    answer(notFound());
+    await settle();
+    editorStays();
+    await settle(10 * HELLO_TIMEOUT_MS);
+    editorStays();
+    expect(kept()).toBe(false);
+    view.unmount();
+    open();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('probing');
+  });
+
+  it('keeps a working editor when the probe times out after the init of draw.io', async () => {
+    await openWithLateProbe();
+    await settle(PROBE_TIMEOUT_MS + 1);
+    editorStays();
+    expect(probes()).toHaveLength(2);
+    expect(kept()).toBe(false);
+  });
+
+  it('waits for the probe again in the next modal after a hello timeout', async () => {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    first.unmount();
+    const second = open();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('starting');
+    await settle(HELLO_TIMEOUT_MS);
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('timeout');
+    second.unmount();
+    open();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('probing');
+  });
+
+  it('probes again in the next modal after a failed probe', async () => {
+    fetchFn.mockImplementation(async () => notFound());
+    const first = open();
+    await settle();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('missing');
+    first.unmount();
+    fetchFn.mockImplementation(async () => jsResponse());
+    open();
+    expect(screen.queryByTitle('draw.io')).toBeNull();
+    await settle();
+    expect(probes()).toHaveLength(2);
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+  });
 
   it('makes no editor frame before the probe of js/main.js', async () => {
     fetchFn.mockImplementation(async () => jsResponse());

@@ -6,10 +6,30 @@ import { localImports, SRC } from './importGraph';
 // View mode must not load editor code. Webpack puts every static import of module.ts in the main chunk;
 // an import() starts a lazy chunk. This walk follows the static value imports the same way.
 const EDITOR_ONLY = [
+  // the bindings popup and its dialog
   'editor/popup/PopupLayout.tsx',
   'editor/popup/DiagramStage.tsx',
   'editor/popup/SplitEditor.tsx',
+  'editor/popup/PluginDialog.tsx',
+  'editor/popup/usePopupKeys.ts',
+  'editor/popup/overlayStack.ts',
   'editor/split/yamlPath.ts',
+  // the draw.io modal behind the Diagram option
+  'editor/DrawioModal.tsx',
+  'editor/protocol.ts',
+  'editor/target.ts',
+  'editor/availability.ts',
+  'editor/files.ts',
+  'editor/decode.ts',
+  // the option editors
+  'options/DiagramEditor.tsx',
+  'options/importDiagram.ts',
+  'options/IconRadioEditor.tsx',
+  'options/LazyConfigYamlEditor.tsx',
+  'options/EditBindingsButton.tsx',
+  'options/ConfigYamlEditor.tsx',
+  'options/yamlConfig.ts',
+  'options/storedConfig.ts',
 ];
 
 /** Each file of the main chunk, with the import chain from module.ts that reaches it. */

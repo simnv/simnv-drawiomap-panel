@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { nextLoad, PROBE_TIMEOUT_MS, probeEditor } from './availability';
+import {
+  forgetProbe,
+  forgetProbes,
+  initialLoad,
+  nextLoad,
+  PROBE_TIMEOUT_MS,
+  probeEditor,
+  rememberProbe,
+} from './availability';
 
 const BASE = 'http://g/public/plugins/p/drawio/';
 
@@ -84,16 +92,60 @@ describe('nextLoad', () => {
     // A reload of the frame sends a new hello.
     expect(nextLoad('ready', 'hello')).toBe('ready');
   });
+  it('ends in an error when the probe of a fast start fails after the frame is there', () => {
+    expect(nextLoad('starting', 'probe-ok')).toBe('starting');
+    expect(nextLoad('starting', 'probe-missing')).toBe('missing');
+    expect(nextLoad('starting', 'probe-unreachable')).toBe('unreachable');
+    expect(nextLoad('ready', 'probe-ok')).toBe('ready');
+    expect(nextLoad('ready', 'probe-missing')).toBe('missing');
+    expect(nextLoad('ready', 'probe-unreachable')).toBe('unreachable');
+  });
+  it('runs after the init of draw.io, and then a late probe result or timeout changes nothing', () => {
+    expect(nextLoad('ready', 'init')).toBe('running');
+    expect(nextLoad('starting', 'init')).toBe('starting');
+    expect(nextLoad('probing', 'init')).toBe('probing');
+    for (const event of ['probe-ok', 'probe-missing', 'probe-unreachable', 'hello', 'init', 'timeout'] as const) {
+      expect(nextLoad('running', event)).toBe('running');
+    }
+  });
   it('waits again for a hello when the frame gets a new document (theme change)', () => {
+    expect(nextLoad('running', 'reload')).toBe('starting');
     expect(nextLoad('ready', 'reload')).toBe('starting');
     expect(nextLoad('starting', 'reload')).toBe('starting');
     expect(nextLoad('probing', 'reload')).toBe('probing');
   });
   it('keeps an error: no event starts the editor again', () => {
     for (const failed of ['missing', 'unreachable', 'timeout'] as const) {
-      for (const event of ['probe-ok', 'probe-missing', 'probe-unreachable', 'hello', 'timeout', 'reload'] as const) {
+      const events = ['probe-ok', 'probe-missing', 'probe-unreachable', 'hello', 'init', 'timeout', 'reload'] as const;
+      for (const event of events) {
         expect(nextLoad(failed, event)).toBe(failed);
       }
     }
+  });
+});
+
+describe('initialLoad', () => {
+  afterEach(forgetProbes);
+  it('probes each base until a good probe of it, then starts at once for the session', () => {
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'missing');
+    rememberProbe(BASE, 'unreachable');
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'ok');
+    expect(initialLoad(BASE)).toBe('starting');
+    expect(initialLoad('http://g/other/drawio/')).toBe('probing');
+    forgetProbes();
+    expect(initialLoad(BASE)).toBe('probing');
+  });
+  it('drops a base after a failed probe or a failed start', () => {
+    rememberProbe(BASE, 'ok');
+    rememberProbe(BASE, 'missing');
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'ok');
+    rememberProbe(BASE, 'unreachable');
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'ok');
+    forgetProbe(BASE);
+    expect(initialLoad(BASE)).toBe('probing');
   });
 });

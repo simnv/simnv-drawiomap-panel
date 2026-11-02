@@ -12,7 +12,15 @@ export interface IconOption<T> {
   component?: React.ComponentType;
 }
 
-export interface IconRadioSettings<T> {
+/** The settings of an option (module.ts) name its buttons by option path. The lists live in this file, in the chunk. */
+export interface IconRadioSettings {
+  choices: IconChoices;
+}
+
+export type IconChoices = 'zoom.mode' | 'zoom.align' | 'legend.corner';
+
+/** The buttons of one option. */
+export interface IconRadioGroup<T> {
   /** The name of the group for the screen reader. */
   ariaLabel: string;
   options: Array<IconOption<T>>;
@@ -22,11 +30,12 @@ export interface IconRadioSettings<T> {
  * A radio group of icons with tooltips: it fits the narrowest options pane. A custom editor and not `addRadio`: the
  * radio editor of Grafana 13 drops the description of an option, so the icons had no tooltip.
  */
-export function IconRadioEditor<T>({ value, onChange, item }: StandardEditorProps<T, IconRadioSettings<T>>) {
+export function IconRadioEditor({ value, onChange, item }: StandardEditorProps<string, IconRadioSettings>) {
+  const group = item.settings ? iconChoices(item.settings.choices) : undefined;
   return (
-    <RadioButtonGroup<T>
-      aria-label={item.settings?.ariaLabel}
-      options={item.settings?.options ?? []}
+    <RadioButtonGroup<string>
+      aria-label={group?.ariaLabel}
+      options={group?.options ?? []}
       value={value}
       onChange={onChange}
     />
@@ -45,7 +54,7 @@ function corner(top: boolean, left: boolean) {
   };
 }
 
-export const ZOOM_MODES: IconRadioSettings<ZoomMode> = {
+const ZOOM_MODES: IconRadioGroup<ZoomMode> = {
   ariaLabel: 'Zoom',
   options: [
     {
@@ -75,7 +84,7 @@ export const ZOOM_MODES: IconRadioSettings<ZoomMode> = {
   ],
 };
 
-export const ZOOM_ALIGNS: IconRadioSettings<ZoomAlign> = {
+const ZOOM_ALIGNS: IconRadioGroup<ZoomAlign> = {
   ariaLabel: 'Align',
   options: [
     {
@@ -93,7 +102,7 @@ export const ZOOM_ALIGNS: IconRadioSettings<ZoomAlign> = {
   ],
 };
 
-export const LEGEND_CORNERS: IconRadioSettings<LegendCorner> = {
+const LEGEND_CORNERS: IconRadioGroup<LegendCorner> = {
   ariaLabel: 'Legend corner',
   options: [
     { value: 'top-left', ariaLabel: 'Top left', description: 'Top left', component: corner(true, true) },
@@ -102,3 +111,14 @@ export const LEGEND_CORNERS: IconRadioSettings<LegendCorner> = {
     { value: 'bottom-right', ariaLabel: 'Bottom right', description: 'Bottom right', component: corner(false, false) },
   ],
 };
+
+const CHOICES: Record<IconChoices, IconRadioGroup<string>> = {
+  'zoom.mode': ZOOM_MODES,
+  'zoom.align': ZOOM_ALIGNS,
+  'legend.corner': LEGEND_CORNERS,
+};
+
+/** The buttons of an option. */
+export function iconChoices(choices: IconChoices): IconRadioGroup<string> {
+  return CHOICES[choices];
+}
