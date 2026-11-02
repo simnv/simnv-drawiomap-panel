@@ -33,9 +33,11 @@ vi.mock('../../render/zoom', async (importOriginal) => {
   return { ...actual, fitCells: zoom.fitCells };
 });
 
-const { SplitEditor } = await import('./SplitEditor');
+const { SplitEditor, SETTLE_MS } = await import('./SplitEditor');
 const { entryTarget, MatchReport } = await import('./MatchReport');
 
+/** Waits for the editor to read the text after the last keystroke. */
+const settle = () => act(() => vi.advanceTimersByTime(SETTLE_MS));
 const report = () => screen.getByTestId('dmap-match-report');
 const tabs = () => within(report()).getAllByRole('tab');
 /** The tab of a group: its label is the class name, or "Not in a class"; a count of entries can follow it. */
@@ -88,10 +90,12 @@ describe('MatchReport in the split editor', () => {
     render(<SplitEditor {...editorProps()} />);
     // `dev` now selects by a label that no series has
     type(fake.text.replace('key: job', 'key: host'));
+    settle();
     expect(counts(group('Class dev'), 'dev, first use')).toEqual(['2', '2', '0', '0']);
     expect(within(group('Class dev')).getByRole('button', { name: 'classes.dev.status: 2 cells have no series' }));
     // a YAML error is an entry of its own, and the counts stay at the last valid draft
     type('version: 4\nclasses: [\n');
+    settle();
     expect(within(group('Not in a class')).getByRole('button', { name: /^line \d+: / })).toBeTruthy();
     expect(counts(group('Class dev'), 'dev, first use')).toEqual(['2', '2', '0', '0']);
   });

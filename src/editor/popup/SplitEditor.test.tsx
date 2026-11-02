@@ -35,10 +35,12 @@ vi.mock('../../render/zoom', async (importOriginal) => {
   return { ...actual, fitCells: zoom.fitCells };
 });
 
-const { SplitEditor, BindingsPopup } = await import('./SplitEditor');
+const { SplitEditor, BindingsPopup, SETTLE_MS } = await import('./SplitEditor');
 
 const editor = () => screen.getByTestId('code-editor') as HTMLTextAreaElement;
 const type = (text: string) => fireEvent.change(editor(), { target: { value: text } });
+/** Waits for the editor to read the text after the last keystroke. */
+const settle = () => act(() => vi.advanceTimersByTime(SETTLE_MS));
 const cell = (id: string) => screen.getByTestId('dmap-popup-stage').querySelector(`[data-cell-id="${id}"]`)!;
 const lit = () =>
   Array.from(screen.getByTestId('dmap-popup-stage').querySelectorAll('[data-dmap-highlight="true"]')).map((el) =>
@@ -155,12 +157,14 @@ describe('SplitEditor', () => {
     render(<SplitEditor {...editorProps()} onOptionsChange={onOptionsChange} />);
     for (const text of ['classes: [', 'version: 3\nclasses: {}', 'version: 4\nclasses: []']) {
       type(text);
+      settle();
       const apply = screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement;
       expect(apply.disabled).toBe(true);
       fireEvent.click(apply);
     }
     expect(onOptionsChange).not.toHaveBeenCalled();
     type('version: 4\nclasses: {dev: {status: 5}}');
+    settle();
     expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(onOptionsChange).toHaveBeenCalledTimes(1);
@@ -286,6 +290,7 @@ describe('SplitEditor', () => {
     expect(cell('c').getAttribute('data-dmap-status')).not.toBe('unavailable');
     // an item error in class `sw`: its cells are unavailable, the cells of `dev` stay bound
     type(fake.text.replace(/(sw:\n(?:.*\n)*?\s+status:) up/, '$1 5'));
+    settle();
     await frame();
     expect(cell('c').getAttribute('data-dmap-status')).toBe('unavailable');
     expect(cell('a').getAttribute('data-dmap-status')).not.toBe('unavailable');
@@ -296,9 +301,11 @@ describe('SplitEditor', () => {
   it('keeps the last valid draft and shows markers while the YAML does not parse', async () => {
     render(<SplitEditor {...editorProps()} />);
     type(fake.text.replace(/(sw:\n(?:.*\n)*?\s+status:) up/, '$1 5'));
+    settle();
     await frame();
     expect(cell('c').getAttribute('data-dmap-status')).toBe('unavailable');
     type('version: 4\nclasses: [\n');
+    settle();
     await frame();
     // the diagram keeps the bind of the last text that parsed
     expect(cell('c').getAttribute('data-dmap-status')).toBe('unavailable');
@@ -306,6 +313,144 @@ describe('SplitEditor', () => {
     const markers = fake.setModelMarkers.mock.lastCall?.[2] ?? [];
     expect(markers.length).toBeGreaterThan(0);
     expect(markers.every((m) => m.severity === 8)).toBe(true);
+  });
+
+  describe('the wait after a keystroke', () => {
+    /** An item error in class `sw`: the cell `c` becomes unavailable. */
+    const broken = () => fake.text.replace(/(sw:\n(?:.*\n)*?\s+status:) up/, '$1 5');
+    const markerCalls = () => fake.setModelMarkers.mock.calls.length;
+    const unavailable = () => cell('c').getAttribute('data-dmap-status') === 'unavailable';
+
+    it('updates the text at once and reads it after SETTLE_MS', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      const text = broken();
+      const marks = markerCalls();
+      type(text);
+      expect(editor().value).toBe(text);
+      act(() => vi.advanceTimersByTime(SETTLE_MS - 1));
+      expect(unavailable()).toBe(false);
+      expect(markerCalls()).toBe(marks);
+      settle();
+      await frame();
+      expect(unavailable()).toBe(true);
+      expect(fake.setModelMarkers.mock.lastCall?.[2]).toEqual([expect.objectContaining({ severity: 4 })]);
+    });
+
+    it('reads a burst of keystrokes once, with the last text', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      const marks = markerCalls();
+      for (const status of ['5', '6', '7', '8']) {
+        type(fake.text.replace(/(sw:\n(?:.*\n)*?\s+status:) \S+/, `$1 ${status}`));
+        act(() => vi.advanceTimersByTime(SETTLE_MS / 2));
+      }
+      expect(markerCalls()).toBe(marks);
+      settle();
+      expect(markerCalls()).toBe(marks + 1);
+      expect(fake.text).toContain('status: 8');
+      expect(fake.setModelMarkers.mock.lastCall?.[2]?.[0]).toEqual(
+        expect.objectContaining({ message: expect.stringContaining('status') })
+      );
+    });
+
+    it('reads the text at once on blur', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      type(broken());
+      fireEvent.blur(editor());
+      await frame();
+      expect(unavailable()).toBe(true);
+      expect(fake.setModelMarkers.mock.lastCall?.[2]).toHaveLength(1);
+    });
+
+    it('reads the text at once on Ctrl+S', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      type(broken());
+      act(() => fake.save());
+      await frame();
+      expect(unavailable()).toBe(true);
+      expect(fake.setModelMarkers.mock.lastCall?.[2]).toHaveLength(1);
+    });
+
+    it('saves the last keystroke on Apply with no wait and no blur', () => {
+      const onOptionsChange = vi.fn();
+      render(<SplitEditor {...editorProps()} onOptionsChange={onOptionsChange} />);
+      type(fake.text.replace('status: up', 'status: down'));
+      type(fake.text.replace('status: down', 'status: sleep'));
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(onOptionsChange).toHaveBeenCalledTimes(1);
+      expect(onOptionsChange.mock.calls[0][0].config.classes.dev.status).toBe('sleep');
+      // The saved text is the box text: the editor is not dirty after Apply.
+      expect(markerCalls()).toBeGreaterThan(0);
+    });
+
+    it('completes from the text in the box, not from the text of the last read', () => {
+      render(<SplitEditor {...editorProps()} />);
+      const text = fake.text.replace(
+        'classes:\n',
+        'classes:\n  fresh:\n    match: { key: job }\n  more:\n    extends: \n'
+      );
+      type(text);
+      const [{ provider }] = fake.providers;
+      const at = fake.model.getPositionAt(text.indexOf('extends: ') + 'extends: '.length);
+      const labels = (provider.provideCompletionItems(fake.model, at).suggestions as Array<{ label: string }>).map(
+        (s) => s.label
+      );
+      expect(labels).toEqual(expect.arrayContaining(['dev', 'sw', 'fresh']));
+    });
+
+    it('does not save an invalid last keystroke on Apply', () => {
+      const onOptionsChange = vi.fn();
+      render(<SplitEditor {...editorProps()} onOptionsChange={onOptionsChange} />);
+      type(fake.text.replace('status: up', 'status: down'));
+      settle();
+      type('classes: [');
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(onOptionsChange).not.toHaveBeenCalled();
+      expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it.each(['Escape', 'Close'])('reads the text at once on %s', async (action) => {
+      render(<BindingsPopup {...editorProps()} onOptionsChange={vi.fn()} onClose={vi.fn()} />);
+      await frame();
+      type(broken());
+      if (action === 'Escape') {
+        fireEvent.keyDown(screen.getByTestId('dmap-bindings-popup'), { key: 'Escape' });
+      } else {
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      }
+      await frame();
+      expect(screen.getByText('Discard changes?')).toBeTruthy();
+      expect(unavailable()).toBe(true);
+    });
+
+    it('does not fail when the wait ends after the unmount', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const view = render(<SplitEditor {...editorProps()} />);
+      await frame();
+      type(broken());
+      const marks = markerCalls();
+      view.unmount();
+      act(() => vi.advanceTimersByTime(SETTLE_MS * 2));
+      expect(markerCalls()).toBe(marks);
+      expect(error).not.toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    it('drops the wait on Reload', async () => {
+      const props = writableProps();
+      const view = render(<SplitEditor {...props} />);
+      await frame();
+      type(broken());
+      view.rerender(<SplitEditor {...props} options={{ ...props.options, config: { ...CONFIG, overrides: { x: {} } } } as never} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+      act(() => vi.advanceTimersByTime(SETTLE_MS * 2));
+      await frame();
+      expect(editor().value).not.toContain('status: 5');
+      expect(unavailable()).toBe(false);
+    });
   });
 
   it('waits 150 ms after a cursor move, then highlights the cells of the path and zooms to them', async () => {

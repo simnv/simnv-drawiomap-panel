@@ -5,7 +5,6 @@ import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import type { Badge } from '../split/cellsForPath';
 import { cellAt } from '../../interact/hit';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../../legend/highlight';
-import { clearOwnedAttrs, setOwnedAttrs } from '../../render/cellAttrs';
 import type { ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../stage/usePanZoom';
@@ -14,24 +13,10 @@ import { useStageLayout } from '../../stage/useStageLayout';
 import { useStagePaint } from '../../stage/useStagePaint';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
 import { boxTargets } from './boxTargets';
+import { createEditorLayer, type EditorLayer, type StageSelection } from './editorLayer';
 import { useBoxSelect } from './useBoxSelect';
 
-export interface StageSelection {
-  /** Every selected cell. The primary one is the last. */
-  selected: string[];
-  /** The cell that the single-cell sections edit. */
-  primary?: string;
-  /** Cells that a proposed selector would match and the selection does not hold. */
-  extra?: string[];
-  /** Selected cells that a proposed selector would miss. */
-  missed?: string[];
-  /** The cells that the edited pattern or override changes. */
-  affected: string[];
-  /** The cells of the YAML path under the cursor or of a report entry (spec 5.3). The other cells dim. */
-  highlight: string[];
-  /** The cells of the classes that extend the class under the cursor: a lighter highlight. */
-  lighter?: string[];
-}
+export type { StageSelection };
 
 export interface DiagramStageProps {
   stage: Stage;
@@ -178,23 +163,20 @@ export function DiagramStage({
     ignore: (target) => box.active() || (target instanceof Node && !!resetRef.current?.contains(target)),
   });
 
-  // The editor layer of the cell attributes: the patch applier does not touch it.
+  // The editor layer of the cell attributes: the patch applier does not touch it. The layer lives as long as the index
+  // and writes only the cells that the old or the new selection tags.
+  const layerRef = useRef<EditorLayer | null>(null);
+  useEffect(() => {
+    const layer = createEditorLayer(stage.index);
+    layerRef.current = layer;
+    return () => {
+      layer.clear();
+      layerRef.current = null;
+    };
+  }, [stage.index]);
   const { selected, affected, highlight, lighter, primary, extra, missed } = selection;
   useEffect(() => {
-    for (const [id, cell] of stage.index) {
-      setOwnedAttrs(cell.group, 'editor', {
-        tabindex: '0',
-        role: 'button',
-        'aria-label': `${id} diagram element`,
-        'data-dmap-selected': selected.includes(id) ? 'true' : 'false',
-        'data-dmap-primary': id === primary ? 'true' : 'false',
-        'data-dmap-extra': extra?.includes(id) ? 'true' : 'false',
-        'data-dmap-missed': missed?.includes(id) ? 'true' : 'false',
-        'data-dmap-affected': affected.includes(id) ? 'true' : 'false',
-        'data-dmap-highlight': highlight.includes(id) ? 'true' : 'false',
-        'data-dmap-lighter': lighter?.includes(id) ? 'true' : 'false',
-      });
-    }
+    layerRef.current?.apply({ selected, affected, highlight, lighter, primary, extra, missed });
   }, [stage.index, selected, affected, highlight, lighter, primary, extra, missed]);
   // The cells that the highlight does not hold dim (the dimming of the legend, spec 5.3).
   useEffect(() => {
@@ -206,10 +188,6 @@ export function DiagramStage({
     highlightCells(root, stage.index, [...stage.index.keys()], hits.length ? hits : null);
     return () => highlightCells(root, stage.index, [], null);
   }, [stage.root, stage.index, highlight, lighter]);
-  useEffect(() => {
-    const index = stage.index;
-    return () => index.forEach((cell) => clearOwnedAttrs(cell.group, 'editor'));
-  }, [stage.index]);
 
   const isDark = theme.isDark;
   const pick = (target: EventTarget | null, shift: boolean) => {
