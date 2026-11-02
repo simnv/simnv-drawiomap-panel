@@ -16,6 +16,14 @@ import { expect, test } from './authoring-fixtures';
 const QUERY_EDITOR_RESOURCE =
   /\/resources\/(?:scenarios|api\/v1\/(?:metadata|labels|label\/[^/]+\/values|series))(?:\?|$)/;
 
+/**
+ * The window for a request that a late effect could send, after the network was quiet for 500 ms. Grafana mounts the
+ * query editors in panel edit and they call their resources within 0.6 s (measured on Grafana 13.2 with the
+ * VictoriaMetrics editors; 12.4 calls only the TestData scenario list). The panel has no timer that sends a request,
+ * and the dashboard refresh is one day. The window is longer than the delay of the editors.
+ */
+const NO_REQUEST_WINDOW_MS = 1000;
+
 /** The API requests of the page: the panel queries, the other datasource resource calls and the other calls. */
 function observeApi(page: Page) {
   const log: Array<{ kind: 'query' | 'resource' | 'query-editor' | 'other'; method: string; path: string }> = [];
@@ -55,7 +63,8 @@ test('panel edit and the popup run no query again, call no datasource resource o
   const normal = () => page.getByTestId('dmap-panel').locator('[data-dmap-status="normal"]');
   await expect(normal()).toHaveCount(2);
   await expect.poll(() => log.filter((r) => r.kind === 'query').length).toBeGreaterThan(0);
-  await page.waitForTimeout(2000);
+  // The first load is done when the network is quiet: later requests belong to panel edit.
+  await page.waitForLoadState('networkidle');
   const before = log.length;
 
   // Enter panel edit in the app, as the panel menu does: the panel component mounts again in the editor.
@@ -64,7 +73,12 @@ test('panel edit and the popup run no query again, call no datasource resource o
   await page.waitForURL(/editPanel=1/);
   await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
   await expect(normal()).toHaveCount(2);
-  await page.waitForTimeout(5000);
+  // The query editors below the panel mount in panel edit and call their resources (the TestData scenario list on all
+  // versions). A query that panel edit would run again comes with them. Wait for the first call, then for a quiet
+  // network, then observe.
+  await expect.poll(() => log.slice(before).some((r) => r.kind === 'query-editor')).toBe(true);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(NO_REQUEST_WINDOW_MS);
   const afterEdit = log.slice(before);
   expect(
     afterEdit.filter((r) => r.kind === 'query'),
@@ -89,7 +103,8 @@ test('panel edit and the popup run no query again, call no datasource resource o
   await openPopup();
   await expect(popupLines).toContainText('version: 4');
   await expect(popupNormal()).toHaveCount(2);
-  await page.waitForTimeout(3000);
+  // The popup is loaded and bound. Its queries would start with its mount; Monaco has loaded, so only a late effect remains.
+  await page.waitForTimeout(NO_REQUEST_WINDOW_MS);
   const afterPopup = log.slice(before);
   expect(
     afterPopup.filter((r) => r.kind === 'query' || r.kind === 'resource'),

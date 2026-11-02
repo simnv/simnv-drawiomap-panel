@@ -10,6 +10,8 @@ x-grafana-env: &grafana-env
   GF_DEFAULT_APP_MODE: development
   GF_LOG_LEVEL: warn
   GF_NEWS_NEWS_FEED_ENABLED: "false"
+  # A test dashboard can refresh every second (tests/link-strokes.spec.ts). The default minimum is 5 s.
+  GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "1s"
 x-sandbox-env: &sandbox-env
   <<: *grafana-env
   GF_SECURITY_ENABLE_FRONTEND_SANDBOX_FOR_PLUGINS: simnv-drawiomap-panel

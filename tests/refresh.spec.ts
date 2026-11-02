@@ -205,7 +205,8 @@ test.describe('popup open', () => {
     }
     const mutations = (name: 'panel' | 'popup') =>
       page.evaluate((key) => (window as unknown as Record<string, number>)[key], `__dmapMutations_${name}`);
-    await page.waitForTimeout(1000);
+    // Late calls of the query editors and the popup mount end here: the network is quiet for 500 ms.
+    await page.waitForLoadState('networkidle');
     const requestsAtOpen = requests.length;
     const valuesAtOpen = values.at(-1)!;
     const panelBefore = await mutations('panel');

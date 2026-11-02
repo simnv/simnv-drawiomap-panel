@@ -219,7 +219,9 @@ test('hovering a legend row of the diagram highlights the nodes of that symbol',
   await expect(hits.first()).toHaveAttribute('data-meta-pg-symbol', 'proxy');
   const other = panel.locator('g.dmap-legend-member:not(.dmap-legend-hit)[data-cell-id^="pg-node~"]').first();
   await expect.poll(() => other.evaluate((el) => getComputedStyle(el).opacity)).toBe('0.2');
-  await page.screenshot({ path: testInfo.outputPath('legend-row-hover.png') });
+  if (process.env.DMAP_SCREENSHOTS) {
+    await page.screenshot({ path: testInfo.outputPath('legend-row-hover.png') });
+  }
   await page.mouse.move(0, 0);
   await expect(panel.locator('svg.dmap-legend-active')).toHaveCount(0);
   await expect(panel.locator('.dmap-legend-hit, .dmap-legend-member')).toHaveCount(0);
