@@ -20,12 +20,23 @@ const componentTests = [
 ];
 const exclude = ['node_modules', 'dist', 'tests'];
 
+// Worker ceiling. Vitest 3 applies `maxWorkers` to each pool, and the two projects run in two pools at the same time:
+// the default is one worker per CPU for each pool, so plain `npm test` can start 2 x (CPUs - 1) workers. These limits
+// give 6 workers in total. The components pool gets most of them: its files import @grafana/ui and cost three times
+// as much as the logic files. An explicit `--maxWorkers=N` on the command line keeps its old meaning (N for each
+// pool), because the pool options below would win over it.
+const workerFlag = process.argv.some((arg) => arg.startsWith('--maxWorkers') || arg.startsWith('--max-workers'));
+const workerLimits = workerFlag ? {} : { maxThreads: 2, maxForks: 4 };
+
 export default defineConfig({
   test: {
     globals: false,
     css: false,
     // Only the logic project uses threads. Vitest reads this pool option from the root, not from a project.
-    poolOptions: { threads: { isolate: false } },
+    poolOptions: {
+      threads: { isolate: false, maxThreads: workerLimits.maxThreads },
+      forks: { maxForks: workerLimits.maxForks },
+    },
     // @grafana/* ESM builds import extensionless @rc-component files. moment and moment-timezone stay external: inlined,
     // the ESM moment and the moment that moment-timezone requires are two instances, and `moment().tz` is missing.
     server: { deps: { inline: [/@rc-component/, /@grafana\//] } },

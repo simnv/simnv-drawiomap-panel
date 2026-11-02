@@ -52,3 +52,6 @@ ci/
 
 # Private local material, never committed
 local/
+
+# TypeScript incremental state (tsconfig.json)
+.cache/

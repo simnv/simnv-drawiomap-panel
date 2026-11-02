@@ -15,7 +15,10 @@ const demo = (n: string) => readFileSync(resolve(__dirname, `../../fixtures/demo
 const NAMES = ['demo-l1', 'demo-l3', 'legacy-html-labels', 'hand-drawn', 'bare-end-dot'];
 const svgOf = (inner: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">${inner}</svg>`;
 const distinct = (i: number) => svgOf(`<rect data-cell-id="c${i}" width="${i + 1}" height="1"/>`);
-const rects = (n: number) => '<rect width="1" height="1"/>'.repeat(n);
+// A few nodes with a large preserved text payload cross the byte thresholds fast: many nodes would cost seconds.
+// The sanitiser keeps the text, so the output is about as long as the key. Key bytes and output bytes both count:
+// each one alone stays below the cap in these tests, and only their sum crosses it.
+const bigText = (id: string, chars: number) => svgOf(`<text data-cell-id="${id}">${'x'.repeat(chars)}</text>`);
 
 const fnv = (s: string) => {
   let h = 0x811c9dc5;
@@ -103,22 +106,32 @@ describe('sanitizeSvg cache: bounds', () => {
   });
 
   it('the byte cap evicts the oldest entries', () => {
+    // Each entry is about 2 * (600,000 + 600,000) = 2.4 MB. The key alone (1.2 MB) would let all four fit in 8 MiB.
     for (let i = 0; i < 4; i++) {
-      sanitizeSvg(svgOf(`<g data-cell-id="g${i}">${rects(30000)}</g>`));
+      const input = bigText(`g${i}`, 600000);
+      const out = sanitizeSvg(input);
+      expect(out.svg.length).toBeGreaterThan(600000);
     }
     const s = sanitizeCacheStats();
     expect(s.bytes).toBeLessThanOrEqual(s.maxBytes);
     expect(s.entries).toBeLessThan(4);
     expect(s.entries).toBeGreaterThan(0);
-  }, 60000);
+    // The oldest entry is gone and the newest entry stays.
+    const before = sanitizeCacheStats();
+    sanitizeSvg(bigText('g3', 600000));
+    expect(sanitizeCacheStats().hits).toBe(before.hits + 1);
+    sanitizeSvg(bigText('g0', 600000));
+    expect(sanitizeCacheStats().misses).toBe(before.misses + 1);
+  });
 
   it('an entry above the cap is not stored', () => {
-    const huge = svgOf(`<g>${rects(80000)}</g>`);
-    expect(sanitizeSvg(huge).svg.length).toBeGreaterThan(0);
+    // Key bytes are 2 * 2,200,000 and output bytes are about the same: each is below 8 MiB, the sum is above it.
+    const huge = bigText('huge', 2200000);
+    expect(sanitizeSvg(huge).svg.length).toBeGreaterThan(2200000);
     expect(sanitizeCacheStats().entries).toBe(0);
     sanitizeSvg(huge);
     expect(sanitizeCacheStats().misses).toBe(2);
-  }, 60000);
+  });
 });
 
 describe('sanitizeSvg cache: a caller cannot change the cache', () => {
