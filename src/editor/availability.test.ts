@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { nextLoad, PROBE_TIMEOUT_MS, probeEditor } from './availability';
+import { forgetProbes, initialLoad, nextLoad, PROBE_TIMEOUT_MS, probeEditor, rememberProbe } from './availability';
 
 const BASE = 'http://g/public/plugins/p/drawio/';
 
@@ -95,5 +95,20 @@ describe('nextLoad', () => {
         expect(nextLoad(failed, event)).toBe(failed);
       }
     }
+  });
+});
+
+describe('initialLoad', () => {
+  afterEach(forgetProbes);
+  it('probes each base until a good probe of it, then starts at once for the session', () => {
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'missing');
+    rememberProbe(BASE, 'unreachable');
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'ok');
+    expect(initialLoad(BASE)).toBe('starting');
+    expect(initialLoad('http://g/other/drawio/')).toBe('probing');
+    forgetProbes();
+    expect(initialLoad(BASE)).toBe('probing');
   });
 });

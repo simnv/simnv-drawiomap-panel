@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DrawioModal } from './DrawioModal';
-import { HELLO_TIMEOUT_MS } from './availability';
+import { forgetProbes, HELLO_TIMEOUT_MS } from './availability';
 import { PluginDialog } from './popup/PluginDialog';
 
 vi.hoisted(() => {
@@ -115,6 +115,7 @@ describe('DrawioModal start-up', () => {
     vi.stubGlobal('fetch', fetchFn);
     onClose.mockReset();
     fetchFn.mockReset();
+    forgetProbes();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -123,6 +124,36 @@ describe('DrawioModal start-up', () => {
 
   const open = () =>
     render(<DrawioModal xml="" title="t" mode="edit" isDark={false} onSave={() => {}} onClose={onClose} />);
+
+  it('makes the frame at once in the next modal of the session after a good probe', async () => {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    expect(probes()).toHaveLength(1);
+    first.unmount();
+    open();
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('starting');
+    await settle();
+    expect(probes()).toHaveLength(1);
+    // The hello timeout runs from the mount.
+    await settle(HELLO_TIMEOUT_MS);
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('timeout');
+  });
+
+  it('probes again in the next modal after a failed probe', async () => {
+    fetchFn.mockImplementation(async () => notFound());
+    const first = open();
+    await settle();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('missing');
+    first.unmount();
+    fetchFn.mockImplementation(async () => jsResponse());
+    open();
+    expect(screen.queryByTitle('draw.io')).toBeNull();
+    await settle();
+    expect(probes()).toHaveLength(2);
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+  });
 
   it('makes no editor frame before the probe of js/main.js', async () => {
     fetchFn.mockImplementation(async () => jsResponse());

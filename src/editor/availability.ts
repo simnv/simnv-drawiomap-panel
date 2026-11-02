@@ -2,7 +2,8 @@
  * Start-up of the bundled editor. The host cannot see script errors in the editor frame: the frame has an opaque
  * origin, so the browser blocks the 404 responses (ORB) and the frame stays empty. Without these checks the modal
  * waits for the channel hello for ever. Thus the panel (same origin as the plugin files) reads js/main.js before it
- * makes the frame, and the modal stops to wait for the hello after HELLO_TIMEOUT_MS.
+ * makes the frame, and the modal stops to wait for the hello after HELLO_TIMEOUT_MS. A good probe holds for the
+ * session (initialLoad): the next modal of the same base makes the frame at once.
  */
 
 /** Time for the channel hello. js/dmap-shim.js sends it before draw.io loads, so it comes quickly. */
@@ -64,6 +65,29 @@ export async function probeEditor(
     clearTimeout(timer);
     signal?.removeEventListener('abort', stop);
   }
+}
+
+// Bases with a good probe in this session. A failure is not kept: the next modal probes again.
+const goodBases = new Set<string>();
+
+/**
+ * First start-up state of a modal: starting when an earlier modal of this session had a good probe of base (the
+ * files were there, so the frame comes at once), else probing.
+ */
+export function initialLoad(base: string): EditorLoad {
+  return goodBases.has(base) ? 'starting' : 'probing';
+}
+
+/** Keeps a good probe of base for the session. */
+export function rememberProbe(base: string, probe: EditorProbe): void {
+  if (probe === 'ok') {
+    goodBases.add(base);
+  }
+}
+
+/** Drops the kept probes. For tests. */
+export function forgetProbes(): void {
+  goodBases.clear();
 }
 
 /** Next start-up state. */

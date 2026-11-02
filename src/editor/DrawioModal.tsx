@@ -17,7 +17,7 @@ import { useOverlay } from './popup/overlayStack';
 import { DIALOG_SHEET_MEDIA, DIALOG_VH, DIALOG_VW } from './dialogSize';
 import { parseFileRequest, readEditorFile } from './files';
 import { bundledEditorBase, editorTarget } from './target';
-import { EditorLoad, HELLO_TIMEOUT_MS, nextLoad, probeEditor } from './availability';
+import { EditorLoad, HELLO_TIMEOUT_MS, initialLoad, nextLoad, probeEditor, rememberProbe } from './availability';
 
 const styles = {
   // The doubled selector wins over the Grafana Modal rules (top 10%, max-height 80%, margins and padding).
@@ -115,10 +115,10 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stateRef = useRef<ProtocolState>(initialState(xml));
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');
-  const [load, dispatchLoad] = useReducer(nextLoad, 'probing');
   // A new token for each modal. The bundled editor sends it back in its channel hello.
   const [token] = useState(newChannelToken);
   const base = useMemo(() => bundledEditorBase(), []);
+  const [load, dispatchLoad] = useReducer(nextLoad, base, initialLoad);
   // The frame and its srcdoc document come only after a good probe of the editor files.
   const started = load === 'starting' || load === 'ready';
   const target = useMemo(() => (started ? editorTarget(isDark, token) : undefined), [started, isDark, token]);
@@ -187,10 +187,19 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     }
   }, [target]);
 
-  // One probe for each modal. A failure is final: the user closes the modal and opens it again.
+  // One probe for each modal, unless a modal of this session had a good probe of the same base. A failure is final:
+  // the user closes the modal and opens it again.
   useEffect(() => {
+    if (initialLoad(base) !== 'probing') {
+      return;
+    }
     const ctrl = new AbortController();
-    probeEditor(base, fetch, ctrl.signal).then((probe) => !ctrl.signal.aborted && dispatchLoad(`probe-${probe}`));
+    probeEditor(base, fetch, ctrl.signal).then((probe) => {
+      if (!ctrl.signal.aborted) {
+        rememberProbe(base, probe);
+        dispatchLoad(`probe-${probe}`);
+      }
+    });
     return () => ctrl.abort();
   }, [base]);
 
