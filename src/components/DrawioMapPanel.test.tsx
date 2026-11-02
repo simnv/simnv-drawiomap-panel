@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Profiler } from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -1097,6 +1097,57 @@ describe('DrawioMapPanel live zoom', () => {
     fireEvent.pointerUp(half(linkId), { pointerType: 'touch', pointerId: 3 });
     fireEvent.click(half(linkId));
     await screen.findByRole('dialog');
+  });
+
+  it('a gesture writes the view box on every move and commits the panel when it leaves the configured view and when it ends', async () => {
+    let commits = 0;
+    const r = render(
+      <Profiler id="panel" onRender={() => commits++}>
+        <DrawioMapPanel {...props()} />
+      </Profiler>
+    );
+    await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
+    const svgEl = r.container.querySelector('svg')!;
+    await waitFor(() => expect(svgEl.getAttribute('width')).toBe('100%'));
+    const wrapper = screen.getByTestId('dmap-panel');
+    const t = (type: string, id: number, x: number, y: number) =>
+      fireEvent[type as 'pointerDown'](wrapper, { pointerType: 'touch', pointerId: id, clientX: x, clientY: y });
+    // a pinch: the first move leaves the configured view (one commit: the reset button), the others write the view
+    // box only, the end of the gesture commits the view
+    await act(async () => {
+      await Promise.resolve();
+    });
+    commits = 0;
+    t('pointerDown', 1, 100, 100);
+    t('pointerDown', 2, 200, 100);
+    // a move beyond the tap slop (6 px) starts the pinch
+    t('pointerMove', 1, 90, 100);
+    t('pointerMove', 2, 210, 100);
+    await screen.findByRole('button', { name: 'Reset zoom' });
+    // the controls measured themselves after the flip; from here the moves write the view box only
+    const afterFlip = commits;
+    expect(afterFlip).toBeGreaterThan(0);
+    const boxes = new Set<string>();
+    for (let i = 2; i <= 8; i++) {
+      t('pointerMove', 1, 100 - 10 * i, 100);
+      t('pointerMove', 2, 200 + 10 * i, 100);
+      boxes.add(svgEl.getAttribute('viewBox')!);
+    }
+    expect(boxes.size).toBe(7);
+    expect(commits).toBe(afterFlip);
+    t('pointerUp', 1, 20, 100);
+    t('pointerUp', 2, 280, 100);
+    await waitFor(() => expect(commits).toBeGreaterThan(afterFlip));
+    // the wheel: the view box follows each event; the panel commits once the wheel settles
+    commits = 0;
+    const before = svgEl.getAttribute('viewBox');
+    for (let i = 0; i < 5; i++) {
+      wheel(wrapper, { deltaY: -10, ctrlKey: true });
+    }
+    expect(svgEl.getAttribute('viewBox')).not.toBe(before);
+    expect(commits).toBe(0);
+    await waitFor(() => expect(commits).toBe(1));
+    r.unmount();
   });
 
   it('a mouse drag pans a zoomed view; the click after the drag pins no card', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { setLinkLabelScale, type StageRect } from '../render/linkLabels';
 import { applyLayout, viewBoxFor, type ViewBox } from '../render/zoom';
 import type { ZoomOptions } from '../types';
@@ -10,8 +10,14 @@ import type { Stage } from './useStage';
  * layout. `zoom` must keep its identity while its values stay the same.
  *
  * The scale of the value labels needs the rendered size of the svg. A `ResizeObserver` on the root keeps it, so a
- * pan or a zoom (a new view box on every pointer move) reads no layout; a layout that changes the size of the svg
- * (a new zoom mode, a new box) reads it once, before the observer reports the new size.
+ * pan or a zoom reads no layout; a layout that changes the size of the svg (a new zoom mode, a new box) reads it
+ * once, before the observer reports the new size.
+ *
+ * Returns `live`: writes a view of a gesture in progress (the view box and the label scale, nothing else changes
+ * during a gesture) without a render. The gesture commits its view to `view` when it ends; the effect then writes the
+ * same layout again. Until then the live view is the newest view: a layout pass during the gesture (a new stage
+ * height) and a commit older than the live view (one batched behind later moves) keep it. A reset (`view` null) ends
+ * the live view.
  */
 export function useStageLayout(
   stage: Stage,
@@ -19,12 +25,14 @@ export function useStageLayout(
   box: { width: number; height: number } | undefined,
   view: ViewBox | null,
   containerRef: React.RefObject<HTMLDivElement>
-): void {
+): { live: (next: ViewBox) => void } {
   const width = box?.width;
   const height = box?.height;
   const rect = useRef<StageRect>();
   // the size of the svg the known rect belongs to: the layout sizes (percent or pixels) and the box they resolve in
   const sized = useRef<string>();
+  // the view of the gesture in progress; the gesture commits the same object to `view`
+  const pending = useRef<ViewBox>();
   useEffect(() => {
     const root = stage.root;
     rect.current = undefined;
@@ -49,7 +57,10 @@ export function useStageLayout(
     if (!stage.root || !stage.base || width === undefined || height === undefined) {
       return;
     }
-    const layout = viewBoxFor(zoom, stage.base, { width, height }, view ?? stage.base);
+    if (view === null || view === pending.current) {
+      pending.current = undefined;
+    }
+    const layout = viewBoxFor(zoom, stage.base, { width, height }, pending.current ?? view ?? stage.base);
     applyLayout(stage.root, layout);
     const size = `${layout.width}|${layout.height}|${width}|${height}`;
     const known = size === sized.current ? rect.current : undefined;
@@ -59,4 +70,17 @@ export function useStageLayout(
       containerRef.current.style.overflow = layout.overflow;
     }
   }, [stage.root, stage.base, zoom, width, height, view, containerRef]);
+  const root = stage.root;
+  const live = useCallback(
+    (next: ViewBox) => {
+      if (!root) {
+        return;
+      }
+      pending.current = next;
+      root.setAttribute('viewBox', `${next.x} ${next.y} ${next.w} ${next.h}`);
+      setLinkLabelScale(root, rect.current);
+    },
+    [root]
+  );
+  return { live };
 }

@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
@@ -62,38 +62,209 @@ const NO_DEADLINES: readonly number[] = [];
 /** Height in px of the title line above a bar gauge or an updown chart, and of the value line of a sparkline. */
 const TITLE_HEIGHT = 22;
 
-/** Check the painted element against the panel and every clipping ancestor. */
-function displayed(shape: SVGGraphicsElement, viewport: HTMLElement): boolean {
-  if (!shape.isConnected || document.visibilityState === 'hidden') {
-    return false;
+/* ---------- the stage watch: one set of observers and one pass for every region ---------- */
+
+/** A box on the screen, or null for a node that does not show (display none, hidden, zero opacity). */
+type Clip = { left: number; top: number; right: number; bottom: number } | null;
+
+/**
+ * One pass over the regions. The computed style and the clip box of a node are read once and shared, so N regions
+ * under one stage cost the nodes above them once, not N times.
+ */
+class RegionPass {
+  private readonly clips = new Map<Element, Clip>();
+  constructor(private readonly viewport: HTMLElement) {}
+
+  /** The box a node clips its content to, after every ancestor; null when it or an ancestor does not show. */
+  private clipOf(node: Element | null): Clip {
+    if (!node) {
+      return { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    }
+    const known = this.clips.get(node);
+    if (known !== undefined) {
+      return known;
+    }
+    let clip = this.clipOf(node.parentElement);
+    if (clip) {
+      const style = getComputedStyle(node);
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.visibility === 'collapse' ||
+        style.opacity === '0'
+      ) {
+        clip = null;
+      } else if (
+        node === this.viewport ||
+        /(hidden|clip|auto|scroll)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)
+      ) {
+        const box = node.getBoundingClientRect();
+        clip = {
+          left: Math.max(clip.left, box.left),
+          top: Math.max(clip.top, box.top),
+          right: Math.min(clip.right, box.right),
+          bottom: Math.min(clip.bottom, box.bottom),
+        };
+      }
+    }
+    this.clips.set(node, clip);
+    return clip;
   }
-  const rect = shape.getBoundingClientRect();
-  let left = Math.max(0, rect.left),
-    top = Math.max(0, rect.top);
-  let right = Math.min(window.innerWidth, rect.right),
-    bottom = Math.min(window.innerHeight, rect.bottom);
-  for (let node: Element | null = shape; node; node = node.parentElement) {
-    const style = getComputedStyle(node);
-    if (
-      style.display === 'none' ||
-      style.visibility === 'hidden' ||
-      style.visibility === 'collapse' ||
-      style.opacity === '0'
-    ) {
+
+  /** Check the painted element against the panel and every clipping ancestor. */
+  displayed(shape: SVGGraphicsElement): boolean {
+    if (!shape.isConnected || document.visibilityState === 'hidden') {
       return false;
     }
-    if (
-      node === viewport ||
-      /(hidden|clip|auto|scroll)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)
-    ) {
-      const clip = node.getBoundingClientRect();
-      left = Math.max(left, clip.left);
-      right = Math.min(right, clip.right);
-      top = Math.max(top, clip.top);
-      bottom = Math.min(bottom, clip.bottom);
+    const clip = this.clipOf(shape);
+    if (!clip) {
+      return false;
     }
+    const rect = shape.getBoundingClientRect();
+    return (
+      Math.min(clip.right, rect.right) > Math.max(clip.left, rect.left) &&
+      Math.min(clip.bottom, rect.bottom) > Math.max(clip.top, rect.top)
+    );
   }
-  return right > left && bottom > top;
+}
+
+/** A region on the watch: its shape and the update that reads its geometry and its visibility. */
+interface Watcher {
+  shape: SVGGraphicsElement;
+  update: (pass: RegionPass) => void;
+}
+
+/**
+ * The observers of a stage, shared by all its regions: one `MutationObserver` on the root (the attributes that move
+ * or hide a cell; not the viewBox: a pan or a zoom moves the regions with the svg, and the `revision` of the layer
+ * reads their visibility again when the view settles) and on the ancestors of the viewport, one `ResizeObserver`,
+ * one `IntersectionObserver` for every shape, and the document and window listeners. A mutation runs only the
+ * regions under its target, so a hover class on another cell runs none.
+ */
+interface StageWatch {
+  add(watcher: Watcher): () => void;
+  /** one pass over every region (or the given ones): they share the reads of the nodes above them */
+  run(only?: Iterable<Watcher>): void;
+  /** one pass over the regions that no pass has read yet (new regions of a new set of charts) */
+  runFresh(): void;
+  /** true when the browser reported the shape in the viewport (true without an IntersectionObserver) */
+  intersecting(shape: Element): boolean;
+  start(): () => void;
+}
+
+function createStageWatch(root: SVGSVGElement, viewport: HTMLElement): StageWatch {
+  const watchers = new Set<Watcher>();
+  const fresh = new Set<Watcher>();
+  const seen = new Map<Element, boolean>();
+  const hasIntersection = typeof IntersectionObserver !== 'undefined';
+  let intersection: IntersectionObserver | undefined;
+  const run = (only?: Iterable<Watcher>) => {
+    const pass = new RegionPass(viewport);
+    for (const w of only ?? watchers) {
+      fresh.delete(w);
+      w.update(pass);
+    }
+  };
+  const runAll = () => run();
+  const onMutation = (records: MutationRecord[]) => {
+    const hit = new Set<Watcher>();
+    for (const w of watchers) {
+      if (records.some((r) => r.target === w.shape || r.target.contains(w.shape))) {
+        hit.add(w);
+      }
+    }
+    if (hit.size) {
+      run(hit);
+    }
+  };
+  return {
+    add(watcher) {
+      watchers.add(watcher);
+      fresh.add(watcher);
+      if (!seen.has(watcher.shape)) {
+        seen.set(watcher.shape, !hasIntersection);
+      }
+      intersection?.observe(watcher.shape);
+      return () => {
+        watchers.delete(watcher);
+        fresh.delete(watcher);
+        intersection?.unobserve(watcher.shape);
+        seen.delete(watcher.shape);
+      };
+    },
+    run,
+    runFresh() {
+      if (fresh.size) {
+        run([...fresh]);
+      }
+    },
+    intersecting: (shape) => seen.get(shape) ?? !hasIntersection,
+    start() {
+      const observer = new MutationObserver(onMutation);
+      observer.observe(root, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ['transform', 'style', 'class', 'x', 'y', 'width', 'height', 'display', 'visibility'],
+      });
+      // Ancestor visibility and panel clipping can change without an SVG mutation.
+      for (let node: Element | null = viewport; node; node = node.parentElement) {
+        observer.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+      }
+      const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(runAll);
+      resize?.observe(viewport);
+      intersection = hasIntersection
+        ? new IntersectionObserver((entries) => {
+            const hit = new Set<Watcher>();
+            for (const entry of entries) {
+              // an entry names its shape; an observer double that reports none counts for every shape
+              const target = entry.target as Element | undefined;
+              for (const w of watchers) {
+                if (!target || w.shape === target) {
+                  seen.set(w.shape, entry.isIntersecting);
+                  hit.add(w);
+                }
+              }
+            }
+            run(hit);
+          })
+        : undefined;
+      for (const w of watchers) {
+        intersection?.observe(w.shape);
+      }
+      document.addEventListener('visibilitychange', runAll);
+      window.addEventListener('resize', runAll);
+      window.addEventListener('scroll', runAll, true);
+      return () => {
+        observer.disconnect();
+        resize?.disconnect();
+        intersection?.disconnect();
+        intersection = undefined;
+        document.removeEventListener('visibilitychange', runAll);
+        window.removeEventListener('resize', runAll);
+        window.removeEventListener('scroll', runAll, true);
+      };
+    },
+  };
+}
+
+/**
+ * The watch of the stage, one per root and viewport; its observers run while the layer is mounted. The regions
+ * register in their own layout effects, which run before these: one pass of the layer then reads them all at once
+ * on the mount and on a new `revision` (the view settled, a new box), and reads the new regions of a new set of
+ * charts (a refresh binds again, the regions that stay need no read).
+ */
+function useStageWatch(props: ChartLayerProps): StageWatch | undefined {
+  const { root, viewport, revision, charts, cells } = props;
+  // the object only holds the lists: the observers start in the effect below
+  const watch = useMemo(() => (root && viewport ? createStageWatch(root, viewport) : undefined), [root, viewport]);
+  useLayoutEffect(() => watch?.start(), [watch]);
+  useLayoutEffect(() => {
+    watch?.run();
+  }, [watch, revision]);
+  useLayoutEffect(() => {
+    watch?.runFresh();
+  }, [watch, charts, cells]);
+  return watch;
 }
 
 interface RegionGeometry {
@@ -101,28 +272,36 @@ interface RegionGeometry {
   visible: boolean;
 }
 
+const sameGeometry = (a: RegionGeometry | undefined, b: RegionGeometry): boolean =>
+  !!a &&
+  a.visible === b.visible &&
+  a.anchor.x === b.anchor.x &&
+  a.anchor.y === b.anchor.y &&
+  a.anchor.width === b.anchor.width &&
+  a.anchor.height === b.anchor.height &&
+  (['a', 'b', 'c', 'd', 'e', 'f'] as const).every((k) => a.anchor.matrix[k] === b.anchor.matrix[k]);
+
 /**
  * The region of a cell: a `foreignObject` after the shape of the cell with the box and the transform of the shape,
  * and whether the shape shows on the screen. `mark` and `id` name the region in the DOM (`data-dmap-chart`).
  */
 function useRegion(
-  { root, viewport, revision }: StageProps,
+  { root, viewport }: StageProps,
+  watch: StageWatch | undefined,
   cell: CellEntry | undefined,
   mark: string,
   id: string
 ): { portal?: SVGForeignObjectElement; geometry?: RegionGeometry } {
-  const updateRef = useRef<() => void>();
   const [portal, setPortal] = useState<SVGForeignObjectElement>();
   const [geometry, setGeometry] = useState<RegionGeometry>();
 
   useLayoutEffect(() => {
     const shape = cell?.shape;
     const parent = shape?.parentElement as unknown as SVGGraphicsElement;
-    if (!root || !cell || !shape || !parent || !viewport) {
+    if (!root || !cell || !shape || !parent || !viewport || !watch) {
       return;
     }
     const region = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
-    let intersecting = typeof IntersectionObserver === 'undefined';
     region.setAttribute(mark, id);
     region.style.overflow = 'hidden';
     region.style.pointerEvents = 'none';
@@ -130,7 +309,7 @@ function useRegion(
     // The portal target belongs to the external SVG DOM and exists only after attachment.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPortal(region);
-    const update = () => {
+    const update = (pass: RegionPass) => {
       const anchor = readChartAnchor(cell, parent);
       if (!anchor) {
         setGeometry(undefined);
@@ -149,52 +328,16 @@ function useRegion(
           region.setAttribute(name, String(value));
         }
       }
-      const next = {
-        anchor,
-        visible: intersecting && displayed(shape, viewport),
-      };
-      setGeometry((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
+      const next = { anchor, visible: watch.intersecting(shape) && pass.displayed(shape) };
+      setGeometry((old) => (sameGeometry(old, next) ? old : next));
     };
-    updateRef.current = update;
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(root, {
-      attributes: true,
-      subtree: true,
-      attributeFilter: ['viewBox', 'transform', 'style', 'class', 'x', 'y', 'width', 'height', 'display', 'visibility'],
-    });
-    // Ancestor visibility and panel clipping can change without an SVG mutation.
-    for (let node: Element | null = viewport; node; node = node.parentElement) {
-      observer.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
-    }
-    const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update);
-    resize?.observe(viewport);
-    const intersection =
-      typeof IntersectionObserver === 'undefined'
-        ? undefined
-        : new IntersectionObserver((entries) => {
-            intersecting = entries.some((entry) => entry.isIntersecting);
-            update();
-          });
-    intersection?.observe(shape);
-    document.addEventListener('visibilitychange', update);
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
+    // the first read comes with the pass of the layer, after every region registered
+    const release = watch.add({ shape, update });
     return () => {
-      observer.disconnect();
-      resize?.disconnect();
-      intersection?.disconnect();
-      document.removeEventListener('visibilitychange', update);
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-      updateRef.current = undefined;
+      release();
       region.remove();
     };
-  }, [root, cell, viewport, mark, id]);
-
-  useLayoutEffect(() => {
-    updateRef.current?.();
-  }, [revision]);
+  }, [root, cell, viewport, watch, mark, id]);
   return { portal, geometry };
 }
 
@@ -230,19 +373,37 @@ function ChartBody({
   stale: boolean;
 }) {
   const theme = useTheme2();
+  // the inputs of the charts keep their identity per row: the memoised views below draw again only for a new row
+  const history = useMemo(
+    () =>
+      row.kind === 'history' && row.state === 'ready' && row.lines && row.domain
+        ? {
+            chart: { lines: row.lines, domain: row.domain },
+            series: row.lines.map((l) => ({
+              name: l.label,
+              color: l.color,
+              history: lineHistory(l),
+              format: row.format,
+              noData: l.noData,
+            })),
+          }
+        : undefined,
+    [row]
+  );
+  const directions = useMemo(
+    () =>
+      row.kind === 'updown' && row.state === 'ready' && row.directions
+        ? row.directions.map((d) => ({ name: d.label, color: d.color, history: d.history }))
+        : undefined,
+    [row]
+  );
   const hint = stale ? <span role="status">Stale data</span> : null;
-  if (row.kind === 'history' && row.state === 'ready' && row.lines && row.domain) {
+  if (row.kind === 'history' && history) {
     const more = row.more ? `+${row.more} more` : '';
     return (
       <ChartHover
         enabled
-        series={row.lines.map((l) => ({
-          name: l.label,
-          color: l.color,
-          history: lineHistory(l),
-          format: row.format,
-          noData: l.noData,
-        }))}
+        series={history.series}
         timeRange={timeRange}
         timeZone={timeZone}
         width={width}
@@ -250,7 +411,7 @@ function ChartBody({
         more={row.more}
       >
         <SparklineView
-          chart={{ lines: row.lines, domain: row.domain }}
+          chart={history.chart}
           config={row.config}
           width={width}
           height={height}
@@ -276,7 +437,7 @@ function ChartBody({
       </>
     );
   }
-  if (row.kind === 'updown' && row.state === 'ready' && row.directions && row.domain) {
+  if (row.kind === 'updown' && row.state === 'ready' && row.directions && row.domain && directions) {
     return (
       <>
         <div>
@@ -285,7 +446,7 @@ function ChartBody({
         {hint}
         <ChartHover
           enabled
-          series={row.directions.map((d) => ({ name: d.label, color: d.color, history: d.history }))}
+          series={directions}
           timeRange={timeRange}
           timeZone={timeZone}
           width={width}
@@ -312,10 +473,10 @@ function ChartBody({
 }
 
 /** A v4 chart region: the `chart` of the class of the cell, in the box of the cell (spec 3.9). */
-function RegionV4({ use, ...props }: ChartLayerProps & { use: ChartUse }) {
+function RegionV4({ use, watch, ...props }: ChartLayerProps & { use: ChartUse; watch: StageWatch | undefined }) {
   const { cells, bound, ctx } = props;
   const theme = useTheme2();
-  const { portal, geometry } = useRegion(props, cells.get(use.cellId), 'data-dmap-chart', use.cellId);
+  const { portal, geometry } = useRegion(props, watch, cells.get(use.cellId), 'data-dmap-chart', use.cellId);
   // the chart builds on each bind (spec 3.2 step 11)
   const row = useMemo(() => chartRowV4(use, bound, ctx), [use, bound, ctx]);
   const deadline = row ? staleDeadline(row) : undefined;
@@ -354,13 +515,17 @@ function RegionV4({ use, ...props }: ChartLayerProps & { use: ChartUse }) {
   );
 }
 
-/** The chart regions over the diagram: one for each chart use of the bind (spec 3.9). */
-export function ChartLayer(props: ChartLayerProps) {
+/**
+ * The chart regions over the diagram: one for each chart use of the bind (spec 3.9). Memoised: a commit of the panel
+ * that changes none of its props (a hover card, a legend highlight) draws no region again.
+ */
+export const ChartLayer = React.memo(function ChartLayer(props: ChartLayerProps) {
+  const watch = useStageWatch(props);
   return (
     <>
       {props.charts.map((use) => (
-        <RegionV4 key={use.cellId} {...props} use={use} />
+        <RegionV4 key={use.cellId} {...props} use={use} watch={watch} />
       ))}
     </>
   );
-}
+});

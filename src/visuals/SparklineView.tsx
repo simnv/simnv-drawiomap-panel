@@ -40,9 +40,10 @@ const finiteCount = (values: ReadonlyArray<number | null>) =>
 
 /**
  * Prepared history only. This adapter never starts queries. N lines are N Grafana sparklines stacked in one box with
- * one Y range: a card row with 8 lines has 8 uPlot canvases. They draw as one chart.
+ * one Y range: a card row with 8 lines has 8 uPlot canvases. They draw as one chart. Memoised: the uPlot canvases
+ * draw again only for new props (a new row, a new box), not for a commit of the panel around them.
  */
-export function SparklineView(props: SparklineLinesProps) {
+export const SparklineView = React.memo(function SparklineView(props: SparklineLinesProps) {
   const theme = useTheme2();
   const { width, height, timeRange, label, stale, showValue = true, chart, value } = props;
   const config = props.config ?? {};
@@ -96,7 +97,7 @@ export function SparklineView(props: SparklineLinesProps) {
       )}
     </div>
   );
-}
+});
 
 function timeFieldOf(line: ChartLine): Field<number> {
   return { name: 'Time', type: FieldType.time, config: {}, values: line.times };
