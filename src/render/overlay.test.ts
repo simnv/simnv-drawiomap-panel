@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTheme } from '@grafana/data';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
-import { ensureOverlay, headSize, linkSplit, renderOverlay, reservedHead } from './overlay';
+import { ensureOverlay, headSize, linkSplit, renderOverlay, reservedHead, drawnWidth } from './overlay';
 import { statusColor } from '../binding/color';
 import { parsePathPoints, polylineLength, slicePolyline, type Point } from './geometry';
 
@@ -513,6 +513,26 @@ describe('renderOverlay keeps its elements across refreshes', () => {
     expect(observer.takeRecords()).toHaveLength(0);
     expect(same(before, strokes(root, 'e1'))).toBe(true);
     expect(root.querySelectorAll('polyline.dmap-half')).toHaveLength(3);
+  });
+  it('the drawn width keeps the configured endpoints: a fractional min and max draw as they are, a width inside rounds to a quarter', () => {
+    const { root, index } = build();
+    const narrow = { theme: opts.theme, minWidth: 0.1, maxWidth: 2.13 };
+    renderOverlay(root, index, round({ width: 0.1 }), narrow);
+    const [line] = strokes(root, 'e1');
+    // the thinnest link stays visible: 0.1 is not rounded to 0
+    expect(line.getAttribute('stroke-width')).toBe('0.1');
+    renderOverlay(root, index, round({ width: 2.13 }), narrow);
+    expect(line.getAttribute('stroke-width')).toBe('2.13');
+    renderOverlay(root, index, round({ width: 1.1 }), narrow);
+    expect(line.getAttribute('stroke-width')).toBe('1');
+    // a max below the quarter grid is never exceeded
+    const wide = { theme: opts.theme, minWidth: 2, maxWidth: 9.9 };
+    renderOverlay(root, index, round({ width: 9.9 }), wide);
+    expect(strokes(root, 'e1')[0].getAttribute('stroke-width')).toBe('9.9');
+    expect(drawnWidth(0.1, { min: 0, max: 10 })).toBe(0.1);
+    expect(drawnWidth(0, { min: 0, max: 10 })).toBe(0);
+    expect(drawnWidth(4.1, { min: 2, max: 10 })).toBe(4);
+    expect(drawnWidth(2.13, { min: 2.13, max: 2.13 })).toBe(2.13);
   });
   it('a colour and width change updates the same elements in place and keeps the cut of the labels', () => {
     const { root, index } = build();

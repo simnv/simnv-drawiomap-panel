@@ -630,6 +630,23 @@ describe('renderLinkLabels: the place of a label', () => {
     strokesOf(root).forEach((el) => expect(el.hasAttribute('stroke-dasharray')).toBe(false));
     expectNoMask(root);
   });
+  it('a label that hides at the same width takes its cut with it; one that returns with the same text brings it back', () => {
+    const { root, index } = build();
+    // a zero load and no data draw at the same width (linkWidth.min), the percent slot is fixed: only the visibility
+    // of the label changes
+    const zero = (): HalfState => half({ width: 2, percent: 0, percentDisplay: '0%' });
+    const two = (a: HalfState, b: HalfState = half({ width: 2 })): PatchMap =>
+      new Map([['e1', linkPatch('e1', { a2b: a, b2a: b, labelMode: 'percent' })]]);
+    render(root, index, two(zero()));
+    expect(gapsOf(root)).toHaveLength(2);
+    render(root, index, two(nodata()));
+    expect(gapsOf(root)).toHaveLength(1);
+    // another label changes while this one is hidden: the sync runs and leaves the hidden one without a cut
+    render(root, index, two(nodata(), half({ width: 2, percentDisplay: '1%' })));
+    expect(gapsOf(root)).toHaveLength(1);
+    render(root, index, two(zero(), half({ width: 2, percentDisplay: '1%' })));
+    expect(gapsOf(root)).toHaveLength(2);
+  });
   it('a hidden layer (too small a scale) takes the cut off the strokes, and a shown layer puts it back', () => {
     const { root, index } = build();
     sized(root, 0.2);

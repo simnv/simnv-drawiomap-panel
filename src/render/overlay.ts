@@ -16,6 +16,14 @@ export interface OverlayOptions {
   theme: GrafanaTheme2;
   /** `linkWidth.max`: the widest drawn half. The split and the reserved heads are fixed for it. */
   maxWidth: number;
+  /** `linkWidth.min`: the thinnest drawn half (0 when absent). The drawn widths stay between the two. */
+  minWidth?: number;
+}
+
+/** The configured range of the drawn widths of the halves (`linkWidth`). */
+export interface WidthRange {
+  min: number;
+  max: number;
 }
 
 /** The size of an arrow head: its length along the path and the width of its base. */
@@ -100,8 +108,18 @@ function el<K extends keyof SVGElementTagNameMap>(
  */
 const WIDTH_STEPS = 4;
 
-/** The width the overlay draws for a half of `width`: the nearest quarter unit. */
-export const drawnWidth = (width: number) => Math.round(width * WIDTH_STEPS) / WIDTH_STEPS;
+/**
+ * The width the overlay draws for a half of `width`: the nearest quarter unit inside the configured range. The
+ * endpoints of the range stay exact (`linkWidth.min` and `max` take any number: a min of 0.1 or a max of 2.13 draws
+ * as it is), and a width above zero is never drawn as zero.
+ */
+export function drawnWidth(width: number, range: WidthRange): number {
+  const lo = Math.min(range.min, range.max);
+  const hi = Math.max(range.min, range.max);
+  const quarter = Math.round(width * WIDTH_STEPS) / WIDTH_STEPS;
+  const held = Math.min(hi, Math.max(lo, quarter));
+  return held > 0 || !(width > 0) ? held : Math.min(hi, width);
+}
 
 /** A coordinate for an attribute: two decimals, as draw.io writes them. */
 export const fmt = (n: number) => String(Math.round(n * 100) / 100);
@@ -122,6 +140,7 @@ interface HalfPlace {
   tip: number;
   forward: boolean;
   maxWidth: number;
+  minWidth: number;
   style: ArrowStyle;
 }
 /** The `points` attributes of a half and of its head at one drawn width. */
@@ -158,6 +177,7 @@ interface BorderDrawn {
 interface OverlayState {
   index: CellIndex;
   maxWidth: number;
+  minWidth: number;
   links: Map<string, LinkDrawn>;
   borders: Map<string, BorderDrawn>;
 }
@@ -203,7 +223,11 @@ function drawBorder(image: SVGGraphicsElement, cellId: string, paint: string): S
 const states = new WeakMap<SVGSVGElement, OverlayState>();
 
 /** The fields of a half that its elements show (the width as it is drawn); the geometry is not among them. */
-const halfKey = (s: HalfState) => `${s.status}|${s.color}|${drawnWidth(s.width)}|${s.stepIndex}`;
+const halfKey = (s: HalfState, range: WidthRange) =>
+  `${s.status}|${s.color}|${drawnWidth(s.width, range)}|${s.stepIndex}`;
+
+/** The configured width range a half is drawn in. */
+const rangeOf = (place: HalfPlace): WidthRange => ({ min: place.minWidth, max: place.maxWidth });
 
 /**
  * The halves as they are drawn: with the status colour of the link in place of the binding colour when the status
@@ -348,7 +372,7 @@ function drawHalf(
   place: HalfPlace,
   state: HalfState
 ): HalfDrawn {
-  const width = drawnWidth(state.width);
+  const width = drawnWidth(state.width, rangeOf(place));
   const points = new Map<number, HalfPointsAttr>();
   const pts = pointsFor(points, place, width);
   const line = layer.appendChild(
@@ -382,7 +406,7 @@ function drawHalf(
   if (arrow) {
     reserved.set(arrow, headHull(halfPoints(place, place.maxWidth).head));
   }
-  return { line, arrow, key: halfKey(state), width, place, points };
+  return { line, arrow, key: halfKey(state, rangeOf(place)), width, place, points };
 }
 
 /**
@@ -390,12 +414,12 @@ function drawHalf(
  * the half and its head (the head grows with the width), in the same elements.
  */
 function updateHalf(drawn: HalfDrawn, state: HalfState): void {
-  const key = halfKey(state);
+  const key = halfKey(state, rangeOf(drawn.place));
   if (drawn.key === key) {
     return;
   }
   drawn.key = key;
-  const width = drawnWidth(state.width);
+  const width = drawnWidth(state.width, rangeOf(drawn.place));
   drawn.line.setAttribute('data-dmap-status', state.status);
   drawn.line.setAttribute('data-dmap-step', String(state.stepIndex));
   drawn.line.setAttribute('stroke', state.color);
@@ -409,7 +433,12 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   }
 }
 
-function drawLink(entry: CellEntry, link: NonNullable<CellPatch['link']>, maxWidth: number): LinkDrawn | undefined {
+function drawLink(
+  entry: CellEntry,
+  link: NonNullable<CellPatch['link']>,
+  maxWidth: number,
+  minWidth: number
+): LinkDrawn | undefined {
   if (!entry.line || (!link.a2b && !link.b2a)) {
     return undefined;
   }
@@ -433,6 +462,7 @@ function drawLink(entry: CellEntry, link: NonNullable<CellPatch['link']>, maxWid
     tip,
     forward,
     maxWidth,
+    minWidth,
     style,
   });
   if (link.a2b && link.b2a) {
@@ -480,10 +510,11 @@ export const linkGeometryKey = (link: CellPatch['link']) =>
  */
 export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: PatchMap, opts: OverlayOptions): void {
   const { maxWidth } = opts;
+  const minWidth = opts.minWidth ?? 0;
   let state = states.get(root);
-  if (!state || state.index !== index || state.maxWidth !== maxWidth) {
+  if (!state || state.index !== index || state.maxWidth !== maxWidth || state.minWidth !== minWidth) {
     root.querySelectorAll(`g.${OVERLAY_CLASS}, .${STATUS_BORDER_CLASS}`).forEach((g) => g.remove());
-    state = { index, maxWidth, links: new Map(), borders: new Map() };
+    state = { index, maxWidth, minWidth, links: new Map(), borders: new Map() };
     states.set(root, state);
   }
   const liveLinks = new Set<string>();
@@ -506,7 +537,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
     }
     drawn?.layer.remove();
     state.links.delete(id);
-    const next = drawLink(entry, link, maxWidth);
+    const next = drawLink(entry, link, maxWidth, minWidth);
     if (next) {
       state.links.set(id, next);
     }

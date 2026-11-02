@@ -1226,9 +1226,8 @@ function fullPlacement(
  * converted as the widest stroke is.
  */
 function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): { drawn: number; head: number } {
-  // the width as the overlay draws it, held to the widths between linkWidth.min and linkWidth.max: the reservation
-  // holds those only
-  const width = Math.min(Math.max(drawnWidth(state.width), layout.min), layout.max);
+  // the width as the overlay draws it, between linkWidth.min and linkWidth.max: the reservation holds those only
+  const width = drawnWidth(state.width, { min: layout.min, max: layout.max });
   const toRootUnits = (v: number) => (leg && layout.max > 0 ? (v * leg.strokeRoot) / layout.max : v);
   return { drawn: toRootUnits(width), head: toRootUnits(headSize(width, layout.max, leg?.arrow ?? 'point').base) };
 }
@@ -1256,6 +1255,9 @@ function keepSpot(layout: LabelLayout, rec: LabelRecord, placed: Placed): boolea
 /** A placed label that stands on its stroke: its text, slot, width and place set the cut. */
 const onStroke = (rec: LabelRecord) => !!rec.placement && 'centre' in rec.placement && rec.placement.side === 0;
 
+/** A label whose element shows its text (`showText`): a hidden one cuts no stroke. */
+const shown = (rec: LabelRecord) => !!rec.el && rec.el.getAttribute('visibility') !== 'hidden';
+
 /**
  * A call with the same key: the texts, the hidden state, the theme, and per changed slot the same spot when the slot
  * changed by one grain and the new box fits there, else an isolated re-placement.
@@ -1273,7 +1275,13 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
   for (const slot of slots) {
     const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
     const text = linkLabelText(slot.state, slot.mode);
-    const before = { onStroke: onStroke(rec), placement: rec.placement, retry: rec.retry, text: rec.el?.textContent };
+    const before = {
+      onStroke: onStroke(rec),
+      placement: rec.placement,
+      retry: rec.retry,
+      text: rec.el?.textContent,
+      shown: shown(rec),
+    };
     let changed = false;
     // a changed load changes the drawn width and head: the text moves across the link, on the same side and place
     // along it
@@ -1331,12 +1339,13 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
       }
     }
     showText(rec, text);
-    // the cut of a stroke follows the text on it: a change of a label on a stroke, or a label that came onto one or
-    // left it, moves a cut
+    // the cut of a stroke follows the text on it: a change of a label on a stroke, a label that came onto one or
+    // left it, and a label that hid or came back (a zero load and no data draw at the same width) move a cut
     if (
       changed ||
       rec.placement !== before.placement ||
       rec.retry !== before.retry ||
+      shown(rec) !== before.shown ||
       (rec.el?.textContent ?? undefined) !== (before.text ?? undefined)
     ) {
       if (before.onStroke || onStroke(rec)) {
