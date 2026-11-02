@@ -100,14 +100,24 @@ describe('nextLoad', () => {
     expect(nextLoad('ready', 'probe-missing')).toBe('missing');
     expect(nextLoad('ready', 'probe-unreachable')).toBe('unreachable');
   });
+  it('runs after the init of draw.io, and then a late probe result or timeout changes nothing', () => {
+    expect(nextLoad('ready', 'init')).toBe('running');
+    expect(nextLoad('starting', 'init')).toBe('starting');
+    expect(nextLoad('probing', 'init')).toBe('probing');
+    for (const event of ['probe-ok', 'probe-missing', 'probe-unreachable', 'hello', 'init', 'timeout'] as const) {
+      expect(nextLoad('running', event)).toBe('running');
+    }
+  });
   it('waits again for a hello when the frame gets a new document (theme change)', () => {
+    expect(nextLoad('running', 'reload')).toBe('starting');
     expect(nextLoad('ready', 'reload')).toBe('starting');
     expect(nextLoad('starting', 'reload')).toBe('starting');
     expect(nextLoad('probing', 'reload')).toBe('probing');
   });
   it('keeps an error: no event starts the editor again', () => {
     for (const failed of ['missing', 'unreachable', 'timeout'] as const) {
-      for (const event of ['probe-ok', 'probe-missing', 'probe-unreachable', 'hello', 'timeout', 'reload'] as const) {
+      const events = ['probe-ok', 'probe-missing', 'probe-unreachable', 'hello', 'init', 'timeout', 'reload'] as const;
+      for (const event of events) {
         expect(nextLoad(failed, event)).toBe(failed);
       }
     }

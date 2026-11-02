@@ -15,11 +15,25 @@ export const PROBE_TIMEOUT_MS = 10_000;
 /** ok: the editor files are there. missing: dist/drawio is not in the plugin build. unreachable: network error. */
 export type EditorProbe = 'ok' | 'missing' | 'unreachable';
 
-/** Start-up state of the editor. missing, unreachable and timeout are final: there is no retry. */
-export type EditorLoad = 'probing' | 'starting' | 'ready' | 'missing' | 'unreachable' | 'timeout';
+/**
+ * Start-up state of the editor. ready: the channel hello came. running: draw.io sent its init through the channel,
+ * so its scripts ran; a late probe result or timeout does not touch the frame. missing, unreachable and timeout are
+ * final: there is no retry.
+ */
+export type EditorLoad = 'probing' | 'starting' | 'ready' | 'running' | 'missing' | 'unreachable' | 'timeout';
 
-/** reload: the frame gets a new srcdoc document (theme change) and must send a new hello. */
-export type EditorLoadEvent = 'probe-ok' | 'probe-missing' | 'probe-unreachable' | 'hello' | 'timeout' | 'reload';
+/**
+ * init: the init message of draw.io came through the channel of the frame. reload: the frame gets a new srcdoc
+ * document (theme change) and must send a new hello.
+ */
+export type EditorLoadEvent =
+  | 'probe-ok'
+  | 'probe-missing'
+  | 'probe-unreachable'
+  | 'hello'
+  | 'init'
+  | 'timeout'
+  | 'reload';
 
 const JS_TYPE = /\b(?:java|ecma)script\b/i;
 
@@ -118,7 +132,11 @@ export function nextLoad(load: EditorLoad, event: EditorLoadEvent): EditorLoad {
     case 'starting':
       return event === 'hello' ? 'ready' : event === 'timeout' ? 'timeout' : failedProbe(event) ?? load;
     case 'ready':
-      return event === 'reload' ? 'starting' : (failedProbe(event) ?? load);
+      return event === 'init' ? 'running' : event === 'reload' ? 'starting' : (failedProbe(event) ?? load);
+    // The editor works: a late result of the probe (the files went away after draw.io loaded, or the probe hung)
+    // must not remove it. The probe still drops the base for the next modal (rememberProbe).
+    case 'running':
+      return event === 'reload' ? 'starting' : load;
     default:
       return load;
   }

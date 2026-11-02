@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DrawioModal } from './DrawioModal';
-import { forgetProbes, HELLO_TIMEOUT_MS } from './availability';
+import { forgetProbes, HELLO_TIMEOUT_MS, initialLoad, PROBE_TIMEOUT_MS } from './availability';
 import { PluginDialog } from './popup/PluginDialog';
 
 vi.hoisted(() => {
@@ -166,6 +166,58 @@ describe('DrawioModal start-up', () => {
     open();
     expect(screen.queryByTitle('draw.io')).toBeNull();
     expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('probing');
+  });
+
+  /** Whether the base of the modal is kept for the session (the next modal starts at once). */
+  const kept = () =>
+    initialLoad(new URL('public/plugins/simnv-drawiomap-panel/drawio/', document.baseURI).href) === 'starting';
+
+  /** A fast start (kept base) whose probe answers only when the test says so. */
+  async function openWithLateProbe() {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    first.unmount();
+    let answer!: (r: Response) => void;
+    fetchFn.mockImplementation(() => new Promise<Response>((resolve) => (answer = resolve)));
+    const view = open();
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    const port = hello();
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'init' }) }));
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'load' }) }));
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('running');
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-phase')).toBe('loaded');
+    expect(screen.queryByRole('status')).toBeNull();
+    return { view, answer: (r: Response) => answer(r) };
+  }
+
+  const editorStays = () => {
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('running');
+  };
+
+  it('keeps a working editor when the probe fails after the init of draw.io, and drops the base for the next modal', async () => {
+    const { view, answer } = await openWithLateProbe();
+    expect(kept()).toBe(true);
+    answer(notFound());
+    await settle();
+    editorStays();
+    await settle(10 * HELLO_TIMEOUT_MS);
+    editorStays();
+    expect(kept()).toBe(false);
+    view.unmount();
+    open();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('probing');
+  });
+
+  it('keeps a working editor when the probe times out after the init of draw.io', async () => {
+    await openWithLateProbe();
+    await settle(PROBE_TIMEOUT_MS + 1);
+    editorStays();
+    expect(probes()).toHaveLength(2);
+    expect(kept()).toBe(false);
   });
 
   it('waits for the probe again in the next modal after a hello timeout', async () => {

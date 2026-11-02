@@ -100,7 +100,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   const base = useMemo(() => bundledEditorBase(), []);
   const [load, dispatchLoad] = useReducer(nextLoad, base, initialLoad);
   // The frame and its srcdoc document come only after a good probe of the editor files.
-  const started = load === 'starting' || load === 'ready';
+  const started = load === 'starting' || load === 'ready' || load === 'running';
   const target = useMemo(() => (started ? editorTarget(isDark, token) : undefined), [started, isDark, token]);
   const failure = FAILURES[load];
   // The port of the accepted channel hello. It stays open while the modal is open.
@@ -118,6 +118,10 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
       const step = handleMessage(stateRef.current, msg, opts);
       stateRef.current = step.state;
       setPhase(step.state.phase);
+      if (msg.event === 'init') {
+        // draw.io runs in the frame of the accepted hello: the probe of this modal cannot remove it any more.
+        dispatchLoad('init');
+      }
       step.send.forEach(reply);
       if (step.result) {
         onSave(step.result);
@@ -170,7 +174,8 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   // One probe for each modal. After a good probe of the base in this session the frame is there from the start
   // (initialLoad), and the probe confirms that the files are still there: the shim sends its hello before draw.io
   // loads, so without the probe a missing main.js would leave the modal in ready without an error. A failure is
-  // final: the user closes the modal and opens it again.
+  // final: the user closes the modal and opens it again. Once draw.io sent its init (running), a late failure of the
+  // probe only drops the base for the next modal.
   useEffect(() => {
     const ctrl = new AbortController();
     probeEditor(base, fetch, ctrl.signal).then((probe) => {
@@ -247,7 +252,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
             </Button>
           </Alert>
         )}
-        {!failure && (load !== 'ready' || phase === 'init') && (
+        {!failure && ((load !== 'ready' && load !== 'running') || phase === 'init') && (
           <div role="status" className={styles.status}>
             <Spinner inline /> Loading the draw.io editor…
           </div>
