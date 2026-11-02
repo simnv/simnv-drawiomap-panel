@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Modal, Spinner } from '@grafana/ui';
 import type { BindingsPopupProps } from '../editor/popup';
 import { dialogModalClass } from '../editor/dialogSize';
@@ -20,9 +20,23 @@ function Shell({ onDismiss, children }: { onDismiss: () => void; children: React
 
 /**
  * The bindings popup in its own chunk: view mode never loads it. While the chunk loads, a modal shows a spinner. A
- * failed load shows a message with a Retry button.
+ * failed load shows a message with a Retry button. On close, the opener gets the focus back.
  */
 export function LazyBindingsPopup(props: BindingsPopupProps) {
+  // The element that opened the popup gets the focus back on close. The first render reads it, in the event that
+  // opens the popup: the loading modal and the dialog mount later and move the focus. The restore waits a frame, after
+  // the unmount cleanup of the dialog, which read the focus after the loading modal and would put it on the body.
+  const [opener] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  useEffect(
+    () => () => {
+      window.requestAnimationFrame(() => {
+        if (opener?.isConnected) {
+          opener.focus();
+        }
+      });
+    },
+    [opener]
+  );
   return (
     <LazyChunk
       load={load}

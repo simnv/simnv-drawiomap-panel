@@ -17,7 +17,15 @@ import { useOverlay } from './popup/overlayStack';
 import { dialogModalClass } from './dialogSize';
 import { parseFileRequest, readEditorFile } from './files';
 import { bundledEditorBase, editorTarget } from './target';
-import { EditorLoad, HELLO_TIMEOUT_MS, initialLoad, nextLoad, probeEditor, rememberProbe } from './availability';
+import {
+  EditorLoad,
+  forgetProbe,
+  HELLO_TIMEOUT_MS,
+  initialLoad,
+  nextLoad,
+  probeEditor,
+  rememberProbe,
+} from './availability';
 
 const styles = {
   content: css`
@@ -159,12 +167,11 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     }
   }, [target]);
 
-  // One probe for each modal, unless a modal of this session had a good probe of the same base. A failure is final:
-  // the user closes the modal and opens it again.
+  // One probe for each modal. After a good probe of the base in this session the frame is there from the start
+  // (initialLoad), and the probe confirms that the files are still there: the shim sends its hello before draw.io
+  // loads, so without the probe a missing main.js would leave the modal in ready without an error. A failure is
+  // final: the user closes the modal and opens it again.
   useEffect(() => {
-    if (initialLoad(base) !== 'probing') {
-      return;
-    }
     const ctrl = new AbortController();
     probeEditor(base, fetch, ctrl.signal).then((probe) => {
       if (!ctrl.signal.aborted) {
@@ -174,6 +181,13 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     });
     return () => ctrl.abort();
   }, [base]);
+
+  // A failed start drops the base: the next modal waits for its probe again.
+  useEffect(() => {
+    if (load === 'timeout') {
+      forgetProbe(base);
+    }
+  }, [load, base]);
 
   useEffect(() => {
     if (load !== 'starting') {

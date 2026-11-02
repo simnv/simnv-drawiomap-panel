@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { forgetProbes, initialLoad, nextLoad, PROBE_TIMEOUT_MS, probeEditor, rememberProbe } from './availability';
+import {
+  forgetProbe,
+  forgetProbes,
+  initialLoad,
+  nextLoad,
+  PROBE_TIMEOUT_MS,
+  probeEditor,
+  rememberProbe,
+} from './availability';
 
 const BASE = 'http://g/public/plugins/p/drawio/';
 
@@ -84,6 +92,14 @@ describe('nextLoad', () => {
     // A reload of the frame sends a new hello.
     expect(nextLoad('ready', 'hello')).toBe('ready');
   });
+  it('ends in an error when the probe of a fast start fails after the frame is there', () => {
+    expect(nextLoad('starting', 'probe-ok')).toBe('starting');
+    expect(nextLoad('starting', 'probe-missing')).toBe('missing');
+    expect(nextLoad('starting', 'probe-unreachable')).toBe('unreachable');
+    expect(nextLoad('ready', 'probe-ok')).toBe('ready');
+    expect(nextLoad('ready', 'probe-missing')).toBe('missing');
+    expect(nextLoad('ready', 'probe-unreachable')).toBe('unreachable');
+  });
   it('waits again for a hello when the frame gets a new document (theme change)', () => {
     expect(nextLoad('ready', 'reload')).toBe('starting');
     expect(nextLoad('starting', 'reload')).toBe('starting');
@@ -109,6 +125,17 @@ describe('initialLoad', () => {
     expect(initialLoad(BASE)).toBe('starting');
     expect(initialLoad('http://g/other/drawio/')).toBe('probing');
     forgetProbes();
+    expect(initialLoad(BASE)).toBe('probing');
+  });
+  it('drops a base after a failed probe or a failed start', () => {
+    rememberProbe(BASE, 'ok');
+    rememberProbe(BASE, 'missing');
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'ok');
+    rememberProbe(BASE, 'unreachable');
+    expect(initialLoad(BASE)).toBe('probing');
+    rememberProbe(BASE, 'ok');
+    forgetProbe(BASE);
     expect(initialLoad(BASE)).toBe('probing');
   });
 });

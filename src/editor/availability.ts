@@ -67,27 +67,40 @@ export async function probeEditor(
   }
 }
 
-// Bases with a good probe in this session. A failure is not kept: the next modal probes again.
+// Bases with a good probe in this session. A failed probe or a failed start drops the base: the next modal waits for
+// its probe again.
 const goodBases = new Set<string>();
 
 /**
  * First start-up state of a modal: starting when an earlier modal of this session had a good probe of base (the
- * files were there, so the frame comes at once), else probing.
+ * files were there, so the frame comes at once), else probing. The modal probes in both cases: a probe that fails
+ * after a fast start still ends in missing or unreachable (nextLoad).
  */
 export function initialLoad(base: string): EditorLoad {
   return goodBases.has(base) ? 'starting' : 'probing';
 }
 
-/** Keeps a good probe of base for the session. */
+/** Keeps a good probe of base for the session. A failed probe drops the base. */
 export function rememberProbe(base: string, probe: EditorProbe): void {
   if (probe === 'ok') {
     goodBases.add(base);
+  } else {
+    goodBases.delete(base);
   }
+}
+
+/** Drops base: the next modal waits for its probe (a failed start). */
+export function forgetProbe(base: string): void {
+  goodBases.delete(base);
 }
 
 /** Drops the kept probes. For tests. */
 export function forgetProbes(): void {
   goodBases.clear();
+}
+
+function failedProbe(event: EditorLoadEvent): EditorLoad | undefined {
+  return event === 'probe-missing' ? 'missing' : event === 'probe-unreachable' ? 'unreachable' : undefined;
 }
 
 /** Next start-up state. */
@@ -101,10 +114,11 @@ export function nextLoad(load: EditorLoad, event: EditorLoadEvent): EditorLoad {
           : event === 'probe-unreachable'
             ? 'unreachable'
             : load;
+    // The probe of a fast start (initialLoad) can fail after the frame is there: the files went away.
     case 'starting':
-      return event === 'hello' ? 'ready' : event === 'timeout' ? 'timeout' : load;
+      return event === 'hello' ? 'ready' : event === 'timeout' ? 'timeout' : failedProbe(event) ?? load;
     case 'ready':
-      return event === 'reload' ? 'starting' : load;
+      return event === 'reload' ? 'starting' : (failedProbe(event) ?? load);
     default:
       return load;
   }

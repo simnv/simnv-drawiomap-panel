@@ -125,7 +125,7 @@ describe('DrawioModal start-up', () => {
   const open = () =>
     render(<DrawioModal xml="" title="t" mode="edit" isDark={false} onSave={() => {}} onClose={onClose} />);
 
-  it('makes the frame at once in the next modal of the session after a good probe', async () => {
+  it('makes the frame at once in the next modal of the session after a good probe, and probes in the background', async () => {
     fetchFn.mockImplementation(async () => jsResponse());
     const first = open();
     await settle();
@@ -135,10 +135,51 @@ describe('DrawioModal start-up', () => {
     expect(screen.getByTitle('draw.io')).toBeTruthy();
     expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('starting');
     await settle();
-    expect(probes()).toHaveLength(1);
+    expect(probes()).toHaveLength(2);
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('starting');
     // The hello timeout runs from the mount.
     await settle(HELLO_TIMEOUT_MS);
     expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('timeout');
+  });
+
+  it('shows the missing-editor error after a fast start when js/main.js went away, also after the hello', async () => {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    hello();
+    first.unmount();
+    // An incomplete plugin build: the shim still loads and sends its hello, main.js answers 404.
+    fetchFn.mockImplementation(async () => notFound());
+    const second = open();
+    expect(screen.getByTitle('draw.io')).toBeTruthy();
+    hello();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('ready');
+    await settle();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('missing');
+    expect(screen.getByRole('alert').textContent).toContain(MISSING);
+    expect(screen.queryByTitle('draw.io')).toBeNull();
+    await settle(10 * HELLO_TIMEOUT_MS);
+    expect(screen.getByRole('alert').textContent).toContain(MISSING);
+    expect(probes()).toHaveLength(2);
+    // The base is dropped: the next modal waits for its probe.
+    second.unmount();
+    open();
+    expect(screen.queryByTitle('draw.io')).toBeNull();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('probing');
+  });
+
+  it('waits for the probe again in the next modal after a hello timeout', async () => {
+    fetchFn.mockImplementation(async () => jsResponse());
+    const first = open();
+    await settle();
+    first.unmount();
+    const second = open();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('starting');
+    await settle(HELLO_TIMEOUT_MS);
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('timeout');
+    second.unmount();
+    open();
+    expect(screen.getByTestId('dmap-editor-modal').getAttribute('data-dmap-editor-load')).toBe('probing');
   });
 
   it('probes again in the next modal after a failed probe', async () => {
