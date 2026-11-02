@@ -1,7 +1,9 @@
 import {
+  FieldColorModeId,
   FieldType,
   createTheme,
   getDisplayProcessor,
+  getFieldDisplayName,
   type DataFrame,
   type DisplayProcessor,
   type DisplayValue,
@@ -96,6 +98,11 @@ export function indexFrames(frames: DataFrame[]): FrameIndex {
       let lastNumeric = field.values.length - 1;
       while (lastNumeric >= 0 && field.values[lastNumeric] === null) {
         lastNumeric--;
+      }
+      if (field.config.color?.mode === FieldColorModeId.PaletteClassicByName) {
+        // The only reader of `field.state.displayName` here is the colour by series name of Grafana. The call fills it,
+        // and it costs O(frames) per field when all series share one label key, so it runs for this mode only.
+        getFieldDisplayName(field, frame, frames);
       }
       candidates.push({
         field,

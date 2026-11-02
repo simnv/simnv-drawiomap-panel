@@ -332,6 +332,26 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
     expect(row.domain![1]).toBeCloseTo(9.9);
   });
 
+  it('an updown row: a value that the unit conversion makes infinite is a gap, as with the general align', () => {
+    const frames = [
+      frame('tx', { job: 'ap-1' }, [1, 1], { unit: 'bps' }, [0, 60_000]),
+      frame('rx', { job: 'ap-1' }, [1, Number.MAX_VALUE], { unit: 'Bps' }, [0, 60_000]),
+    ];
+    const [up, down] = card(clients([{ kind: 'updown', up: 'tx', down: 'rx' }]), frames).rows[0].directions!;
+    expect(up.history.state === 'ready' && [...up.history.values]).toEqual([1, 1]);
+    expect(down.history.state === 'ready' && [...down.history.values]).toEqual([8, null]);
+    expect(down.history.state === 'ready' && [down.history.latestValue, down.history.sampleAt]).toEqual([8, 0]);
+  });
+
+  it('an updown row with a negative zero shows a zero', () => {
+    const frames = [
+      frame('tx', { job: 'ap-1' }, [-0], { unit: 'bps' }, [0]),
+      frame('rx', { job: 'ap-1' }, [1], { unit: 'bps' }, [0]),
+    ];
+    const [up] = card(clients([{ kind: 'updown', up: 'tx', down: 'rx' }]), frames).rows[0].directions!;
+    expect(up.history.state === 'ready' && Object.is(up.history.latestValue, 0)).toBe(true);
+  });
+
   it('the pinned tooltip model lists all drawn lines at the hovered time, then "+N more"', () => {
     const row = historyRow(card(clients([{ kind: 'history', query: 'clients' }]), ssidFrames(10)));
     const tip = lineTooltip(row, 61_000)!;

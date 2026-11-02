@@ -1,4 +1,12 @@
-import { FieldType, type DataFrame } from '@grafana/data';
+import {
+  FieldColorModeId,
+  FieldType,
+  createTheme,
+  getFieldColorModeForField,
+  getFieldDisplayName,
+  type DataFrame,
+  type Field,
+} from '@grafana/data';
 import { describe, expect, it } from 'vitest';
 import { indexFrames, lastSampleTime } from './frames';
 
@@ -169,5 +177,43 @@ describe('lastSampleTime', () => {
     expect(
       lastSampleTime([{ length: 1, fields: [{ name: 'v', type: FieldType.number, config: {}, values: [1] }] }])
     ).toBeUndefined();
+  });
+});
+
+describe('the series name for the colour by name', () => {
+  const named = (mode: string, job = 'ap-1'): DataFrame => {
+    const f = frame();
+    f.fields[1].config = { ...f.fields[1].config, color: { mode } };
+    f.fields[1].labels = { job };
+    return f;
+  };
+  const colourOf = (field: Field) =>
+    getFieldColorModeForField(field).getCalculator(field, createTheme())(1, 0, { value: 0, color: 'red' });
+
+  it('is set for palette-classic-by-name, as getFieldDisplayName sets it', () => {
+    const mode = FieldColorModeId.PaletteClassicByName;
+    const frames = [named(mode), named(mode, 'ap-2')];
+    const oracle = [named(mode), named(mode, 'ap-2')];
+    indexFrames(frames);
+    expect(frames[0].fields[1].state?.displayName).toBe(getFieldDisplayName(oracle[0].fields[1], oracle[0], oracle));
+    expect(frames[1].fields[1].state?.displayName).toBe(getFieldDisplayName(oracle[1].fields[1], oracle[1], oracle));
+    expect(frames[0].fields[1].state?.displayName).not.toBe(frames[1].fields[1].state?.displayName);
+  });
+
+  it('gives the colour of the series name, not of the field name', () => {
+    const mode = FieldColorModeId.PaletteClassicByName;
+    const f = named(mode);
+    const oracle = named(mode);
+    getFieldDisplayName(oracle.fields[1], oracle, [oracle]);
+    const unprimed = named(mode);
+    const field = indexFrames([f]).candidates[0].field;
+    expect(colourOf({ ...field })).toBe(colourOf({ ...oracle.fields[1] }));
+    expect(colourOf({ ...field })).not.toBe(colourOf({ ...unprimed.fields[1] }));
+  });
+
+  it('is not computed for other colour modes: the call is O(frames) per field', () => {
+    const f = named(FieldColorModeId.Thresholds);
+    indexFrames([f]);
+    expect(f.fields[1].state?.displayName).toBeUndefined();
   });
 });

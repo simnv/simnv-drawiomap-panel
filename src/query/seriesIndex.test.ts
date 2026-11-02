@@ -172,6 +172,12 @@ it('treats an inherited object property as an absent label', () => {
   );
 });
 
+const canonicalOf = (labels: Labels) =>
+  Object.keys(labels)
+    .sort()
+    .map((name) => `${name}=${JSON.stringify(labels[name])}`)
+    .join(',');
+
 /** The general path as it was before the single-frame fast path: every key goes through a Map and a sort. */
 function mergeReference(frames: DataFrame[], refId: string) {
   const merged = new Map<
@@ -198,13 +204,27 @@ function mergeReference(frames: DataFrame[], refId: string) {
   return [...merged.values()]
     .map((e) => {
       const times = [...e.samples.keys()].sort((a, b) => a - b);
-      return { labels: e.labels, frameIndex: e.frame, times, values: times.map((t) => e.samples.get(t)!) };
+      return {
+        labels: e.labels,
+        frameIndex: e.frame,
+        canonical: canonicalOf(e.labels),
+        times,
+        values: times.map((t) => e.samples.get(t)!),
+      };
     })
-    .sort((a, b) => a.frameIndex - b.frameIndex);
+    .sort(
+      (a, b) => (a.canonical < b.canonical ? -1 : a.canonical > b.canonical ? 1 : 0) || a.frameIndex - b.frameIndex
+    );
 }
 
 const shape = (series: ReturnType<typeof indexSeries>['series']) =>
-  series.map((s) => ({ labels: s.labels, frameIndex: s.frameIndex, times: s.times, values: s.values }));
+  series.map((s) => ({
+    labels: s.labels,
+    frameIndex: s.frameIndex,
+    canonical: canonicalOf(s.labels),
+    times: s.times,
+    values: s.values,
+  }));
 
 it.each([
   ['one frame per key', [frame({ a: '1' }), frame({ a: '2' }, [0, 1000], [5, null]), frame({ a: '3' }, [], [])]],
@@ -214,6 +234,17 @@ it.each([
   [
     'single and duplicate keys together',
     [frame({ a: '1' }, [0, 2], [1, 3]), frame({ a: '2' }), frame({ a: '1' }, [1], [9]), frame({ a: '3' }, [7], [null])],
+  ],
+  [
+    'labels in shuffled key order, frames out of canonical order',
+    [
+      frame({ z: '1', a: '9' }, [0, 1], [1, 2]),
+      frame({ b: 'x', a: '2' }, [0], [3]),
+      frame({ a: '9', z: '1' }, [2], [4]),
+      frame({ a: '2', b: 'x' }, [1], [5]),
+      frame({ m: '0' }, [0], [6]),
+      frame({ a: '1', b: 'y' }, [0], [7]),
+    ],
   ],
   ['repeated times inside one frame', [frame({ a: '1' }, [0, 1, 1, 2], [1, 2, 2, 3])]],
 ])('gives the same series from the fast path and the merge: %s', (_name, frames) => {

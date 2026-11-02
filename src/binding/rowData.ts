@@ -50,6 +50,19 @@ export function snapshotV4(data: PanelData, refId: string): QuerySnapshot {
 }
 
 /**
+ * The values of one series that alignUpdown gives back unchanged: each value is null or finite. A negative zero stays
+ * only for the max reduce: a sum or a mean adds it to zero. indexSeries gives such values, a unit conversion may not.
+ */
+function copiedByAlign(values: ReadonlyArray<number | null>, how: AcrossReduce): boolean {
+  for (const v of values) {
+    if (v !== null && (!Number.isFinite(v) || (how !== 'max' && Object.is(v, -0)))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * The history of an `updown` direction: one series as it is, N series reduced at each timestamp (spec 3.7). A
  * timestamp where one of the series has no value is a gap. The default reduce comes from the unit of the first series.
  */
@@ -64,10 +77,11 @@ export function directionHistory(
   }
   const first = r.series[0];
   const how = reduce ?? defaultReduce(first.field.config.unit);
-  // One series needs no align: indexSeries gives rising times and finite or null values.
+  // One series needs no align when the align would copy it as it is. Values that a unit conversion made infinite, and
+  // a negative zero that a sum or a mean turns into zero, go through the general path.
   let aligned: { times: number[]; values: Array<number | null> } = first;
   let latest: number | undefined;
-  if (r.series.length > 1) {
+  if (r.series.length > 1 || !copiedByAlign(first.values, how)) {
     const reduced = reduceAcross(r.series, how);
     latest = 'mismatch' in reduced || reduced.value === null ? undefined : reduced.value;
     aligned = alignUpdown(r.series, how);
@@ -77,7 +91,7 @@ export function directionHistory(
   while (last >= 0 && values[last] === null) {
     last--;
   }
-  if (r.series.length === 1 && last >= 0) {
+  if (aligned === first && last >= 0) {
     latest = values[last] as number;
   }
   return {
