@@ -424,5 +424,58 @@ git commit -qm sw
 sweep "--commit" 1 --commit HEAD
 sweep "--all" 1 --all
 
+# Fault injection: a temp file that the shell cannot open. A mktemp shim makes a dangling symlink for
+# one temp file name. The shell then fails to open that file before any tool runs. This is a different
+# failure from a tool that exits non-zero. Every file that a mode uses must end the scan with exit 2.
+real_mktemp=$(command -v mktemp)
+mkdir -p "$root/mkshim"
+cat > "$root/mkshim/mktemp" <<SHIM
+#!/bin/sh
+t=\$($real_mktemp "\$@") || exit 2
+[ -n "\${FAULT_TARGET:-}" ] && { ln -s "\$t/no-such-dir/x" "\$t/\$FAULT_TARGET" || exit 2; }
+printf '%s\n' "\$t"
+SHIM
+chmod +x "$root/mkshim/mktemp"
+
+opensweep() { # description, hook arguments...
+  desc=$1; shift
+  common="rc terms terms.1 allow allow.1 names names.all names.plain names.nl rec found.term found.gen found.ip
+    rec.gen m1 m1.pos m2 m2.pos ipcand text tok.raw pos n.cand n.tok ptok toklist tokens uniq valid bad
+    found.pos found.col hits done"
+  case "$1" in
+    --all) only="files grep.out grep.tab" ;;
+    *) only="diff" ;;
+  esac
+  none="$root/open.none"; : > "$none"
+  bad="$root/open.bad"; : > "$bad"
+  for target in $common $only; do
+    FAULT_TARGET=$target PATH="$root/mkshim:$PATH" sh "$hooks/check-denylist.sh" "$@" > "$root/open.out" 2>&1; rc=$?
+    [ $rc -eq 2 ] || echo "$target exit $rc" >> "$bad"
+    grep -qF leakword "$root/open.out" && echo "$target leaked content" >> "$bad"
+    grep -qF SYNTHMARK "$root/open.out" && echo "$target leaked the denylist path" >> "$bad"
+  done
+  out="$bad"
+  check "open $desc: a temp file that cannot be opened exits 2" test ! -s "$bad"
+  # A target that this mode never uses must not change the result.
+  case "$1" in
+    --all) other="diff" ;;
+    *) other="files" ;;
+  esac
+  FAULT_TARGET=$other PATH="$root/mkshim:$PATH" sh "$hooks/check-denylist.sh" "$@" > "$root/open.out" 2>&1; rc=$?
+  out="$root/open.out"
+  check "open $desc: a temp name the mode does not use is harmless" test $rc -eq 1
+}
+
+newrepo op
+h1=/Users
+p1=10.99
+dm=10.10.0
+printf 'leakword SYNTHTERM\np %s/someone/x\nip %s.5 and %s.1.2\nok\n' "$h1" "$dm" "$p1" > op.txt
+git add -A
+opensweep "staged"
+git commit -qm op
+opensweep "--commit" --commit HEAD
+opensweep "--all" --all
+
 echo "$n checks, $fails failed"
 [ "$fails" -eq 0 ]
