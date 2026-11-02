@@ -31,6 +31,7 @@ import {
   obstacleIndex,
   placeHalfLabel,
   placeLinkLabels,
+  placeAgain,
   pointToSegment,
   type LegInput,
   type Obstacle,
@@ -40,7 +41,16 @@ import {
   type Rect,
 } from './labelPlacement';
 import { alphaOf, maxBodyWidth, statusBorderWidth } from '../binding/color';
-import { fmt, headSize, linkGeometryKey, linkSplit, OVERLAY_CLASS, reservedHead } from './overlay';
+import {
+  drawnWidth,
+  fmt,
+  headSize,
+  linkGeometryKey,
+  linkSplit,
+  OVERLAY_CLASS,
+  overlayHalves,
+  reservedHead,
+} from './overlay';
 import { readViewBox, viewScaleOf } from './zoom';
 
 /*
@@ -60,6 +70,8 @@ const WIDEST_PERCENT = '>999%';
 const FALLBACK_FONT = 'sans-serif';
 /** a box inside another by at most this much on a side still counts as contained (two decimals in the export) */
 const CONTAIN_EPS = 0.5;
+/** the most measured texts a layout keeps: live values give ever new texts, the memo must not grow for days */
+const MAX_WIDTHS = 2000;
 
 export interface LinkLabelOptions {
   theme: GrafanaTheme2;
@@ -121,6 +133,12 @@ interface LabelLayout {
   min: number;
   /** the bounds of the diagram in root units */
   bounds: Rect;
+  /** the halves that carry a cut, with their cell: the next sync takes the cut off one that is no longer wanted */
+  cuts: Map<SVGElement, string>;
+  /** the matrix of an overlay group into root units, read once per layout: a pan or a zoom does not change it */
+  spaces: Map<Element, Matrix | undefined>;
+  /** a change since the last sync that can move a cut: a text, a slot, a drawn width, a placement, a hidden label */
+  cutsStale: boolean;
 }
 
 const layouts = new WeakMap<SVGSVGElement, LabelLayout>();
@@ -192,7 +210,11 @@ export function renderLinkLabels(
       dropped++;
     }
   }
-  syncCuts(root, layout);
+  // the cuts follow the texts on the strokes: a pass that changed none of them (and whose cut halves are still in the
+  // DOM: an overlay that was built again has none) writes none
+  if (layout.cutsStale || [...layout.cuts.keys()].some((el) => !el.isConnected)) {
+    syncCuts(root, layout);
+  }
   layout.layer.setAttribute('data-dmap-labels-placed', String(placed));
   layout.layer.setAttribute('data-dmap-labels-dropped', String(dropped));
   if (debugEnabled()) {
@@ -203,13 +225,16 @@ export function renderLinkLabels(
   return { placed, dropped, moved };
 }
 
+/** The rendered size of the root svg, when the caller knows it: `viewScaleOf` then reads no layout. */
+export type StageRect = { width: number; height: number };
+
 /** Writes the visibility of the layer for the current scale; true when it flipped. */
-function applyScale(root: SVGSVGElement): { layer?: Element; flipped: boolean } {
+function applyScale(root: SVGSVGElement, rect?: StageRect): { layer?: Element; flipped: boolean } {
   const layer = Array.from(root.children).find((c) => c.classList.contains(LINK_LABEL_LAYER_CLASS));
   if (!layer) {
     return { flipped: false };
   }
-  const hidden = !labelsVisible(viewScaleOf(root));
+  const hidden = !labelsVisible(viewScaleOf(root, rect));
   const flipped = hidden !== (layer.getAttribute('visibility') === 'hidden');
   if (hidden) {
     layer.setAttribute('visibility', 'hidden');
@@ -221,12 +246,13 @@ function applyScale(root: SVGSVGElement): { layer?: Element; flipped: boolean } 
 
 /**
  * Hides the layer when a glyph would be smaller than the minimum on-screen size, shows it otherwise (spec section
- * 6). One rect read and one attribute on a pan or a zoom; the cuts in the strokes change only when the layer
- * flips (a pan or a zoom changes nothing in the local space of the overlay). The zoom effects call it after
- * `applyLayout`.
+ * 6). One attribute on a pan or a zoom, and one rect read unless the caller passes the rendered size of the svg
+ * (`rect`: the zoom effects keep it from a `ResizeObserver`, so a pointer move forces no layout); the cuts in the
+ * strokes change only when the layer flips (a pan or a zoom changes nothing in the local space of the overlay). The
+ * zoom effects call it after `applyLayout`.
  */
-export function setLinkLabelScale(root: SVGSVGElement): void {
-  const { flipped } = applyScale(root);
+export function setLinkLabelScale(root: SVGSVGElement, rect?: StageRect): void {
+  const { flipped } = applyScale(root, rect);
   const layout = layouts.get(root);
   if (flipped && layout) {
     syncCuts(root, layout);
@@ -321,6 +347,9 @@ function measure(
   const measured = canMeasure ? probe.getComputedTextLength() : 0;
   const estimate = 0.6 * font.size * text.length;
   if (measured > 0 || !canMeasure) {
+    if (layout.widths.size >= MAX_WIDTHS) {
+      layout.widths.clear();
+    }
     layout.widths.set(key, measured > 0 ? measured : estimate);
   }
   return measured > 0 ? measured : estimate;
@@ -409,7 +438,7 @@ const isFluid = (el: Element) =>
  * draw.io uses to position the text). Where ranges have no layout (jsdom), the box of its first element child.
  * The foreignObject box is never used. Undefined when the content has no box.
  */
-function htmlBox(fo: Element, root: SVGSVGElement): Rect | undefined {
+function htmlBox(fo: Element, root: SVGSVGElement, rootCtm?: Matrix): Rect | undefined {
   const empty = (r: { width: number; height: number } | undefined) => !r || !(r.width > 0) || !(r.height > 0);
   let r: { x: number; y: number; width: number; height: number } | undefined;
   const probe = document.createRange();
@@ -433,24 +462,28 @@ function htmlBox(fo: Element, root: SVGSVGElement): Rect | undefined {
     return undefined;
   }
   // screen pixels into root units; a root without a screen matrix (jsdom) keeps them as they are
-  const base = typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
+  const base = rootCtm ?? screenCtm(root);
   if (!base) {
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   }
   return usable(base) ? mapRect({ x: r.x, y: r.y, width: r.width, height: r.height }, invert(base)) : undefined;
 }
 
+/** The screen matrix of the root, read once per pass and passed down: every `toRoot` of the pass needs it. */
+const screenCtm = (root: SVGSVGElement): Matrix | undefined =>
+  typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
+
 /** The painted box of an element in root user units, or undefined when it cannot be read. */
-function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
+function rootBox(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Rect | undefined {
   const g = el as SVGGraphicsElement;
   if (isFluid(el)) {
-    return htmlBox(el, root);
+    return htmlBox(el, root, rootCtm);
   }
   // a group with a fluid foreignObject inside: its own box would be the viewport, so take the union of the children
   const fluidInside = Array.from(el.querySelectorAll('foreignObject')).some(isFluid);
   if (typeof g.getBBox === 'function' && !fluidInside) {
     try {
-      const m = toRoot(el, root);
+      const m = toRoot(el, root, rootCtm);
       const b = g.getBBox();
       if (!m || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) {
         return undefined;
@@ -466,7 +499,7 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
     const fo =
       el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
     for (const child of fo ? [fo] : Array.from(el.children)) {
-      const b = rootBox(child, root);
+      const b = rootBox(child, root, rootCtm);
       // an empty child (a box of 0 x 0 at the origin) would stretch the union
       if (b && (b.width > 0 || b.height > 0)) {
         box = union(box, b);
@@ -475,7 +508,7 @@ function rootBox(el: Element, root: SVGSVGElement): Rect | undefined {
     return box;
   }
   const local = attributeBox(el);
-  const m = local && toRoot(el, root);
+  const m = local && toRoot(el, root, rootCtm);
   return local && m ? mapRect(local, m) : undefined;
 }
 
@@ -536,18 +569,19 @@ export function stageObstacles(
   index: CellIndex,
   patches: PatchMap,
   max: number,
-  legs: Map<string, EdgeLegs> = new Map()
+  legs: Map<string, EdgeLegs> = new Map(),
+  rootCtm: Matrix | undefined = screenCtm(root)
 ): Obstacle[] {
   const out: Obstacle[] = [];
   const rect = (el: Element | undefined, clearance = 0) => {
-    const box = el && rootBox(el, root);
+    const box = el && rootBox(el, root, rootCtm);
     if (box) {
       out.push({ kind: 'rect', rect: box, clearance });
     }
   };
   const bodies = new Map<string, Rect>();
   for (const [cellId, entry] of index) {
-    const box = !entry.line && entry.shape ? rootBox(entry.shape, root) : undefined;
+    const box = !entry.line && entry.shape ? rootBox(entry.shape, root, rootCtm) : undefined;
     if (box) {
       bodies.set(cellId, box);
     }
@@ -564,13 +598,13 @@ export function stageObstacles(
   };
   for (const [cellId, entry] of index) {
     if (entry.line) {
-      const m = toRoot(entry.line, root);
+      const m = toRoot(entry.line, root, rootCtm);
       if (m) {
         const unit = scaleOf(m);
         const own =
           legs.get(cellId) ??
           (hasHalves(patches, cellId)
-            ? edgeLegs(entry, root, max, halvesOf(patches, cellId), max, patches.get(cellId)?.link?.arrow)
+            ? edgeLegs(entry, root, max, halvesOf(patches, cellId), max, patches.get(cellId)?.link?.arrow, rootCtm)
             : undefined);
         if (own) {
           [own.a2b, own.b2a].forEach((leg) => leg && strokes(cellId, leg.points, leg.strokeRoot / 2, leg.id));
@@ -596,7 +630,7 @@ export function stageObstacles(
       // (the frame line and the interior stay free; the halo covers the frame)
       rect(entry.label);
     } else if (entry.shape && !backgrounds.has(cellId)) {
-      const m = toRoot(entry.shape, root);
+      const m = toRoot(entry.shape, root, rootCtm);
       const body = bodies.get(cellId);
       if (body && m) {
         out.push({
@@ -615,7 +649,7 @@ export function stageObstacles(
   // its half: a label beside the drawn heads moves with the head of its own half.
   root.querySelectorAll(`g.${OVERLAY_CLASS} polygon.dmap-arrow`).forEach((a) => {
     const head = reservedHead(a);
-    const m = head && toRoot(a, root);
+    const m = head && toRoot(a, root, rootCtm);
     if (head && m) {
       const owner = a.getAttribute('data-dmap-cell');
       const half = a.getAttribute('data-dmap-half');
@@ -697,11 +731,12 @@ function edgeLegs(
   max: number,
   halves: { a2b: boolean; b2a: boolean },
   min = max,
-  arrow: ArrowStyle = 'point'
+  arrow: ArrowStyle = 'point',
+  rootCtm?: Matrix
 ): EdgeLegs {
   const line = entry.line!;
   const id = entry.meta.id;
-  const m = toRoot(line, root);
+  const m = toRoot(line, root, rootCtm);
   if (!m) {
     return {};
   }
@@ -863,17 +898,24 @@ function dropCuts(root: SVGSVGElement): void {
   });
 }
 
-/** The points of a `points` attribute. */
+/** The parsed `points` of a half, with the attribute they came from: the overlay writes a new string for new points. */
+const parsedPoints = new WeakMap<Element, { attr: string; pts: Point[] }>();
+
+/** The points of a `points` attribute, parsed once per attribute value. */
 function pointsOf(el: Element): Point[] {
-  const nums = (el.getAttribute('points') ?? '')
-    .trim()
-    .split(/[\s,]+/)
-    .map(Number);
+  const attr = el.getAttribute('points') ?? '';
+  const known = parsedPoints.get(el);
+  if (known && known.attr === attr) {
+    return known.pts;
+  }
+  const nums = attr.trim().split(/[\s,]+/).map(Number);
   const pts: Point[] = [];
   for (let i = 1; i < nums.length; i += 2) {
     pts.push({ x: nums[i - 1], y: nums[i] });
   }
-  return pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) ? pts : [];
+  const out = pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) ? pts : [];
+  parsedPoints.set(el, { attr, pts: out });
+  return out;
 }
 
 /** The arc length of the point of a polyline nearest to `p`, and the distance of `p` to it. */
@@ -927,10 +969,14 @@ export function cutPattern(cuts: Array<[number, number]>, total: number): string
  * axis are mapped from root units through the inverse of the matrix of the overlay group, then onto the polyline of
  * the half. The arrow heads need no cut: an on-stroke label never stands on a head (each head is an obstacle at its
  * widest). No `<mask>`, no id and no `url()` reference: the links that Safari stopped painting after a long time in
- * the background were the ones whose halves wore a mask. Called on every pass: an overlay layer that was built again in this frame has no cut yet, and a half
- * whose points changed (a new width) gets its pattern again; an attribute that did not change is not written.
+ * the background were the ones whose halves wore a mask. Called after a pass that changed a text, a slot, a drawn
+ * width or a placement (`cutsStale`), when the layer flips, and when a font arrives: only the halves of the links
+ * with a text on the stroke are read (an overlay layer that was built again in this frame has no cut yet, and a half
+ * whose points changed, a new width, gets its pattern again); a cut that is no longer wanted is taken off; an
+ * attribute that did not change is not written.
  */
 function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
+  layout.cutsStale = false;
   const shown = layout.layer.getAttribute('visibility') !== 'hidden';
   const wanted = new Map<string, LabelRecord[]>();
   for (const rec of layout.records.values()) {
@@ -947,19 +993,29 @@ function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
       wanted.set(rec.cellId, [...(wanted.get(rec.cellId) ?? []), rec]);
     }
   }
-  const halves = new Map<string, SVGElement[]>();
-  root.querySelectorAll<SVGElement>(`g.${OVERLAY_CLASS} .dmap-half`).forEach((el) => {
-    const cell = el.getAttribute('data-dmap-cell') ?? '';
-    halves.set(cell, [...(halves.get(cell) ?? []), el]);
-  });
   // all the reads first (the matrices and the text boxes), then all the writes: one layout, not one per link
-  const base = typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
   const patterns = new Map<SVGElement, string | undefined>();
-  for (const [cell, els] of halves) {
-    const recs = wanted.get(cell);
-    const space = els[0].parentElement;
-    const m = recs && space && toRoot(space, root, base);
-    if (!recs || !m) {
+  for (const [el, cell] of layout.cuts) {
+    if (!el.isConnected) {
+      // a half of an overlay layer that was built again: the new one is below, this one is gone
+      layout.cuts.delete(el);
+    } else if (!wanted.has(cell)) {
+      patterns.set(el, undefined);
+    }
+  }
+  let base: Matrix | undefined;
+  for (const [cell, recs] of wanted) {
+    const els = overlayHalves(root, cell);
+    if (!els.length) {
+      continue;
+    }
+    const space = els[0].parentElement!;
+    if (!layout.spaces.has(space)) {
+      base ??= screenCtm(root);
+      layout.spaces.set(space, toRoot(space, root, base));
+    }
+    const m = layout.spaces.get(space);
+    if (!m) {
       els.forEach((el) => patterns.set(el, undefined));
       continue;
     }
@@ -1000,8 +1056,12 @@ function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
   for (const [el, pattern] of patterns) {
     if (pattern === undefined) {
       el.removeAttribute('stroke-dasharray');
-    } else if (el.getAttribute('stroke-dasharray') !== pattern) {
-      el.setAttribute('stroke-dasharray', pattern);
+      layout.cuts.delete(el);
+    } else {
+      if (el.getAttribute('stroke-dasharray') !== pattern) {
+        el.setAttribute('stroke-dasharray', pattern);
+      }
+      layout.cuts.set(el, el.getAttribute('data-dmap-cell') ?? '');
     }
   }
 }
@@ -1093,7 +1153,13 @@ function fullPlacement(
     max: opts.linkWidth.max,
     min: opts.linkWidth.min,
     bounds: boundsOfStage(root, opts.bounds),
+    // the cuts of the last layout stay on their halves until the sync below takes them off
+    cuts: previous?.cuts ?? new Map(),
+    spaces: new Map(),
+    cutsStale: true,
   };
+  // the screen matrix of the root, once for the whole placement
+  const rootCtm = screenCtm(root);
   // the legs of every labelled edge first: their pieces are the stroke obstacles of those edges
   const legs = new Map<string, EdgeLegs>();
   for (const slot of slots) {
@@ -1106,12 +1172,13 @@ function fullPlacement(
           opts.linkWidth.max,
           halvesOf(patches, slot.cellId),
           opts.linkWidth.min,
-          patches.get(slot.cellId)?.link?.arrow
+          patches.get(slot.cellId)?.link?.arrow,
+          rootCtm
         )
       );
     }
   }
-  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, legs));
+  layout.grid = obstacleIndex(stageObstacles(root, index, patches, opts.linkWidth.max, legs, rootCtm));
   const texts: Array<string | undefined> = [];
   for (const slot of slots) {
     const text = linkLabelText(slot.state, slot.mode);
@@ -1159,13 +1226,40 @@ function fullPlacement(
  * converted as the widest stroke is.
  */
 function drawnOf(layout: LabelLayout, leg: Leg | undefined, state: HalfState): { drawn: number; head: number } {
-  // the reservation holds the widths between linkWidth.min and linkWidth.max only
-  const width = Math.min(Math.max(state.width, layout.min), layout.max);
+  // the width as the overlay draws it, held to the widths between linkWidth.min and linkWidth.max: the reservation
+  // holds those only
+  const width = Math.min(Math.max(drawnWidth(state.width), layout.min), layout.max);
   const toRootUnits = (v: number) => (leg && layout.max > 0 ? (v * leg.strokeRoot) / layout.max : v);
   return { drawn: toRootUnits(width), head: toRootUnits(headSize(width, layout.max, leg?.arrow ?? 'point').base) };
 }
 
-/** A call with the same key: the texts, the hidden state, the theme, and an isolated re-placement per changed slot. */
+/**
+ * The label keeps its spot with its new slot when the box of that slot fits there (`placeAgain`): the grid then holds
+ * the new box. False when it does not fit; the grid is as before and the caller places the label again.
+ */
+function keepSpot(layout: LabelLayout, rec: LabelRecord, placed: Placed): boolean {
+  const leg = inputOf(rec, layout.bounds);
+  const old = rec.obstacle;
+  if (!leg || !old) {
+    return false;
+  }
+  layout.grid.remove(old);
+  const again = placeAgain(leg, rec.cellId, layout.grid, placed);
+  if (again) {
+    hold(layout, rec, again);
+    return true;
+  }
+  layout.grid.add(old);
+  return false;
+}
+
+/** A placed label that stands on its stroke: its text, slot, width and place set the cut. */
+const onStroke = (rec: LabelRecord) => !!rec.placement && 'centre' in rec.placement && rec.placement.side === 0;
+
+/**
+ * A call with the same key: the texts, the hidden state, the theme, and per changed slot the same spot when the slot
+ * changed by one grain and the new box fits there, else an isolated re-placement.
+ */
 function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root: SVGSVGElement): number {
   let moved = 0;
   const halo = haloColour(root, theme);
@@ -1179,23 +1273,37 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
   for (const slot of slots) {
     const rec = layout.records.get(`${slot.cellId}:${slot.which}`)!;
     const text = linkLabelText(slot.state, slot.mode);
+    const before = { onStroke: onStroke(rec), placement: rec.placement, retry: rec.retry, text: rec.el?.textContent };
+    let changed = false;
     // a changed load changes the drawn width and head: the text moves across the link, on the same side and place
     // along it
     const { drawn, head } = drawnOf(layout, rec.leg, slot.state);
     if (drawn !== rec.drawn || head !== rec.head) {
       rec.drawn = drawn;
       rec.head = head;
+      changed = true;
       if (rec.placement && 'centre' in rec.placement) {
         draw(rec, rec.placement);
       }
     }
     const width = slotOf(layout, slot, text);
     const slotChanged = width !== undefined && width !== rec.slot;
+    let kept = false;
     if (slotChanged) {
+      const held = rec.slot;
       rec.slot = width;
+      changed = true;
+      // hysteresis: a label that holds a spot keeps it when its slot changes by one grain and its box at the new slot
+      // still fits there (a value that goes from two digits to three and back does not move it); a slot that changes
+      // by two grains or more goes over the whole ladder again, so a long value that goes away gives the preferred
+      // spot back
+      const placed = !rec.retry && rec.placement && 'centre' in rec.placement ? rec.placement : undefined;
+      if (placed && held !== undefined && Math.abs(width - held) <= SLOT_GRAIN) {
+        kept = keepSpot(layout, rec, placed);
+      }
     }
     // a changed slot is placed again also while the label is hidden: a stale reservation must never survive
-    if (slotChanged || (rec.retry && text !== undefined)) {
+    if ((slotChanged && !kept) || (rec.retry && text !== undefined)) {
       // the label held a box (placed, or hidden with its reserved box): a new spot is a move
       const old = rec.obstacle;
       if (old) {
@@ -1223,6 +1331,18 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
       }
     }
     showText(rec, text);
+    // the cut of a stroke follows the text on it: a change of a label on a stroke, or a label that came onto one or
+    // left it, moves a cut
+    if (
+      changed ||
+      rec.placement !== before.placement ||
+      rec.retry !== before.retry ||
+      (rec.el?.textContent ?? undefined) !== (before.text ?? undefined)
+    ) {
+      if (before.onStroke || onStroke(rec)) {
+        layout.cutsStale = true;
+      }
+    }
   }
   return moved;
 }

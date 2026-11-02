@@ -316,23 +316,30 @@ describe('renderLinkLabels: the refresh path', () => {
     expect(a.getAttribute('data-dmap-placed-at')).toBe(stamp);
     expect(a.textContent).toBe('5%');
   });
-  it('a value text that crosses a grain places that label again and leaves the other one alone', () => {
+  it('a value text one grain wider keeps its spot; two grains or more place that label again and leave the other one alone', () => {
     const { root, index } = build();
     const value = (text: string, suffix = ' Mb/s') => half({ display: { text, suffix, numeric: 0 } });
     render(root, index, two(value('41'), value('10'), 'value'));
     const [a, b] = [byHalf(root, 'a2b')!, byHalf(root, 'b2a')!];
+    const transformA = a.getAttribute('transform');
     const transformB = b.getAttribute('transform');
     const stamps = () => [a.getAttribute('data-dmap-placed-at'), b.getAttribute('data-dmap-placed-at')];
     const first = stamps();
     // "41 Mb/s" and "99 Mb/s" share the slot 36; "410 Mb/s" is 38.4 wide and takes the slot 40
     expect(render(root, index, two(value('99'), value('10'), 'value')).moved).toBe(0);
     expect(stamps()).toEqual(first);
-    const counts = render(root, index, two(value('410'), value('10'), 'value'));
+    // one grain wider, and the box of the new slot fits where the label stands: the same spot, no new stamp
+    expect(render(root, index, two(value('410'), value('10'), 'value'))).toEqual({ placed: 2, dropped: 0, moved: 0 });
+    expect(stamps()).toEqual(first);
+    expect(a.getAttribute('transform')).toBe(transformA);
+    expect(a.textContent).toBe('410 Mb/s');
+    // "41000 Mb/s" is 54 wide and takes the slot 56: four grains more, the label goes over the ladder again
+    const counts = render(root, index, two(value('41000'), value('10'), 'value'));
     expect(counts).toEqual({ placed: 2, dropped: 0, moved: 1 });
     expect(a.getAttribute('data-dmap-placed-at')).not.toBe(first[0]);
     expect(b.getAttribute('data-dmap-placed-at')).toBe(first[1]);
     expect(b.getAttribute('transform')).toBe(transformB);
-    expect(a.textContent).toBe('410 Mb/s');
+    expect(a.textContent).toBe('41000 Mb/s');
   });
   it('a new slot that fits nowhere hides the label with its transform; it comes back when a later text fits', () => {
     // two blocks across the stroke of the a2b leg leave 60 free units around its anchor, on and beside the stroke
@@ -418,8 +425,12 @@ describe('renderLinkLabels: the refresh path', () => {
     const a = byHalf(root, 'a2b')!;
     expect(a.getAttribute('data-dmap-side')).toBe('line');
     expect(byHalf(root, 'b2a')!.getAttribute('data-dmap-side')).toBe('top-wide');
-    // a longer text gives a2b a new slot: it is placed again on its own stroke, not on the far side of its mate
-    expect(render(root, index, value('410 Mb/s')).moved).toBe(1);
+    // a text one grain longer keeps the spot on the stroke
+    expect(render(root, index, value('410 Mb/s')).moved).toBe(0);
+    expect(a.getAttribute('data-dmap-side')).toBe('line');
+    // a text four grains longer gives a2b a new slot: it is placed again on its own stroke, not on the far side of
+    // its mate
+    expect(render(root, index, value('41000 Mb/s')).moved).toBe(1);
     expect(a.getAttribute('data-dmap-side')).toBe('line');
     expect(a.getAttribute('y')).toBe('100');
   });
@@ -524,16 +535,23 @@ describe('renderLinkLabels: the place of a label', () => {
   });
   it('the cut follows the drawn text: its length plus 1.5 on each end, centred on the text, again when the text changes', () => {
     const { root, index } = build();
+    const shown = (percentDisplay: string): PatchMap =>
+      new Map([['e1', linkPatch('e1', { a2b: half({ percentDisplay }), b2a: half(), labelMode: 'percent' })]]);
     render(root, index, both());
     const text = byHalf(root, 'a2b')!;
-    // a text of 14 units whose glyphs stand 1 left of the anchor 120: the box x 112..126, the centre 119
+    // a text of 14 units whose glyphs stand 1 left of the anchor 120: the box x 112..126, the centre 119; the box is
+    // read again when the text changes (a font that arrives later goes through `watchLinkLabelFonts`)
     (text as unknown as { getBBox: () => unknown }).getBBox = () => ({ x: 112, y: 96, width: 14, height: 8 });
-    render(root, index, both());
+    render(root, index, shown('42%'));
     const [h1] = halvesOf(root);
     expect(gapsOn(h1)).toEqual([[110.5, 127.5]]);
     // a longer text gives a longer cut
     (text as unknown as { getBBox: () => unknown }).getBBox = () => ({ x: 108, y: 96, width: 22, height: 8 });
-    render(root, index, both());
+    render(root, index, shown('420%'));
+    expect(gapsOn(h1)).toEqual([[106.5, 131.5]]);
+    // a pass that changes nothing on the stroke reads no box and writes nothing
+    (text as unknown as { getBBox: () => unknown }).getBBox = () => ({ x: 100, y: 96, width: 40, height: 8 });
+    render(root, index, shown('420%'));
     expect(gapsOn(h1)).toEqual([[106.5, 131.5]]);
   });
   it('the cut stays at its place when the width changes on a refresh, also on the half whose start moves', () => {

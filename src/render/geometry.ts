@@ -333,6 +333,14 @@ interface LocalGeom {
  */
 const localGeoms = new WeakMap<SVGPathElement, LocalGeom>();
 
+/**
+ * The most points and runs one path keeps. The callers ask for arc lengths on a small grid (the bends, the split,
+ * the heads at the drawn widths on their quarter grid), so a path stays far below these; a caller that asks for ever
+ * new lengths starts the maps again instead of growing them for the life of the stage.
+ */
+const MAX_POINTS = 4096;
+const MAX_RUNS = 256;
+
 function localGeom(line: SVGPathElement): LocalGeom {
   const known = localGeoms.get(line);
   if (known) {
@@ -367,6 +375,9 @@ function localGeom(line: SVGPathElement): LocalGeom {
       if (!p) {
         const raw = api.getPointAtLength(clamped);
         p = { x: raw.x, y: raw.y };
+        if (points.size >= MAX_POINTS) {
+          points.clear();
+        }
         points.set(clamped, p);
       }
       return p;
@@ -385,6 +396,9 @@ function localGeom(line: SVGPathElement): LocalGeom {
           out = [];
           for (let i = 0; i <= n; i++) {
             out.push(at(from + ((to - from) * i) / n));
+          }
+          if (runs.size >= MAX_RUNS) {
+            runs.clear();
           }
           runs.set(key, out);
         }

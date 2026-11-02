@@ -495,7 +495,8 @@ function placeOnRuns(
   own: string,
   index: ObstacleIndex,
   sides: readonly LabelSide[],
-  atBends: boolean
+  atBends: boolean,
+  only?: number
 ): Placement {
   const { halo, normalGap, wideGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
   const w = leg.size.width + 2 * halo;
@@ -530,9 +531,10 @@ function placeOnRuns(
           ? h + (gapBase(leg, side) - headMin) / 2
           : h;
   const d0 = leg.length / 2;
-  // the distances from the middle, the lower one first at each step; the same list serves both sides
-  const distances: number[] = [d0];
-  for (let k = 1; ; k++) {
+  // the distances from the middle, the lower one first at each step; the same list serves both sides (`only`: one
+  // distance, the spot a label holds)
+  const distances: number[] = [only ?? d0];
+  for (let k = 1; only === undefined; k++) {
     const lo = d0 - k * alongStep;
     const hi = d0 + k * alongStep;
     if (lo < 0 && hi > leg.length) {
@@ -610,6 +612,18 @@ function placeOnRuns(
     }
   }
   return { dropped: 'no-free-spot' };
+}
+
+/**
+ * The spot of `placed` again for the size of `leg` (a new slot): the same anchor and side, with the box of the new
+ * width, under the strict rules of `placeHalfLabel` (a whole box on its run, the obstacle test). Undefined when the
+ * box no longer fits there; the caller then places the label again over the whole ladder. A box at a candidate
+ * holds a narrower box at the same centre, so a spot that is free for the new size is the one the ladder would give
+ * again, or a nearer one that was blocked before: the label keeps its place.
+ */
+export function placeAgain(leg: LegInput, own: string, index: ObstacleIndex, placed: Placed): Placed | undefined {
+  const again = placeOnRuns(leg, own, index, [placed.side], false, placed.along);
+  return 'centre' in again ? again : undefined;
 }
 
 /**

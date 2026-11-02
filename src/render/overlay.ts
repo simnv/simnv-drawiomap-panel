@@ -91,6 +91,18 @@ function el<K extends keyof SVGElementTagNameMap>(
   return e;
 }
 
+/**
+ * The drawn width of a half is `HalfState.width` on a grid of this many steps per unit: a quarter unit. The width
+ * follows the load percent without steps (`widthFor`), so with live traffic every half would get new points on every
+ * refresh, and the points of a point taper are the costly part of the overlay. A quarter unit is a quarter pixel at
+ * the usual fit of a diagram (about one pixel per unit), below what a screen shows; a label beside the stroke moves
+ * by the same amount at most (`drawnOf` in the label layer reads the same width).
+ */
+const WIDTH_STEPS = 4;
+
+/** The width the overlay draws for a half of `width`: the nearest quarter unit. */
+export const drawnWidth = (width: number) => Math.round(width * WIDTH_STEPS) / WIDTH_STEPS;
+
 /** A coordinate for an attribute: two decimals, as draw.io writes them. */
 export const fmt = (n: number) => String(Math.round(n * 100) / 100);
 const pointsAttr = (pts: Point[], point = false) => {
@@ -112,13 +124,23 @@ interface HalfPlace {
   maxWidth: number;
   style: ArrowStyle;
 }
-/** The elements of one drawn half, with the key of the state they show and the width their points are drawn for. */
+/** The `points` attributes of a half and of its head at one drawn width. */
+interface HalfPointsAttr {
+  line: string;
+  head: string;
+}
+/**
+ * The elements of one drawn half, with the key of the state they show and the drawn width their points are drawn
+ * for. `points` keeps the attributes per drawn width: a width that comes back (traffic that goes up and down) costs
+ * no new taper. The widths lie on the quarter grid between `linkWidth.min` and `max`, so the map stays small.
+ */
 interface HalfDrawn {
   line: SVGPolylineElement;
   arrow?: SVGPolygonElement;
   key: string;
   width: number;
   place: HalfPlace;
+  points: Map<number, HalfPointsAttr>;
 }
 /** The overlay of one link: its layer, the set of halves it was built for, and the elements of each half. */
 interface LinkDrawn {
@@ -180,8 +202,8 @@ function drawBorder(image: SVGGraphicsElement, cellId: string, paint: string): S
 
 const states = new WeakMap<SVGSVGElement, OverlayState>();
 
-/** The fields of a half that its elements show; the geometry is not among them. */
-const halfKey = (s: HalfState) => `${s.status}|${s.color}|${s.width}|${s.stepIndex}`;
+/** The fields of a half that its elements show (the width as it is drawn); the geometry is not among them. */
+const halfKey = (s: HalfState) => `${s.status}|${s.color}|${drawnWidth(s.width)}|${s.stepIndex}`;
 
 /**
  * The halves as they are drawn: with the status colour of the link in place of the binding colour when the status
@@ -305,6 +327,20 @@ export function reservedHead(arrow: Element): Point[] | undefined {
   return reserved.get(arrow);
 }
 
+/** The `points` attributes of a half at a drawn width, from the memo of the half or computed into it. */
+function pointsFor(memo: Map<number, HalfPointsAttr>, place: HalfPlace, width: number): HalfPointsAttr {
+  const known = memo.get(width);
+  if (known) {
+    return known;
+  }
+  const pts = halfPoints(place, width);
+  const point = place.style === 'point';
+  // a head of fewer than three points is no polygon: the half has no arrow
+  const attrs = { line: pointsAttr(pts.line, point), head: pts.head.length < 3 ? '' : pointsAttr(pts.head, point) };
+  memo.set(width, attrs);
+  return attrs;
+}
+
 function drawHalf(
   layer: SVGGElement,
   cellId: string,
@@ -312,7 +348,9 @@ function drawHalf(
   place: HalfPlace,
   state: HalfState
 ): HalfDrawn {
-  const pts = halfPoints(place, state.width);
+  const width = drawnWidth(state.width);
+  const points = new Map<number, HalfPointsAttr>();
+  const pts = pointsFor(points, place, width);
   const line = layer.appendChild(
     el('polyline', {
       class: 'dmap-half',
@@ -320,32 +358,31 @@ function drawHalf(
       'data-dmap-half': which,
       'data-dmap-status': state.status,
       'data-dmap-step': state.stepIndex,
-      points: pointsAttr(pts.line, place.style === 'point'),
+      points: pts.line,
       fill: 'none',
       stroke: state.color,
-      'stroke-width': state.width,
+      'stroke-width': width,
       'stroke-linecap': 'butt',
       'stroke-linejoin': 'round',
       'pointer-events': 'stroke',
     })
   );
-  const arrow =
-    pts.head.length < 3
-      ? undefined
-      : layer.appendChild(
-          el('polygon', {
-            class: 'dmap-arrow',
-            'data-dmap-cell': cellId,
-            'data-dmap-half': which,
-            points: pointsAttr(pts.head, place.style === 'point'),
-            fill: state.color,
-            'pointer-events': 'none',
-          })
-        );
+  const arrow = !pts.head
+    ? undefined
+    : layer.appendChild(
+        el('polygon', {
+          class: 'dmap-arrow',
+          'data-dmap-cell': cellId,
+          'data-dmap-half': which,
+          points: pts.head,
+          fill: state.color,
+          'pointer-events': 'none',
+        })
+      );
   if (arrow) {
     reserved.set(arrow, headHull(halfPoints(place, place.maxWidth).head));
   }
-  return { line, arrow, key: halfKey(state), width: state.width, place };
+  return { line, arrow, key: halfKey(state), width, place, points };
 }
 
 /**
@@ -358,16 +395,17 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
     return;
   }
   drawn.key = key;
+  const width = drawnWidth(state.width);
   drawn.line.setAttribute('data-dmap-status', state.status);
   drawn.line.setAttribute('data-dmap-step', String(state.stepIndex));
   drawn.line.setAttribute('stroke', state.color);
-  drawn.line.setAttribute('stroke-width', String(state.width));
+  drawn.line.setAttribute('stroke-width', String(width));
   drawn.arrow?.setAttribute('fill', state.color);
-  if (drawn.width !== state.width) {
-    drawn.width = state.width;
-    const pts = halfPoints(drawn.place, state.width);
-    drawn.line.setAttribute('points', pointsAttr(pts.line, drawn.place.style === 'point'));
-    drawn.arrow?.setAttribute('points', pointsAttr(pts.head, drawn.place.style === 'point'));
+  if (drawn.width !== width) {
+    drawn.width = width;
+    const pts = pointsFor(drawn.points, drawn.place, width);
+    drawn.line.setAttribute('points', pts.line);
+    drawn.arrow?.setAttribute('points', pts.head);
   }
 }
 
@@ -419,6 +457,15 @@ function drawLink(entry: CellEntry, link: NonNullable<CellPatch['link']>, maxWid
     );
   }
   return drawn;
+}
+
+/**
+ * The drawn halves of a link under `root` (its polylines, a2b before b2a); empty for a link the overlay did not draw.
+ * The label layer cuts their strokes under the texts that lie on them.
+ */
+export function overlayHalves(root: SVGSVGElement, cellId: string): SVGPolylineElement[] {
+  const drawn = states.get(root)?.links.get(cellId);
+  return drawn ? [drawn.a2b?.line, drawn.b2a?.line].filter((line): line is SVGPolylineElement => !!line) : [];
 }
 
 /** The half presence and arrow style that both overlay and label geometry depend on. */
