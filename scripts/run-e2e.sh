@@ -32,7 +32,8 @@ if [ "$has_workers" = 0 ]; then
   workers=(--workers "${PW_WORKERS:-$default_workers}")
 fi
 
-export GRAFANA_URL=${GRAFANA_URL:-http://localhost:$port}
+# The port argument selects the stack. An inherited GRAFANA_URL is not used: it could point to another Grafana.
+export GRAFANA_URL="http://${STACK_HOST:-localhost}:$port"
 # DMAP_STACK_READY=1 means the caller has already run wait-stack.sh on this stack (scripts/ci-local.sh does).
 if [ "${DMAP_STACK_READY:-0}" != 1 ]; then
   ./scripts/wait-stack.sh

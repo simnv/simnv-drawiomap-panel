@@ -9,7 +9,9 @@ node_cpu_usage_percent moves slowly around a base value for each host that is up
 On a new stack, gen.py first writes SEED_SAMPLES backdated samples (SEED_STEP s apart, the last one 5 s old), so
 rate(...[1m]) has a value at once, and the charts have the history of the default range of the demo dashboard (15 min):
 a crosshair snaps to the nearest sample, and with a short history the samples are too far apart for the tests.
-The counters go on from the seed: they do not start again at zero.
+The counters go on from the seed: they do not start again at zero. After a restart of this process the old samples stay:
+the counters go on from the last retained value (the time of the outage counts as time passed), and the seed fills only
+the time before the oldest retained sample.
 The v4 metrics use separate names. GEN_SET=v4 writes only those metrics. dmap_v4_three has no min or max
 in the demo: its shared Y range comes from the values of the three lines.
 """
@@ -105,32 +107,74 @@ def push(body: bytes) -> None:
     urllib.request.urlopen(req, timeout=5).read()
 
 
-def has_recent_samples() -> bool:
-    """True when VictoriaMetrics has samples of the last 2 min: a restart of this process, not a new stack."""
-    query = urllib.parse.urlencode({"query": "count_over_time(dmap_v4_gauge[2m])"})
-    with urllib.request.urlopen(f"{VM}/api/v1/query?{query}", timeout=5) as response:
-        return bool(json.load(response)["data"]["result"])
+def probe() -> tuple[str, float | None]:
+    """The series that shows the history of this process, and its counter rate in units/s (None: not a counter)."""
+    if os.environ.get("GEN_SET") == "v4":
+        return 'dmap_v4_gauge{job="node-proxy-a"}', None
+    job, dev, tx, _rx = LINKS[0]
+    return f'node_network_transmit_bytes_total{{job="{job}",device="{dev}"}}', float(tx)
 
 
-def seed(t0: float, now: float) -> None:
-    """Writes SEED_SAMPLES samples, at the times now - 15 min ... now - 5 s, as if the process had started at t0."""
+def read_history(text: str) -> tuple[list[int], list[float]]:
+    """The timestamps (ms) and values of an /api/v1/export answer (one JSON object per line), in time order."""
+    points: list[tuple[int, float]] = []
+    for line in text.splitlines():
+        if line.strip():
+            item = json.loads(line)
+            points += zip(item["timestamps"], (float(v) for v in item["values"]))
+    points.sort()
+    return [t for t, _ in points], [v for _, v in points]
+
+
+def fetch_history(now: float) -> tuple[list[int], list[float]]:
+    """The retained samples of the probe series in the seed window (the last SEED_SAMPLES * SEED_STEP s)."""
+    selector, _rate = probe()
+    query = urllib.parse.urlencode({"match[]": selector, "start": int(now - SEED_SAMPLES * SEED_STEP)})
+    with urllib.request.urlopen(f"{VM}/api/v1/export?{query}", timeout=5) as response:
+        return read_history(response.read().decode())
+
+
+def plan(now: float, timestamps: list[int], values: list[float]) -> tuple[float, list[int]]:
+    """Returns t0, the start time that gives the elapsed time of build(), and the timestamps (ms) to seed.
+
+    New stack (no retained sample in the seed window): t0 is SEED_SAMPLES * SEED_STEP s ago and the seed fills the window.
+    Restart (retained samples): the counters go on from the last retained value, so t0 is the time at which the counter
+    would be 0 and no counter goes back. The seed fills only the time before the oldest retained sample, and not
+    before t0 (the counter cannot be negative). Samples in the window stay as they are.
+    """
+    window = SEED_SAMPLES * SEED_STEP
     now_ms = int(now * 1000)
-    body = b""
-    for k in range(SEED_SAMPLES):
-        age = (SEED_SAMPLES - k) * SEED_STEP
-        body += build(now - age - t0, now_ms - age * 1000)
-    push(body)
+    now = now_ms / 1000  # whole ms: the first seed sample has elapsed 0, not a little less than 0
+    _selector, rate = probe()
+    if not timestamps:
+        return now - window, [now_ms - age * 1000 for age in range(window, 0, -SEED_STEP)]
+    t0 = now - window
+    if rate:
+        t0 = timestamps[-1] / 1000 - values[-1] / rate
+    oldest = timestamps[0]
+    first = int(max(t0 * 1000, now_ms - window * 1000))
+    seed_ms = []
+    ts = oldest - SEED_STEP * 1000
+    while ts >= first:
+        seed_ms.append(ts)
+        ts -= SEED_STEP * 1000
+    return t0, sorted(seed_ms)
+
+
+def seed(t0: float, seed_ms: list[int]) -> None:
+    """Writes one sample for each timestamp, as if the process had started at t0."""
+    if seed_ms:
+        push(b"".join(build(ts / 1000 - t0, ts) for ts in seed_ms))
 
 
 def main() -> None:
-    now = time.time()
-    t0 = now - SEED_SAMPLES * SEED_STEP
+    t0 = time.time()
     # VictoriaMetrics can start after this process: try for up to 60 s, then go on without a seed.
-    # A restart of this process keeps the old samples: a seed would put low counters between them (counter resets).
     for _ in range(120):
         try:
-            if not has_recent_samples():
-                seed(t0, now)
+            now = time.time()
+            t0, seed_ms = plan(now, *fetch_history(now))
+            seed(t0, seed_ms)
             break
         except Exception as exc:  # noqa: BLE001
             print(f"seed failed: {exc}", flush=True)

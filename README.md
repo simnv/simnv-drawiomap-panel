@@ -790,7 +790,7 @@ The acceptance results are in `docs/acceptance.md`. The decision records are in 
 
 `npm run e2e:12` runs `matrix`; `npm run e2e:13` runs `matrix` and `plugin`; `npm run e2e:release` runs both projects on both versions and then the WebKit check. Pass a spec file after `--` to run one spec, for example `npm run e2e:13 -- tests/links.spec.ts`. Use `--project=name` with an equals sign: `--project name` takes the next file name as a project.
 
-`scripts/run-e2e.sh` (the scripts above) starts Playwright with `min(4, floor(CPUs / 2))` workers, and at least 2. `PW_WORKERS=N` or `--workers N` sets another count. The script runs `scripts/wait-stack.sh` first; with `DMAP_STACK_READY=1` it skips that wait (`npm run ci:local` sets it after its own wait).
+`scripts/run-e2e.sh` (the scripts above) starts Playwright with `min(4, floor(CPUs / 2))` workers, and at least 2. `PW_WORKERS=N` or `--workers N` sets another count. The script sets `GRAFANA_URL` from the port argument (an inherited `GRAFANA_URL` is not used) and runs `scripts/wait-stack.sh` first; with `DMAP_STACK_READY=1` it skips that wait (`npm run ci:local` sets it after its own wait).
 
 The compose stack and the CI workflow set `GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s`, so a test dashboard can refresh every second. Grafana runs a refresh only when its interval is in the dashboard list `timepicker.refresh_intervals`: the `createDiagram` option `refresh` writes it. Tests that wait for a timer use this interval, not the default 5 s.
 
@@ -816,7 +816,7 @@ Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.g
 - `pre-commit`: the privacy check on the staged diff, then `npm run typecheck` and `npm run lint` when code files are staged.
 - `pre-push`: the privacy check on the pushed commits, then `npm test`.
 
-The privacy check prints `file:line` only. It uses generic patterns (home paths, MAC addresses, private IPv4 outside the demo ranges in `.githooks/privacy-allow.txt`) and the private terms in `~/.config/simnv-drawiomap-panel/denylist` (set `SIMNV_PANEL_DENYLIST` to use another path). Without that file only the generic patterns run. `npm run check:privacy` scans all tracked files. CI runs the generic patterns in the `privacy` step of `build.yaml`.
+The privacy check prints `file:line` only. It uses generic patterns (home paths, MAC addresses, private IPv4 outside the demo ranges in `.githooks/privacy-allow.txt`) and the private terms in `~/.config/simnv-drawiomap-panel/denylist` (set `SIMNV_PANEL_DENYLIST` to use another path). Without that file only the generic patterns run. `npm run check:privacy` scans all tracked files. CI runs the generic patterns in the `privacy` step of `.woodpecker/ci.yaml`.
 
 ### CI
 

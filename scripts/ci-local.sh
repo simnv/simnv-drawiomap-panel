@@ -97,7 +97,7 @@ for v in 12:3012 13:3013; do
   projects=(--project=matrix)
   [ "$service" = grafana13 ] && projects+=(--project=plugin)
   # wait-stack.sh has run: run-e2e.sh does not run it again. It also keeps the Mac awake and sets the worker count.
-  DMAP_STACK_READY=1 ./scripts/run-e2e.sh "$port" "${projects[@]}"
+  GRAFANA_URL="http://localhost:$port" DMAP_STACK_READY=1 ./scripts/run-e2e.sh "$port" "${projects[@]}"
   docker compose down -v
 done
 step "ci:local OK"
