@@ -8,6 +8,8 @@
 #  5. the build is newer than each file in src/ (spec 5.3: no stale build),
 #  6. dist/module.js holds no message text of the yaml package: the parser loads only in the lazy editor chunk
 #     (spec 5.3, A13). A minifier renames functions but keeps string literals.
+#  7. the YAML editor modules (options/yamlConfig.ts) are in one lazy chunk only: the bindings popup and the YAML
+#     option editor share them (webpack.config.ts, cacheGroups.editorShared).
 # The runtime check (no request to the editor origin in view mode) is tests/no-drawio.spec.ts.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -25,6 +27,12 @@ for text in 'Implicit keys need to be on a single line' 'Map keys must be unique
     bad=1
   fi
 done
+# yamlConfig.ts holds this text. Two chunks with it means the shared chunk does not work any more.
+copies=$(grep -lF -- 'YAML anchors are not allowed.' "$root"/dist/*.js | wc -l | tr -d ' ')
+if [ "$copies" != "1" ]; then
+  echo "FAIL: the YAML editor modules are in $copies chunks of dist/, expected 1 (webpack.config.ts, cacheGroups.editorShared)"
+  bad=1
+fi
 deps=$(node -e 'const p=require(process.argv[1]); console.log(Object.keys({...p.dependencies,...p.devDependencies}).join("\n"))' "$root/package.json")
 for pkg in @maxgraph/core mxgraph drawio @drawio/mcp; do
   if printf '%s\n' "$deps" | grep -qx "$pkg"; then
