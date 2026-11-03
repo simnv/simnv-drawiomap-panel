@@ -113,8 +113,13 @@ test.describe('tooltip on the charts of the pinned card', () => {
       await expect(tooltip).toContainText('↑');
       await expect(tooltip).toContainText(/9\d(\.\d+)? Mb\/s|90/);
       await expect(crosshair).toBeVisible();
-      const c = (await crosshair.boundingBox())!;
-      expect(Math.abs(c.x + c.width / 2 - x)).toBeLessThanOrEqual(2);
+      // The crosshair moves after the tooltip shows: poll its centre, as a read under load can be a frame late.
+      await expect
+        .poll(async () => {
+          const c = await crosshair.boundingBox();
+          return c ? Math.abs(c.x + c.width / 2 - x) : Infinity;
+        })
+        .toBeLessThanOrEqual(2);
       // a colour swatch before the series name
       await expect(tooltip.locator('[style*="background"], [style*="color"]').first()).toBeAttached();
       await shot(page, `desktop-${Math.round(fraction * 100)}`, chart);

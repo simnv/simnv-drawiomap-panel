@@ -1,0 +1,147 @@
+# One workflow: install, checks, build, package and the Playwright e2e tests on each Grafana version of the matrix.
+# scripts/ci-local.sh runs the same steps on a developer machine (npm run ci:local).
+# Workflows do not share a workspace. So one workflow builds the plugin once, and both e2e runs use that one dist/
+# (the same files as the plugin zip in artifacts/). A second workflow would need npm ci and the build again.
+# No cache: each run downloads the pinned draw.io release (about 46 MB from github.com, sha256 check in
+# scripts/vendor-drawio.sh). Woodpecker has no cache without a volume or a plugin; the steps need no trusted-repository
+# settings, no volumes and no privileged mode. All steps run one after the other, so each step sees the files of the
+# steps before it and a failed step fails the workflow (the later steps do not run).
+# The stack runs as detached steps on the network of the workflow; the step name is the hostname. Grafana reads the
+# plugin and the provisioning from the workspace (scripts/ci-grafana-files.sh).
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: install
+    image: node:24-bookworm
+    commands:
+      - node --version
+      - npm ci
+
+  - name: privacy
+    image: node:24-bookworm
+    commands:
+      - sh .githooks/check-denylist.sh --all
+
+  - name: typecheck
+    image: node:24-bookworm
+    commands:
+      - npm run typecheck
+
+  - name: lint
+    image: node:24-bookworm
+    commands:
+      - npm run lint
+
+  - name: test
+    image: node:24-bookworm
+    commands:
+      - npm test
+
+  - name: build
+    image: node:24-bookworm
+    commands:
+      - npm run build
+
+  - name: check-bundle
+    image: node:24-bookworm
+    commands:
+      - npm run check:bundle
+
+  - name: package
+    image: node:24-bookworm
+    commands:
+      - npm run package
+      - ls -l artifacts/
+      - cat artifacts/*.sha256
+
+  - name: grafana-files
+    image: node:24-bookworm
+    commands:
+      - ./scripts/ci-grafana-files.sh
+      # Each Grafana has its own plugin folder: Grafana installs its preinstalled plugins there, and the two versions
+      # must not write to the same folder.
+      - cp -R ci/plugins ci/plugins-13
+      - chmod -R a+rX ci/plugins-13
+      - chmod g+w ci/plugins-13
+      # The e2e tests use the files that the package step packed.
+      - diff -r dist ci/plugins/simnv-drawiomap-panel
+      - diff -r dist ci/plugins-13/simnv-drawiomap-panel
+
+  - name: victoriametrics
+    image: victoriametrics/victoria-metrics:v1.126.0
+    detach: true
+    # The same flags as docker-compose.yaml. The data stays outside of the workspace.
+    entrypoint:
+      - /victoria-metrics-prod
+      - -retentionPeriod=2d
+      - -search.latencyOffset=0s
+      - -storageDataPath=/victoria-metrics-data
+
+  - name: metrics-gen
+    image: python:3.12-alpine
+    detach: true
+    environment:
+      VM_URL: http://victoriametrics:8428
+    commands:
+      - python -I stack/metrics-gen/gen.py
+
+  - name: grafana12
+    image: grafana/grafana:12.4.13
+    detach: true
+    # The same GF_* settings as x-grafana-env in docker-compose.yaml. Keep the image versions the same as the
+    # images of grafana12 and grafana13 in docker-compose.yaml.
+    environment:
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: simnv-drawiomap-panel
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_DEFAULT_APP_MODE: development
+      GF_LOG_LEVEL: warn
+      GF_NEWS_NEWS_FEED_ENABLED: 'false'
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: '1s'
+    commands:
+      - export GF_PATHS_PLUGINS="$${CI_WORKSPACE}/ci/plugins"
+      - export GF_PATHS_PROVISIONING="$${CI_WORKSPACE}/ci/provisioning"
+      - exec /run.sh
+
+  - name: grafana13
+    image: grafana/grafana:13.2.4
+    detach: true
+    environment:
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: simnv-drawiomap-panel
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_DEFAULT_APP_MODE: development
+      GF_LOG_LEVEL: warn
+      GF_NEWS_NEWS_FEED_ENABLED: 'false'
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: '1s'
+    commands:
+      - export GF_PATHS_PLUGINS="$${CI_WORKSPACE}/ci/plugins-13"
+      - export GF_PATHS_PROVISIONING="$${CI_WORKSPACE}/ci/provisioning"
+      - exec /run.sh
+
+  - name: wait
+    image: node:24-bookworm
+    environment:
+      VM_URL: http://victoriametrics:8428
+      GRAFANA_URL: http://grafana12:3000 http://grafana13:3000
+    commands:
+      - ./scripts/wait-stack.sh
+
+  - name: e2e-12
+    # Keep the image version the same as @playwright/test in package-lock.json. The first command checks it.
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    environment:
+      PLAYWRIGHT_IMAGE_VERSION: 1.64.1
+      GRAFANA_URL: http://grafana12:3000
+    commands:
+      - test "$(node -p 'require("@playwright/test/package.json").version')" = "$${PLAYWRIGHT_IMAGE_VERSION}"
+      # The version split of docs/research/test-cost-audit.md: Grafana 12.4 runs the project matrix, 13.2 runs both.
+      - npx playwright test --project=matrix
+
+  - name: e2e-13
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    environment:
+      GRAFANA_URL: http://grafana13:3000
+    commands:
+      - npx playwright test --project=matrix --project=plugin

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Runs the Woodpecker workflows of .woodpecker/ on the local docker with woodpecker-cli exec (docker backend).
-# Usage: npm run ci:woodpecker                          (lint, then all workflows: build, e2e for each Grafana version)
-#        npm run ci:woodpecker -- .woodpecker/build.yaml (one workflow without depends_on)
-# woodpecker-cli exec runs the workflows one after the other. It does not run a workflow alone when its depends_on
-# workflow is not in the same run ("all filtered out"), so e2e.yaml runs only with the directory.
+# Usage: npm run ci:woodpecker                          (lint, then the workflow .woodpecker/ci.yaml)
+#        npm run ci:woodpecker -- .woodpecker/ci.yaml   (one workflow file)
+# The workflow builds once and runs the e2e tests on both Grafana versions with that build.
 # The steps write node_modules, dist/ and .drawio/ in the workspace. So this script copies the files of the working
-# tree (tracked and untracked, without ignored files) to a new $WP_DIR/repo and runs the workflows there.
+# tree (tracked and untracked, without ignored files) to a new $WP_DIR/repo, with a new git repository of one commit,
+# and runs the workflows there.
 # woodpecker-cli runs in a container with the docker socket and makes bind mounts of $WP_DIR/repo: this path must
 # be the same in the container and on the docker host (Docker Desktop and OrbStack share the home folder).
 set -euo pipefail
@@ -24,6 +24,10 @@ step "copy the working tree to $work/repo"
 rm -rf "$work/repo"
 mkdir -p "$work/repo"
 git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- ./ "$work/repo/"
+# The step "privacy" runs git ls-files, so the copy needs a repository. One commit of the copied files is enough.
+git -C "$work/repo" init -q
+git -C "$work/repo" add -A
+git -C "$work/repo" -c user.name=ci -c user.email=ci@localhost -c commit.gpgsign=false commit -q -m "ci:woodpecker copy"
 
 step "woodpecker-cli lint"
 cli lint .woodpecker
