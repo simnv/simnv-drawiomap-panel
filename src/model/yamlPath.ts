@@ -10,7 +10,7 @@ const PLAIN_KEY = /^[^.[\]"]+$/;
 const PART = /^(?:\.?([^.[\]"]+)|\[(\d+)\]|\[("(?:[^"\\]|\\.)*")\])/;
 
 /**
- * The one format of a diagnostic path, as zod issue paths read: `classes.lan.rows[2].query`. A list index is `[2]`.
+ * The one format of a diagnostic path, as the issue paths of the config check read: `classes.lan.rows[2].query`. A list index is `[2]`.
  * A key with a character of this syntax (`.`, `[`, `]`, `"`), for example a cell id with a dot, or an empty key goes
  * in brackets as a JSON string, so each path names one place: `overrides["sw.1"].status`. `base` is a path that the
  * parts continue.

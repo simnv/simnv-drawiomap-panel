@@ -1,7 +1,7 @@
 import type { Labels } from '@grafana/data';
 import type { monacoTypes } from '@grafana/ui';
 
-import { classSchema, overrideSchema } from '../../model/v4';
+import { ARROW_STYLES, schemaKeys } from '../../model/v4';
 import { parsePath, type PathPart } from '../../model/yamlPath';
 import type { CellMeta } from '../../types';
 
@@ -41,15 +41,11 @@ const ARROW_DOCS = {
 
 // ---- the schema keys (spec 5.6: "from classSchema") ----
 
-/** The options of a discriminated union on `kind`, with their keys. */
-const keysByKind = (options: ReadonlyArray<{ shape: { kind: { value: string } } }>) =>
-  new Map(options.map((option) => [option.shape.kind.value, Object.keys(option.shape)]));
-
-const CLASS_KEYS = Object.keys(classSchema.shape);
-const OVERRIDE_KEYS = Object.keys(overrideSchema.shape);
-const TEXT_KEYS = Object.keys(classSchema.shape.text.unwrap().shape);
-const ROW_KEYS = keysByKind(classSchema.shape.rows.unwrap().element.options);
-const CHART_KEYS = keysByKind(classSchema.shape.chart.unwrap().options);
+const CLASS_KEYS = schemaKeys.class;
+const OVERRIDE_KEYS = schemaKeys.override;
+const TEXT_KEYS = schemaKeys.text;
+const ROW_KEYS = schemaKeys.row;
+const CHART_KEYS = schemaKeys.chart;
 
 /** The keys of the kind of a row or a chart; all keys when the kind is not known yet. */
 function kindKeys(byKind: Map<string, string[]>, kind: unknown): string[] {
@@ -768,7 +764,7 @@ function valueItems(path: PathPart[], ctx: Context): CompletionItem[] {
     return matcherItems(owner, ctx);
   }
   if (owner.sub.length === 0 && rest.length === 1 && rest[0] === 'arrow') {
-    return scalarItems(classSchema.shape.arrow.unwrap().options, 'value', ctx).map((item) => ({
+    return scalarItems(ARROW_STYLES, 'value', ctx).map((item) => ({
       ...item,
       documentation: ARROW_DOCS,
     }));

@@ -2,7 +2,7 @@ import type { monacoTypes } from '@grafana/ui';
 import { describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
 
-import { classSchema, overrideSchema } from '../../model/v4';
+import { schemaKeys } from '../../model/v4';
 import { itemsAt, registerCompletion, registerHover, type CompletionSource } from './completion';
 import { pathAt, readDraft } from './yamlPath';
 
@@ -68,7 +68,6 @@ function complete(marked: string, path: string, extra: Partial<CompletionSource>
 }
 
 const labels = (items: ReturnType<typeof itemsAt>) => items.map((item) => item.label);
-const keysOf = (shape: object) => Object.keys(shape);
 
 describe('itemsAt: schema keys', () => {
   it.each(['classes', 'overrides'])('offers arrow next to linkLabel in %s', (root) => {
@@ -80,7 +79,7 @@ describe('itemsAt: schema keys', () => {
 
   it('gives the keys of a class on a blank line in the class', () => {
     const items = complete(`${BASE.split('  link:')[0]}    |\n`, 'classes.host.text');
-    expect(labels(items)).toEqual(keysOf(classSchema.shape));
+    expect(labels(items)).toEqual(schemaKeys.class);
     expect(items[0].range).toEqual({ startColumn: 5, endColumn: 5 });
     expect(items[0].insertText).toBe('extends: ');
   });
@@ -102,7 +101,7 @@ describe('itemsAt: schema keys', () => {
 
   it('gives the keys of an override, with no extends', () => {
     const items = complete('overrides:\n  n-sw1:\n    status: up\n    |\n', 'overrides.n-sw1.status');
-    expect(labels(items)).toEqual(keysOf(overrideSchema.shape));
+    expect(labels(items)).toEqual(schemaKeys.override);
     expect(labels(items)).not.toContain('extends');
   });
 
@@ -142,7 +141,7 @@ describe('itemsAt: schema keys', () => {
 
   it('gives the keys in a flow mapping', () => {
     const items = complete('classes:\n  host: {status: up, |}\n', 'classes.host');
-    expect(labels(items)).toEqual(keysOf(classSchema.shape));
+    expect(labels(items)).toEqual(schemaKeys.class);
   });
 
   it('gives nothing in a comment or at an unknown place', () => {
