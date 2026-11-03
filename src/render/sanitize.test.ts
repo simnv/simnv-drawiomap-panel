@@ -161,3 +161,116 @@ describe('sanitizeSvgUncached in the Grafana frontend sandbox', () => {
     }
   });
 });
+
+// Hostile inputs that are well-formed XML (parseSvg rejects anything else before the sanitiser runs). Each one
+// checks two things: the dangerous part is gone, and the output sanitises again to the same string (stored diagrams
+// are sanitised twice). The structure of the tree is what the HTML parser makes of the serialised XML; a change of
+// the DOMPurify input (string or node) changes what these inputs produce. See docs/security.md.
+const XH = 'http://www.w3.org/1999/xhtml';
+const fo = (inner: string) =>
+  `<switch><foreignObject width="10" height="10"><div xmlns="${XH}">${inner}</div></foreignObject></switch>`;
+
+/** The sanitised output, which must be a fixed point of the sanitiser. */
+function clean(text: string): string {
+  const once = sanitizeSvgUncached(text).svg;
+  expect(sanitizeSvgUncached(once).svg).toBe(once);
+  return once;
+}
+
+describe('sanitizeSvg: namespace confusion and mXSS', () => {
+  it('removes an HTML element that is not inside a foreignObject', () => {
+    const out = clean(wrap(`<p xmlns="${XH}"><img src="x" onerror="alert(1)"/></p><text>after</text>`));
+    expect(out).not.toMatch(/<p[ >]|<img|onerror/);
+  });
+  it('removes an element with an HTML name in the svg namespace', () => {
+    const out = clean(wrap('<p>x<rect width="1" height="1"/></p><div>y</div><text>after</text>'));
+    expect(out).not.toMatch(/<p[ >]|<div/);
+  });
+  it('removes a font element that breaks out of the svg in the HTML parser', () => {
+    const out = clean(
+      wrap(
+        '<font color="red"><image href="data:image/png;base64,AAAA" src="x"/><a href="https://example.org"><text>t</text></a></font><text>after</text>'
+      )
+    );
+    expect(out).not.toMatch(/<font|<img|src="x"/);
+  });
+  it('removes handlers from elements written in another case', () => {
+    const out = clean(wrap('<Rect width="1" height="1" onclick="1" onClick="2" ONLOAD="3"/><LINEARGRADIENT id="g"/>'));
+    expect(out).not.toMatch(/onclick|onload/i);
+  });
+  it('keeps a tag in text as text', () => {
+    const out = clean(
+      wrap(
+        '<title>&lt;img src=x onerror=alert(1)&gt;</title><desc>&lt;/desc&gt;&lt;script&gt;1&lt;/script&gt;</desc><text>a&lt;b</text>'
+      )
+    );
+    expect(out).not.toMatch(/<img|<script|<\/desc><\/desc>/);
+    expect(out).toContain('&lt;img');
+    expect(out).toContain('a&lt;b');
+  });
+  it('keeps a CDATA section as text', () => {
+    const out = clean(wrap('<desc><![CDATA[<img src=x onerror=alert(1)>]]></desc>'));
+    expect(out).not.toMatch(/<img|CDATA/);
+  });
+  it('removes a comment with a tag and a processing instruction', () => {
+    const out = clean(wrap('<!-- <img src=x onerror=alert(1)> --><!-- plain --><?xml-stylesheet href="https://evil.example/a.css"?><rect/>'));
+    expect(out).not.toMatch(/onerror|xml-stylesheet|evil\.example/);
+    expect(out).toContain('<rect/>');
+  });
+  it('removes an attribute value that closes a style or a title element', () => {
+    const out = clean(wrap('<rect title="&lt;/style&gt;&lt;img src=x onerror=alert(1)&gt;" data-x="--!&gt;"/>'));
+    expect(out).not.toMatch(/title=|data-x=|onerror/);
+    expect(out).toContain('<rect/>');
+  });
+  it('removes animation of a URL attribute', () => {
+    const out = clean(
+      wrap('<a><animate attributeName="href" values="javascript:alert(1)"/><set attributeName="href" to="javascript:alert(1)"/><text>t</text></a>')
+    );
+    expect(out).not.toContain('javascript:');
+  });
+  it('removes MathML inside and outside a foreignObject', () => {
+    const out = clean(
+      wrap(
+        `<math xmlns="http://www.w3.org/1998/Math/MathML"><mtext><img src="x" onerror="alert(1)"/></mtext></math>${fo('<math xmlns="http://www.w3.org/1998/Math/MathML"><annotation-xml encoding="text/html"><img src="x" onerror="alert(1)"/></annotation-xml></math>')}`
+      )
+    );
+    expect(out).not.toMatch(/<math|annotation-xml|<img|onerror/);
+  });
+  it('removes a noscript with a closing tag in an attribute', () => {
+    const out = clean(wrap(fo('<noscript><p title="&lt;/noscript&gt;&lt;img src=x onerror=alert(1)&gt;"></p></noscript>')));
+    expect(out).not.toMatch(/noscript|onerror/);
+  });
+  it('removes meta, link, base, template, form and ping', () => {
+    const out = clean(
+      wrap(
+        `<a href="https://example.org" ping="https://evil.example"><rect/></a>${fo('<meta http-equiv="refresh" content="0;url=https://evil.example"/><link rel="stylesheet" href="https://evil.example/a.css"/><base href="https://evil.example/"/><template><img src="x" onerror="alert(1)"/></template><form action="https://evil.example"><input name="a"/><button formaction="javascript:1">x</button></form>')}`
+      )
+    );
+    expect(out).not.toMatch(/<meta|<link|<base|<template|<form|<input|<button|ping=|evil\.example|onerror/);
+    expect(out).toContain('href="https://example.org"');
+  });
+  it('removes handlers from HTML inside a lowercase foreignobject', () => {
+    const out = clean(wrap(`<foreignobject width="10" height="10"><div xmlns="${XH}"><img src="x" onerror="alert(1)"/>label</div></foreignobject>`));
+    expect(out).not.toContain('onerror');
+    expect(out).toContain('label');
+  });
+  it('removes an id or a name that clobbers a document property', () => {
+    const out = clean(wrap('<rect id="location"/><rect id="body"/><a name="cookie"><rect/></a><rect id="fine"/>'));
+    expect(out).not.toMatch(/location|cookie|id="body"/);
+    expect(out).toContain('id="fine"');
+  });
+  it('removes a data: URL on an element that is not an image', () => {
+    const out = clean(wrap('<a href="data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;"><rect/></a>'));
+    expect(out).not.toContain('data:text/html');
+  });
+  it('keeps a data: image, a local use and a plain href', () => {
+    const out = clean(
+      wrap(
+        '<defs><rect id="ok" width="1" height="1"/></defs><image href="data:image/png;base64,AAAA" width="1" height="1"/><use href="#ok"/><a href="https://example.org/x" target="_blank"><text>t</text></a>'
+      )
+    );
+    expect(out).toContain('data:image/png;base64,AAAA');
+    expect(out).toContain('href="#ok"');
+    expect(out).toContain('href="https://example.org/x"');
+  });
+});

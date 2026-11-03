@@ -107,6 +107,17 @@ strings and numbers only, never a DOM node: each mount parses its own copy, and 
 warnings. A hit returns what `sanitizeSvgUncached` returns for that input. A change to `PURIFY_CONFIG` or to a sanitizer
 step needs a new `SANITIZER_VERSION` (a test pins a digest of the options). Tests: `src/render/sanitizeCache.test.ts`.
 
+## Input of DOMPurify
+
+The sanitiser serialises the DOM of the structural pass to XML and gives DOMPurify the **string**. DOMPurify parses it
+with the HTML parser, so it checks the same tree that the stage builds at mount time (`<template>.innerHTML`, see
+`src/render/svgStage.ts`). A Node input (DOMPurify copies the XML tree with `importNode` and skips its parse) was
+measured on 2026-11-03 in Chromium: it saves 10 to 12 % of sanitise plus mount (1 ms at 72 KB, 59 ms at 3.6 MB) and
+changes the output of 10 of 43 hostile inputs. None of the changes is weaker, but DOMPurify would check a tree that
+differs from the tree of the mount. The gain is too small for that. `IN_PLACE` would run the checks inside the XML
+document, where `innerHTML` serialises differently, so the mXSS checks of DOMPurify do not work as designed. Do not
+use it. The hostile inputs are in `src/render/sanitize.test.ts`.
+
 ## Trade-offs
 
 - draw.io cannot save its settings (`.drawio-config`) between two opens: the opaque origin has no localStorage.
