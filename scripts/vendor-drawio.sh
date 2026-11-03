@@ -12,7 +12,7 @@ set -euo pipefail
 DRAWIO_VERSION=32.4.1
 DRAWIO_SHA256=b83663313ccdecef6581476a7eaa96750bccf1bfdc3768981eb5d95e94be7820
 # Increase when the output of this script changes for the same draw.io version: --if-missing then vendors again.
-VENDOR_REVISION=2
+VENDOR_REVISION=3
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cache="$root/.drawio/cache"
@@ -62,6 +62,20 @@ if [ "$full" -eq 0 ]; then
     rm -rf shapes
     # draw.io plugins (p= URL parameter, Extras > Plugins). Offline mode does not load them.
     rm -rf plugins
+    # Standalone copies that only dev=1 loads. The production bundles hold the same code: js/extensions.min.js holds
+    # ELK, Mermaid, the org chart sources (bridge.*, OrgChart.Layout), libavoid, JSZip and drawio-vsd; js/app.min.js
+    # holds pako, DOMPurify, CryptoJS, rough, perfect-freehand and spin. The editor never sets dev=1: urlParams
+    # come from the dmap-search meta tag (src/editor/protocol.ts). js/orgchart.min.js is the production file.
+    rm -rf mxgraph/mxClient.js js/elk js/mermaid js/orgchart js/vsd js/jszip js/deflate js/sanitizer js/cryptojs \
+      js/rough js/freehand js/spin
+    # UI languages other than English (resources/dia_<lang>.txt). The editor starts in English: EMBED_PARAMS has no
+    # lang, and draw.io uses the browser language only on its own hosts. The only menu that selects a language
+    # (Extras > Language) exists only when localStorage works (isLocalStorage), and the opaque-origin frame has none.
+    rm -f resources/dia_*.txt
+    # App.TRELLO_JQUERY_URL: jQuery loads only for the Trello client (tr=1). PreConfig.js sets tr=0.
+    rm -rf js/jquery
+    # libavoid is LGPL: keep its LICENSE next to the code that js/extensions.min.js holds.
+    find js/libavoid-js -type f ! -name LICENSE -delete
   )
 fi
 
