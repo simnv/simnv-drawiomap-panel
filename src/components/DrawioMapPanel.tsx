@@ -15,7 +15,8 @@ import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applie
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
-import { useStage } from '../stage/useStage';
+import { DEFER_ABOVE, useStage } from '../stage/useStage';
+import { useHeld } from '../stage/useHeld';
 import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
 import { reportLine, useBoundDiagram } from '../stage/useBoundDiagram';
@@ -176,7 +177,7 @@ function DrawioMapPanelView(props: ViewProps) {
     containerRef.current = element;
     setViewport(element);
   }, []);
-  const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
+  const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash, DEFER_ABOVE);
   const interactiveRef = useRef<Marked>();
   const cards = useCardState();
   const { card, dispatch, cardRef } = cards;
@@ -194,14 +195,6 @@ function DrawioMapPanelView(props: ViewProps) {
   const align = opts.zoom.align ?? 'top';
   const minScale = opts.zoom.minScale ?? 0;
 
-  // Reset the custom view and close the card when the diagram changes (state adjustment during render).
-  const hash = opts.diagram?.hash;
-  const [viewHash, setViewHash] = useState(hash);
-  if (viewHash !== hash) {
-    setViewHash(hash);
-    setView(null);
-    dispatch({ type: 'diagram-changed' });
-  }
   // A new panel size or a new zoom option resets the live view to the configured view.
   const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}|${align}|${minScale}`;
   const [lastViewKey, setLastViewKey] = useState(viewKey);
@@ -221,13 +214,32 @@ function DrawioMapPanelView(props: ViewProps) {
       }),
     [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, opts.linkWidth.min, opts.linkWidth.max]
   );
+  // While a deferred build of a new diagram is pending, the stage is the previous diagram. It keeps the inputs it
+  // was bound with, so the stage and its binding change in one commit, and it is inert until then: no card, no
+  // click, no new patches. A config or data change with the same diagram is not pending and binds at once.
+  const latest = useMemo(
+    () => ({ hash: opts.diagram?.hash, xml: opts.diagram?.xml, config: options.config, data, bindContext: bindingContext }),
+    [opts.diagram?.hash, opts.diagram?.xml, options.config, data, bindingContext]
+  );
+  const inputs = useHeld(latest, stage.pending);
+  // Reset the custom view and close the card when the shown diagram changes (state adjustment during render).
+  const hash = inputs.hash;
+  const [viewHash, setViewHash] = useState(hash);
+  if (viewHash !== hash) {
+    setViewHash(hash);
+    setView(null);
+    dispatch({ type: 'diagram-changed' });
+  }
+  if (stage.pending && card) {
+    dispatch({ type: 'close' });
+  }
   // The bind runs on new data, a new diagram or a new config; the clock runs only the stale pass (spec 3.5).
   const { bound, patches, cardContext } = useBoundDiagram({
     index: stage.index,
-    xml: opts.diagram?.xml,
-    config: options.config,
-    data,
-    bindContext: bindingContext,
+    xml: inputs.xml,
+    config: inputs.config,
+    data: inputs.data,
+    bindContext: inputs.bindContext,
   });
   // The bind result at the current clock: the cards and the chart regions read the stale status.
   const shown = useMemo((): BindResultV4 => ({ ...bound, patches }), [bound, patches]);
@@ -269,7 +281,7 @@ function DrawioMapPanelView(props: ViewProps) {
       }),
     [result.patches, bound, stage.index, hoverKinds]
   );
-  const cardable = (p: CellPatch) => interactive.has(p.cellId);
+  const cardable = (p: CellPatch) => !stage.pending && interactive.has(p.cellId);
 
   // The colour legend: the scales of the bound cells. A legend entry under the pointer highlights its cells.
   const legendOptions = opts.legend;
@@ -301,8 +313,8 @@ function DrawioMapPanelView(props: ViewProps) {
   );
   const stampRef = useRef<HTMLElement>(null);
   const lastTime = useMemo(
-    () => (legendOptions.timestamp === false ? undefined : lastSampleTime(data.series)),
-    [legendOptions.timestamp, data.series]
+    () => (legendOptions.timestamp === false ? undefined : lastSampleTime(inputs.data.series)),
+    [legendOptions.timestamp, inputs.data.series]
   );
   // A card without rows and links has nothing to show: the cell opens no card.
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
@@ -451,7 +463,8 @@ function DrawioMapPanelView(props: ViewProps) {
       data-dmap-cells={stage.index.size}
       data-dmap-patched={result.patches.size}
       data-dmap-warnings={warnings.length}
-      data-dmap-hash={opts.diagram.hash}
+      data-dmap-hash={inputs.hash}
+      data-dmap-pending={stage.pending ? 'true' : undefined}
       style={{ colorScheme: theme.isDark ? 'dark' : 'light', touchAction }}
       onClick={onClick}
       onKeyDown={onKeyDown}
@@ -468,7 +481,7 @@ function DrawioMapPanelView(props: ViewProps) {
       <div
         ref={attachStage}
         className={styles.stage}
-        style={{ touchAction, height: stageHeight }}
+        style={{ touchAction, height: stageHeight, pointerEvents: stage.pending ? 'none' : undefined }}
         data-testid="dmap-stage"
       />
       {charts.length ? (

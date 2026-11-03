@@ -20,6 +20,7 @@ import { DrawioMapPanel } from './DrawioMapPanel';
 import { currentAddress, requestOpen } from '../editor/popup/popupBus';
 import { writeYaml } from '../options/yamlConfig';
 import { fnv1a } from '../util/hash';
+import { DEFER_ABOVE } from '../stage/useStage';
 import type { Options } from '../types';
 import type { ConfigV4 } from '../model/v4';
 import { demoConfigV4 } from '../fixtures/demo-config';
@@ -2002,5 +2003,85 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(requestOpen(currentAddress(), { kind: 'none' })).toBe(true);
     });
     expect(await screen.findByTestId('dmap-bindings-popup')).toBeTruthy();
+  });
+});
+
+describe('DrawioMapPanel deferred diagram', () => {
+  const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+  // demo-l3 above the deferral limit, with one label that names the diagram
+  const large = (label: string) =>
+    svg.replace(/<svg([^>]*)>/, `<svg$1><desc>${'x'.repeat(DEFER_ABOVE)}</desc>`).replace('Local subnets', label);
+  const diagram = (text: string) => ({ xml: '<mxfile/>', svg: text, hash: fnv1a(text), updatedAt: '' });
+  const withUrl = (text: string, url: string) =>
+    props({ options: { ...options, diagram: diagram(text), config: withClass('wan', { url }) } });
+  /** One frame, then the timer of the deferred build. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((done) => requestAnimationFrame(() => done(undefined)));
+      await new Promise((done) => setTimeout(done, 0));
+    });
+  const half = (c: HTMLElement) =>
+    c.querySelector(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${linkId}"]`);
+  const hasLabel = (c: HTMLElement, label: string) =>
+    Array.from(c.querySelectorAll('[data-testid="dmap-stage"] text')).some((t) => t.textContent === label);
+  const links = () => screen.getAllByTestId('dmap-card-link').map((l) => l.getAttribute('href'));
+  const panel = () => screen.getByTestId('dmap-panel');
+
+  it('keeps the old diagram inert with its own binding until the new one is built', async () => {
+    const old = large('old-diagram');
+    const fresh = large('new-diagram');
+    const r = render(<DrawioMapPanel {...withUrl(old, 'https://example.org/old-diagram')} />);
+    expect(panel().getAttribute('data-dmap-cells')).toBe('0');
+    await settle();
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    expect(panel().getAttribute('data-dmap-pending')).toBeNull();
+    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(old));
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/old-diagram');
+    const binds = work.binds;
+
+    r.rerender(<DrawioMapPanel {...withUrl(fresh, 'https://example.org/new-diagram')} renderCounter={1} />);
+    // the old picture with its own binding: no bind of the new config against the old index, no card, no click
+    expect(hasLabel(r.container, 'old-diagram')).toBe(true);
+    expect(hasLabel(r.container, 'new-diagram')).toBe(false);
+    expect(work.binds).toBe(binds);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(panel().getAttribute('data-dmap-pending')).toBe('true');
+    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(old));
+    expect(screen.getByTestId('dmap-stage').style.pointerEvents).toBe('none');
+    fireEvent.click(half(r.container)!);
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 20));
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryAllByTestId('dmap-card-link')).toHaveLength(0);
+
+    await settle();
+    // the new stage and its binding in one commit
+    await waitFor(() => expect(panel().getAttribute('data-dmap-pending')).toBeNull());
+    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(fresh));
+    expect(hasLabel(r.container, 'new-diagram')).toBe(true);
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
+    expect(work.binds).toBe(binds + 1);
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/new-diagram');
+    expect(links()).not.toContain('https://example.org/old-diagram');
+  });
+
+  it('binds a config change for the same large diagram at once', async () => {
+    const old = large('old-diagram');
+    const r = render(<DrawioMapPanel {...withUrl(old, 'https://example.org/old-diagram')} />);
+    await settle();
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    const binds = work.binds;
+    r.rerender(<DrawioMapPanel {...withUrl(old, 'https://example.org/new-url')} renderCounter={1} />);
+    expect(panel().getAttribute('data-dmap-pending')).toBeNull();
+    expect(work.binds).toBe(binds + 1);
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/new-url');
   });
 });

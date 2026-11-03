@@ -13,7 +13,7 @@ function mounted(): { stage: Stage; container: { current: HTMLDivElement } } {
   container.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><g data-cell-id="n1"/></svg>';
   const root = container.querySelector('svg') as SVGSVGElement;
   return {
-    stage: { index: buildCellIndex(root), root, base: readViewBox(root), warnings: [] },
+    stage: { index: buildCellIndex(root), root, base: readViewBox(root), warnings: [], pending: false },
     container: { current: container },
   };
 }

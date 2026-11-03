@@ -9,9 +9,19 @@ const svgOf = (id: string, pad = 0) =>
 const small = (id: string) => svgOf(id);
 const large = (id: string) => svgOf(id, DEFER_ABOVE);
 
-function Harness({ svg, hash, onStage }: { svg?: string; hash?: string; onStage: (s: Stage) => void }) {
+function Harness({
+  svg,
+  hash,
+  onStage,
+  deferAbove = DEFER_ABOVE,
+}: {
+  svg?: string;
+  hash?: string;
+  onStage: (s: Stage) => void;
+  deferAbove?: number;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const stage = useStage(ref, svg, hash);
+  const stage = useStage(ref, svg, hash, deferAbove);
   onStage(stage);
   return <div data-testid="stage" ref={ref} />;
 }
@@ -33,7 +43,15 @@ describe('useStage', () => {
     let stage!: Stage;
     const { container } = render(<Harness svg={small('a')} hash="h1" onStage={(s) => (stage = s)} />);
     expect(cellsOf(stage)).toEqual(['a']);
+    expect(stage.pending).toBe(false);
     expect(container.querySelector('[data-testid="stage"] svg')).toBe(stage.root!);
+  });
+
+  it('builds a large diagram during the render without a limit (the split editor)', () => {
+    let stage!: Stage;
+    render(<Harness svg={large('a')} hash="h1" deferAbove={Infinity} onStage={(s) => (stage = s)} />);
+    expect(cellsOf(stage)).toEqual(['a']);
+    expect(stage.pending).toBe(false);
   });
 
   it('returns the empty stage without a diagram', () => {
@@ -48,10 +66,12 @@ describe('useStage', () => {
     let stage!: Stage;
     const { container } = render(<Harness svg={large('a')} hash="h1" onStage={(s) => (stage = s)} />);
     expect(stage.root).toBeUndefined();
+    expect(stage.pending).toBe(true);
     expect(container.querySelector('svg')).toBeNull();
     expect(sanitizeCacheStats().misses).toBe(0);
     await settle();
     expect(cellsOf(stage)).toEqual(['a']);
+    expect(stage.pending).toBe(false);
     expect(container.querySelector('[data-testid="stage"] svg')).toBe(stage.root!);
     expect(sanitizeCacheStats().misses).toBe(1);
   });
@@ -65,9 +85,11 @@ describe('useStage', () => {
     rerender(<Harness svg={large('b')} hash="h2" onStage={onStage} />);
     expect(stage.root).toBe(first);
     expect(cellsOf(stage)).toEqual(['a']);
+    expect(stage.pending).toBe(true);
     expect(container.querySelector('svg')).toBe(first);
     await settle();
     expect(cellsOf(stage)).toEqual(['b']);
+    expect(stage.pending).toBe(false);
     expect(container.querySelector('svg')).toBe(stage.root!);
     expect(stage.root).not.toBe(first);
   });
