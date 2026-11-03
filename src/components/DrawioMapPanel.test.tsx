@@ -2027,48 +2027,72 @@ describe('DrawioMapPanel deferred diagram', () => {
   const links = () => screen.getAllByTestId('dmap-card-link').map((l) => l.getAttribute('href'));
   const panel = () => screen.getByTestId('dmap-panel');
 
-  it('keeps the old diagram inert with its own binding until the new one is built', async () => {
+  /** What the DOM holds of a diagram: stage svg, labels, card links, legend entries. */
+  const traces = (c: HTMLElement) => ({
+    svg: c.querySelector('[data-testid="dmap-stage"] svg') !== null,
+    cells: panel().getAttribute('data-dmap-cells'),
+    pending: panel().getAttribute('data-dmap-pending'),
+    labels: Array.from(c.querySelectorAll('text')).filter((t) => /diagram$/.test(t.textContent ?? '')).length,
+    links: screen.queryAllByTestId('dmap-card-link').length,
+    dialog: screen.queryByRole('dialog') !== null,
+    legend: screen.queryAllByTestId('dmap-legend-entry').length,
+  });
+
+  it('shows nothing of the old diagram while the new one builds, then the new stage with its binding', async () => {
     const old = large('old-diagram');
     const fresh = large('new-diagram');
     const r = render(<DrawioMapPanel {...withUrl(old, 'https://example.org/old-diagram')} />);
-    expect(panel().getAttribute('data-dmap-cells')).toBe('0');
+    // before the first build: the same blank
+    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
     await settle();
     await waitFor(() => expect(half(r.container)).not.toBeNull());
     expect(panel().getAttribute('data-dmap-pending')).toBeNull();
-    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(old));
     fireEvent.click(half(r.container)!);
     await screen.findByRole('dialog');
     expect(links()).toContain('https://example.org/old-diagram');
     const binds = work.binds;
 
     r.rerender(<DrawioMapPanel {...withUrl(fresh, 'https://example.org/new-diagram')} renderCounter={1} />);
-    // the old picture with its own binding: no bind of the new config against the old index, no card, no click
-    expect(hasLabel(r.container, 'old-diagram')).toBe(true);
-    expect(hasLabel(r.container, 'new-diagram')).toBe(false);
-    expect(work.binds).toBe(binds);
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(panel().getAttribute('data-dmap-pending')).toBe('true');
-    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(old));
-    expect(screen.getByTestId('dmap-stage').style.pointerEvents).toBe('none');
-    fireEvent.click(half(r.container)!);
-    await act(async () => {
-      await new Promise((done) => setTimeout(done, 20));
-    });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.queryAllByTestId('dmap-card-link')).toHaveLength(0);
+    // the blank again: no stage, no label, no card, no link of either diagram
+    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(fresh));
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
 
     await settle();
-    // the new stage and its binding in one commit
     await waitFor(() => expect(panel().getAttribute('data-dmap-pending')).toBeNull());
-    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(fresh));
     expect(hasLabel(r.container, 'new-diagram')).toBe(true);
     expect(hasLabel(r.container, 'old-diagram')).toBe(false);
-    expect(work.binds).toBe(binds + 1);
+    expect(work.binds).toBe(binds + 2); // the empty stage, then the new one
     await waitFor(() => expect(half(r.container)).not.toBeNull());
     fireEvent.click(half(r.container)!);
     await screen.findByRole('dialog');
     expect(links()).toContain('https://example.org/new-diagram');
     expect(links()).not.toContain('https://example.org/old-diagram');
+  });
+
+  it('never shows a diagram whose build completes in the batch that requests the next one', async () => {
+    const a = large('a-diagram');
+    const b = large('b-diagram');
+    const c = large('c-diagram');
+    const r = render(<DrawioMapPanel {...withUrl(a, 'https://example.org/a')} />);
+    await settle();
+    await waitFor(() => expect(hasLabel(r.container, 'a-diagram')).toBe(true));
+    r.rerender(<DrawioMapPanel {...withUrl(b, 'https://example.org/b')} renderCounter={1} />);
+    await act(async () => {
+      await new Promise((done) => requestAnimationFrame(() => done(undefined)));
+      await new Promise((done) => setTimeout(done, 0));
+      r.rerender(<DrawioMapPanel {...withUrl(c, 'https://example.org/c')} renderCounter={2} />);
+    });
+    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(c));
+    await settle();
+    await waitFor(() => expect(panel().getAttribute('data-dmap-pending')).toBeNull());
+    expect(hasLabel(r.container, 'c-diagram')).toBe(true);
+    expect(hasLabel(r.container, 'b-diagram')).toBe(false);
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/c');
   });
 
   it('binds a config change for the same large diagram at once', async () => {

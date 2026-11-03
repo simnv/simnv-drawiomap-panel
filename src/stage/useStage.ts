@@ -10,15 +10,12 @@ export interface Stage {
   base?: ViewBox;
   warnings: string[];
   error?: string;
-  /**
-   * True while a deferred build of a newer diagram runs: `root` and `index` are those of the previous diagram. A
-   * consumer must then keep the inputs it bound that stage with and make the stage inert, so the stage and its
-   * binding change in one commit.
-   */
+  /** True while the deferred build of the current diagram runs: the stage is empty until then. */
   pending: boolean;
 }
 
 const EMPTY: Stage = { index: new Map(), warnings: [], pending: false };
+const PENDING: Stage = { index: new Map(), warnings: [], pending: true };
 
 /**
  * The limit of the dashboard panel: an svg text longer than this builds after the first paint. The build (sanitise,
@@ -54,8 +51,9 @@ const NONE: Deferred = { key: undefined, stage: EMPTY };
  * Sanitise and index the SVG once per hash, then put its root into the container.
  *
  * Without `deferAbove` the stage builds during the render. With it, a diagram whose svg text is longer builds after
- * the first paint: the panel chrome paints at once and the diagram follows. Until the build is done the hook returns
- * the previous deferred stage with `pending` set, so a large diagram stays on screen when the next large one arrives.
+ * the first paint: the panel chrome paints at once and the diagram follows. Until then the hook returns the empty
+ * stage with `pending` set. The hook never returns a stage of another diagram: a deferred result carries the key of
+ * its input, and a result for an older key (its timer ran in the same batch as a newer diagram) is not shown.
  * Without a diagram the hook returns the empty stage at once.
  */
 export function useStage(
@@ -92,11 +90,7 @@ export function useStage(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, defer]);
-  const pending = defer && deferred.key !== key;
-  const stage = useMemo(
-    () => direct ?? (pending ? { ...deferred.stage, pending: true } : deferred.stage),
-    [direct, deferred, pending]
-  );
+  const stage = direct ?? (deferred.key === key ? deferred.stage : PENDING);
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) {

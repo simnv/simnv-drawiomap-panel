@@ -76,22 +76,44 @@ describe('useStage', () => {
     expect(sanitizeCacheStats().misses).toBe(1);
   });
 
-  it('keeps the previous large diagram on screen until the next one is built', async () => {
+  it('shows nothing of the previous diagram while the next large one builds', async () => {
     let stage!: Stage;
     const onStage = (s: Stage) => (stage = s);
     const { container, rerender } = render(<Harness svg={large('a')} hash="h1" onStage={onStage} />);
     await settle();
     const first = stage.root!;
     rerender(<Harness svg={large('b')} hash="h2" onStage={onStage} />);
-    expect(stage.root).toBe(first);
-    expect(cellsOf(stage)).toEqual(['a']);
     expect(stage.pending).toBe(true);
-    expect(container.querySelector('svg')).toBe(first);
+    expect(stage.root).toBeUndefined();
+    expect(cellsOf(stage)).toEqual([]);
+    expect(container.querySelector('svg')).toBeNull();
     await settle();
     expect(cellsOf(stage)).toEqual(['b']);
     expect(stage.pending).toBe(false);
     expect(container.querySelector('svg')).toBe(stage.root!);
     expect(stage.root).not.toBe(first);
+  });
+
+  it('never shows a build whose completion batches with the request of a newer diagram', async () => {
+    let stage!: Stage;
+    const onStage = (s: Stage) => (stage = s);
+    const { container, rerender } = render(<Harness svg={large('a')} hash="h1" onStage={onStage} />);
+    await settle();
+    rerender(<Harness svg={large('b')} hash="h2" onStage={onStage} />);
+    // the build of b completes in the same batch as the request of c
+    await act(async () => {
+      await new Promise((done) => requestAnimationFrame(() => done(undefined)));
+      await new Promise((done) => setTimeout(done, 0));
+      rerender(<Harness svg={large('c')} hash="h3" onStage={onStage} />);
+    });
+    expect(sanitizeCacheStats().misses).toBe(2);
+    expect(stage.pending).toBe(true);
+    expect(cellsOf(stage)).toEqual([]);
+    expect(container.querySelector('svg')).toBeNull();
+    await settle();
+    expect(cellsOf(stage)).toEqual(['c']);
+    expect(stage.pending).toBe(false);
+    expect(container.querySelector('svg')).toBe(stage.root!);
   });
 
   it('shows a small diagram at once in the place of a large one', async () => {
