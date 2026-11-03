@@ -1,17 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { z } from 'zod';
 
 import type { ReportEntry } from '../binding/report';
 import { boilerPilot, netL2Pilot } from '../fixtures/pilots-v4';
-import {
-  classSchema,
-  envelopeSchema,
-  overrideSchema,
-  parseConfig,
-  type ArrowStyle,
-  type MatchV4,
-  type ParsedConfig,
-} from './v4';
+import { parseConfig, type ArrowStyle, type ClassV4, type MatchV4, type OverrideV4, type ParsedConfig } from './v4';
 
 const schemaEntries = (entries: ReportEntry[] | undefined) => (entries ?? []).filter((e) => e.kind === 'schema');
 
@@ -167,8 +158,9 @@ describe('parseConfig (S2.5)', () => {
   });
 
   it('keeps an omitted arrow absent so a child or override preserves the inherited style', () => {
-    expect(classSchema.parse({})).not.toHaveProperty('arrow');
-    expect(overrideSchema.parse({})).not.toHaveProperty('arrow');
+    const parsed = parseConfig({ version: 4, classes: { a: {} }, overrides: { o: {} } });
+    expect(parsed.config?.classes.a).not.toHaveProperty('arrow');
+    expect(parsed.config?.overrides.o).not.toHaveProperty('arrow');
   });
 
   it('accepts min auto on a history row and a chart region', () => {
@@ -184,7 +176,7 @@ describe('parseConfig (S2.5)', () => {
     expect(parseConfig(raw).report).toEqual([]);
   });
 
-  it('rejects the name __proto__, which zod would drop with no issue', () => {
+  it('rejects the name __proto__, which a record would drop with no issue', () => {
     const classKey = parseConfig(JSON.parse('{"version": 4, "classes": {"__proto__": {}}}'));
     expect(classKey.config).toBeNull();
     expect(classKey.report).toEqual([{ kind: 'schema', path: 'classes.__proto__', message: expect.any(String) }]);
@@ -227,17 +219,13 @@ describe('parseConfig (S2.5)', () => {
 describe('the schema types', () => {
   it('exports the arrow styles and keeps the class and override fields optional', () => {
     expectTypeOf<ArrowStyle>().toEqualTypeOf<'point' | 'triangle' | 'none'>();
-    expectTypeOf<z.infer<typeof classSchema>['arrow']>().toEqualTypeOf<ArrowStyle | undefined>();
-    expectTypeOf<z.infer<typeof overrideSchema>['arrow']>().toEqualTypeOf<ArrowStyle | undefined>();
+    expectTypeOf<ClassV4['arrow']>().toEqualTypeOf<ArrowStyle | undefined>();
+    expectTypeOf<OverrideV4['arrow']>().toEqualTypeOf<ArrowStyle | undefined>();
   });
 
   it('types the match schema as MatchV4', () => {
-    expectTypeOf<z.infer<typeof overrideSchema>['match']>().toEqualTypeOf<MatchV4 | undefined>();
-    expectTypeOf<z.infer<typeof classSchema>['match']>().toEqualTypeOf<MatchV4 | undefined>();
-  });
-
-  it('gives the default freshness in the envelope', () => {
-    expect(envelopeSchema.parse({ version: 4, classes: {} }).freshness).toBe('3x');
+    expectTypeOf<OverrideV4['match']>().toEqualTypeOf<MatchV4 | undefined>();
+    expectTypeOf<ClassV4['match']>().toEqualTypeOf<MatchV4 | undefined>();
   });
 
   it('keeps the ParsedConfig shape of the plan', () => {

@@ -26,6 +26,7 @@
 | --- | --- | --- | --- |
 | 2026-10-30, panel 1.4.0 | Every link half uses the head with wings. | Add the optional class and cell override field `arrow: point\|triangle\|none`. The default is `point`, also for saved configs that omit the field. There is no panel option. | 2.2, 2.3, 3.8 |
 | 2026-10-30, review correction | Every point retains its full base on every path. | A degenerate fold keeps a simple outline inside the stroke envelope and a tip at the port. Its base width or symmetry can change. | 2.3, 3.8 |
+| 2026-11-03, panel 1.5.0 | zod 3.23.8 parses the config; one zod schema gives the types. | A small validator in `src/model/check.ts` parses the config with no dependency. `src/model/v4.ts` builds the same shapes on it and gives the same types, paths and messages; the table `src/model/v4.table.test.ts` locks the report of 212 configs. zod left `dist/module.js` (55 KB raw, 13 KB gzip). | 2.2, 2.5 |
 
 The owner note "Arrow style" of 2026-10-30 records this decision. The rows override the previous head style and define the fold exception.
 
