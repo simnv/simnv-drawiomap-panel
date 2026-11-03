@@ -181,7 +181,7 @@ export function SplitEditor({
   const yamlEntries = useMemo(() => readDraft(settledText).entries, [settledText]);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const stage = useStage(stageRef, diagram?.svg, diagram?.hash);
+  const stage = useStage(stageRef, diagram?.svg);
   const { min, max } = opts.linkWidth;
   const bindContext = useMemo(
     () =>

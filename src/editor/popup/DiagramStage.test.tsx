@@ -42,7 +42,7 @@ function Harness({
   ...rest
 }: HarnessProps) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const stage = useStage(ref, text, hash);
+  const stage = useStage(ref, text);
   onStage?.(stage);
   return (
     <DiagramStage

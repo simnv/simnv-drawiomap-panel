@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeYaml } from '../../options/yamlConfig';
 import { grafanaUpdate } from '../../fixtures/grafanaOptions';
-import { CONFIG, editorProps } from './splitTestKit';
+import { CONFIG, editorProps, SVG } from './splitTestKit';
+import { DEFER_ABOVE } from '../../stage/useStage';
 import type { Options } from '../../types';
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. Set them before the imports run.
@@ -191,6 +192,28 @@ describe('SplitEditor', () => {
     expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(onOptionsChange.mock.calls[0][0].diagram).toBe(options.diagram);
+  });
+
+  it('a large diagram after Reload shows its cells in the same render: the editor stage never waits', async () => {
+    const large = (cells: string) =>
+      SVG.replace('viewBox="0 0 300 100">', `viewBox="0 0 300 100"><desc>${'x'.repeat(DEFER_ABOVE)}</desc>`).replace(
+        '<text>A</text>',
+        cells
+      );
+    const props = editorProps();
+    props.options = { ...props.options, diagram: { ...props.options.diagram!, svg: large('<text>A-old</text>') } };
+    const view = render(<SplitEditor {...props} />);
+    await frame();
+    expect(cell('a').textContent).toBe('A-old');
+    const options = {
+      ...props.options,
+      diagram: { ...props.options.diagram!, svg: large('<text>A-new</text>'), hash: 'outside' },
+    };
+    view.rerender(<SplitEditor {...props} options={options} />);
+    expect(cell('a').textContent).toBe('A-old');
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(cell('a').textContent).toBe('A-new');
+    expect(screen.getByTestId('dmap-popup-stage').querySelectorAll('[data-cell-id]')).toHaveLength(3);
   });
 
   it('keeps the draft on conflict and applies it over the latest saved options', () => {

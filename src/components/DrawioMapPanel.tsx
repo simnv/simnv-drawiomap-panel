@@ -15,7 +15,7 @@ import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applie
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
-import { useStage } from '../stage/useStage';
+import { DEFER_ABOVE, useStage } from '../stage/useStage';
 import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
 import { reportLine, useBoundDiagram } from '../stage/useBoundDiagram';
@@ -176,7 +176,7 @@ function DrawioMapPanelView(props: ViewProps) {
     containerRef.current = element;
     setViewport(element);
   }, []);
-  const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash);
+  const stage = useStage(containerRef, opts.diagram?.svg, DEFER_ABOVE);
   const interactiveRef = useRef<Marked>();
   const cards = useCardState();
   const { card, dispatch, cardRef } = cards;
@@ -222,6 +222,7 @@ function DrawioMapPanelView(props: ViewProps) {
     [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, opts.linkWidth.min, opts.linkWidth.max]
   );
   // The bind runs on new data, a new diagram or a new config; the clock runs only the stale pass (spec 3.5).
+  // While the deferred build of a large diagram runs, the stage is empty: nothing of another diagram binds or shows.
   const { bound, patches, cardContext } = useBoundDiagram({
     index: stage.index,
     xml: opts.diagram?.xml,
@@ -452,6 +453,7 @@ function DrawioMapPanelView(props: ViewProps) {
       data-dmap-patched={result.patches.size}
       data-dmap-warnings={warnings.length}
       data-dmap-hash={opts.diagram.hash}
+      data-dmap-pending={stage.pending ? 'true' : undefined}
       style={{ colorScheme: theme.isDark ? 'dark' : 'light', touchAction }}
       onClick={onClick}
       onKeyDown={onKeyDown}

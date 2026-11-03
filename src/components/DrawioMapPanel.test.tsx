@@ -20,6 +20,7 @@ import { DrawioMapPanel } from './DrawioMapPanel';
 import { currentAddress, requestOpen } from '../editor/popup/popupBus';
 import { writeYaml } from '../options/yamlConfig';
 import { fnv1a } from '../util/hash';
+import { DEFER_ABOVE } from '../stage/useStage';
 import type { Options } from '../types';
 import type { ConfigV4 } from '../model/v4';
 import { demoConfigV4 } from '../fixtures/demo-config';
@@ -2002,5 +2003,125 @@ describe('DrawioMapPanel bindings popup', () => {
       expect(requestOpen(currentAddress(), { kind: 'none' })).toBe(true);
     });
     expect(await screen.findByTestId('dmap-bindings-popup')).toBeTruthy();
+  });
+});
+
+describe('DrawioMapPanel deferred diagram', () => {
+  const linkId = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+  // demo-l3 above the deferral limit, with one label that names the diagram
+  const large = (label: string) =>
+    svg.replace(/<svg([^>]*)>/, `<svg$1><desc>${'x'.repeat(DEFER_ABOVE)}</desc>`).replace('Local subnets', label);
+  const diagram = (text: string) => ({ xml: '<mxfile/>', svg: text, hash: fnv1a(text), updatedAt: '' });
+  const withUrl = (text: string, url: string) =>
+    props({ options: { ...options, diagram: diagram(text), config: withClass('wan', { url }) } });
+  /** One frame, then the timer of the deferred build. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((done) => requestAnimationFrame(() => done(undefined)));
+      await new Promise((done) => setTimeout(done, 0));
+    });
+  const half = (c: HTMLElement) =>
+    c.querySelector(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${linkId}"]`);
+  const hasLabel = (c: HTMLElement, label: string) =>
+    Array.from(c.querySelectorAll('[data-testid="dmap-stage"] text')).some((t) => t.textContent === label);
+  const links = () => screen.getAllByTestId('dmap-card-link').map((l) => l.getAttribute('href'));
+  const panel = () => screen.getByTestId('dmap-panel');
+
+  /** What the DOM holds of a diagram: stage svg, labels, card links, legend entries. */
+  const traces = (c: HTMLElement) => ({
+    svg: c.querySelector('[data-testid="dmap-stage"] svg') !== null,
+    cells: panel().getAttribute('data-dmap-cells'),
+    pending: panel().getAttribute('data-dmap-pending'),
+    labels: Array.from(c.querySelectorAll('text')).filter((t) => /diagram$/.test(t.textContent ?? '')).length,
+    links: screen.queryAllByTestId('dmap-card-link').length,
+    dialog: screen.queryByRole('dialog') !== null,
+    legend: screen.queryAllByTestId('dmap-legend-entry').length,
+  });
+
+  it('shows nothing of the old diagram while the new one builds, then the new stage with its binding', async () => {
+    const old = large('old-diagram');
+    const fresh = large('new-diagram');
+    const r = render(<DrawioMapPanel {...withUrl(old, 'https://example.org/old-diagram')} />);
+    // before the first build: the same blank
+    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    await settle();
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    expect(panel().getAttribute('data-dmap-pending')).toBeNull();
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/old-diagram');
+    const binds = work.binds;
+
+    r.rerender(<DrawioMapPanel {...withUrl(fresh, 'https://example.org/new-diagram')} renderCounter={1} />);
+    // the blank again: no stage, no label, no card, no link of either diagram
+    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(fresh));
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
+
+    await settle();
+    await waitFor(() => expect(panel().getAttribute('data-dmap-pending')).toBeNull());
+    expect(hasLabel(r.container, 'new-diagram')).toBe(true);
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
+    expect(work.binds).toBe(binds + 2); // the empty stage, then the new one
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/new-diagram');
+    expect(links()).not.toContain('https://example.org/old-diagram');
+  });
+
+  it('never shows a diagram whose build completes in the batch that requests the next one', async () => {
+    const a = large('a-diagram');
+    const b = large('b-diagram');
+    const c = large('c-diagram');
+    const r = render(<DrawioMapPanel {...withUrl(a, 'https://example.org/a')} />);
+    await settle();
+    await waitFor(() => expect(hasLabel(r.container, 'a-diagram')).toBe(true));
+    r.rerender(<DrawioMapPanel {...withUrl(b, 'https://example.org/b')} renderCounter={1} />);
+    await act(async () => {
+      await new Promise((done) => requestAnimationFrame(() => done(undefined)));
+      await new Promise((done) => setTimeout(done, 0));
+      r.rerender(<DrawioMapPanel {...withUrl(c, 'https://example.org/c')} renderCounter={2} />);
+    });
+    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(c));
+    await settle();
+    await waitFor(() => expect(panel().getAttribute('data-dmap-pending')).toBeNull());
+    expect(hasLabel(r.container, 'c-diagram')).toBe(true);
+    expect(hasLabel(r.container, 'b-diagram')).toBe(false);
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/c');
+  });
+
+  it('shows a new large diagram whose saved hash equals the hash of the old one', async () => {
+    const old = large('old-diagram');
+    const fresh = large('new-diagram');
+    const sameHash = (text: string) => ({ xml: '<mxfile/>', svg: text, hash: 'collision', updatedAt: '' });
+    const at = (text: string) => props({ options: { ...options, diagram: sameHash(text) } });
+    const r = render(<DrawioMapPanel {...at(old)} />);
+    await settle();
+    await waitFor(() => expect(hasLabel(r.container, 'old-diagram')).toBe(true));
+    r.rerender(<DrawioMapPanel {...at(fresh)} renderCounter={1} />);
+    expect(panel().getAttribute('data-dmap-pending')).toBe('true');
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
+    await settle();
+    await waitFor(() => expect(hasLabel(r.container, 'new-diagram')).toBe(true));
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
+  });
+
+  it('binds a config change for the same large diagram at once', async () => {
+    const old = large('old-diagram');
+    const r = render(<DrawioMapPanel {...withUrl(old, 'https://example.org/old-diagram')} />);
+    await settle();
+    await waitFor(() => expect(half(r.container)).not.toBeNull());
+    const binds = work.binds;
+    r.rerender(<DrawioMapPanel {...withUrl(old, 'https://example.org/new-url')} renderCounter={1} />);
+    expect(panel().getAttribute('data-dmap-pending')).toBeNull();
+    expect(work.binds).toBe(binds + 1);
+    fireEvent.click(half(r.container)!);
+    await screen.findByRole('dialog');
+    expect(links()).toContain('https://example.org/new-url');
   });
 });
