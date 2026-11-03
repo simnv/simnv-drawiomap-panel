@@ -46,6 +46,20 @@ describe('the states of a check', () => {
   });
 });
 
+describe('array', () => {
+  it('checks each index up to the length: a hole reads as undefined and gives "Required"', () => {
+    const c = array(letters);
+    expect(check(c, Object.assign(new Array(2), { 0: 'ab' }))).toEqual({
+      issues: [{ path: ['at', 1], message: 'Required' }],
+    });
+    expect(check(c, Object.assign(new Array(2), { 1: 'ab' }))).toEqual({
+      issues: [{ path: ['at', 0], message: 'Required' }],
+    });
+    expect(check(c, new Array(1))).toEqual({ issues: [{ path: ['at', 0], message: 'Required' }] });
+    expect(check(c, ['ab', 'cd'])).toEqual({ value: ['ab', 'cd'] });
+  });
+});
+
 describe('union', () => {
   const c = union<string | string[]>(letters, array(letters, true));
 

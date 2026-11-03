@@ -117,7 +117,10 @@ export const withDefault =
 
 export const unknown: Check<unknown> = (data) => data;
 
-/** A list; `atLeastOne` rejects an empty list. An element of the wrong type makes the list INVALID. */
+/**
+ * A list; `atLeastOne` rejects an empty list. An element of the wrong type makes the list INVALID. Each index up to the
+ * length is checked, so a hole of a sparse list reads as undefined and gives "Required", as in zod.
+ */
 export const array =
   <T>(item: Check<T>, atLeastOne = false): Check<T[]> =>
   (data, path, ctx) => {
@@ -129,14 +132,14 @@ export const array =
     }
     const out: T[] = [];
     let invalid = false;
-    data.forEach((element, index) => {
-      const value = item(element, [...path, index], ctx);
+    for (let index = 0; index < data.length; index++) {
+      const value = item(data[index], [...path, index], ctx);
       if (value === INVALID) {
         invalid = true;
       } else {
         out.push(value);
       }
-    });
+    }
     return invalid ? INVALID : out;
   };
 

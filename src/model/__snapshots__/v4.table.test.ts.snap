@@ -814,6 +814,418 @@ exports[`parseConfig over the config table > chain: items first, then the chain 
 }
 `;
 
+exports[`parseConfig over the config table > chart history: decimals above 10 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Number must be less than or equal to 10",
+          "path": "classes.a.chart.decimals",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Number must be less than or equal to 10",
+      "path": "classes.a.chart.decimals",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart history: match a string 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected object, received string",
+          "path": "classes.a.chart.match",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected object, received string",
+      "path": "classes.a.chart.match",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart history: min a string and max a string 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "classes.a.chart.min",
+        },
+        {
+          "kind": "schema",
+          "message": "Expected number, received string",
+          "path": "classes.a.chart.max",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "classes.a.chart.min",
+    },
+    {
+      "kind": "schema",
+      "message": "Expected number, received string",
+      "path": "classes.a.chart.max",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart history: min infinite and max infinite 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Number must be finite",
+          "path": "classes.a.chart.min",
+        },
+        {
+          "kind": "schema",
+          "message": "Number must be finite",
+          "path": "classes.a.chart.max",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Number must be finite",
+      "path": "classes.a.chart.min",
+    },
+    {
+      "kind": "schema",
+      "message": "Number must be finite",
+      "path": "classes.a.chart.max",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart updown: down empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "classes.a.chart.down",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "classes.a.chart.down",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart updown: min is an unknown key 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "min".",
+          "path": "classes.a.chart.min",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "min".",
+      "path": "classes.a.chart.min",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart updown: unit a list and decimals a string 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected string, received array",
+          "path": "classes.a.chart.unit",
+        },
+        {
+          "kind": "schema",
+          "message": "Expected number, received string",
+          "path": "classes.a.chart.decimals",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected string, received array",
+      "path": "classes.a.chart.unit",
+    },
+    {
+      "kind": "schema",
+      "message": "Expected number, received string",
+      "path": "classes.a.chart.decimals",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart updown: up missing 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.chart.up",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.chart.up",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart value: label a number and reduce a number 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected 'sum' | 'max' | 'mean', received number",
+          "path": "classes.a.chart.reduce",
+        },
+        {
+          "kind": "schema",
+          "message": "Expected string, received number",
+          "path": "classes.a.chart.label",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected 'sum' | 'max' | 'mean', received number",
+      "path": "classes.a.chart.reduce",
+    },
+    {
+      "kind": "schema",
+      "message": "Expected string, received number",
+      "path": "classes.a.chart.label",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart value: match empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "match must not be empty",
+          "path": "classes.a.chart.match",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "match must not be empty",
+      "path": "classes.a.chart.match",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart value: query empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "classes.a.chart.query",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "classes.a.chart.query",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart value: query missing 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.chart.query",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.chart.query",
+    },
+  ],
+}
+`;
+
 exports[`parseConfig over the config table > chart: a list 1`] = `
 {
   "config": {
@@ -902,6 +1314,37 @@ exports[`parseConfig over the config table > chart: history with no query 1`] = 
       "kind": "schema",
       "message": "Required",
       "path": "classes.a.chart.query",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart: kind a number 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid discriminator value. Expected 'history' | 'value' | 'updown'",
+          "path": "classes.a.chart.kind",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid discriminator value. Expected 'history' | 'value' | 'updown'",
+      "path": "classes.a.chart.kind",
     },
   ],
 }
@@ -1025,6 +1468,37 @@ exports[`parseConfig over the config table > chart: not an object 1`] = `
     {
       "kind": "schema",
       "message": "Expected object, received string",
+      "path": "classes.a.chart",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > chart: null 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected object, received null",
+          "path": "classes.a.chart",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected object, received null",
       "path": "classes.a.chart",
     },
   ],
@@ -2176,6 +2650,53 @@ exports[`parseConfig over the config table > class: urlTitle not a string 1`] = 
 }
 `;
 
+exports[`parseConfig over the config table > drilldown: an empty label is valid 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {
+        "rows": [
+          {
+            "kind": "drilldown",
+            "label": "",
+            "url": "/d",
+          },
+        ],
+      },
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > drilldown: an empty url is valid 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {
+        "rows": [
+          {
+            "kind": "drilldown",
+            "url": "",
+          },
+        ],
+      },
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
 exports[`parseConfig over the config table > match: a bad attribute name 1`] = `
 {
   "config": {
@@ -3021,6 +3542,289 @@ exports[`parseConfig over the config table > match: two bad keys, in input order
 }
 `;
 
+exports[`parseConfig over the config table > metadata: label not a string 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected string, received number",
+          "path": "classes.a.rows[0].label",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected string, received number",
+      "path": "classes.a.rows[0].label",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > metadata: label null 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected string, received null",
+          "path": "classes.a.rows[0].label",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected string, received null",
+      "path": "classes.a.rows[0].label",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a Date as a chart 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid discriminator value. Expected 'history' | 'value' | 'updown'",
+          "path": "classes.a.chart.kind",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid discriminator value. Expected 'history' | 'value' | 'updown'",
+      "path": "classes.a.chart.kind",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a Date as a class reads as an empty class 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {},
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a Map as an override reads as an empty override 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {
+      "o": {},
+    },
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a Set as text reads as an empty text 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.text.query",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.text.query",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a boxed number as rows 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected array, received object",
+          "path": "classes.a.rows",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected array, received object",
+      "path": "classes.a.rows",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a boxed string as a matcher reads as an object 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "classes.a.match.job",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "classes.a.match.job",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a class with a custom prototype reads only its own keys 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {
+        "status": "up",
+      },
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a class with a null prototype 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "colour".",
+          "path": "classes.a.colour",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "colour".",
+      "path": "classes.a.colour",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > non-plain: a null-prototype class record 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {},
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
 exports[`parseConfig over the config table > override: a bad arrow on an id with a quote 1`] = `
 {
   "config": {
@@ -3145,6 +3949,130 @@ exports[`parseConfig over the config table > override: an unknown key on an id w
 }
 `;
 
+exports[`parseConfig over the config table > override: arrow a number 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected 'point' | 'triangle' | 'none', received number",
+          "path": "overrides.o.arrow",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected 'point' | 'triangle' | 'none', received number",
+      "path": "overrides.o.arrow",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: capacity empty string 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "overrides.o.capacity",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "overrides.o.capacity",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: capacity with an unknown direction 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "overrides.o.capacity",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "overrides.o.capacity",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: chart kind missing 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid discriminator value. Expected 'history' | 'value' | 'updown'",
+          "path": "overrides.o.chart.kind",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid discriminator value. Expected 'history' | 'value' | 'updown'",
+      "path": "overrides.o.chart.kind",
+    },
+  ],
+}
+`;
+
 exports[`parseConfig over the config table > override: extends is an unknown key 1`] = `
 {
   "config": {
@@ -3171,6 +4099,130 @@ exports[`parseConfig over the config table > override: extends is an unknown key
       "kind": "schema",
       "message": "Unknown key "extends".",
       "path": "overrides.cell-1.extends",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: freshness bad 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Use a duration such as 5m, or a cadence factor such as 3x.",
+          "path": "overrides.o.freshness",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Use a duration such as 5m, or a cadence factor such as 3x.",
+      "path": "overrides.o.freshness",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: linkLabel wrong 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid enum value. Expected 'none' | 'value' | 'percent', received 'both'",
+          "path": "overrides.o.linkLabel",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid enum value. Expected 'none' | 'value' | 'percent', received 'both'",
+      "path": "overrides.o.linkLabel",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: match a list 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected object, received array",
+          "path": "overrides.o.match",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected object, received array",
+      "path": "overrides.o.match",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: missing wrong 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid enum value. Expected 'nodata' | 'down', received 'gone'",
+          "path": "overrides.o.missing",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid enum value. Expected 'nodata' | 'down', received 'gone'",
+      "path": "overrides.o.missing",
     },
   ],
 }
@@ -3268,6 +4320,564 @@ exports[`parseConfig over the config table > override: one good, one bad 1`] = `
       "kind": "schema",
       "message": "Expected string, received number",
       "path": "overrides.bad.status",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: rows not a list 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected array, received string",
+          "path": "overrides.o.rows",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected array, received string",
+      "path": "overrides.o.rows",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: several bad fields, in shape order 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "match must not be empty",
+          "path": "overrides.o.match",
+        },
+        {
+          "kind": "schema",
+          "message": "Expected string, received number",
+          "path": "overrides.o.status",
+        },
+        {
+          "kind": "schema",
+          "message": "Invalid enum value. Expected 'point' | 'triangle' | 'none', received 'x'",
+          "path": "overrides.o.arrow",
+        },
+        {
+          "kind": "schema",
+          "message": "Unknown key "zeta".",
+          "path": "overrides.o.zeta",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "match must not be empty",
+      "path": "overrides.o.match",
+    },
+    {
+      "kind": "schema",
+      "message": "Expected string, received number",
+      "path": "overrides.o.status",
+    },
+    {
+      "kind": "schema",
+      "message": "Invalid enum value. Expected 'point' | 'triangle' | 'none', received 'x'",
+      "path": "overrides.o.arrow",
+    },
+    {
+      "kind": "schema",
+      "message": "Unknown key "zeta".",
+      "path": "overrides.o.zeta",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: status empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "overrides.o.status",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "overrides.o.status",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: text decimals above 10 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Number must be less than or equal to 10",
+          "path": "overrides.o.text.decimals",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Number must be less than or equal to 10",
+      "path": "overrides.o.text.decimals",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: text query missing 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "overrides.o.text.query",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "overrides.o.text.query",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: up and down empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "overrides.o.up",
+        },
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "overrides.o.down",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "overrides.o.up",
+    },
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "overrides.o.down",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > override: url and urlTitle not strings 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected string, received number",
+          "path": "overrides.o.url",
+        },
+        {
+          "kind": "schema",
+          "message": "Expected string, received number",
+          "path": "overrides.o.urlTitle",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected string, received number",
+      "path": "overrides.o.url",
+    },
+    {
+      "kind": "schema",
+      "message": "Expected string, received number",
+      "path": "overrides.o.urlTitle",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: constructor is an unknown chart key 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "constructor".",
+          "path": "classes.a.chart.constructor",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "constructor".",
+      "path": "classes.a.chart.constructor",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: constructor is an unknown class key 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "constructor".",
+          "path": "classes.a.constructor",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "constructor".",
+      "path": "classes.a.constructor",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: constructor is an unknown text key 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "constructor".",
+          "path": "classes.a.text.constructor",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "constructor".",
+      "path": "classes.a.text.constructor",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: extends constructor with no such class 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {
+        "extends": "constructor",
+      },
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "cls": "a",
+          "kind": "class-unknown-parent",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "cls": "a",
+      "kind": "class-unknown-parent",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: hasOwnProperty is an unknown envelope key 1`] = `
+{
+  "config": null,
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "hasOwnProperty".",
+      "path": "hasOwnProperty",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: prototype is an unknown override key 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "prototype".",
+          "path": "overrides.o.prototype",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "prototype".",
+      "path": "overrides.o.prototype",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: prototype is an unknown row key 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "prototype".",
+          "path": "classes.a.rows[0].prototype",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "prototype".",
+      "path": "classes.a.rows[0].prototype",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: the attribute names constructor and prototype are valid names 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {
+        "match": {
+          "constructor": "job",
+          "prototype": "instance",
+        },
+      },
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: the class names constructor and prototype are valid names 1`] = `
+{
+  "config": {
+    "classes": {
+      "constructor": {},
+      "prototype": {
+        "extends": "constructor",
+      },
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: the override ids constructor and prototype are valid ids 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {
+      "constructor": {},
+      "prototype": {},
+    },
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > proto-name: toString is an unknown capacity key 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Unknown key "toString".",
+          "path": "classes.a.capacity.toString",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Unknown key "toString".",
+      "path": "classes.a.capacity.toString",
     },
   ],
 }
@@ -3969,6 +5579,264 @@ exports[`parseConfig over the config table > root: version null 1`] = `
       "kind": "schema",
       "message": "Invalid literal value, expected 4",
       "path": "version",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row updown: decimals a float 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected integer, received float",
+          "path": "classes.a.rows[0].decimals",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected integer, received float",
+      "path": "classes.a.rows[0].decimals",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row updown: down missing and up empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "classes.a.rows[0].up",
+        },
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.rows[0].down",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "classes.a.rows[0].up",
+    },
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.rows[0].down",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row updown: match empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "match must not be empty",
+          "path": "classes.a.rows[0].match",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "match must not be empty",
+      "path": "classes.a.rows[0].match",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row updown: reduce a number 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected 'sum' | 'max' | 'mean', received number",
+          "path": "classes.a.rows[0].reduce",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected 'sum' | 'max' | 'mean', received number",
+      "path": "classes.a.rows[0].reduce",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row value: decimals negative 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Number must be greater than or equal to 0",
+          "path": "classes.a.rows[0].decimals",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Number must be greater than or equal to 0",
+      "path": "classes.a.rows[0].decimals",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row value: label a list 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected string, received array",
+          "path": "classes.a.rows[0].label",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected string, received array",
+      "path": "classes.a.rows[0].label",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row value: match a number 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected object, received number",
+          "path": "classes.a.rows[0].match",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected object, received number",
+      "path": "classes.a.rows[0].match",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > row value: query empty 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "String must contain at least 1 character(s)",
+          "path": "classes.a.rows[0].query",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "String must contain at least 1 character(s)",
+      "path": "classes.a.rows[0].query",
     },
   ],
 }
@@ -5096,6 +6964,448 @@ exports[`parseConfig over the config table > row: value with no query and an unk
       "kind": "schema",
       "message": "Unknown key "min".",
       "path": "classes.a.rows[0].min",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > show: an empty unit is valid 1`] = `
+{
+  "config": {
+    "classes": {
+      "a": {
+        "rows": [
+          {
+            "kind": "value",
+            "label": "",
+            "query": "q",
+            "unit": "",
+          },
+        ],
+        "text": {
+          "query": "q",
+          "unit": "",
+        },
+      },
+    },
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [],
+  "report": [],
+}
+`;
+
+exports[`parseConfig over the config table > show: unit not a string on a row 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Expected string, received number",
+          "path": "classes.a.rows[0].unit",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Expected string, received number",
+      "path": "classes.a.rows[0].unit",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: a match list of one hole 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "classes.a.match.job",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "classes.a.match.job",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: a match list with a hole after a matcher 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "classes.a.match.job",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "classes.a.match.job",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: a match list with a hole before a matcher 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "classes.a.match.job",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "classes.a.match.job",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: a match list with a hole between a matcher and a bad matcher 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "classes.a.match.job",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "classes.a.match.job",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: a row match list with a hole 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "classes.a.rows[0].match.job",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "classes.a.rows[0].match.job",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: override match list with a hole 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Invalid input",
+          "path": "overrides.o.match.job",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Invalid input",
+      "path": "overrides.o.match.job",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: override rows with a hole 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [],
+  "invalidOverrides": [
+    [
+      "o",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "overrides.o.rows[0]",
+        },
+      ],
+    ],
+  ],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "overrides.o.rows[0]",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: rows of one hole 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.rows[0]",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.rows[0]",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: rows with a hole and a bad row 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.rows[0]",
+        },
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.rows[1].query",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.rows[0]",
+    },
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.rows[1].query",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: rows with a hole at the end 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.rows[1]",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.rows[1]",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: rows with a hole before a row 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.rows[0]",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.rows[0]",
+    },
+  ],
+}
+`;
+
+exports[`parseConfig over the config table > sparse: rows with a hole in the middle 1`] = `
+{
+  "config": {
+    "classes": {},
+    "freshness": "3x",
+    "overrides": {},
+    "version": 4,
+  },
+  "invalidClasses": [
+    [
+      "a",
+      [
+        {
+          "kind": "schema",
+          "message": "Required",
+          "path": "classes.a.rows[1]",
+        },
+      ],
+    ],
+  ],
+  "invalidOverrides": [],
+  "report": [
+    {
+      "kind": "schema",
+      "message": "Required",
+      "path": "classes.a.rows[1]",
     },
   ],
 }

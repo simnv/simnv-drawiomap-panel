@@ -12,6 +12,8 @@ const v4 = (classes: unknown, extra: Record<string, unknown> = {}) => ({ version
 const cls = (body: unknown) => v4({ a: body });
 const row = (body: unknown) => cls({ rows: [body] });
 const json = (text: string): unknown => JSON.parse(text);
+/** A list with holes: `length` slots, only the given indexes set. A hole reads as undefined. */
+const holes = (length: number, items: Record<number, unknown>): unknown[] => Object.assign(new Array(length), items);
 
 // prettier-ignore
 const cases: Array<[name: string, input: unknown]> = [
@@ -266,6 +268,95 @@ const cases: Array<[name: string, input: unknown]> = [
   ['chain: a child of a cycle', v4({ a: { extends: 'b' }, b: { extends: 'a' }, c: { extends: 'a' } })],
   ['chain: items first, then the chain', v4({ bad: { colour: 'red' }, child: { extends: 'bad' } }, { overrides: { o: { colour: 'red' } } })],
   ['chain: a child of a class with a bad extends name', v4({ a: { extends: '1bad' }, b: { extends: 'a' } })],
+
+  // ---- lists with holes (a hole reads as undefined; JSON and YAML never give one) ----
+  ['sparse: a match list of one hole', cls({ match: { job: holes(1, {}) } })],
+  ['sparse: a match list with a hole before a matcher', cls({ match: { job: holes(2, { 1: 'job' }) } })],
+  ['sparse: a match list with a hole after a matcher', cls({ match: { job: holes(2, { 0: 'job' }) } })],
+  ['sparse: a match list with a hole between a matcher and a bad matcher', cls({ match: { job: holes(3, { 0: 'job', 2: 'a b' }) } })],
+  ['sparse: rows of one hole', cls({ rows: holes(1, {}) })],
+  ['sparse: rows with a hole before a row', cls({ rows: holes(2, { 1: { kind: 'value', query: 'q' } }) })],
+  ['sparse: rows with a hole in the middle', cls({ rows: holes(3, { 0: { kind: 'value', query: 'q' }, 2: { kind: 'value', query: 'q' } }) })],
+  ['sparse: rows with a hole at the end', cls({ rows: holes(2, { 0: { kind: 'value', query: 'q' } }) })],
+  ['sparse: rows with a hole and a bad row', cls({ rows: holes(2, { 1: { kind: 'value' } }) })],
+  ['sparse: override rows with a hole', v4({}, { overrides: { o: { rows: holes(2, { 1: { kind: 'value', query: 'q' } }) } } })],
+  ['sparse: override match list with a hole', v4({}, { overrides: { o: { match: { job: holes(2, { 0: 'job' }) } } } })],
+  ['sparse: a row match list with a hole', row({ kind: 'history', query: 'q', match: { job: holes(1, {}) } })],
+
+  // ---- objects that are not plain (the parse reads only their own enumerable keys) ----
+  ['non-plain: a Date as a class reads as an empty class', v4({ a: new Date(0) })],
+  ['non-plain: a Map as an override reads as an empty override', v4({}, { overrides: { o: new Map([['url', '/d']]) } })],
+  ['non-plain: a Set as text reads as an empty text', cls({ text: new Set(['q']) })],
+  ['non-plain: a boxed string as a matcher reads as an object', cls({ match: { job: Object('job') } })],
+  ['non-plain: a boxed number as rows', cls({ rows: Object(1) })],
+  ['non-plain: a Date as a chart', cls({ chart: new Date(0) })],
+  ['non-plain: a class with a custom prototype reads only its own keys', v4({ a: Object.assign(Object.create({ colour: 'red' }), { status: 'up' }) })],
+  ['non-plain: a class with a null prototype', v4({ a: Object.assign(Object.create(null), { status: 'up', colour: 'red' }) })],
+  ['non-plain: a null-prototype class record', v4(Object.assign(Object.create(null), { a: {} }))],
+
+  // ---- prototype names at each depth ----
+  ['proto-name: the class names constructor and prototype are valid names', v4({ constructor: {}, prototype: { extends: 'constructor' } })],
+  ['proto-name: the override ids constructor and prototype are valid ids', v4({}, { overrides: { constructor: {}, prototype: {} } })],
+  ['proto-name: the attribute names constructor and prototype are valid names', cls({ match: { constructor: 'job', prototype: 'instance' } })],
+  ['proto-name: constructor is an unknown class key', cls({ constructor: 1 })],
+  ['proto-name: prototype is an unknown override key', v4({}, { overrides: { o: { prototype: 1 } } })],
+  ['proto-name: constructor is an unknown text key', cls({ text: { query: 'q', constructor: 1 } })],
+  ['proto-name: prototype is an unknown row key', row({ kind: 'value', query: 'q', prototype: 1 })],
+  ['proto-name: constructor is an unknown chart key', cls({ chart: { kind: 'value', query: 'q', constructor: 1 } })],
+  ['proto-name: toString is an unknown capacity key', cls({ capacity: { a2b: 'x', b2a: 'y', toString: 'z' } })],
+  ['proto-name: hasOwnProperty is an unknown envelope key', v4({}, { hasOwnProperty: 1 })],
+  ['proto-name: extends constructor with no such class', cls({ extends: 'constructor' })],
+
+  // ---- more string positions ----
+  ['metadata: label not a string', row({ kind: 'metadata', label: 5, text: 't' })],
+  ['metadata: label null', row({ kind: 'metadata', label: null, text: 't' })],
+  ['drilldown: an empty label is valid', row({ kind: 'drilldown', label: '', url: '/d' })],
+  ['drilldown: an empty url is valid', row({ kind: 'drilldown', url: '' })],
+  ['show: an empty unit is valid', cls({ text: { query: 'q', unit: '' }, rows: [{ kind: 'value', query: 'q', unit: '', label: '' }] })],
+  ['show: unit not a string on a row', row({ kind: 'value', query: 'q', unit: 1 })],
+
+  // ---- each chart field in its position ----
+  ['chart value: query empty', cls({ chart: { kind: 'value', query: '' } })],
+  ['chart value: query missing', cls({ chart: { kind: 'value' } })],
+  ['chart value: label a number and reduce a number', cls({ chart: { kind: 'value', query: 'q', label: 1, reduce: 2 } })],
+  ['chart value: match empty', cls({ chart: { kind: 'value', query: 'q', match: {} } })],
+  ['chart updown: down empty', cls({ chart: { kind: 'updown', up: 'u', down: '' } })],
+  ['chart updown: up missing', cls({ chart: { kind: 'updown', down: 'd' } })],
+  ['chart updown: unit a list and decimals a string', cls({ chart: { kind: 'updown', up: 'u', down: 'd', unit: [], decimals: '1' } })],
+  ['chart updown: min is an unknown key', cls({ chart: { kind: 'updown', up: 'u', down: 'd', min: 0 } })],
+  ['chart history: min a string and max a string', cls({ chart: { kind: 'history', query: 'q', min: 'x', max: 'y' } })],
+  ['chart history: min infinite and max infinite', cls({ chart: { kind: 'history', query: 'q', min: -Infinity, max: Infinity } })],
+  ['chart history: decimals above 10', cls({ chart: { kind: 'history', query: 'q', decimals: 11 } })],
+  ['chart history: match a string', cls({ chart: { kind: 'history', query: 'q', match: 'job' } })],
+  ['chart: kind a number', cls({ chart: { kind: 1 } })],
+  ['chart: null', cls({ chart: null })],
+
+  // ---- each override field in its position ----
+  ['override: match a list', v4({}, { overrides: { o: { match: [] } } })],
+  ['override: status empty', v4({}, { overrides: { o: { status: '' } } })],
+  ['override: missing wrong', v4({}, { overrides: { o: { missing: 'gone' } } })],
+  ['override: text query missing', v4({}, { overrides: { o: { text: {} } } })],
+  ['override: text decimals above 10', v4({}, { overrides: { o: { text: { query: 'q', decimals: 11 } } } })],
+  ['override: rows not a list', v4({}, { overrides: { o: { rows: 'x' } } })],
+  ['override: chart kind missing', v4({}, { overrides: { o: { chart: { query: 'q' } } } })],
+  ['override: freshness bad', v4({}, { overrides: { o: { freshness: '5' } } })],
+  ['override: url and urlTitle not strings', v4({}, { overrides: { o: { url: 1, urlTitle: 2 } } })],
+  ['override: up and down empty', v4({}, { overrides: { o: { up: '', down: '' } } })],
+  ['override: capacity with an unknown direction', v4({}, { overrides: { o: { capacity: { up: 'x' } } } })],
+  ['override: capacity empty string', v4({}, { overrides: { o: { capacity: '' } } })],
+  ['override: linkLabel wrong', v4({}, { overrides: { o: { linkLabel: 'both' } } })],
+  ['override: arrow a number', v4({}, { overrides: { o: { arrow: 1 } } })],
+  ['override: several bad fields, in shape order', v4({}, { overrides: { o: { arrow: 'x', zeta: 1, match: {}, status: 1 } } })],
+
+  // ---- each value and updown row field in its position ----
+  ['row value: query empty', row({ kind: 'value', query: '' })],
+  ['row value: match a number', row({ kind: 'value', query: 'q', match: 5 })],
+  ['row value: label a list', row({ kind: 'value', query: 'q', label: [] })],
+  ['row value: decimals negative', row({ kind: 'value', query: 'q', decimals: -1 })],
+  ['row updown: down missing and up empty', row({ kind: 'updown', up: '' })],
+  ['row updown: reduce a number', row({ kind: 'updown', up: 'u', down: 'd', reduce: 1 })],
+  ['row updown: match empty', row({ kind: 'updown', up: 'u', down: 'd', match: {} })],
+  ['row updown: decimals a float', row({ kind: 'updown', up: 'u', down: 'd', decimals: 0.5 })],
 ];
 
 describe('parseConfig over the config table', () => {
