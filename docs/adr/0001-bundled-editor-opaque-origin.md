@@ -36,7 +36,7 @@ the panel only through a `MessagePort` that a token in the srcdoc binds. The plu
   `tests/editor.spec.ts` checks this on each Grafana version.
 - Good: no external service and no extra container. The editor works offline.
 - Good: the editor works in the frontend sandbox, with CSP and with a sub-path (`docs/security.md`, "Test results").
-- Bad: the plugin zip is about 21 MB, most of it draw.io.
+- Bad: the plugin zip is about 19 MB, most of it draw.io (about 21 MB before the vendor script removed the files that the embedded editor never loads).
 - Bad: draw.io cannot keep its settings between two opens (no storage in an opaque origin).
 - Bad: the vendor script patches `js/bootstrap.js` and converts text resources to scripts. A new draw.io release can
   need new patches.

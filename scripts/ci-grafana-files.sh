@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepares the files for the Grafana step of .woodpecker/e2e.yaml. The CI steps have no bind mounts: Grafana reads the
+# Prepares the files for the Grafana steps of .woodpecker/ci.yaml. The CI steps have no bind mounts: Grafana reads the
 # plugin and the provisioning from the workspace (GF_PATHS_PLUGINS, GF_PATHS_PROVISIONING).
 #   ci/plugins/simnv-drawiomap-panel   copy of dist/ (run npm run build first)
 #   ci/provisioning                    copy of provisioning/, with the dashboard path in the workspace
