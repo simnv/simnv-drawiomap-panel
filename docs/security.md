@@ -28,7 +28,7 @@ same-origin fallback would only add risk.
 | `sandbox="allow-scripts allow-popups allow-downloads allow-modals"` | No `allow-same-origin`: the document has an opaque origin (`window.origin === 'null'`). No `allow-top-navigation`, no `allow-popups-to-escape-sandbox`, no `allow-forms`. | `src/editor/target.ts` (`EDITOR_SANDBOX`) |
 | `<base href=".../public/plugins/simnv-drawiomap-panel/drawio/">` | Absolute URLs for all draw.io files. Scripts, styles and images load cross-origin. Grafana sends no `Cross-Origin-Resource-Policy`, so the browser does not block them. | `src/editor/target.ts` |
 | CSP `<meta>` | draw.io can load files only from `drawio/` (plus `data:` and `blob:`). Frames, objects and forms are blocked. The frame also inherits the Grafana CSP. | `src/editor/target.ts` (`editorCsp`) |
-| Text resources as scripts | XHR from an opaque origin to Grafana fails (no CORS). The vendor script converts `resources/dia*.txt` to `resources/dia*.txt.js`. The shim loads the script file when draw.io requests the text file, and finishes the XHR without a network request. The srcdoc loads `resources/dia.txt.js` before draw.io asks for it; the other languages load on demand. | `scripts/vendor-drawio.sh`, `src/editor/drawio-shim.js` |
+| Text resources as scripts | XHR from an opaque origin to Grafana fails (no CORS). The vendor script converts `resources/dia*.txt` to `resources/dia*.txt.js`. The shim loads the script file when draw.io requests the text file, and finishes the XHR without a network request. The srcdoc loads `resources/dia.txt.js` before draw.io asks for it. It is the only language file: the vendor script removes the other 58 (see Trade-offs). | `scripts/vendor-drawio.sh`, `src/editor/drawio-shim.js` |
 | Message channel | See below. | `src/editor/protocol.ts`, `src/editor/drawio-shim.js`, `src/editor/DrawioModal.tsx` |
 | Image files for the export | The frame cannot read image bytes of `drawio/img` (no CORS), but the export must embed images as `data:` URLs. The frame asks the panel through the channel. The panel reads only image files (png, gif, jpg, svg, webp) inside `drawio/`, without credentials and without redirects, up to 10 MB. | `src/editor/files.ts` |
 
@@ -111,8 +111,17 @@ step needs a new `SANITIZER_VERSION` (a test pins a digest of the options). Test
 
 - draw.io cannot save its settings (`.drawio-config`) between two opens: the opaque origin has no localStorage.
   Before, draw.io wrote them into the Grafana localStorage.
-- The UI language is English. draw.io uses the browser language only on its own hosts. The other 60 languages load
-  on demand (Extras > Language or a `lang` parameter), tested with `de`.
+- The UI language is English. draw.io uses the browser language only on its own hosts. The language menu (Extras >
+  Language) exists only when `localStorage` works, and the opaque-origin frame has none (`tests/editor.spec.ts` checks
+  this). The plugin never sets `lang`. So the vendor script removes the other language files
+  (`resources/dia_<lang>.txt`, 8 MB). A future `lang` parameter needs them back: run `scripts/vendor-drawio.sh --full`
+  or change the script.
+- The vendor script also removes standalone copies that only `dev=1` loads (`mxgraph/mxClient.js`, `js/elk`,
+  `js/mermaid`, `js/orgchart`) and source folders whose code is already inside `js/app.min.js` or
+  `js/extensions.min.js` (`js/libavoid-js`, `js/vsd`, `js/jszip`, `js/deflate`, `js/sanitizer`, `js/cryptojs`,
+  `js/rough`, `js/freehand`, `js/spin`), and jQuery (Trello only). The LGPL `LICENSE` of libavoid stays. A file goes
+  into this list only after a check that no code path of the embed loads it: ELK and Mermaid layouts, org chart,
+  rough (sketch) style, freehand, VSDX import and PNG/SVG/XML export gave no 404 and no new console error.
 - Images in diagrams: the export embeds the image files of `drawio/` through the panel. Images on other hosts stay as
   URLs; the panel sanitizer and the CSP decide about them.
 - The panel answers file requests of the frame. This adds code on the panel side. The URL check uses the URL parser
