@@ -51,6 +51,8 @@ vi.hoisted(() => {
 });
 
 const svg = readFileSync(resolve(__dirname, '../fixtures/authoring.svg'), 'utf8');
+/** The diagram of a saved hash: the identity of a stage is its svg text, so another hash is another text. */
+const svgFor = (hash: string) => (hash === 'h1' ? svg : svg.replace('</svg>', `<desc>${hash}</desc></svg>`));
 const LINK_WIDTH = { min: 2, max: 10 };
 const NONE: StageSelection = { selected: [], affected: [], highlight: [] };
 
@@ -88,7 +90,7 @@ function panelProps(hash: string): PanelProps<Options> {
     width: 800,
     height: 600,
     options: {
-      diagram: { xml: '<mxfile/>', svg, hash, updatedAt: '2026-10-17T00:00:00Z' },
+      diagram: { xml: '<mxfile/>', svg: svgFor(hash), hash, updatedAt: '2026-10-17T00:00:00Z' },
       zoom: { mode: 'fit', percent: 100, wheel: false, pan: false },
       linkWidth: LINK_WIDTH,
     },
@@ -113,7 +115,7 @@ function panelProps(hash: string): PanelProps<Options> {
 
 function Popup({ patches, hash }: { patches: PatchMap; hash: string }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const stage = useStage(ref, svg, hash);
+  const stage = useStage(ref, svgFor(hash));
   return (
     <DiagramStage
       stage={stage}

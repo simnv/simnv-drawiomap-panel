@@ -2095,6 +2095,22 @@ describe('DrawioMapPanel deferred diagram', () => {
     expect(links()).toContain('https://example.org/c');
   });
 
+  it('shows a new large diagram whose saved hash equals the hash of the old one', async () => {
+    const old = large('old-diagram');
+    const fresh = large('new-diagram');
+    const sameHash = (text: string) => ({ xml: '<mxfile/>', svg: text, hash: 'collision', updatedAt: '' });
+    const at = (text: string) => props({ options: { ...options, diagram: sameHash(text) } });
+    const r = render(<DrawioMapPanel {...at(old)} />);
+    await settle();
+    await waitFor(() => expect(hasLabel(r.container, 'old-diagram')).toBe(true));
+    r.rerender(<DrawioMapPanel {...at(fresh)} renderCounter={1} />);
+    expect(panel().getAttribute('data-dmap-pending')).toBe('true');
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
+    await settle();
+    await waitFor(() => expect(hasLabel(r.container, 'new-diagram')).toBe(true));
+    expect(hasLabel(r.container, 'old-diagram')).toBe(false);
+  });
+
   it('binds a config change for the same large diagram at once', async () => {
     const old = large('old-diagram');
     const r = render(<DrawioMapPanel {...withUrl(old, 'https://example.org/old-diagram')} />);

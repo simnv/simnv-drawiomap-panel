@@ -41,32 +41,30 @@ function buildStage(svg: string | undefined): Stage {
 }
 
 interface Deferred {
-  key: string | undefined;
+  /** The input the stage was built from. */
+  svg: string | undefined;
   stage: Stage;
 }
 
-const NONE: Deferred = { key: undefined, stage: EMPTY };
+const NONE: Deferred = { svg: undefined, stage: EMPTY };
 
 /**
- * Sanitise and index the SVG once per hash, then put its root into the container.
+ * Sanitise and index the SVG once per svg text, then put its root into the container.
  *
- * Without `deferAbove` the stage builds during the render. With it, a diagram whose svg text is longer builds after
- * the first paint: the panel chrome paints at once and the diagram follows. Until then the hook returns the empty
- * stage with `pending` set. The hook never returns a stage of another diagram: a deferred result carries the key of
- * its input, and a result for an older key (its timer ran in the same batch as a newer diagram) is not shown.
- * Without a diagram the hook returns the empty stage at once.
+ * The identity of a diagram is its svg text, the only input of the build, compared as a string: a saved hash is 32
+ * bits and two diagrams can share one. Without `deferAbove` the stage builds during the render. With it, a diagram
+ * whose svg text is longer builds after the first paint: the panel chrome paints at once and the diagram follows.
+ * Until then the hook returns the empty stage with `pending` set. The hook never returns a stage of another diagram:
+ * a deferred result carries the svg it was built from, and a result for an older svg (its timer ran in the same
+ * batch as a newer diagram) is not shown. Without a diagram the hook returns the empty stage at once.
  */
 export function useStage(
   containerRef: React.RefObject<HTMLDivElement>,
   svg: string | undefined,
-  hash: string | undefined,
   deferAbove = Infinity
 ): Stage {
-  // The hash identifies the diagram. Without a hash, the svg text is the key.
-  const key = hash ?? svg;
   const defer = svg !== undefined && svg.length > deferAbove;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const direct = useMemo(() => (defer ? undefined : buildStage(svg)), [key, defer]);
+  const direct = useMemo(() => (defer ? undefined : buildStage(svg)), [svg, defer]);
   const [deferred, setDeferred] = useState<Deferred>(NONE);
   if (!defer && deferred !== NONE) {
     // A small diagram took the place of a deferred one: release its stage (state adjustment during render).
@@ -80,7 +78,7 @@ export function useStage(
     // frame callback runs after the paint. A new key or an unmount cancels a build that has not started.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const frame = requestAnimationFrame(() => {
-      timer = setTimeout(() => setDeferred({ key, stage: buildStage(svg) }), 0);
+      timer = setTimeout(() => setDeferred({ svg, stage: buildStage(svg) }), 0);
     });
     return () => {
       cancelAnimationFrame(frame);
@@ -88,9 +86,8 @@ export function useStage(
         clearTimeout(timer);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, defer]);
-  const stage = direct ?? (deferred.key === key ? deferred.stage : PENDING);
+  }, [svg, defer]);
+  const stage = direct ?? (deferred.svg === svg ? deferred.stage : PENDING);
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) {

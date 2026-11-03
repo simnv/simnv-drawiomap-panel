@@ -176,7 +176,7 @@ function DrawioMapPanelView(props: ViewProps) {
     containerRef.current = element;
     setViewport(element);
   }, []);
-  const stage = useStage(containerRef, opts.diagram?.svg, opts.diagram?.hash, DEFER_ABOVE);
+  const stage = useStage(containerRef, opts.diagram?.svg, DEFER_ABOVE);
   const interactiveRef = useRef<Marked>();
   const cards = useCardState();
   const { card, dispatch, cardRef } = cards;
