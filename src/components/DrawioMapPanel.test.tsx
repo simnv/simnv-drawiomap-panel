@@ -748,7 +748,8 @@ describe('DrawioMapPanel hover card', () => {
     const style = getComputedStyle(dialog);
     expect(style.position).toBe('fixed');
     expect(style.bottom).toBe('0px');
-    expect(style.maxHeight).toBe('60vh');
+    // getComputedStyle resolves 60vh to px, as browsers do (jsdom 26 kept the unit)
+    expect(style.maxHeight).toBe(`${(window.innerHeight * 60) / 100}px`);
     expect(style.overflowY).toBe('auto');
     expect(Number(style.zIndex)).toBeGreaterThanOrEqual(createTheme().zIndex.modal);
     // a tap inside the sheet keeps it; a click on its row does not close it

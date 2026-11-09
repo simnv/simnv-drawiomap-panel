@@ -1,5 +1,13 @@
 import { defineConfig } from 'eslint/config';
+import { fixupPluginRules } from '@eslint/compat';
 import baseConfig from './.config/eslint.config.mjs';
+
+// eslint-plugin-react 7.37 still calls context.getFilename() and other APIs that ESLint 10 removed.
+// fixupPluginRules adds them back. Every config object that carries the plugin gets the wrapped copy.
+const wrapReact = (config) =>
+  config.plugins?.react
+    ? { ...config, plugins: { ...config.plugins, react: fixupPluginRules(config.plugins.react) } }
+    : config;
 
 export default defineConfig([
   {
@@ -36,7 +44,10 @@ export default defineConfig([
       '.drawio/',
       // Agent worktrees: other checkouts of this repository, each linted on its own.
       '.claude/worktrees/',
+      // Managed by create-plugin. ESLint 10 reads the config nearest to each file, so these files would use
+      // .config/eslint.config.mjs, which has no React plugin wrapper.
+      '.config/',
     ],
   },
-  ...baseConfig,
+  ...baseConfig.map(wrapReact),
 ]);
