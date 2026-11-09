@@ -153,8 +153,8 @@ test('percent: each WAN half reads its percent, both labels on one side of the e
   await expect(label(panel, ISP_A, 'b2a')).toHaveText(/^\d+%$/);
   await expect(label(panel, ISP_A, 'a2b')).toHaveAttribute('data-dmap-mode', 'percent');
   expect(await sideOf(panel, ISP_A, 'a2b')).toBe(await sideOf(panel, ISP_A, 'b2a'));
-  // no LAN label: the LAN class disables labels; the four WAN links have two halves each
-  await expect(labelsOf(panel)).toHaveCount(8);
+  // no LAN label: the LAN class disables labels; the three bound WAN links have two halves each
+  await expect(labelsOf(panel)).toHaveCount(6);
   for (const el of await labelsOf(panel).all()) {
     expect(await el.getAttribute('data-dmap-cell')).toMatch(/rtr-(a|b):(wan1|wan2|wan3|pppoe)$/);
   }
@@ -362,8 +362,8 @@ test('an HTML edge label (a 100% foreignObject) does not drop the labels and no 
   const total = await labelsOf(panel).count();
   const dropped = Number(await layerOf(panel).getAttribute('data-dmap-labels-dropped'));
   expect(total, `dropped ${dropped}`).toBeGreaterThan(0);
-  // the same sheet with plain labels places all eight halves (two of them have no data and stay hidden)
-  expect(total).toBe(8);
+  // the same sheet with plain labels places all six halves (the offline LTE link has no binding)
+  expect(total).toBe(6);
   expect(dropped).toBe(0);
   expect(placed.length).toBe(6);
   // none sits on the text of an HTML label (the innermost text blocks of the foreignObjects)

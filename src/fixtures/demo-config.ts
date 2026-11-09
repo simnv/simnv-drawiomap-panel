@@ -28,7 +28,7 @@ const nodeRows = (): RowV4[] => [
 ];
 
 /**
- * The L3 demo. LTE stays down; the proxy-b override selects no series from the up target and stays grey. `links` is
+ * The L3 demo. LTE stays down (up=0); every cell and link end has a series, so the match report is empty. `links` is
  * the base of the tunnels: it has no match, so it is abstract and needs no cell (spec 2.3).
  */
 const { match: linkMatch, ...links } = traffic('lan_tx', 'lan_rx');
@@ -64,10 +64,7 @@ export const demoConfigV4: ConfigV4 = {
       urlTitle: 'Host ${key}',
     },
   },
-  overrides: {
-    // key=node-proxy-b selects node-proxy-b-no-data, which the generator never emits. Keep up and load unchanged.
-    'pg-node~proxy-b': { match: { key: 'job="${key}-no-data"' } },
-  },
+  overrides: {},
 };
 
 /** The two hand-drawn edges carry bind=hand-links, key=<job>, port=<device> and their capacity in `cap`. */

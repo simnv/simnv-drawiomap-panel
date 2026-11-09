@@ -1,7 +1,7 @@
 # Publishes the plugin zip as a GitHub Release.
 # Push a tag vX.Y.Z (the version in package.json) to release that version. To release a tag that was pushed before
 # this workflow existed, run the workflow by hand (Actions > Release > Run workflow) with the tag.
-# The zip is not signed: Grafana loads it only with allow_loading_unsigned_plugins (README section "Install").
+# The zip is not signed: Grafana loads it only with allow_loading_unsigned_plugins (docs/guide/install.md).
 name: Release
 
 on:
@@ -78,6 +78,9 @@ jobs:
           zip="artifacts/simnv-drawiomap-panel-$version.zip"
           test -f "$zip" || { echo "::error::$zip is missing"; ls -l artifacts; exit 1; }
           (cd artifacts && sha256sum -c "$(basename "$zip").sha256")
+          # The same zip under a stable name: the URL releases/latest/download/simnv-drawiomap-panel.zip never changes.
+          cp "$zip" artifacts/simnv-drawiomap-panel.zip
+          (cd artifacts && sha256sum simnv-drawiomap-panel.zip >simnv-drawiomap-panel.zip.sha256)
           echo "VERSION=$version" >>"$GITHUB_ENV"
 
       # The notes are the CHANGELOG section "## <version>" (the heading may have a suffix, for example "(Unreleased)").
@@ -101,7 +104,7 @@ jobs:
             echo "grafana cli --pluginUrl https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/simnv-drawiomap-panel-$VERSION.zip plugins install simnv-drawiomap-panel"
             echo '```'
             echo
-            echo "See the README section \"Install\" for Docker and a manual install."
+            echo "See docs/guide/install.md for Docker and a manual install."
           } >>notes.md
           cat notes.md
 
@@ -111,4 +114,6 @@ jobs:
         run: |
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md \
             "artifacts/simnv-drawiomap-panel-$VERSION.zip" \
-            "artifacts/simnv-drawiomap-panel-$VERSION.zip.sha256"
+            "artifacts/simnv-drawiomap-panel-$VERSION.zip.sha256" \
+            artifacts/simnv-drawiomap-panel.zip \
+            artifacts/simnv-drawiomap-panel.zip.sha256

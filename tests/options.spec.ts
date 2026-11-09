@@ -3,8 +3,8 @@ import { expect, saveDashboard, test } from './authoring-fixtures';
 
 const PANE_WIDTH = 300;
 
-// Set DMAP_SCREENSHOTS=1 to write docs/images/options-diagram.png and local/options-bindings.png.
-const SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'docs/images/options-diagram.png' : undefined;
+// Set DMAP_SCREENSHOTS=1 to write local/options-bindings.png. The documentation image of the Diagram options comes
+// from tests/docs/screenshots.spec.ts (`npm run docs:screenshots`).
 const BINDINGS_SCREENSHOT = process.env.DMAP_SCREENSHOTS ? 'local/options-bindings.png' : undefined;
 
 /** Drag the vertical splitter between the panel and the options pane to the right: the pane gets about 300 px. */
@@ -80,16 +80,6 @@ test('the Diagram option buttons, the Edit bindings button and the YAML option s
     await page.screenshot({
       path: BINDINGS_SCREENSHOT,
       clip: { x: pane.x, y: top, width: pane.width, height: Math.min(360, 800 - top) },
-    });
-  }
-
-  if (SCREENSHOT) {
-    await page.getByTestId('dmap-diagram-status').scrollIntoViewIfNeeded();
-    const paneBox = (await group.boundingBox())!;
-    const top = (await page.getByTestId('dmap-diagram-status').boundingBox())!.y - 80;
-    await page.screenshot({
-      path: SCREENSHOT,
-      clip: { x: paneBox.x, y: Math.max(0, top), width: paneBox.width, height: 360 },
     });
   }
 });

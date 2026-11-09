@@ -13,7 +13,12 @@
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
-    "screenshots": [],
+    "screenshots": [
+      { "name": "Map with link colours", "path": "img/screenshots/map.png" },
+      { "name": "Hover card", "path": "img/screenshots/hover-card.png" },
+      { "name": "draw.io editor", "path": "img/screenshots/editor.png" },
+      { "name": "Hover card opening", "path": "img/screenshots/hero.gif" }
+    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },

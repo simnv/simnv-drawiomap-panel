@@ -1,9 +1,11 @@
 import CopyWebpackPlugin from 'copy-webpack-plugin';
 import fs from 'fs';
 import path from 'path';
-import type { Configuration } from 'webpack';
+import { Compilation, sources, type Configuration, type WebpackPluginInstance } from 'webpack';
 import { merge } from 'webpack-merge';
 import grafanaConfig, { type Env } from './.config/webpack/webpack.config.ts';
+import { getPackageJson } from './.config/bundler/utils.ts';
+import { rewriteReadmeUrls } from './src/util/readmeUrls.ts';
 
 /**
  * Extends the scaffolded config. See
@@ -20,6 +22,27 @@ const DRAWIO_SHIM = path.resolve(process.cwd(), 'src', 'editor', 'drawio-shim.js
 const SHARED_EDITOR_MODULES =
   /[\\/]src[\\/](options[\\/](ConfigYamlEditor|yamlConfig|storedConfig)\.tsx?|util[\\/]hash\.ts|editor[\\/]popup[\\/]overlayStack\.ts)$/;
 
+/** The catalogue rejects relative links in README.md. This plugin rewrites them in dist/README.md after the copy. */
+const readmeUrlsPlugin: WebpackPluginInstance = {
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap('ReadmeUrls', (compilation) => {
+      compilation.hooks.processAssets.tap(
+        { name: 'ReadmeUrls', stage: Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE },
+        () => {
+          const asset = compilation.getAsset('README.md');
+          if (asset) {
+            const text = asset.source.source().toString();
+            compilation.updateAsset(
+              'README.md',
+              new sources.RawSource(rewriteReadmeUrls(text, 'simnv/simnv-drawiomap-panel', getPackageJson().version))
+            );
+          }
+        }
+      );
+    });
+  },
+};
+
 const config = async (env: Env): Promise<Configuration> => {
   const baseConfig = await grafanaConfig(env);
   if (!fs.existsSync(DRAWIO_DIR)) {
@@ -27,6 +50,7 @@ const config = async (env: Env): Promise<Configuration> => {
   }
   return merge(baseConfig, {
     plugins: [
+      readmeUrlsPlugin,
       new CopyWebpackPlugin({
         patterns: [
           { from: DRAWIO_DIR, to: 'drawio', info: { minimized: true } },

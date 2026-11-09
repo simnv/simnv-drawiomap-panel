@@ -1,6 +1,6 @@
 # Acceptance results of the v3 bindings popup (archive)
 
-Archived with the v4 change (P1-20). The bindings popup, the pattern editor and the v3 config no longer exist in the panel; version 4 deleted them (README, "Bindings (v4)"). These results are the record of the old work. They describe code that is gone, so do not use them as checks. The current checks are in `docs/acceptance.md`.
+Archived with the v4 change (P1-20). The bindings popup, the pattern editor and the v3 config no longer exist in the panel; version 4 deleted them (`docs/guide/bindings.md`, "Bindings (v4)"). These results are the record of the old work. They describe code that is gone, so do not use them as checks. The current checks are in `docs/acceptance.md`.
 
 ## Bindings popup: Task 0
 

@@ -11,7 +11,12 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
   await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'a2b')).toHaveAttribute('data-dmap-step', '0');
   await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'b2a')).toHaveAttribute('data-dmap-status', 'ok');
   await expect(half('pg-link~radio:dhcp->rtr-a:wan2', 'a2b')).toHaveAttribute('data-dmap-step', '2');
-  await expect(half('pg-link~lte:static->rtr-a:wan3', 'a2b')).toHaveAttribute('data-dmap-status', 'nodata');
+  // The offline LTE link has no binding: no halves, and the grey stroke of the diagram.
+  await expect(half('pg-link~lte:static->rtr-a:wan3', 'a2b')).toHaveCount(0);
+  await expect(panel.locator.locator('[data-cell-id="pg-link~lte:static->rtr-a:wan3"] path').first()).toHaveCSS(
+    'stroke',
+    'rgb(158, 158, 158)'
+  );
   await expect(panel.locator.locator('[data-cell-id="pg-node~lte"]')).toHaveAttribute('data-dmap-status', 'down');
   await expect(panel.locator.locator('[data-cell-id="pg-node~rtr-a"]')).toHaveAttribute('data-dmap-status', 'normal');
   // The values and sparklines show in the hover card only.

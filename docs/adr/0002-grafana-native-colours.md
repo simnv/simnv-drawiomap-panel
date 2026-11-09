@@ -40,7 +40,7 @@ field config of the matched series, with the overrides applied (`getDisplayProce
 
 ## More information
 
-README, "How colours and thresholds work" and "Capacity". `tests/color.spec.ts`.
+`docs/guide/colours.md`, "How colours and thresholds work", and `docs/guide/links.md`, "Capacity". `tests/color.spec.ts`.
 
 ## Update: binding model v4 (2026-10-29)
 

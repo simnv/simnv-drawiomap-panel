@@ -2,7 +2,7 @@
 
 Stdlib only. Counters grow at a constant rate from process start, so
 rate(...[1m]) * 8 is stable: isp-a (wan1) 41 Mb/s (41 % of 100M), radio (wan2) 90 Mb/s
-(90 % of 100M), br-lan 480 Mb/s (48 % of 1G). lte has no traffic series and up=0.
+(90 % of 100M), br-lan 480 Mb/s (48 % of 1G). lte has no traffic series and up=0; its link is not bound.
 node_network_speed_bytes gives the port speed of some ports (bytes/s, as node_exporter):
 the demo reads the LAN capacity from it.
 node_cpu_usage_percent moves slowly around a base value for each host that is up.
@@ -27,10 +27,11 @@ SEED_SAMPLES = 180  # 15 min
 SEED_STEP = 5
 
 # (job, device, transmit bytes/s, receive bytes/s)
+# The demo L3 panel selects one end of each link, the end that its cell names with key and port; the series of the
+# other end would select no cell. So the LAN and tunnel links have one end here. No cell selects the router ends of the WAN
+# links; the L3 queries leave them out by job. The offline LTE link is not bound, so it has no series.
 LINKS = [
-    ("node-net-a", "lan", 60_000_000, 12_000_000),
     ("node-rtr-a", "br-lan", 60_000_000, 12_000_000),
-    ("node-net-b", "lan", 2_500_000, 1_000_000),
     ("node-rtr-b", "br-lan", 2_500_000, 1_000_000),
     ("node-isp-a", "pppoe", 5_125_000, 1_250_000),
     ("node-rtr-a", "wan1", 1_250_000, 5_125_000),
@@ -39,13 +40,9 @@ LINKS = [
     ("node-isp-b", "pppoe", 3_000_000, 500_000),
     ("node-rtr-b", "pppoe", 500_000, 3_000_000),
     ("node-rtr-a", "ts0", 400_000, 300_000),
-    ("node-rtr-b", "ts0", 300_000, 400_000),
     ("node-rtr-a", "tun0", 200_000, 100_000),
-    ("node-proxy-a", "tun-in", 100_000, 200_000),
     ("node-rtr-b", "tun0", 150_000, 90_000),
-    ("node-proxy-b", "tun-in", 90_000, 150_000),
     ("node-proxy-a", "relay-out", 50_000, 20_000),
-    ("node-proxy-b", "relay-in", 20_000, 50_000),
 ]
 # port speed in bytes/s: rtr-a br-lan 1 Gb/s, rtr-b br-lan 100 Mb/s
 SPEED = [
@@ -71,10 +68,11 @@ def build(elapsed: float, ts_ms: int | None = None) -> bytes:
     # that differ and can tell values of one sample from values of another.
     tick = int(elapsed // 5)
     lines = [
-        f'dmap_v4_nine{{job="node-rtr-a",line="line-{i}"}} {(i + 1) * 10 + (tick + i) % 5}'
+        f'dmap_v4_nine{{job="{job}",line="line-{i}"}} {(i + 1) * 10 + (tick + i) % 5}'
+        for job in ("node-rtr-a", "node-rtr-b")
         for i in range(9)
     ]
-    for job in ("node-rtr-a", "node-net-b"):
+    for job in ("node-rtr-a", "node-rtr-b", "node-net-b"):
         for i in range(3):
             value = 20 * (i + 1) + 5 * math.sin(elapsed / 15 + i)
             lines.append(f'dmap_v4_three{{job="{job}",line="line-{i}"}} {value:.2f}')

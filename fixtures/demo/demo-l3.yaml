@@ -125,7 +125,7 @@ links:
 
   - [isp-a.pppoe, rtr-a.wan1, { label: "metric 10", meta: { at: source, bind: wan, cap: 100M, key: node-isp-a, port: pppoe } }]
   - [radio.dhcp, rtr-a.wan2, { label: "metric 20", meta: { at: source, bind: wan, cap: 100M, key: node-radio, port: dhcp } }]
-  - [lte.static, rtr-a.wan3, { label: "metric 30 · offline", class: broken, meta: { at: source, bind: wan, cap: 100M, key: node-lte, port: static } }]
+  - [lte.static, rtr-a.wan3, { label: "metric 30 · offline", class: idle }]
   - [isp-b.pppoe, rtr-b.pppoe, { label: "default route", meta: { at: source, bind: wan, cap: 100M, key: node-isp-b, port: pppoe } }]
 
   - [rtr-a.ts0, rtr-b.ts0, { label: "tunnel · 10.255.0.1 ↔ .2", meta: { at: source, bind: tunnels, cap: 100M, key: node-rtr-a, port: ts0 } }]

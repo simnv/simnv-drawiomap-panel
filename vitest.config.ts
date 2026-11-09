@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// Two projects (see README, Development). A test file goes to `logic` when it is a plain `*.test.ts`:
+// Two projects (see CONTRIBUTING.md). A test file goes to `logic` when it is a plain `*.test.ts`:
 // no render, no vi.mock and no @grafana/ui. Every other file goes to `components`.
 // `logic` shares one jsdom document per worker (isolate: false): it skips the per-file import of @grafana/data.
 const componentTests = [

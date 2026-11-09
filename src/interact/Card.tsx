@@ -138,13 +138,18 @@ const getStyles = (theme: GrafanaTheme2) => ({
     align-items: baseline;
     gap: ${theme.spacing(1)};
   `,
+  // the title keeps a floor: a wide value line shrinks to its longest direction before the title shrinks below it; an empty title takes no width
   rowTitle: css`
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 4em;
+    min-width: 4em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: ${theme.colors.text.secondary};
+    &:empty {
+      flex-basis: 0;
+      min-width: 0;
+    }
   `,
   value: css`
     font-variant-numeric: tabular-nums;
@@ -154,9 +159,13 @@ const getStyles = (theme: GrafanaTheme2) => ({
   empty: css`
     color: ${theme.colors.text.secondary};
   `,
-  // keeps the two spaces between the directions of a combined row
+  // keeps the two spaces between the directions of a combined row; the row wraps between the directions
   pre: css`
-    white-space: pre;
+    white-space: pre-wrap;
+    text-align: right;
+  `,
+  direction: css`
+    white-space: nowrap;
   `,
   spark: css`
     display: block;
@@ -232,6 +241,7 @@ const Row = memo(function Row({
       <div className={styles.rowHead}>
         <span
           className={styles.rowTitle}
+          data-testid="dmap-card-title"
           style={row.status ? { color: statusTextColor({ state: row.status }, theme) } : undefined}
         >
           {row.title}
@@ -248,7 +258,9 @@ const Row = memo(function Row({
             ? directions.map((d, j) => (
                 <React.Fragment key={d.direction}>
                   {j ? '  ' : ''}
-                  <span style={{ color: d.color }}>{d.label}</span> {d.text}
+                  <span className={styles.direction}>
+                    <span style={{ color: d.color }}>{d.label}</span> {d.text}
+                  </span>
                 </React.Fragment>
               ))
             : row.text}

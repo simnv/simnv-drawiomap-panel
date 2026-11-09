@@ -60,6 +60,23 @@ async function moveOnChart(page: Page, chart: Locator, fraction: number) {
   return x;
 }
 
+/** No value line of the card is cut off: its text fits its box and the box fits the card. */
+async function expectValuesNotClipped(card: Locator) {
+  const values = card.getByTestId('dmap-card-value');
+  await expect(values.first()).toBeVisible();
+  // the row title keeps room: a wide value line must not squeeze it to nothing
+  const titles = card.getByTestId('dmap-card-title').first();
+  await expect(titles).not.toHaveText('');
+  expect((await titles.boundingBox())!.width).toBeGreaterThan(0);
+  const clipped = await card.evaluate((el) => {
+    const edge = el.getBoundingClientRect().right;
+    return [...el.querySelectorAll<HTMLElement>('[data-testid="dmap-card-value"]')]
+      .filter((v) => v.scrollWidth > v.clientWidth || v.getBoundingClientRect().right > edge)
+      .map((v) => v.textContent);
+  });
+  expect(clipped).toEqual([]);
+}
+
 async function shot(page: Page, name: string, around?: Locator) {
   if (!SHOTS) {
     return;
@@ -87,6 +104,8 @@ test.describe('tooltip on the charts of the pinned card', () => {
     // the hover card ignores the pointer, so the chart under it gets no pointer event
     await expect(card.getByTestId('dmap-chart-hover')).toHaveCount(0);
     await expect(page.getByTestId('dmap-chart-tooltip')).toHaveCount(0);
+    await shot(page, 'card-hover', card);
+    await expectValuesNotClipped(card);
   });
 
   test('a pinned chart shows crosshair and a Grafana tooltip at 25, 50 and 90 percent', async ({
@@ -266,6 +285,8 @@ test.describe('tooltip on a phone', () => {
     }).toPass();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toHaveAttribute('data-sheet', 'true');
+    await shot(page, 'card-sheet', dialog);
+    await expectValuesNotClipped(dialog);
     const chart = dialog.getByTestId('dmap-chart-hover').first();
     const tooltip = page.getByTestId('dmap-chart-tooltip');
     const box = (await chart.boundingBox())!;
