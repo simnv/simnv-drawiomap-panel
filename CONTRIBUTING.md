@@ -94,9 +94,9 @@ A new `.test.ts` file that needs `vi.mock`, `@grafana/ui` or `sanitizeSvg` goes 
 
 ## Git hooks
 
-Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.githooks`.
+Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.githooks`, and `blame.ignoreRevsFile` to `.git-blame-ignore-revs` (the format-only commits).
 
-- `pre-commit`: the privacy check on the staged diff, then `npm run typecheck` and `npm run lint` when code files are staged.
+- `pre-commit`: the privacy check on the staged diff, Prettier on the staged files, then `npm run typecheck` and `npm run lint` when code files are staged. `npm run lint` runs ESLint, `npm run format:check` (Prettier on the whole repository, with `.prettierignore`) and the import guards. `npm run lint:fix` formats.
 - `pre-push`: the privacy check on the pushed commits (a commit that a branch and its tags both publish is scanned once), then `npm test` with 4 workers. When another vitest process is active, the hook waits for it to end (at most 10 minutes), because two runs make the timed tests time out.
 
 The privacy check prints `file:line` only. It uses generic patterns (home paths, MAC addresses, private IPv4 outside the demo ranges in `.githooks/privacy-allow.txt`) and the private terms in `~/.config/simnv-drawiomap-panel/denylist` (set `SIMNV_PANEL_DENYLIST` to use another path). Without that file only the generic patterns run. `npm run check:privacy` scans all tracked files. CI runs the generic patterns in the `privacy` step of `.github/workflows/ci.yml` and `.woodpecker/ci.yaml`.

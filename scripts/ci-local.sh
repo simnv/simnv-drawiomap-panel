@@ -17,12 +17,12 @@ fi
 
 # The checks do not use each other's output: they run at the same time, each one with its output in a file. Each step
 # prints in a fixed order, as soon as it ends and the steps before it have printed. One failed step fails the script.
-# ESLint runs without `npm run lint`: that script also runs the import guards (check:imports), and the full unit
-# suite runs the same two test files.
+# ESLint and Prettier run without `npm run lint`: that script also runs the import guards (check:imports), and the
+# full unit suite runs the same two test files.
 # Each check runs in its own process group (job control on while it starts). A cancel (SIGINT, SIGTERM) or an exit
 # stops every group, with the Vitest workers and the other descendants, before the logs go away. A cancel exits non-zero.
-check_names=("typecheck" "eslint" "unit tests")
-check_cmds=("npm run typecheck" "npx eslint --cache ." "npm test")
+check_names=("typecheck" "eslint" "prettier" "unit tests")
+check_cmds=("npm run typecheck" "npx eslint --cache ." "npm run format:check" "npm test")
 check_logs=$(mktemp -d)
 check_pids=()
 stop_checks() {
