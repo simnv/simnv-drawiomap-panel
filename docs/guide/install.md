@@ -2,7 +2,7 @@
 
 Each [GitHub release](https://github.com/simnv/simnv-drawiomap-panel/releases/latest) has the plugin zip `simnv-drawiomap-panel-<version>.zip` and the same zip as `simnv-drawiomap-panel.zip`, each with a `.sha256` file. The URL `https://github.com/simnv/simnv-drawiomap-panel/releases/latest/download/simnv-drawiomap-panel.zip` always points to the latest release. The zip has one top folder, `simnv-drawiomap-panel`.
 
-The plugin is not signed. Set `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel` (or `allow_loading_unsigned_plugins` in `grafana.ini`) for each method below. Restart Grafana after you install or update the plugin.
+The plugin is not signed. Set `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel` (or `allow_loading_unsigned_plugins` in `grafana.ini`) for each method below. In a list of plugin ids, put no spaces after the commas (see [Troubleshooting](#troubleshooting)). Restart Grafana after you install or update the plugin.
 
 To install an older version, use the versioned zip of that release.
 
@@ -46,9 +46,9 @@ Plugin validation failed ... has no signature
 
 Grafana installed the zip, but it did not get `allow_loading_unsigned_plugins`. When the setting is in effect, the log has `Permitting unsigned plugin` after `Plugin is unsigned`, and the plugin loads. Check the setting:
 
-1. The value is exactly `simnv-drawiomap-panel`. To allow more plugins, separate the ids with commas.
+1. The value is exactly `simnv-drawiomap-panel`. To allow more plugins, separate the ids with commas and **no spaces**: `a-plugin,simnv-drawiomap-panel`. Grafana does not remove the space after a comma, so in `a-plugin, simnv-drawiomap-panel` the id ` simnv-drawiomap-panel` does not match (seen on Grafana 12.4 and 13.2). The settings page shows the list without the spaces, so it does not show this problem.
 2. In `grafana.ini`, the key is in the section `[plugins]`. With the Helm chart, put it in `grafana.ini` > `plugins`, or in `env` as `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS`.
 3. Grafana reads the setting only when it starts. Restart Grafana after you change it.
-4. To see the value that Grafana uses, open **Administration > General > Settings** (or `GET /api/admin/settings`) and find `allow_loading_unsigned_plugins` in the section `plugins`.
+4. To see the list that Grafana uses, open **Administration > General > Settings** (or `GET /api/admin/settings`) and find `allow_loading_unsigned_plugins` in the section `plugins`.
 
 **The panel shows "Panel plugin not found" in the development stack of this repository:** `dist/` has no built plugin. Run `npm run build` before `docker compose up`.
