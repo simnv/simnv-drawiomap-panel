@@ -8,8 +8,11 @@
 # steps before it and a failed step fails the workflow (the later steps do not run).
 # The stack runs as detached steps on the network of the workflow; the step name is the hostname. Grafana reads the
 # plugin and the provisioning from the workspace (scripts/ci-grafana-files.sh).
+# Pushes to main only: the Forgejo mirror also copies the Dependabot branches, and GitHub Actions checks those.
 when:
-  - event: [push, pull_request, manual]
+  - event: push
+    branch: main
+  - event: [pull_request, manual]
 
 steps:
   - name: install
@@ -35,6 +38,10 @@ steps:
 
   - name: test
     image: node:24-bookworm
+    # The agent runs the benches slower than a developer machine (the label placement pair bench took 270-430 ms
+    # against its 250 ms budget). DMAP_BENCH_BUDGET_SCALE multiplies the time budgets, as in .github/workflows/ci.yml.
+    environment:
+      DMAP_BENCH_BUDGET_SCALE: '3'
     commands:
       - npm test
 
