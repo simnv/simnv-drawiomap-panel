@@ -14,6 +14,7 @@
 - Made the draw.io editor open faster: the panel preloads the editor scripts. A cold open takes about 0.5 s instead of about 0.9 s on the test stack. The editing code loads only when a user edits, and the panel no longer needs the `zod` library, so a dashboard viewer downloads about 18 % less plugin code (`module.js`, about 85 KB instead of about 104 KB with gzip).
 - Made the split editor faster on large diagrams: a click changes only the cells that change. The editor reads the YAML 150 ms after the last keystroke, and at once on blur, Apply, Ctrl+S and close. The **Bindings** YAML box of the options pane still stores each valid keystroke at once.
 - Made the plugin zip smaller: about 19 MB instead of about 22.6 MB. The vendor script removes the draw.io files that the embedded editor never loads (development bundles, standalone copies of libraries that the main editor bundle already contains, and the language files: the embedded editor has no language menu).
+- Fixed the hover card and the phone sheet: the value line of a combined up/down row no longer clips at the right edge. A line that is too wide wraps between the up and the down part. The row title stays visible.
 
 ## 1.4.0 (Unreleased)
 
@@ -63,7 +64,7 @@ The 1.1.0 tag comes first: do not release 1.2.0 before it.
 
 Binding model v4. This is the first version that reads the v4 config. A config of version 3 or older binds nothing: the diagram renders, the panel shows one note, and you write the config again as version 4 (or regenerate it). There is no migration. Regenerate the dashboards of a generator in the same change as this release.
 
-- A cell joins a class with its attribute `bind`. The attributes `key`, `port` and others select the series of the cell, with a matcher (`=`, `!=`, `=~`, `!~`, a list) in a fixed regex dialect. The classes and the cell overrides are in the panel option `config`. See README, "Bindings (v4)".
+- A cell joins a class with its attribute `bind`. The attributes `key`, `port` and others select the series of the cell, with a matcher (`=`, `!=`, `=~`, `!~`, a list) in a fixed regex dialect. The classes and the cell overrides are in the panel option `config`. See [Bindings](docs/guide/bindings.md).
 - The status colour and text of a cell are the exact colour and text of the field config of the `status` query. A healthy value can keep the drawn colour with the colour `transparent`. A missing value is grey "no data", never a good state.
 - A link takes `up` and `down` queries for its two halves; the attribute `at=target` flips them. The capacity of a link is a `capacity` query, else the attribute `cap` (`1G`, `50M/10M`), else none. The field Max is no longer a capacity.
 - A `history` row or chart draws up to 8 lines in one Y range and then "+N more". A `value` chart is a bar gauge. A cell turns stale on the clock when its newest sample is too old, with no new data.
@@ -77,7 +78,7 @@ Binding model v4. This is the first version that reads the v4 config. A config o
 
 Initial release.
 
-- Removed the rules of version 1 (the `rules` option and the Legacy rules editor). A saved value loads; the panel ignores it and shows one warning. See README, "Rules of version 1".
+- Removed the rules of version 1 (the `rules` option and the Legacy rules editor). A saved value loads; the panel ignores it and shows one warning. See [Bindings](docs/guide/bindings.md).
 - A shape binding with an explicit `shape.target` colours the node icon, the shape or its outline by the value, with the colours of the field config. Without a target the colour changes nothing, as before.
 - The arrow head of a link half grows with its drawn width (8 by 8 up to a 2-unit half; above, each unit of width adds 2 to the base and 0.5 to the length), and the stroke stops under the head, so a busy link keeps a visible direction. The split, the label obstacles and the mask are fixed for `linkWidth.max`: a width change on a refresh moves no label. The label obstacle is the triangle of the widest head, and a label on a link too short for any spot beside the stroke stands beyond the wings of the widest head.
-- The status paints the element: a device with a status that is not normal gets a border and a tint in the status colour, a link gets its stroke in it. The `! down` markers on the elements are gone; the hover card shows the state and its reason as its first row. See README, "Status paint".
+- The status paints the element: a device with a status that is not normal gets a border and a tint in the status colour, a link gets its stroke in it. The `! down` markers on the elements are gone; the hover card shows the state and its reason as its first row. See [Colours, status and legend](docs/guide/colours.md).
