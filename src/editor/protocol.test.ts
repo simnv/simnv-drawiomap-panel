@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   acceptChannelHello,
   channelHello,
+  EditorMessage,
+  exportDone,
+  exportFailed,
   newChannelToken,
   editorSearch,
   eventSource,
@@ -106,6 +109,16 @@ describe('channel of the bundled editor (token + MessagePort)', () => {
 });
 
 describe('handleMessage in edit mode', () => {
+  const loaded = { phase: 'loaded' as const, xml, pendingExit: false, seq: 0 };
+  const reply = (seq: number, over: Partial<EditorMessage> = {}): EditorMessage => ({
+    event: 'export',
+    format: 'svg',
+    data: svgB64,
+    xml: '<mxfile>c</mxfile>',
+    message: { action: 'export', seq },
+    ...over,
+  });
+
   it('answers configure with compressXml:false', () => {
     const s = handleMessage(initialState(xml), { event: 'configure' }, opts);
     expect(s.send[0]).toMatchObject({ action: 'configure', config: { compressXml: false } });
@@ -120,70 +133,75 @@ describe('handleMessage in edit mode', () => {
     expect(s.state.phase).toBe('loaded');
     expect(s.send).toEqual([]);
   });
-  it('requests an xmlsvg export on save and remembers exit', () => {
-    const s = handleMessage(
-      { phase: 'loaded', xml, pendingExit: false },
-      { event: 'save', xml: '<mxfile>2</mxfile>', exit: true },
-      opts
-    );
-    expect(s.send[0]).toMatchObject({
-      action: 'export',
-      format: 'xmlsvg',
-      embedCellMetadata: true,
-      embedImages: true,
-      theme: 'auto',
-    });
-    expect(s.state).toMatchObject({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true });
+  it('requests one xmlsvg export on save, with a new id each time, and remembers exit', () => {
+    const s = handleMessage(loaded, { event: 'save', xml: '<mxfile>2</mxfile>', exit: true }, opts);
+    expect(s.send).toEqual([
+      { action: 'export', format: 'xmlsvg', embedCellMetadata: true, embedImages: true, theme: 'auto', spin: 'Saving', seq: 1 },
+    ]);
+    expect(s.state).toEqual({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true, seq: 1 });
+    const again = handleMessage(s.state, { event: 'save', xml: '<mxfile>3</mxfile>' }, opts);
+    expect(again.send[0]).toMatchObject({ action: 'export', seq: 2 });
+    expect(again.state).toEqual({ phase: 'exporting', xml: '<mxfile>3</mxfile>', pendingExit: false, seq: 2 });
   });
-  it('asks for the uncompressed XML after the SVG export, then returns the result', () => {
-    // The xmlsvg export of draw.io compresses the pages of its xml (getFileData with uncompressed=false), so the
-    // host asks for the xml export (which honours compressXml:false) and keeps the SVG while it waits.
-    const compressed = '<mxfile><diagram id="p">7Vxbc9...</diagram></mxfile>';
-    const s1 = handleMessage(
-      { phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: false },
-      { event: 'export', format: 'svg', data: svgB64, xml: compressed },
-      opts
-    );
-    expect(s1.result).toBeUndefined();
-    expect(s1.close).toBe(false);
-    expect(s1.send).toEqual([{ action: 'export', format: 'xml' }]);
-    expect(s1.state).toMatchObject({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: false });
-    const s2 = handleMessage(s1.state, { event: 'export', format: 'xml', xml: '<mxfile>3</mxfile>' }, opts);
-    expect(s2.result).toEqual({ xml: '<mxfile>3</mxfile>', svg: '<svg/>' });
-    expect(s2.close).toBe(false);
-    expect(s2.state).toEqual({ phase: 'loaded', xml: '<mxfile>3</mxfile>', pendingExit: false });
+  it('hands the reply of the current export to the host for the inflate and waits', () => {
+    const exporting = { ...loaded, phase: 'exporting' as const, xml: '<mxfile>2</mxfile>', seq: 1 };
+    const s = handleMessage(exporting, reply(1), opts);
+    expect(s.export).toEqual({ xml: '<mxfile>c</mxfile>', svg: '<svg/>' });
+    expect(s.result).toBeUndefined();
+    expect(s.close).toBe(false);
+    expect(s.state).toEqual({ ...exporting, phase: 'inflating' });
+    // A reply with no xml: the xml of the save event.
+    expect(handleMessage(exporting, reply(1, { xml: undefined }), opts).export?.xml).toBe('<mxfile>2</mxfile>');
   });
-  it('closes after the xml export only when exit was requested, and falls back to the saved xml', () => {
-    const s1 = handleMessage(
-      { phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true },
-      { event: 'export', data: svgB64 },
-      opts
-    );
-    expect(s1.result).toBeUndefined();
+  it('ignores a stale reply, a reply with no id, a reply with no data and a reply outside an export', () => {
+    const exporting = { ...loaded, phase: 'exporting' as const, seq: 2 };
+    for (const msg of [reply(1), reply(3), reply(2, { message: undefined }), reply(2, { data: undefined })]) {
+      expect(handleMessage(exporting, msg, opts)).toEqual({ state: exporting, send: [], close: false });
+    }
+    expect(handleMessage(loaded, reply(0), opts).state).toBe(loaded);
+    const inflating = { ...exporting, phase: 'inflating' as const };
+    expect(handleMessage(inflating, reply(2), opts).state).toBe(inflating);
+  });
+  it('stores the inflated diagram with exportDone and closes only when exit was requested', () => {
+    const inflating = { ...loaded, phase: 'inflating' as const, xml: '<mxfile>2</mxfile>', seq: 1 };
+    const diagram = { xml: '<mxfile>u</mxfile>', svg: '<svg/>' };
+    const s1 = exportDone(inflating, 1, diagram, opts);
+    expect(s1.result).toBe(diagram);
     expect(s1.close).toBe(false);
-    const s2 = handleMessage(s1.state, { event: 'export', format: 'xml' }, opts);
-    expect(s2.result).toEqual({ xml: '<mxfile>2</mxfile>', svg: '<svg/>' });
+    expect(s1.state).toEqual({ phase: 'loaded', xml: '<mxfile>u</mxfile>', pendingExit: false, seq: 1 });
+    const s2 = exportDone({ ...inflating, pendingExit: true }, 1, diagram, opts);
+    expect(s2.result).toBe(diagram);
     expect(s2.close).toBe(true);
     expect(s2.state.phase).toBe('done');
   });
-  it('ignores an export outside the exporting phase, an SVG export with no data and an xml export before the SVG', () => {
-    const loaded = { phase: 'loaded' as const, xml, pendingExit: false };
-    expect(handleMessage(loaded, { event: 'export', format: 'svg', data: svgB64 }, opts)).toEqual({
-      state: loaded,
+  it('exportDone ignores an old export and any phase but inflating', () => {
+    const inflating = { ...loaded, phase: 'inflating' as const, seq: 2 };
+    const diagram = { xml: '<mxfile>u</mxfile>', svg: '<svg/>' };
+    expect(exportDone(inflating, 1, diagram, opts)).toEqual({ state: inflating, send: [], close: false });
+    const exporting = { ...inflating, phase: 'exporting' as const };
+    expect(exportDone(exporting, 2, diagram, opts)).toEqual({ state: exporting, send: [], close: false });
+    expect(exportDone(loaded, 0, diagram, opts).result).toBeUndefined();
+  });
+  it('exportFailed keeps the editor open with the reason, in exporting and in inflating, and a save clears it', () => {
+    const exporting = { ...loaded, phase: 'exporting' as const, pendingExit: true, seq: 1 };
+    const s = exportFailed(exporting, 1, 'no reply');
+    expect(s).toEqual({
+      state: { phase: 'loaded', xml, pendingExit: false, seq: 1, failure: 'no reply' },
       send: [],
       close: false,
     });
-    const exporting = { phase: 'exporting' as const, xml, pendingExit: false };
-    expect(handleMessage(exporting, { event: 'export', format: 'svg' }, opts).send).toEqual([]);
-    const early = handleMessage(exporting, { event: 'export', format: 'xml', xml: '<mxfile>3</mxfile>' }, opts);
-    expect(early.result).toBeUndefined();
-    expect(early.state).toBe(exporting);
+    expect(exportFailed({ ...exporting, phase: 'inflating' }, 1, 'bad page').state.failure).toBe('bad page');
+    expect(exportFailed(exporting, 0, 'old').state).toBe(exporting);
+    expect(exportFailed(loaded, 0, 'late').state).toBe(loaded);
+    const saved = handleMessage(s.state, { event: 'save', xml: '<mxfile>3</mxfile>' }, opts);
+    expect(saved.state).toEqual({ phase: 'exporting', xml: '<mxfile>3</mxfile>', pendingExit: false, seq: 2 });
+    expect(saved.state.failure).toBeUndefined();
   });
   it('closes on exit', () => {
-    expect(handleMessage({ phase: 'loaded', xml, pendingExit: false }, { event: 'exit' }, opts).close).toBe(true);
+    expect(handleMessage(loaded, { event: 'exit' }, opts).close).toBe(true);
   });
   it('ignores unknown events', () => {
-    const s = handleMessage({ phase: 'loaded', xml, pendingExit: false }, { event: 'autosave', xml: 'x' }, opts);
+    const s = handleMessage(loaded, { event: 'autosave', xml: 'x' }, opts);
     expect(s.send).toEqual([]);
     expect(s.state.xml).toBe(xml);
   });
@@ -191,15 +209,14 @@ describe('handleMessage in edit mode', () => {
 
 describe('handleMessage in export-only mode', () => {
   const eo = { ...opts, mode: 'export-only' as const };
-  it('exports right after load and closes after export', () => {
+  it('exports right after load, hands the reply to the inflate, and closes after exportDone', () => {
     const s = handleMessage(initialState(xml), { event: 'load' }, eo);
-    expect(s.send[0]).toMatchObject({ action: 'export', format: 'xmlsvg' });
-    expect(s.state.phase).toBe('exporting');
-    const svg = handleMessage(s.state, { event: 'export', format: 'svg', data: svgB64, xml }, eo);
-    expect(svg.result).toBeUndefined();
-    expect(svg.close).toBe(false);
-    expect(svg.send).toEqual([{ action: 'export', format: 'xml' }]);
-    const done = handleMessage(svg.state, { event: 'export', format: 'xml', xml: '<mxfile>u</mxfile>' }, eo);
+    expect(s.send[0]).toMatchObject({ action: 'export', format: 'xmlsvg', seq: 1 });
+    expect(s.state).toEqual({ phase: 'exporting', xml, pendingExit: true, seq: 1 });
+    const got = handleMessage(s.state, { event: 'export', data: svgB64, xml, message: { seq: 1 } }, eo);
+    expect(got.export).toEqual({ xml, svg: '<svg/>' });
+    expect(got.close).toBe(false);
+    const done = exportDone(got.state, 1, { xml: '<mxfile>u</mxfile>', svg: '<svg/>' }, eo);
     expect(done.result).toEqual({ xml: '<mxfile>u</mxfile>', svg: '<svg/>' });
     expect(done.close).toBe(true);
     expect(done.state.phase).toBe('done');

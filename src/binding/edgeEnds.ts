@@ -44,7 +44,7 @@ function readPage(xml: string): Page {
     }
     model = Array.from(diagram.children).find((el) => el.localName === 'mxGraphModel');
     if (!model) {
-      // the panel has no inflate code (5.5)
+      // a page that an older version stored: the host inflates only the export of the editor (src/editor/inflate.ts)
       return diagram.textContent?.trim() ? { error: 'compressed page' } : EMPTY_PAGE;
     }
   }

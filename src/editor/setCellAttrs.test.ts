@@ -4,7 +4,8 @@ import { sanitizeSvg } from '../render/sanitize';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
-import { EditorAction, EditorMessage, handleMessage, initialState, ProtocolOptions } from './protocol';
+import { inflatePages } from './inflate';
+import { EditorAction, EditorMessage, exportDone, handleMessage, initialState, ProtocolOptions } from './protocol';
 import { setCellAttrs } from './setCellAttrs';
 
 const model = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
@@ -291,9 +292,10 @@ const compressPage = (xml: string) => deflateRawSync(encodeURIComponent(xml)).to
 
 /**
  * Runs the embed protocol against a stand-in for the bundled draw.io: its xmlsvg export compresses the pages of
- * its xml (EditorUi.getFileData with uncompressed=false), its save event and its xml export honour compressXml:false.
+ * its xml (EditorUi.getFileData with uncompressed=false) and echoes the request; its save event honours
+ * compressXml:false. The host inflates the pages of the reply, as DrawioModal does.
  */
-function editorRoundTrip(opts: ProtocolOptions, loaded: string) {
+async function editorRoundTrip(opts: ProtocolOptions, loaded: string) {
   const uncompressed = `<mxfile><diagram id="page-1">${model}</diagram></mxfile>`;
   const compressed = `<mxfile><diagram id="page-1">${compressPage(model)}</diagram></mxfile>`;
   const data = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
@@ -303,9 +305,7 @@ function editorRoundTrip(opts: ProtocolOptions, loaded: string) {
       return opts.mode === 'edit' ? [{ event: 'load' }, { event: 'save', xml: uncompressed }] : [{ event: 'load' }];
     }
     if (action.action === 'export') {
-      return action.format === 'xml'
-        ? [{ event: 'export', format: 'xml', xml: uncompressed }]
-        : [{ event: 'export', format: 'svg', data, xml: compressed }];
+      return [{ event: 'export', format: 'svg', data, xml: compressed, message: action }];
     }
     return [];
   };
@@ -315,8 +315,12 @@ function editorRoundTrip(opts: ProtocolOptions, loaded: string) {
   while (queue.length) {
     const step = handleMessage(state, queue.shift()!, opts);
     state = step.state;
-    result ??= step.result;
     queue.push(...step.send.flatMap(reply));
+    if (step.export) {
+      const done = exportDone(state, state.seq, { ...step.export, xml: await inflatePages(step.export.xml) }, opts);
+      state = done.state;
+      result ??= done.result;
+    }
   }
   return { result, state };
 }
@@ -324,17 +328,17 @@ function editorRoundTrip(opts: ProtocolOptions, loaded: string) {
 describe('the stored diagram of the bundled editor', () => {
   const write = (d: Diagram) => setCellAttrs(d, [{ id: 'host-a', attrs: { bind: 'server' } }]);
 
-  it('is uncompressed after a save in edit mode, so the inspector can write to it', () => {
-    const { result, state } = editorRoundTrip({ mode: 'edit', isDark: false }, '<mxfile/>');
+  it('is uncompressed after a save in edit mode, so the inspector can write to it', async () => {
+    const { result, state } = await editorRoundTrip({ mode: 'edit', isDark: false }, '<mxfile/>');
     expect(result?.xml).toContain('<mxGraphModel>');
     expect(state.phase).toBe('loaded');
     const d: Diagram = { ...result!, hash: fnv1a(result!.svg + result!.xml), updatedAt: '' };
     expect(parse(write(d).xml).getElementById('host-a')?.getAttribute('bind')).toBe('server');
   });
 
-  it('is uncompressed after an export-only import of a compressed page', () => {
+  it('is uncompressed after an export-only import of a compressed page', async () => {
     const pasted = `<mxfile><diagram id="page-1">${compressPage(model)}</diagram></mxfile>`;
-    const { result, state } = editorRoundTrip({ mode: 'export-only', isDark: false }, pasted);
+    const { result, state } = await editorRoundTrip({ mode: 'export-only', isDark: false }, pasted);
     expect(result?.xml).toContain('<mxGraphModel>');
     expect(state.phase).toBe('done');
     const d: Diagram = { ...result!, hash: fnv1a(result!.svg + result!.xml), updatedAt: '' };

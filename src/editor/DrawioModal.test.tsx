@@ -1,9 +1,13 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DrawioModal } from './DrawioModal';
+import { DrawioModal, EXPORT_TIMEOUT_MS } from './DrawioModal';
 import { forgetProbes, HELLO_TIMEOUT_MS, initialLoad, PROBE_TIMEOUT_MS } from './availability';
 import { PluginDialog } from './popup/PluginDialog';
+
+// The inflate of the export is a browser stream: the tests of this file control when it settles.
+const inflate = vi.hoisted(() => ({ pages: vi.fn<(xml: string) => Promise<string>>() }));
+vi.mock('./inflate', () => ({ inflatePages: inflate.pages }));
 
 vi.hoisted(() => {
   if (!window.localStorage) {
@@ -373,12 +377,155 @@ describe('DrawioModal during panel refreshes', () => {
     expect(listen.mock.calls.filter(([type]) => type === 'message')).toEqual([]);
     expect(unlisten.mock.calls.filter(([type]) => type === 'message')).toEqual([]);
     // The channel uses the newest callbacks.
+    inflate.pages.mockImplementation(async (xml) => xml.replace('c', 'u'));
     act(() => port.onmessage?.({ data: JSON.stringify({ event: 'save', xml: '<mxfile id="b"/>' }) }));
-    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'export', data: 'data:image/svg+xml,%3Csvg%2F%3E' }) }));
-    // The SVG export answers with a compressed xml: the host asks for the xml export and stores that XML.
-    expect(JSON.parse(port.postMessage.mock.lastCall![0])).toEqual({ action: 'export', format: 'xml' });
-    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'export', format: 'xml', xml: '<mxfile id="c"/>' }) }));
-    expect(lastSave).toHaveBeenCalledWith({ xml: '<mxfile id="c"/>', svg: '<svg/>' });
+    const seq = JSON.parse(port.postMessage.mock.lastCall![0]).seq;
+    await act(async () => {
+      port.onmessage?.({ data: JSON.stringify({ event: 'export', data: SVG_URI, xml: '<mxfile id="c"/>', message: { seq } }) });
+    });
+    expect(lastSave).toHaveBeenCalledWith({ xml: '<mxfile id="u"/>', svg: '<svg/>' });
     expect(firstSave).not.toHaveBeenCalled();
+  });
+});
+
+const SVG_URI = 'data:image/svg+xml,%3Csvg%2F%3E';
+
+describe('DrawioModal export', () => {
+  const onSave = vi.fn();
+  const onClose = vi.fn();
+  /** One controllable inflate for each export reply. */
+  const pending: Array<{ resolve: (xml: string) => void; reject: (e: Error) => void }> = [];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsResponse())
+    );
+    forgetProbes();
+    onSave.mockReset();
+    onClose.mockReset();
+    pending.length = 0;
+    inflate.pages.mockReset();
+    inflate.pages.mockImplementation(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const open = async (mode: 'edit' | 'export-only' = 'edit') => {
+    const view = render(
+      <DrawioModal xml="<mxfile/>" title="t" mode={mode} isDark={false} onSave={onSave} onClose={onClose} />
+    );
+    // The probe of the editor files settles under the fake timers.
+    await settle();
+    const port = hello();
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'init' }) }));
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'load' }) }));
+    return { view, port };
+  };
+  const modal = () => screen.getByTestId('dmap-editor-modal');
+  const requests = (port: ReturnType<typeof hello>) =>
+    port.postMessage.mock.calls.map(([m]) => JSON.parse(m)).filter((a) => a.action === 'export');
+  const save = (port: ReturnType<typeof hello>, xml: string, exit = false) => {
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'save', xml, exit }) }));
+    return requests(port).at(-1)!.seq as number;
+  };
+  const reply = (port: ReturnType<typeof hello>, seq: number, xml: string) =>
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'export', data: SVG_URI, xml, message: { seq } }) }));
+
+  it('stores the SVG and the inflated XML of one export reply', async () => {
+    const { port } = await open();
+    const seq = save(port, '<mxfile>s</mxfile>');
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('exporting');
+    reply(port, seq, '<mxfile>c</mxfile>');
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('inflating');
+    expect(inflate.pages).toHaveBeenCalledWith('<mxfile>c</mxfile>');
+    await act(async () => pending[0].resolve('<mxfile>u</mxfile>'));
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u</mxfile>', svg: '<svg/>' });
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps only the newest of overlapping saves: the reply and the inflate of the older one are dropped', async () => {
+    const { port } = await open();
+    const first = save(port, '<mxfile>1</mxfile>');
+    reply(port, first, '<mxfile>c1</mxfile>');
+    const second = save(port, '<mxfile>2</mxfile>');
+    expect(second).toBe(first + 1);
+    // The inflate of the first reply ends after the second save: its result is stale.
+    await act(async () => pending[0].resolve('<mxfile>u1</mxfile>'));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('exporting');
+    // A late reply of the first export is stale too.
+    reply(port, first, '<mxfile>c1</mxfile>');
+    expect(inflate.pages).toHaveBeenCalledTimes(1);
+    reply(port, second, '<mxfile>c2</mxfile>');
+    await act(async () => pending[1].resolve('<mxfile>u2</mxfile>'));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u2</mxfile>', svg: '<svg/>' });
+  });
+
+  it('gives up on an export with no reply, keeps the editor open, and fences the late reply', async () => {
+    const { port } = await open();
+    const seq = save(port, '<mxfile>s</mxfile>', true);
+    await settle(EXPORT_TIMEOUT_MS);
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
+    expect(screen.getByRole('alert').textContent).toMatch(/did not finish in 60 s/);
+    expect(onClose).not.toHaveBeenCalled();
+    reply(port, seq, '<mxfile>c</mxfile>');
+    expect(inflate.pages).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+    // The next save works, and its request has a new id.
+    const next = save(port, '<mxfile>n</mxfile>');
+    expect(next).toBe(seq + 1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    reply(port, next, '<mxfile>c2</mxfile>');
+    await act(async () => pending[0].resolve('<mxfile>u2</mxfile>'));
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u2</mxfile>', svg: '<svg/>' });
+  });
+
+  it('shows the inflate failure and stores nothing', async () => {
+    const { port } = await open();
+    const seq = save(port, '<mxfile>s</mxfile>', true);
+    reply(port, seq, '<mxfile>c</mxfile>');
+    await act(async () => pending[0].reject(new Error('The compressed page 1 is not a draw.io page.')));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
+    expect(screen.getByRole('alert').textContent).toContain('The compressed page 1 is not a draw.io page.');
+  });
+
+  it('drops a reply and an inflate that end after the modal closed', async () => {
+    const { port, view } = await open();
+    const seq = save(port, '<mxfile>s</mxfile>');
+    reply(port, seq, '<mxfile>c</mxfile>');
+    view.unmount();
+    expect(port.close).toHaveBeenCalled();
+    await act(async () => pending[0].resolve('<mxfile>u</mxfile>'));
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('in export-only mode closes after the inflate, and stays open with the error when the export fails', async () => {
+    const { port } = await open('export-only');
+    const [request] = requests(port);
+    expect(request).toMatchObject({ format: 'xmlsvg', seq: 1 });
+    reply(port, 1, '<mxfile>c</mxfile>');
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => pending[0].resolve('<mxfile>u</mxfile>'));
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u</mxfile>', svg: '<svg/>' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('in export-only mode a missing reply shows the error with a close button', async () => {
+    const { port } = await open('export-only');
+    await settle(EXPORT_TIMEOUT_MS);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/did not finish/);
+    reply(port, 1, '<mxfile>c</mxfile>');
+    expect(inflate.pages).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('dmap-editor-close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

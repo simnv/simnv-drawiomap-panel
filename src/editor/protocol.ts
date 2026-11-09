@@ -24,6 +24,8 @@ export interface EditorMessage {
   format?: string;
   exit?: boolean;
   modified?: boolean;
+  /** The request that an export reply answers: draw.io echoes it (`Ba.message = E`). */
+  message?: { seq?: unknown; [key: string]: unknown };
 }
 
 export type EditorAction =
@@ -46,21 +48,32 @@ export type EditorAction =
       embedImages: boolean;
       theme: 'auto';
       spin?: string;
+      /** The id of this export. draw.io echoes the request in its reply, so the host can drop a stale reply. */
+      seq: number;
     }
-  | { action: 'export'; format: 'xml' }
   | { action: 'exit' };
 
+/**
+ * The phases of one editor. `exporting`: the host waits for the reply of the export `seq`. `inflating`: the host
+ * inflates the pages of that reply (`exportDone` or `exportFailed` ends it). A save starts a new export from any
+ * phase: the reply and the inflate of an older export are stale and are dropped.
+ */
 export interface ProtocolState {
-  phase: 'init' | 'loaded' | 'exporting' | 'done';
+  phase: 'init' | 'loaded' | 'exporting' | 'inflating' | 'done';
   xml: string;
   pendingExit: boolean;
-  /** The SVG of the xmlsvg export, while the host waits for the xml export of the same state. */
-  svg?: string;
+  /** The id of the newest export request. */
+  seq: number;
+  /** Why the last export stored nothing. The next save clears it. */
+  failure?: string;
 }
 
 export interface Step {
   state: ProtocolState;
   send: EditorAction[];
+  /** The reply of the current export: the SVG and the xml with compressed pages. The host inflates the pages. */
+  export?: { xml: string; svg: string };
+  /** The diagram to store. */
   result?: { xml: string; svg: string };
   close: boolean;
 }
@@ -72,7 +85,7 @@ export interface ProtocolOptions {
 }
 
 export function initialState(xml: string): ProtocolState {
-  return { phase: 'init', xml, pendingExit: false };
+  return { phase: 'init', xml, pendingExit: false, seq: 0 };
 }
 
 /** Parses a postMessage payload from the editor. Returns undefined for anything that is not a JSON event. */
@@ -167,22 +180,27 @@ export function acceptChannelHello<P>(
   return e.ports[0];
 }
 
-const EXPORT: EditorAction = {
+/**
+ * One xmlsvg export gives the SVG and the xml of one snapshot of the graph: draw.io reads both when it takes the
+ * request, then embeds the images and replies. The xml of that reply has compressed pages (EditorUi.getFileData
+ * with uncompressed=false, whatever the compressXml setting): the host inflates them (src/editor/inflate.ts). A
+ * second request for the xml would read the live graph, which the user can change while the images embed.
+ */
+const exportAction = (seq: number): EditorAction => ({
   action: 'export',
   format: 'xmlsvg',
   embedCellMetadata: true,
   embedImages: true,
   theme: 'auto',
   spin: 'Saving',
-};
+  seq,
+});
 
-/**
- * The xmlsvg export of draw.io compresses the pages of its xml (EditorUi.getFileData with uncompressed=false),
- * whatever the compressXml setting. The panel has no inflate code (spec 5.5): it asks for the xml export, which
- * honours compressXml:false, and stores that XML with the SVG of the xmlsvg export. draw.io answers an xml export
- * at once, from the same state as the SVG.
- */
-const EXPORT_XML: EditorAction = { action: 'export', format: 'xml' };
+/** The state of a new export: the id of the request, no failure. */
+function startExport(state: ProtocolState, xml: string, pendingExit: boolean): Step {
+  const seq = state.seq + 1;
+  return { state: { phase: 'exporting', xml, pendingExit, seq }, send: [exportAction(seq)], close: false };
+}
 
 /** Pure step of the draw.io embed protocol: one editor message in, the next state and the host replies out. */
 export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: ProtocolOptions): Step {
@@ -210,35 +228,20 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
     }
     case 'load':
       if (opts.mode === 'export-only') {
-        return { state: { ...state, phase: 'exporting', pendingExit: true }, send: [EXPORT], close: false };
+        return startExport(state, state.xml, true);
       }
       return { ...noop, state: { ...state, phase: 'loaded' } };
     case 'save':
-      return {
-        state: { phase: 'exporting', xml: msg.xml ?? state.xml, pendingExit: !!msg.exit },
-        send: [EXPORT],
-        close: false,
-      };
+      return startExport(state, msg.xml ?? state.xml, !!msg.exit);
     case 'export': {
-      if (state.phase !== 'exporting') {
+      if (state.phase !== 'exporting' || !msg.data || msg.message?.seq !== state.seq) {
         return noop;
       }
-      if (msg.format !== 'xml') {
-        if (!msg.data) {
-          return noop;
-        }
-        return { state: { ...state, svg: decodeDataUri(msg.data) }, send: [EXPORT_XML], close: false };
-      }
-      if (state.svg === undefined) {
-        return noop;
-      }
-      const xml = msg.xml ?? state.xml;
-      const close = state.pendingExit || opts.mode === 'export-only';
       return {
-        state: { phase: close ? 'done' : 'loaded', xml, pendingExit: false },
+        state: { ...state, phase: 'inflating' },
         send: [],
-        result: { xml, svg: state.svg },
-        close,
+        export: { xml: msg.xml ?? state.xml, svg: decodeDataUri(msg.data) },
+        close: false,
       };
     }
     case 'exit':
@@ -246,4 +249,31 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
     default:
       return noop;
   }
+}
+
+/** The inflated diagram of the export `seq` is ready: store it, and close when the save asked for the exit. */
+export function exportDone(
+  state: ProtocolState,
+  seq: number,
+  diagram: { xml: string; svg: string },
+  opts: ProtocolOptions
+): Step {
+  if (state.phase !== 'inflating' || seq !== state.seq) {
+    return { state, send: [], close: false };
+  }
+  const close = state.pendingExit || opts.mode === 'export-only';
+  return {
+    state: { phase: close ? 'done' : 'loaded', xml: diagram.xml, pendingExit: false, seq },
+    send: [],
+    result: diagram,
+    close,
+  };
+}
+
+/** The export `seq` gave no diagram (no reply in time, or a page that does not inflate): keep the editor open. */
+export function exportFailed(state: ProtocolState, seq: number, reason: string): Step {
+  if ((state.phase !== 'exporting' && state.phase !== 'inflating') || seq !== state.seq) {
+    return { state, send: [], close: false };
+  }
+  return { state: { ...state, phase: 'loaded', pendingExit: false, failure: reason }, send: [], close: false };
 }

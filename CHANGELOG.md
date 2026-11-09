@@ -2,7 +2,8 @@
 
 ## 1.5.2 (Unreleased)
 
-- Fixed the stored diagram XML of the draw.io editor: a save, an import and pasted XML stored page 1 compressed, so **Set bind and key** and **Assign class** in the split editor failed with "Open the diagram in draw.io once and save it", and a new save did not help. The panel now asks the editor for the uncompressed XML after the SVG export. A diagram that an older version stored: open it in draw.io once and save it.
+- Fixed the stored diagram XML of the draw.io editor: a save, an import and pasted XML stored page 1 compressed, so **Set bind and key** and **Assign class** in the split editor failed with "Open the diagram in draw.io once and save it", and a new save did not help. The panel now inflates the pages of the export before it stores the diagram, so the SVG and the XML come from one snapshot of the editor. A diagram that an older version stored: open it in draw.io once and save it.
+- The draw.io editor gives up on an export with no reply in 60 s and says so. The last saved diagram stays. A save during an export replaces that export.
 - Security: updated the bundled DOMPurify HTML and SVG sanitiser from 3.2.6 to 3.4.17. It fixes several published sanitiser advisories. The sanitised output of the test diagrams does not change.
 - Changed the build tools: create-plugin 8.0.2, Vitest 4 and the other development dependencies. The source code of the plugin does not change. `npm audit` has no critical findings. The remaining findings are listed in `docs/security.md`.
 - Added a troubleshooting section to the install guide (`docs/guide/install.md`). In `allow_loading_unsigned_plugins`, put no spaces after the commas: Grafana does not remove them, and then it does not load the plugin.
