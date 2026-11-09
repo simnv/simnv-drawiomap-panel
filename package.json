@@ -61,7 +61,7 @@
     "eslint-plugin-react-hooks": "^7.1.0",
     "fork-ts-checker-webpack-plugin": "^9.1.0",
     "imports-loader": "^5.0.0",
-    "jsdom": "26.1.0",
+    "jsdom": "31.0.0",
     "prettier": "^3.6.0",
     "replace-in-file-webpack-plugin": "^1.0.0",
     "sass": "^1.108.0",

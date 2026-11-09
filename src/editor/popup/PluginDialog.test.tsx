@@ -153,13 +153,16 @@ describe('PluginDialog', () => {
   });
 
   it('has the geometry of the draw.io dialog: 96 % of the viewport width and 94 % of its height, in the middle', () => {
+    // getComputedStyle resolves viewport units to px, as browsers do (jsdom 26 kept the unit).
+    const vw = (n: number) => `${(window.innerWidth * n) / 100}px`;
+    const vh = (n: number) => `${(window.innerHeight * n) / 100}px`;
     mount();
     const style = getComputedStyle(screen.getByRole('dialog', { name: 'Edit bindings' }));
     expect({ top: style.top, left: style.left, width: style.width, height: style.height }).toEqual({
-      top: '3dvh',
-      left: '2vw',
-      width: '96vw',
-      height: '94dvh',
+      top: vh(3),
+      left: vw(2),
+      width: vw(96),
+      height: vh(94),
     });
   });
 
