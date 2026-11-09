@@ -1,4 +1,3 @@
-import 'intersection-observer';
 import { screen } from '@testing-library/react';
 
 type Queries = Pick<typeof screen, 'getByRole'>;

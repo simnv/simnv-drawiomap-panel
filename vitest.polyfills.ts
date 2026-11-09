@@ -38,4 +38,20 @@ export function installPolyfills(): void {
       removeListener() {},
     })) as unknown as typeof window.matchMedia;
   }
+
+  // jsdom has no IntersectionObserver. @grafana/ui reads it. A stub that never reports is enough for the tests.
+  if (typeof window.IntersectionObserver === 'undefined') {
+    class IntersectionObserverStub {
+      readonly root = null;
+      readonly rootMargin = '';
+      readonly thresholds = [];
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    window.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
+  }
 }

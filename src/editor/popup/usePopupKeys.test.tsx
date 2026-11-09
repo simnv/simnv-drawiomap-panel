@@ -1,4 +1,3 @@
-import 'intersection-observer';
 import React, { useRef, useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { Select } from '@grafana/ui';
@@ -25,6 +24,8 @@ function Harness({
     <div role="dialog" aria-label="Own">
       <button type="button">Header</button>
       <div ref={body} data-testid="body" {...keys}>
+        {/* Keep the deprecated react-select Select: usePopupKeys handles its Esc behaviour. Combobox (downshift) differs. */}
+        {/* eslint-disable-next-line @typescript-eslint/no-deprecated */}
         <Select
           aria-label="Choice"
           options={[
