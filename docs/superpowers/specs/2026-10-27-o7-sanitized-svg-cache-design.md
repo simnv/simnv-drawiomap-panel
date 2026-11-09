@@ -18,12 +18,12 @@ So one edit session on one diagram runs it at least twice on the same string (pa
 
 Measured before the change (vitest, jsdom, median of 10 runs; a browser is faster, but the ratio is the same):
 
-| Input                        | Size (chars) | `sanitizeSvg` (ms) |
-| ---------------------------- | ------------ | ------------------ |
-| `demo-l3.svg`                | 71,894       | 17.3               |
-| `demo-l1.svg`                | 101,316      | 29.4               |
-| `legacy-html-labels.svg`     | 386,094      | 31.7               |
-| synthetic, 2,000 cells       | 294,340      | 166.7              |
+| Input                    | Size (chars) | `sanitizeSvg` (ms) |
+| ------------------------ | ------------ | ------------------ |
+| `demo-l3.svg`            | 71,894       | 17.3               |
+| `demo-l1.svg`            | 101,316      | 29.4               |
+| `legacy-html-labels.svg` | 386,094      | 31.7               |
+| synthetic, 2,000 cells   | 294,340      | 166.7              |
 
 ## 2. Design
 

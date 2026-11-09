@@ -1,14 +1,6 @@
 import React from 'react';
 import { vi } from 'vitest';
-import {
-  CoreApp,
-  dateTime,
-  FieldType,
-  LoadingState,
-  ThresholdsMode,
-  toDataFrame,
-  type PanelData,
-} from '@grafana/data';
+import { CoreApp, dateTime, FieldType, LoadingState, ThresholdsMode, toDataFrame, type PanelData } from '@grafana/data';
 import type { Options } from '../../types';
 import type { SplitEditorProps } from './SplitEditor';
 
@@ -110,7 +102,8 @@ export function createFakeMonaco() {
     cursor: new Set<(event: CursorEvent) => void>(),
     providers: [] as Array<{ language: string; provider: Provider; dispose: ReturnType<typeof vi.fn> }>,
     hovers: [] as Array<{ language: string; provider: HoverProvider; dispose: ReturnType<typeof vi.fn> }>,
-    setModelMarkers: vi.fn<(model: unknown, owner: string, markers: Array<{ severity: number; message: string }>) => void>(),
+    setModelMarkers:
+      vi.fn<(model: unknown, owner: string, markers: Array<{ severity: number; message: string }>) => void>(),
     model: {
       id: 'split-model-1',
       getValue: () => fake.text,

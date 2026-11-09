@@ -27,13 +27,13 @@ Contents:
 
 ### 1.1 Versions
 
-| Item | State on 2026-10-16 | Source |
-|---|---|---|
-| `@grafana/create-plugin` | 7.13.0, published 2026-10-15, Node `>=20` | [npm registry](https://registry.npmjs.org/@grafana/create-plugin/latest), [GitHub releases](https://github.com/grafana/plugin-tools/releases) |
-| Template `@grafana/*` libs | 13.x ("latest" since 7.12.0, 2026-09-22) | [create-plugin CHANGELOG](https://raw.githubusercontent.com/grafana/plugin-tools/main/packages/create-plugin/CHANGELOG.md) |
-| Template `@grafana/plugin-e2e` | 3.15.x (3.15.1 on npm, peer `@playwright/test ^1.52`) | npm registry |
-| `@grafana/ui` | 13.2.4, peer `react >=19` | npm registry |
-| Grafana releases | 13.0 on 2026-04-14 (React 19), 13.1 on 2026-06-23, 13.2 on 2026-08-18; patches 13.0.11 / 13.1.8 / 13.2.4 | [What's new 13.0](https://grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v13-0/), [endoflife.date](https://endoflife.date/grafana) |
+| Item                           | State on 2026-10-16                                                                                      | Source                                                                                                                                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@grafana/create-plugin`       | 7.13.0, published 2026-10-15, Node `>=20`                                                                | [npm registry](https://registry.npmjs.org/@grafana/create-plugin/latest), [GitHub releases](https://github.com/grafana/plugin-tools/releases) |
+| Template `@grafana/*` libs     | 13.x ("latest" since 7.12.0, 2026-09-22)                                                                 | [create-plugin CHANGELOG](https://raw.githubusercontent.com/grafana/plugin-tools/main/packages/create-plugin/CHANGELOG.md)                    |
+| Template `@grafana/plugin-e2e` | 3.15.x (3.15.1 on npm, peer `@playwright/test ^1.52`)                                                    | npm registry                                                                                                                                  |
+| `@grafana/ui`                  | 13.2.4, peer `react >=19`                                                                                | npm registry                                                                                                                                  |
+| Grafana releases               | 13.0 on 2026-04-14 (React 19), 13.1 on 2026-06-23, 13.2 on 2026-08-18; patches 13.0.11 / 13.1.8 / 13.2.4 | [What's new 13.0](https://grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v13-0/), [endoflife.date](https://endoflife.date/grafana)     |
 
 ### 1.2 Grafana version target and React
 
@@ -88,6 +88,7 @@ Contents:
   `display.color` already applies the thresholds / color mode / value mappings of that field,
   including per-series overrides the user set with "Fields with name matching regex".
   Source: [value mappings guide](https://grafana.com/developers/plugin-tools/how-to-guides/panel-plugins/add-value-mappings-support).
+
 - Data links: `getFieldDisplayValues` attaches `hasLinks` / `getLinks` per field value. Wrap the
   clickable SVG element with `DataLinksContextMenu` and call `api.openMenu` on click. The guide
   casts the component type for cross-version compatibility.
@@ -158,13 +159,13 @@ Contents:
 
 Release state on 2026-10-16 ([endoflife.date](https://endoflife.date/grafana)):
 
-| Line | Latest patch | Released | Security support ends | React runtime |
-|---|---|---|---|---|
-| 12.4 | 12.4.13 (2026-10-13) | 2026-02-24 | 2027-05-24 | 18 |
-| 12.3 | 12.3.11 | 2025-11-19 | 2026-08-19 (ended) | 18 |
-| 13.0 | 13.0.11 | 2026-04-14 | 2027-01-09 | 19 |
-| 13.1 | 13.1.8 | 2026-06-23 | 2027-03-20 | 19 |
-| 13.2 | 13.2.4 | 2026-08-18 | 2027-05-18 | 19 |
+| Line | Latest patch         | Released   | Security support ends | React runtime |
+| ---- | -------------------- | ---------- | --------------------- | ------------- |
+| 12.4 | 12.4.13 (2026-10-13) | 2026-02-24 | 2027-05-24            | 18            |
+| 12.3 | 12.3.11              | 2025-11-19 | 2026-08-19 (ended)    | 18            |
+| 13.0 | 13.0.11              | 2026-04-14 | 2027-01-09            | 19            |
+| 13.1 | 13.1.8               | 2026-06-23 | 2027-03-20            | 19            |
+| 13.2 | 13.2.4               | 2026-08-18 | 2027-05-18            | 19            |
 
 **`grafanaDependency`:** `">=12.4.0"`. Reasons: 12.4 is the only 12.x line still in security support;
 the create-plugin 7.13 bundler externalises `react/jsx-runtime` and `react/jsx-dev-runtime` by
@@ -191,20 +192,20 @@ Either way: do not bundle React; never pin a different React than the peer; run
 
 **API changes and deprecations between 12 and 13 that touch panel plugins:**
 
-| Area | Grafana 12.x | Grafana 13.x | Effect on this plugin |
-|---|---|---|---|
-| React | 18 | 19 (core from 13.0; `@grafana/*` peer `>=19` from 13.2) | No `findDOMNode`, string refs, `defaultProps` on function components, legacy context, `ReactDOM.render`; avoid libraries that touch `__SECRET_INTERNALS` (`react-draggable` < 4.4, old `rc-*`, `react-window`, `@tanstack/react-query` without the jsx-runtime fix). Iframe + `postMessage` code is plain DOM and unaffected |
-| Angular | Removed in 12.0 (toggle gone) | Removed | None; React-only plugin. Confirms Flowcharting cannot be revived |
-| Dashboards | Scenes-based; dynamic dashboards and schema v2 experimental (one-way migration) | Dynamic dashboards GA; pre-Scenes fallback removed; `/api` deprecated in favour of `/apis` | `PanelProps` unchanged. Do not read or write dashboard JSON from the panel; store everything in panel `options`/`fieldConfig`. If the plugin ever calls Grafana HTTP APIs, prefer `/apis` |
-| Panel options and field config | `PanelPlugin.setPanelOptions`, `useFieldConfig`, `addCustomEditor`, `addNestedOptions`, `showIf`, `category` | Same | Stable; safe to rely on |
-| Data links | `DataLinksContextMenu` lost its `actions` prop in 12.0; actions and one-click links exist in field config | Same; `getFieldDisplayValues` -> `hasLinks`/`getLinks` unchanged | Use the documented cast pattern; do not pass `actions`. Panel "Actions" (HTTP calls) are field-config features that come for free through `getLinks` |
-| `@grafana/ui` | Deprecated `Graph*` components still exported | `Graph`, `GraphWithLegend`, `GraphContextMenu`, `GraphSeriesToggler` and one more component removed in 13.0 | Do not import them; `Sparkline`, `Modal`, `DataLinksContextMenu`, `useStyles2`, `useTheme2` remain |
-| `@grafana/runtime` | `config.apps`, `config.panels` available | Deprecated, removed in 13.2 | Do not use; use `PluginMeta` from `PanelProps`/`usePluginContext` |
-| UI extensions API | Legacy `configureExtensionLink` removed in 12.0; `addLink()` `category` deprecated in 13 (use `group`) | Same | Not used by a panel plugin |
-| `plugin.json` | `dependencies.grafanaDependency` enforced by CLI since 12.0; `languages` (i18n) and `extensions` object exist | Same; no new required fields for panels found | Keep `type: panel`, `id: simnv-drawiomap-panel`, `dependencies.grafanaDependency: ">=12.4.0"`, `info.*`. Optional `languages: ["en-US"]` if `@grafana/i18n` is used (works from 11.0; Grafana 13.1 stops loading `@grafana/i18n` at runtime for plugins, so bundle it) |
-| CSP | Default template has no `frame-src`; `[security] content_security_policy` off by default | Same defaults; `enable_gzip` on by default in 13.0 | Document the `frame-src` addition for hardened installs; nothing version-specific |
-| Frontend sandbox | Public preview since 11.5, off by default, opt-in per plugin | Same | Test once with `enable_frontend_sandbox_for_plugins = simnv-drawiomap-panel` on both versions; do not depend on globals |
-| Build tooling | create-plugin 7.x, webpack 5 + SWC, externals incl. jsx-runtime | Same | Run `npx @grafana/create-plugin@latest update` when new minor versions ship |
+| Area                           | Grafana 12.x                                                                                                  | Grafana 13.x                                                                                                | Effect on this plugin                                                                                                                                                                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| React                          | 18                                                                                                            | 19 (core from 13.0; `@grafana/*` peer `>=19` from 13.2)                                                     | No `findDOMNode`, string refs, `defaultProps` on function components, legacy context, `ReactDOM.render`; avoid libraries that touch `__SECRET_INTERNALS` (`react-draggable` < 4.4, old `rc-*`, `react-window`, `@tanstack/react-query` without the jsx-runtime fix). Iframe + `postMessage` code is plain DOM and unaffected |
+| Angular                        | Removed in 12.0 (toggle gone)                                                                                 | Removed                                                                                                     | None; React-only plugin. Confirms Flowcharting cannot be revived                                                                                                                                                                                                                                                             |
+| Dashboards                     | Scenes-based; dynamic dashboards and schema v2 experimental (one-way migration)                               | Dynamic dashboards GA; pre-Scenes fallback removed; `/api` deprecated in favour of `/apis`                  | `PanelProps` unchanged. Do not read or write dashboard JSON from the panel; store everything in panel `options`/`fieldConfig`. If the plugin ever calls Grafana HTTP APIs, prefer `/apis`                                                                                                                                    |
+| Panel options and field config | `PanelPlugin.setPanelOptions`, `useFieldConfig`, `addCustomEditor`, `addNestedOptions`, `showIf`, `category`  | Same                                                                                                        | Stable; safe to rely on                                                                                                                                                                                                                                                                                                      |
+| Data links                     | `DataLinksContextMenu` lost its `actions` prop in 12.0; actions and one-click links exist in field config     | Same; `getFieldDisplayValues` -> `hasLinks`/`getLinks` unchanged                                            | Use the documented cast pattern; do not pass `actions`. Panel "Actions" (HTTP calls) are field-config features that come for free through `getLinks`                                                                                                                                                                         |
+| `@grafana/ui`                  | Deprecated `Graph*` components still exported                                                                 | `Graph`, `GraphWithLegend`, `GraphContextMenu`, `GraphSeriesToggler` and one more component removed in 13.0 | Do not import them; `Sparkline`, `Modal`, `DataLinksContextMenu`, `useStyles2`, `useTheme2` remain                                                                                                                                                                                                                           |
+| `@grafana/runtime`             | `config.apps`, `config.panels` available                                                                      | Deprecated, removed in 13.2                                                                                 | Do not use; use `PluginMeta` from `PanelProps`/`usePluginContext`                                                                                                                                                                                                                                                            |
+| UI extensions API              | Legacy `configureExtensionLink` removed in 12.0; `addLink()` `category` deprecated in 13 (use `group`)        | Same                                                                                                        | Not used by a panel plugin                                                                                                                                                                                                                                                                                                   |
+| `plugin.json`                  | `dependencies.grafanaDependency` enforced by CLI since 12.0; `languages` (i18n) and `extensions` object exist | Same; no new required fields for panels found                                                               | Keep `type: panel`, `id: simnv-drawiomap-panel`, `dependencies.grafanaDependency: ">=12.4.0"`, `info.*`. Optional `languages: ["en-US"]` if `@grafana/i18n` is used (works from 11.0; Grafana 13.1 stops loading `@grafana/i18n` at runtime for plugins, so bundle it)                                                       |
+| CSP                            | Default template has no `frame-src`; `[security] content_security_policy` off by default                      | Same defaults; `enable_gzip` on by default in 13.0                                                          | Document the `frame-src` addition for hardened installs; nothing version-specific                                                                                                                                                                                                                                            |
+| Frontend sandbox               | Public preview since 11.5, off by default, opt-in per plugin                                                  | Same                                                                                                        | Test once with `enable_frontend_sandbox_for_plugins = simnv-drawiomap-panel` on both versions; do not depend on globals                                                                                                                                                                                                      |
+| Build tooling                  | create-plugin 7.x, webpack 5 + SWC, externals incl. jsx-runtime                                               | Same                                                                                                        | Run `npx @grafana/create-plugin@latest update` when new minor versions ship                                                                                                                                                                                                                                                  |
 
 Sources: [What's new 12.0](https://grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v12-0/),
 [What's new 13.0](https://grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v13-0/),
@@ -229,6 +230,7 @@ Sources: [What's new 12.0](https://grafana.com/docs/grafana/latest/whatsnew/what
   Use `grafana/grafana:<tag>` (`GRAFANA_IMAGE=grafana`) for OSS parity with the lab; the default
   template image is `grafana-enterprise`. Add `GRAFANA_VERSION=main` (or `grafana-dev`) as an
   optional nightly job. Docker Hub tags follow `grafana/grafana:12.4.13`, `grafana/grafana:13.2.4`.
+
 - Provision the same Prometheus datasource and test dashboard for every version; dashboards saved
   by Grafana 13 (schema v2 when dynamic dashboards are on) do not load in 12, so keep the provisioned
   dashboard JSON in the classic schema and let each version migrate it in memory.
@@ -278,11 +280,11 @@ Source: [Embed mode](https://www.drawio.com/doc/faq/embed-mode), [URL parameters
 
 ### 2.2 Hosting options for the editor
 
-| Option | Size | Pros | Cons |
-|---|---|---|---|
-| `https://embed.diagrams.net` (public) | 0 in plugin | Zero maintenance, always current | Needs internet from the browser; diagram XML goes to the browser iframe only (not uploaded) but fonts/stencils load from diagrams.net; version drift (unpinned) |
-| `jgraph/drawio` Docker image, own Compose service | ~400 MB image (Docker Hub `full_size`, tag 32.4.1, 2026-10-12) | Air-gap friendly, pinned version, same embed protocol, `DRAWIO_*` env config | One more container (Tomcat + JRE); must be reachable from the browser; needs its own TLS/host; panel option for "editor URL" |
-| Bundle the webapp inside the plugin `dist/` | `draw.war` 48 MB (release v32.4.1); Desktop `app.asar` 60 MB; served from `/public/plugins/<id>/drawio/` | No extra service, same origin as Grafana (simpler CSP, no cross-origin issues) | Plugin zip 50 MB+; Grafana serves static files fine, but plugin catalog/size hygiene suffers; license and trademark notes below; updating draw.io means re-releasing the plugin |
+| Option                                            | Size                                                                                                     | Pros                                                                           | Cons                                                                                                                                                                            |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://embed.diagrams.net` (public)             | 0 in plugin                                                                                              | Zero maintenance, always current                                               | Needs internet from the browser; diagram XML goes to the browser iframe only (not uploaded) but fonts/stencils load from diagrams.net; version drift (unpinned)                 |
+| `jgraph/drawio` Docker image, own Compose service | ~400 MB image (Docker Hub `full_size`, tag 32.4.1, 2026-10-12)                                           | Air-gap friendly, pinned version, same embed protocol, `DRAWIO_*` env config   | One more container (Tomcat + JRE); must be reachable from the browser; needs its own TLS/host; panel option for "editor URL"                                                    |
+| Bundle the webapp inside the plugin `dist/`       | `draw.war` 48 MB (release v32.4.1); Desktop `app.asar` 60 MB; served from `/public/plugins/<id>/drawio/` | No extra service, same origin as Grafana (simpler CSP, no cross-origin issues) | Plugin zip 50 MB+; Grafana serves static files fine, but plugin catalog/size hygiene suffers; license and trademark notes below; updating draw.io means re-releasing the plugin |
 
 Sources: [Docker Hub tags API](https://hub.docker.com/v2/repositories/jgraph/drawio/tags?page_size=5),
 [jgraph/drawio releases (gh api, `draw.war` 48,442,174 bytes)](https://github.com/jgraph/drawio/releases),
@@ -431,8 +433,8 @@ binding key in an `<object>` attribute, and export with `--embed-svg-metadata --
   - edge line: first `path[fill="none"]` with `pointer-events="stroke"`; arrow heads: following
     `path` with `pointer-events="all"`;
   - label: `text` (with `convertToSvg=1`) or `foreignObject div` (HTML labels).
-  Because `data-cell-id` is on the wrapper only (not on inner primitives), the plugin needs these
-  small heuristics; they are stable across draw.io 24-32 in the probe and in Flow panel's experience.
+    Because `data-cell-id` is on the wrapper only (not on inner primitives), the plugin needs these
+    small heuristics; they are stable across draw.io 24-32 in the probe and in Flow panel's experience.
 - Restyle via `element.style.fill/stroke/strokeWidth` (not attributes, see 3.1 item 5) and batch
   updates with a single `requestAnimationFrame` per data refresh. Keep a `Map<cellId, {group, shape, line, arrows, label}>`
   built once per SVG load (`useMemo` on the SVG string) so each refresh is O(bound cells).
@@ -468,15 +470,15 @@ binding key in an `<object>` attribute, and export with `--embed-svg-metadata --
 
 ### 3.6 Comparison
 
-| Criterion | (a) draw.io viewer | (b) maxGraph | (c) SVG DOM | (d) own renderer |
-|---|---|---|---|---|
-| Bundle added | ~930 KB gzip + stencils | ~170 KB gzip (full) | ~0 | ~0 |
-| Shape/stencil fidelity | exact | partial, ongoing work | exact | poor |
-| Edge label positions | exact | approximate | exact | must implement |
-| Many updates/sec | redraw via mxGraph | redraw via maxGraph | style writes on cached nodes | depends |
-| Offline | needs stencils shipped | yes | yes | yes |
-| Editing in view | yes (not needed) | yes (not needed) | no | no |
-| Risk | globals, size | fidelity gap | SVG structure heuristics | huge scope |
+| Criterion              | (a) draw.io viewer      | (b) maxGraph          | (c) SVG DOM                  | (d) own renderer |
+| ---------------------- | ----------------------- | --------------------- | ---------------------------- | ---------------- |
+| Bundle added           | ~930 KB gzip + stencils | ~170 KB gzip (full)   | ~0                           | ~0               |
+| Shape/stencil fidelity | exact                   | partial, ongoing work | exact                        | poor             |
+| Edge label positions   | exact                   | approximate           | exact                        | must implement   |
+| Many updates/sec       | redraw via mxGraph      | redraw via maxGraph   | style writes on cached nodes | depends          |
+| Offline                | needs stencils shipped  | yes                   | yes                          | yes              |
+| Editing in view        | yes (not needed)        | yes (not needed)      | no                           | no               |
+| Risk                   | globals, size           | fidelity gap          | SVG structure heuristics     | huge scope       |
 
 Recommendation: (c), with the XML kept alongside as the source of truth for the editor and as the
 geometry fallback.
@@ -635,13 +637,13 @@ geometry fallback.
 
 ### 7.1 Identifying cells
 
-| Selector | Where it lives | Survives editor edits | Notes |
-|---|---|---|---|
-| `mxCell@id` | XML and `data-cell-id` in SVG | Yes, unless cell is deleted/recreated; copy/paste makes new ids | Best primary key. Generator can set readable ids (`node-r1`, `link-r1-r2`) since draw.io keeps arbitrary string ids (probe) |
-| Custom attribute on `<object>` (e.g. `data-key`, `host`, `iface`) | XML (`Edit Data`), SVG as `data-meta-*` with cell metadata export | Yes; copied with the cell | Best semantic key; supports placeholders `%host%` in labels when `placeholders="1"` |
-| Label text | XML `value`/`label`, SVG `<text>` | Fragile (user renames) | Use only for regex convenience matching |
-| Tags (`tags` attribute, draw.io "Tags" feature) | XML `tags="a b"` on object | Yes | Good for group rules ("all core links") |
-| Edge `source`/`target` | XML only | Yes | Lets a rule target "edge between node X and Y" and gives direction |
+| Selector                                                          | Where it lives                                                    | Survives editor edits                                           | Notes                                                                                                                       |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `mxCell@id`                                                       | XML and `data-cell-id` in SVG                                     | Yes, unless cell is deleted/recreated; copy/paste makes new ids | Best primary key. Generator can set readable ids (`node-r1`, `link-r1-r2`) since draw.io keeps arbitrary string ids (probe) |
+| Custom attribute on `<object>` (e.g. `data-key`, `host`, `iface`) | XML (`Edit Data`), SVG as `data-meta-*` with cell metadata export | Yes; copied with the cell                                       | Best semantic key; supports placeholders `%host%` in labels when `placeholders="1"`                                         |
+| Label text                                                        | XML `value`/`label`, SVG `<text>`                                 | Fragile (user renames)                                          | Use only for regex convenience matching                                                                                     |
+| Tags (`tags` attribute, draw.io "Tags" feature)                   | XML `tags="a b"` on object                                        | Yes                                                             | Good for group rules ("all core links")                                                                                     |
+| Edge `source`/`target`                                            | XML only                                                          | Yes                                                             | Lets a rule target "edge between node X and Y" and gives direction                                                          |
 
 Sources: [draw.io placeholders](https://www.drawio.com/docs/manual/advanced/placeholders/),
 [shape data](https://www.drawio.com/docs/manual/shapes/shape-data/), [diagram generation reference (`placeholders="1"` on object)](https://www.drawio.com/docs/reference/diagram-generation/), probe.

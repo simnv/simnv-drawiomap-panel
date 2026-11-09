@@ -2044,7 +2044,15 @@ describe('DrawioMapPanel deferred diagram', () => {
     const fresh = large('new-diagram');
     const r = render(<DrawioMapPanel {...withUrl(old, 'https://example.org/old-diagram')} />);
     // before the first build: the same blank
-    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    expect(traces(r.container)).toEqual({
+      svg: false,
+      cells: '0',
+      pending: 'true',
+      labels: 0,
+      links: 0,
+      dialog: false,
+      legend: 0,
+    });
     await settle();
     await waitFor(() => expect(half(r.container)).not.toBeNull());
     expect(panel().getAttribute('data-dmap-pending')).toBeNull();
@@ -2055,7 +2063,15 @@ describe('DrawioMapPanel deferred diagram', () => {
 
     r.rerender(<DrawioMapPanel {...withUrl(fresh, 'https://example.org/new-diagram')} renderCounter={1} />);
     // the blank again: no stage, no label, no card, no link of either diagram
-    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    expect(traces(r.container)).toEqual({
+      svg: false,
+      cells: '0',
+      pending: 'true',
+      labels: 0,
+      links: 0,
+      dialog: false,
+      legend: 0,
+    });
     expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(fresh));
     expect(hasLabel(r.container, 'old-diagram')).toBe(false);
 
@@ -2084,7 +2100,15 @@ describe('DrawioMapPanel deferred diagram', () => {
       await new Promise((done) => setTimeout(done, 0));
       r.rerender(<DrawioMapPanel {...withUrl(c, 'https://example.org/c')} renderCounter={2} />);
     });
-    expect(traces(r.container)).toEqual({ svg: false, cells: '0', pending: 'true', labels: 0, links: 0, dialog: false, legend: 0 });
+    expect(traces(r.container)).toEqual({
+      svg: false,
+      cells: '0',
+      pending: 'true',
+      labels: 0,
+      links: 0,
+      dialog: false,
+      legend: 0,
+    });
     expect(panel().getAttribute('data-dmap-hash')).toBe(fnv1a(c));
     await settle();
     await waitFor(() => expect(panel().getAttribute('data-dmap-pending')).toBeNull());

@@ -27,13 +27,7 @@ export type EditorLoad = 'probing' | 'starting' | 'ready' | 'running' | 'missing
  * document (theme change) and must send a new hello.
  */
 export type EditorLoadEvent =
-  | 'probe-ok'
-  | 'probe-missing'
-  | 'probe-unreachable'
-  | 'hello'
-  | 'init'
-  | 'timeout'
-  | 'reload';
+  'probe-ok' | 'probe-missing' | 'probe-unreachable' | 'hello' | 'init' | 'timeout' | 'reload';
 
 const JS_TYPE = /\b(?:java|ecma)script\b/i;
 
@@ -130,7 +124,7 @@ export function nextLoad(load: EditorLoad, event: EditorLoadEvent): EditorLoad {
             : load;
     // The probe of a fast start (initialLoad) can fail after the frame is there: the files went away.
     case 'starting':
-      return event === 'hello' ? 'ready' : event === 'timeout' ? 'timeout' : failedProbe(event) ?? load;
+      return event === 'hello' ? 'ready' : event === 'timeout' ? 'timeout' : (failedProbe(event) ?? load);
     case 'ready':
       return event === 'init' ? 'running' : event === 'reload' ? 'starting' : (failedProbe(event) ?? load);
     // The editor works: a late result of the probe (the files went away after draw.io loaded, or the probe hung)

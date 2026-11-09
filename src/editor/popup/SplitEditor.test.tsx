@@ -467,7 +467,9 @@ describe('SplitEditor', () => {
       const view = render(<SplitEditor {...props} />);
       await frame();
       type(broken());
-      view.rerender(<SplitEditor {...props} options={{ ...props.options, config: { ...CONFIG, overrides: { x: {} } } } as never} />);
+      view.rerender(
+        <SplitEditor {...props} options={{ ...props.options, config: { ...CONFIG, overrides: { x: {} } } } as never} />
+      );
       fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
       act(() => vi.advanceTimersByTime(SETTLE_MS * 2));
       await frame();

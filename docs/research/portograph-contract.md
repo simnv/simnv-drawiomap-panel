@@ -27,7 +27,7 @@ rule in this document. A change to a rule increments the schema version.
 </object>
 ```
 
-draw.io keeps the attributes when a user edits the diagram. Its *Edit Data* dialog shows them. An
+draw.io keeps the attributes when a user edits the diagram. Its _Edit Data_ dialog shows them. An
 SVG or PNG export from draw.io keeps them only when it embeds the diagram XML.
 
 ## 2. Ids
@@ -35,13 +35,13 @@ SVG or PNG export from draw.io keeps them only when it embeds the diagram XML.
 Bind to `pg-id`, not to the cell `id`. A copy and paste in draw.io gives the cell a new `id` but
 keeps `pg-id`. The cell `id` follows from `pg-id` and is for convenience only.
 
-| Thing | `pg-id` | Cell `id` |
-| --- | --- | --- |
-| node | the YAML node id: `sw1` | `pg-node~sw1` |
-| port | `<node>:<port>`: `sw1:eth2`; `<node>:<port>#<n>` for the n-th port of one name, n > 1 | `pg-port~sw1~eth2~1` |
-| link | see section 2.1 | `pg-link~<link id>`; `pg-link~<link id>~<i>` for run i of a split link |
-| link label | — (the cell has `pg-of`) | `pg-linkLabel~<link id>` |
-| node icon | — (the cell has `pg-of`) | `pg-icon~<node>` |
+| Thing      | `pg-id`                                                                               | Cell `id`                                                              |
+| ---------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| node       | the YAML node id: `sw1`                                                               | `pg-node~sw1`                                                          |
+| port       | `<node>:<port>`: `sw1:eth2`; `<node>:<port>#<n>` for the n-th port of one name, n > 1 | `pg-port~sw1~eth2~1`                                                   |
+| link       | see section 2.1                                                                       | `pg-link~<link id>`; `pg-link~<link id>~<i>` for run i of a split link |
+| link label | — (the cell has `pg-of`)                                                              | `pg-linkLabel~<link id>`                                               |
+| node icon  | — (the cell has `pg-of`)                                                              | `pg-icon~<node>`                                                       |
 
 In a cell `id`, the separator is `~`. The export writes a `%` or a `~` inside a part as `%25` or
 `%7e`, so two different things cannot get the same cell `id`.
@@ -77,19 +77,19 @@ Give a link an `id:` when a dashboard must bind to it through such changes.
 
 All attribute values are strings. A reader must parse numbers and booleans.
 
-| Attribute | On | Value |
-| --- | --- | --- |
-| `pg-schema` | root cell `id="0"` | `1` |
-| `pg-kind` | every bound cell | `node`, `port`, `link`, `link-label` or `node-icon` |
-| `pg-id` | node, port, link | the id from section 2 |
-| `pg-node` | port | the node id |
-| `pg-port` | port | the port name. For a network diagram this is the OS interface name, for example `eth2` |
-| `pg-from` | link | the `from` end, in the form of section 2.1, rule 2 |
-| `pg-to` | link | the `to` end, in the same form |
-| `pg-run` | link, split into runs only | the index of this run, from `0` |
-| `pg-runs` | link, split into runs only | the number of runs |
-| `pg-of` | link label, node icon | the `pg-id` of the link that owns the label, or of the node that owns the icon |
-| `pg-rules` | root cell `id="0"` | reserved, not written in version 1. It will hold binding rules as one YAML or JSON string, versioned with `pg-schema` |
+| Attribute   | On                         | Value                                                                                                                 |
+| ----------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `pg-schema` | root cell `id="0"`         | `1`                                                                                                                   |
+| `pg-kind`   | every bound cell           | `node`, `port`, `link`, `link-label` or `node-icon`                                                                   |
+| `pg-id`     | node, port, link           | the id from section 2                                                                                                 |
+| `pg-node`   | port                       | the node id                                                                                                           |
+| `pg-port`   | port                       | the port name. For a network diagram this is the OS interface name, for example `eth2`                                |
+| `pg-from`   | link                       | the `from` end, in the form of section 2.1, rule 2                                                                    |
+| `pg-to`     | link                       | the `to` end, in the same form                                                                                        |
+| `pg-run`    | link, split into runs only | the index of this run, from `0`                                                                                       |
+| `pg-runs`   | link, split into runs only | the number of runs                                                                                                    |
+| `pg-of`     | link label, node icon      | the `pg-id` of the link that owns the label, or of the node that owns the icon                                        |
+| `pg-rules`  | root cell `id="0"`         | reserved, not written in version 1. It will hold binding rules as one YAML or JSON string, versioned with `pg-schema` |
 
 A link from `pg-from` to `pg-to` has the YAML direction. Use it to select the counter for each
 direction, for example the transmit counter of the `pg-from` port.

@@ -36,7 +36,7 @@ links:
 - Port names can repeat. A port is identified by its name and a 1-based ordinal.
 - Endpoint forms: `node.port`, `node.port#n`, `node.*`, `node`, `group`.
 - Port status tokens in `class`: `up down admin-down degraded unused`. Port roles: `uplink downlink
-  peer mgmt lag loopback`. Other tokens stay as free CSS classes.
+peer mgmt lag loopback`. Other tokens stay as free CSS classes.
 - portograph has no Prometheus, SNMP or ifIndex concept. Port names are free text. In a network
   diagram they are usually the OS interface names (`br-lan`, `eth2`, `eth2.103`).
 
@@ -50,16 +50,16 @@ links:
 - Cell ids are deterministic. The scheme is `pg-<kind>~<part>~<part>`. A `%` or a `~` in a part is
   percent-escaped.
 
-| Cell | id |
-|---|---|
-| layers | `pg-layer~canvas/diagram/overlay/links/labels/legend` |
-| group, group title | `pg-group~<groupId>`, `pg-groupTitle~<groupId>` |
-| node | `pg-node~<nodeId>` |
-| node description | `pg-nodeDescription~<nodeId>` |
-| node icon | `pg-icon~<nodeId>`, `pg-iconTile~<nodeId>` |
-| port pill | `pg-port~<nodeId>~<portName>~<ordinal>` |
-| link | `pg-link~<link id>`, `pg-link~<link id>~<i>` for run i of a split link |
-| link label | `pg-linkLabel~<link id>` |
+| Cell               | id                                                                     |
+| ------------------ | ---------------------------------------------------------------------- |
+| layers             | `pg-layer~canvas/diagram/overlay/links/labels/legend`                  |
+| group, group title | `pg-group~<groupId>`, `pg-groupTitle~<groupId>`                        |
+| node               | `pg-node~<nodeId>`                                                     |
+| node description   | `pg-nodeDescription~<nodeId>`                                          |
+| node icon          | `pg-icon~<nodeId>`, `pg-iconTile~<nodeId>`                             |
+| port pill          | `pg-port~<nodeId>~<portName>~<ordinal>`                                |
+| link               | `pg-link~<link id>`, `pg-link~<link id>~<i>` for run i of a split link |
+| link label         | `pg-linkLabel~<link id>`                                               |
 
 - A link id is the YAML `id:`, or `<from>-><to>` from its ends (`isp-a:pppoe->rtr-a:wan1`).
 - Edge `source` and `target` point to port cells, or to the node cell for an anonymous end.
@@ -111,7 +111,7 @@ through user templates. The panel rules use templates such as `node-${from.node}
 ## 4. Implications for the panel
 
 1. Parse the draw.io XML in the browser: plain and compressed, `mxfile` and bare `mxGraphModel`.
-2. Bind by `pg-id` or by a custom attribute (draw.io *Edit Data*). Link ids from the link ends
+2. Bind by `pg-id` or by a custom attribute (draw.io _Edit Data_). Link ids from the link ends
    survive a reorder of the YAML.
 3. Rewrite colours inline and handle the `light-dark()` form.
 4. Link direction is source to target, with two series (a2b, b2a), threshold sets per link and

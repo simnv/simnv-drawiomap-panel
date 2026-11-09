@@ -26,14 +26,14 @@ origin. The other caveats are size and the plugin CDN (see below).
 
 ## How the prototype works
 
-| Part | File |
-|---|---|
-| Downloads the pinned `draw.war` from the GitHub release, checks sha256, removes unused files, writes the offline configuration, patches `bootstrap.js`, converts `resources/dia*.txt` to script files, writes `NOTICE` and `LICENSE`. Builds in a temporary folder; `--if-missing` skips when the pinned version and `VENDOR_REVISION` are present | `scripts/vendor-drawio.sh` (called by `npm run build` and `npm run dev`) |
-| Copies `.drawio/webapp` to `dist/drawio` and the shim to `dist/drawio/js/dmap-shim.js` (no Terser) | `webpack.config.ts` (root, extends `.config/`) |
-| Shim in the frame: answers draw.io XHR for the text resources from script files, opens the channel to the panel, asks the panel for image files for the export | `src/editor/drawio-shim.js` |
-| Selects the editor: empty Editor URL = bundled editor, other value = external editor | `src/editor/target.ts` |
-| iframe with `srcDoc` and `sandbox` (bundled) or `src` (external); channel hello and message filter | `src/editor/DrawioModal.tsx`, `src/editor/protocol.ts`, `src/editor/files.ts` |
-| Test stack: Grafana 12.4/13.2 on 3112/3113, sandbox on 3122/3123, CSP on 3132/3133, sandbox + CSP on 3143, `app_sub_url` on 3153 | `docker-compose.spike.yaml` |
+| Part                                                                                                                                                                                                                                                                                                                                               | File                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Downloads the pinned `draw.war` from the GitHub release, checks sha256, removes unused files, writes the offline configuration, patches `bootstrap.js`, converts `resources/dia*.txt` to script files, writes `NOTICE` and `LICENSE`. Builds in a temporary folder; `--if-missing` skips when the pinned version and `VENDOR_REVISION` are present | `scripts/vendor-drawio.sh` (called by `npm run build` and `npm run dev`)      |
+| Copies `.drawio/webapp` to `dist/drawio` and the shim to `dist/drawio/js/dmap-shim.js` (no Terser)                                                                                                                                                                                                                                                 | `webpack.config.ts` (root, extends `.config/`)                                |
+| Shim in the frame: answers draw.io XHR for the text resources from script files, opens the channel to the panel, asks the panel for image files for the export                                                                                                                                                                                     | `src/editor/drawio-shim.js`                                                   |
+| Selects the editor: empty Editor URL = bundled editor, other value = external editor                                                                                                                                                                                                                                                               | `src/editor/target.ts`                                                        |
+| iframe with `srcDoc` and `sandbox` (bundled) or `src` (external); channel hello and message filter                                                                                                                                                                                                                                                 | `src/editor/DrawioModal.tsx`, `src/editor/protocol.ts`, `src/editor/files.ts` |
+| Test stack: Grafana 12.4/13.2 on 3112/3113, sandbox on 3122/3123, CSP on 3132/3133, sandbox + CSP on 3143, `app_sub_url` on 3153                                                                                                                                                                                                                   | `docker-compose.spike.yaml`                                                   |
 
 The srcdoc document:
 
@@ -72,16 +72,16 @@ The srcdoc document:
 
 ## Test results
 
-| Grafana | Setting | Port | Bundled editor e2e | Full e2e suite |
-|---|---|---|---|---|
-| 12.4.13 | default | 3112 | pass | 9/9 |
-| 13.2.4 | default | 3113 | pass | 9/9 |
-| 12.4.13 | frontend sandbox | 3122 | pass | 8/9 (1) |
-| 13.2.4 | frontend sandbox | 3123 | pass | 8/9 (1) |
-| 12.4.13 | `content_security_policy = true` | 3132 | pass (2) | 9/9 |
-| 13.2.4 | `content_security_policy = true` | 3133 | pass (2) | 9/9 |
-| 13.2.4 | sandbox + CSP | 3143 | pass (3) | 8/9 (1) |
-| 13.2.4 | `app_sub_url = /grafana`, `serve_from_sub_path` | 3153 | pass | 9/9 |
+| Grafana | Setting                                         | Port | Bundled editor e2e | Full e2e suite |
+| ------- | ----------------------------------------------- | ---- | ------------------ | -------------- |
+| 12.4.13 | default                                         | 3112 | pass               | 9/9            |
+| 13.2.4  | default                                         | 3113 | pass               | 9/9            |
+| 12.4.13 | frontend sandbox                                | 3122 | pass               | 8/9 (1)        |
+| 13.2.4  | frontend sandbox                                | 3123 | pass               | 8/9 (1)        |
+| 12.4.13 | `content_security_policy = true`                | 3132 | pass (2)           | 9/9            |
+| 13.2.4  | `content_security_policy = true`                | 3133 | pass (2)           | 9/9            |
+| 13.2.4  | sandbox + CSP                                   | 3143 | pass (3)           | 8/9 (1)        |
+| 13.2.4  | `app_sub_url = /grafana`, `serve_from_sub_path` | 3153 | pass               | 9/9            |
 
 (1) `no-drawio.spec.ts` expects zero iframes in view mode. The sandbox adds its own iframe. No draw.io file loads.
 This failure is not caused by the bundled editor.
@@ -117,13 +117,13 @@ Not tested: export to PDF/PNG, Mermaid, PlantUML, math, image shapes from `img/l
 
 ## Sizes
 
-| Set | Raw | zip -9 | Files |
-|---|---|---|---|
-| `draw.war` (download) | 48.4 MB (archive) | | |
-| Full webapp without `WEB-INF`, `META-INF` | 112 MB | 44.0 MB | 3089 |
-| Trimmed (prototype default) | 54 MB | 21.7 MB | 2402 |
-| Files loaded when the editor opens | 20.3 MB | 6.6 MB (gzip) | 13 |
-| Plugin code (`module.js`) | 176 KB | | |
+| Set                                       | Raw               | zip -9        | Files |
+| ----------------------------------------- | ----------------- | ------------- | ----- |
+| `draw.war` (download)                     | 48.4 MB (archive) |               |       |
+| Full webapp without `WEB-INF`, `META-INF` | 112 MB            | 44.0 MB       | 3089  |
+| Trimmed (prototype default)               | 54 MB             | 21.7 MB       | 2402  |
+| Files loaded when the editor opens        | 20.3 MB           | 6.6 MB (gzip) | 13    |
+| Plugin code (`module.js`)                 | 176 KB            |               |       |
 
 Removed in the trimmed set: Java servlet part, other host pages (`dropbox.html`, `teams.html`, ...), service worker,
 development sources (`js/diagramly`, `js/grapheditor`, `mxgraph/src`), `integrate.min.js` (19 MB, Confluence/Jira),
@@ -232,11 +232,11 @@ Other items:
 
 Top risks and mitigations:
 
-| Risk | Mitigation |
-|---|---|
-| draw.io XSS in the editor frame | Done: opaque-origin frame with script-loaded resources and a token-bound channel; pin and update draw.io; keep the CSP meta |
-| Plugin CDN: cross-origin base, XHR without CORS | Detect a cross-origin `__webpack_public_path__`, show a clear message, fall back to the Editor URL; test before catalog submission |
-| 22 MB archive, weekly upstream releases, review of a patched third-party app | Trimmed set, NOTICE and LICENSE, pinned version with sha256, asserted patches, e2e on each update |
+| Risk                                                                         | Mitigation                                                                                                                         |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| draw.io XSS in the editor frame                                              | Done: opaque-origin frame with script-loaded resources and a token-bound channel; pin and update draw.io; keep the CSP meta        |
+| Plugin CDN: cross-origin base, XHR without CORS                              | Detect a cross-origin `__webpack_public_path__`, show a clear message, fall back to the Editor URL; test before catalog submission |
+| 22 MB archive, weekly upstream releases, review of a patched third-party app | Trimmed set, NOTICE and LICENSE, pinned version with sha256, asserted patches, e2e on each update                                  |
 
 ## Open items
 

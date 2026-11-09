@@ -220,13 +220,7 @@ export function DiagramStage({
     >
       <div ref={attachStage} className={styles.stage} data-testid="dmap-popup-stage" data-dmap-hash={hash} />
       {chartLayer ? (
-        <ChartLayer
-          {...chartLayer}
-          root={stage.root}
-          cells={stage.index}
-          viewport={viewport}
-          revision={revision}
-        />
+        <ChartLayer {...chartLayer} root={stage.root} cells={stage.index} viewport={viewport} revision={revision} />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
       {places.map(({ id, left, top }) => {

@@ -213,7 +213,11 @@ describe('sanitizeSvg: namespace confusion and mXSS', () => {
     expect(out).not.toMatch(/<img|CDATA/);
   });
   it('removes a comment with a tag and a processing instruction', () => {
-    const out = clean(wrap('<!-- <img src=x onerror=alert(1)> --><!-- plain --><?xml-stylesheet href="https://evil.example/a.css"?><rect/>'));
+    const out = clean(
+      wrap(
+        '<!-- <img src=x onerror=alert(1)> --><!-- plain --><?xml-stylesheet href="https://evil.example/a.css"?><rect/>'
+      )
+    );
     expect(out).not.toMatch(/onerror|xml-stylesheet|evil\.example/);
     expect(out).toContain('<rect/>');
   });
@@ -224,7 +228,9 @@ describe('sanitizeSvg: namespace confusion and mXSS', () => {
   });
   it('removes animation of a URL attribute', () => {
     const out = clean(
-      wrap('<a><animate attributeName="href" values="javascript:alert(1)"/><set attributeName="href" to="javascript:alert(1)"/><text>t</text></a>')
+      wrap(
+        '<a><animate attributeName="href" values="javascript:alert(1)"/><set attributeName="href" to="javascript:alert(1)"/><text>t</text></a>'
+      )
     );
     expect(out).not.toContain('javascript:');
   });
@@ -237,7 +243,9 @@ describe('sanitizeSvg: namespace confusion and mXSS', () => {
     expect(out).not.toMatch(/<math|annotation-xml|<img|onerror/);
   });
   it('removes a noscript with a closing tag in an attribute', () => {
-    const out = clean(wrap(fo('<noscript><p title="&lt;/noscript&gt;&lt;img src=x onerror=alert(1)&gt;"></p></noscript>')));
+    const out = clean(
+      wrap(fo('<noscript><p title="&lt;/noscript&gt;&lt;img src=x onerror=alert(1)&gt;"></p></noscript>'))
+    );
     expect(out).not.toMatch(/noscript|onerror/);
   });
   it('removes meta, link, base, template, form and ping', () => {
@@ -250,7 +258,11 @@ describe('sanitizeSvg: namespace confusion and mXSS', () => {
     expect(out).toContain('href="https://example.org"');
   });
   it('removes handlers from HTML inside a lowercase foreignobject', () => {
-    const out = clean(wrap(`<foreignobject width="10" height="10"><div xmlns="${XH}"><img src="x" onerror="alert(1)"/>label</div></foreignobject>`));
+    const out = clean(
+      wrap(
+        `<foreignobject width="10" height="10"><div xmlns="${XH}"><img src="x" onerror="alert(1)"/>label</div></foreignobject>`
+      )
+    );
     expect(out).not.toContain('onerror');
     expect(out).toContain('label');
   });

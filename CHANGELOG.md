@@ -46,7 +46,7 @@
 
 This version removes the option `legend.maxBlocks`. The panel ignores a saved value.
 
-- Changed the colour legend: blocks with the same content (the same texts and colours in the same order, the same gradient) merge into one block. Its title lists the queries, joined with ` · `. The pointer or the focus on an entry highlights the cells of all these queries.
+- Changed the colour legend: blocks with the same content (the same texts and colours in the same order, the same gradient) merge into one block. Its title lists the queries, joined with `·`. The pointer or the focus on an entry highlights the cells of all these queries.
 - Changed the title of a status block in the legend: it is the **Display name** of the field config, else the query name (refId). Before, it could be the name of one series from the legend format, for example `scrape_up node-rtr-a`.
 - Removed the legend option **Maximum scales** (`legend.maxBlocks`) and its `+N more` line. The legend shows all blocks and scrolls.
 - The **Edit bindings** button in the panel corner shows its text next to the link icon.
