@@ -31,6 +31,7 @@
     "stack:wait": "./scripts/wait-stack.sh",
     "ci:local": "./scripts/ci-local.sh",
     "ci:woodpecker": "./scripts/ci-woodpecker.sh",
+    "ci:status": "./scripts/ci-status.sh",
     "sign": "sign-plugin"
   },
   "author": "Simnv",

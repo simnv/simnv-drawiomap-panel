@@ -2,12 +2,14 @@
 # Versioned pre-push guardrail. Enable: npm run hooks:install
 # Every commit that the push publishes is scanned, so a term added and removed in later commits is found.
 # $1 is the remote name (githooks(5)). Only commits that the target remote does not have are scanned.
+# A commit that more than one ref publishes (a branch and its tags) is scanned once.
 dir=$(dirname "$0")
 remote="${1:-}"
 zero=0000000000000000000000000000000000000000
 tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT
-while read -r local_ref local_sha remote_ref remote_sha; do
+: > "$tmp/all" || { echo "pre-push: cannot write a temp file" >&2; exit 1; }
+while read -r _ local_sha _ remote_sha; do
   [ "$local_sha" = "$zero" ] && continue
   if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2> /dev/null; then
     git rev-list "$remote_sha..$local_sha" > "$tmp/commits" || { echo "pre-push: cannot list commits" >&2; exit 1; }
@@ -17,9 +19,25 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       || git rev-list "$local_sha" > "$tmp/commits" \
       || { echo "pre-push: cannot list commits" >&2; exit 1; }
   fi
-  while read -r c; do
-    sh "$dir/check-denylist.sh" --commit "$c" || exit 1
-  done < "$tmp/commits"
+  cat "$tmp/commits" >> "$tmp/all" || { echo "pre-push: cannot write a temp file" >&2; exit 1; }
 done
+sort -u "$tmp/all" > "$tmp/unique" || { echo "pre-push: cannot sort the commits" >&2; exit 1; }
+while read -r c; do
+  sh "$dir/check-denylist.sh" --commit "$c" || exit 1
+done < "$tmp/unique" || exit 1
 [ -n "${SIMNV_PANEL_SKIP_PUSH_TESTS:-}" ] && exit 0
-npm test
+# A second vitest run on the same machine makes the timed tests time out. Wait for it (at most 10 minutes).
+# Vitest sets the title of its main process to "node (vitest)" (the workers are "node (vitest N)"). A watch process
+# looks the same, so the wait stops after 10 minutes.
+waited=0
+while pgrep '^node \(vitest\)$' > /dev/null 2>&1; do
+  if [ "$waited" -ge 600 ]; then
+    echo "pre-push: the other vitest run is still active after 10 minutes; the unit tests start now" >&2
+    break
+  fi
+  [ "$waited" = 0 ] && echo "pre-push: another vitest run is active; the unit tests start when it ends" >&2
+  sleep 10
+  waited=$((waited + 10))
+done
+# 4 workers: the CPU budget of CONTRIBUTING.md (the default of vitest.config.ts is 6).
+npm test -- --maxWorkers=4

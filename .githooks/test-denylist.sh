@@ -69,6 +69,22 @@ printf 'refs/heads/x %s refs/heads/x %s\n' "$c2" "$c0" | sh "$hooks/pre-push" or
 check "b: update push blocked" test $rc -ne 0
 check "b: update reports commit:file:line" has "privacy: $c1:a.txt:1"
 check "b: no term in output" lacks SYNTHTERM
+# A branch and a tag that publish the same commits: blocked
+out="$root/b3.out"
+printf 'refs/heads/x %s refs/heads/x %s\nrefs/tags/v1 %s refs/tags/v1 %s\n' "$c2" "$zero" "$c2" "$zero" \
+  | sh "$hooks/pre-push" origin url > "$out" 2>&1; rc=$?
+check "b: branch and tag push blocked" test $rc -ne 0
+# ... and each commit is scanned once (a fake scanner records its calls)
+mkdir -p "$root/fakehooks"
+cp "$hooks/pre-push" "$root/fakehooks/pre-push"
+# shellcheck disable=SC2016 # the fake scanner expands $2 when it runs
+printf '#!/bin/sh\necho "$2" >> "%s"\n' "$root/scans" > "$root/fakehooks/check-denylist.sh"
+: > "$root/scans"
+printf 'refs/heads/x %s refs/heads/x %s\nrefs/tags/v1 %s refs/tags/v1 %s\n' "$c2" "$zero" "$c2" "$zero" \
+  | sh "$root/fakehooks/pre-push" origin url > "$root/b4.out" 2>&1; rc=$?
+check "b: clean branch and tag push passes" test $rc -eq 0
+check "b: a shared commit is scanned once" test "$(wc -l < "$root/scans")" -eq "$(sort -u "$root/scans" | wc -l)"
+check "b: every published commit is scanned" test "$(wc -l < "$root/scans")" -eq 3
 
 # (c) invalid range
 newrepo c
