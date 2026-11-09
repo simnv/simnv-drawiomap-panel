@@ -4,16 +4,20 @@ import { pointTaper } from './pointTaper';
 
 const cross = (a: Point, b: Point, c: Point) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 
+// the distance from p to the segment a-b; the property loops call it often, so it allocates nothing
+function segmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x,
+    dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+}
+
 function distance(p: Point, path: Point[]): number {
-  return Math.min(
-    ...path.slice(1).map((b, i) => {
-      const a = path[i],
-        dx = b.x - a.x,
-        dy = b.y - a.y;
-      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
-      return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
-    })
-  );
+  let shortest = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    shortest = Math.min(shortest, segmentDistance(p, path[i - 1], path[i]));
+  }
+  return shortest;
 }
 
 function simple(head: Point[], path?: Point[]): void {
@@ -35,9 +39,27 @@ function simple(head: Point[], path?: Point[]): void {
       const overlap =
         Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x)) <= Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) &&
         Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y)) <= Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y));
-      const epsilon = 64 * Number.EPSILON * Math.max(1, ...[a, b, c, d].flatMap((p) => [Math.abs(p.x), Math.abs(p.y)]));
+      const epsilon =
+        64 *
+        Number.EPSILON *
+        Math.max(
+          1,
+          Math.abs(a.x),
+          Math.abs(a.y),
+          Math.abs(b.x),
+          Math.abs(b.y),
+          Math.abs(c.x),
+          Math.abs(c.y),
+          Math.abs(d.x),
+          Math.abs(d.y)
+        );
       const touch =
-        Math.min(distance(a, [c, d]), distance(b, [c, d]), distance(c, [a, b]), distance(d, [a, b])) <= epsilon;
+        Math.min(
+          segmentDistance(a, c, d),
+          segmentDistance(b, c, d),
+          segmentDistance(c, a, b),
+          segmentDistance(d, a, b)
+        ) <= epsilon;
       if (touch || (overlap && o[0] * o[1] < 0 && o[2] * o[3] < 0)) {
         crossed = true;
         witness = JSON.stringify({ path, a, b, c, d, o });
