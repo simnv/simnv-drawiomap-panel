@@ -20,23 +20,17 @@ const componentTests = [
 ];
 const exclude = ['node_modules', 'dist', 'tests'];
 
-// Worker ceiling. Vitest 3 applies `maxWorkers` to each pool, and the two projects run in two pools at the same time:
-// the default is one worker per CPU for each pool, so plain `npm test` can start 2 x (CPUs - 1) workers. These limits
-// give 6 workers in total. The components pool gets most of them: its files import @grafana/ui and cost three times
-// as much as the logic files. An explicit `--maxWorkers=N` on the command line keeps its old meaning (N for each
-// pool), because the pool options below would win over it.
+// Worker ceiling. In Vitest 4 `maxWorkers` is one limit for all projects that run at the same time: the projects share
+// one worker queue. Projects with different `maxWorkers` need different `sequence.groupOrder` and then run one after
+// the other, so a split of 2 + 4 is not possible without a slower run. Plain `npm test` uses a total of 6 workers.
+// An explicit `--maxWorkers=N` on the command line is a total of N (it was N for each pool in Vitest 3).
 const workerFlag = process.argv.some((arg) => arg.startsWith('--maxWorkers') || arg.startsWith('--max-workers'));
-const workerLimits = workerFlag ? {} : { maxThreads: 2, maxForks: 4 };
 
 export default defineConfig({
   test: {
     globals: false,
+    maxWorkers: workerFlag ? undefined : 6,
     css: false,
-    // Only the logic project uses threads. Vitest reads this pool option from the root, not from a project.
-    poolOptions: {
-      threads: { isolate: false, maxThreads: workerLimits.maxThreads },
-      forks: { maxForks: workerLimits.maxForks },
-    },
     // @grafana/* ESM builds import extensionless @rc-component files. moment and moment-timezone stay external: inlined,
     // the ESM moment and the moment that moment-timezone requires are two instances, and `moment().tz` is missing.
     server: { deps: { inline: [/@rc-component/, /@grafana\//] } },
@@ -49,10 +43,8 @@ export default defineConfig({
           setupFiles: ['./vitest.setup.logic.ts'],
           include: ['src/**/*.test.ts'],
           exclude: [...exclude, ...componentTests],
-          // Threads, because the pool reads the isolate flag of the root config only: see poolOptions above.
           pool: 'threads',
           isolate: false,
-          poolOptions: { threads: { isolate: false } },
         },
       },
       {
@@ -63,6 +55,7 @@ export default defineConfig({
           setupFiles: ['./vitest.setup.ts'],
           include: componentTests,
           exclude,
+          pool: 'forks',
         },
       },
     ],

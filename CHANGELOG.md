@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.2 (Unreleased)
+
+- Security: updated the bundled DOMPurify HTML and SVG sanitiser from 3.2.6 to 3.4.17. It fixes several published sanitiser advisories. The sanitised output of the test diagrams does not change.
+
 ## 1.5.1 (Unreleased)
 
 - Added support for Grafana 12.3. The plugin needs Grafana `>=12.3.0` (it needed `>=12.4.0`). It builds against `@grafana/*` 12.4.13 and the 12.3.11 types also compile. The test stack has Grafana 12.3.11 and runs the `matrix` e2e project on it (`npm run e2e:12.3`). Restart Grafana after you install this version: `plugin.json` changed.

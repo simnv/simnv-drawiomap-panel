@@ -29,6 +29,9 @@ export function panelSnapshot(data: PanelData | undefined, refId: string, now: (
 
 /** Interpret eager data consistently without copying Grafana's formatted fields. */
 function read(data: PanelData, refId: string, fetchedAt: number): QuerySnapshot {
+  // Grafana 12.3 and 12.4 (runRequest.ts) still set only `error`, not `errors`, for a thrown request error
+  // (catchError) and for a response packet that has only `error`. Reading both is needed.
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
   const errors = [...(data.errors ?? []), ...(data.error ? [data.error] : [])];
   // A refId-specific failure belongs to that query. Error without details is request-wide.
   if (
