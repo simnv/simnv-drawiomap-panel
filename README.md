@@ -21,6 +21,34 @@ The panel removes every `<style>` element from the SVG. It keeps only the `--ge-
 - The plugin is not signed. Set `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel` (or `allow_loading_unsigned_plugins` in `grafana.ini`).
 - A data source with time series. The demo uses VictoriaMetrics.
 
+## Install
+
+Each [GitHub release](https://github.com/simnv/simnv-drawiomap-panel/releases) has the plugin zip `simnv-drawiomap-panel-<version>.zip` and its `.sha256` file. The zip has one top folder, `simnv-drawiomap-panel`. The plugin is not signed, so each method below also needs `allow_loading_unsigned_plugins` (see [Requirements](#requirements)). Restart Grafana after you install or update the plugin.
+
+The examples use version 1.5.0. Replace it with the version that you want.
+
+With the Grafana CLI:
+
+```bash
+grafana cli --pluginUrl https://github.com/simnv/simnv-drawiomap-panel/releases/download/v1.5.0/simnv-drawiomap-panel-1.5.0.zip plugins install simnv-drawiomap-panel
+```
+
+With Docker (Grafana installs the plugin before it starts; the format is `<plugin id>@<version>@<zip URL>`):
+
+```bash
+docker run -d -p 3000:3000 \
+  -e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel \
+  -e GF_PLUGINS_PREINSTALL_SYNC=simnv-drawiomap-panel@1.5.0@https://github.com/simnv/simnv-drawiomap-panel/releases/download/v1.5.0/simnv-drawiomap-panel-1.5.0.zip \
+  grafana/grafana:13.2.4
+```
+
+By hand (for example with no internet access on the Grafana host): check the zip, then extract it into the plugin directory (`[paths] plugins` in `grafana.ini`, default `/var/lib/grafana/plugins`):
+
+```bash
+sha256sum -c simnv-drawiomap-panel-1.5.0.zip.sha256
+unzip simnv-drawiomap-panel-1.5.0.zip -d /var/lib/grafana/plugins
+```
+
 ## Quick start
 
 You need Node.js and Docker.
@@ -816,11 +844,20 @@ Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.g
 - `pre-commit`: the privacy check on the staged diff, then `npm run typecheck` and `npm run lint` when code files are staged.
 - `pre-push`: the privacy check on the pushed commits, then `npm test`.
 
-The privacy check prints `file:line` only. It uses generic patterns (home paths, MAC addresses, private IPv4 outside the demo ranges in `.githooks/privacy-allow.txt`) and the private terms in `~/.config/simnv-drawiomap-panel/denylist` (set `SIMNV_PANEL_DENYLIST` to use another path). Without that file only the generic patterns run. `npm run check:privacy` scans all tracked files. CI runs the generic patterns in the `privacy` step of `.woodpecker/ci.yaml`.
+The privacy check prints `file:line` only. It uses generic patterns (home paths, MAC addresses, private IPv4 outside the demo ranges in `.githooks/privacy-allow.txt`) and the private terms in `~/.config/simnv-drawiomap-panel/denylist` (set `SIMNV_PANEL_DENYLIST` to use another path). Without that file only the generic patterns run. `npm run check:privacy` scans all tracked files. CI runs the generic patterns in the `privacy` step of `.github/workflows/ci.yml` and `.woodpecker/ci.yaml`.
 
 ### CI
 
-Woodpecker CI (v3, docker backend) runs the workflow `.woodpecker/ci.yaml` on push, pull request and manual events. Workflows do not share a workspace, so one workflow does all the work, and the steps run one after the other. A failed step fails the workflow, and the steps after it do not run.
+GitHub is the primary repository. GitHub Actions runs two workflows:
+
+- `.github/workflows/ci.yml`, on push and pull request to `main`: `npm ci`, privacy check, typecheck, lint, unit tests, build, `check:bundle`, `package`. It uploads the plugin zip as the artifact `plugin-zip`. It runs no e2e tests.
+- `.github/workflows/release.yml`, on a pushed tag `vX.Y.Z`: it runs `ci.yml` on the tag, checks that the tag is `v` plus the `package.json` version, and makes a GitHub release with the zip, its `.sha256` file and the notes from the `CHANGELOG.md` section of that version. To release a tag that exists already, run the workflow by hand with the tag as input.
+
+The actions are pinned by commit SHA. Dependabot (`.github/dependabot.yml`) proposes updates each week.
+
+To release: set the version in `package.json` and the heading in `CHANGELOG.md`, run `npm run e2e:release`, commit, then `git tag -a vX.Y.Z -m vX.Y.Z && git push origin main vX.Y.Z`.
+
+Woodpecker CI (v3, docker backend) runs the e2e tests on a Forgejo mirror of the GitHub repository. It runs the workflow `.woodpecker/ci.yaml` on push, pull request and manual events. Workflows do not share a workspace, so one workflow does all the work, and the steps run one after the other. A failed step fails the workflow, and the steps after it do not run.
 
 1. Build: `npm ci`, privacy check, typecheck, lint, unit tests, build, `check:bundle`, `package`. The last step shows the plugin zip and its sha256. There is no cache: the run downloads the pinned draw.io release (about 46 MB from github.com) once, and `scripts/vendor-drawio.sh` checks its sha256. Woodpecker has no cache without a volume or a plugin.
 2. Stack: the step `grafana-files` runs `scripts/ci-grafana-files.sh`: it copies `dist/` and `provisioning/` to `ci/` in the workspace (one plugin folder for each Grafana) and checks that the copies are the same as `dist/`, the files of the plugin zip. The detached steps `victoriametrics`, `metrics-gen`, `grafana12` and `grafana13` start the stack (the same images as `docker-compose.yaml`: Grafana 12.4.13 and 13.2.4). The step name is the hostname. Grafana reads the plugin and the provisioning from the workspace (`GF_PATHS_PLUGINS`, `GF_PATHS_PROVISIONING`). The step `wait` runs `scripts/wait-stack.sh` with `VM_URL=http://victoriametrics:8428` and `GRAFANA_URL="http://grafana12:3000 http://grafana13:3000"`.

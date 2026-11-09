@@ -1,0 +1,78 @@
+# Checks, build and package on GitHub Actions. The same steps as the build part of .woodpecker/ci.yaml, without e2e:
+# the e2e tests run on Woodpecker (Forgejo mirror of this repo) and with npm run e2e:release before a tag.
+# release.yml calls this workflow with the tag as ref and publishes the zip that it uploads.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: The git ref to check out, for example v1.5.0.
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: install
+        run: npm ci
+
+      # Generic patterns only: the private denylist is not in CI.
+      - name: privacy
+        run: sh .githooks/check-denylist.sh --all
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: lint
+        run: npm run lint
+
+      - name: test
+        run: npm test
+
+      # Downloads the pinned draw.io release (about 46 MB); scripts/vendor-drawio.sh checks its sha256.
+      - name: build
+        run: npm run build
+
+      - name: check-bundle
+        run: npm run check:bundle
+
+      - name: package
+        run: |
+          npm run package
+          ls -l artifacts/
+          cat artifacts/*.sha256
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-zip
+          path: |
+            artifacts/*.zip
+            artifacts/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,7 @@
+# Weekly updates of the pinned actions in .github/workflows (commit SHA pins with a version comment).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
