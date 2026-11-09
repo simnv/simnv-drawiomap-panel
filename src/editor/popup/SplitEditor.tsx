@@ -548,18 +548,21 @@ export function SplitEditor({
           Apply
         </Button>
       </div>
-      <ConfirmModal
-        isOpen={discard}
-        title="Discard changes?"
-        body="The draft has changes that are not saved."
-        confirmText="Discard"
-        dismissText="Cancel"
-        onConfirm={() => {
-          setDiscard(false);
-          onClose?.();
-        }}
-        onDismiss={() => setDiscard(false)}
-      />
+      {/* Mount the question only while it is open: the Grafana 12.3 Modal names itself on its first mount, and a closed Modal has no title yet. */}
+      {discard && (
+        <ConfirmModal
+          isOpen
+          title="Discard changes?"
+          body="The draft has changes that are not saved."
+          confirmText="Discard"
+          dismissText="Cancel"
+          onConfirm={() => {
+            setDiscard(false);
+            onClose?.();
+          }}
+          onDismiss={() => setDiscard(false)}
+        />
+      )}
     </div>
   );
   return onClose ? (

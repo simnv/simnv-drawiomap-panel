@@ -22,7 +22,7 @@ The panel removes every `<style>` element from the SVG. It keeps only the `--ge-
 
 ## Grafana 12 and 13
 
-The plugin targets Grafana `>=12.4.0` and builds against `@grafana/*` 12.4.x. React comes from Grafana (it is not bundled). The authoring matrix and its evidence are in [authoring compatibility](../research/authoring-compatibility.md). The v4 checks and the earlier PoC results are in [acceptance](../acceptance.md).
+The plugin targets Grafana `>=12.3.0` and builds against `@grafana/*` 12.4.x. It runs on 12.3, 12.4 and 13.2. React comes from Grafana (it is not bundled). The authoring matrix and its evidence are in [authoring compatibility](../research/authoring-compatibility.md). The v4 checks and the earlier PoC results are in [acceptance](../acceptance.md).
 
 ## Known limits
 

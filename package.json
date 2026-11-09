@@ -1,6 +1,6 @@
 {
   "name": "simnv-drawiomap-panel",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "scripts": {
     "build": "./scripts/vendor-drawio.sh --if-missing && webpack -c ./webpack.config.ts --env production",
     "dev": "./scripts/vendor-drawio.sh --if-missing && webpack -w -c ./webpack.config.ts --env development",
@@ -15,11 +15,12 @@
     "test:hooks": "sh .githooks/test-denylist.sh",
     "hooks:install": "git config core.hooksPath .githooks",
     "e2e": "playwright test",
+    "e2e:12.3": "./scripts/run-e2e.sh 3011 --project=matrix",
     "e2e:12": "./scripts/run-e2e.sh 3012 --project=matrix",
     "e2e:13": "./scripts/run-e2e.sh 3013 --project=matrix --project=plugin",
-    "e2e:matrix": "npm run e2e:12 && npm run e2e:13",
+    "e2e:matrix": "npm run e2e:12.3 && npm run e2e:12 && npm run e2e:13",
     "e2e:webkit": "PW_WEBKIT=1 ./scripts/run-e2e.sh 3013 --project=webkit tests/card-tooltip.spec.ts",
-    "e2e:release": "./scripts/run-e2e.sh 3012 --project=matrix --project=plugin && npm run e2e:13 && npm run e2e:webkit",
+    "e2e:release": "npm run e2e:12.3 && ./scripts/run-e2e.sh 3012 --project=matrix --project=plugin && npm run e2e:13 && npm run e2e:webkit",
     "docs:screenshots": "PW_DOCS=1 GRAFANA_URL=${GRAFANA_URL:-http://localhost:3013} playwright test --project=docs --workers=1 && ./scripts/docs-hero-gif.sh",
     "build:dashboard": "tsx scripts/build-dashboard.ts",
     "check:bundle": "./scripts/check-bundle.sh",

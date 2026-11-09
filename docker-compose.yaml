@@ -21,6 +21,12 @@ x-grafana-volumes: &grafana-volumes
   - ./provisioning:/etc/grafana/provisioning
 
 services:
+  grafana123:
+    image: grafana/grafana:12.3.11
+    ports: ["127.0.0.1:3011:3000"]
+    environment: *grafana-env
+    volumes: *grafana-volumes
+    depends_on: [victoriametrics]
   grafana12:
     image: grafana/grafana:12.4.13
     ports: ["127.0.0.1:3012:3000"]

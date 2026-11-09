@@ -6,7 +6,8 @@ import baseConfig from './.config/playwright.config';
  * Extends the scaffolded config. See
  * https://grafana.com/developers/plugin-tools/how-to-guides/extend-configurations#extend-the-playwright-config
  *
- * GRAFANA_URL selects the Grafana version: http://localhost:3012 (12.4) or http://localhost:3013 (13.2).
+ * GRAFANA_URL selects the Grafana version: http://localhost:3011 (12.3), http://localhost:3012 (12.4) or
+ * http://localhost:3013 (13.2).
  * VictoriaMetrics needs about one minute of counters before rate() is stable, so the timeouts are long.
  * PW_WEBKIT=1 adds a WebKit project (`--project webkit`) for the checks that differ in Safari, for example the
  * paint cost of the pinned-card tooltip. The default run stays Chromium only.
@@ -15,7 +16,7 @@ import baseConfig from './.config/playwright.config';
  *
  * Two Chromium projects split the suite by what a test depends on (docs/research/test-cost-audit.md, section 2.3):
  * - `matrix`: the tests on surfaces that differ between Grafana versions (panel edit page, dashboard save API,
- *   datasource editors, dashboard refresh, field config, plugin loading). They run on 12.4 and on 13.2.
+ *   datasource editors, dashboard refresh, field config, plugin loading). They run on 12.3, 12.4 and 13.2.
  * - `plugin`: the tests on the plugin's own DOM. They run on 13.2 only; the release run covers 12.4 too.
  * A whole spec file is in `matrix` when its path is in MATRIX_SPECS. A single test is in `matrix` when its title
  * carries the tag `@matrix` (`test(title, { tag: '@matrix' }, fn)`). `webkit` runs everything except `tests/docs/`. `docs` (only with PW_DOCS=1) runs only `tests/docs/`.

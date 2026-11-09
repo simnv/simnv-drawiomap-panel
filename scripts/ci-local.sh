@@ -3,7 +3,7 @@
 # Usage: npm run ci:local            (all steps)
 #        SKIP_INSTALL=1 npm run ci:local   (keep node_modules: no npm ci)
 #        SKIP_E2E=1 npm run ci:local       (stop after the package step)
-# The e2e steps use the compose stack on 127.0.0.1:3012, :3013 and :8428 and stop it at the end. In CI, detached
+# The e2e steps use the compose stack on 127.0.0.1:3011, :3012, :3013 and :8428 and stop it at the end. In CI, detached
 # steps replace the compose stack.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -87,7 +87,7 @@ step "package"; npm run package
 
 # e2e, one run for each Grafana version of the matrix
 step "playwright browsers"; npx playwright install chromium
-for v in 12:3012 13:3013; do
+for v in 123:3011 12:3012 13:3013; do
   service="grafana${v%%:*}"
   port=${v##*:}
   step "e2e $service on :$port"
