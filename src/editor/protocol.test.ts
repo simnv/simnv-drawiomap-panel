@@ -183,7 +183,7 @@ describe('handleMessage in edit mode', () => {
     const exporting = { ...loaded, phase: 'exporting' as const, seq: 1, pending: { xml: '<mxfile>2</mxfile>', exit: true } };
     const s = exportFailed(exporting, 1, 'no reply');
     expect(s.send).toEqual([]);
-    expect(s.state).toEqual({ phase: 'loaded', xml, pendingExit: false, seq: 1, failure: 'no reply' });
+    expect(s.state).toEqual({ phase: 'loaded', xml, pendingExit: false, seq: 1, failure: 'no reply', busy: 1 });
   });
   it('hands the reply of the current export to the host for the inflate and waits', () => {
     const exporting = { ...loaded, phase: 'exporting' as const, xml: '<mxfile>2</mxfile>', seq: 1 };
@@ -224,20 +224,45 @@ describe('handleMessage in edit mode', () => {
     expect(exportDone(exporting, 2, diagram, opts)).toEqual({ state: exporting, send: [], close: false });
     expect(exportDone(loaded, 0, diagram, opts).result).toBeUndefined();
   });
-  it('exportFailed keeps the editor open with the reason, in exporting and in inflating, and a save clears it', () => {
+  it('exportFailed keeps the editor open with the reason; a timeout leaves the editor busy, an inflate failure does not', () => {
     const exporting = { ...loaded, phase: 'exporting' as const, pendingExit: true, seq: 1 };
     const s = exportFailed(exporting, 1, 'no reply');
     expect(s).toEqual({
-      state: { phase: 'loaded', xml, pendingExit: false, seq: 1, failure: 'no reply' },
+      state: { phase: 'loaded', xml, pendingExit: false, seq: 1, failure: 'no reply', busy: 1 },
       send: [],
       close: false,
     });
-    expect(exportFailed({ ...exporting, phase: 'inflating' }, 1, 'bad page').state.failure).toBe('bad page');
+    const inflating = exportFailed({ ...exporting, phase: 'inflating' }, 1, 'bad page');
+    expect(inflating.state).toEqual({ phase: 'loaded', xml, pendingExit: false, seq: 1, failure: 'bad page' });
     expect(exportFailed(exporting, 0, 'old').state).toBe(exporting);
     expect(exportFailed(loaded, 0, 'late').state).toBe(loaded);
-    const saved = handleMessage(s.state, { event: 'save', xml: '<mxfile>3</mxfile>' }, opts);
+    // After an inflate failure the editor is free: the next save exports at once.
+    const saved = handleMessage(inflating.state, { event: 'save', xml: '<mxfile>3</mxfile>' }, opts);
     expect(saved.state).toEqual({ phase: 'exporting', xml: '<mxfile>3</mxfile>', pendingExit: false, seq: 2 });
-    expect(saved.state.failure).toBeUndefined();
+    expect(saved.send).toHaveLength(1);
+  });
+  it('after a timeout the editor may still export: a save waits, and the late reply is stored and frees it', () => {
+    const timedOut = exportFailed({ ...loaded, phase: 'exporting', seq: 1 }, 1, 'no reply').state;
+    // The late reply with no newer save: it is still what the user asked to save.
+    const late = handleMessage(timedOut, reply(1, { xml: '<mxfile>c1</mxfile>' }), opts);
+    expect(late.export?.xml).toBe('<mxfile>c1</mxfile>');
+    expect(late.state).toEqual({ phase: 'inflating', xml, pendingExit: false, seq: 1 });
+    const stored = exportDone(late.state, 1, { xml: '<mxfile>u1</mxfile>', svg: '<svg/>' }, opts);
+    expect(stored.result?.xml).toBe('<mxfile>u1</mxfile>');
+    expect(stored.state).toEqual({ phase: 'loaded', xml: '<mxfile>u1</mxfile>', pendingExit: false, seq: 1 });
+    // A save while the editor is busy waits with no request; a stale or unknown reply does not free the editor.
+    const retry = handleMessage(timedOut, { event: 'save', xml: '<mxfile>2</mxfile>', exit: true }, opts);
+    expect(retry.send).toEqual([]);
+    expect(retry.state).toEqual({ ...timedOut, failure: undefined, pending: { xml: '<mxfile>2</mxfile>', exit: true } });
+    expect(handleMessage(retry.state, reply(0), opts).state).toBe(retry.state);
+    expect(handleMessage(retry.state, reply(2), opts).state).toBe(retry.state);
+    // The late reply frees the editor: its snapshot is stored, then the export of the waiting save starts.
+    const freed = handleMessage(retry.state, reply(1, { xml: '<mxfile>c1</mxfile>' }), opts);
+    expect(freed.state).toEqual({ phase: 'inflating', xml, pendingExit: false, seq: 1, pending: { xml: '<mxfile>2</mxfile>', exit: true } });
+    const next = exportDone(freed.state, 1, { xml: '<mxfile>u1</mxfile>', svg: '<svg/>' }, opts);
+    expect(next.result?.xml).toBe('<mxfile>u1</mxfile>');
+    expect(next.send).toEqual([exportAction(2)]);
+    expect(next.state).toEqual({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true, seq: 2 });
   });
   it('closes on exit', () => {
     expect(handleMessage(loaded, { event: 'exit' }, opts).close).toBe(true);
@@ -328,5 +353,35 @@ describe('the protocol against the spinner gate of the bundled editor', () => {
     expect(results.map((r) => r.xml)).toEqual(['<mxfile>u1</mxfile>', '<mxfile>u2</mxfile>']);
     expect(drawio.ignored).toEqual([]);
     expect(drawio.inFlight()).toBeUndefined();
+  });
+
+  it('after the host deadline, Save again waits for the late reply, which frees the spinner; then the retry succeeds', () => {
+    const drawio = editor();
+    let state = { phase: 'loaded' as const, xml, pendingExit: false, seq: 0 };
+    const results: Array<{ xml: string; svg: string }> = [];
+    const run = (step: Step) => {
+      state = step.state as typeof state;
+      drawio.take(step.send);
+      if (step.result) {
+        results.push(step.result);
+      }
+      return step;
+    };
+    run(handleMessage(state, { event: 'save', xml: '<mxfile>1</mxfile>' }, opts));
+    // The host deadline passes while draw.io still embeds the images of export 1.
+    run(exportFailed(state, 1, 'no reply'));
+    expect(state.phase).toBe('loaded');
+    run(handleMessage(state, { event: 'save', xml: '<mxfile>2</mxfile>' }, opts));
+    // No request went to the busy editor: nothing for its spinner gate to drop.
+    expect(drawio.ignored).toEqual([]);
+    expect(drawio.inFlight()).toBe(1);
+    run(handleMessage(state, drawio.reply(), opts));
+    run(exportDone(state, state.seq, { xml: '<mxfile>u1</mxfile>', svg: '<svg/>' }, opts));
+    expect(drawio.inFlight()).toBe(2);
+    run(handleMessage(state, drawio.reply(), opts));
+    const last = run(exportDone(state, state.seq, { xml: '<mxfile>u2</mxfile>', svg: '<svg/>' }, opts));
+    expect(last.state.phase).toBe('loaded');
+    expect(results.map((r) => r.xml)).toEqual(['<mxfile>u1</mxfile>', '<mxfile>u2</mxfile>']);
+    expect(drawio.ignored).toEqual([]);
   });
 });

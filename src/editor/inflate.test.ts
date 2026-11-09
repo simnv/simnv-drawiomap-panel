@@ -36,6 +36,12 @@ describe('inflatePages', () => {
     await expect(inflatePages(page('<mxGraphModel></mxGraphModel><other/>'))).rejects.toThrow(/page 1/);
     await expect(inflatePages(page('<mxGraphModel/>trailing'))).rejects.toThrow(/page 1/);
     await expect(inflatePages(page('<mxGraphModelX/>'))).rejects.toThrow(/page 1/);
+    // A prolog or a DTD parses on its own, but not inside <diagram>: the assembled file would not parse.
+    await expect(inflatePages(page('<?xml version="1.0"?><mxGraphModel><root/></mxGraphModel>'))).rejects.toThrow(/page 1/);
+    await expect(
+      inflatePages(page('<!DOCTYPE mxGraphModel [<!ENTITY x "y">]><mxGraphModel>&x;</mxGraphModel>'))
+    ).rejects.toThrow(/page 1/);
+    await expect(inflatePages(page('<!-- c --><mxGraphModel/>'))).rejects.toThrow(/page 1/);
     expect(await inflatePages(page('<mxGraphModel dx="1"/>'))).toBe('<mxfile><diagram id="p"><mxGraphModel dx="1"/></diagram></mxfile>');
   });
   it('stops a decompression bomb at the limit plus the output of one input chunk', async () => {
@@ -52,6 +58,11 @@ describe('inflatePages', () => {
     expect(stopped).toBeGreaterThan(1024 * 1024);
     expect(stopped).toBeLessThanOrEqual(1024 * 1024 + INPUT_CHUNK * 1032);
     expect(Date.now() - start).toBeLessThan(2000);
+  });
+  it('rejects a file that does not parse once its pages are inflated', async () => {
+    // The page is fine on its own; the file around it is broken.
+    const broken = `<mxfile><diagram id="p">${compress('<mxGraphModel/>')}</diagram>`;
+    await expect(inflatePages(broken)).rejects.toThrow(/does not parse/);
   });
   it('rejects when the browser has no DecompressionStream', async () => {
     vi.stubGlobal('DecompressionStream', undefined);

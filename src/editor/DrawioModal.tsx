@@ -94,6 +94,8 @@ const HELP =
 /** How long the host waits for the reply of an export. The editor embeds the images of the diagram in that time. */
 export const EXPORT_TIMEOUT_MS = 60_000;
 const EXPORT_TIMEOUT = `The export did not finish in ${EXPORT_TIMEOUT_MS / 1000} s. The diagram was not saved.`;
+const EDITOR_BUSY =
+  'The editor is still running the previous export. This save follows it. If it does not finish, close the editor and open it again.';
 
 /** Shows the bundled draw.io editor in embed mode inside a sandboxed iframe. Only this component loads draw.io code. */
 export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: DrawioModalProps) {
@@ -104,6 +106,8 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');
   /** Why the last export stored nothing. */
   const [exportFailure, setExportFailure] = useState<string>();
+  /** A save waits for the editor, which may still run the export that the deadline gave up on. */
+  const [queued, setQueued] = useState(false);
   /** The id of the export that the host waits for, while the phase is exporting. */
   const [waiting, setWaiting] = useState<number>();
   /** True while the editor is mounted (the effect below sets it): an inflate that ends after the unmount stores nothing. */
@@ -134,6 +138,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     stateRef.current = step.state;
     setPhase(step.state.phase);
     setExportFailure(step.state.failure);
+    setQueued(step.state.phase === 'loaded' && step.state.busy !== undefined && step.state.pending !== undefined);
     setWaiting(step.state.phase === 'exporting' ? step.state.seq : undefined);
     for (const action of step.send) {
       portRef.current?.postMessage(JSON.stringify(action));
@@ -324,6 +329,11 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
               </Button>
             )}
           </Alert>
+        )}
+        {!failure && queued && (
+          <div role="status" className={styles.status} data-testid="dmap-export-queued">
+            <Spinner inline /> {EDITOR_BUSY}
+          </div>
         )}
         {!failure && ((load !== 'ready' && load !== 'running') || phase === 'init') && (
           <div role="status" className={styles.status}>

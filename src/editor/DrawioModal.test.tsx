@@ -488,23 +488,46 @@ describe('DrawioModal export', () => {
     expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
   });
 
-  it('gives up on an export with no reply, keeps the editor open, and fences the late reply', async () => {
+  it('gives up on an export with no reply and keeps the editor open; the late reply is still stored', async () => {
     const { port } = await open();
     const seq = save(port, '<mxfile>s</mxfile>', true);
     await settle(EXPORT_TIMEOUT_MS);
     expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
     expect(screen.getByRole('alert').textContent).toMatch(/did not finish in 60 s/);
     expect(onClose).not.toHaveBeenCalled();
+    // The editor still ran the export: its late reply is what the user asked to save.
     reply(port, seq, '<mxfile>c</mxfile>');
-    expect(inflate.pages).not.toHaveBeenCalled();
-    expect(onSave).not.toHaveBeenCalled();
-    // The next save works, and its request has a new id.
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('inflating');
+    await act(async () => pending[0].resolve('<mxfile>u</mxfile>'));
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u</mxfile>', svg: '<svg/>' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    // The editor stays open: the user saw the failure, an exit now would surprise.
+    expect(onClose).not.toHaveBeenCalled();
     const next = save(port, '<mxfile>n</mxfile>');
     expect(next).toBe(seq + 1);
-    expect(screen.queryByRole('alert')).toBeNull();
-    reply(port, next, '<mxfile>c2</mxfile>');
-    await act(async () => pending[0].resolve('<mxfile>u2</mxfile>'));
-    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u2</mxfile>', svg: '<svg/>' });
+  });
+
+  it('a Save again after the deadline waits for the busy editor, then follows its late reply', async () => {
+    const { port } = await open();
+    const first = save(port, '<mxfile>1</mxfile>');
+    await settle(EXPORT_TIMEOUT_MS);
+    expect(screen.getByRole('alert').textContent).toMatch(/did not finish/);
+    // Save again: no request goes to the editor while it may still export, and the state says so.
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'save', xml: '<mxfile>2</mxfile>' }) }));
+    expect(requests(port)).toHaveLength(1);
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
+    expect(screen.getByRole('status').textContent).toMatch(/still running the previous export/);
+    // The late reply frees the editor: its snapshot is stored, and the export of the new save follows.
+    reply(port, first, '<mxfile>c1</mxfile>');
+    await act(async () => pending[0].resolve('<mxfile>u1</mxfile>'));
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u1</mxfile>', svg: '<svg/>' });
+    const second = requests(port).at(-1)!.seq;
+    expect(second).toBe(first + 1);
+    expect(screen.queryByRole('status')).toBeNull();
+    reply(port, second, '<mxfile>c2</mxfile>');
+    await act(async () => pending[1].resolve('<mxfile>u2</mxfile>'));
+    expect(onSave).toHaveBeenLastCalledWith({ xml: '<mxfile>u2</mxfile>', svg: '<svg/>' });
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
   });
 
   it('shows the inflate failure and stores nothing', async () => {
@@ -539,14 +562,17 @@ describe('DrawioModal export', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('in export-only mode a missing reply shows the error with a close button', async () => {
+  it('in export-only mode a missing reply shows the error with a close button; a late reply still imports', async () => {
     const { port } = await open('export-only');
     await settle(EXPORT_TIMEOUT_MS);
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toMatch(/did not finish/);
-    reply(port, 1, '<mxfile>c</mxfile>');
-    expect(inflate.pages).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('dmap-editor-close'));
     expect(onClose).toHaveBeenCalledTimes(1);
+    // The user did not close yet (the parent unmounts on close): the late reply completes the import.
+    reply(port, 1, '<mxfile>c</mxfile>');
+    await act(async () => pending[0].resolve('<mxfile>u</mxfile>'));
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u</mxfile>', svg: '<svg/>' });
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

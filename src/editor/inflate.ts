@@ -56,7 +56,11 @@ export async function inflatePages(xml: string, limits: InflateLimits = {}): Pro
     out += xml.slice(last, m.index) + m[1] + model + m[3];
     last = m.index + m[0].length;
   }
-  return out + xml.slice(last);
+  const file = out + xml.slice(last);
+  if (last > 0 && !parseXml(file)) {
+    throw new Error('The inflated diagram does not parse.');
+  }
+  return file;
 }
 
 /** The inflated bytes of one page: base64, then deflate-raw through the browser. */
@@ -119,7 +123,11 @@ async function inflatePage(text: string, page: number, budget: number, maxBytes:
   return bytes;
 }
 
-/** The page XML from the inflated bytes: URI-encoded text of one well-formed `<mxGraphModel>` document. */
+/**
+ * The page XML from the inflated bytes: URI-encoded text of one well-formed `<mxGraphModel>` element and nothing
+ * else. The text goes inside `<diagram>` as it is, so a declaration, a DTD or a comment before the element (which
+ * parse on their own) would break the file.
+ */
 function decodePage(bytes: Uint8Array, page: number): string {
   let model: string;
   try {
@@ -127,7 +135,7 @@ function decodePage(bytes: Uint8Array, page: number): string {
   } catch {
     throw new Error(`The compressed page ${page} does not decode.`);
   }
-  const doc = parseXml(model);
+  const doc = /^\s*<mxGraphModel[\s/>]/.test(model) ? parseXml(model) : undefined;
   if (!doc || doc.documentElement.localName !== 'mxGraphModel') {
     throw new Error(`The compressed page ${page} is not a draw.io page.`);
   }

@@ -66,10 +66,15 @@ export interface ProtocolState {
   pendingExit: boolean;
   /** The id of the newest export request. */
   seq: number;
-  /** The latest save that came during the export in flight. */
+  /** The latest save that came during the export in flight, or while the editor is busy. */
   pending?: { xml: string; exit: boolean };
   /** Why the last export stored nothing. The next save clears it. */
   failure?: string;
+  /**
+   * The export `seq` got no reply in time, and draw.io may still run it (its spinner stays active until it ends,
+   * and it drops a request in that time). A save waits in `pending` until the late reply frees the editor.
+   */
+  busy?: number;
 }
 
 export interface Step {
@@ -235,17 +240,25 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
         return startExport(state, state.xml, true);
       }
       return { ...noop, state: { ...state, phase: 'loaded' } };
-    case 'save':
+    case 'save': {
+      const pending = { xml: msg.xml ?? state.xml, exit: !!msg.exit };
       if (state.phase === 'exporting' || state.phase === 'inflating') {
-        return { ...noop, state: { ...state, pending: { xml: msg.xml ?? state.xml, exit: !!msg.exit } } };
+        return { ...noop, state: { ...state, pending } };
       }
-      return startExport(state, msg.xml ?? state.xml, !!msg.exit);
+      if (state.busy !== undefined) {
+        return { ...noop, state: { ...state, pending, failure: undefined } };
+      }
+      return startExport(state, pending.xml, pending.exit);
+    }
     case 'export': {
-      if (state.phase !== 'exporting' || !msg.data || msg.message?.seq !== state.seq) {
+      // The reply of the export in flight, or the late reply of the export that the deadline gave up on. The
+      // late one is still what the user asked to save, and it frees the editor for the save that waits.
+      const expected = state.phase === 'exporting' ? state.seq : state.phase === 'loaded' ? state.busy : undefined;
+      if (expected === undefined || !msg.data || msg.message?.seq !== expected) {
         return noop;
       }
       return {
-        state: { ...state, phase: 'inflating' },
+        state: { ...state, phase: 'inflating', seq: expected, failure: undefined, busy: undefined },
         send: [],
         export: { xml: msg.xml ?? state.xml, svg: decodeDataUri(msg.data) },
         close: false,
@@ -285,12 +298,15 @@ export function exportDone(
 }
 
 /**
- * The export `seq` gave no diagram (no reply in time, or a page that does not inflate): keep the editor open with
- * the reason. A save that waited is dropped too: the reason tells the user to save again.
+ * The export `seq` gave no diagram: keep the editor open with the reason. A save that waited is dropped too: the
+ * reason tells the user to save again. With no reply in time (phase exporting) the editor stays busy: it may still
+ * run the export, and a new request would be dropped. After a page that does not inflate (phase inflating) the
+ * reply came, so the editor is free.
  */
 export function exportFailed(state: ProtocolState, seq: number, reason: string): Step {
   if ((state.phase !== 'exporting' && state.phase !== 'inflating') || seq !== state.seq) {
     return { state, send: [], close: false };
   }
-  return { state: { phase: 'loaded', xml: state.xml, pendingExit: false, seq, failure: reason }, send: [], close: false };
+  const next: ProtocolState = { phase: 'loaded', xml: state.xml, pendingExit: false, seq, failure: reason };
+  return { state: state.phase === 'exporting' ? { ...next, busy: seq } : next, send: [], close: false };
 }
