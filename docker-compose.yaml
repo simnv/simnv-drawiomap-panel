@@ -16,9 +16,19 @@ x-sandbox-env: &sandbox-env
   <<: *grafana-env
   GF_SECURITY_ENABLE_FRONTEND_SANDBOX_FOR_PLUGINS: simnv-drawiomap-panel
   GF_FEATURE_TOGGLES_ENABLE: pluginsFrontendSandbox
+# Grafana reads its plugin folder only when it starts. Without a built dist/, the panel shows "Panel plugin not found",
+# and a build after the start does not help until Grafana restarts. So dist/ must exist before `docker compose up`
+# (create_host_path: false: Docker does not make an empty dist/, which is root-owned on Linux), and the service
+# plugin-dist stops the start when dist/ has no built plugin. Run `npm run build` first.
 x-grafana-volumes: &grafana-volumes
-  - ./dist:/var/lib/grafana/plugins/simnv-drawiomap-panel
+  - type: bind
+    source: ./dist
+    target: /var/lib/grafana/plugins/simnv-drawiomap-panel
+    bind: { create_host_path: false }
   - ./provisioning:/etc/grafana/provisioning
+x-grafana-depends: &grafana-depends
+  victoriametrics: { condition: service_started }
+  plugin-dist: { condition: service_completed_successfully }
 
 services:
   grafana123:
@@ -26,19 +36,19 @@ services:
     ports: ["127.0.0.1:3011:3000"]
     environment: *grafana-env
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
   grafana12:
     image: grafana/grafana:12.4.13
     ports: ["127.0.0.1:3012:3000"]
     environment: *grafana-env
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
   grafana13:
     image: grafana/grafana:13.2.4
     ports: ["127.0.0.1:3013:3000"]
     environment: *grafana-env
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
   # Profile "isolation": frontend sandbox, content_security_policy = true, app_sub_url.
   grafana12-sandbox:
     image: grafana/grafana:12.4.13
@@ -46,14 +56,14 @@ services:
     ports: ["127.0.0.1:3122:3000"]
     environment: *sandbox-env
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
   grafana13-sandbox:
     image: grafana/grafana:13.2.4
     profiles: [isolation]
     ports: ["127.0.0.1:3123:3000"]
     environment: *sandbox-env
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
   grafana13-csp:
     image: grafana/grafana:13.2.4
     profiles: [isolation]
@@ -62,7 +72,7 @@ services:
       <<: *grafana-env
       GF_SECURITY_CONTENT_SECURITY_POLICY: "true"
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
   grafana13-sandbox-csp:
     image: grafana/grafana:13.2.4
     profiles: [isolation]
@@ -71,7 +81,7 @@ services:
       <<: *sandbox-env
       GF_SECURITY_CONTENT_SECURITY_POLICY: "true"
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
   grafana13-subpath:
     image: grafana/grafana:13.2.4
     profiles: [isolation]
@@ -81,7 +91,19 @@ services:
       GF_SERVER_ROOT_URL: http://localhost:3153/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
     volumes: *grafana-volumes
-    depends_on: [victoriametrics]
+    depends_on: *grafana-depends
+  plugin-dist:
+    image: busybox:1.37
+    volumes:
+      - type: bind
+        source: ./dist
+        target: /dist
+        read_only: true
+        bind: { create_host_path: false }
+    command:
+      - sh
+      - -c
+      - test -f /dist/plugin.json && test -f /dist/module.js || { echo "dist/ has no built plugin. Run npm run build, then docker compose up again." >&2; exit 1; }
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.126.0
     ports: ["127.0.0.1:8428:8428"]
