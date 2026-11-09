@@ -2,6 +2,7 @@
   "extends": "./.config/tsconfig.json",
   "compilerOptions": {
     "incremental": true,
-    "tsBuildInfoFile": "./.cache/tsc/tsconfig.tsbuildinfo"
+    "tsBuildInfoFile": "./.cache/tsc/tsconfig.tsbuildinfo",
+    "types": ["node"]
   }
 }
