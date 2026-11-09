@@ -20,7 +20,7 @@ const componentTests = [
 ];
 const exclude = ['node_modules', 'dist', 'tests'];
 
-// Worker ceiling. In Vitest 4 `maxWorkers` is one limit for all projects that run at the same time: the projects share
+// Worker ceiling. In Vitest 4 and 5 `maxWorkers` is one limit for all projects that run at the same time: the projects share
 // one worker queue. Projects with different `maxWorkers` need different `sequence.groupOrder` and then run one after
 // the other, so a split of 2 + 4 is not possible without a slower run. Plain `npm test` uses a total of 6 workers.
 // An explicit `--maxWorkers=N` on the command line is a total of N (it was N for each pool in Vitest 3).
