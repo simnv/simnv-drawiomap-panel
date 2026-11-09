@@ -10,10 +10,19 @@
  * nothing and the editor shows the reason.
  */
 
+import { parseXml } from '../util/xml';
+
 /** The longest compressed page text that the host inflates (characters). */
 export const MAX_PAGE_TEXT = 16 * 1024 * 1024;
 /** The most inflated bytes of one file. */
 export const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
+/**
+ * The bytes of compressed input that go into the stream at one time. Chromium inflates the whole output of one
+ * input chunk before it gives any of it to the reader, so the output of one chunk is the memory the limit cannot
+ * see. Deflate expands at most about 1032:1: a 4 KB chunk gives at most about 4 MB, and the input is at most
+ * `MAX_PAGE_TEXT`, so the stream sees at most 4096 chunks for a page.
+ */
+export const INPUT_CHUNK = 4096;
 
 export interface InflateLimits {
   maxPageText?: number;
@@ -64,30 +73,39 @@ async function inflatePage(text: string, page: number, budget: number, maxBytes:
   } catch {
     throw new Error(`The compressed page ${page} is not base64.`);
   }
-  const source = new ReadableStream<BufferSource>({
-    start(controller) {
-      controller.enqueue(input);
-      controller.close();
-    },
-  });
-  const reader = source.pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const stream = new DecompressionStream('deflate-raw');
+  const writer = stream.writable.getWriter();
+  const reader = stream.readable.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  try {
+  class Overflow extends Error {}
+  // The reader counts every output chunk as it comes. The stream has no output queue (highWaterMark 0), so the
+  // writer waits for the reader before it gives the next input chunk: the count runs ahead of the inflate.
+  const drain = async () => {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) {
-        break;
+        return;
       }
       total += value.length;
       if (total > budget) {
-        await reader.cancel();
-        throw new Error(`The inflated diagram is over ${maxBytes} bytes.`);
+        throw new Overflow(`The inflated diagram is over ${maxBytes} bytes (stopped at ${total}).`);
       }
       chunks.push(value);
     }
+  };
+  const feed = async () => {
+    for (let at = 0; at < input.length; at += INPUT_CHUNK) {
+      await writer.write(input.subarray(at, at + INPUT_CHUNK));
+    }
+    await writer.close();
+  };
+  try {
+    await Promise.all([drain(), feed()]);
   } catch (e) {
-    if (e instanceof Error && e.message.startsWith('The inflated diagram')) {
+    // Stop both ends at once: no more input goes in, and the output in flight is dropped.
+    await Promise.allSettled([writer.abort(e), reader.cancel(e)]);
+    if (e instanceof Overflow) {
       throw e;
     }
     throw new Error(`The compressed page ${page} does not inflate.`);
@@ -101,7 +119,7 @@ async function inflatePage(text: string, page: number, budget: number, maxBytes:
   return bytes;
 }
 
-/** The page XML from the inflated bytes: URI-encoded text of an `<mxGraphModel>`. */
+/** The page XML from the inflated bytes: URI-encoded text of one well-formed `<mxGraphModel>` document. */
 function decodePage(bytes: Uint8Array, page: number): string {
   let model: string;
   try {
@@ -109,7 +127,8 @@ function decodePage(bytes: Uint8Array, page: number): string {
   } catch {
     throw new Error(`The compressed page ${page} does not decode.`);
   }
-  if (!/^\s*<mxGraphModel[\s>]/.test(model)) {
+  const doc = parseXml(model);
+  if (!doc || doc.documentElement.localName !== 'mxGraphModel') {
     throw new Error(`The compressed page ${page} is not a draw.io page.`);
   }
   return model;

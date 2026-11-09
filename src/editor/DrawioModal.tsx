@@ -106,8 +106,8 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   const [exportFailure, setExportFailure] = useState<string>();
   /** The id of the export that the host waits for, while the phase is exporting. */
   const [waiting, setWaiting] = useState<number>();
-  /** False after the unmount: a reply or an inflate that ends later stores nothing. */
-  const live = useRef(true);
+  /** True while the editor is mounted (the effect below sets it): an inflate that ends after the unmount stores nothing. */
+  const live = useRef(false);
   // A new token for each modal. The bundled editor sends it back in its channel hello.
   const [token] = useState(newChannelToken);
   const base = useMemo(() => bundledEditorBase(), []);
@@ -259,8 +259,10 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     return () => clearTimeout(timer);
   }, [load]);
 
+  // Strict Mode replays this effect: the setup makes the editor live again after the replayed cleanup.
   useEffect(() => {
     const ref = portRef;
+    live.current = true;
     return () => {
       live.current = false;
       ref.current?.close();

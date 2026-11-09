@@ -55,8 +55,10 @@ export type EditorAction =
 
 /**
  * The phases of one editor. `exporting`: the host waits for the reply of the export `seq`. `inflating`: the host
- * inflates the pages of that reply (`exportDone` or `exportFailed` ends it). A save starts a new export from any
- * phase: the reply and the inflate of an older export are stale and are dropped.
+ * inflates the pages of that reply (`exportDone` or `exportFailed` ends it). At most one export is in flight: the
+ * bundled draw.io runs an export only while its spinner is free, so a second request during an export would get
+ * no reply. A save during an export or an inflate waits in `pending` (the latest one wins), and `exportDone`
+ * sends its export after the reply. A reply with another `seq` is stale and is dropped.
  */
 export interface ProtocolState {
   phase: 'init' | 'loaded' | 'exporting' | 'inflating' | 'done';
@@ -64,6 +66,8 @@ export interface ProtocolState {
   pendingExit: boolean;
   /** The id of the newest export request. */
   seq: number;
+  /** The latest save that came during the export in flight. */
+  pending?: { xml: string; exit: boolean };
   /** Why the last export stored nothing. The next save clears it. */
   failure?: string;
 }
@@ -232,6 +236,9 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
       }
       return { ...noop, state: { ...state, phase: 'loaded' } };
     case 'save':
+      if (state.phase === 'exporting' || state.phase === 'inflating') {
+        return { ...noop, state: { ...state, pending: { xml: msg.xml ?? state.xml, exit: !!msg.exit } } };
+      }
       return startExport(state, msg.xml ?? state.xml, !!msg.exit);
     case 'export': {
       if (state.phase !== 'exporting' || !msg.data || msg.message?.seq !== state.seq) {
@@ -251,7 +258,10 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
   }
 }
 
-/** The inflated diagram of the export `seq` is ready: store it, and close when the save asked for the exit. */
+/**
+ * The inflated diagram of the export `seq` is ready: store it. Then the export of the save that waited starts, or
+ * the editor closes when the save asked for the exit.
+ */
 export function exportDone(
   state: ProtocolState,
   seq: number,
@@ -260,6 +270,10 @@ export function exportDone(
 ): Step {
   if (state.phase !== 'inflating' || seq !== state.seq) {
     return { state, send: [], close: false };
+  }
+  if (state.pending) {
+    const next = startExport({ ...state, seq }, state.pending.xml, state.pending.exit);
+    return { ...next, result: diagram };
   }
   const close = state.pendingExit || opts.mode === 'export-only';
   return {
@@ -270,10 +284,13 @@ export function exportDone(
   };
 }
 
-/** The export `seq` gave no diagram (no reply in time, or a page that does not inflate): keep the editor open. */
+/**
+ * The export `seq` gave no diagram (no reply in time, or a page that does not inflate): keep the editor open with
+ * the reason. A save that waited is dropped too: the reason tells the user to save again.
+ */
 export function exportFailed(state: ProtocolState, seq: number, reason: string): Step {
   if ((state.phase !== 'exporting' && state.phase !== 'inflating') || seq !== state.seq) {
     return { state, send: [], close: false };
   }
-  return { state: { ...state, phase: 'loaded', pendingExit: false, failure: reason }, send: [], close: false };
+  return { state: { phase: 'loaded', xml: state.xml, pendingExit: false, seq, failure: reason }, send: [], close: false };
 }

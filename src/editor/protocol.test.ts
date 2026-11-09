@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   acceptChannelHello,
   channelHello,
+  EditorAction,
   EditorMessage,
   exportDone,
   exportFailed,
@@ -12,6 +13,7 @@ import {
   handleMessage,
   initialState,
   parseMessage,
+  Step,
 } from './protocol';
 
 const xml = '<mxfile><diagram/></mxfile>';
@@ -110,6 +112,15 @@ describe('channel of the bundled editor (token + MessagePort)', () => {
 
 describe('handleMessage in edit mode', () => {
   const loaded = { phase: 'loaded' as const, xml, pendingExit: false, seq: 0 };
+  const exportAction = (seq: number) => ({
+    action: 'export',
+    format: 'xmlsvg',
+    embedCellMetadata: true,
+    embedImages: true,
+    theme: 'auto',
+    spin: 'Saving',
+    seq,
+  });
   const reply = (seq: number, over: Partial<EditorMessage> = {}): EditorMessage => ({
     event: 'export',
     format: 'svg',
@@ -139,9 +150,40 @@ describe('handleMessage in edit mode', () => {
       { action: 'export', format: 'xmlsvg', embedCellMetadata: true, embedImages: true, theme: 'auto', spin: 'Saving', seq: 1 },
     ]);
     expect(s.state).toEqual({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true, seq: 1 });
-    const again = handleMessage(s.state, { event: 'save', xml: '<mxfile>3</mxfile>' }, opts);
+    const again = handleMessage({ ...loaded, seq: 1 }, { event: 'save', xml: '<mxfile>3</mxfile>' }, opts);
     expect(again.send[0]).toMatchObject({ action: 'export', seq: 2 });
     expect(again.state).toEqual({ phase: 'exporting', xml: '<mxfile>3</mxfile>', pendingExit: false, seq: 2 });
+  });
+  it('keeps one export in flight: a save during an export waits, and the latest one follows the reply', () => {
+    // The bundled draw.io runs an export only when its spinner is free (spinner.spin returns false while it spins),
+    // so a second request during an export gets no reply. The host sends the next export after the reply.
+    const first = handleMessage(loaded, { event: 'save', xml: '<mxfile>1</mxfile>' }, opts);
+    const second = handleMessage(first.state, { event: 'save', xml: '<mxfile>2</mxfile>' }, opts);
+    expect(second.send).toEqual([]);
+    expect(second.state).toEqual({ ...first.state, pending: { xml: '<mxfile>2</mxfile>', exit: false } });
+    // The latest save wins, with its exit flag.
+    const third = handleMessage(second.state, { event: 'save', xml: '<mxfile>3</mxfile>', exit: true }, opts);
+    expect(third.send).toEqual([]);
+    expect(third.state.pending).toEqual({ xml: '<mxfile>3</mxfile>', exit: true });
+    const got = handleMessage(third.state, reply(1, { xml: '<mxfile>c1</mxfile>' }), opts);
+    expect(got.state.phase).toBe('inflating');
+    expect(got.export?.xml).toBe('<mxfile>c1</mxfile>');
+    // A save during the inflate waits too.
+    const fourth = handleMessage(got.state, { event: 'save', xml: '<mxfile>4</mxfile>' }, opts);
+    expect(fourth.send).toEqual([]);
+    expect(fourth.state).toEqual({ ...got.state, pending: { xml: '<mxfile>4</mxfile>', exit: false } });
+    // The first snapshot is stored, then the export of the latest save starts; the modal stays open.
+    const done = exportDone(fourth.state, 1, { xml: '<mxfile>u1</mxfile>', svg: '<svg/>' }, opts);
+    expect(done.result).toEqual({ xml: '<mxfile>u1</mxfile>', svg: '<svg/>' });
+    expect(done.close).toBe(false);
+    expect(done.send).toEqual([{ ...exportAction(2) }]);
+    expect(done.state).toEqual({ phase: 'exporting', xml: '<mxfile>4</mxfile>', pendingExit: false, seq: 2 });
+  });
+  it('drops the waiting save when the export fails', () => {
+    const exporting = { ...loaded, phase: 'exporting' as const, seq: 1, pending: { xml: '<mxfile>2</mxfile>', exit: true } };
+    const s = exportFailed(exporting, 1, 'no reply');
+    expect(s.send).toEqual([]);
+    expect(s.state).toEqual({ phase: 'loaded', xml, pendingExit: false, seq: 1, failure: 'no reply' });
   });
   it('hands the reply of the current export to the host for the inflate and waits', () => {
     const exporting = { ...loaded, phase: 'exporting' as const, xml: '<mxfile>2</mxfile>', seq: 1 };
@@ -226,5 +268,65 @@ describe('handleMessage in export-only mode', () => {
       action: 'load',
       noSaveBtn: '1',
     });
+  });
+});
+
+describe('the protocol against the spinner gate of the bundled editor', () => {
+  /**
+   * A stand-in for draw.io: an export runs only while no export is in flight (EditorUi.spinner.spin returns false
+   * while the spinner is active, and the export handler returns without a reply). The reply comes when the test
+   * lets the "images embed" end.
+   */
+  function editor() {
+    let inFlight: number | undefined;
+    const ignored: number[] = [];
+    return {
+      take(actions: EditorAction[]) {
+        for (const a of actions) {
+          if (a.action !== 'export') {
+            continue;
+          }
+          if (inFlight !== undefined) {
+            ignored.push(a.seq);
+          } else {
+            inFlight = a.seq;
+          }
+        }
+      },
+      reply(): EditorMessage {
+        const seq = inFlight!;
+        inFlight = undefined;
+        return { event: 'export', data: svgB64, xml: `<mxfile>c${seq}</mxfile>`, message: { seq } };
+      },
+      inFlight: () => inFlight,
+      ignored,
+    };
+  }
+
+  it('a Save & Exit during an export is exported after the reply and closes the editor', () => {
+    const drawio = editor();
+    let state = { phase: 'loaded' as const, xml, pendingExit: false, seq: 0 };
+    const results: Array<{ xml: string; svg: string }> = [];
+    const run = (step: Step) => {
+      state = step.state as typeof state;
+      drawio.take(step.send);
+      if (step.result) {
+        results.push(step.result);
+      }
+      return step;
+    };
+    run(handleMessage(state, { event: 'save', xml: '<mxfile>1</mxfile>' }, opts));
+    run(handleMessage(state, { event: 'save', xml: '<mxfile>2</mxfile>', exit: true }, opts));
+    expect(drawio.ignored).toEqual([]);
+    run(handleMessage(state, drawio.reply(), opts));
+    const first = run(exportDone(state, state.seq, { xml: '<mxfile>u1</mxfile>', svg: '<svg/>' }, opts));
+    expect(first.close).toBe(false);
+    expect(drawio.inFlight()).toBe(2);
+    run(handleMessage(state, drawio.reply(), opts));
+    const second = run(exportDone(state, state.seq, { xml: '<mxfile>u2</mxfile>', svg: '<svg/>' }, opts));
+    expect(second.close).toBe(true);
+    expect(results.map((r) => r.xml)).toEqual(['<mxfile>u1</mxfile>', '<mxfile>u2</mxfile>']);
+    expect(drawio.ignored).toEqual([]);
+    expect(drawio.inFlight()).toBeUndefined();
   });
 });

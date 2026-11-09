@@ -448,23 +448,44 @@ describe('DrawioModal export', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('keeps only the newest of overlapping saves: the reply and the inflate of the older one are dropped', async () => {
+  it('keeps one export in flight: a Save & Exit during an export follows the reply, then the editor closes', async () => {
     const { port } = await open();
     const first = save(port, '<mxfile>1</mxfile>');
+    // The editor runs no second export while its spinner is active: the host sends none.
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'save', xml: '<mxfile>2</mxfile>', exit: true }) }));
+    expect(requests(port)).toHaveLength(1);
     reply(port, first, '<mxfile>c1</mxfile>');
-    const second = save(port, '<mxfile>2</mxfile>');
-    expect(second).toBe(first + 1);
-    // The inflate of the first reply ends after the second save: its result is stale.
     await act(async () => pending[0].resolve('<mxfile>u1</mxfile>'));
-    expect(onSave).not.toHaveBeenCalled();
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u1</mxfile>', svg: '<svg/>' });
+    expect(onClose).not.toHaveBeenCalled();
+    const second = requests(port).at(-1)!.seq;
+    expect(second).toBe(first + 1);
     expect(modal().getAttribute('data-dmap-editor-phase')).toBe('exporting');
-    // A late reply of the first export is stale too.
+    // A late reply of the first export is stale.
     reply(port, first, '<mxfile>c1</mxfile>');
     expect(inflate.pages).toHaveBeenCalledTimes(1);
     reply(port, second, '<mxfile>c2</mxfile>');
     await act(async () => pending[1].resolve('<mxfile>u2</mxfile>'));
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(onSave).toHaveBeenLastCalledWith({ xml: '<mxfile>u2</mxfile>', svg: '<svg/>' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles an inflate under a React Strict Mode replay of the effects', async () => {
+    render(
+      <React.StrictMode>
+        <DrawioModal xml="<mxfile/>" title="t" mode="edit" isDark={false} onSave={onSave} onClose={onClose} />
+      </React.StrictMode>
+    );
+    await settle();
+    const port = hello();
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'init' }) }));
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'load' }) }));
+    const seq = save(port, '<mxfile>s</mxfile>');
+    reply(port, seq, '<mxfile>c</mxfile>');
+    await act(async () => pending[0].resolve('<mxfile>u</mxfile>'));
     expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u2</mxfile>', svg: '<svg/>' });
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
   });
 
   it('gives up on an export with no reply, keeps the editor open, and fences the late reply', async () => {
