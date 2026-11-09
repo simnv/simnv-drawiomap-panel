@@ -157,13 +157,21 @@ describe('PluginDialog', () => {
     const vw = (n: number) => `${(window.innerWidth * n) / 100}px`;
     const vh = (n: number) => `${(window.innerHeight * n) / 100}px`;
     mount();
-    const style = getComputedStyle(screen.getByRole('dialog', { name: 'Edit bindings' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit bindings' });
+    const style = getComputedStyle(dialog);
     expect({ top: style.top, left: style.left, width: style.width, height: style.height }).toEqual({
       top: vh(3),
       left: vw(2),
       width: vw(96),
       height: vh(94),
     });
+    // The computed px cannot tell dvh from vh. The authored rule must use dvh: it follows the visible height on
+    // iPhone Safari, where the toolbars come and go.
+    const authored = Array.from(document.styleSheets)
+      .flatMap((sheet) => Array.from(sheet.cssRules))
+      .filter((rule): rule is CSSStyleRule => 'selectorText' in rule)
+      .find((rule) => dialog.matches(rule.selectorText) && rule.style.width === '96vw');
+    expect({ top: authored?.style.top, height: authored?.style.height }).toEqual({ top: '3dvh', height: '94dvh' });
   });
 
   it('closes through the header button', () => {

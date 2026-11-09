@@ -143,16 +143,17 @@ use it. The hostile inputs are in `src/render/sanitize.test.ts`.
 
 ## Accepted audit findings
 
-State: `npm audit` after the update of 2026-11-09 shows 24 findings (2 low, 13 moderate, 7 high, 2 critical).
+State: `npm audit` after the update to ESLint 10, TypeScript 6, Vitest 5 and jsdom 31 (2026-11-09) shows 26 findings
+(2 low, 17 moderate, 7 high, 0 critical).
 None of them is in the plugin zip, except where the text says so. The bundled `dompurify` is 3.4.17 and has no
 finding. Run `npm audit` again before each release and update this table.
 
 | Package | Severity | Why we accept it | What clears it |
 |---|---|---|---|
-| `@grafana/data`, `@grafana/ui`, `@grafana/runtime`, `@grafana/i18n` | high, moderate | They are Grafana externals. The zip does not contain them. Grafana gives its own copy to the plugin at run time. We pin 12.4.13 to build against the oldest API that we support. | Move to `@grafana/*` 13.x. This drops Grafana 12.3 and 12.4. Not planned. |
+| `@grafana/data`, `@grafana/ui`, `@grafana/runtime`, `@grafana/i18n` | high, moderate | They are Grafana externals. The zip does not contain them. Grafana gives its own copy to the plugin at run time. We pin 12.4.x to build against the oldest API that we support. | Move to `@grafana/*` 13.x. This drops Grafana 12.3 and 12.4. Not planned. |
 | `dompurify` (under `@grafana/data`) | high | The copy of `@grafana/data` is an external. The bundled copy that the SVG sanitiser uses is the top-level 3.4.17. | Same as the row above. |
 | `moment`, `react-use`, `js-cookie`, `uuid`, `immutable`, `react-router`, `react-router-dom-v5-compat` | high, moderate | They come only through `@grafana/data` and `@grafana/ui`, which are externals. The zip does not contain them. | Same as the first row. |
-| `@typescript-eslint/*`, `@grafana/eslint-config`, `minimatch` | moderate | Lint tools. They run only on this repository. `@typescript-eslint/typescript-estree` 8.72.1 (latest) depends on `minimatch` 10.2.x, and the fix is in 11.x. | A new `typescript-estree` that uses a fixed `minimatch`. |
+| `eslint`, `@eslint/config-array`, `@eslint-community/eslint-utils`, `eslint-plugin-react`, `eslint-plugin-jsdoc`, `@typescript-eslint/*`, `@grafana/eslint-config`, `@grafana/i18n` (lint part), `minimatch` | moderate | Lint tools. They run only on this repository. All findings come from one `minimatch` advisory (denial of service through a crafted glob pattern, fixed in 11.0.1). ESLint 10.14 and `@typescript-eslint/typescript-estree` 8.72.1 (the latest versions) depend on `minimatch` 10.2.x. Our glob patterns are fixed strings in `eslint.config.mjs`, so no untrusted pattern gets to `minimatch`. We do not force `minimatch` 11 with `overrides`: ESLint uses it to match the `files` and `ignores` of the config, and a different match can stop rules without an error. | New ESLint and `typescript-eslint` versions that use `minimatch` 11. |
 | `fork-ts-checker-webpack-plugin`, `deepmerge` | low | Build tool. It runs only on this repository. The zip does not contain it. The latest version (9.1.0) still uses `deepmerge`. | A new `fork-ts-checker-webpack-plugin`. |
 
 `npm audit fix --force` would install old versions of the tools (a downgrade). Do not run it.
