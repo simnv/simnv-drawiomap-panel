@@ -135,23 +135,49 @@ describe('handleMessage in edit mode', () => {
     });
     expect(s.state).toMatchObject({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true });
   });
-  it('returns the result on export and closes only when exit was requested', () => {
+  it('asks for the uncompressed XML after the SVG export, then returns the result', () => {
+    // The xmlsvg export of draw.io compresses the pages of its xml (getFileData with uncompressed=false), so the
+    // host asks for the xml export (which honours compressXml:false) and keeps the SVG while it waits.
+    const compressed = '<mxfile><diagram id="p">7Vxbc9...</diagram></mxfile>';
     const s1 = handleMessage(
       { phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: false },
-      { event: 'export', format: 'xmlsvg', data: svgB64, xml: '<mxfile>3</mxfile>' },
+      { event: 'export', format: 'svg', data: svgB64, xml: compressed },
       opts
     );
-    expect(s1.result).toEqual({ xml: '<mxfile>3</mxfile>', svg: '<svg/>' });
+    expect(s1.result).toBeUndefined();
     expect(s1.close).toBe(false);
-    expect(s1.state.phase).toBe('loaded');
-    const s2 = handleMessage(
+    expect(s1.send).toEqual([{ action: 'export', format: 'xml' }]);
+    expect(s1.state).toMatchObject({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: false });
+    const s2 = handleMessage(s1.state, { event: 'export', format: 'xml', xml: '<mxfile>3</mxfile>' }, opts);
+    expect(s2.result).toEqual({ xml: '<mxfile>3</mxfile>', svg: '<svg/>' });
+    expect(s2.close).toBe(false);
+    expect(s2.state).toEqual({ phase: 'loaded', xml: '<mxfile>3</mxfile>', pendingExit: false });
+  });
+  it('closes after the xml export only when exit was requested, and falls back to the saved xml', () => {
+    const s1 = handleMessage(
       { phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true },
       { event: 'export', data: svgB64 },
       opts
     );
+    expect(s1.result).toBeUndefined();
+    expect(s1.close).toBe(false);
+    const s2 = handleMessage(s1.state, { event: 'export', format: 'xml' }, opts);
     expect(s2.result).toEqual({ xml: '<mxfile>2</mxfile>', svg: '<svg/>' });
     expect(s2.close).toBe(true);
     expect(s2.state.phase).toBe('done');
+  });
+  it('ignores an export outside the exporting phase, an SVG export with no data and an xml export before the SVG', () => {
+    const loaded = { phase: 'loaded' as const, xml, pendingExit: false };
+    expect(handleMessage(loaded, { event: 'export', format: 'svg', data: svgB64 }, opts)).toEqual({
+      state: loaded,
+      send: [],
+      close: false,
+    });
+    const exporting = { phase: 'exporting' as const, xml, pendingExit: false };
+    expect(handleMessage(exporting, { event: 'export', format: 'svg' }, opts).send).toEqual([]);
+    const early = handleMessage(exporting, { event: 'export', format: 'xml', xml: '<mxfile>3</mxfile>' }, opts);
+    expect(early.result).toBeUndefined();
+    expect(early.state).toBe(exporting);
   });
   it('closes on exit', () => {
     expect(handleMessage({ phase: 'loaded', xml, pendingExit: false }, { event: 'exit' }, opts).close).toBe(true);
@@ -169,9 +195,14 @@ describe('handleMessage in export-only mode', () => {
     const s = handleMessage(initialState(xml), { event: 'load' }, eo);
     expect(s.send[0]).toMatchObject({ action: 'export', format: 'xmlsvg' });
     expect(s.state.phase).toBe('exporting');
-    const done = handleMessage(s.state, { event: 'export', data: svgB64, xml }, eo);
-    expect(done.result?.svg).toBe('<svg/>');
+    const svg = handleMessage(s.state, { event: 'export', format: 'svg', data: svgB64, xml }, eo);
+    expect(svg.result).toBeUndefined();
+    expect(svg.close).toBe(false);
+    expect(svg.send).toEqual([{ action: 'export', format: 'xml' }]);
+    const done = handleMessage(svg.state, { event: 'export', format: 'xml', xml: '<mxfile>u</mxfile>' }, eo);
+    expect(done.result).toEqual({ xml: '<mxfile>u</mxfile>', svg: '<svg/>' });
     expect(done.close).toBe(true);
+    expect(done.state.phase).toBe('done');
   });
   it('hides the save button in load', () => {
     expect(handleMessage(initialState(xml), { event: 'init' }, eo).send[0]).toMatchObject({

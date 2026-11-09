@@ -1,4 +1,3 @@
-import { inflateRawSync } from 'node:zlib';
 import { devices } from '@playwright/test';
 import type { APIRequestContext, Locator, Request } from '@playwright/test';
 import type { ConfigV4 } from '../src/model/v4';
@@ -41,10 +40,10 @@ async function savedOptions(request: APIRequestContext, uid: string) {
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   return saved.dashboard.panels[0].options;
 }
-/** The draw.io XML of page 1, inflated when draw.io stored it compressed. */
+/** The draw.io XML of page 1. The panel stores it uncompressed, also after a save in draw.io. */
 function pageXml(xml: string) {
-  const encoded = /<diagram[^>]*>([^<]+)<\/diagram>/.exec(xml)?.[1];
-  return encoded ? decodeURIComponent(inflateRawSync(Buffer.from(encoded, 'base64')).toString()) : xml;
+  expect(xml).toMatch(/<diagram[^>]*>\s*<mxGraphModel/);
+  return xml;
 }
 /** The attributes of the `<object>` of a cell, and the attributes of the `<mxCell>` in it. */
 function wrapperOf(xml: string, id: string) {

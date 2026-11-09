@@ -1,8 +1,10 @@
+import { deflateRawSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sanitizeSvg } from '../render/sanitize';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
+import { EditorAction, EditorMessage, handleMessage, initialState, ProtocolOptions } from './protocol';
 import { setCellAttrs } from './setCellAttrs';
 
 const model = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
@@ -281,5 +283,61 @@ describe('setCellAttrs', () => {
     const clean = sanitizeSvg(result.svg).svg;
     const index = buildCellIndex(mountSvg(document.createElement('div'), clean));
     expect(index.get('host-a')?.meta.attrs.key).toBe('last');
+  });
+});
+
+/** The page text of a compressed draw.io file: Graph.compress (deflateRaw of the URI-encoded XML, base64). */
+const compressPage = (xml: string) => deflateRawSync(encodeURIComponent(xml)).toString('base64');
+
+/**
+ * Runs the embed protocol against a stand-in for the bundled draw.io: its xmlsvg export compresses the pages of
+ * its xml (EditorUi.getFileData with uncompressed=false), its save event and its xml export honour compressXml:false.
+ */
+function editorRoundTrip(opts: ProtocolOptions, loaded: string) {
+  const uncompressed = `<mxfile><diagram id="page-1">${model}</diagram></mxfile>`;
+  const compressed = `<mxfile><diagram id="page-1">${compressPage(model)}</diagram></mxfile>`;
+  const data = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+  const reply = (action: EditorAction): EditorMessage[] => {
+    if (action.action === 'load') {
+      // In edit mode the user saves after the load.
+      return opts.mode === 'edit' ? [{ event: 'load' }, { event: 'save', xml: uncompressed }] : [{ event: 'load' }];
+    }
+    if (action.action === 'export') {
+      return action.format === 'xml'
+        ? [{ event: 'export', format: 'xml', xml: uncompressed }]
+        : [{ event: 'export', format: 'svg', data, xml: compressed }];
+    }
+    return [];
+  };
+  let state = initialState(loaded);
+  let result: { xml: string; svg: string } | undefined;
+  const queue: EditorMessage[] = [{ event: 'configure' }, { event: 'init' }];
+  while (queue.length) {
+    const step = handleMessage(state, queue.shift()!, opts);
+    state = step.state;
+    result ??= step.result;
+    queue.push(...step.send.flatMap(reply));
+  }
+  return { result, state };
+}
+
+describe('the stored diagram of the bundled editor', () => {
+  const write = (d: Diagram) => setCellAttrs(d, [{ id: 'host-a', attrs: { bind: 'server' } }]);
+
+  it('is uncompressed after a save in edit mode, so the inspector can write to it', () => {
+    const { result, state } = editorRoundTrip({ mode: 'edit', isDark: false }, '<mxfile/>');
+    expect(result?.xml).toContain('<mxGraphModel>');
+    expect(state.phase).toBe('loaded');
+    const d: Diagram = { ...result!, hash: fnv1a(result!.svg + result!.xml), updatedAt: '' };
+    expect(parse(write(d).xml).getElementById('host-a')?.getAttribute('bind')).toBe('server');
+  });
+
+  it('is uncompressed after an export-only import of a compressed page', () => {
+    const pasted = `<mxfile><diagram id="page-1">${compressPage(model)}</diagram></mxfile>`;
+    const { result, state } = editorRoundTrip({ mode: 'export-only', isDark: false }, pasted);
+    expect(result?.xml).toContain('<mxGraphModel>');
+    expect(state.phase).toBe('done');
+    const d: Diagram = { ...result!, hash: fnv1a(result!.svg + result!.xml), updatedAt: '' };
+    expect(parse(write(d).xml).getElementById('host-a')?.getAttribute('bind')).toBe('server');
   });
 });

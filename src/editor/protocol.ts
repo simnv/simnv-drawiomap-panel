@@ -47,12 +47,15 @@ export type EditorAction =
       theme: 'auto';
       spin?: string;
     }
+  | { action: 'export'; format: 'xml' }
   | { action: 'exit' };
 
 export interface ProtocolState {
   phase: 'init' | 'loaded' | 'exporting' | 'done';
   xml: string;
   pendingExit: boolean;
+  /** The SVG of the xmlsvg export, while the host waits for the xml export of the same state. */
+  svg?: string;
 }
 
 export interface Step {
@@ -173,6 +176,14 @@ const EXPORT: EditorAction = {
   spin: 'Saving',
 };
 
+/**
+ * The xmlsvg export of draw.io compresses the pages of its xml (EditorUi.getFileData with uncompressed=false),
+ * whatever the compressXml setting. The panel has no inflate code (spec 5.5): it asks for the xml export, which
+ * honours compressXml:false, and stores that XML with the SVG of the xmlsvg export. draw.io answers an xml export
+ * at once, from the same state as the SVG.
+ */
+const EXPORT_XML: EditorAction = { action: 'export', format: 'xml' };
+
 /** Pure step of the draw.io embed protocol: one editor message in, the next state and the host replies out. */
 export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: ProtocolOptions): Step {
   const noop: Step = { state, send: [], close: false };
@@ -209,16 +220,24 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
         close: false,
       };
     case 'export': {
-      if (state.phase !== 'exporting' || !msg.data) {
+      if (state.phase !== 'exporting') {
         return noop;
       }
-      const svg = decodeDataUri(msg.data);
+      if (msg.format !== 'xml') {
+        if (!msg.data) {
+          return noop;
+        }
+        return { state: { ...state, svg: decodeDataUri(msg.data) }, send: [EXPORT_XML], close: false };
+      }
+      if (state.svg === undefined) {
+        return noop;
+      }
       const xml = msg.xml ?? state.xml;
       const close = state.pendingExit || opts.mode === 'export-only';
       return {
         state: { phase: close ? 'done' : 'loaded', xml, pendingExit: false },
         send: [],
-        result: { xml, svg },
+        result: { xml, svg: state.svg },
         close,
       };
     }

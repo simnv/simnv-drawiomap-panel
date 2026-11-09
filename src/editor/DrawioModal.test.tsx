@@ -375,7 +375,10 @@ describe('DrawioModal during panel refreshes', () => {
     // The channel uses the newest callbacks.
     act(() => port.onmessage?.({ data: JSON.stringify({ event: 'save', xml: '<mxfile id="b"/>' }) }));
     act(() => port.onmessage?.({ data: JSON.stringify({ event: 'export', data: 'data:image/svg+xml,%3Csvg%2F%3E' }) }));
-    expect(lastSave).toHaveBeenCalledWith({ xml: '<mxfile id="b"/>', svg: '<svg/>' });
+    // The SVG export answers with a compressed xml: the host asks for the xml export and stores that XML.
+    expect(JSON.parse(port.postMessage.mock.lastCall![0])).toEqual({ action: 'export', format: 'xml' });
+    act(() => port.onmessage?.({ data: JSON.stringify({ event: 'export', format: 'xml', xml: '<mxfile id="c"/>' }) }));
+    expect(lastSave).toHaveBeenCalledWith({ xml: '<mxfile id="c"/>', svg: '<svg/>' });
     expect(firstSave).not.toHaveBeenCalled();
   });
 });
