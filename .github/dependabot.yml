@@ -5,3 +5,28 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      development-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+    ignore:
+      # Grafana externals and React: the plugin follows the oldest Grafana version that it supports.
+      - dependency-name: "@grafana/data"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@grafana/ui"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@grafana/runtime"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@grafana/i18n"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@grafana/schema"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
