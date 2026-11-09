@@ -20,6 +20,7 @@
     "e2e:matrix": "npm run e2e:12 && npm run e2e:13",
     "e2e:webkit": "PW_WEBKIT=1 ./scripts/run-e2e.sh 3013 --project=webkit tests/card-tooltip.spec.ts",
     "e2e:release": "./scripts/run-e2e.sh 3012 --project=matrix --project=plugin && npm run e2e:13 && npm run e2e:webkit",
+    "docs:screenshots": "PW_DOCS=1 GRAFANA_URL=${GRAFANA_URL:-http://localhost:3013} playwright test --project=docs --workers=1 && ./scripts/docs-hero-gif.sh",
     "build:dashboard": "tsx scripts/build-dashboard.ts",
     "check:bundle": "./scripts/check-bundle.sh",
     "package": "./scripts/package.sh",

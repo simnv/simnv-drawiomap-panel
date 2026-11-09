@@ -38,5 +38,5 @@ Read this file when you review a diff. Each rule needs judgement. Mechanical rul
 
 ## Docs
 
-- A change to an option updates its README section in the same diff. A change to a field of the config (`src/model/v4.ts`), to the matcher, to a template or to a report entry updates the README section "Bindings (v4)" in the same diff.
+- A change to an option updates its page in `docs/guide/` in the same diff. A change to a field of the config (`src/model/v4.ts`), to the matcher, to a template or to a report entry updates `docs/guide/bindings.md` in the same diff.
 - A change to a decision in the spec adds a row to the "Superseded decisions" table or an ADR.

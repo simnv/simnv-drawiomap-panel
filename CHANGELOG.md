@@ -2,6 +2,7 @@
 
 ## 1.5.0 (Unreleased)
 
+- Changed the docs. The README is now short. The option reference moved to `docs/guide/`. The development notes moved to `CONTRIBUTING.md`. The plugin catalogue shows the README and four screenshots (`info.screenshots` in `plugin.json`). The build rewrites the relative links of `dist/README.md` to absolute URLs of the release tag.
 - Added the last data timestamp: the time of the newest sample of the panel data, at the bottom of the panel beside the legend. The text has the date with the year, the time and the UTC offset in the dashboard time zone, for example `2026-10-31 14:32:05 +01:00`. Its tooltip says "Last data timestamp" and gives the time zone name and the age. The new option **Show last data timestamp** (`legend.timestamp`, group **Legend**) is on by default, also for saved panels without it. The timestamp and the legend share the bottom row and never overlap at their start places, also on a narrow panel and on a phone.
 - Changed the **Zoom**, **Align** and legend **Corner** options to rows of icon buttons with tooltips. They fit the narrowest options pane. The saved values do not change.
 - Renamed the **Open editor** button of the **Diagram** options to **Edit in draw.io**. A panel without a diagram still shows **New diagram**.

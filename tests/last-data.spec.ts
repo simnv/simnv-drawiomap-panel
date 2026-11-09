@@ -71,17 +71,6 @@ test('the last data timestamp stands left of the bottom-right legend; its toolti
   const text = (await stamp.textContent())!;
   await expect(tooltip).toHaveText(new RegExp(`^Last data timestamp: ${text.replace('+', '\\+')} \\(.+, .+ ago\\)$`));
   expect(overlaps(await box(tooltip), await box(stamp))).toBe(false);
-  if (process.env.DMAP_SCREENSHOTS) {
-    const p = await box(panel);
-    const t = await box(tooltip);
-    // the bottom-right part of the panel and the tooltip (below or above the timestamp)
-    const top = Math.min(t.y, p.y + p.height - 200) - 8;
-    const bottom = Math.max(t.y + t.height, p.y + p.height) + 8;
-    const left = Math.min(t.x, p.x + p.width - 480) - 8;
-    const clip = { x: left, y: top, width: p.x + p.width + 4 - left, height: bottom - top };
-    await page.screenshot({ path: 'local/timestamp-legend.png', clip });
-    await page.screenshot({ path: 'docs/images/last-data-timestamp.png', clip });
-  }
   await page.mouse.move(0, 0);
   await expect(tooltip).toHaveCount(0);
 

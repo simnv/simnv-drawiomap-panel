@@ -4,7 +4,7 @@ import type { CellIndex } from '../types';
  * The legend of a portograph diagram draws one row for each node symbol: the cells `pg-legendRow~symbol:router`,
  * `pg-legendSwatch~symbol:router` and so on. The rows point at their nodes only through the attribute
  * `data-meta-pg-symbol` on the node cells (value `router`). A diagram without that attribute has no row link:
- * the rows do nothing. See the README, "Colour legend".
+ * the rows do nothing. See docs/guide/colours.md, "Colour legend".
  */
 export const SYMBOL_ATTR = 'pg-symbol';
 /** Set on a legend row element that is linked to nodes. */

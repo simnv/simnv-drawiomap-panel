@@ -11,5 +11,6 @@ This repository contains a **Grafana plugin**. You must Read @./.config/AGENTS/i
 - `docs/security.md`: read before you change the sanitiser, the editor iframe, the MessagePort protocol or URL templates.
 - `docs/research/portograph-contract.md`: read before you change how the panel reads `pg-*` cell attributes.
 - `docs/acceptance.md`: read before you claim a feature is done. It lists the checks and the Grafana versions.
-- `README.md`: the user-facing option reference. Update the matching section when you change an option.
+- `docs/guide/`: the user-facing option reference, one page for each area (see `docs/guide/index.md`). Update the matching page when you change an option. `README.md` is the short catalogue page: keep it short.
+- `CONTRIBUTING.md`: development commands, test suites, hooks and CI.
 - `CODING_STANDARDS.md`: read when you review a diff.
