@@ -15,10 +15,12 @@ import {
  * edge strokes. The measured figure goes into docs/acceptance.md.
  */
 /**
- * The time budget of each bench. A slow shared CI runner (GitHub Actions, about 7 times slower than a developer
- * machine) sets DMAP_BENCH_BUDGET_SCALE to multiply it; it is 1 everywhere else.
+ * The time budget of each bench. A CI runner (GitHub Actions or Woodpecker, both set CI) is up to 7 times slower
+ * than a developer machine, so the budget is 6 times larger there. DMAP_BENCH_BUDGET_SCALE sets another multiplier.
  */
-const BUDGET_MS = 250 * (Number(process.env.DMAP_BENCH_BUDGET_SCALE) || 1);
+const onCi = Boolean(process.env.CI) && !['false', '0'].includes(process.env.CI ?? '');
+const BUDGET_SCALE = Number(process.env.DMAP_BENCH_BUDGET_SCALE) || (onCi ? 6 : 1);
+const BUDGET_MS = 250 * BUDGET_SCALE;
 const EDGES = 500;
 const RECTS = 2000;
 const COLUMNS = 25;

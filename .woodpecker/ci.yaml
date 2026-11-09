@@ -39,9 +39,7 @@ steps:
   - name: test
     image: node:24-bookworm
     # The agent runs the benches slower than a developer machine (the label placement pair bench took 270-430 ms
-    # against its 250 ms budget). DMAP_BENCH_BUDGET_SCALE multiplies the time budgets, as in .github/workflows/ci.yml.
-    environment:
-      DMAP_BENCH_BUDGET_SCALE: '3'
+    # against its 250 ms budget). Woodpecker sets CI, so the benches multiply their time budgets.
     commands:
       - npm test
 

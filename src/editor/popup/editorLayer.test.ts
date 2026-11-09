@@ -72,7 +72,7 @@ describe('createEditorLayer', () => {
       // Some ids are not in the index; the layer skips them.
       const pickIds = (chance: number) =>
         Array.from({ length: count + 5 }, (_, i) => `c${i}`).filter(() => rnd() < chance);
-      const maybe = <T,>(value: T): T | undefined => (rnd() < 0.5 ? value : undefined);
+      const maybe = <T>(value: T): T | undefined => (rnd() < 0.5 ? value : undefined);
       for (let step = 0; step < 150; step++) {
         const roll = rnd();
         if (roll < 0.05) {

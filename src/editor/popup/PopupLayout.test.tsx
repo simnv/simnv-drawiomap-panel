@@ -225,7 +225,9 @@ describe('PopupLayout', () => {
       expect(hiddenPanes()).toEqual(['code', 'stage']);
       fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
       expect(onTabChange).toHaveBeenCalledWith('code');
-      view.rerender(<PopupLayout code={<i />} stage={<i />} below={<i />} activeTab="stage" onTabChange={onTabChange} />);
+      view.rerender(
+        <PopupLayout code={<i />} stage={<i />} below={<i />} activeTab="stage" onTabChange={onTabChange} />
+      );
       expect(hiddenPanes()).toEqual(['code', 'report']);
       box.mockRestore();
     });

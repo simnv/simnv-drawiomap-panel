@@ -36,13 +36,13 @@
 
 ## 2. What goes
 
-| Item                                                                                               | Where                                                                                                      |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `drawStatusMarker`, `statusMarkerBox`, `StatusMarkerBox`, `STATUS_MARKER_FONT`, `TextProbe`, the marker state and its sweep | `src/render/overlay.ts`. `statusColor` moves to `src/binding/color.ts`. `TextProbe` moves to `linkLabels.ts`, its only user. |
-| The marker room obstacle and the `probe` parameter of `stageObstacles`                             | `src/render/linkLabels.ts`; the `Obstacle` comment in `labelPlacement.ts`                                 |
-| The marker tests                                                                                   | `overlay.test.ts` ("status overlay", the marker cases of "keeps its elements", "linkSplit and statusMarkerBox"), `linkLabels.test.ts` ("reserves the status marker room"; the `284` expectations that came from the room) |
-| The e2e marker checks                                                                              | `tests/visual-regions.spec.ts` (the count of 2 markers, the marker tops of the crowded panel), `tests/link-labels.spec.ts` (the marker boxes in the overlap test) |
-| The docs mentions                                                                                  | `README.md` (the band paragraph, the legend "Status" entry, the shape binding paragraph, the label placement obstacle list), `docs/acceptance.md` (three rows), the step 5 spec (section 3.2 items 4 and 5 and R1-4 describe the markers; a note at the top says they are gone) |
+| Item                                                                                                                        | Where                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drawStatusMarker`, `statusMarkerBox`, `StatusMarkerBox`, `STATUS_MARKER_FONT`, `TextProbe`, the marker state and its sweep | `src/render/overlay.ts`. `statusColor` moves to `src/binding/color.ts`. `TextProbe` moves to `linkLabels.ts`, its only user.                                                                                                                                                    |
+| The marker room obstacle and the `probe` parameter of `stageObstacles`                                                      | `src/render/linkLabels.ts`; the `Obstacle` comment in `labelPlacement.ts`                                                                                                                                                                                                       |
+| The marker tests                                                                                                            | `overlay.test.ts` ("status overlay", the marker cases of "keeps its elements", "linkSplit and statusMarkerBox"), `linkLabels.test.ts` ("reserves the status marker room"; the `284` expectations that came from the room)                                                       |
+| The e2e marker checks                                                                                                       | `tests/visual-regions.spec.ts` (the count of 2 markers, the marker tops of the crowded panel), `tests/link-labels.spec.ts` (the marker boxes in the overlap test)                                                                                                               |
+| The docs mentions                                                                                                           | `README.md` (the band paragraph, the legend "Status" entry, the shape binding paragraph, the label placement obstacle list), `docs/acceptance.md` (three rows), the step 5 spec (section 3.2 items 4 and 5 and R1-4 describe the markers; a note at the top says they are gone) |
 
 The layer `g.dmap-overlay` keeps its elements and its z-order. Nothing else of the overlay changes.
 
@@ -52,11 +52,11 @@ The layer `g.dmap-overlay` keeps its elements and its z-order. Nothing else of t
 
 `statusColor(view, theme)` moves from `overlay.ts` to `src/binding/color.ts`, next to `noDataColor`:
 
-| State                | Colour                                                                                   |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `down`, `critical`   | `theme.visualization.getColorByName('red')` (`#E02F44` light, `#F2495C` dark)             |
-| `warning`, `stale`   | `theme.visualization.getColorByName('orange')`                                           |
-| `missing`            | `noDataColor(theme)` (`theme.colors.text.disabled`), the grey of every missing value      |
+| State              | Colour                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| `down`, `critical` | `theme.visualization.getColorByName('red')` (`#E02F44` light, `#F2495C` dark)        |
+| `warning`, `stale` | `theme.visualization.getColorByName('orange')`                                       |
+| `missing`          | `noDataColor(theme)` (`theme.colors.text.disabled`), the grey of every missing value |
 
 Today the function reads `theme.colors.error.text`, `warning.text` and `text.secondary`. The band and the legend
 import the new one; their colours change with it, so the band, the legend and the elements show one colour per

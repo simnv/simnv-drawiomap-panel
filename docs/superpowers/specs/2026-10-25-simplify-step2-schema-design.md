@@ -105,13 +105,13 @@ Decisions in the sketch:
 
 ### Unit rules
 
-| Source | Amount | Unit |
-| --- | --- | --- |
-| `capacity`, a number, at a **link** place | the number | bit/s (README "Capacity": "All values are in bit/s") |
-| `capacity`, a number, at a **row** place | the number | the unit of the value field (README "Combined up/down row") |
-| `capacity`, a template, at any place | the resolved text as a number | bit/s |
-| `capacityBinding`, any place | the latest value of its series | its own field unit, through `toBitsPerSecond` |
-| field **Max** | `field.config.max` | the unit of the value field |
+| Source                                    | Amount                         | Unit                                                        |
+| ----------------------------------------- | ------------------------------ | ----------------------------------------------------------- |
+| `capacity`, a number, at a **link** place | the number                     | bit/s (README "Capacity": "All values are in bit/s")        |
+| `capacity`, a number, at a **row** place  | the number                     | the unit of the value field (README "Combined up/down row") |
+| `capacity`, a template, at any place      | the resolved text as a number  | bit/s                                                       |
+| `capacityBinding`, any place              | the latest value of its series | its own field unit, through `toBitsPerSecond`               |
+| field **Max**                             | `field.config.max`             | the unit of the value field                                 |
 
 Internally every amount is in the canonical unit of the value field: bit/s for a data-rate unit or no unit, the raw
 unit otherwise (`toBitsPerSecond` is the identity there and adds `unit-not-rate`). Percent:
@@ -125,20 +125,20 @@ decimals). A `bps` field shows `100 Mb/s`, a `Bps` field with amount 1e9 shows `
 The table is documentation for `scripts/gen_drawiomap/config.py`, `bindings.py`, `inject.py` (mode B, four owned
 fields), `validate_config.mjs`, `plan.mjs`, `replay.mjs`. The panel does not apply it.
 
-| Old field | New field | Note |
-| --- | --- | --- |
-| `version: 2` (root) | `version: 3` | the only detector of the shape; a generator that writes the new keys writes 3 |
-| `link.a2bBinding: B` | `link.a2b.binding: B` | |
-| `link.b2aBinding: B` | `link.b2a.binding: B` | |
-| `link.capacityA2bBinding: B` | `link.a2b.capacityBinding: B` | |
-| `link.capacityB2aBinding: B` | `link.b2a.capacityBinding: B` | |
-| `link.capacityA2b: n \| "${…}"` | `link.a2b.capacity` | a number must be > 0; `0` as "no own value" has no equivalent: leave the key out |
-| `link.capacityB2a` | `link.b2a.capacity` | same |
-| `link.capacityBinding: B` | `link.capacityBinding: B` | unchanged key |
-| `link.capacity: n \| "${…}"` | `link.capacity` | unchanged; a numeric string `"123"` must become the number; `"auto"` must go (the Max is the default) |
-| `hover.rows[i]`: `kind: 'history'` with `series` | `kind: 'combined'` | rename |
-| `hover.rows[i].capacity`, `series[j].capacity` | same keys, same meaning | a row number is in the unit of the values; a template in bit/s |
-| `shape.*`, `status`, `label`, `url`, `urlTitle`, `reducer` | same | unchanged |
+| Old field                                                  | New field                     | Note                                                                                                  |
+| ---------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `version: 2` (root)                                        | `version: 3`                  | the only detector of the shape; a generator that writes the new keys writes 3                         |
+| `link.a2bBinding: B`                                       | `link.a2b.binding: B`         |                                                                                                       |
+| `link.b2aBinding: B`                                       | `link.b2a.binding: B`         |                                                                                                       |
+| `link.capacityA2bBinding: B`                               | `link.a2b.capacityBinding: B` |                                                                                                       |
+| `link.capacityB2aBinding: B`                               | `link.b2a.capacityBinding: B` |                                                                                                       |
+| `link.capacityA2b: n \| "${…}"`                            | `link.a2b.capacity`           | a number must be > 0; `0` as "no own value" has no equivalent: leave the key out                      |
+| `link.capacityB2a`                                         | `link.b2a.capacity`           | same                                                                                                  |
+| `link.capacityBinding: B`                                  | `link.capacityBinding: B`     | unchanged key                                                                                         |
+| `link.capacity: n \| "${…}"`                               | `link.capacity`               | unchanged; a numeric string `"123"` must become the number; `"auto"` must go (the Max is the default) |
+| `hover.rows[i]`: `kind: 'history'` with `series`           | `kind: 'combined'`            | rename                                                                                                |
+| `hover.rows[i].capacity`, `series[j].capacity`             | same keys, same meaning       | a row number is in the unit of the values; a template in bit/s                                        |
+| `shape.*`, `status`, `label`, `url`, `urlTitle`, `reducer` | same                          | unchanged                                                                                             |
 
 New abilities: `capacityBinding` on a combined row and on a series entry.
 
@@ -208,7 +208,8 @@ The chain, the same as the link half today (`engine.ts:190-228`), stops at the f
 2. `own.capacity`: a number: `numberUnit === 'field'` converts through the unit of `field`, else as is; source
    `number`. A template: resolved against `scope`; unresolved or not a positive finite number: `unresolved-metadata`
    at `ownPath.capacity`; else source `attr`.
-3. `shared.capacityBinding`, 4. `shared.capacity`: the same rules at `sharedPath`.
+3. `shared.capacityBinding`: the same rules at `sharedPath`.
+4. `shared.capacity`: the same rules at `sharedPath`.
 5. `field.config.max` > 0: `toBitsPerSecond(max, field.unit)`, source `fieldMax`.
 6. `{ source: 'none' }`.
 
@@ -231,11 +232,11 @@ the unavailable half is grey, and the half counts in the "Incomplete coverage" s
 
 Callers, after step 2:
 
-| Caller | own, shared | numberUnit | field | read |
-| --- | --- | --- | --- | --- |
-| `engine.ts` `bindPlan`, each link direction | `link.a2b`, `link` | canonical | the field of the direction model when ready | `read` of the cell (reports `metricProblem`, sets the `missing` status view) |
-| `cardModel.ts` `combinedRow`, each direction | `series[j]`, the row | field | the field of the direction; a direction without data takes the field of the other (as today) | `readBinding` of the card (adds a hover demand) |
-| the link labels (section 6) | none: they read `HalfState` | | | |
+| Caller                                       | own, shared                 | numberUnit | field                                                                                        | read                                                                         |
+| -------------------------------------------- | --------------------------- | ---------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `engine.ts` `bindPlan`, each link direction  | `link.a2b`, `link`          | canonical  | the field of the direction model when ready                                                  | `read` of the cell (reports `metricProblem`, sets the `missing` status view) |
+| `cardModel.ts` `combinedRow`, each direction | `series[j]`, the row        | field      | the field of the direction; a direction without data takes the field of the other (as today) | `readBinding` of the card (adds a hover demand)                              |
+| the link labels (section 6)                  | none: they read `HalfState` |            |                                                                                              |                                                                              |
 
 `HalfState` gains `capacityDisplay?: DisplayValue` (the capacity in the field unit, through `ctx.display`). The card
 and the labels show it; nothing formats a capacity a second time. `half()` becomes `export function halfState(...)`
@@ -425,18 +426,18 @@ suspended for the bindings config until 1.0; the capacity rule points at `src/bi
 
 ## 9. Review resolutions
 
-| Concern | Resolution |
-| --- | --- |
-| R1-1. Capacity-only patches; the `0` sentinel | `linkDirection.binding` optional; `mergeDisplay` merges `a2b`/`b2a` as objects with separate leaves (section 2). The `0` sentinel has no equivalent and no migration (user decision); open question 1. |
-| R1-2. Precedence across owners | Two leaves per level at four places; a pattern's series still wins over an override's number (sections 2, 4). |
-| R1-3. Unit rule changed saved meaning | Numbers keep the meaning documented at their place (`numberUnit`); only the text changes (section 2, unit rules). |
-| R1-4. `"auto"`, the number fallback, no fall-through | The chain is the link chain of today; every failed source falls through with a diagnostic; rows gain it (section 4). `"auto"` is a schema failure of its item in version 3 (section 3). |
-| R1-5. A skipped pattern retargets overrides | Its cells are unavailable from every item, with `skipped-cells`; an unparseable `select` makes every cell unavailable (section 5). |
-| R1-6. Skipped query, widgets, ChartLayer | A widget with an unusable binding is admitted as unavailable; `BindingPlan.config` is the validated config and `ChartLayer` reads `plan.config.queries` (section 5). |
-| R1-7. Popup with malformed items | `indices`, `skipped` with saved indices; problem rows without touching the item; `draft.config` raw, `draft.validated` typed (section 5). |
-| R1-8. `setMigrationHandler` | Removed with the whole migration (user decision, section 1 and 3). |
-| R2-1. Neutralised options and popup edits | Nothing is neutralised or stripped any more: a semantic problem keeps the item unchanged; a parsed item is deep-equal to its saved JSON (asserted by a test), so a form that writes the whole item back loses nothing (sections 2, 5). |
-| R2-2. Invalid freshness made stale data healthy | `evaluateStatus` returns `missing`, "Invalid freshness policy" before the stale check; rows and widgets with it show `unsupported` (section 5, item 3). |
-| R2-3. Omitted cells got their drawn fill back | New explicit state: `EffectiveCellBinding.unavailable` → `PlanCellPatch.unavailable` + a `missing` status view; the applier paints no-data grey and `data-dmap-status="unavailable"`, never `reset` (section 5). |
-| R3-1. An unusable direction could look green | Every configured direction that cannot bind gets an explicit `unbound` grey `HalfState`; `drawLink` splits the link and the half counts in the coverage view (section 4, "Unavailable direction"; section 5, item 4; tests in 7). |
-| R3-2, R3-3. The old-key scan was fragile | The scan is dropped. The envelope version is the detector: the new shape is `version: 3`; `version: 2` gives `outdated-config` and binds nothing; zod parses only 3; old keys inside a version 3 document are item-level schema failures (sections 1, 3, 5; the mapping table, the fixtures and the tests say `"version": 3`). |
+| Concern                                              | Resolution                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R1-1. Capacity-only patches; the `0` sentinel        | `linkDirection.binding` optional; `mergeDisplay` merges `a2b`/`b2a` as objects with separate leaves (section 2). The `0` sentinel has no equivalent and no migration (user decision); open question 1.                                                                                                                         |
+| R1-2. Precedence across owners                       | Two leaves per level at four places; a pattern's series still wins over an override's number (sections 2, 4).                                                                                                                                                                                                                  |
+| R1-3. Unit rule changed saved meaning                | Numbers keep the meaning documented at their place (`numberUnit`); only the text changes (section 2, unit rules).                                                                                                                                                                                                              |
+| R1-4. `"auto"`, the number fallback, no fall-through | The chain is the link chain of today; every failed source falls through with a diagnostic; rows gain it (section 4). `"auto"` is a schema failure of its item in version 3 (section 3).                                                                                                                                        |
+| R1-5. A skipped pattern retargets overrides          | Its cells are unavailable from every item, with `skipped-cells`; an unparseable `select` makes every cell unavailable (section 5).                                                                                                                                                                                             |
+| R1-6. Skipped query, widgets, ChartLayer             | A widget with an unusable binding is admitted as unavailable; `BindingPlan.config` is the validated config and `ChartLayer` reads `plan.config.queries` (section 5).                                                                                                                                                           |
+| R1-7. Popup with malformed items                     | `indices`, `skipped` with saved indices; problem rows without touching the item; `draft.config` raw, `draft.validated` typed (section 5).                                                                                                                                                                                      |
+| R1-8. `setMigrationHandler`                          | Removed with the whole migration (user decision, section 1 and 3).                                                                                                                                                                                                                                                             |
+| R2-1. Neutralised options and popup edits            | Nothing is neutralised or stripped any more: a semantic problem keeps the item unchanged; a parsed item is deep-equal to its saved JSON (asserted by a test), so a form that writes the whole item back loses nothing (sections 2, 5).                                                                                         |
+| R2-2. Invalid freshness made stale data healthy      | `evaluateStatus` returns `missing`, "Invalid freshness policy" before the stale check; rows and widgets with it show `unsupported` (section 5, item 3).                                                                                                                                                                        |
+| R2-3. Omitted cells got their drawn fill back        | New explicit state: `EffectiveCellBinding.unavailable` → `PlanCellPatch.unavailable` + a `missing` status view; the applier paints no-data grey and `data-dmap-status="unavailable"`, never `reset` (section 5).                                                                                                               |
+| R3-1. An unusable direction could look green         | Every configured direction that cannot bind gets an explicit `unbound` grey `HalfState`; `drawLink` splits the link and the half counts in the coverage view (section 4, "Unavailable direction"; section 5, item 4; tests in 7).                                                                                              |
+| R3-2, R3-3. The old-key scan was fragile             | The scan is dropped. The envelope version is the detector: the new shape is `version: 3`; `version: 2` gives `outdated-config` and binds nothing; zod parses only 3; old keys inside a version 3 document are item-level schema failures (sections 1, 3, 5; the mapping table, the fixtures and the tests say `"version": 3`). |

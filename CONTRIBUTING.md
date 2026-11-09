@@ -94,10 +94,10 @@ A new `.test.ts` file that needs `vi.mock`, `@grafana/ui` or `sanitizeSvg` goes 
 
 ## Git hooks
 
-Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.githooks`.
+Run `npm run hooks:install` once for each clone. It sets `core.hooksPath` to `.githooks`, and `blame.ignoreRevsFile` to `.git-blame-ignore-revs` (the format-only commits).
 
-- `pre-commit`: the privacy check on the staged diff, then `npm run typecheck` and `npm run lint` when code files are staged.
-- `pre-push`: the privacy check on the pushed commits, then `npm test`.
+- `pre-commit`: the privacy check on the staged diff, Prettier on the staged files, then `npm run typecheck` and `npm run lint` when code files are staged. `npm run lint` runs ESLint, `npm run format:check` (Prettier on the whole repository, with `.prettierignore`) and the import guards. `npm run lint:fix` formats.
+- `pre-push`: the privacy check on the pushed commits (a commit that a branch and its tags both publish is scanned once), then `npm test` with 4 workers. When another vitest process is active, the hook waits for it to end (at most 10 minutes), because two runs make the timed tests time out.
 
 The privacy check prints `file:line` only. It uses generic patterns (home paths, MAC addresses, private IPv4 outside the demo ranges in `.githooks/privacy-allow.txt`) and the private terms in `~/.config/simnv-drawiomap-panel/denylist` (set `SIMNV_PANEL_DENYLIST` to use another path). Without that file only the generic patterns run. `npm run check:privacy` scans all tracked files. CI runs the generic patterns in the `privacy` step of `.github/workflows/ci.yml` and `.woodpecker/ci.yaml`.
 
@@ -110,15 +110,25 @@ GitHub is the primary repository. GitHub Actions runs two workflows:
 
 The actions are pinned by commit SHA. Dependabot (`.github/dependabot.yml`) proposes updates each week.
 
-To release: set the version in `package.json` and the heading in `CHANGELOG.md`, run `npm run e2e:release`, commit, then `git tag -a vX.Y.Z -m vX.Y.Z && git push origin main vX.Y.Z`.
+To release: set the version in `package.json` and the heading in `CHANGELOG.md`, run `npm run e2e:release`, commit and push `main`. Run `npm run ci:status -- --wait`: GitHub Actions and Woodpecker must both pass on the commit. Then `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. Push at most 3 tags at a time: GitHub starts no tag workflow for a push with more tags. For such a tag, run `release.yml` by hand.
 
-Woodpecker CI (v3, docker backend) runs the e2e tests on a Forgejo mirror of the GitHub repository. It runs the workflow `.woodpecker/ci.yaml` on a push to `main`, pull request and manual events (the mirror also copies the Dependabot branches; GitHub Actions checks those). The `test` step sets `DMAP_BENCH_BUDGET_SCALE=3` for the bench time budgets. One workflow runs all steps in order, because workflows do not share a workspace. A failed step fails the workflow, and the steps after it do not run.
+Woodpecker CI (v3, docker backend) runs the e2e tests on a Forgejo mirror of the GitHub repository. It runs the workflow `.woodpecker/ci.yaml` on a push to `main`, pull request and manual events (the mirror also copies the Dependabot branches; GitHub Actions checks those). The benches multiply their time budgets by 6 when `CI` is set (GitHub Actions and Woodpecker set it). `DMAP_BENCH_BUDGET_SCALE` sets another multiplier. One workflow runs all steps in order, because workflows do not share a workspace. A failed step fails the workflow, and the steps after it do not run.
 
 1. Build: `npm ci`, privacy check, typecheck, lint, unit tests, build, `check:bundle`, `package`. The last step shows the plugin zip and its sha256. There is no cache: the run downloads the pinned draw.io release (about 46 MB from github.com) once, and `scripts/vendor-drawio.sh` checks its sha256. Woodpecker has no cache without a volume or a plugin.
 2. Stack: the step `grafana-files` runs `scripts/ci-grafana-files.sh`: it copies `dist/` and `provisioning/` to `ci/` in the workspace (one plugin folder for each Grafana) and checks that the copies are the same as `dist/`, the files of the plugin zip. The detached steps `victoriametrics`, `metrics-gen`, `grafana123`, `grafana12` and `grafana13` start the stack (the same images as `docker-compose.yaml`: Grafana 12.3.11, 12.4.13 and 13.2.4). The step name is the hostname. Grafana reads the plugin and the provisioning from the workspace (`GF_PATHS_PLUGINS`, `GF_PATHS_PROVISIONING`). The step `wait` runs `scripts/wait-stack.sh` with `VM_URL=http://victoriametrics:8428` and `GRAFANA_URL="http://grafana123:3000 http://grafana12:3000 http://grafana13:3000"`.
 3. E2E: the steps `e2e-123`, `e2e-12` and `e2e-13` run Playwright in `mcr.microsoft.com/playwright`, with the same version as `@playwright/test`, on the `node_modules` and `dist/` of the build. `e2e-123` runs the project `matrix` on Grafana 12.3. `e2e-12` runs the project `matrix` on Grafana 12.4. `e2e-13` runs the projects `matrix` and `plugin` on 13.2 (see "E2E suites"). The runs are one after the other because they share the Playwright output folders. If an earlier e2e step fails, the next one does not run. CI does not run the WebKit check.
 
 The steps do not use the docker socket, volumes, privileged mode or secrets. The repository does not have to be trusted. The steps need access to registry.npmjs.org, github.com and raw.githubusercontent.com (draw.io release and its LICENSE).
+
+### CI status and logs
+
+`npm run ci:status -- [--wait] [--logs] [<commit>]` shows the GitHub Actions runs and the Woodpecker pipeline of a commit (default `HEAD`). `--wait` polls every 30 seconds until no run is pending, and tries again 3 times after an API error. `--logs` prints the last 60 lines of each failed Woodpecker step. The exit status is 0 (all passed), 1 (a run failed), 2 (a run is pending, also when `--wait` stops after 60 minutes) or 3 (a setup or API error). A new commit is pending on Woodpecker until the next mirror sync (every 10 minutes). The detached steps (`grafana*`, `metrics-gen`) always end with exit 137 at teardown. That is not a failure, and the script does not report it.
+
+The script needs the `gh` CLI and, for Woodpecker, `WOODPECKER_SERVER` and `WOODPECKER_TOKEN` (a Woodpecker personal token) in the gitignored `.env`. It takes the Woodpecker repository from the git remote `forgejo`, and `WOODPECKER_REPO=owner/name` overrides it. Do not write the Forgejo hostname in repository files.
+
+### Mirror setup
+
+Make the mirror with Forgejo "New migration" from GitHub, with "This repository will be a mirror" and a 10-minute interval. A normal repository with a push from your machine does not sync. Then activate the mirror in Woodpecker.
 
 `npm run ci:woodpecker` runs the workflow with `woodpecker-cli exec` (image `woodpeckerci/woodpecker-cli:v3`) on the local docker. It copies the files of the working tree (without ignored files) to `~/.cache/wp-ci/repo` (`WP_DIR` selects another folder), so `node_modules` and `dist/` of your checkout do not change.
 

@@ -86,24 +86,24 @@ simnv-drawiomap-panel/
 
 Workers in one wave run in parallel. A wave starts when every task of the previous wave is committed.
 
-| Wave | Task | Title | Model | Owns |
-|---|---|---|---|---|
-| 0 | 0 | Scaffold, pins, Vitest, stubs | sonnet | whole scaffold |
-| 1 | 1 | Shared types, rules schema, portograph adapter | opus | `src/types.ts`, `src/util/hash.ts`, `src/rules/*`, `src/adapter/*` |
-| 1 | 2 | Compose stack, metrics-gen, datasource provisioning | sonnet | `docker-compose.yaml`, `stack/**`, `provisioning/datasources/*`, `provisioning/dashboards/dashboards.yaml`, `scripts/stack-smoke.sh` |
-| 1 | 3 | Fixtures: real draw.io SVG exports | sonnet | `scripts/export-fixtures.sh`, `fixtures/hand/*`, `fixtures/svg/*`, `src/fixtures.test.ts` |
-| 2 | 4 | Binding engine | opus | `src/binding/*` |
-| 2 | 5 | SVG stage: sanitise, mount, cell index, zoom | opus | `src/render/sanitize.ts`, `src/render/svgStage.ts`, `src/render/zoom.ts` + tests |
-| 2 | 6 | Patch applier | opus | `src/render/applier.ts` + test |
-| 2 | 7 | Geometry and overlay | opus | `src/render/geometry.ts`, `src/render/overlay.ts` + tests |
-| 2 | 8 | Editor protocol and DrawioModal | opus | `src/editor/*` |
-| 2 | 9 | Interactions: links, menu, tooltip | opus | `src/interact/*` |
-| 2 | 10 | Option editors and module.ts options | sonnet | `src/options/*`, `src/module.ts` |
-| 3 | 11 | Panel integration | opus | `src/components/DrawioMapPanel.tsx`, `src/components/useStage.ts`, `src/components/*.test.tsx` |
-| 3 | 12 | Demo dashboard build script | sonnet | `scripts/build-dashboard.ts`, `demo/*`, `provisioning/dashboards/drawiomap-demo.json` |
-| 4 | 13 | Bundle check and stack scripts | sonnet | `scripts/check-bundle.sh`, `package.json` scripts (`src/module.ts` only for a leftover cast) |
-| 4 | 14 | Playwright e2e on Grafana 12 and 13 | opus | `tests/**`, `playwright.config.ts` |
-| 5 | 15 | Acceptance checklist and README | sonnet | `docs/acceptance.md`, `README.md` |
+| Wave | Task | Title                                               | Model  | Owns                                                                                                                                 |
+| ---- | ---- | --------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | 0    | Scaffold, pins, Vitest, stubs                       | sonnet | whole scaffold                                                                                                                       |
+| 1    | 1    | Shared types, rules schema, portograph adapter      | opus   | `src/types.ts`, `src/util/hash.ts`, `src/rules/*`, `src/adapter/*`                                                                   |
+| 1    | 2    | Compose stack, metrics-gen, datasource provisioning | sonnet | `docker-compose.yaml`, `stack/**`, `provisioning/datasources/*`, `provisioning/dashboards/dashboards.yaml`, `scripts/stack-smoke.sh` |
+| 1    | 3    | Fixtures: real draw.io SVG exports                  | sonnet | `scripts/export-fixtures.sh`, `fixtures/hand/*`, `fixtures/svg/*`, `src/fixtures.test.ts`                                            |
+| 2    | 4    | Binding engine                                      | opus   | `src/binding/*`                                                                                                                      |
+| 2    | 5    | SVG stage: sanitise, mount, cell index, zoom        | opus   | `src/render/sanitize.ts`, `src/render/svgStage.ts`, `src/render/zoom.ts` + tests                                                     |
+| 2    | 6    | Patch applier                                       | opus   | `src/render/applier.ts` + test                                                                                                       |
+| 2    | 7    | Geometry and overlay                                | opus   | `src/render/geometry.ts`, `src/render/overlay.ts` + tests                                                                            |
+| 2    | 8    | Editor protocol and DrawioModal                     | opus   | `src/editor/*`                                                                                                                       |
+| 2    | 9    | Interactions: links, menu, tooltip                  | opus   | `src/interact/*`                                                                                                                     |
+| 2    | 10   | Option editors and module.ts options                | sonnet | `src/options/*`, `src/module.ts`                                                                                                     |
+| 3    | 11   | Panel integration                                   | opus   | `src/components/DrawioMapPanel.tsx`, `src/components/useStage.ts`, `src/components/*.test.tsx`                                       |
+| 3    | 12   | Demo dashboard build script                         | sonnet | `scripts/build-dashboard.ts`, `demo/*`, `provisioning/dashboards/drawiomap-demo.json`                                                |
+| 4    | 13   | Bundle check and stack scripts                      | sonnet | `scripts/check-bundle.sh`, `package.json` scripts (`src/module.ts` only for a leftover cast)                                         |
+| 4    | 14   | Playwright e2e on Grafana 12 and 13                 | opus   | `tests/**`, `playwright.config.ts`                                                                                                   |
+| 5    | 15   | Acceptance checklist and README                     | sonnet | `docs/acceptance.md`, `README.md`                                                                                                    |
 
 ---
 
@@ -114,6 +114,7 @@ Workers in one wave run in parallel. A wave starts when every task of the previo
 **Model:** sonnet
 
 **Files:**
+
 - Create: everything `@grafana/create-plugin` 7.13.0 generates (`package.json`, `tsconfig.json`, `.config/**`, `src/plugin.json`, `src/module.ts`, `src/components/*`, `playwright.config.ts`, `tests/*`, `.github/**`, `docker-compose.yaml` from the template, `.eslintrc`/`eslint.config.*`, `.prettierrc.js`, `jest.config.js`)
 - Delete: `jest.config.js`, `.config/jest.config.js`, `.config/jest-setup.js`, `.config/jest/` (replaced by Vitest), the scaffold `docker-compose.yaml` (Task 2 writes the real one), `src/components/SimplePanel.tsx`
 - Create: `vitest.config.ts`, `src/components/DrawioMapPanel.tsx` (stub), `src/editor/DrawioModal.tsx` (stub), `src/types.ts` (empty placeholder, Task 1 fills it)
@@ -121,6 +122,7 @@ Workers in one wave run in parallel. A wave starts when every task of the previo
 - Modify: `package.json`, `src/plugin.json`, `src/module.ts`, `tsconfig.json`
 
 **Interfaces:**
+
 - Produces: a repo where `npm run build`, `npm run typecheck`, `npm run lint`, `npm test` pass; `dist/module.js` loads in Grafana as `simnv-drawiomap-panel`; the stub `DrawioModal` with the props shape that Task 1 formalises.
 
 - [ ] **Step 1: Scaffold in a temp directory and copy into the repo**
@@ -325,10 +327,12 @@ git commit -m "chore: scaffold simnv-drawiomap-panel with create-plugin 7.13, Gr
 **Model:** opus
 
 **Files:**
+
 - Modify: `src/types.ts`
 - Create: `src/util/hash.ts`, `src/util/hash.test.ts`, `src/rules/schema.ts`, `src/rules/schema.test.ts`, `src/adapter/portograph.ts`, `src/adapter/portograph.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing beyond `@grafana/data` types.
 - Produces: every type below. Tasks 4 to 13 import them verbatim. Do not rename anything after this task lands.
 
@@ -960,10 +964,12 @@ git commit -m "feat: shared types, rule schema and portograph contract adapter"
 **Model:** sonnet
 
 **Files:**
+
 - Create: `docker-compose.yaml`, `stack/metrics-gen/gen.py`, `provisioning/datasources/victoriametrics.yaml`, `provisioning/dashboards/dashboards.yaml`, `provisioning/dashboards/.gitkeep`
 - Create: `scripts/stack-smoke.sh`
 
 **Interfaces:**
+
 - Produces: Grafana 12 at `http://localhost:3012`, Grafana 13 at `http://localhost:3013`, draw.io at `http://localhost:8080`, VictoriaMetrics at `http://localhost:8428`, datasource uid `victoriametrics` (type `prometheus`). Series listed in Step 2 (Task 12 and Task 14 depend on these exact label values).
 
 - [ ] **Step 1: Write `docker-compose.yaml`**
@@ -1174,10 +1180,12 @@ Leave the stack running for other workers, or `docker compose down -v`.
 **Model:** sonnet
 
 **Files:**
+
 - Read only: `fixtures/portograph/{l1-physical,l2-link,l3-routing,l4-exits}.drawio` (committed; do not edit)
 - Create: `scripts/export-fixtures.sh`, `fixtures/hand/hand-drawn.drawio`, `fixtures/svg/l1-physical.svg`, `fixtures/svg/l2-link.svg`, `fixtures/svg/l3-routing.svg`, `fixtures/svg/l4-exits.svg`, `fixtures/svg/hand-drawn.svg`, `src/fixtures.test.ts`
 
 **Interfaces:**
+
 - Produces: SVG files that Tasks 5, 6, 7, 11, 12 load with `fs.readFileSync(resolve(__dirname, '..', 'fixtures', 'svg', name))`. Known facts (verified on 2026-10-17 with draw.io 32.4.1 CLI on the committed `l3-routing.drawio`): 438 680 bytes, 100 `data-cell-id` groups, 10 `data-meta-pg-kind="link"`, 10 `node`, 20 `port`, 8 `link-label`, root cell `data-cell-id="0"` with `data-meta-pg-schema="1"`, link ids like `pg-link~isp-a:pppoe->rtr-a:wan1` (`&gt;` in the file, `>` in the DOM), 53 PNG `<image>` label fallbacks inside `<switch>`, 189 `light-dark(` occurrences. `l2-link` carries meta attrs `job`, `instance`, `device`, `capacity`; `l1-physical` carries `capacity`, `kind`, `device`; `l3-routing` and `l4-exits` carry only `pg-*` attrs.
 
 - [ ] **Step 1: Write `scripts/export-fixtures.sh`**
@@ -1336,6 +1344,7 @@ git commit -m "test: real draw.io SVG exports of the portograph fixtures and a h
 ```
 
 ---
+
 ## Wave 2
 
 All seven tasks of this wave code against `src/types.ts` and `src/adapter/portograph.ts` from Task 1 and the fixtures from Task 3. They do not import each other.
@@ -1345,9 +1354,11 @@ All seven tasks of this wave code against `src/types.ts` and `src/adapter/portog
 **Model:** opus
 
 **Files:**
+
 - Create: `src/binding/template.ts`, `src/binding/template.test.ts`, `src/binding/select.ts`, `src/binding/select.test.ts`, `src/binding/series.ts`, `src/binding/series.test.ts`, `src/binding/reduce.ts`, `src/binding/reduce.test.ts`, `src/binding/color.ts`, `src/binding/color.test.ts`, `src/binding/engine.ts`, `src/binding/engine.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CellMeta`, `SeriesInfo`, `Rule`, `BindContext`, `BindResult`, `CellPatch`, `HalfState`, `ShapeState`, `SparklineState`, `TemplateScope` from `src/types.ts`; `endpointScope` from `src/adapter/portograph.ts`.
 - Produces (Task 11 and Task 9 call these):
   - `resolveTemplate(tpl: string, scope: TemplateScope): { text: string; unresolved: string[] }`
@@ -2284,9 +2295,11 @@ git commit -m "feat: pure binding engine with templates, selectors, series match
 **Model:** opus
 
 **Files:**
+
 - Create: `src/render/sanitize.ts`, `src/render/sanitize.test.ts`, `src/render/svgStage.ts`, `src/render/svgStage.test.ts`, `src/render/zoom.ts`, `src/render/zoom.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CellIndex`, `CellEntry`, `CellMeta`, `ZoomOptions` from `src/types.ts`; `cellMetaFromAttrs`, `attachLinkLabels` from `src/adapter/portograph.ts`; fixtures from `fixtures/svg/`.
 - Produces (Tasks 11 and 12 call these):
   - `sanitizeSvg(text: string): { svg: string; removed: { elements: number; attributes: number; images: number }; foreignObjects: number; warnings: string[] }` (throws `Error('Not an SVG document')` on parse failure). Output is HTML-serialised SVG (`outerHTML`), because DOMPurify runs in HTML parsing mode; `mountSvg` parses it with a `<template>`.
@@ -2492,6 +2505,7 @@ export function sanitizeSvg(text: string): SanitizeResult {
 ```
 
 Run: `npx vitest run src/render/sanitize` — Expected: PASS (10). Notes for the implementer:
+
 - If DOMPurify strips `foreignObject`, check `DOMPurify.removed` in the test output and add the missing tag to `ADD_TAGS` (DOMPurify lower-cases tag names in HTML mode, so `foreignobject` is equivalent).
 - If `requiredFeatures` or `xml:space` are dropped, that is harmless; remove them from `ADD_ATTR` only if DOMPurify rejects the config.
 - Do not switch to `PARSER_MEDIA_TYPE: 'application/xhtml+xml'`: in that mode DOMPurify compares case-sensitive tag names against its lowercase SVG list and strips `linearGradient`, `clipPath`, etc.
@@ -2833,14 +2847,17 @@ git commit -m "feat: SVG stage with sanitiser, cell index and viewBox zoom"
 ```
 
 ---
+
 ### Task 6: Patch applier
 
 **Model:** opus
 
 **Files:**
+
 - Create: `src/render/applier.ts`, `src/render/applier.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CellIndex`, `CellEntry`, `PatchMap`, `CellPatch` from `src/types.ts`.
 - Produces: `applyPatches(index: CellIndex, patches: PatchMap, previous: Set<string>): Set<string>` (returns the set of cell ids now patched; cells in `previous` but not in `patches` are reset to their original style). Group attributes written: `data-dmap-status` (`ok|nodata|unbound`), `data-dmap-step` (highest step index of the cell, `-1` for no data). Bound edges get `line.style.strokeOpacity = '0'` and arrows `style.opacity = '0'` so the overlay halves replace them.
 
@@ -3075,9 +3092,11 @@ git commit -m "feat: patch applier writes shape and link styles into the SVG DOM
 **Model:** opus
 
 **Files:**
+
 - Create: `src/render/geometry.ts`, `src/render/geometry.test.ts`, `src/render/overlay.ts`, `src/render/overlay.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CellIndex`, `CellEntry`, `PatchMap`, `HalfState`, `SparklineState` from `src/types.ts`; `GrafanaTheme2`.
 - Produces:
   - `parsePathPoints(d: string): Point[]`, `polylineLength(pts): number`, `pointAt(pts, dist): { x; y; angle }`, `slicePolyline(pts, from, to): Point[]` (pure; jsdom fallback)
@@ -3670,10 +3689,12 @@ git commit -m "feat: overlay with half-links, arrows, labels and sparklines from
 **Model:** opus
 
 **Files:**
+
 - Create: `src/editor/protocol.ts`, `src/editor/protocol.test.ts`, `src/editor/decode.ts`, `src/editor/decode.test.ts`
 - Modify: `src/editor/DrawioModal.tsx` (replace the Task 0 stub)
 
 **Interfaces:**
+
 - Consumes: `DrawioModalProps` from `src/types.ts`.
 - Produces:
   - `buildEditorUrl(base: string, isDark?: boolean): string` (merges `embed`, `proto`, `configure`, `spin`, `libraries`, `ui`, `saveAndExit`, `noExitBtn` one by one with `URLSearchParams`; sets `dark` from the theme), `editorOrigin(base: string): string`
@@ -4045,9 +4066,11 @@ git commit -m "feat: draw.io embed protocol state machine and editor modal"
 **Model:** opus
 
 **Files:**
+
 - Create: `src/interact/links.ts`, `src/interact/links.test.ts`, `src/interact/hit.ts`, `src/interact/hit.test.ts`, `src/interact/Tooltip.tsx`
 
 **Interfaces:**
+
 - Consumes: `CellPatch`, `PatchMap`, `SeriesInfo`, `HalfState`, `ShapeState` from `src/types.ts`; `LinkModel`, `ScopedVars`, `DisplayValue`, `FieldType` from `@grafana/data`; `Sparkline`, `useTheme2` from `@grafana/ui`.
 - Produces (Task 11 uses these):
   - `primaryOf(patch: CellPatch): Primary` where `Primary = { status: BindStatus; series?: SeriesInfo; display?: DisplayValue; value?: number; percent?: number; label?: string }` (the a2b half, else b2a, else the shape)
@@ -4340,10 +4363,12 @@ git commit -m "feat: link resolution with scoped vars, hit testing and hover too
 **Model:** sonnet
 
 **Files:**
+
 - Create: `src/options/DiagramEditor.tsx`, `src/options/RulesEditor.tsx`, `src/options/RulesEditor.test.tsx`, `src/options/importDiagram.ts`, `src/options/importDiagram.test.ts`
 - Modify: `src/module.ts`
 
 **Interfaces:**
+
 - Consumes: `Options`, `Diagram`, `Rule`, `DEFAULT_OPTIONS` from `src/types.ts`; `fnv1a` from `src/util/hash.ts`; `parseRulesYaml`, `rulesToYaml` from `src/rules/schema.ts`; `DrawioModal` from `src/editor/DrawioModal.tsx` (the Task 0 stub if Task 8 has not landed; the props are identical).
 - Produces: `plugin` in `src/module.ts` with `useFieldConfig` and all panel options; `DiagramEditor` with `data-testid="dmap-open-editor"` button; `importDiagram(text: string): { xml: string; warnings: string[] }`.
 
@@ -4722,6 +4747,7 @@ git commit -m "feat: diagram and rules option editors, panel options and field c
 ```
 
 ---
+
 ## Wave 3
 
 ### Task 11: Panel integration
@@ -4729,11 +4755,13 @@ git commit -m "feat: diagram and rules option editors, panel options and field c
 **Model:** opus
 
 **Files:**
+
 - Modify: `src/components/DrawioMapPanel.tsx` (replace the Task 0 stub)
 - Create: `src/components/DrawioMapPanel.test.tsx`, `src/components/useStage.ts`
 - Modify: `src/module.ts` only if Task 10 left an `as never` cast on `DrawioMapPanel` (remove the cast; nothing else)
 
 **Interfaces:**
+
 - Consumes: everything from Waves 1 and 2 (exact names in each task's Interfaces block).
 - Produces: `DrawioMapPanel(props: PanelProps<Options>)`. DOM contract for e2e: wrapper `data-testid="dmap-panel"`, `data-dmap-cells="<count>"`, `data-dmap-patched="<count>"`, `data-dmap-warnings="<count>"`, `data-dmap-hash="<diagram hash>"`; SVG root inside; empty state `data-testid="dmap-empty"`; click menu = `@grafana/ui` `ContextMenu` with `MenuItem` entries (`role="menuitem"`, `href` = resolved URL).
 
@@ -5137,9 +5165,11 @@ git commit -m "feat: panel component integrates stage, binding, overlay, zoom an
 **Model:** sonnet
 
 **Files:**
+
 - Create: `scripts/build-dashboard.ts`, `demo/rules.yaml`, `demo/rules-hand.yaml`, `demo/dashboard.template.json`, `provisioning/dashboards/drawiomap-demo.json` (generated, committed)
 
 **Interfaces:**
+
 - Consumes: `sanitizeSvg` (Task 5), `parseRulesYaml` (Task 1), `fnv1a` (Task 1), `fixtures/svg/l3-routing.svg`, `fixtures/portograph/l3-routing.drawio`, the series from Task 2.
 - Produces: dashboard uid `drawiomap-demo`, panel id `1` titled `demo-lab L3` (l3-routing fixture, `demo/rules.yaml`) and panel id `2` titled `hand-drawn` (hand-drawn fixture with the curved edge, `demo/rules-hand.yaml`), datasource uid `victoriametrics`. Task 14 depends on these values and on the rule names `links`, `wan uplinks 100M`, `node up`, `hand links`.
 
@@ -5343,10 +5373,12 @@ git commit -m "feat: provisioned demo dashboard built from the l3-routing fixtur
 **Model:** sonnet
 
 **Files:**
+
 - Create: `scripts/check-bundle.sh`
 - Modify: `package.json` (scripts only), `src/module.ts` (only if a `setNoPadding` or cast cleanup is still needed; otherwise do not touch)
 
 **Interfaces:**
+
 - Produces: `npm run check:bundle` fails when `dist/module.js` contains draw.io runtime code or when `@grafana/react-detect` reports findings. npm scripts `stack:up`, `stack:down`, `stack:smoke`.
 
 - [ ] **Step 1: `scripts/check-bundle.sh`**
@@ -5423,11 +5455,13 @@ git commit -m "chore: bundle check for draw.io runtime code and stack scripts"
 **Model:** opus
 
 **Files:**
+
 - Modify: `playwright.config.ts`
 - Create: `tests/view.spec.ts`, `tests/links.spec.ts`, `tests/editor.spec.ts`, `tests/no-drawio.spec.ts`
 - Delete: any template spec left in `tests/` from the scaffold
 
 **Interfaces:**
+
 - Consumes: dashboard uid `drawiomap-demo`, panel title `demo-lab L3`, panel id `1` (Task 12); overlay attributes (Task 7); `data-testid` values `dmap-panel`, `dmap-open-editor`, `dmap-editor-frame`, `dmap-editor-modal`, `data-dmap-editor-phase` (Tasks 8, 10, 11); series values from Task 2 (isp-a 41 %, radio 90 %, lte no data and up=0).
 - Produces: `npm run e2e:12` and `npm run e2e:13` green.
 
@@ -5555,6 +5589,7 @@ test('edit mode opens the self-hosted draw.io editor, saves, and the panel updat
 ```
 
 Notes:
+
 - If the quick-insert picker selector does not match your draw.io version, open `http://localhost:8080/?embed=1&proto=json&ui=min` manually, double-click the canvas and read the class names of the picker items; fix the selector. A keyboard-only alternative inside the frame: `Control+A` then `Control+C`, `Control+V` (duplicates the selection, which also modifies the diagram).
 - If Ctrl+S does not trigger the embed save on your draw.io version, click the "Save" button in the editor toolbar: `frame.getByRole('button', { name: /^Save/ })`.
 - Manual fallback (documented in `docs/acceptance.md`): open the editor, move a node, click Save, confirm the panel updates.
@@ -5603,10 +5638,12 @@ git commit -m "test: Playwright e2e for view, links, editor handshake and bundle
 **Model:** sonnet
 
 **Files:**
+
 - Create: `docs/acceptance.md`
 - Modify: `README.md` (replace the scaffold text)
 
 **Interfaces:**
+
 - Consumes: everything. No code changes. If a check fails, stop and report; do not patch other tasks' files.
 
 - [ ] **Step 1: Run the checks and record the output in `docs/acceptance.md`**
@@ -5647,26 +5684,26 @@ git commit -m "docs: PoC acceptance results and README"
 
 ## Spec coverage
 
-| Spec item | Tasks |
-|---|---|
-| 2 Grafana 12.4/13.2, `>=12.4.0`, `@grafana/* 12.4`, no bundled React | 0, 2, 13, 14 |
-| 2 Unsigned with allow-list | 2 |
-| 2 Diagram inline `{xml, svg, hash, updatedAt}`, import by paste/upload, SVG through the editor | 1, 8, 10 |
-| 2 Editor embed mode in a ~95vw×90vh modal, editor URL option, `xmlsvg` export; save round trip | 8, 10, 14 |
-| 2 View renderer: SVG once, memoised by hash, cell index by `data-cell-id`/`data-meta-*`, style patches, overlay `<g>` | 5, 6, 7, 11 |
-| 2 Data: panel queries, `refId` + label matchers | 4 |
-| 2 Rules in `options.rules`, form + YAML | 1, 10 |
-| 2 Two halves, arrowhead at midpoint, own label; one series colours the whole edge; real path geometry with transforms | 7, 14 |
-| 2 Label `${value} · ${percent}` from the display processor (unit, decimals); percent colour with capacity, else field display colour | 4 |
-| 2 No data grey, never green | 4, 6, 7 |
-| 2 One adaptive SVG, `color-scheme` from theme | 5 (keeps light-dark), 11 |
-| 2 Sparklines near shapes and in tooltip | 7, 9 |
-| 2 Zoom modes, wheel/pan off by default, viewBox | 5, 10, 11 |
-| 3 Binding model, templates, matchers, unbound = grey + warning | 4, 11 |
-| 3 Field config colour/unit/mappings via display processor; data links in context menu with rule url | 4, 9, 10, 11 |
-| 3 Cell identity: `pg-*`, else id and label | 1 |
-| 4 Component layout | file map |
-| 5 Compose stack, metrics-gen, provisioning, demo dashboard | 2, 12 |
-| 5 Vitest + jsdom on real fixtures; Playwright on 12 and 13 | 0, 3, 5–11, 14 |
-| 6 Acceptance 1–6 | 13, 14, 15 |
-| 7 Multi-page: render page 1 and warn | 10 (`importDiagram`) |
+| Spec item                                                                                                                            | Tasks                    |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| 2 Grafana 12.4/13.2, `>=12.4.0`, `@grafana/* 12.4`, no bundled React                                                                 | 0, 2, 13, 14             |
+| 2 Unsigned with allow-list                                                                                                           | 2                        |
+| 2 Diagram inline `{xml, svg, hash, updatedAt}`, import by paste/upload, SVG through the editor                                       | 1, 8, 10                 |
+| 2 Editor embed mode in a ~95vw×90vh modal, editor URL option, `xmlsvg` export; save round trip                                       | 8, 10, 14                |
+| 2 View renderer: SVG once, memoised by hash, cell index by `data-cell-id`/`data-meta-*`, style patches, overlay `<g>`                | 5, 6, 7, 11              |
+| 2 Data: panel queries, `refId` + label matchers                                                                                      | 4                        |
+| 2 Rules in `options.rules`, form + YAML                                                                                              | 1, 10                    |
+| 2 Two halves, arrowhead at midpoint, own label; one series colours the whole edge; real path geometry with transforms                | 7, 14                    |
+| 2 Label `${value} · ${percent}` from the display processor (unit, decimals); percent colour with capacity, else field display colour | 4                        |
+| 2 No data grey, never green                                                                                                          | 4, 6, 7                  |
+| 2 One adaptive SVG, `color-scheme` from theme                                                                                        | 5 (keeps light-dark), 11 |
+| 2 Sparklines near shapes and in tooltip                                                                                              | 7, 9                     |
+| 2 Zoom modes, wheel/pan off by default, viewBox                                                                                      | 5, 10, 11                |
+| 3 Binding model, templates, matchers, unbound = grey + warning                                                                       | 4, 11                    |
+| 3 Field config colour/unit/mappings via display processor; data links in context menu with rule url                                  | 4, 9, 10, 11             |
+| 3 Cell identity: `pg-*`, else id and label                                                                                           | 1                        |
+| 4 Component layout                                                                                                                   | file map                 |
+| 5 Compose stack, metrics-gen, provisioning, demo dashboard                                                                           | 2, 12                    |
+| 5 Vitest + jsdom on real fixtures; Playwright on 12 and 13                                                                           | 0, 3, 5–11, 14           |
+| 6 Acceptance 1–6                                                                                                                     | 13, 14, 15               |
+| 7 Multi-page: render page 1 and warn                                                                                                 | 10 (`importDiagram`)     |

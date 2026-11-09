@@ -142,7 +142,9 @@ describe('setCellAttrs', () => {
         attrs.key = 'new-key';
       }
       expect(after[index].tagName).toBe(element.tagName);
-      expect(Object.fromEntries(Array.from(after[index].attributes, ({ name, value }) => [name, value]))).toEqual(attrs);
+      expect(Object.fromEntries(Array.from(after[index].attributes, ({ name, value }) => [name, value]))).toEqual(
+        attrs
+      );
     });
   });
 

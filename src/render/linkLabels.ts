@@ -908,7 +908,10 @@ function pointsOf(el: Element): Point[] {
   if (known && known.attr === attr) {
     return known.pts;
   }
-  const nums = attr.trim().split(/[\s,]+/).map(Number);
+  const nums = attr
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
   const pts: Point[] = [];
   for (let i = 1; i < nums.length; i += 2) {
     pts.push({ x: nums[i - 1], y: nums[i] });

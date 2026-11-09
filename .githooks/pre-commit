@@ -2,6 +2,13 @@
 # Versioned pre-commit guardrail. Enable: npm run hooks:install
 dir=$(dirname "$0")
 sh "$dir/check-denylist.sh" || exit 1
+# Prettier on the staged files of every type (docs too). It reads the working tree copy; .prettierignore applies.
+staged=$(git diff --cached --name-only --diff-filter=ACMR) || exit 1
+if [ -n "$staged" ]; then
+  git diff --cached --name-only --diff-filter=ACMR -z \
+    | xargs -0 npx prettier --check --ignore-unknown --log-level warn \
+    || { echo "pre-commit: run npx prettier --write on the files above" >&2; exit 1; }
+fi
 if git diff --cached --name-only --diff-filter=ACMR | grep -Eq '^(src|tests|scripts)/|^[^/]+\.(ts|tsx|js|mjs|cjs|json)$'; then
   npm run typecheck && npm run lint || exit 1
 else

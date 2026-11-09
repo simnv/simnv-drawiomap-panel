@@ -22,11 +22,11 @@
 
 ## Superseded decisions
 
-| Date | Previous decision | Owner decision | Sections |
-| --- | --- | --- | --- |
-| 2026-10-30, panel 1.4.0 | Every link half uses the head with wings. | Add the optional class and cell override field `arrow: point\|triangle\|none`. The default is `point`, also for saved configs that omit the field. There is no panel option. | 2.2, 2.3, 3.8 |
-| 2026-10-30, review correction | Every point retains its full base on every path. | A degenerate fold keeps a simple outline inside the stroke envelope and a tip at the port. Its base width or symmetry can change. | 2.3, 3.8 |
-| 2026-11-03, panel 1.5.0 | zod 3.23.8 parses the config; one zod schema gives the types. | A small validator in `src/model/check.ts` parses the config with no dependency. `src/model/v4.ts` builds the same shapes on it and gives the same types, paths and messages; the table `src/model/v4.table.test.ts` locks the report of 212 configs. zod left `dist/module.js` (55 KB raw, 13 KB gzip). | 2.2, 2.5 |
+| Date                          | Previous decision                                             | Owner decision                                                                                                                                                                                                                                                                                          | Sections      |
+| ----------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 2026-10-30, panel 1.4.0       | Every link half uses the head with wings.                     | Add the optional class and cell override field `arrow: point\|triangle\|none`. The default is `point`, also for saved configs that omit the field. There is no panel option.                                                                                                                            | 2.2, 2.3, 3.8 |
+| 2026-10-30, review correction | Every point retains its full base on every path.              | A degenerate fold keeps a simple outline inside the stroke envelope and a tip at the port. Its base width or symmetry can change.                                                                                                                                                                       | 2.3, 3.8      |
+| 2026-11-03, panel 1.5.0       | zod 3.23.8 parses the config; one zod schema gives the types. | A small validator in `src/model/check.ts` parses the config with no dependency. `src/model/v4.ts` builds the same shapes on it and gives the same types, paths and messages; the table `src/model/v4.table.test.ts` locks the report of 212 configs. zod left `dist/module.js` (55 KB raw, 13 KB gzip). | 2.2, 2.5      |
 
 The owner note "Arrow style" of 2026-10-30 records this decision. The rows override the previous head style and define the fold exception.
 
@@ -36,58 +36,58 @@ The owner note "Arrow style" of 2026-10-30 records this decision. The rows overr
 
 Changes since review round 3 (revision 4):
 
-| Item | Severity | What changed in this spec | Section |
-|---|---|---|---|
-| A17 (O4) | amendment | `${name:format}` with a Grafana variable format is a dashboard variable; `${name}` with no format stays a required cell attribute (A5); bare `$var` stays a dashboard variable. The URL order keeps an explicit format and gives `percentencode` only to a bare ordinary variable. `${job:queryparam}` is no longer rejected. O4 closed. | 2.4, 3.3, 6.2, 9 (P1 acceptance 4, 14), 10.1, 10.2 |
-| R8 | major | The acceptance expectation follows the retained `yDomain`: `min: auto` with lines at 49 and 51 gives 47.45 to 52.55, because the helper keeps a span of at least 10 % of the top. The helper does not change. | 3.7, 9 (P1 acceptance 9) |
-| N1 | major | Only a positively identified v3 deployment (`options.config.version` below 4) is exempt when `options.build` is missing. A v4 panel with no usable base stops `pull` and the deploy gate; nothing replaces `.cells.yml`, and nothing deploys. | 7.3.5, 7.4, 9 (P2 acceptance 2, 9), 10.3 |
-| P1-10 review 4 | minor | A band row of a cell with no value (text `–`) shows the status reason in place of the text, for example `No data · cpu: 1 cell`. A row `– · cpu: 1 cell` gives no cause. | 3.4 |
-| P1-10 review 2 | minor | The legend has a `down` entry ("Down, no data") before `stale` and `missing`, when cells have a down status with no value (`missing: down`). The painter paints such a cell in the theme red, and no value mapping or step explains that colour. | 3.4 |
-| P3-05 review, finding 2 | minor | The panel reads `options.build` only to tell a generated panel apart: the inspector shows the generated-panel note next to the `at` button when the panel has a build id (5.4). The panel never changes the build id, and Apply keeps it. | 5.4, 6.2, 7.3.5 |
-| P1 gate review B, m6 | minor | Line i of a chart takes slot i of `[0, 1, 2, 3, 4, 5, 26, 30]` in the Grafana classic palette, not slot i: slots 6 and 7 repeat the green and yellow shades, so cyan (26) and pink (30) replace them. The order stays fixed. Decided in the P1-11b review; `docs/adr/0003-history-line-labels-colours.md`. | 3.7 |
+| Item                    | Severity  | What changed in this spec                                                                                                                                                                                                                                                                                                                | Section                                            |
+| ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| A17 (O4)                | amendment | `${name:format}` with a Grafana variable format is a dashboard variable; `${name}` with no format stays a required cell attribute (A5); bare `$var` stays a dashboard variable. The URL order keeps an explicit format and gives `percentencode` only to a bare ordinary variable. `${job:queryparam}` is no longer rejected. O4 closed. | 2.4, 3.3, 6.2, 9 (P1 acceptance 4, 14), 10.1, 10.2 |
+| R8                      | major     | The acceptance expectation follows the retained `yDomain`: `min: auto` with lines at 49 and 51 gives 47.45 to 52.55, because the helper keeps a span of at least 10 % of the top. The helper does not change.                                                                                                                            | 3.7, 9 (P1 acceptance 9)                           |
+| N1                      | major     | Only a positively identified v3 deployment (`options.config.version` below 4) is exempt when `options.build` is missing. A v4 panel with no usable base stops `pull` and the deploy gate; nothing replaces `.cells.yml`, and nothing deploys.                                                                                            | 7.3.5, 7.4, 9 (P2 acceptance 2, 9), 10.3           |
+| P1-10 review 4          | minor     | A band row of a cell with no value (text `–`) shows the status reason in place of the text, for example `No data · cpu: 1 cell`. A row `– · cpu: 1 cell` gives no cause.                                                                                                                                                                 | 3.4                                                |
+| P1-10 review 2          | minor     | The legend has a `down` entry ("Down, no data") before `stale` and `missing`, when cells have a down status with no value (`missing: down`). The painter paints such a cell in the theme red, and no value mapping or step explains that colour.                                                                                         | 3.4                                                |
+| P3-05 review, finding 2 | minor     | The panel reads `options.build` only to tell a generated panel apart: the inspector shows the generated-panel note next to the `at` button when the panel has a build id (5.4). The panel never changes the build id, and Apply keeps it.                                                                                                | 5.4, 6.2, 7.3.5                                    |
+| P1 gate review B, m6    | minor     | Line i of a chart takes slot i of `[0, 1, 2, 3, 4, 5, 26, 30]` in the Grafana classic palette, not slot i: slots 6 and 7 repeat the green and yellow shades, so cyan (26) and pink (30) replace them. The order stays fixed. Decided in the P1-11b review; `docs/adr/0003-history-line-labels-colours.md`.                               | 3.7                                                |
 
 Changes since review round 2 (revision 3). Amendments:
 
-| Amendment | What changed in this spec | Section |
-|---|---|---|
-| A14 (O3) | Generated healthy mappings use the colour `transparent`: a healthy cell keeps its drawn colour, severity normal. A hand author can still choose green. O3 closed. | 3.4, 7.3.4, 8.1, 8.2, 9 (P2 acceptance 6) |
-| A15 (O2) | `gen_drawiomap pull --check` runs in step 0 of the consumer `scripts/deploy.sh`, with the Grafana token from the environment. No API access stops the deploy. O2 closed. | 7.4, 9 (P2) |
-| A16 (O1) | In P2, `"editable": true` is set by hand in `dashboards/Home & IoT/wb-enclosures.json`. O1 closed. | 7.3.8, 9 (P2) |
-| A17 (O4) | Added in revision 4: see the table above. | 3.3, 10.1 |
+| Amendment | What changed in this spec                                                                                                                                                | Section                                   |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| A14 (O3)  | Generated healthy mappings use the colour `transparent`: a healthy cell keeps its drawn colour, severity normal. A hand author can still choose green. O3 closed.        | 3.4, 7.3.4, 8.1, 8.2, 9 (P2 acceptance 6) |
+| A15 (O2)  | `gen_drawiomap pull --check` runs in step 0 of the consumer `scripts/deploy.sh`, with the Grafana token from the environment. No API access stops the deploy. O2 closed. | 7.4, 9 (P2)                               |
+| A16 (O1)  | In P2, `"editable": true` is set by hand in `dashboards/Home & IoT/wb-enclosures.json`. O1 closed.                                                                       | 7.3.8, 9 (P2)                             |
+| A17 (O4)  | Added in revision 4: see the table above.                                                                                                                                | 3.3, 10.1                                 |
 
 Findings:
 
-| Finding | Severity | Resolution | Section |
-|---|---|---|---|
-| Astra R1 | major | `applier.ts` moves to the rewrite list: its `applyKey` reads every status field that the painter reads (colour, text, severity, refId). A colour change with the same state repaints; `transparent` resets the paint. | 3.4, 6.2, 6.3, 9 (P1 acceptance 6) |
-| Astra R2 | blocker | P1 replaces the v3 popup with the plain YAML option (A11). P1 deletes the whole v3 popup and its entry buttons, so P1 and P2 typecheck and ship without P3. A table names each e2e case that waits for P3. | 5.0, 5.1, 6.1, 6.2, 6.3, 6.5, 9 (P1 work, P1 acceptance 15, P3 work) |
-| Astra R3 | major | `pull` compares the deployment with the unmerged base of the deployed build, not with the merged XML. Each pull gives the full delta again; a removed attribute leaves the file. Two pull, build and deploy cycles are tested. | 7.3.5, 7.3.6, 9 (P2 acceptance 3) |
-| Astra R4 | major | A relative range measures the age at the clock, with the lag of a range that ends before now; an absolute range measures it at the range end. Tested with the same data and time range objects across a clock step. | 3.5, 9 (P1 acceptance 8) |
-| Astra R5 | major | Frames of one refId with equal labels and field name merge by timestamp; history stays. Only a different value at an equal timestamp is a `duplicate-series` entry. Both frame orders are tested. | 3.2, 9 (P1 acceptance 9) |
-| Astra R6 | major | The regex dialect is the common part of RE2 and JavaScript: a scan rejects RE2-only and JavaScript-only forms (`\z` included), rewrites escaped punctuation, and the compile uses the flag `u`. | 2.4, 9 (P1 acceptance 3) |
-| Astra R7 | major | A bare dashboard variable in a URL gets the Grafana format `percentencode`; `$__…` variables stay raw. `links.ts` moves to the rewrite list. A `${` that is neither a placeholder nor a formatted variable (A17, revision 4) is a `schema` entry. | 3.3, 6.2, 6.3, 9 (P1 acceptance 4), 10.1 (O4) |
-| Astra R8 | major | N lines share one Y range through `yDomain`, so the zero-based default of `CODING_STANDARDS.md:21` stays. `history.min` keeps `"auto"`. | 2.2, 3.7, 9 (P1 acceptance 9) |
-| Astra R9 | major | A3 stays: topology wins. The P3 pilot binds a cell that the source generator leaves unbound, and a separate check shows that an edit of a generator-owned attribute is a conflict. | 7.3.6, 8.2, 9 (P3 acceptance 10) |
-| Fable M1 | major | Same fix as R4. | 3.5, 9 (P1 acceptance 8) |
-| Fable M2 | major | `pull` reads the build id of the deployed panel (`options.build`), not `HEAD`. A difference of config, targets, geometry or style is a printed warning. The deploy gate compares content, not versions. | 7.3.5, 7.4, 9 (P2 acceptance 2, 9) |
-| Fable, smaller: `at=target` on generated links | minor | The one-click `at=target` serves hand-drawn edges. On a generated link the fix goes into the catalogue family. | 5.4, 7.3.6 |
-| Fable, smaller: `gen_boiler.py` | minor | Today it writes only `model`, `slave` and `k`. P2 changes it to write `bind`, `key` and `port` and keeps its cell ids. | 7.3.7, 9 (P2 work, P2 acceptance 10) |
-| Fable, smaller: consumer paths | minor | The harness scripts and the baseline file are under `scripts/gen_drawiomap/tests/`. | 6.4, 9 (P0) |
-| Fable, smaller: a deployed sheet with no `.cells.yml` | minor | The gate computes the delta; an empty delta passes, else "pull first". | 7.4, 9 (P2 acceptance 9) |
-| Fable, smaller: `object_class` | minor | All 13 nodes of net-l2-dm carry `object_class` today; the example shows it on each node. | 8.1 |
-| Astra (3): P1/P3 boundary, P1 acceptance 15 | blocker | Same as R2; 6.5 has a P1 and a P3 column for each case that needs the popup. | 6.5, 9 (P1 acceptance 15) |
-| Astra (3): repeat pull | major | Same as R3. | 9 (P2 acceptance 3) |
-| Astra (3): R4, R9, O1, O2 | major | R4 and R9 are fixed; A16 closes O1; A15 puts the gate in a named deploy step; A14 closes O3. | 3.5, 7.4, 8.2, 10.1 |
-| Astra (3): harness order | major | The bind validation runs after the SVG export and the config build, before the hash and the writes, on the cells of the exported SVG. | 7.4 |
-| Astra (3): N-line tests | major | 9 lines with "+1 more", stable colours and labels after a frame reorder, the pinned tooltip, an empty member, R5 and R8. | 3.7, 9 (P1 acceptance 9, 14) |
-| Astra (3): sandbox, CSP and phone | major | The Monaco smoke runs on the CSP and sandbox+CSP services of `docker-compose.yaml:49-65`; a phone check of the split view. Appendix A no longer defers them. | 9 (P3 acceptance 12, 13), Appendix A |
-| Astra (3): Monaco test in `matrix` | minor | `split-editor` goes into `MATRIX_SPECS`; P1 removes `binding-editor` and `query` from it. | 6.5, 9 (P3 acceptance 9) |
-| Astra (3): bundle check | minor | A fresh build first; the check looks for message texts of the `yaml` package, and the view-mode network trace shows no YAML chunk. | 5.3, 9 (P1 acceptance 17) |
-| Fable (3): P1 acceptance 10 | minor | `${from.key}` through the parent chain; `no-edge-ends` on a compressed page. | 9 (P1 acceptance 10) |
-| Fable (3): P1 acceptance 14 | minor | A `chart: {kind: value}` region. | 9 (P1 acceptance 14) |
-| Fable (3): P1 acceptance 8 | minor | `raw.to: 'now'` with a clock step, and an absolute range. | 9 (P1 acceptance 8) |
-| Fable (3): P2 acceptance 2 | minor | A deployment that is not `HEAD`, a build id that is not in the repository, and `--base`. | 9 (P2 acceptance 2) |
-| Fable (3): boiler cell ids | minor | The regenerated source `.drawio` keeps its cell ids. | 9 (P2 acceptance 10) |
+| Finding                                               | Severity | Resolution                                                                                                                                                                                                                                        | Section                                                              |
+| ----------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Astra R1                                              | major    | `applier.ts` moves to the rewrite list: its `applyKey` reads every status field that the painter reads (colour, text, severity, refId). A colour change with the same state repaints; `transparent` resets the paint.                             | 3.4, 6.2, 6.3, 9 (P1 acceptance 6)                                   |
+| Astra R2                                              | blocker  | P1 replaces the v3 popup with the plain YAML option (A11). P1 deletes the whole v3 popup and its entry buttons, so P1 and P2 typecheck and ship without P3. A table names each e2e case that waits for P3.                                        | 5.0, 5.1, 6.1, 6.2, 6.3, 6.5, 9 (P1 work, P1 acceptance 15, P3 work) |
+| Astra R3                                              | major    | `pull` compares the deployment with the unmerged base of the deployed build, not with the merged XML. Each pull gives the full delta again; a removed attribute leaves the file. Two pull, build and deploy cycles are tested.                    | 7.3.5, 7.3.6, 9 (P2 acceptance 3)                                    |
+| Astra R4                                              | major    | A relative range measures the age at the clock, with the lag of a range that ends before now; an absolute range measures it at the range end. Tested with the same data and time range objects across a clock step.                               | 3.5, 9 (P1 acceptance 8)                                             |
+| Astra R5                                              | major    | Frames of one refId with equal labels and field name merge by timestamp; history stays. Only a different value at an equal timestamp is a `duplicate-series` entry. Both frame orders are tested.                                                 | 3.2, 9 (P1 acceptance 9)                                             |
+| Astra R6                                              | major    | The regex dialect is the common part of RE2 and JavaScript: a scan rejects RE2-only and JavaScript-only forms (`\z` included), rewrites escaped punctuation, and the compile uses the flag `u`.                                                   | 2.4, 9 (P1 acceptance 3)                                             |
+| Astra R7                                              | major    | A bare dashboard variable in a URL gets the Grafana format `percentencode`; `$__…` variables stay raw. `links.ts` moves to the rewrite list. A `${` that is neither a placeholder nor a formatted variable (A17, revision 4) is a `schema` entry. | 3.3, 6.2, 6.3, 9 (P1 acceptance 4), 10.1 (O4)                        |
+| Astra R8                                              | major    | N lines share one Y range through `yDomain`, so the zero-based default of `CODING_STANDARDS.md:21` stays. `history.min` keeps `"auto"`.                                                                                                           | 2.2, 3.7, 9 (P1 acceptance 9)                                        |
+| Astra R9                                              | major    | A3 stays: topology wins. The P3 pilot binds a cell that the source generator leaves unbound, and a separate check shows that an edit of a generator-owned attribute is a conflict.                                                                | 7.3.6, 8.2, 9 (P3 acceptance 10)                                     |
+| Fable M1                                              | major    | Same fix as R4.                                                                                                                                                                                                                                   | 3.5, 9 (P1 acceptance 8)                                             |
+| Fable M2                                              | major    | `pull` reads the build id of the deployed panel (`options.build`), not `HEAD`. A difference of config, targets, geometry or style is a printed warning. The deploy gate compares content, not versions.                                           | 7.3.5, 7.4, 9 (P2 acceptance 2, 9)                                   |
+| Fable, smaller: `at=target` on generated links        | minor    | The one-click `at=target` serves hand-drawn edges. On a generated link the fix goes into the catalogue family.                                                                                                                                    | 5.4, 7.3.6                                                           |
+| Fable, smaller: `gen_boiler.py`                       | minor    | Today it writes only `model`, `slave` and `k`. P2 changes it to write `bind`, `key` and `port` and keeps its cell ids.                                                                                                                            | 7.3.7, 9 (P2 work, P2 acceptance 10)                                 |
+| Fable, smaller: consumer paths                        | minor    | The harness scripts and the baseline file are under `scripts/gen_drawiomap/tests/`.                                                                                                                                                               | 6.4, 9 (P0)                                                          |
+| Fable, smaller: a deployed sheet with no `.cells.yml` | minor    | The gate computes the delta; an empty delta passes, else "pull first".                                                                                                                                                                            | 7.4, 9 (P2 acceptance 9)                                             |
+| Fable, smaller: `object_class`                        | minor    | All 13 nodes of net-l2-dm carry `object_class` today; the example shows it on each node.                                                                                                                                                          | 8.1                                                                  |
+| Astra (3): P1/P3 boundary, P1 acceptance 15           | blocker  | Same as R2; 6.5 has a P1 and a P3 column for each case that needs the popup.                                                                                                                                                                      | 6.5, 9 (P1 acceptance 15)                                            |
+| Astra (3): repeat pull                                | major    | Same as R3.                                                                                                                                                                                                                                       | 9 (P2 acceptance 3)                                                  |
+| Astra (3): R4, R9, O1, O2                             | major    | R4 and R9 are fixed; A16 closes O1; A15 puts the gate in a named deploy step; A14 closes O3.                                                                                                                                                      | 3.5, 7.4, 8.2, 10.1                                                  |
+| Astra (3): harness order                              | major    | The bind validation runs after the SVG export and the config build, before the hash and the writes, on the cells of the exported SVG.                                                                                                             | 7.4                                                                  |
+| Astra (3): N-line tests                               | major    | 9 lines with "+1 more", stable colours and labels after a frame reorder, the pinned tooltip, an empty member, R5 and R8.                                                                                                                          | 3.7, 9 (P1 acceptance 9, 14)                                         |
+| Astra (3): sandbox, CSP and phone                     | major    | The Monaco smoke runs on the CSP and sandbox+CSP services of `docker-compose.yaml:49-65`; a phone check of the split view. Appendix A no longer defers them.                                                                                      | 9 (P3 acceptance 12, 13), Appendix A                                 |
+| Astra (3): Monaco test in `matrix`                    | minor    | `split-editor` goes into `MATRIX_SPECS`; P1 removes `binding-editor` and `query` from it.                                                                                                                                                         | 6.5, 9 (P3 acceptance 9)                                             |
+| Astra (3): bundle check                               | minor    | A fresh build first; the check looks for message texts of the `yaml` package, and the view-mode network trace shows no YAML chunk.                                                                                                                | 5.3, 9 (P1 acceptance 17)                                            |
+| Fable (3): P1 acceptance 10                           | minor    | `${from.key}` through the parent chain; `no-edge-ends` on a compressed page.                                                                                                                                                                      | 9 (P1 acceptance 10)                                                 |
+| Fable (3): P1 acceptance 14                           | minor    | A `chart: {kind: value}` region.                                                                                                                                                                                                                  | 9 (P1 acceptance 14)                                                 |
+| Fable (3): P1 acceptance 8                            | minor    | `raw.to: 'now'` with a clock step, and an absolute range.                                                                                                                                                                                         | 9 (P1 acceptance 8)                                                  |
+| Fable (3): P2 acceptance 2                            | minor    | A deployment that is not `HEAD`, a build id that is not in the repository, and `--base`.                                                                                                                                                          | 9 (P2 acceptance 2)                                                  |
+| Fable (3): boiler cell ids                            | minor    | The regenerated source `.drawio` keeps its cell ids.                                                                                                                                                                                              | 9 (P2 acceptance 10)                                                 |
 
 Round-1 findings that review round 2 marked "partly": Astra 1 (R1), Astra 5 (R6), Astra 6 (R7), Astra 7 and 8 (R4,
 M1), Astra 15 (`gen_boiler.py`), Astra 18 (R2), Astra 21 (R3, A15), Astra 22 (R3, R9), Astra 23 (the section (3)
@@ -95,65 +95,65 @@ rows), Fable f.1 and f.2 (R3, A15), Fable f.4 (A16). The rows above resolve them
 
 ### 0.2 Amendments of round 1
 
-| Amendment | What changed in this spec | Section |
-|---|---|---|
-| A1 | The painter, the status band and the legend carry the exact Grafana colour, text and refId. Severity is only for "worst of N", the band and the legend. Q1 closed. | 3.4, 6.2 |
-| A2 | `gen_drawiomap pull` writes `<sheet>.cells.yml`; the generator merges only from it, before the SVG export and the hashes. Generated dashboards are `editable: true`. Q4 closed. | 7.3, 7.4 |
-| A3 | All editor-written attributes are kept; classes and overrides of generated panels stay generator-owned; a conflict exits non-zero unless `--accept-topology`; identity is uid + panel id + page + cell id. | 7.3.6 |
-| A4 | Asymmetric capacity: `cap=50M/10M` and `capacity: {a2b, b2a}`. Capacities follow the geometry. Q5 closed. | 2.2, 3.8 |
-| A5 | `${x}` is always a cell attribute, also inside a matcher; a missing one is `missing-attr`. Dashboard variables use bare `$var`. Reserved roots: `labels.`, `value`, `from.`, `to.`. Q3 closed. A17 (revision 4) adds `${name:format}` as a dashboard variable in URLs and titles; `${name}` with no format stays a cell attribute, and a matcher still reads no dashboard variable. | 2.4, 3.3 |
-| A6 | A matcher value can be a list. Constant filters with no cell attribute go into the query. | 2.4 |
-| A7 | A class with no `match` is a valid abstract base; it is an error only when a cell binds it. Q12 closed. | 2.3, 8.1 |
-| A8 | Pilots: net-l2-dm and boiler-enclosure. wb-channels-lighting is a stretch pilot. Q2 closed. | 8 |
-| A9 | Chart regions stay as the class field `chart`. Q7 closed. | 2.2, 3.9 |
-| A10 | Stale is the result age per series; one stale series makes the cell stale; instant queries are never stale. Q9 closed. | 3.5 |
-| A11 | P1 ships a plain YAML `CodeEditor` option. P1 and P2 ship in one change set. Q10 closed. | 5.0, 9 |
-| A12 | The stored form is JSON only; the YAML text is written in a stable key order. Q6 closed. | 5.1 |
-| A13 | Q8 `linkLabel` none/value/percent, the generator sets percent; Q11 an explicit rate-unit table; Q13 the inspector shows the source end and has one-click `at=target`; Q14 the generator sets `at` on each link and audits all panels; Q15 `yaml` 2.x only in a lazy chunk, with a bundle check. | 2.3, 3.7, 5.4, 7.3, 5.3 |
+| Amendment | What changed in this spec                                                                                                                                                                                                                                                                                                                                                           | Section                 |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| A1        | The painter, the status band and the legend carry the exact Grafana colour, text and refId. Severity is only for "worst of N", the band and the legend. Q1 closed.                                                                                                                                                                                                                  | 3.4, 6.2                |
+| A2        | `gen_drawiomap pull` writes `<sheet>.cells.yml`; the generator merges only from it, before the SVG export and the hashes. Generated dashboards are `editable: true`. Q4 closed.                                                                                                                                                                                                     | 7.3, 7.4                |
+| A3        | All editor-written attributes are kept; classes and overrides of generated panels stay generator-owned; a conflict exits non-zero unless `--accept-topology`; identity is uid + panel id + page + cell id.                                                                                                                                                                          | 7.3.6                   |
+| A4        | Asymmetric capacity: `cap=50M/10M` and `capacity: {a2b, b2a}`. Capacities follow the geometry. Q5 closed.                                                                                                                                                                                                                                                                           | 2.2, 3.8                |
+| A5        | `${x}` is always a cell attribute, also inside a matcher; a missing one is `missing-attr`. Dashboard variables use bare `$var`. Reserved roots: `labels.`, `value`, `from.`, `to.`. Q3 closed. A17 (revision 4) adds `${name:format}` as a dashboard variable in URLs and titles; `${name}` with no format stays a cell attribute, and a matcher still reads no dashboard variable. | 2.4, 3.3                |
+| A6        | A matcher value can be a list. Constant filters with no cell attribute go into the query.                                                                                                                                                                                                                                                                                           | 2.4                     |
+| A7        | A class with no `match` is a valid abstract base; it is an error only when a cell binds it. Q12 closed.                                                                                                                                                                                                                                                                             | 2.3, 8.1                |
+| A8        | Pilots: net-l2-dm and boiler-enclosure. wb-channels-lighting is a stretch pilot. Q2 closed.                                                                                                                                                                                                                                                                                         | 8                       |
+| A9        | Chart regions stay as the class field `chart`. Q7 closed.                                                                                                                                                                                                                                                                                                                           | 2.2, 3.9                |
+| A10       | Stale is the result age per series; one stale series makes the cell stale; instant queries are never stale. Q9 closed.                                                                                                                                                                                                                                                              | 3.5                     |
+| A11       | P1 ships a plain YAML `CodeEditor` option. P1 and P2 ship in one change set. Q10 closed.                                                                                                                                                                                                                                                                                            | 5.0, 9                  |
+| A12       | The stored form is JSON only; the YAML text is written in a stable key order. Q6 closed.                                                                                                                                                                                                                                                                                            | 5.1                     |
+| A13       | Q8 `linkLabel` none/value/percent, the generator sets percent; Q11 an explicit rate-unit table; Q13 the inspector shows the source end and has one-click `at=target`; Q14 the generator sets `at` on each link and audits all panels; Q15 `yaml` 2.x only in a lazy chunk, with a bundle check.                                                                                     | 2.3, 3.7, 5.4, 7.3, 5.3 |
 
 ### 0.3 Blockers and major findings of round 1
 
-| Finding | Severity | Resolution | Section |
-|---|---|---|---|
-| Fable a.3 | major | Reserved roots `labels.`, `value`, `from.`, `to.` stay (A5). `cell.`, `cellTitle` and `percent` go; `${label}` reads the cell attribute `label`. | 3.3, 2.6 |
-| Fable b.1 | blocker | Each `${x}` in a matcher is a required cell attribute; a missing one is `missing-attr` (A5). | 2.4, 3.3 |
-| Fable b.2 | major | A matcher value can be a list (A6). Constants go into the query. | 2.4 |
-| Fable b.3 | major | No empty match. A singleton query keeps a label that names the cell; the boiler pilot shows the idiom. | 2.4, 8.2 |
-| Fable c (fan-out cost) | major | A hand-authored panel uses open selectors and the report. README note. | 8.4 |
-| Fable d.2 | major | `setCellAttrs` and the edge-end reader refuse a compressed page with a clear message. No inflate code. | 5.5, 3.8 |
-| Fable e.1 | blocker | A stable `src/harness.ts`; the consumer `.mjs` scripts are rewritten against it, before the v3 delete. | 6.4, 9 |
-| Fable e.2 | blocker | `tests/authoring-fixtures.ts` and `tests/authoring-controls.ts` are rewritten, not deleted. | 6.5 |
-| Fable e.3 | major | The unlisted `src/` files are now in the lists. | 6.1, 6.2, 6.3 |
-| Fable e.4 | major | Each e2e spec has a line: deleted, rewritten or re-fixtured. | 6.5 |
-| Fable f.1 | blocker | `pull` command and an offline merge from `<sheet>.cells.yml` (A2). | 7.3.5, 7.3.6 |
-| Fable f.2 | major | Every editor-written attribute is kept; YAML of generated panels is generator-owned (A3). | 7.3.6 |
-| Fable f.3 | major | Mode B merges from `<sheet>.cells.yml` too; the repo holds the source and the delta. | 7.3.7 |
-| Fable f.4 | major | Generated dashboards become `editable: true` (A2); the mode B target is closed by A16. | 7.3.8 |
-| Fable h.1 | major | P0 records the v3 colour parity on `main` before the delete; P2 compares with it. | 9 |
-| Fable h.2 | major | P0 records the v3 bench number on `main`. | 9 |
-| Fable h.3 | major | P1 acceptance: YAML → JSON → YAML round trip and block style for `${`. | 9 |
-| Astra 1 | blocker | Exact colour, text and refId through patches, painter, band and legend (A1). | 3.4, 6.2 |
-| Astra 2 | major | An explicit, tested rate-unit table with the flow units (A13). | 3.7 |
-| Astra 3 | major | Abstract base classes are valid (A7). | 2.3, 8.1 |
-| Astra 4 | major | A match block must be nonempty and must read a cell attribute; inherited and override blocks too. Row match replaces the whole block. | 2.4, 2.5 |
-| Astra 5 | major | The matcher contract: parse, unescape, substitute, escape, compile, anchored whole-string, absent label = empty string, `matcher-error`. JavaScript regex dialect. | 2.4 |
-| Astra 6 | major | A5; matchers do not read dashboard variables; the URL order keeps the `$` shield and `isAllowedUrl`. | 3.3 |
-| Astra 7 | major | Freshness per series, the effective cadence of a target, absent interval, clock-driven transitions (A10). | 3.5 |
-| Astra 8 | major | Stale is the result age (A10). The historical range uses the range end. | 3.5 |
-| Astra 9 | major | Null, NaN, failed and loading are not "no series" and never `down`. | 3.6 |
-| Astra 10 | major | N-series reduce: a deterministic order, unit normalisation, rebuilt display processor, explicit `reduce` silences the report, updown alignment. | 3.7 |
-| Astra 11 | major | An explicit endpoint lookup: `pg-from`/`pg-to`, else the XML `source`/`target`; the port wins over the node. | 3.8 |
-| Astra 12 | major | Capacity: invalid speed falls through with a report entry; asymmetric capacity (A4). | 3.8 |
-| Astra 13 | major | Envelope-then-item parsing; invalid parents and overrides; uses after overrides; the editor keeps the last valid draft. | 2.5, 3.2, 5.1 |
-| Astra 15 | major | D19 stays. `port` and `cap` come from the generator or from draw.io "Edit Data"; `at` from the inspector (A13). The boiler cells get their attributes from the source generator. | 5.5, 8.2 |
-| Astra 16 | major | One draft transaction for config and diagram; `revision.ts` stays; conflict, discard, invalid text and undo are defined. | 5.7 |
-| Astra 17 | major | Cursor rules for keys, blank lines, parse errors, duplicate keys, aliases, inherited rows and link-only classes. | 5.3 |
-| Astra 18 | major | `editor-refresh` and the popup behaviours of `bindings-popup.spec.ts:251-365` are kept in rewritten specs; 6.5 tells which run in P1 and which wait for P3 (R2). | 6.5 |
-| Astra 19 | major | Multi-series card and chart work is in the rewrite list. | 3.7, 6.2 |
-| Astra 20 | major | The merge runs before the SVG export, the bundle and the hashes. | 7.4 |
-| Astra 21 | major | Identity uid + panel + page + cell; one snapshot per dashboard; a failed pull stops; a deploy gate (A15). | 7.3.5, 7.4 |
-| Astra 22 | major | Ownership (A3), a validation of the merged sheet with the panel's own bind, and the unbind semantics. | 7.3.6 |
-| Astra 23 | major | The acceptance of each phase lists the targeted checks. | 9 |
+| Finding                | Severity | Resolution                                                                                                                                                                       | Section       |
+| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| Fable a.3              | major    | Reserved roots `labels.`, `value`, `from.`, `to.` stay (A5). `cell.`, `cellTitle` and `percent` go; `${label}` reads the cell attribute `label`.                                 | 3.3, 2.6      |
+| Fable b.1              | blocker  | Each `${x}` in a matcher is a required cell attribute; a missing one is `missing-attr` (A5).                                                                                     | 2.4, 3.3      |
+| Fable b.2              | major    | A matcher value can be a list (A6). Constants go into the query.                                                                                                                 | 2.4           |
+| Fable b.3              | major    | No empty match. A singleton query keeps a label that names the cell; the boiler pilot shows the idiom.                                                                           | 2.4, 8.2      |
+| Fable c (fan-out cost) | major    | A hand-authored panel uses open selectors and the report. README note.                                                                                                           | 8.4           |
+| Fable d.2              | major    | `setCellAttrs` and the edge-end reader refuse a compressed page with a clear message. No inflate code.                                                                           | 5.5, 3.8      |
+| Fable e.1              | blocker  | A stable `src/harness.ts`; the consumer `.mjs` scripts are rewritten against it, before the v3 delete.                                                                           | 6.4, 9        |
+| Fable e.2              | blocker  | `tests/authoring-fixtures.ts` and `tests/authoring-controls.ts` are rewritten, not deleted.                                                                                      | 6.5           |
+| Fable e.3              | major    | The unlisted `src/` files are now in the lists.                                                                                                                                  | 6.1, 6.2, 6.3 |
+| Fable e.4              | major    | Each e2e spec has a line: deleted, rewritten or re-fixtured.                                                                                                                     | 6.5           |
+| Fable f.1              | blocker  | `pull` command and an offline merge from `<sheet>.cells.yml` (A2).                                                                                                               | 7.3.5, 7.3.6  |
+| Fable f.2              | major    | Every editor-written attribute is kept; YAML of generated panels is generator-owned (A3).                                                                                        | 7.3.6         |
+| Fable f.3              | major    | Mode B merges from `<sheet>.cells.yml` too; the repo holds the source and the delta.                                                                                             | 7.3.7         |
+| Fable f.4              | major    | Generated dashboards become `editable: true` (A2); the mode B target is closed by A16.                                                                                           | 7.3.8         |
+| Fable h.1              | major    | P0 records the v3 colour parity on `main` before the delete; P2 compares with it.                                                                                                | 9             |
+| Fable h.2              | major    | P0 records the v3 bench number on `main`.                                                                                                                                        | 9             |
+| Fable h.3              | major    | P1 acceptance: YAML → JSON → YAML round trip and block style for `${`.                                                                                                           | 9             |
+| Astra 1                | blocker  | Exact colour, text and refId through patches, painter, band and legend (A1).                                                                                                     | 3.4, 6.2      |
+| Astra 2                | major    | An explicit, tested rate-unit table with the flow units (A13).                                                                                                                   | 3.7           |
+| Astra 3                | major    | Abstract base classes are valid (A7).                                                                                                                                            | 2.3, 8.1      |
+| Astra 4                | major    | A match block must be nonempty and must read a cell attribute; inherited and override blocks too. Row match replaces the whole block.                                            | 2.4, 2.5      |
+| Astra 5                | major    | The matcher contract: parse, unescape, substitute, escape, compile, anchored whole-string, absent label = empty string, `matcher-error`. JavaScript regex dialect.               | 2.4           |
+| Astra 6                | major    | A5; matchers do not read dashboard variables; the URL order keeps the `$` shield and `isAllowedUrl`.                                                                             | 3.3           |
+| Astra 7                | major    | Freshness per series, the effective cadence of a target, absent interval, clock-driven transitions (A10).                                                                        | 3.5           |
+| Astra 8                | major    | Stale is the result age (A10). The historical range uses the range end.                                                                                                          | 3.5           |
+| Astra 9                | major    | Null, NaN, failed and loading are not "no series" and never `down`.                                                                                                              | 3.6           |
+| Astra 10               | major    | N-series reduce: a deterministic order, unit normalisation, rebuilt display processor, explicit `reduce` silences the report, updown alignment.                                  | 3.7           |
+| Astra 11               | major    | An explicit endpoint lookup: `pg-from`/`pg-to`, else the XML `source`/`target`; the port wins over the node.                                                                     | 3.8           |
+| Astra 12               | major    | Capacity: invalid speed falls through with a report entry; asymmetric capacity (A4).                                                                                             | 3.8           |
+| Astra 13               | major    | Envelope-then-item parsing; invalid parents and overrides; uses after overrides; the editor keeps the last valid draft.                                                          | 2.5, 3.2, 5.1 |
+| Astra 15               | major    | D19 stays. `port` and `cap` come from the generator or from draw.io "Edit Data"; `at` from the inspector (A13). The boiler cells get their attributes from the source generator. | 5.5, 8.2      |
+| Astra 16               | major    | One draft transaction for config and diagram; `revision.ts` stays; conflict, discard, invalid text and undo are defined.                                                         | 5.7           |
+| Astra 17               | major    | Cursor rules for keys, blank lines, parse errors, duplicate keys, aliases, inherited rows and link-only classes.                                                                 | 5.3           |
+| Astra 18               | major    | `editor-refresh` and the popup behaviours of `bindings-popup.spec.ts:251-365` are kept in rewritten specs; 6.5 tells which run in P1 and which wait for P3 (R2).                 | 6.5           |
+| Astra 19               | major    | Multi-series card and chart work is in the rewrite list.                                                                                                                         | 3.7, 6.2      |
+| Astra 20               | major    | The merge runs before the SVG export, the bundle and the hashes.                                                                                                                 | 7.4           |
+| Astra 21               | major    | Identity uid + panel + page + cell; one snapshot per dashboard; a failed pull stops; a deploy gate (A15).                                                                        | 7.3.5, 7.4    |
+| Astra 22               | major    | Ownership (A3), a validation of the merged sheet with the panel's own bind, and the unbind semantics.                                                                            | 7.3.6         |
+| Astra 23               | major    | The acceptance of each phase lists the targeted checks.                                                                                                                          | 9             |
 
 ### 0.4 Minor findings of round 1
 
@@ -297,13 +297,13 @@ export type ConfigV4 = Omit<z.infer<typeof envelopeSchema>, 'classes' | 'overrid
 **Match (D4, A6).** The record key names a cell attribute. The value names a series label and an optional operator.
 Section 2.4 gives the full contract.
 
-| Form | Meaning |
-|---|---|
-| `key: name` | the label `name` of the series equals the attribute `key` of the cell |
-| `key: instance=~"${key}:.*"` | the label `instance` matches `^(?:<key value, regex-escaped>:.*)$` |
-| `port: port_num` | a second key: the label `port_num` equals the attribute `port` |
-| `key: entity="switch.${key}_k${port}"` | a template can read any attribute of the cell; each one it reads is required |
-| `key: [instance=~"${key}:.*", job="node"]` | a list: all matchers must pass (A6) |
+| Form                                       | Meaning                                                                      |
+| ------------------------------------------ | ---------------------------------------------------------------------------- |
+| `key: name`                                | the label `name` of the series equals the attribute `key` of the cell        |
+| `key: instance=~"${key}:.*"`               | the label `instance` matches `^(?:<key value, regex-escaped>:.*)$`           |
+| `port: port_num`                           | a second key: the label `port_num` equals the attribute `port`               |
+| `key: entity="switch.${key}_k${port}"`     | a template can read any attribute of the cell; each one it reads is required |
+| `key: [instance=~"${key}:.*", job="node"]` | a list: all matchers must pass (A6)                                          |
 
 YAML note: in flow style (`{…}`, `[…]`), a plain value cannot hold `{`, `}`, `[`, `]` or `,`. Thus a matcher with
 `${` or a regex class such as `[1-6]` must be in block style or in single quotes. The YAML writer (5.1) writes
@@ -405,6 +405,7 @@ The panel runs one matcher in these steps. Each step has one failure mode.
 
    A compile error is a `matcher-error` entry with the class, the path, the resolved text, the message and the
    cells. That use selects no series for those cells. The cache lives for one bind.
+
 7. **Test.** The test reads the whole label value. An absent label is the empty string, as in PromQL: `job!="x"`
    passes on a series with no `job`, `job=""` passes on it, `job="x"` fails, `job=~".*"` passes.
 8. **Combine.** All matchers of a block must pass. A list value (A6) adds each of its matchers to the block.
@@ -438,17 +439,17 @@ The editor uses the same functions, so the live diagram and the view mode show t
 No decision names these items. They come from v3 so that no feature goes silently. The owner confirms them when
 approving this spec.
 
-| Item | v3 source | v4 |
-|---|---|---|
-| Row kinds `metadata` and `drilldown` | `src/model/config.ts:190-191` | kept |
-| `min`/`max` on `history` | `src/model/config.ts:174-175` | kept (the Y range through `yDomain`, 3.7); `min: auto` stays |
-| `urlTitle` | v3 display url title | kept |
-| `text.reduce` | — | new, follows D8 |
-| `linkLabel` | `display.link.label.mode` | kept (A13) |
-| Chart regions | `widgets`, `src/model/config.ts:272-286` | kept as `chart` (A9) |
-| The field Max as a capacity | `src/binding/capacity.ts:117-121` | dropped (D15) |
-| Template roots `cell.`, `cellTitle`, `percent` | `src/binding/template.ts:4` | dropped (A5); `${label}` reads the cell attribute `label` |
-| The `${__…}` form of Grafana global variables | `src/binding/template.ts:20` | write `$__url_time_range`; `${__…}` is a cell attribute (A5) and the report says so |
+| Item                                           | v3 source                                | v4                                                                                  |
+| ---------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| Row kinds `metadata` and `drilldown`           | `src/model/config.ts:190-191`            | kept                                                                                |
+| `min`/`max` on `history`                       | `src/model/config.ts:174-175`            | kept (the Y range through `yDomain`, 3.7); `min: auto` stays                        |
+| `urlTitle`                                     | v3 display url title                     | kept                                                                                |
+| `text.reduce`                                  | —                                        | new, follows D8                                                                     |
+| `linkLabel`                                    | `display.link.label.mode`                | kept (A13)                                                                          |
+| Chart regions                                  | `widgets`, `src/model/config.ts:272-286` | kept as `chart` (A9)                                                                |
+| The field Max as a capacity                    | `src/binding/capacity.ts:117-121`        | dropped (D15)                                                                       |
+| Template roots `cell.`, `cellTitle`, `percent` | `src/binding/template.ts:4`              | dropped (A5); `${label}` reads the cell attribute `label`                           |
+| The `${__…}` form of Grafana global variables  | `src/binding/template.ts:20`             | write `$__url_time_range`; `${__…}` is a cell attribute (A5) and the report says so |
 
 ## 3. The runtime join
 
@@ -502,19 +503,19 @@ status part of a patch changes (3.4); the renderer of shapes and links does not.
 
 The scope (A5, A17):
 
-| Placeholder | Value |
-|---|---|
-| `${<name>}` | the cell attribute `<name>` (a `data-meta-*` attribute). `${id}` is the draw.io cell id. `${label}` is the attribute `label`. |
-| `${from.<name>}`, `${to.<name>}` | an attribute of the cell at that edge end (3.8) |
-| `${labels.<name>}` | a label of the status series of the cell; only when that use selects exactly one series |
-| `${value}` | the formatted status value; the same condition |
+| Placeholder                      | Value                                                                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `${<name>}`                      | the cell attribute `<name>` (a `data-meta-*` attribute). `${id}` is the draw.io cell id. `${label}` is the attribute `label`. |
+| `${from.<name>}`, `${to.<name>}` | an attribute of the cell at that edge end (3.8)                                                                               |
+| `${labels.<name>}`               | a label of the status series of the cell; only when that use selects exactly one series                                       |
+| `${value}`                       | the formatted status value; the same condition                                                                                |
 
 Dashboard variables (A17) are not in the scope. The panel does not substitute them; `replaceVariables` does:
 
-| Form | Meaning |
-|---|---|
-| `$<name>`, `$__<name>` | a dashboard variable or a Grafana global variable, bare form (A5) |
-| `${<name>:<format>}` | a dashboard variable with a Grafana variable format (A17). `<name>` is `[A-Za-z_][A-Za-z0-9_]*`; `<format>` is a Grafana format id such as `csv`, `pipe`, `regex`, `queryparam`, `percentencode`, `raw` or `text`. The panel does not check the id against a list. |
+| Form                   | Meaning                                                                                                                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `$<name>`, `$__<name>` | a dashboard variable or a Grafana global variable, bare form (A5)                                                                                                                                                                                                  |
+| `${<name>:<format>}`   | a dashboard variable with a Grafana variable format (A17). `<name>` is `[A-Za-z_][A-Za-z0-9_]*`; `<format>` is a Grafana format id such as `csv`, `pipe`, `regex`, `queryparam`, `percentencode`, `raw` or `text`. The panel does not check the id against a list. |
 
 Thus a colon in the braces marks a dashboard variable, and `${<name>}` with no colon is always a cell attribute
 (A5). A17 does not change the matcher: a matcher reads no dashboard variable (2.4 step 3).
@@ -547,6 +548,7 @@ Thus a colon in the braces marks a dashboard variable, and `${<name>}` with no c
   give `var-job=a&var-job=b` (A17). Today `src/interact/links.ts:75-78` calls `replaceVariables(u.url, vars)` with
   no format, so a value can change the query structure; v4 rewrites this call (6.2). A title is text: step 2 and the
   encoding of step 1 do not apply to it, and a `${<name>:<format>}` in it goes to `replaceVariables` as it is.
+
 - A `${` that starts neither a placeholder of the scope table nor a `${<name>:<format>}` (for example `${job.x:csv}`
   or `${}`) is a `schema` entry in a URL, a `metadata` text and a `drilldown`: "write ${attr} for a cell attribute,
   $var or ${var:format} for a dashboard variable".
@@ -592,7 +594,7 @@ For each series of the status use, the display processor of its field gives `{te
   (`missing: down`).
 - **Legend groups (1.3.0, owner decision 2026-10-29).** Blocks with the same content become one block: the same
   entries in the same order, each with the same text and colour, and the same gradient with the same end texts. The
-  title of the block is the titles of its members joined with ` · `; a long title wraps. The cells of the block, and
+  title of the block is the titles of its members joined with `·`; a long title wraps. The cells of the block, and
   the cells of each entry, are the cells of all members, so a hover or a keyboard focus on an entry highlights the
   cells of all members. The key of the block is the sorted keys of its members. The `State` block and the link load
   scale use the same rule: they merge with a status block only when the content is the same. The legend shows all
@@ -646,18 +648,17 @@ For each series of the status use, the display processor of its field gives `{te
 
 The state of a use comes from the snapshot of its refId (`src/query/panelSnapshot.ts:31-48`):
 
-| Snapshot | Cell state for this use | `missing: down` |
-|---|---|---|
-| `error` for the refId, or a request-wide error | `missing`, reason "Query failed"; report `query-unavailable` | does not apply |
-| `loading`, first load with no series | `missing`, reason "Loading data" | does not apply |
-| loading during a refresh | Grafana keeps the last series; the panel uses them | as `ready` |
-| a refId that no target has | `missing`, reason "Unknown query"; report `unknown-ref` | does not apply |
-| `ready` or `empty`, zero series for the cell | `missing`, grey "no data" | `down` |
-| `ready`, a series with no finite value (all null, NaN, ±Infinity) | that series is `missing`, reason "No value" | does not apply |
-| `ready`, a field that fails the checks of `src/query/frames.ts:73-94` | that series is `missing`; report `invalid-series` | does not apply |
+| Snapshot                                                              | Cell state for this use                                      | `missing: down` |
+| --------------------------------------------------------------------- | ------------------------------------------------------------ | --------------- |
+| `error` for the refId, or a request-wide error                        | `missing`, reason "Query failed"; report `query-unavailable` | does not apply  |
+| `loading`, first load with no series                                  | `missing`, reason "Loading data"                             | does not apply  |
+| loading during a refresh                                              | Grafana keeps the last series; the panel uses them           | as `ready`      |
+| a refId that no target has                                            | `missing`, reason "Unknown query"; report `unknown-ref`      | does not apply  |
+| `ready` or `empty`, zero series for the cell                          | `missing`, grey "no data"                                    | `down`          |
+| `ready`, a series with no finite value (all null, NaN, ±Infinity)     | that series is `missing`, reason "No value"                  | does not apply  |
+| `ready`, a field that fails the checks of `src/query/frames.ts:73-94` | that series is `missing`; report `invalid-series`            | does not apply  |
 
-- `missing: down` applies only to zero series (Fable b.7). A module with 5 of 6 relay series shows the worst of the
-  5. It applies only to a ready query, so a failed query, a first load or an invalid binding never shows as a proven
+- `missing: down` applies only to zero series (Fable b.7). A module with 5 of 6 relay series shows the worst of the 5. It applies only to a ready query, so a failed query, a first load or an invalid binding never shows as a proven
   outage.
 - A special-value mapping of Grafana (null → green) does not apply: a series with no finite value is always
   `missing`. The value must never show as a good state.
@@ -688,14 +689,14 @@ and 500 kbit/s sum to 1.5 Mbit/s.
 **Format.** The result uses the display processor of the first series. A row `unit` or `decimals` builds a new
 processor with these values in the field config (`fieldDisplay`, `src/query/frames.ts:37`).
 
-| Use | One series expected | With N series |
-|---|---|---|
-| status | no | the worst state (3.4) |
-| text, `value` row, `value` chart | yes | reduce across series; a `many-series` entry unless the use sets `reduce` |
-| `history` row or chart | no | N lines, cap 8, "+N more" |
-| `updown` row or chart | yes, per direction | reduce per direction; a `many-series` entry unless the use sets `reduce` |
-| link `up` / `down` | yes | reduce with the default; a `many-series` entry |
-| `capacity` | yes | not used: falls through (3.8); a `many-series` entry |
+| Use                              | One series expected | With N series                                                            |
+| -------------------------------- | ------------------- | ------------------------------------------------------------------------ |
+| status                           | no                  | the worst state (3.4)                                                    |
+| text, `value` row, `value` chart | yes                 | reduce across series; a `many-series` entry unless the use sets `reduce` |
+| `history` row or chart           | no                  | N lines, cap 8, "+N more"                                                |
+| `updown` row or chart            | yes, per direction  | reduce per direction; a `many-series` entry unless the use sets `reduce` |
+| link `up` / `down`               | yes                 | reduce with the default; a `many-series` entry                           |
+| `capacity`                       | yes                 | not used: falls through (3.8); a `many-series` entry                     |
 
 An explicit `reduce` declares that N series are expected, so the report stays quiet for that use.
 
@@ -753,6 +754,7 @@ range query share the step of the query, so their timestamps agree.
 
    The capacities follow the geometry. `at=target` changes only which counter feeds which direction, not the
    capacities (A4). Example: `cap=50M/10M`, `at=target`, rx 8 Mbit/s: a→b shows 8 Mbit/s and 16 %.
+
 5. **Colour and width.** As today: with a capacity, the colour input is the percent; without, the raw value
    (`colorFor`, `src/binding/color.ts:176-201`; ADR 0002).
 6. **Node classes.** `up`, `down`, `capacity`, `linkLabel` and `arrow` on a class whose cells are not edges give one
@@ -862,17 +864,17 @@ The panel targets `grafanaDependency >=12.4.0` (`src/plugin.json`) and builds wi
 (`package.json:87-91`). `@grafana/ui` is external (`.config/bundler/externals.ts:29-31`), so the plugin uses the
 Monaco of Grafana at run time.
 
-| Need | API | Evidence | Verdict |
-|---|---|---|---|
-| The Monaco instance | `onEditorDidMount(editor, monaco)` | NM `dist/types/components/Monaco/CodeEditor.d.ts:7-26`; called at NM `dist/esm/components/Monaco/CodeEditor.mjs:64-66` | yes |
-| Cursor events | `editor.onDidChangeCursorPosition`, `onDidChangeCursorSelection` | `monaco-editor` 0.34.1, `editor.api.d.ts:5173`, :5178 | yes, through the instance; no React prop |
-| Completion | `monaco.languages.registerCompletionItemProvider('yaml', …)` | `editor.api.d.ts:5882` | yes, with our own provider |
-| The `getSuggestions` prop | registers a provider for the language | NM `suggestions.mjs:56-93` | too crude: it gets no position and no model context; it runs on `$` and on word triggers with a prefix (:63, :78-90) |
-| Markers | `monaco.editor.setModelMarkers` | `editor.api.d.ts:989` | yes; we make the diagnostics |
-| Decorations | `editor.createDecorationsCollection` | `editor.api.d.ts:2608` | yes |
-| Move the cursor | `editor.setPosition`, `revealLineInCenter` | `editor.api.d.ts:2466`, :2474 | yes |
-| YAML highlight | Monarch `yaml` | `monaco.contribution.js:87` | yes, syntax only |
-| YAML schema check | `monaco-yaml` | not installed | no: the panel validates with zod |
+| Need                      | API                                                              | Evidence                                                                                                               | Verdict                                                                                                              |
+| ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| The Monaco instance       | `onEditorDidMount(editor, monaco)`                               | NM `dist/types/components/Monaco/CodeEditor.d.ts:7-26`; called at NM `dist/esm/components/Monaco/CodeEditor.mjs:64-66` | yes                                                                                                                  |
+| Cursor events             | `editor.onDidChangeCursorPosition`, `onDidChangeCursorSelection` | `monaco-editor` 0.34.1, `editor.api.d.ts:5173`, :5178                                                                  | yes, through the instance; no React prop                                                                             |
+| Completion                | `monaco.languages.registerCompletionItemProvider('yaml', …)`     | `editor.api.d.ts:5882`                                                                                                 | yes, with our own provider                                                                                           |
+| The `getSuggestions` prop | registers a provider for the language                            | NM `suggestions.mjs:56-93`                                                                                             | too crude: it gets no position and no model context; it runs on `$` and on word triggers with a prefix (:63, :78-90) |
+| Markers                   | `monaco.editor.setModelMarkers`                                  | `editor.api.d.ts:989`                                                                                                  | yes; we make the diagnostics                                                                                         |
+| Decorations               | `editor.createDecorationsCollection`                             | `editor.api.d.ts:2608`                                                                                                 | yes                                                                                                                  |
+| Move the cursor           | `editor.setPosition`, `revealLineInCenter`                       | `editor.api.d.ts:2466`, :2474                                                                                          | yes                                                                                                                  |
+| YAML highlight            | Monarch `yaml`                                                   | `monaco.contribution.js:87`                                                                                            | yes, syntax only                                                                                                     |
+| YAML schema check         | `monaco-yaml`                                                    | not installed                                                                                                          | no: the panel validates with zod                                                                                     |
 
 Notes:
 
@@ -910,14 +912,14 @@ keeps string literals. `tests/no-drawio.spec.ts` also checks in the browser that
 
 **The cells of a path.**
 
-| Path under the cursor | Highlight | Badge per cell |
-|---|---|---|
-| `classes.<c>` and its plain fields | the cells of `<c>` and, lighter, the cells of classes that extend `<c>` | none |
-| `classes.<c>.match` | the same cells | the count of series of the first use of the class: status, else the first row, else `up`, else `text`, else `chart`; none when the class has no use. Red for 0. |
-| `classes.<c>.rows[i]` and below | the cells of each class whose resolved rows hold this origin path (3.2 step 2) | the count of series for that row in each class; red for 0 |
-| `classes.<c>.text`, `.chart`, `.up`, `.down`, `.capacity`, `.status` | the same cells as `classes.<c>` | the count for that use; red for 0 |
-| `overrides.<id>` | that one cell | the count for its first use |
-| other paths | nothing | none |
+| Path under the cursor                                                | Highlight                                                                      | Badge per cell                                                                                                                                                  |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `classes.<c>` and its plain fields                                   | the cells of `<c>` and, lighter, the cells of classes that extend `<c>`        | none                                                                                                                                                            |
+| `classes.<c>.match`                                                  | the same cells                                                                 | the count of series of the first use of the class: status, else the first row, else `up`, else `text`, else `chart`; none when the class has no use. Red for 0. |
+| `classes.<c>.rows[i]` and below                                      | the cells of each class whose resolved rows hold this origin path (3.2 step 2) | the count of series for that row in each class; red for 0                                                                                                       |
+| `classes.<c>.text`, `.chart`, `.up`, `.down`, `.capacity`, `.status` | the same cells as `classes.<c>`                                                | the count for that use; red for 0                                                                                                                               |
+| `overrides.<id>`                                                     | that one cell                                                                  | the count for its first use                                                                                                                                     |
+| other paths                                                          | nothing                                                                        | none                                                                                                                                                            |
 
 Thus the cursor on a row of the base class `device` lights the cells of `host` and `unifi-switch` with the count of
 that row in each class.
@@ -996,14 +998,14 @@ function setCellAttrs(d: Diagram, cells: ReadonlyArray<{ id: string; attrs: Reco
 
 One provider for `yaml`, context by the path of 5.3:
 
-| Place | Items |
-|---|---|
-| a key in `classes.<c>`, a row, `text`, `chart`, an override | the schema keys of that level, from `classSchema` |
-| `extends`, the `bind` field of the inspector | the class names |
-| `status`, `query`, `up`, `down`, `capacity`, `text.query` | the refIds of the panel targets |
-| the left side of a matcher | the attribute names of the cells of the class |
-| the right side of a matcher | the label names of the series of the refId of the use; after `="`, the label values, escaped for a PromQL string |
-| inside `${` | the attribute names of the cells of the class, then `from.` and `to.` |
+| Place                                                       | Items                                                                                                            |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| a key in `classes.<c>`, a row, `text`, `chart`, an override | the schema keys of that level, from `classSchema`                                                                |
+| `extends`, the `bind` field of the inspector                | the class names                                                                                                  |
+| `status`, `query`, `up`, `down`, `capacity`, `text.query`   | the refIds of the panel targets                                                                                  |
+| the left side of a matcher                                  | the attribute names of the cells of the class                                                                    |
+| the right side of a matcher                                 | the label names of the series of the refId of the use; after `="`, the label values, escaped for a PromQL string |
+| inside `${`                                                 | the attribute names of the cells of the class, then `from.` and `to.`                                            |
 
 An item that holds `{`, `}`, `[`, `]` or `,` in a flow mapping is inserted in single quotes. The sources are the
 loaded frames and the cell index. The provider sends no query.
@@ -1036,54 +1038,54 @@ The popup holds one draft: the YAML text, the last valid config, and the diagram
 P1 deletes every module of this table, the v3 popup included (5.0, Astra R2). After P1, no file of `src/` imports
 `src/model/config.ts`: the type-only importers take their types from `src/model/v4.ts` (6.2).
 
-| Module | Why |
-|---|---|
-| `src/model/config.ts` | the v3 schema (`version: 3` at :290; native queries at :242-266). The `QuerySnapshot` and `FreshnessPolicy` users move first (6.2). |
-| `src/binding/patterns.ts` | patterns and override merge (`resolvePatterns` :329) |
-| `src/binding/select.ts`, `src/model/matcher.ts` | the v3 selector and the `/re/flags` matcher; v4 uses the contract of 2.4 |
-| `src/binding/resolve.ts` | the demand resolver over the native query store (:160-161) |
-| `src/query/controller.ts`, `grafana.ts`, `session.ts`, `store.ts`, `useBindings.ts`, `panel.tsx`, `testService.ts` | native queries, their cache and their test double (`createQueryController` `controller.ts:98`) |
-| `src/query/types.ts` | after `QuerySnapshot` moves to `src/query/snapshot.ts` (`src/query/panelSnapshot.ts:3` imports it) |
-| `src/components/useHeld.ts` | the hold for native queries (5.1) |
-| `src/editor/BindingEditor.tsx`, `BindingFields.tsx`, `BindingInspector.tsx`, `BindingsList.tsx`, `ChartFields.tsx`, `QueryEditor.tsx`, `PatternTransfer.tsx`, `EditorLayout.tsx` | v3 forms, list, inspector, query editor |
-| `src/editor/bindingsModel.ts`, `draft.ts`, `draftContext.ts`, `fieldSource.ts`, `leafPaths.ts`, `patternPreview.ts`, `portable.ts`, `preview.ts`, `proposeSelector.ts`, `editorHarness.tsx` | v3 draft model and selector proposals (`proposeSelector.ts:50`) |
-| `src/editor/popup/BindingsPopup.tsx`, `InspectorPane.tsx`, `ListPane.tsx`, `MultiSelectionPane.tsx`, `PatternFromSelection.tsx`, `BulkPane.tsx`, `QueryPane.tsx`, `CardPreview.tsx` | v3 panes; in P3 the new popup body replaces `BindingsPopup.tsx` and keeps its Apply, conflict and discard behaviour (5.7) |
-| `src/components/LazyBindingsPopup.tsx`, `src/editor/popup/index.ts` | the lazy entry of the v3 popup (`index.ts` exports `BindingsPopup`; `LazyBindingsPopup.tsx:4` imports its props). P3 writes new ones (5.1). |
-| `src/editor/history.ts` | the v3 draft undo; it imports `draft.ts` and `leafPaths.ts` (:1-2). P3 writes a new one for the diagram stack (5.7). |
+| Module                                                                                                                                                                                      | Why                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/model/config.ts`                                                                                                                                                                       | the v3 schema (`version: 3` at :290; native queries at :242-266). The `QuerySnapshot` and `FreshnessPolicy` users move first (6.2).         |
+| `src/binding/patterns.ts`                                                                                                                                                                   | patterns and override merge (`resolvePatterns` :329)                                                                                        |
+| `src/binding/select.ts`, `src/model/matcher.ts`                                                                                                                                             | the v3 selector and the `/re/flags` matcher; v4 uses the contract of 2.4                                                                    |
+| `src/binding/resolve.ts`                                                                                                                                                                    | the demand resolver over the native query store (:160-161)                                                                                  |
+| `src/query/controller.ts`, `grafana.ts`, `session.ts`, `store.ts`, `useBindings.ts`, `panel.tsx`, `testService.ts`                                                                          | native queries, their cache and their test double (`createQueryController` `controller.ts:98`)                                              |
+| `src/query/types.ts`                                                                                                                                                                        | after `QuerySnapshot` moves to `src/query/snapshot.ts` (`src/query/panelSnapshot.ts:3` imports it)                                          |
+| `src/components/useHeld.ts`                                                                                                                                                                 | the hold for native queries (5.1)                                                                                                           |
+| `src/editor/BindingEditor.tsx`, `BindingFields.tsx`, `BindingInspector.tsx`, `BindingsList.tsx`, `ChartFields.tsx`, `QueryEditor.tsx`, `PatternTransfer.tsx`, `EditorLayout.tsx`            | v3 forms, list, inspector, query editor                                                                                                     |
+| `src/editor/bindingsModel.ts`, `draft.ts`, `draftContext.ts`, `fieldSource.ts`, `leafPaths.ts`, `patternPreview.ts`, `portable.ts`, `preview.ts`, `proposeSelector.ts`, `editorHarness.tsx` | v3 draft model and selector proposals (`proposeSelector.ts:50`)                                                                             |
+| `src/editor/popup/BindingsPopup.tsx`, `InspectorPane.tsx`, `ListPane.tsx`, `MultiSelectionPane.tsx`, `PatternFromSelection.tsx`, `BulkPane.tsx`, `QueryPane.tsx`, `CardPreview.tsx`         | v3 panes; in P3 the new popup body replaces `BindingsPopup.tsx` and keeps its Apply, conflict and discard behaviour (5.7)                   |
+| `src/components/LazyBindingsPopup.tsx`, `src/editor/popup/index.ts`                                                                                                                         | the lazy entry of the v3 popup (`index.ts` exports `BindingsPopup`; `LazyBindingsPopup.tsx:4` imports its props). P3 writes new ones (5.1). |
+| `src/editor/history.ts`                                                                                                                                                                     | the v3 draft undo; it imports `draft.ts` and `leafPaths.ts` (:1-2). P3 writes a new one for the diagram stack (5.7).                        |
 
 `src/editor/revision.ts` stays (5.7).
 
 ### 6.2 Rewritten
 
-| Module | Change |
-|---|---|
-| `src/model/v4.ts` (new), `src/binding/matcher.ts` (new) | the schema of 2.2, the parse of 2.5, the matcher of 2.4 |
-| `src/binding/engine.ts` | input: the v4 uses; output: the patches with the status of 3.4 (`bindPlan` :150, `staleStatuses` :414) |
-| `src/binding/status.ts` | `evaluateStatus` goes; per-series freshness (3.5) and coverage (3.6); `statusLevel` :119 and `STATUS_SEVERITY` :128 stay |
-| `src/binding/color.ts` | `statusPaint` paints the exact colour (3.4); `statusColor` stays for stale and missing |
-| `src/legend/model.ts` | one block per status refId (3.4); `mappingEntries` stays |
-| `src/components/StatusBand.tsx` | the band text of 3.4 |
-| `src/binding/capacity.ts` | refId or `{a2b, b2a}`, then `cap` with `a/b`; no field Max (3.8) |
-| `src/binding/template.ts` | the scope and the grammar of 3.3; the shield stays |
-| `src/interact/links.ts` | the URL order of 3.3: `percentencode` for bare ordinary dashboard variables; an explicit `${name:format}` keeps its format (A17); the cell-value shield and the final `isAllowedUrl` stay (:75-78 today passes no format) |
-| `src/render/applier.ts` | `applyKey` reads every patch field that a write reads (3.4, Astra R1) |
-| `src/binding/units.ts` | the rate-unit table (3.7) |
-| `src/query/frames.ts` | the series index by refId and labels; the checks of :73-94 stay |
-| `src/query/reduce.ts` | `sum`, `max` and `mean` across series; `last` over time. Today its `ReducerName` is `last`, `mean`, `max`, `min` over time, with no `sum` (:26-35) |
-| `src/query/panelSnapshot.ts` | imports `QuerySnapshot` from `src/query/snapshot.ts` |
-| `src/visuals/useSampleStale.ts` | its `FreshnessPolicy` type comes from `src/model/v4.ts` (:4 imports it from `model/config` today) |
-| `src/interact/cardModel.ts`, `src/interact/Card.tsx`, `src/visuals/SparklineView.tsx`, `src/visuals/MirrorSparkline.tsx` | N lines in one chart, a shared Y range, palette colours, line labels, "+N more", the tooltip of all lines (3.7) |
-| `src/visuals/ChartLayer.tsx`, `ChartHover.tsx`, `hoverSample.ts`, `tooltipPlace.ts`, `domain.ts` | input from the `chart` uses (3.9); `domain.ts:1` takes `LowerBound` and `RangeMax` from `src/model/v4.ts` |
-| `src/render/linkLabels.ts`, `src/visuals/BarGaugeView.tsx`, `src/types.ts` | type imports only: `LinkLabelMode` (`linkLabels.ts:2`), `FreshnessPolicy` (`BarGaugeView.tsx:4`) and the config types (`types.ts:10`) come from `src/model/v4.ts` |
-| `src/stage/useBoundDiagram.ts`, `src/components/DrawioMapPanel.tsx` | wire the v4 bind; `DrawioMapPanel.tsx:24,27` drops `EMPTY_CONFIG`, `legacyRulesWarning` and `MAX_DATA_POINTS` from deleted files; P1 removes the popup state and P3 adds the new popup (5.0) |
-| `src/components/CornerControls.tsx`, `src/options/DiagramEditor.tsx` | P1 removes the two "Edit bindings" buttons; P3 adds them again for the split editor (5.0) |
-| `src/adapter/portograph.ts` | `cellScope` and `endpointScope` give way to the scope of 3.3 and the end lookup of 3.8 |
-| `src/editor/popup/PopupLayout.tsx`, `DiagramStage.tsx` | P3: the split editor. In P1 they have no user; `DiagramStage.tsx:13` follows the P1 type of `ChartLayerProps`, so P1 typechecks. |
-| `src/editor/history.ts`, `src/components/LazyBindingsPopup.tsx`, `src/editor/popup/index.ts` (new in P3) | the split editor (5.1, 5.7) |
-| `src/fixtures/demo-config.ts`, `authoring-config.ts`, `scripts/build-dashboard.ts` | v4 demo configs |
-| `src/module.ts`, `src/types.ts` | `Options.config` type; the YAML option of 5.0; drop the v1 `rules` warning only when 1.0 allows it; `Options.build?: string`, which the generator writes and the panel reads only to tell a generated panel apart in the inspector (5.4, 7.3.5) |
-| `scripts/check-bundle.sh`, `playwright.config.ts` | the bundle checks of 5.3; `MATRIX_SPECS` (`playwright.config.ts:22-33`) loses `binding-editor` and `query` in P1 and gets `split-editor` in P3 (6.5) |
-| `src/harness.ts` (new) | the stable export for the consumer harness (6.4) |
+| Module                                                                                                                   | Change                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/model/v4.ts` (new), `src/binding/matcher.ts` (new)                                                                  | the schema of 2.2, the parse of 2.5, the matcher of 2.4                                                                                                                                                                                         |
+| `src/binding/engine.ts`                                                                                                  | input: the v4 uses; output: the patches with the status of 3.4 (`bindPlan` :150, `staleStatuses` :414)                                                                                                                                          |
+| `src/binding/status.ts`                                                                                                  | `evaluateStatus` goes; per-series freshness (3.5) and coverage (3.6); `statusLevel` :119 and `STATUS_SEVERITY` :128 stay                                                                                                                        |
+| `src/binding/color.ts`                                                                                                   | `statusPaint` paints the exact colour (3.4); `statusColor` stays for stale and missing                                                                                                                                                          |
+| `src/legend/model.ts`                                                                                                    | one block per status refId (3.4); `mappingEntries` stays                                                                                                                                                                                        |
+| `src/components/StatusBand.tsx`                                                                                          | the band text of 3.4                                                                                                                                                                                                                            |
+| `src/binding/capacity.ts`                                                                                                | refId or `{a2b, b2a}`, then `cap` with `a/b`; no field Max (3.8)                                                                                                                                                                                |
+| `src/binding/template.ts`                                                                                                | the scope and the grammar of 3.3; the shield stays                                                                                                                                                                                              |
+| `src/interact/links.ts`                                                                                                  | the URL order of 3.3: `percentencode` for bare ordinary dashboard variables; an explicit `${name:format}` keeps its format (A17); the cell-value shield and the final `isAllowedUrl` stay (:75-78 today passes no format)                       |
+| `src/render/applier.ts`                                                                                                  | `applyKey` reads every patch field that a write reads (3.4, Astra R1)                                                                                                                                                                           |
+| `src/binding/units.ts`                                                                                                   | the rate-unit table (3.7)                                                                                                                                                                                                                       |
+| `src/query/frames.ts`                                                                                                    | the series index by refId and labels; the checks of :73-94 stay                                                                                                                                                                                 |
+| `src/query/reduce.ts`                                                                                                    | `sum`, `max` and `mean` across series; `last` over time. Today its `ReducerName` is `last`, `mean`, `max`, `min` over time, with no `sum` (:26-35)                                                                                              |
+| `src/query/panelSnapshot.ts`                                                                                             | imports `QuerySnapshot` from `src/query/snapshot.ts`                                                                                                                                                                                            |
+| `src/visuals/useSampleStale.ts`                                                                                          | its `FreshnessPolicy` type comes from `src/model/v4.ts` (:4 imports it from `model/config` today)                                                                                                                                               |
+| `src/interact/cardModel.ts`, `src/interact/Card.tsx`, `src/visuals/SparklineView.tsx`, `src/visuals/MirrorSparkline.tsx` | N lines in one chart, a shared Y range, palette colours, line labels, "+N more", the tooltip of all lines (3.7)                                                                                                                                 |
+| `src/visuals/ChartLayer.tsx`, `ChartHover.tsx`, `hoverSample.ts`, `tooltipPlace.ts`, `domain.ts`                         | input from the `chart` uses (3.9); `domain.ts:1` takes `LowerBound` and `RangeMax` from `src/model/v4.ts`                                                                                                                                       |
+| `src/render/linkLabels.ts`, `src/visuals/BarGaugeView.tsx`, `src/types.ts`                                               | type imports only: `LinkLabelMode` (`linkLabels.ts:2`), `FreshnessPolicy` (`BarGaugeView.tsx:4`) and the config types (`types.ts:10`) come from `src/model/v4.ts`                                                                               |
+| `src/stage/useBoundDiagram.ts`, `src/components/DrawioMapPanel.tsx`                                                      | wire the v4 bind; `DrawioMapPanel.tsx:24,27` drops `EMPTY_CONFIG`, `legacyRulesWarning` and `MAX_DATA_POINTS` from deleted files; P1 removes the popup state and P3 adds the new popup (5.0)                                                    |
+| `src/components/CornerControls.tsx`, `src/options/DiagramEditor.tsx`                                                     | P1 removes the two "Edit bindings" buttons; P3 adds them again for the split editor (5.0)                                                                                                                                                       |
+| `src/adapter/portograph.ts`                                                                                              | `cellScope` and `endpointScope` give way to the scope of 3.3 and the end lookup of 3.8                                                                                                                                                          |
+| `src/editor/popup/PopupLayout.tsx`, `DiagramStage.tsx`                                                                   | P3: the split editor. In P1 they have no user; `DiagramStage.tsx:13` follows the P1 type of `ChartLayerProps`, so P1 typechecks.                                                                                                                |
+| `src/editor/history.ts`, `src/components/LazyBindingsPopup.tsx`, `src/editor/popup/index.ts` (new in P3)                 | the split editor (5.1, 5.7)                                                                                                                                                                                                                     |
+| `src/fixtures/demo-config.ts`, `authoring-config.ts`, `scripts/build-dashboard.ts`                                       | v4 demo configs                                                                                                                                                                                                                                 |
+| `src/module.ts`, `src/types.ts`                                                                                          | `Options.config` type; the YAML option of 5.0; drop the v1 `rules` warning only when 1.0 allows it; `Options.build?: string`, which the generator writes and the panel reads only to tell a generated panel apart in the inspector (5.4, 7.3.5) |
+| `scripts/check-bundle.sh`, `playwright.config.ts`                                                                        | the bundle checks of 5.3; `MATRIX_SPECS` (`playwright.config.ts:22-33`) loses `binding-editor` and `query` in P1 and gets `split-editor` in P3 (6.5)                                                                                            |
+| `src/harness.ts` (new)                                                                                                   | the stable export for the consumer harness (6.4)                                                                                                                                                                                                |
 
 ### 6.3 Kept as they are
 
@@ -1149,22 +1151,23 @@ these modules.
 - **P1 and P3 (Astra R2).** P1 has no popup (5.0). Each e2e case that needs the popup or an "Edit bindings" button
   has a P1 form and a P3 form:
 
-  | Case | P1 | P3 |
-  |---|---|---|
-  | `bindings-popup.spec.ts` | deleted; the cases of :251-365 wait for P3 | the cases of :251-365 in `split-editor.spec.ts` |
-  | `editor-refresh.spec.ts:6-18`, entry `geometry` (through the popup) | the entry `Diagram option` only | the split editor keeps its dialog, Monaco model and draft through two refreshes; Apply still works (erratum P3-08: the split editor has no geometry entry, 5.1) |
-  | `editor.spec.ts:125` (geometry export through the popup) | geometry export through the Diagram option; `bind` and `key` survive the save and the reopen | the chart assignment through the split editor |
-  | `options.spec.ts:8-39` (Diagram option buttons at the narrowest width) | the buttons without `dmap-edit-bindings-option`, and the YAML option | with the button |
-  | `zoom.spec.ts:138-162` (the corner in panel edit) | the corner without `dmap-edit-bindings` | with the button |
-  | `reset-corner.spec.ts:165` (edit-bindings button in the corner) | waits for P3 | rewritten for the split editor |
-  | `refresh.spec.ts:172` (refresh while the popup is open) | waits for P3 | rewritten for the split editor |
-  | `panel-edit-requests.spec.ts:57` | the panel-edit part: no query again, no datasource resource call, Cancel closes | the popup part |
-  | `no-drawio.spec.ts:12-13` | kept: no popup chunk and no button in view mode; plus no YAML chunk (5.3) | kept |
+  | Case                                                                   | P1                                                                                           | P3                                                                                                                                                              |
+  | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `bindings-popup.spec.ts`                                               | deleted; the cases of :251-365 wait for P3                                                   | the cases of :251-365 in `split-editor.spec.ts`                                                                                                                 |
+  | `editor-refresh.spec.ts:6-18`, entry `geometry` (through the popup)    | the entry `Diagram option` only                                                              | the split editor keeps its dialog, Monaco model and draft through two refreshes; Apply still works (erratum P3-08: the split editor has no geometry entry, 5.1) |
+  | `editor.spec.ts:125` (geometry export through the popup)               | geometry export through the Diagram option; `bind` and `key` survive the save and the reopen | the chart assignment through the split editor                                                                                                                   |
+  | `options.spec.ts:8-39` (Diagram option buttons at the narrowest width) | the buttons without `dmap-edit-bindings-option`, and the YAML option                         | with the button                                                                                                                                                 |
+  | `zoom.spec.ts:138-162` (the corner in panel edit)                      | the corner without `dmap-edit-bindings`                                                      | with the button                                                                                                                                                 |
+  | `reset-corner.spec.ts:165` (edit-bindings button in the corner)        | waits for P3                                                                                 | rewritten for the split editor                                                                                                                                  |
+  | `refresh.spec.ts:172` (refresh while the popup is open)                | waits for P3                                                                                 | rewritten for the split editor                                                                                                                                  |
+  | `panel-edit-requests.spec.ts:57`                                       | the panel-edit part: no query again, no datasource resource call, Cancel closes              | the popup part                                                                                                                                                  |
+  | `no-drawio.spec.ts:12-13`                                              | kept: no popup chunk and no button in view mode; plus no YAML chunk (5.3)                    | kept                                                                                                                                                            |
 
   `tests/authoring-controls.ts` loses `openBindingsPopup`, `closeBindingsPopup`, `popupInspector` and
   `selectStageCell` in P1; P3 adds the helpers of the split editor. In P1, `MATRIX_SPECS`
   (`playwright.config.ts:22-33`) loses `binding-editor` and `query`; in P3 it gets `split-editor`, so the Monaco
   test runs in the `matrix` project on 12.4 and 13.2.
+
 - The unit tests of each deleted module go with it. The behaviour tests of a kept rule move to the new module (for
   example the coverage cases of `src/binding/status.test.ts`).
 
@@ -1204,18 +1207,18 @@ these modules.
 
 ### 7.2 Verified: portograph passes `meta.bind` and `meta.key`
 
-| Check | Evidence | Result |
-|---|---|---|
-| The meta keys go out with no prefix | portograph `src/render/drawio.ts:412-417`; contract `docs/drawio-binding-contract.md:143-147` | `bind="…"`, `key="…"` on the `<object>` |
-| Bound cells: object around a bare mxCell | portograph `src/render/drawio.ts:425-429` | yes |
-| Nodes, ports and links get meta | portograph `src/render/drawio.ts:832-836`, :946-949, :590-598 | yes |
-| Allowed names | portograph `src/parse/index.ts:32-35`: `^[A-Za-z_][A-Za-z0-9_-]*$`; reserved `pg-*`, `id`, `label`, `placeholders`, `xml*` | `bind`, `key`, `port`, `cap`, `at` pass |
-| Portograph's own attributes | `id`, `label` and `pg-*` only (portograph `src/render/drawio.ts:593-597`, :832-836, :946-948) | no clash with `bind` or `key` |
-| The visual `class` | YAML `class` drives style only (portograph `src/parse/index.ts:154`, :178, :336) | not written; `meta.class` would be a separate attribute |
-| Escaping | `escapeAttribute` and `xmlSafe` (portograph `src/render/svg.ts:11`, :25-42) | safe |
-| SVG | draw.io writes each `<object>` attribute as `data-meta-<name>` (consumer `tools.py:27`, `--embed-svg-metadata`); the panel strips the prefix (`src/render/svgStage.ts:41-49`) | `attrs.bind`, `attrs.key` arrive as is |
-| The panel's own names | the panel reads only `pg-*` and `label` (`src/adapter/portograph.ts:59`, :116-131) | no clash |
-| One clash in the panel | `cellScope` puts the pg-id at `cell.key` (`src/adapter/portograph.ts:191`) | removed by the scope of 3.3 |
+| Check                                    | Evidence                                                                                                                                                                      | Result                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| The meta keys go out with no prefix      | portograph `src/render/drawio.ts:412-417`; contract `docs/drawio-binding-contract.md:143-147`                                                                                 | `bind="…"`, `key="…"` on the `<object>`                 |
+| Bound cells: object around a bare mxCell | portograph `src/render/drawio.ts:425-429`                                                                                                                                     | yes                                                     |
+| Nodes, ports and links get meta          | portograph `src/render/drawio.ts:832-836`, :946-949, :590-598                                                                                                                 | yes                                                     |
+| Allowed names                            | portograph `src/parse/index.ts:32-35`: `^[A-Za-z_][A-Za-z0-9_-]*$`; reserved `pg-*`, `id`, `label`, `placeholders`, `xml*`                                                    | `bind`, `key`, `port`, `cap`, `at` pass                 |
+| Portograph's own attributes              | `id`, `label` and `pg-*` only (portograph `src/render/drawio.ts:593-597`, :832-836, :946-948)                                                                                 | no clash with `bind` or `key`                           |
+| The visual `class`                       | YAML `class` drives style only (portograph `src/parse/index.ts:154`, :178, :336)                                                                                              | not written; `meta.class` would be a separate attribute |
+| Escaping                                 | `escapeAttribute` and `xmlSafe` (portograph `src/render/svg.ts:11`, :25-42)                                                                                                   | safe                                                    |
+| SVG                                      | draw.io writes each `<object>` attribute as `data-meta-<name>` (consumer `tools.py:27`, `--embed-svg-metadata`); the panel strips the prefix (`src/render/svgStage.ts:41-49`) | `attrs.bind`, `attrs.key` arrive as is                  |
+| The panel's own names                    | the panel reads only `pg-*` and `label` (`src/adapter/portograph.ts:59`, :116-131)                                                                                            | no clash                                                |
+| One clash in the panel                   | `cellScope` puts the pg-id at `cell.key` (`src/adapter/portograph.ts:191`)                                                                                                    | removed by the scope of 3.3                             |
 
 Verdict: yes. The one clash is in the v3 template scope, and v4 replaces that scope.
 
@@ -1241,7 +1244,7 @@ Verdict: yes. The one clash is in the v3 template scope, and v4 replaces that sc
    healthy state ("up", "normal", "no fault") gets the colour `transparent` (A14), so a healthy cell keeps its
    drawn colour and its severity stays normal (3.4). Mode B writes its mappings the same way.
 5. **`pull` (A2, Astra R3, Fable M2).** A new command, `gen_drawiomap pull [--sheet <name>] [--base <commit>]
-   [--check]`, reads the deployed dashboards. It is the only command that talks to Grafana.
+[--check]`, reads the deployed dashboards. It is the only command that talks to Grafana.
    - It reads the URL and the token from environment variables and never prints the token.
    - It takes one snapshot per dashboard uid: `GET /api/dashboards/uid/<uid>`. All panels of that dashboard come from
      this one snapshot.
@@ -1294,6 +1297,7 @@ Verdict: yes. The one clash is in the v3 template scope, and v4 replaces that sc
      pg-link~p-a1-16: {cap: 2.5G}
      pg-node~cam-1: {bind: camera, key: cam-1}
    ```
+
 6. **Merge and ownership (A2, A3).** The generator merges only from `<sheet>.cells.yml`. It never talks to Grafana.
    - Identity: dashboard uid + panel id + page + cell id. A file whose uid, panel or page does not match the sheet
      stops the run.
@@ -1356,16 +1360,16 @@ dashboard. Step 0 of the consumer `scripts/deploy.sh` (where the alert-panel lin
 For each sheet, it computes the delta of the deployed panel against its build (7.3.5) and compares it with the
 `cells` of `<sheet>.cells.yml`:
 
-| State | Gate |
-|---|---|
-| the delta equals the file | pass |
-| the delta differs from the file | stop: "pull again" |
-| the sheet has no `.cells.yml`, and the delta is empty | pass |
-| the sheet has no `.cells.yml`, and the delta is not empty | stop: "pull first" |
-| the dashboard was never deployed (404) | pass |
-| the panel has no `options.build`, and its `options.config.version` is a number below 4 (a v3 deployment) | pass |
-| the panel has no `options.build`, and it is not a positively identified v3 deployment (N1) | stop: "no build id; pass --base" |
-| no API access: a network error, 401, 403, 5xx, no token | stop (A15) |
+| State                                                                                                    | Gate                             |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| the delta equals the file                                                                                | pass                             |
+| the delta differs from the file                                                                          | stop: "pull again"               |
+| the sheet has no `.cells.yml`, and the delta is empty                                                    | pass                             |
+| the sheet has no `.cells.yml`, and the delta is not empty                                                | stop: "pull first"               |
+| the dashboard was never deployed (404)                                                                   | pass                             |
+| the panel has no `options.build`, and its `options.config.version` is a number below 4 (a v3 deployment) | pass                             |
+| the panel has no `options.build`, and it is not a positively identified v3 deployment (N1)               | stop: "no build id; pass --base" |
+| no API access: a network error, 401, 403, 5xx, no token                                                  | stop (A15)                       |
 
 A stop leaves `<sheet>.cells.yml` as it is and copies no file. For the N1 row, the author runs
 `gen_drawiomap pull --base <commit>` with the commit of the deployed build; step 0 of `scripts/deploy.sh` passes
@@ -1846,12 +1850,12 @@ None.
 
 ## Appendix A. Deferred minor findings
 
-| Finding | Why deferred | Where it goes |
-|---|---|---|
-| Fable b.9 (freshness `3x` on a 1 m step) | No change needed: 3.5 step 4 uses the target step. | — |
-| Astra 23, rollout: rollback artefacts | A rollback is the previous panel release plus the previous dashboards from git; P2 acceptance 8 pins the pair. A rollback drill is not in v1. | release checklist |
-| Astra 23, generator: multi-page policy | v4 binds page 1 only (5.5), as the panel renders page 1 only. A second page stays unbound. | README |
-| Astra 17, completion replacement ranges beyond quoting | The P3 plan gives the exact Monaco ranges; 5.6 fixes the quoting rule. | P3 plan |
+| Finding                                                | Why deferred                                                                                                                                  | Where it goes     |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| Fable b.9 (freshness `3x` on a 1 m step)               | No change needed: 3.5 step 4 uses the target step.                                                                                            | —                 |
+| Astra 23, rollout: rollback artefacts                  | A rollback is the previous panel release plus the previous dashboards from git; P2 acceptance 8 pins the pair. A rollback drill is not in v1. | release checklist |
+| Astra 23, generator: multi-page policy                 | v4 binds page 1 only (5.5), as the panel renders page 1 only. A second page stays unbound.                                                    | README            |
+| Astra 17, completion replacement ranges beyond quoting | The P3 plan gives the exact Monaco ranges; 5.6 fixes the quoting rule.                                                                        | P3 plan           |
 
 The phone check and the sandbox and CSP smoke of the split editor are no longer deferred: P3 acceptance 12 and 13
 (Astra review round 2, section (3)).

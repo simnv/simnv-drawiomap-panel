@@ -75,16 +75,16 @@ E2E in a panel worktree. The shared stack (ports 3012 and 3013) mounts the `dist
 starts its own Grafana with its own `dist/`. Each e2e task has its own port pair (13.2 / 12.4), so two parallel e2e
 tasks never share a port. Replace 3213 and 3212 below with the pair of the task:
 
-| Task | 13.2 | 12.4 |
-|---|---|---|
-| P1-15a (it merges before P1-16 starts) | 3213 | 3212 |
-| P1-15b | 3243 | 3242 |
-| P1-16 | 3213 | 3212 |
-| P1-17 | 3223 | 3222 |
-| P1-18 | 3233 | 3232 |
-| P3-07 | 3213 | 3212 |
-| P3-08 | 3223 | 3222 |
-| P3-09 (isolation) | 3233, 3243 | — |
+| Task                                   | 13.2       | 12.4 |
+| -------------------------------------- | ---------- | ---- |
+| P1-15a (it merges before P1-16 starts) | 3213       | 3212 |
+| P1-15b                                 | 3243       | 3242 |
+| P1-16                                  | 3213       | 3212 |
+| P1-17                                  | 3223       | 3222 |
+| P1-18                                  | 3233       | 3232 |
+| P3-07                                  | 3213       | 3212 |
+| P3-08                                  | 3223       | 3222 |
+| P3-09 (isolation)                      | 3233, 3243 | —    |
 
 ```sh
 MAIN="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
@@ -124,35 +124,35 @@ scripts/dm gates          # the deploy gates of scripts/deploy.sh step 0
 
 ## Phase map
 
-| Phase | Repo | Tasks | Ships |
-|---|---|---|---|
-| P0 | panel, consumer | P0-1, P0-2, P0-G | baselines only; no release |
-| P1 | panel | P1-00 … P1-20 (with the splits 09a/b, 11a/b, 13a/b/c, 15a/b), P1-G | together with P2 (A11) |
-| P2 | consumer | P2-01 … P2-10, P2-G | together with P1 |
-| R | both | R-1 … R-4 | the P1+P2 change set |
-| P3 | panel (P3-11: both) | P3-01 … P3-11, P3-G, P3-R | a second change set |
+| Phase | Repo                | Tasks                                                              | Ships                      |
+| ----- | ------------------- | ------------------------------------------------------------------ | -------------------------- |
+| P0    | panel, consumer     | P0-1, P0-2, P0-G                                                   | baselines only; no release |
+| P1    | panel               | P1-00 … P1-20 (with the splits 09a/b, 11a/b, 13a/b/c, 15a/b), P1-G | together with P2 (A11)     |
+| P2    | consumer            | P2-01 … P2-10, P2-G                                                | together with P1           |
+| R     | both                | R-1 … R-4                                                          | the P1+P2 change set       |
+| P3    | panel (P3-11: both) | P3-01 … P3-11, P3-G, P3-R                                          | a second change set        |
 
 Waves (a task starts when its dependencies are merged; at most 4 heavy jobs at one time; a wave with more than four
 tasks runs four, and the next task starts when one merges):
 
-| Wave | Tasks |
-|---|---|
-| 0 | P0-1 (done on `v4/P0-1`, commit `a1aec84`, not merged yet), P0-2 (in progress on the consumer branch `drawiomap-v4`) |
-| 0G | P0-G, then P1-00 (types only, about 20 minutes) |
-| 1 | P1-01, P1-02, P1-03, P1-04 |
-| 2 | P1-05, P1-06, P1-07, P1-08, P1-09a (P1-09a needs only P1-00 … P1-03) |
-| 3 | P1-09b, P1-10, P1-13a (P1-13a touches no file of P1-09 … P1-11) |
-| 4 | P1-11a, then P1-11b; P1-13b (beside P1-11a or P1-11b) |
-| 5 | P1-12, then P1-13c (the cut-over) |
-| 6 | P1-14, P1-19, P1-20 (after P1-19); P1-15a after P1-14; P2-01 can start here (it needs only P1-12) |
-| 7 | P1-15b, P1-16, P1-17, P1-18 (e2e: at most two of them at one time, each on its own ports; the next starts when one merges) |
-| 6–8 | P2-02, P2-03, P2-04, then P2-05: they need only P2-01 and fill free heavy-job slots of waves 6–8 |
-| 8 | P1-G |
-| 9 | the P2 tasks of waves 6–8 that are not done yet |
-| 10 | P2-06, P2-07, P2-08 |
-| 11 | P2-09, P2-10, P2-G |
-| 12 | R-1 … R-4 |
-| 13 | P3-01, P3-02, P3-03; then P3-04 … P3-11 |
+| Wave | Tasks                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------------------- |
+| 0    | P0-1 (done on `v4/P0-1`, commit `a1aec84`, not merged yet), P0-2 (in progress on the consumer branch `drawiomap-v4`)       |
+| 0G   | P0-G, then P1-00 (types only, about 20 minutes)                                                                            |
+| 1    | P1-01, P1-02, P1-03, P1-04                                                                                                 |
+| 2    | P1-05, P1-06, P1-07, P1-08, P1-09a (P1-09a needs only P1-00 … P1-03)                                                       |
+| 3    | P1-09b, P1-10, P1-13a (P1-13a touches no file of P1-09 … P1-11)                                                            |
+| 4    | P1-11a, then P1-11b; P1-13b (beside P1-11a or P1-11b)                                                                      |
+| 5    | P1-12, then P1-13c (the cut-over)                                                                                          |
+| 6    | P1-14, P1-19, P1-20 (after P1-19); P1-15a after P1-14; P2-01 can start here (it needs only P1-12)                          |
+| 7    | P1-15b, P1-16, P1-17, P1-18 (e2e: at most two of them at one time, each on its own ports; the next starts when one merges) |
+| 6–8  | P2-02, P2-03, P2-04, then P2-05: they need only P2-01 and fill free heavy-job slots of waves 6–8                           |
+| 8    | P1-G                                                                                                                       |
+| 9    | the P2 tasks of waves 6–8 that are not done yet                                                                            |
+| 10   | P2-06, P2-07, P2-08                                                                                                        |
+| 11   | P2-09, P2-10, P2-G                                                                                                         |
+| 12   | R-1 … R-4                                                                                                                  |
+| 13   | P3-01, P3-02, P3-03; then P3-04 … P3-11                                                                                    |
 
 ---
 
@@ -843,8 +843,8 @@ Done: P1.15 passes for all P1-column rows.
 - [ ] Extend `stack/metrics-gen/gen.py`: the new series are new metric names, and with `GEN_SET=v4` in the
       environment the script writes only them. The shared `metrics-gen` service mounts the main checkout, so start
       a second writer from the worktree beside it: `docker run -d --rm --name dmap-gen-P1-18 --network
-      simnv-drawiomap-panel_default -e VM_URL=http://victoriametrics:8428 -e GEN_SET=v4
-      -v "$PWD/stack/metrics-gen:/app:ro" python:3.12-alpine python -I /app/gen.py`. It does not write the series
+simnv-drawiomap-panel_default -e VM_URL=http://victoriametrics:8428 -e GEN_SET=v4
+-v "$PWD/stack/metrics-gen:/app:ro" python:3.12-alpine python -I /app/gen.py`. It does not write the series
       that P1-16 and P1-17 read. Check the new series in VictoriaMetrics before the spec runs. Stop the writer with
       the Grafana container. R-1 restarts the shared stack, which then writes all series.
 - [ ] Write the spec with these tests, then run it on 3233 with `--project=plugin --workers 1`:
@@ -963,7 +963,7 @@ Done: the consumer scripts import only `src/harness.ts`.
   `scripts/gen_drawiomap/dashboard.py`, `scripts/gen_drawiomap/smoke_dashboard.py`; modify `tests/test_config.py`,
   `tests/test_config_simple.py`, `tests/test_dashboard.py`, `tests/test_smoke_dashboard.py`.
 - [ ] Write the failing tests: `config.build` writes `version: 4`, one class per catalogue family, `linkLabel:
-      percent` on link classes; one fan-out target per metric with refId = query name; field overrides match
+percent` on link classes; one fan-out target per metric with refId = query name; field overrides match
       `byFrameRefID`; each healthy mapping ("up", "normal", "no fault") has the colour `transparent`; the config of
       net-l2-dm equals the shape of S8.1 (classes, matches, rows); `validate_config.mjs` on the result gives no
       `schema` entry; dashboards are `editable: true` with the note of S7.3.8; the smoke dashboard is v4.
@@ -1166,6 +1166,7 @@ line for each changed file. The rule below accepts only those lines. R-3, R-4, P
    Go on only when the last line is `RELEASE-DRIFT-OK`. Else `stop.txt` lists the lines that stop the release: a
    `DRIFT` on a path that the range does not change, a `LIVE-ONLY` file that the range does not delete, an
    unreachable host, or a wb drift. Put `drift.txt` and `stop.txt` in the task report.
+
 5. **After the deploy.** Run `scripts/drift-check.sh` again in the same worktree. Expect `CLEAN` and exit 0. A line
    here means that the deploy did not land: stop and report.
 
@@ -1455,78 +1456,78 @@ branches `v4p3/<task-id>`.
 
 ## Coverage: spec acceptance → task
 
-| Spec acceptance | Task(s) |
-|---|---|
-| P0.1 bench | P0-1 |
-| P0.2 colour parity | P0-2 |
-| P1.1 parse, invalid class, invalid parent, invalid override (the cell is unavailable) | P1-01, P1-09a, P1-09b |
-| P1.2 YAML round trip, block style | P1-08 |
-| P1.3 matcher forms and dialect | P1-02 |
-| P1.4 `missing-attr`, shield, `isAllowedUrl`, URL encoding, A17 (unit) | P1-02, P1-03 |
-| P1.5 extends, overrides, override query in the index, row match | P1-01, P1-09b |
-| P1.6 status, colour, severity, `transparent`, band, legend, applier | P1-05, P1-10 |
-| S4 report types and kinds | P1-00 (types), P1-09b (entries) |
-| P1.7 no data, the cell text "–" | P1-05 |
-| P1.8 freshness and the clock, the "stale" row | P1-06, P1-11a |
-| P1.9 several series, frame merge, N lines, R8 | P1-04, P1-09b, P1-11a |
-| P1.10 links, capacity, ends | P1-07, P1-09b |
-| P1.11 report entry kinds, orphan cap | P1-09b |
-| P1.12 `version: 3` binds nothing, one notice | P1-01, P1-09a, P1-09b, P1-13c |
-| P1.13 harness names | P1-12 |
-| P1.14 e2e v4 demo, `build` kept, URL encoding with real formats (A17) | P1-18 (unit side: P1-11b, P1-14; demo configs: P1-13b) |
-| P1.15 re-fixtured specs, P1 column; no popup | P1-13a, P1-15a, P1-15b, P1-16, P1-17 |
-| P1.16 bench faster than P0 | P1-19 (with P0-1) |
-| P1.17 fresh build, bundle checks, no YAML chunk in view mode | P1-14, P1-15a |
-| P2.1 classes, `bind`/`key`/`at`, no `bind_*`, `at` audit | P2-02, P2-03 |
-| P2.2 `pull` (snapshot, failures, token, deployed build, `--base`, N1, geometry and style warnings, missing panel, wrong type) | P2-05 |
-| P2.3 merge rules (an inferred `at=source` is a topology value) and repeat pulls | P2-06, P2-09 |
-| P2.4 order: exported SVG holds merged values, hash covers them | P2-06 |
-| P2.5 10 panels with no `schema` and no `unknown-ref` | P2-10, R-3 |
-| P2.6 parity with P0 at the same frames | P2-10 (with P0-2) |
-| P2.7 options smaller than v3 | P2-10 |
-| P2.8 release note (with the "page 1 only" note) and dashboards in one change set | P1-20, R-1, R-2 |
-| P2.9 deploy gate rows, step 0, token, version increment, N1 | P2-08 |
-| P2.10 boiler cell ids and attributes | P2-07 |
-| P3.1 path at offset, cell sets, report counts | P3-01 |
-| P3.2 `setCellAttrs` | P3-02 |
-| P3.3 sanitiser keeps `data-meta-*`, idempotent | P3-02 |
-| P3.4 completion items and quoting | P3-03 |
-| P3.5 cursor highlights and zooms; row counts; the match-report pane and its click (S4, S5.1, S5.3) | P3-07 (code: P3-01, P3-04) |
-| P3.6 click opens the inspector (resolved matchers); `at=target` | P3-07 (code: P1-02, P3-05) |
-| P3.7 multi-select, assign class, wrapper, draw.io save | P3-07 (code: P3-05) |
-| P3.8 markers, invalid YAML, discard, conflict, Apply, undo | P3-07 (code: P3-06) |
-| P3.9 Monaco on 12.4 and 13.2 (`matrix`) | P3-07 |
-| P3.10 pilot round trip and conflict | P3-11 |
-| P3.11 screenshot checked by eye | P3-09 |
-| P3.12 isolation services | P3-09 |
-| P3.13 phone | P3-09 |
-| Phase gates of S9 (typecheck, lint, affected tests, review, privacy) | P0-G, P1-G, P2-G, P3-G |
-| Before the push: full `npm test`, `npm run e2e:release` (it includes the matrix) | R-1, P3-R |
-| Release drift rule: baseline, release range, clean after the deploy; rollback of the range | R-2, R-3, R-4, P3-R, P3-11 |
+| Spec acceptance                                                                                                               | Task(s)                                                |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| P0.1 bench                                                                                                                    | P0-1                                                   |
+| P0.2 colour parity                                                                                                            | P0-2                                                   |
+| P1.1 parse, invalid class, invalid parent, invalid override (the cell is unavailable)                                         | P1-01, P1-09a, P1-09b                                  |
+| P1.2 YAML round trip, block style                                                                                             | P1-08                                                  |
+| P1.3 matcher forms and dialect                                                                                                | P1-02                                                  |
+| P1.4 `missing-attr`, shield, `isAllowedUrl`, URL encoding, A17 (unit)                                                         | P1-02, P1-03                                           |
+| P1.5 extends, overrides, override query in the index, row match                                                               | P1-01, P1-09b                                          |
+| P1.6 status, colour, severity, `transparent`, band, legend, applier                                                           | P1-05, P1-10                                           |
+| S4 report types and kinds                                                                                                     | P1-00 (types), P1-09b (entries)                        |
+| P1.7 no data, the cell text "–"                                                                                               | P1-05                                                  |
+| P1.8 freshness and the clock, the "stale" row                                                                                 | P1-06, P1-11a                                          |
+| P1.9 several series, frame merge, N lines, R8                                                                                 | P1-04, P1-09b, P1-11a                                  |
+| P1.10 links, capacity, ends                                                                                                   | P1-07, P1-09b                                          |
+| P1.11 report entry kinds, orphan cap                                                                                          | P1-09b                                                 |
+| P1.12 `version: 3` binds nothing, one notice                                                                                  | P1-01, P1-09a, P1-09b, P1-13c                          |
+| P1.13 harness names                                                                                                           | P1-12                                                  |
+| P1.14 e2e v4 demo, `build` kept, URL encoding with real formats (A17)                                                         | P1-18 (unit side: P1-11b, P1-14; demo configs: P1-13b) |
+| P1.15 re-fixtured specs, P1 column; no popup                                                                                  | P1-13a, P1-15a, P1-15b, P1-16, P1-17                   |
+| P1.16 bench faster than P0                                                                                                    | P1-19 (with P0-1)                                      |
+| P1.17 fresh build, bundle checks, no YAML chunk in view mode                                                                  | P1-14, P1-15a                                          |
+| P2.1 classes, `bind`/`key`/`at`, no `bind_*`, `at` audit                                                                      | P2-02, P2-03                                           |
+| P2.2 `pull` (snapshot, failures, token, deployed build, `--base`, N1, geometry and style warnings, missing panel, wrong type) | P2-05                                                  |
+| P2.3 merge rules (an inferred `at=source` is a topology value) and repeat pulls                                               | P2-06, P2-09                                           |
+| P2.4 order: exported SVG holds merged values, hash covers them                                                                | P2-06                                                  |
+| P2.5 10 panels with no `schema` and no `unknown-ref`                                                                          | P2-10, R-3                                             |
+| P2.6 parity with P0 at the same frames                                                                                        | P2-10 (with P0-2)                                      |
+| P2.7 options smaller than v3                                                                                                  | P2-10                                                  |
+| P2.8 release note (with the "page 1 only" note) and dashboards in one change set                                              | P1-20, R-1, R-2                                        |
+| P2.9 deploy gate rows, step 0, token, version increment, N1                                                                   | P2-08                                                  |
+| P2.10 boiler cell ids and attributes                                                                                          | P2-07                                                  |
+| P3.1 path at offset, cell sets, report counts                                                                                 | P3-01                                                  |
+| P3.2 `setCellAttrs`                                                                                                           | P3-02                                                  |
+| P3.3 sanitiser keeps `data-meta-*`, idempotent                                                                                | P3-02                                                  |
+| P3.4 completion items and quoting                                                                                             | P3-03                                                  |
+| P3.5 cursor highlights and zooms; row counts; the match-report pane and its click (S4, S5.1, S5.3)                            | P3-07 (code: P3-01, P3-04)                             |
+| P3.6 click opens the inspector (resolved matchers); `at=target`                                                               | P3-07 (code: P1-02, P3-05)                             |
+| P3.7 multi-select, assign class, wrapper, draw.io save                                                                        | P3-07 (code: P3-05)                                    |
+| P3.8 markers, invalid YAML, discard, conflict, Apply, undo                                                                    | P3-07 (code: P3-06)                                    |
+| P3.9 Monaco on 12.4 and 13.2 (`matrix`)                                                                                       | P3-07                                                  |
+| P3.10 pilot round trip and conflict                                                                                           | P3-11                                                  |
+| P3.11 screenshot checked by eye                                                                                               | P3-09                                                  |
+| P3.12 isolation services                                                                                                      | P3-09                                                  |
+| P3.13 phone                                                                                                                   | P3-09                                                  |
+| Phase gates of S9 (typecheck, lint, affected tests, review, privacy)                                                          | P0-G, P1-G, P2-G, P3-G                                 |
+| Before the push: full `npm test`, `npm run e2e:release` (it includes the matrix)                                              | R-1, P3-R                                              |
+| Release drift rule: baseline, release range, clean after the deploy; rollback of the range                                    | R-2, R-3, R-4, P3-R, P3-11                             |
 
 ## Plan review fixes
 
 The plan review of 2026-10-29 (blockers B1–B2, majors M1–M8, minors m1–m10) changed these tasks.
 
-| Finding | Change | Tasks |
-|---|---|---|
-| B1 drift rule blocks every release | New section "The release drift rule": baseline at `PRE` before the merge; between merge and deploy, accept only `DRIFT` on paths of `PRE..REL` and `LIVE-ONLY` on paths the range deletes; `CLEAN` after the deploy; clean detached worktrees for the check and the deploy | R (new section), R-2, R-3, R-4, P3-R, P3-11 |
-| B2 no merge commit to revert | R-2 records `PRE` and `REL` and asks for `--no-ff`; R-4 reverses the range `PRE..REL` as one patch (`git diff --binary PRE REL \| git apply -R --index`), so it works after a fast-forward or a squash too | R-2, R-4, P3-R |
-| M1 wave 1 not parallel | New task P1-00 (`ReportEntry`, `UsePath`, `REPORT_KINDS`, `MatchV4`) merges before wave 1 | P1-00, P1-01, P1-02, P1-04 |
-| M2 P1-13 too large | Split: P1-13a deletes the v3 popup and editor (wave 3); P1-13b writes the v4 demo configs beside v3; P1-13c is the atomic cut-over with the 12 test rewrites. The review named the cut-over P1-13b; here the demo configs come first, so each merge typechecks. The V4 renames are dropped (global "Names") | P1-13a, P1-13b, P1-13c, global constraints |
-| M3 wave 7 ports | A port pair per e2e task; at most two e2e tasks at one time | global constraints, E2E section, P1-15a, P1-15b, P1-16, P1-17, P1-18 |
-| M4 no task for the match-report pane | `reportCounts` in P3-01; the report pane and its click in P3-04; an e2e case in P3-07 | P3-01, P3-04, P3-07 |
-| M5 P1-15 too large | Split: P1-15a helpers, deletes, `--list`, `no-drawio`; P1-15b the other P1-column specs (wave 7) | P1-15a, P1-15b |
-| M6 P1-11 too large | Split: P1-11a cards and N lines with a v3 shim; P1-11b chart regions; sequential | P1-11a, P1-11b |
-| M7 P1-09 critical path, P3 contracts | `validateConfig` moves to P1-09a (wave 2); P1-09b states `Use.path` = origin path; `resolveBlock` returns `resolved` | P1-02, P1-09a, P1-09b, P3-05 |
-| M8 P1-07 changes `applyContract` | P1-07 does not touch `portograph.ts`; ends come from `edgeEnds` at bind time; P1-13c changes `applyContract` | P1-07, P1-09b, P1-13c |
-| m1 | P1-20 depends on P1-19 | P1-20 |
-| m2 | P2-06 depends on P2-05 | P2-06 |
-| m3 | P2-02 … P2-05 fill free slots in waves 6–8 | wave table, P2-02 … P2-05 |
-| m4 | `--maxWorkers=2` when four tasks run | global constraints |
-| m5 | R-1 runs `npm ci`, `npm run e2e:release` and tags the release with the owner's approval | R-1, P3-R |
-| m6 | P1-18 extends `stack/metrics-gen/gen.py` | P1-18 |
-| m7 | New test cases: invalid override (P1-09b), "stale" row (P1-11a), "–" text (P1-05), `pull` warnings and stops (P2-05), inferred `at=source` (P2-06), "page 1 only" (P1-20) | P1-05, P1-09b, P1-11a, P1-20, P2-05, P2-06 |
-| m8 | The render tests go in `DrawioMapPanel.test.tsx` | P1-13a, P1-13c |
-| m9 | P2-07 must not change `docs/diagrams/drawio_helpers.py` | P2-07 |
-| m10 | P0-G reviews P0-1 and P0-2 before the merge | P0-G |
+| Finding                              | Change                                                                                                                                                                                                                                                                                                      | Tasks                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| B1 drift rule blocks every release   | New section "The release drift rule": baseline at `PRE` before the merge; between merge and deploy, accept only `DRIFT` on paths of `PRE..REL` and `LIVE-ONLY` on paths the range deletes; `CLEAN` after the deploy; clean detached worktrees for the check and the deploy                                  | R (new section), R-2, R-3, R-4, P3-R, P3-11                          |
+| B2 no merge commit to revert         | R-2 records `PRE` and `REL` and asks for `--no-ff`; R-4 reverses the range `PRE..REL` as one patch (`git diff --binary PRE REL \| git apply -R --index`), so it works after a fast-forward or a squash too                                                                                                  | R-2, R-4, P3-R                                                       |
+| M1 wave 1 not parallel               | New task P1-00 (`ReportEntry`, `UsePath`, `REPORT_KINDS`, `MatchV4`) merges before wave 1                                                                                                                                                                                                                   | P1-00, P1-01, P1-02, P1-04                                           |
+| M2 P1-13 too large                   | Split: P1-13a deletes the v3 popup and editor (wave 3); P1-13b writes the v4 demo configs beside v3; P1-13c is the atomic cut-over with the 12 test rewrites. The review named the cut-over P1-13b; here the demo configs come first, so each merge typechecks. The V4 renames are dropped (global "Names") | P1-13a, P1-13b, P1-13c, global constraints                           |
+| M3 wave 7 ports                      | A port pair per e2e task; at most two e2e tasks at one time                                                                                                                                                                                                                                                 | global constraints, E2E section, P1-15a, P1-15b, P1-16, P1-17, P1-18 |
+| M4 no task for the match-report pane | `reportCounts` in P3-01; the report pane and its click in P3-04; an e2e case in P3-07                                                                                                                                                                                                                       | P3-01, P3-04, P3-07                                                  |
+| M5 P1-15 too large                   | Split: P1-15a helpers, deletes, `--list`, `no-drawio`; P1-15b the other P1-column specs (wave 7)                                                                                                                                                                                                            | P1-15a, P1-15b                                                       |
+| M6 P1-11 too large                   | Split: P1-11a cards and N lines with a v3 shim; P1-11b chart regions; sequential                                                                                                                                                                                                                            | P1-11a, P1-11b                                                       |
+| M7 P1-09 critical path, P3 contracts | `validateConfig` moves to P1-09a (wave 2); P1-09b states `Use.path` = origin path; `resolveBlock` returns `resolved`                                                                                                                                                                                        | P1-02, P1-09a, P1-09b, P3-05                                         |
+| M8 P1-07 changes `applyContract`     | P1-07 does not touch `portograph.ts`; ends come from `edgeEnds` at bind time; P1-13c changes `applyContract`                                                                                                                                                                                                | P1-07, P1-09b, P1-13c                                                |
+| m1                                   | P1-20 depends on P1-19                                                                                                                                                                                                                                                                                      | P1-20                                                                |
+| m2                                   | P2-06 depends on P2-05                                                                                                                                                                                                                                                                                      | P2-06                                                                |
+| m3                                   | P2-02 … P2-05 fill free slots in waves 6–8                                                                                                                                                                                                                                                                  | wave table, P2-02 … P2-05                                            |
+| m4                                   | `--maxWorkers=2` when four tasks run                                                                                                                                                                                                                                                                        | global constraints                                                   |
+| m5                                   | R-1 runs `npm ci`, `npm run e2e:release` and tags the release with the owner's approval                                                                                                                                                                                                                     | R-1, P3-R                                                            |
+| m6                                   | P1-18 extends `stack/metrics-gen/gen.py`                                                                                                                                                                                                                                                                    | P1-18                                                                |
+| m7                                   | New test cases: invalid override (P1-09b), "stale" row (P1-11a), "–" text (P1-05), `pull` warnings and stops (P2-05), inferred `at=source` (P2-06), "page 1 only" (P1-20)                                                                                                                                   | P1-05, P1-09b, P1-11a, P1-20, P2-05, P2-06                           |
+| m8                                   | The render tests go in `DrawioMapPanel.test.tsx`                                                                                                                                                                                                                                                            | P1-13a, P1-13c                                                       |
+| m9                                   | P2-07 must not change `docs/diagrams/drawio_helpers.py`                                                                                                                                                                                                                                                     | P2-07                                                                |
+| m10                                  | P0-G reviews P0-1 and P0-2 before the merge                                                                                                                                                                                                                                                                 | P0-G                                                                 |

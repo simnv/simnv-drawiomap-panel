@@ -275,7 +275,10 @@ describe('ChartLayer', () => {
     // The UA stylesheet of jsdom 31 clips a nested svg (overflow: hidden), as browsers do: give the root svg the box of its host.
     Object.assign(root, { getBoundingClientRect: host.getBoundingClientRect });
     const validated = validateConfig({ version: 4, classes: { host: { match: { key: 'job' }, ...historyClass } } });
-    const data = panelData([frame('cpu', { job: 'node-rtr-a' }, [1, 2, 3]), frame('cpu', { job: 'node-rtr-b' }, [1, 2, 3])]);
+    const data = panelData([
+      frame('cpu', { job: 'node-rtr-a' }, [1, 2, 3]),
+      frame('cpu', { job: 'node-rtr-b' }, [1, 2, 3]),
+    ]);
     const bound = bindV4({ index: cells, validated, data, ctx: bindCtx });
     const ctx: CardContextV4 = { theme, replaceVariables: (v) => v, index: cells, validated, data };
     const Original = MutationObserver;

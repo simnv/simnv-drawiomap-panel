@@ -65,7 +65,8 @@ describe.skipIf(!existsSync(WEBAPP))('EDITOR_PRELOADS against the vendored draw.
     expect([...EDITOR_PRELOADS, EDITOR_RESOURCE_SCRIPT].filter((f) => !existsSync(join(WEBAPP, f)))).toEqual([]);
   });
   it('names the scripts that bootstrap.js and app.min.js load', () => {
-    const loaders = readFileSync(join(WEBAPP, 'js/bootstrap.js'), 'utf8') + readFileSync(join(WEBAPP, 'js/app.min.js'), 'utf8');
+    const loaders =
+      readFileSync(join(WEBAPP, 'js/bootstrap.js'), 'utf8') + readFileSync(join(WEBAPP, 'js/app.min.js'), 'utf8');
     expect(EDITOR_PRELOADS.filter((f) => !loaders.includes(`'${f}'`) && !loaders.includes(`"${f}"`))).toEqual([]);
   });
   it('names the default resource bundle that PreConfig.js lists', () => {

@@ -1,0 +1,3 @@
+# Format-only commits. GitHub skips them in blame; locally: npm run hooks:install (sets blame.ignoreRevsFile).
+# style: format the repository with Prettier
+5c9f1dc49c436ee7d1f7795ca78321bbb30cb568
