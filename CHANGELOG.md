@@ -3,6 +3,9 @@
 ## 1.5.2 (Unreleased)
 
 - Security: updated the bundled DOMPurify HTML and SVG sanitiser from 3.2.6 to 3.4.17. It fixes several published sanitiser advisories. The sanitised output of the test diagrams does not change.
+- Changed the build tools: create-plugin 8.0.2, Vitest 4 and the other development dependencies. The source code of the plugin does not change. `npm audit` has no critical findings. The remaining findings are listed in `docs/security.md`.
+- Added a troubleshooting section to the install guide (`docs/guide/install.md`). In `allow_loading_unsigned_plugins`, put no spaces after the commas: Grafana does not remove them, and then it does not load the plugin.
+- The development stack: `docker compose up` stops with a message when `dist/` has no built plugin. Before, every Grafana showed "Panel plugin not found".
 
 ## 1.5.1 (Unreleased)
 
