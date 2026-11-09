@@ -94,7 +94,7 @@ describe('editor dialog responsive geometry', () => {
     // The comma is OR: includes 620x800, the 640px/480px boundaries and landscape phones such as 844x390.
     expect(fullscreen[0].media).toBe('(max-width: 640px), (max-height: 480px)');
     expect(fullscreen[0].style.height).toBe('100dvh');
-    expect(fullscreen[0].style.getPropertyValue('border-radius')).toBe('0');
+    expect(fullscreen[0].style.getPropertyValue('border-radius')).toBe('0px');
     const desktop = rules
       .filter((rule): rule is CSSStyleRule => 'selectorText' in rule)
       .find((rule) => dialog.matches(rule.selectorText) && rule.style.width === '96vw');

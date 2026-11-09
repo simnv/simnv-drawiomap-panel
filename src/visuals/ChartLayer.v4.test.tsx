@@ -112,6 +112,8 @@ function stage(attrs: Record<string, string>) {
   Object.assign(host, {
     getBoundingClientRect: () => ({ left: 0, top: 0, right: 400, bottom: 200, width: 400, height: 200 }),
   });
+  // The UA stylesheet of jsdom 31 clips a nested svg (overflow: hidden), as browsers do: give the root svg the box of its host.
+  Object.assign(root, { getBoundingClientRect: host.getBoundingClientRect });
   return { host, root, cells };
 }
 

@@ -105,6 +105,8 @@ const shape = (over: Partial<ShapeState> = {}): ShapeState => ({
 });
 /** jsdom keeps '#ff0000' as written; browsers read it back as 'rgb(255, 0, 0)'. */
 const RED = /^(#ff0000|rgb\(255, 0, 0\))$/;
+/** jsdom 31 writes rgb() with spaces inside light-dark() after a setProperty and with commas when it parses a style attribute. Browsers keep one form, so compare without the separator. */
+const sameColour = (v: string) => v.replace(/rgb\((\d+), (\d+), (\d+)\)/g, 'rgb($1 $2 $3)');
 const patch = (cellId: string, p: Partial<CellPatch>): CellPatch => ({
   cellId,
   scope: { cell: {} },
@@ -136,7 +138,7 @@ describe('applyPatches', () => {
     expect((n1.shape as SVGElement).style.fill).toMatch(GREY);
     expect(e1.line!.style.stroke).toMatch(GREY);
     applyPatches(index, new Map(), prev);
-    expect((n1.shape as SVGElement).style.fill).toBe(original);
+    expect(sameColour((n1.shape as SVGElement).style.fill)).toBe(sameColour(original));
     expect(e1.line!.style.stroke).toBe('');
     expect(n1.group.getAttribute('data-dmap-status')).toBeNull();
   });
@@ -158,7 +160,9 @@ describe('applyPatches', () => {
     expect(index.get('n1')!.group.getAttribute('aria-label')).toBe('rtr-a: down. Device down');
     const normal: CellPatch = { ...p, statusView: { ...statusView, state: 'normal', reason: 'Healthy' } };
     applyPatches(index, new Map([['n1', normal]]), prev);
-    expect((index.get('n1')!.shape as SVGElement).style.fill).toBe(index.get('n1')!.original.fill);
+    expect(sameColour((index.get('n1')!.shape as SVGElement).style.fill)).toBe(
+      sameColour(index.get('n1')!.original.fill ?? '')
+    );
     applyPatches(index, new Map(), prev);
     expect(index.get('n1')!.group.hasAttribute('data-dmap-reason')).toBe(false);
   });
@@ -270,7 +274,7 @@ describe('applyPatches', () => {
     const done = applyPatches(index, new Map(), prev);
     expect(done.keys.size).toBe(0);
     const rect = index.get('n1')!.shape as SVGElement;
-    expect(rect.style.fill).toBe(index.get('n1')!.original.fill ?? '');
+    expect(sameColour(rect.style.fill)).toBe(sameColour(index.get('n1')!.original.fill ?? ''));
     expect(index.get('n1')!.label!.textContent).toBe('rtr-a');
     expect(index.get('n1')!.group.hasAttribute('data-dmap-status')).toBe(false);
     expect(index.get('n1')!.group.hasAttribute('tabindex')).toBe(false);
@@ -948,10 +952,10 @@ describe('applyPatches status paint', () => {
     // the written declarations keep the priority of the diagram's
     expect(read().map((d) => d[1])).toEqual(['important', 'important', 'important']);
     prev = applyPatches(index, new Map([['n5', withStatus('n5', 'normal')]]), prev, undefined, ctx);
-    expect(read()).toEqual(before);
+    expect(read().map(([v, p]) => [sameColour(v), p])).toEqual(before.map(([v, p]) => [sameColour(v), p]));
     prev = applyPatches(index, down(), prev, undefined, ctx);
     applyPatches(index, new Map(), prev, undefined, ctx);
-    expect(read()).toEqual(before);
+    expect(read().map(([v, p]) => [sameColour(v), p])).toEqual(before.map(([v, p]) => [sameColour(v), p]));
   });
   it('a status-only edge paints its end dots in the status colour too, and restores them (R3)', () => {
     const ID = 'pg-link~dot-a-b';
