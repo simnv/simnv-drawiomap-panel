@@ -1,5 +1,22 @@
 import { screen } from '@testing-library/react';
 
+// jsdom has no IntersectionObserver. Importing this file installs a stub that never reports, in the test files that
+// import it (the old intersection-observer polyfill did the same). Other tests keep the "no IntersectionObserver" path.
+if (typeof window.IntersectionObserver === 'undefined') {
+  class IntersectionObserverStub {
+    readonly root = null;
+    readonly rootMargin = '';
+    readonly thresholds = [];
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  }
+  window.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
+}
+
 type Queries = Pick<typeof screen, 'getByRole'>;
 
 /** True when the element, or an ancestor, is hidden from the user and from the accessibility tree. */
