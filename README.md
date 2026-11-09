@@ -14,7 +14,7 @@ A Grafana panel that shows a draw.io diagram as a network weathermap. Queries co
 
 ## Requirements
 
-- Grafana 12.4 or later.
+- Grafana 12.3 or later.
 - A data source with time series.
 - The plugin is not signed. Set `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=simnv-drawiomap-panel`.
 

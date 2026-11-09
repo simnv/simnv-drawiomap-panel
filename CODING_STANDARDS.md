@@ -6,7 +6,7 @@ Read this file when you review a diff. Each rule needs judgement. Mechanical rul
 
 - Use the Grafana model before a custom option: field config, thresholds, colour schemes, overrides, units, data links, `replaceVariables`. Add a panel option only when Grafana has no equivalent. `docs/adr/0002-grafana-native-colours.md` gives the colour reasoning.
 - Use `@grafana/ui` components and theme tokens (`useTheme2`), not hand-made widgets or fixed colours.
-- Keep `grafanaDependency` and the APIs compatible with Grafana 12.4 and 13. A new API must exist in both versions.
+- Keep `grafanaDependency` and the APIs compatible with Grafana 12.3, 12.4 and 13. A new API must exist in all of these versions.
 
 ## One concept, one function
 

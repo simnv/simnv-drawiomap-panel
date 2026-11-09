@@ -15,6 +15,7 @@ The stack starts these services:
 
 | Service         | URL                   |
 | --------------- | --------------------- |
+| Grafana 12.3.11 | http://localhost:3011 |
 | Grafana 12.4.13 | http://localhost:3012 |
 | Grafana 13.2.4  | http://localhost:3013 |
 | VictoriaMetrics | http://localhost:8428 |
@@ -32,9 +33,10 @@ npm run dev               # webpack in watch mode
 npm test                  # Vitest unit tests (jsdom, real SVG fixtures)
 npm run typecheck && npm run lint
 npm run check:bundle      # fails if draw.io runtime code is in the bundle
-npm run e2e:12            # Playwright project `matrix` on Grafana 12 (the stack must run)
+npm run e2e:12.3          # Playwright project `matrix` on Grafana 12.3 (the stack must run)
+npm run e2e:12            # Playwright project `matrix` on Grafana 12.4
 npm run e2e:13            # Playwright projects `matrix` and `plugin` on Grafana 13
-npm run e2e:matrix        # both: the version split suite
+npm run e2e:matrix        # all three: the version split suite
 npm run e2e:webkit        # the WebKit check of the card tooltip on Grafana 13
 npm run e2e:release       # everything on both versions, then the WebKit check (before a tag)
 npm run stack:wait        # wait for the demo series, Grafana health and the plugin (bounded, no fixed sleep)
@@ -66,10 +68,10 @@ The acceptance results are in [docs/acceptance.md](docs/acceptance.md). The deci
 
 `playwright.config.ts` has two Chromium projects. The split follows the surface that a test depends on:
 
-- `matrix`: the tests on surfaces that differ between Grafana versions: the panel edit page and the options pane, the dashboard save API, the datasource query editors, the dashboard refresh in panel edit, field config and overrides, the theme, plugin and chunk loading. They run on 12.4 and on 13.2. A whole spec file is in `matrix` when it is in the list `MATRIX_SPECS` in `playwright.config.ts`. A single test is in `matrix` when it has the tag `@matrix` (`test(title, { tag: '@matrix' }, fn)`).
-- `plugin`: every other test, that is, the tests on the DOM that the plugin draws itself. They run on 13.2 only. A regression in this DOM on 12.4 only is found by `npm run e2e:release`.
+- `matrix`: the tests on surfaces that differ between Grafana versions: the panel edit page and the options pane, the dashboard save API, the datasource query editors, the dashboard refresh in panel edit, field config and overrides, the theme, plugin and chunk loading. They run on 12.3, 12.4 and 13.2. A whole spec file is in `matrix` when it is in the list `MATRIX_SPECS` in `playwright.config.ts`. A single test is in `matrix` when it has the tag `@matrix` (`test(title, { tag: '@matrix' }, fn)`).
+- `plugin`: every other test, that is, the tests on the DOM that the plugin draws itself. They run on 13.2 in the push suite and in CI, and on 12.4 too in `npm run e2e:release`. No suite runs them on 12.3.
 
-`npm run e2e:12` runs `matrix`; `npm run e2e:13` runs `matrix` and `plugin`; `npm run e2e:release` runs both projects on both versions and then the WebKit check. Pass a spec file after `--` to run one spec, for example `npm run e2e:13 -- tests/links.spec.ts`. Use `--project=name` with an equals sign: `--project name` takes the next file name as a project.
+`npm run e2e:12.3` and `npm run e2e:12` run `matrix`; `npm run e2e:13` runs `matrix` and `plugin`; `npm run e2e:release` runs `matrix` on 12.3, both projects on 12.4 and 13.2, and then the WebKit check. Pass a spec file after `--` to run one spec, for example `npm run e2e:13 -- tests/links.spec.ts`. Use `--project=name` with an equals sign: `--project name` takes the next file name as a project.
 
 `scripts/run-e2e.sh` (the scripts above) starts Playwright with `min(4, floor(CPUs / 2))` workers, and at least 2. `PW_WORKERS=N` or `--workers N` sets another count. The script sets `GRAFANA_URL` from the port argument (an inherited `GRAFANA_URL` is not used) and runs `scripts/wait-stack.sh` first; with `DMAP_STACK_READY=1` it skips that wait (`npm run ci:local` sets it after its own wait).
 
@@ -113,8 +115,8 @@ To release: set the version in `package.json` and the heading in `CHANGELOG.md`,
 Woodpecker CI (v3, docker backend) runs the e2e tests on a Forgejo mirror of the GitHub repository. It runs the workflow `.woodpecker/ci.yaml` on push, pull request and manual events. One workflow runs all steps in order, because workflows do not share a workspace. A failed step fails the workflow, and the steps after it do not run.
 
 1. Build: `npm ci`, privacy check, typecheck, lint, unit tests, build, `check:bundle`, `package`. The last step shows the plugin zip and its sha256. There is no cache: the run downloads the pinned draw.io release (about 46 MB from github.com) once, and `scripts/vendor-drawio.sh` checks its sha256. Woodpecker has no cache without a volume or a plugin.
-2. Stack: the step `grafana-files` runs `scripts/ci-grafana-files.sh`: it copies `dist/` and `provisioning/` to `ci/` in the workspace (one plugin folder for each Grafana) and checks that the copies are the same as `dist/`, the files of the plugin zip. The detached steps `victoriametrics`, `metrics-gen`, `grafana12` and `grafana13` start the stack (the same images as `docker-compose.yaml`: Grafana 12.4.13 and 13.2.4). The step name is the hostname. Grafana reads the plugin and the provisioning from the workspace (`GF_PATHS_PLUGINS`, `GF_PATHS_PROVISIONING`). The step `wait` runs `scripts/wait-stack.sh` with `VM_URL=http://victoriametrics:8428` and `GRAFANA_URL="http://grafana12:3000 http://grafana13:3000"`.
-3. E2E: the steps `e2e-12` and `e2e-13` run Playwright in `mcr.microsoft.com/playwright`, with the same version as `@playwright/test`, on the `node_modules` and `dist/` of the build. `e2e-12` runs the project `matrix` on Grafana 12.4. `e2e-13` runs the projects `matrix` and `plugin` on 13.2 (see "E2E suites"). The runs are one after the other because they share the Playwright output folders. If `e2e-12` fails, `e2e-13` does not run. CI does not run the WebKit check.
+2. Stack: the step `grafana-files` runs `scripts/ci-grafana-files.sh`: it copies `dist/` and `provisioning/` to `ci/` in the workspace (one plugin folder for each Grafana) and checks that the copies are the same as `dist/`, the files of the plugin zip. The detached steps `victoriametrics`, `metrics-gen`, `grafana123`, `grafana12` and `grafana13` start the stack (the same images as `docker-compose.yaml`: Grafana 12.3.11, 12.4.13 and 13.2.4). The step name is the hostname. Grafana reads the plugin and the provisioning from the workspace (`GF_PATHS_PLUGINS`, `GF_PATHS_PROVISIONING`). The step `wait` runs `scripts/wait-stack.sh` with `VM_URL=http://victoriametrics:8428` and `GRAFANA_URL="http://grafana123:3000 http://grafana12:3000 http://grafana13:3000"`.
+3. E2E: the steps `e2e-123`, `e2e-12` and `e2e-13` run Playwright in `mcr.microsoft.com/playwright`, with the same version as `@playwright/test`, on the `node_modules` and `dist/` of the build. `e2e-123` runs the project `matrix` on Grafana 12.3. `e2e-12` runs the project `matrix` on Grafana 12.4. `e2e-13` runs the projects `matrix` and `plugin` on 13.2 (see "E2E suites"). The runs are one after the other because they share the Playwright output folders. If an earlier e2e step fails, the next one does not run. CI does not run the WebKit check.
 
 The steps do not use the docker socket, volumes, privileged mode or secrets. The repository does not have to be trusted. The steps need access to registry.npmjs.org, github.com and raw.githubusercontent.com (draw.io release and its LICENSE).
 

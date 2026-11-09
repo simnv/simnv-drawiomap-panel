@@ -3,7 +3,7 @@
 #  1. VictoriaMetrics has the demo series, and rate() over it has a value (the counters have two samples),
 #  2. each Grafana answers /api/health with database "ok",
 #  3. each Grafana has loaded the plugin.
-# Usage: scripts/wait-stack.sh [port ...]   (default: 3012 3013 on STACK_HOST)
+# Usage: scripts/wait-stack.sh [port ...]   (default: 3012 3013 on STACK_HOST; 3011 is Grafana 12.3)
 # STACK_HOST (default localhost) and VM_PORT (default 8428) select the compose stack.
 # CI (.woodpecker/ci.yaml): VM_URL and GRAFANA_URL give the full URLs, for example http://victoriametrics:8428 and
 # "http://grafana12:3000 http://grafana13:3000" (GRAFANA_URL is a list with spaces). GRAFANA_URL is used only when there
@@ -20,7 +20,7 @@ if [ $# -gt 0 ]; then
 elif [ -n "${GRAFANA_URL:-}" ]; then
   read -ra grafanas <<<"$GRAFANA_URL"
 else
-  grafanas=("http://$host:3012" "http://$host:3013")
+  grafanas=("http://$host:3011" "http://$host:3012" "http://$host:3013")
 fi
 deadline=$((SECONDS + timeout))
 series=${DEMO_SERIES:-'node_network_transmit_bytes_total{job="node-isp-a",device="pppoe"}'}

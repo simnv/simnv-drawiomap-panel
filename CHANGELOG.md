@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.1 (Unreleased)
+
+- Added support for Grafana 12.3. The plugin needs Grafana `>=12.3.0` (it needed `>=12.4.0`). It builds against `@grafana/*` 12.4.13 and the 12.3.11 types also compile. The test stack has Grafana 12.3.11 and runs the `matrix` e2e project on it (`npm run e2e:12.3`). Restart Grafana after you install this version: `plugin.json` changed.
+- Fixed the question "Discard changes?" of the split editor: it had no accessible name on Grafana 12.3. A screen reader now reads its title on 12.3, 12.4 and 13.2.
+
 ## 1.5.0 (Unreleased)
 
 - Changed the docs. The README is now short. The option reference moved to `docs/guide/`. The development notes moved to `CONTRIBUTING.md`. The plugin catalogue shows the README and four screenshots (`info.screenshots` in `plugin.json`). The build rewrites the relative links of `dist/README.md` to absolute URLs of the release tag.

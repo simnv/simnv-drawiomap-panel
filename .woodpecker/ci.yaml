@@ -64,9 +64,13 @@ steps:
       - cp -R ci/plugins ci/plugins-13
       - chmod -R a+rX ci/plugins-13
       - chmod g+w ci/plugins-13
+      - cp -R ci/plugins ci/plugins-123
+      - chmod -R a+rX ci/plugins-123
+      - chmod g+w ci/plugins-123
       # The e2e tests use the files that the package step packed.
       - diff -r dist ci/plugins/simnv-drawiomap-panel
       - diff -r dist ci/plugins-13/simnv-drawiomap-panel
+      - diff -r dist ci/plugins-123/simnv-drawiomap-panel
 
   - name: victoriametrics
     image: victoriametrics/victoria-metrics:v1.126.0
@@ -86,11 +90,27 @@ steps:
     commands:
       - python -I stack/metrics-gen/gen.py
 
+  - name: grafana123
+    image: grafana/grafana:12.3.11
+    detach: true
+    environment:
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: simnv-drawiomap-panel
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_DEFAULT_APP_MODE: development
+      GF_LOG_LEVEL: warn
+      GF_NEWS_NEWS_FEED_ENABLED: 'false'
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: '1s'
+    commands:
+      - export GF_PATHS_PLUGINS="$${CI_WORKSPACE}/ci/plugins-123"
+      - export GF_PATHS_PROVISIONING="$${CI_WORKSPACE}/ci/provisioning"
+      - exec /run.sh
+
   - name: grafana12
     image: grafana/grafana:12.4.13
     detach: true
     # The same GF_* settings as x-grafana-env in docker-compose.yaml. Keep the image versions the same as the
-    # images of grafana12 and grafana13 in docker-compose.yaml.
+    # images of grafana123, grafana12 and grafana13 in docker-compose.yaml.
     environment:
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: simnv-drawiomap-panel
       GF_AUTH_ANONYMOUS_ENABLED: 'true'
@@ -124,18 +144,26 @@ steps:
     image: node:24-bookworm
     environment:
       VM_URL: http://victoriametrics:8428
-      GRAFANA_URL: http://grafana12:3000 http://grafana13:3000
+      GRAFANA_URL: http://grafana123:3000 http://grafana12:3000 http://grafana13:3000
     commands:
       - ./scripts/wait-stack.sh
 
-  - name: e2e-12
+  - name: e2e-123
     # Keep the image version the same as @playwright/test in package-lock.json. The first command checks it.
     image: mcr.microsoft.com/playwright:v1.64.1-noble
     environment:
       PLAYWRIGHT_IMAGE_VERSION: 1.64.1
-      GRAFANA_URL: http://grafana12:3000
+      GRAFANA_URL: http://grafana123:3000
     commands:
       - test "$(node -p 'require("@playwright/test/package.json").version')" = "$${PLAYWRIGHT_IMAGE_VERSION}"
+      # Grafana 12.3 runs the project matrix only.
+      - npx playwright test --project=matrix
+
+  - name: e2e-12
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    environment:
+      GRAFANA_URL: http://grafana12:3000
+    commands:
       # The version split of docs/research/test-cost-audit.md: Grafana 12.4 runs the project matrix, 13.2 runs both.
       - npx playwright test --project=matrix
 
