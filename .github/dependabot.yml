@@ -9,25 +9,33 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Minor and patch updates come in two grouped PRs. Each major update comes in its own PR.
     groups:
       development-dependencies:
         dependency-type: development
+        update-types: [minor, patch]
       production-dependencies:
         dependency-type: production
+        update-types: [minor, patch]
     ignore:
       # Grafana externals and React: the plugin builds against the oldest Grafana version that it supports.
       # The @grafana packages get patch updates only; a minor or major bump follows grafanaDependency in plugin.json.
-      - dependency-name: "@grafana/data"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: "@grafana/ui"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: "@grafana/runtime"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: "@grafana/i18n"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: "@grafana/schema"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: '@grafana/data'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@grafana/ui'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@grafana/runtime'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@grafana/i18n'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@grafana/schema'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
       - dependency-name: react
-        update-types: ["version-update:semver-major"]
+        update-types: ['version-update:semver-major']
       - dependency-name: react-dom
-        update-types: ["version-update:semver-major"]
+        update-types: ['version-update:semver-major']
+      # The Node types follow the Node major of .nvmrc and CI.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # The version must equal the Playwright image of .woodpecker/ci.yaml (the e2e steps check it). Bump both by hand.
+      - dependency-name: '@playwright/test'
