@@ -15,6 +15,7 @@
 - Made the split editor faster on large diagrams: a click changes only the cells that change. The editor reads the YAML 150 ms after the last keystroke, and at once on blur, Apply, Ctrl+S and close. The **Bindings** YAML box of the options pane still stores each valid keystroke at once.
 - Made the plugin zip smaller: about 19 MB instead of about 22.6 MB. The vendor script removes the draw.io files that the embedded editor never loads (development bundles, standalone copies of libraries that the main editor bundle already contains, and the language files: the embedded editor has no language menu).
 - Fixed the hover card and the phone sheet: the value line of a combined up/down row no longer clips at the right edge. A line that is too wide wraps between the up and the down part. The row title stays visible.
+- Cleaned the demo dashboard: the L3 panel has an empty match report (it had 15 warnings) and no cell without data. The offline LTE modem is the one down cell, and its link is not bound: it is drawn grey and idle. The generator writes only the series that the cells select, and the `dmap_v4_*` series for both routers.
 
 ## 1.4.0 (Unreleased)
 

@@ -18,13 +18,13 @@
       "targets": [
         { "refId": "lan_tx", "expr": "rate(node_network_transmit_bytes_total{device!~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "tx {{job}} {{device}}" },
         { "refId": "lan_rx", "expr": "rate(node_network_receive_bytes_total{device!~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "rx {{job}} {{device}}" },
-        { "refId": "wan_tx", "expr": "rate(node_network_transmit_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan tx {{job}} {{device}}" },
-        { "refId": "wan_rx", "expr": "rate(node_network_receive_bytes_total{device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan rx {{job}} {{device}}" },
+        { "refId": "wan_tx", "expr": "rate(node_network_transmit_bytes_total{job=~\"node-isp-a|node-radio|node-isp-b\",device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan tx {{job}} {{device}}" },
+        { "refId": "wan_rx", "expr": "rate(node_network_receive_bytes_total{job=~\"node-isp-a|node-radio|node-isp-b\",device=~\"pppoe|dhcp|static|wan1|wan2|wan3\"}[1m]) * 8", "legendFormat": "wan rx {{job}} {{device}}" },
         { "refId": "speed", "expr": "node_network_speed_bytes", "legendFormat": "speed {{job}} {{device}}" },
         { "refId": "up", "expr": "up", "legendFormat": "{{job}}" },
         { "refId": "load", "expr": "node_load1", "legendFormat": "{{job}}" },
         { "refId": "cpu", "expr": "node_cpu_usage_percent{job=~\"node-rtr-a|node-rtr-b\"}", "legendFormat": "{{job}}" },
-        { "refId": "v4_samples", "expr": "dmap_v4_three{job=\"node-rtr-a\"}", "legendFormat": "{{line}}" },
+        { "refId": "v4_samples", "expr": "dmap_v4_three{job=~\"node-rtr-a|node-rtr-b\"}", "legendFormat": "{{line}}" },
         { "refId": "v4_nine", "expr": "dmap_v4_nine", "legendFormat": "{{line}}" }
       ],
       "fieldConfig": {

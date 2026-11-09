@@ -383,8 +383,8 @@ describe('DrawioMapPanel', () => {
     expect(red.getAttribute('data-dmap-step')).toBe('2');
     const lte = container.querySelector(
       'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~lte:static->rtr-a:wan3"]'
-    )!;
-    expect(lte.getAttribute('data-dmap-status')).toBe('nodata');
+    );
+    expect(lte).toBeNull(); // the offline LTE link has no binding
     expect(container.querySelector('[data-cell-id="pg-node~lte"]')!.getAttribute('data-dmap-status')).toBe('critical');
     expect(container.querySelector('[data-cell-id="pg-node~rtr-a"]')!.getAttribute('data-dmap-status')).toBe('normal');
     expect(container.querySelector('svg')!.getAttribute('width')).toBe('100%');

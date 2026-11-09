@@ -118,7 +118,7 @@ describe('v4 demo configs', () => {
     expect(toBitsPerSecond(selected.values[0]!, selected.field.config.unit).bits).toBe(capacity);
   });
 
-  it('makes proxy-b no data while LTE stays down with the generated up series', () => {
+  it('keeps LTE down and every other node up with the generated up series', () => {
     const data = [
       ['net-a', 1],
       ['net-b', 1],
@@ -156,7 +156,7 @@ describe('v4 demo configs', () => {
         theme: createTheme(),
       });
     };
-    expect(status('proxy-b')).toMatchObject({ state: 'missing', reason: 'No data' });
+    expect(status('proxy-b')).toMatchObject({ state: 'normal' });
     expect(status('lte')).toMatchObject({ state: 'down' });
     expect(status('proxy-a')).toMatchObject({ state: 'normal' });
   });
@@ -219,10 +219,10 @@ describe('v4 demo configs', () => {
       if (typeof value === 'string' && key === 'url') {
         expect(value).toMatch(/^\/d\/drawiomap-demo\?/);
       } else if (key === 'match') {
-        // All identities come from the demo cells, including the deliberate no-data suffix.
+        // All identities come from the demo cells.
         expect(Object.values(value as MatchV4).flat()).toEqual(expect.arrayContaining([expect.any(String)]));
         for (const matcher of Object.values(value as MatchV4).flat()) {
-          expect(['job', 'device', 'job="${key}-no-data"']).toContain(matcher);
+          expect(['job', 'device']).toContain(matcher);
         }
       } else if (value && typeof value === 'object') {
         for (const [childKey, child] of Object.entries(value)) {

@@ -1,4 +1,4 @@
-import type { Locator, TestInfo } from '@playwright/test';
+import type { APIRequestContext, Locator, TestInfo } from '@playwright/test';
 import { expect, saveDashboard, svg, test } from './authoring-fixtures';
 import type { ConfigV4 } from '../src/model/v4';
 
@@ -10,9 +10,41 @@ async function screenshot(target: Locator, info: TestInfo, name: string) {
   await info.attach(name, { path, contentType: 'image/png' });
 }
 
-test('the v4 demo paints link halves, a down node and a grey node with no data', async ({ gotoDashboardPage }) => {
-  const dashboard = await gotoDashboardPage(DEMO);
-  const panel = dashboard.getPanelByTitle('demo-lab L3').locator;
+/** A copy of the demo dashboard in which proxy-b selects no series: the demo itself has no cell without data. */
+async function greyNodeDashboard(request: APIRequestContext, uid: string) {
+  const demo = await (await request.get(`/api/dashboards/uid/${DEMO.uid}`)).json();
+  const panel = demo.dashboard.panels.find((p: { id: number }) => p.id === 1);
+  const config: ConfigV4 = {
+    ...panel.options.config,
+    overrides: { 'pg-node~proxy-b': { match: { key: 'job="${key}-no-data"' } } },
+  };
+  const dashboard = {
+    ...demo.dashboard,
+    id: null,
+    uid,
+    title: uid,
+    refresh: '',
+    panels: [{ ...panel, options: { ...panel.options, config } }],
+  };
+  const response = await request.post('/api/dashboards/db', { data: { dashboard, overwrite: true } });
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+test('the v4 demo paints link halves, a down node and a grey node with no data', async ({
+  gotoDashboardPage,
+  request,
+}, testInfo) => {
+  const uid = `bv4-${testInfo.workerIndex}-${Date.now()}`;
+  await greyNodeDashboard(request, uid);
+  try {
+    const dashboard = await gotoDashboardPage({ uid });
+    await checkDemoNodes(dashboard.getPanelByTitle('demo-lab L3').locator);
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});
+
+async function checkDemoNodes(panel: Locator) {
   const half = panel.locator(
     'polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="pg-link~net-a:lan->rtr-a:br-lan"]'
   );
@@ -31,7 +63,7 @@ test('the v4 demo paints link halves, a down node and a grey node with no data',
   expect(await paint(down)).not.toBe(await paint(missing));
   const grey = (await paint(missing)).match(/\d+/g)!.slice(0, 3).map(Number);
   expect(Math.max(...grey) - Math.min(...grey)).toBeLessThan(25);
-});
+}
 
 test('the v4 demo shows three history lines on one axis and a history chart region', async ({
   gotoDashboardPage,
@@ -111,7 +143,7 @@ test('nine series show eight lines, +1 more and eight values at the hovered time
   };
   // the stored values of the nine lines at a time, read from the datasource
   const stored = async (ms: number) => {
-    const params = new URLSearchParams({ query: 'dmap_v4_nine', time: String(ms / 1000) });
+    const params = new URLSearchParams({ query: 'dmap_v4_nine{job="node-rtr-a"}', time: String(ms / 1000) });
     const response = await request.get(`/api/datasources/proxy/uid/victoriametrics/api/v1/query?${params}`);
     expect(response.ok()).toBe(true);
     const body = await response.json();
