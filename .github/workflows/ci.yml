@@ -52,17 +52,17 @@ jobs:
       - name: lint
         run: npm run lint
 
-      # The runner has 2 vCPUs (private repository) or 4 (public). The default limits of vitest.config.ts start
-      # 6 workers, and on 2 vCPUs the timed tests then time out. --maxWorkers applies to each of the two pools,
-      # so nproc / 2 for each pool gives one worker per vCPU. The cores are also slower than a developer machine:
+      # The runner has 2 vCPUs (private repository) or 4 (public). The default limit of vitest.config.ts starts
+      # 6 workers, and on 2 vCPUs the timed tests then time out. --maxWorkers is the total for both projects,
+      # so nproc gives one worker per vCPU. The cores are also slower than a developer machine:
       # DMAP_BENCH_BUDGET_SCALE multiplies the time budgets of the benches.
       - name: test
         env:
           DMAP_BENCH_BUDGET_SCALE: '6'
         run: |
-          workers=$(( $(nproc) / 2 ))
+          workers=$(nproc)
           [ "$workers" -ge 1 ] || workers=1
-          echo "vCPUs: $(nproc), workers for each pool: $workers"
+          echo "vCPUs: $(nproc), workers: $workers"
           npm test -- --maxWorkers="$workers"
 
       # Downloads the pinned draw.io release (about 46 MB); scripts/vendor-drawio.sh checks its sha256.
