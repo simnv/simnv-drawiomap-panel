@@ -471,6 +471,30 @@ describe('DrawioModal export', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('after a timeout, a theme change replaces the frame: the busy fence goes with it, and a save completes', async () => {
+    const { port, view } = await open();
+    const first = save(port, '<mxfile>1</mxfile>');
+    await settle(EXPORT_TIMEOUT_MS);
+    expect(screen.getByRole('alert').textContent).toMatch(/did not finish/);
+    // The theme change makes a new srcdoc document: the old port closes, the new document sends its hello.
+    view.rerender(<DrawioModal xml="<mxfile/>" title="t" mode="edit" isDark={true} onSave={onSave} onClose={onClose} />);
+    const next = hello();
+    expect(port.close).toHaveBeenCalled();
+    act(() => next.onmessage?.({ data: JSON.stringify({ event: 'init' }) }));
+    // The new frame loads the content of the save that timed out.
+    expect(JSON.parse(next.postMessage.mock.calls[0][0])).toMatchObject({ action: 'load', xml: '<mxfile>1</mxfile>' });
+    act(() => next.onmessage?.({ data: JSON.stringify({ event: 'load' }) }));
+    expect(modal().getAttribute('data-dmap-editor-phase')).toBe('loaded');
+    const second = save(next, '<mxfile>2</mxfile>');
+    expect(second).toBe(first + 1);
+    expect(requests(next)).toHaveLength(1);
+    reply(next, second, '<mxfile>c2</mxfile>');
+    await act(async () => pending[0].resolve('<mxfile>u2</mxfile>'));
+    expect(onSave).toHaveBeenCalledWith({ xml: '<mxfile>u2</mxfile>', svg: '<svg/>' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('settles an inflate under a React Strict Mode replay of the effects', async () => {
     render(
       <React.StrictMode>

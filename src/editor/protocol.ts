@@ -72,7 +72,8 @@ export interface ProtocolState {
   failure?: string;
   /**
    * The export `seq` got no reply in time, and draw.io may still run it (its spinner stays active until it ends,
-   * and it drops a request in that time). A save waits in `pending` until the late reply frees the editor.
+   * and it drops a request in that time). A save waits in `pending` until the late reply frees the editor, or
+   * until a new frame replaces the old one (its `init` drops the fence with the frame).
    */
   busy?: number;
 }
@@ -223,9 +224,25 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
         ],
       };
     case 'init': {
+      // The init of a frame. A theme change replaces the srcdoc document: the old frame, its port, its export and
+      // its busy fence are gone with it, and a reply of the old frame cannot come. A save that was in flight or
+      // waited is the user's intent that the old frame did not fulfil: the new frame loads that xml and exports it
+      // after its load (the newer one wins). A save that failed is not carried: the user was told so.
+      const carried =
+        state.pending ??
+        (state.phase === 'exporting' || state.phase === 'inflating'
+          ? { xml: state.xml, exit: state.pendingExit }
+          : undefined);
+      const fresh: ProtocolState = {
+        phase: 'init',
+        xml: carried?.xml ?? state.xml,
+        pendingExit: false,
+        seq: state.seq,
+        ...(carried ? { pending: carried } : state.failure !== undefined ? { failure: state.failure } : {}),
+      };
       const load: EditorAction = {
         action: 'load',
-        xml: state.xml,
+        xml: fresh.xml,
         autosave: 0,
         title: opts.title,
         modified: 'unsavedChanges',
@@ -233,11 +250,15 @@ export function handleMessage(state: ProtocolState, msg: EditorMessage, opts: Pr
         dark: opts.isDark,
         ...(opts.mode === 'export-only' ? { noSaveBtn: '1', noExitBtn: '1' } : {}),
       };
-      return { ...noop, send: [load] };
+      return { state: fresh, send: [load], close: false };
     }
     case 'load':
       if (opts.mode === 'export-only') {
         return startExport(state, state.xml, true);
+      }
+      if (state.pending) {
+        // The save that a replaced frame carried over: this frame exports it.
+        return startExport(state, state.pending.xml, state.pending.exit);
       }
       return { ...noop, state: { ...state, phase: 'loaded' } };
     case 'save': {

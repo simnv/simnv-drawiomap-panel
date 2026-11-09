@@ -264,6 +264,51 @@ describe('handleMessage in edit mode', () => {
     expect(next.send).toEqual([exportAction(2)]);
     expect(next.state).toEqual({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true, seq: 2 });
   });
+  it('a new frame drops the busy fence of the old one: after its init and load, a save exports at once', () => {
+    // A theme change replaces the srcdoc document: the old frame, its port and its export are gone.
+    const timedOut = exportFailed({ ...loaded, phase: 'exporting', seq: 1 }, 1, 'no reply').state;
+    const init = handleMessage(timedOut, { event: 'init' }, opts);
+    expect(init.send[0]).toMatchObject({ action: 'load', xml });
+    expect(init.state).toEqual({ phase: 'init', xml, pendingExit: false, seq: 1, failure: 'no reply' });
+    const ready = handleMessage(init.state, { event: 'load' }, opts);
+    expect(ready.send).toEqual([]);
+    expect(ready.state.phase).toBe('loaded');
+    const saved = handleMessage(ready.state, { event: 'save', xml: '<mxfile>2</mxfile>' }, opts);
+    expect(saved.send).toEqual([exportAction(2)]);
+    expect(saved.state).toEqual({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: false, seq: 2 });
+    const got = handleMessage(saved.state, reply(2), opts);
+    const done = exportDone(got.state, 2, { xml: '<mxfile>u2</mxfile>', svg: '<svg/>' }, opts);
+    expect(done.result?.xml).toBe('<mxfile>u2</mxfile>');
+    expect(done.state.phase).toBe('loaded');
+  });
+  it('a new frame carries the save that waited or was in flight: it loads that xml and exports it after the load', () => {
+    // The save that waited for the busy editor: the new frame loads its xml, the old failure is gone.
+    const waiting = { ...loaded, seq: 1, failure: 'no reply', busy: 1, pending: { xml: '<mxfile>2</mxfile>', exit: true } };
+    const init = handleMessage(waiting, { event: 'init' }, opts);
+    expect(init.send[0]).toMatchObject({ action: 'load', xml: '<mxfile>2</mxfile>' });
+    expect(init.state).toEqual({
+      phase: 'init',
+      xml: '<mxfile>2</mxfile>',
+      pendingExit: false,
+      seq: 1,
+      pending: { xml: '<mxfile>2</mxfile>', exit: true },
+    });
+    const ready = handleMessage(init.state, { event: 'load' }, opts);
+    expect(ready.send).toEqual([exportAction(2)]);
+    expect(ready.state).toEqual({ phase: 'exporting', xml: '<mxfile>2</mxfile>', pendingExit: true, seq: 2 });
+    // The save in flight on the old frame: its reply can never come, so the new frame exports it again.
+    for (const phase of ['exporting', 'inflating'] as const) {
+      const inFlight = { ...loaded, phase, xml: '<mxfile>3</mxfile>', pendingExit: false, seq: 1 };
+      const again = handleMessage(inFlight, { event: 'init' }, opts);
+      expect(again.state).toEqual({ phase: 'init', xml: '<mxfile>3</mxfile>', pendingExit: false, seq: 1, pending: { xml: '<mxfile>3</mxfile>', exit: false } });
+      // The late work of the old frame is fenced.
+      expect(exportDone(again.state, 1, { xml: '<mxfile>u1</mxfile>', svg: '<svg/>' }, opts).result).toBeUndefined();
+      expect(handleMessage(again.state, reply(1), opts).state).toBe(again.state);
+    }
+    // A newer waiting save wins over the one in flight.
+    const both = { ...loaded, phase: 'exporting' as const, xml: '<mxfile>3</mxfile>', seq: 1, pending: { xml: '<mxfile>4</mxfile>', exit: false } };
+    expect(handleMessage(both, { event: 'init' }, opts).state.xml).toBe('<mxfile>4</mxfile>');
+  });
   it('closes on exit', () => {
     expect(handleMessage(loaded, { event: 'exit' }, opts).close).toBe(true);
   });
