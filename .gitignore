@@ -55,3 +55,6 @@ local/
 
 # TypeScript incremental state (tsconfig.json)
 .cache/
+
+# Local secrets (tokens), never committed
+.env
