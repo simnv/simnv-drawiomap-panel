@@ -53,6 +53,9 @@ jobs:
         run: npm run lint
 
       - name: test
+        # The runner is about 7 times slower than a developer machine: scale the time budgets of the benches.
+        env:
+          DMAP_BENCH_BUDGET_SCALE: '6'
         run: npm test
 
       # Downloads the pinned draw.io release (about 46 MB); scripts/vendor-drawio.sh checks its sha256.

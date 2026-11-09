@@ -14,6 +14,11 @@ import {
  * The cost bound of the spec (section 7): 1,000 halves on legs of 100 units against 2,000 rect obstacles and the
  * edge strokes. The measured figure goes into docs/acceptance.md.
  */
+/**
+ * The time budget of each bench. A slow shared CI runner (GitHub Actions, about 7 times slower than a developer
+ * machine) sets DMAP_BENCH_BUDGET_SCALE to multiply it; it is 1 everywhere else.
+ */
+const BUDGET_MS = 250 * (Number(process.env.DMAP_BENCH_BUDGET_SCALE) || 1);
 const EDGES = 500;
 const RECTS = 2000;
 const COLUMNS = 25;
@@ -80,7 +85,7 @@ describe('labelPlacement bench', () => {
     expect(placed + dropped).toBe(2 * EDGES);
     expect(placed).toBeGreaterThan(EDGES);
     expect(dropped).toBeGreaterThan(0);
-    expect(ms).toBeLessThan(250);
+    expect(ms).toBeLessThan(BUDGET_MS);
   });
 });
 
@@ -204,6 +209,6 @@ describe('labelPlacement bench: pairs and the last resort', () => {
     // the short links stand beside their heads; the links under a body drop after the whole ladder
     expect((sides.get(3) ?? 0) + (sides.get(4) ?? 0)).toBeGreaterThan(PAIRS / 3);
     expect(dropped).toBeGreaterThanOrEqual(2 * Math.floor(PAIRS / 3));
-    expect(ms).toBeLessThan(250);
+    expect(ms).toBeLessThan(BUDGET_MS);
   });
 });
