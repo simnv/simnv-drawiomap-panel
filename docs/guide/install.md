@@ -33,3 +33,22 @@ curl -LO https://github.com/simnv/simnv-drawiomap-panel/releases/latest/download
 sha256sum -c simnv-drawiomap-panel.zip.sha256
 unzip simnv-drawiomap-panel.zip -d /var/lib/grafana/plugins
 ```
+
+## Troubleshooting
+
+**The panel shows "Panel plugin not found", and the Grafana log has these lines:**
+
+```
+Plugin is unsigned ... could not find a MANIFEST.txt
+Skipping loading plugin due to problem with signature
+Plugin validation failed ... has no signature
+```
+
+Grafana installed the zip, but it did not get `allow_loading_unsigned_plugins`. When the setting is in effect, the log has `Permitting unsigned plugin` after `Plugin is unsigned`, and the plugin loads. Check the setting:
+
+1. The value is exactly `simnv-drawiomap-panel`. To allow more plugins, separate the ids with commas.
+2. In `grafana.ini`, the key is in the section `[plugins]`. With the Helm chart, put it in `grafana.ini` > `plugins`, or in `env` as `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS`.
+3. Grafana reads the setting only when it starts. Restart Grafana after you change it.
+4. To see the value that Grafana uses, open **Administration > General > Settings** (or `GET /api/admin/settings`) and find `allow_loading_unsigned_plugins` in the section `plugins`.
+
+**The panel shows "Panel plugin not found" in the development stack of this repository:** `dist/` has no built plugin. Run `npm run build` before `docker compose up`.
