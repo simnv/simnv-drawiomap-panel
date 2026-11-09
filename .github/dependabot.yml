@@ -15,17 +15,18 @@ updates:
       production-dependencies:
         dependency-type: production
     ignore:
-      # Grafana externals and React: the plugin follows the oldest Grafana version that it supports.
+      # Grafana externals and React: the plugin builds against the oldest Grafana version that it supports.
+      # The @grafana packages get patch updates only; a minor or major bump follows grafanaDependency in plugin.json.
       - dependency-name: "@grafana/data"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "@grafana/ui"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "@grafana/runtime"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "@grafana/i18n"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "@grafana/schema"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: react
         update-types: ["version-update:semver-major"]
       - dependency-name: react-dom

@@ -31,9 +31,8 @@ export function panelSnapshot(data: PanelData | undefined, refId: string, now: (
 function read(data: PanelData, refId: string, fetchedAt: number): QuerySnapshot {
   // Grafana 12.3 and 12.4 (runRequest.ts) still set only `error`, not `errors`, for a thrown request error
   // (catchError) and for a response packet that has only `error`. Reading both is needed.
-  /* eslint-disable @typescript-eslint/no-deprecated */
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
   const errors = [...(data.errors ?? []), ...(data.error ? [data.error] : [])];
-  /* eslint-enable @typescript-eslint/no-deprecated */
   // A refId-specific failure belongs to that query. Error without details is request-wide.
   if (
     errors.some((error) => !error.refId || error.refId === refId) ||
