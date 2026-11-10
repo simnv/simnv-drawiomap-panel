@@ -17,8 +17,9 @@ export const LAYOUT_EVENT = 'dmap-layout';
  * layout. `zoom` must keep its identity while its values stay the same.
  *
  * The scale of the value labels needs the rendered size of the svg. A `ResizeObserver` on the root keeps it, so a
- * pan or a zoom reads no layout; a layout that changes the size of the svg (a new zoom mode, a new box) reads it
- * once, before the observer reports the new size.
+ * pan or a zoom reads no layout here; a layout that changes the size of the svg (a new zoom mode, a new box) reads it
+ * once, before the observer reports the new size. A listener of `LAYOUT_EVENT` can read layout: while a cell shows
+ * its focus ring or outline, `useCellPlaces` reads one screen matrix and one wrapper box for each live step.
  *
  * Returns `live`: writes a view of a gesture in progress (the view box and the label scale, nothing else changes
  * during a gesture) without a render. The gesture commits its view to `view` when it ends; the effect then writes the
