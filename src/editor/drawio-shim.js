@@ -17,6 +17,9 @@
  * Export: draw.io embeds images as data: URLs (embedImages). It cannot read image files of dist/drawio (no CORS), so
  * js/PostConfig.js calls dmapAfterApp(), which makes Editor.convertImageToDataUri ask the host for these files through
  * the channel (src/editor/files.ts).
+ *
+ * Input: Safari on macOS sends a quick two-finger tap as a right press without a release. The shim adds the release
+ * (watchRightRelease), so draw.io opens its menu and does not pan the canvas.
  */
 (function () {
   const base = document.baseURI;
@@ -244,6 +247,134 @@
       });
     };
   };
+
+  /**
+   * Lost right-button release. Safari on macOS sends a quick two-finger tap as a right press with no button down in
+   * `buttons`, and then sends no release. draw.io starts a right-button pan on the press and opens the menu on the
+   * release. Without the release, every later move pans the canvas, and the menu opens only on the next right click.
+   *
+   * For each event family (draw.io uses mouse events on a Mac and pointer events elsewhere), the shim watches the right
+   * presses on the diagram canvas and sends the missing release at the place and target of the press:
+   * - after the context menu event of a press with no button down,
+   * - before the first move of the same pointer with no button down,
+   * - before the next right press of the same pointer, or the next press with no button down.
+   * A release from the browser ends the watch, so a normal right click gets no second release. A press or move with
+   * another button down (Ctrl + click in Firefox on a Mac, a chorded press) never ends a right drag.
+   *
+   * Trade-off: a right press that loses its release for another reason (a focus change while the button is down)
+   * also ends at the next move with no button down. If the pointer did not move, draw.io then opens its menu at the
+   * press. Without the shim, every move would pan the canvas.
+   */
+  function watchRightRelease(down, move, up, Ctor) {
+    let open = null;
+
+    function release() {
+      const press = open;
+      open = null;
+      if (press == null) {
+        return;
+      }
+      const e = press.event;
+      const init = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: e.view,
+        detail: e.detail,
+        button: 2,
+        buttons: 0,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        screenX: e.screenX,
+        screenY: e.screenY,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        metaKey: e.metaKey,
+        pointerId: e.pointerId,
+        pointerType: e.pointerType,
+        isPrimary: e.isPrimary,
+      };
+      const target = press.target.isConnected ? press.target : document;
+      target.dispatchEvent(new Ctor(up, init));
+    }
+
+    /**
+     * Only a press on the diagram canvas starts a pan. Other targets get no added release: on a row of the draw.io
+     * menu, a release runs the menu item, also after the user dragged out of the frame to cancel it.
+     */
+    function onCanvas(target) {
+      return target instanceof Element && target.closest('.geDiagramContainer') != null;
+    }
+
+    /** Mouse events have no pointerId: they always match. */
+    function samePointer(e) {
+      return open != null && open.event.pointerId === e.pointerId;
+    }
+
+    document.addEventListener(
+      down,
+      function (e) {
+        if (samePointer(e) && (e.button === 2 || e.buttons === 0)) {
+          release();
+        }
+        if (e.button === 2 && onCanvas(e.target)) {
+          open = { event: e, target: e.target, lost: e.buttons === 0 };
+        }
+      },
+      true
+    );
+    document.addEventListener(
+      move,
+      function (e) {
+        if (samePointer(e) && e.buttons === 0) {
+          release();
+        }
+      },
+      true
+    );
+    document.addEventListener(
+      up,
+      function (e) {
+        if (samePointer(e) && e.button === 2) {
+          open = null;
+        }
+      },
+      true
+    );
+    if (up === 'pointerup') {
+      document.addEventListener(
+        'pointercancel',
+        function (e) {
+          if (samePointer(e)) {
+            open = null;
+          }
+        },
+        true
+      );
+    }
+    // The timer runs after all context menu handlers, so the order is the order of a Mac: press, menu event, release.
+    // It releases only the press that was open at the menu event.
+    document.addEventListener(
+      'contextmenu',
+      function () {
+        const press = open;
+        if (press != null && press.lost) {
+          setTimeout(function () {
+            if (open === press) {
+              release();
+            }
+          }, 0);
+        }
+      },
+      true
+    );
+  }
+
+  if (typeof PointerEvent === 'function') {
+    watchRightRelease('pointerdown', 'pointermove', 'pointerup', PointerEvent);
+  }
+  watchRightRelease('mousedown', 'mousemove', 'mouseup', MouseEvent);
 
   openChannel();
 })();
