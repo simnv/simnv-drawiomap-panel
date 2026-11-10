@@ -1,5 +1,6 @@
 import type { CellIndex, ZoomAlign, ZoomOptions } from '../types';
-import { applyMatrix, toRoot } from './geometry';
+import type { Matrix } from './geometry';
+import { paintedBox, screenCtm } from './paintedBox';
 
 export interface ViewBox {
   x: number;
@@ -174,30 +175,23 @@ export function pinchView(
   return { x: anchor.x - (mid.x - rect.left - ox) / k, y: anchor.y - (mid.y - rect.top - oy) / k, w, h };
 }
 
-/** The box of a cell group in the user space of its svg; undefined when the engine gives no finite box. */
-function cellBox(group: SVGGElement): { x0: number; y0: number; x1: number; y1: number } | undefined {
+/**
+ * The painted box of a cell group in the user space of its svg (`paintedBox`); undefined when it has none. `ctms`
+ * keeps the screen matrix of each root for one pass.
+ */
+function cellBox(
+  group: SVGGElement,
+  ctms: Map<SVGSVGElement, Matrix | undefined>
+): { x0: number; y0: number; x1: number; y1: number } | undefined {
   const root = group.ownerSVGElement;
-  if (!root || typeof group.getBBox !== 'function') {
+  if (!root) {
     return undefined;
   }
-  try {
-    const b = group.getBBox();
-    const m = toRoot(group, root);
-    if (!m || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) {
-      return undefined;
-    }
-    const corners = [
-      [b.x, b.y],
-      [b.x + b.width, b.y],
-      [b.x, b.y + b.height],
-      [b.x + b.width, b.y + b.height],
-    ].map(([x, y]) => applyMatrix(m, { x, y }));
-    const xs = corners.map((p) => p.x);
-    const ys = corners.map((p) => p.y);
-    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
-  } catch {
-    return undefined;
+  if (!ctms.has(root)) {
+    ctms.set(root, screenCtm(root));
   }
+  const b = paintedBox(group, root, ctms.get(root));
+  return b && { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
 }
 
 /**
@@ -207,9 +201,10 @@ function cellBox(group: SVGGElement): { x0: number; y0: number; x1: number; y1: 
  */
 export function fitCells(index: CellIndex, ids: string[], base: ViewBox, margin: number): ViewBox {
   let union: { x0: number; y0: number; x1: number; y1: number } | undefined;
+  const ctms = new Map<SVGSVGElement, Matrix | undefined>();
   for (const id of ids) {
     const group = index.get(id)?.group;
-    const box = group && cellBox(group);
+    const box = group && cellBox(group, ctms);
     if (box) {
       union = union
         ? {

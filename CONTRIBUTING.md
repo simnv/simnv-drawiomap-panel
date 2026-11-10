@@ -37,7 +37,7 @@ npm run e2e:12.3          # Playwright project `matrix` on Grafana 12.3 (the sta
 npm run e2e:12            # Playwright project `matrix` on Grafana 12.4
 npm run e2e:13            # Playwright projects `matrix` and `plugin` on Grafana 13
 npm run e2e:matrix        # all three: the version split suite
-npm run e2e:webkit        # the WebKit check of the card tooltip on Grafana 13
+npm run e2e:webkit        # the WebKit checks on Grafana 13: the card tooltip and the painted cell box
 npm run e2e:release       # everything on both versions, then the WebKit check (before a tag)
 npm run stack:wait        # wait for the demo series, Grafana health and the plugin (bounded, no fixed sleep)
 npm run package           # artifacts/simnv-drawiomap-panel-<version>.zip (run npm run build first)

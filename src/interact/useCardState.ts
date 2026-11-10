@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { LEGEND_ROW_ATTR } from '../legend/symbolRows';
+import { paintedClientBox } from '../render/paintedBox';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
 import { cardReducer, type CardAction, type CardState } from './cardState';
 import { patchAt } from './hit';
@@ -134,9 +135,11 @@ export function useCardInput(args: InputArgs) {
     }
     e.preventDefault();
     const r = wrapperRef.current!.getBoundingClientRect();
-    const b = e.target.getBoundingClientRect();
+    // the painted box: the group box of a cell with a draw.io HTML label is the whole viewport
+    const c = e.target.getBoundingClientRect();
+    const b = paintedClientBox(e.target) ?? { x: c.left, y: c.top, width: c.width, height: c.height };
     opener.current = e.target;
-    dispatch({ type: 'pin', at: { cellId: patch.cellId, x: b.left + b.width / 2 - r.left, y: b.bottom - r.top } });
+    dispatch({ type: 'pin', at: { cellId: patch.cellId, x: b.x + b.width / 2 - r.left, y: b.y + b.height - r.top } });
   };
   const moveRef = useRef<(() => void) | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);

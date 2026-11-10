@@ -5,6 +5,13 @@ import type { ZoomOptions } from '../types';
 import type { Stage } from './useStage';
 
 /**
+ * The event that the root gets after each write of its view box: a layout pass and each live step of a gesture.
+ * The cell places (`useCellPlaces`) map their boxes on it, so they never depend on the order of the effects of a
+ * component tree, and they follow a gesture that renders nothing. It does not bubble.
+ */
+export const LAYOUT_EVENT = 'dmap-layout';
+
+/**
  * Lays the stage out in its box: the view box of the zoom options, then the scale of the value labels, then the
  * overflow of the container. A live view (pan or zoom) changes the view box only. Without a box the stage keeps its
  * layout. `zoom` must keep its identity while its values stay the same.
@@ -69,6 +76,7 @@ export function useStageLayout(
     if (containerRef.current) {
       containerRef.current.style.overflow = layout.overflow;
     }
+    stage.root.dispatchEvent(new Event(LAYOUT_EVENT));
   }, [stage.root, stage.base, zoom, width, height, view, containerRef]);
   const root = stage.root;
   const live = useCallback(
@@ -79,6 +87,7 @@ export function useStageLayout(
       pending.current = next;
       root.setAttribute('viewBox', `${next.x} ${next.y} ${next.w} ${next.h}`);
       setLinkLabelScale(root, rect.current);
+      root.dispatchEvent(new Event(LAYOUT_EVENT));
     },
     [root]
   );

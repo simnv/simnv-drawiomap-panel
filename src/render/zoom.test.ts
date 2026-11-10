@@ -289,6 +289,16 @@ describe('fitCells', () => {
     expect(fitCells(index, ['a'], base, 0)).toEqual({ x: 150, y: 100, w: 200, h: 100 });
   });
 
+  it('a cell with an HTML label fits its painted box, not the 100% foreignObject that fills the group box', () => {
+    // a browser gives the group of an HTML-label cell the box of the whole viewport
+    const index = indexOf({ a: { box: [0, 0, 1000, 500] } });
+    const group = index.get('a')!.group;
+    group.innerHTML =
+      '<rect x="100" y="50" width="200" height="100"/>' +
+      '<switch><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">a</div></foreignObject></switch>';
+    expect(fitCells(index, ['a'], base, 0)).toEqual({ x: 100, y: 50, w: 200, h: 100 });
+  });
+
   it('a small cell zooms in no more than MAX_SCALE', () => {
     const index = indexOf({ a: { box: [500, 250, 1, 1] } });
     const vb = fitCells(index, ['a'], base, 0);
