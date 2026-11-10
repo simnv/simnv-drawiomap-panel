@@ -1,5 +1,4 @@
 import { expect, saveDashboard, test } from './authoring-fixtures';
-import { inflateRawSync } from 'node:zlib';
 
 test('edit mode opens the bundled draw.io editor, saves, and the panel updates', async ({
   gotoPanelEditPage,
@@ -168,12 +167,10 @@ test('geometry export through the Diagram option keeps bind and key through dash
   await saveDashboard(page, panelEditPage);
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   const options = saved.dashboard.panels[0].options;
-  const encoded = /<diagram[^>]*>([^<]+)<\/diagram>/.exec(options.diagram.xml)?.[1];
-  const decoded = encoded
-    ? decodeURIComponent(inflateRawSync(Buffer.from(encoded, 'base64')).toString())
-    : options.diagram.xml;
-  expect(decoded).toMatch(/<object [^>]*id="device-1"[^>]*bind="routers"[^>]*key="router-1"/);
-  expect(decoded).toMatch(/<object [^>]*id="chart-1"[^>]*bind="trend-region"[^>]*key="trend"/);
+  // The stored page is not compressed: the inspector can write to it without another save in draw.io.
+  expect(options.diagram.xml).toMatch(/<diagram[^>]*>\s*<mxGraphModel/);
+  expect(options.diagram.xml).toMatch(/<object [^>]*id="device-1"[^>]*bind="routers"[^>]*key="router-1"/);
+  expect(options.diagram.xml).toMatch(/<object [^>]*id="chart-1"[^>]*bind="trend-region"[^>]*key="trend"/);
   expect(options.diagram.svg).toContain('data-meta-bind="routers"');
   // The geometry edit does not change the bindings of the panel.
   expect(options.config).toEqual(config);
@@ -220,10 +217,7 @@ test('a chart assignment through the split editor survives Apply, dashboard save
   await saveDashboard(page, panelEditPage);
   const saved = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
   const options = saved.dashboard.panels[0].options;
-  const encoded = /<diagram[^>]*>([^<]+)<\/diagram>/.exec(options.diagram.xml)?.[1];
-  const decoded = encoded
-    ? decodeURIComponent(inflateRawSync(Buffer.from(encoded, 'base64')).toString())
-    : options.diagram.xml;
+  const decoded = options.diagram.xml;
   // The bare mxCell now has the <object> wrapper that holds the attributes (spec 5.5).
   expect(decoded).toMatch(/<object [^>]*id="ordinary-chart"[^>]*bind="trend-region"[^>]*key="trend"/);
   expect(decoded).not.toMatch(/<mxCell [^>]*id="ordinary-chart"/);

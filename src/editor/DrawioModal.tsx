@@ -1,18 +1,21 @@
-import React, { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { Alert, Button, Icon, Modal, Spinner, Toggletip } from '@grafana/ui';
 import type { DrawioModalProps } from '../types';
 import {
   acceptChannelHello,
-  EditorAction,
   EditorMessage,
+  exportDone,
+  exportFailed,
   frameWindow,
   handleMessage,
   initialState,
   newChannelToken,
   parseMessage,
   ProtocolState,
+  Step,
 } from './protocol';
+import { inflatePages } from './inflate';
 import { useOverlay } from './popup/overlayStack';
 import { dialogModalClass } from './dialogSize';
 import { parseFileRequest, readEditorFile } from './files';
@@ -88,6 +91,12 @@ const FAILURES: Partial<Record<EditorLoad, { title: string; hint: string }>> = {
 const HELP =
   'Move or resize chart rectangles here. Keep cell IDs unchanged to retain bindings. Assign queries and chart settings in the panel inspector.';
 
+/** How long the host waits for the reply of an export. The editor embeds the images of the diagram in that time. */
+export const EXPORT_TIMEOUT_MS = 60_000;
+const EXPORT_TIMEOUT = `The export did not finish in ${EXPORT_TIMEOUT_MS / 1000} s. The diagram was not saved.`;
+const EDITOR_BUSY =
+  'The editor is still running the previous export. This save follows it. If it does not finish, close the editor and open it again.';
+
 /** Shows the bundled draw.io editor in embed mode inside a sandboxed iframe. Only this component loads draw.io code. */
 export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: DrawioModalProps) {
   // The modal is on top of the overlay stack, so the bindings popup under it ignores Esc.
@@ -95,6 +104,14 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stateRef = useRef<ProtocolState>(initialState(xml));
   const [phase, setPhase] = useState<ProtocolState['phase']>('init');
+  /** Why the last export stored nothing. */
+  const [exportFailure, setExportFailure] = useState<string>();
+  /** A save waits for the editor, which may still run the export that the deadline gave up on. */
+  const [queued, setQueued] = useState(false);
+  /** The id of the export that the host waits for, while the phase is exporting. */
+  const [waiting, setWaiting] = useState<number>();
+  /** True while the editor is mounted (the effect below sets it): an inflate that ends after the unmount stores nothing. */
+  const live = useRef(false);
   // A new token for each modal. The bundled editor sends it back in its channel hello.
   const [token] = useState(newChannelToken);
   const base = useMemo(() => bundledEditorBase(), []);
@@ -112,22 +129,58 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     propsRef.current = { mode, title, isDark, onSave, onClose };
   });
 
+  const options = () => {
+    const { onSave: _save, onClose: _close, ...opts } = propsRef.current;
+    return opts;
+  };
+  /** Applies one step of the protocol: the state, the replies to the editor, the stored diagram and the close. */
+  const apply = useCallback((step: Step) => {
+    stateRef.current = step.state;
+    setPhase(step.state.phase);
+    setExportFailure(step.state.failure);
+    setQueued(step.state.phase === 'loaded' && step.state.busy !== undefined && step.state.pending !== undefined);
+    setWaiting(step.state.phase === 'exporting' ? step.state.seq : undefined);
+    for (const action of step.send) {
+      portRef.current?.postMessage(JSON.stringify(action));
+    }
+    if (step.result) {
+      propsRef.current.onSave(step.result);
+    }
+    if (step.close) {
+      propsRef.current.onClose();
+    }
+  }, []);
+
+  // The reply of an export has the SVG and the xml of one snapshot, with compressed pages: inflate them, then
+  // store both. A save in the meantime, or the unmount, makes the result stale (exportDone drops it).
+  const inflate = useCallback(
+    (raw: { xml: string; svg: string }, seq: number) => {
+      inflatePages(raw.xml).then(
+        (xml) => {
+          if (live.current) {
+            apply(exportDone(stateRef.current, seq, { xml, svg: raw.svg }, options()));
+          }
+        },
+        (error: unknown) => {
+          if (live.current) {
+            apply(exportFailed(stateRef.current, seq, error instanceof Error ? error.message : String(error)));
+          }
+        }
+      );
+    },
+    [apply]
+  );
+
   useEffect(() => {
-    const run = (msg: EditorMessage, reply: (action: EditorAction) => void) => {
-      const { onSave, onClose, ...opts } = propsRef.current;
-      const step = handleMessage(stateRef.current, msg, opts);
-      stateRef.current = step.state;
-      setPhase(step.state.phase);
+    const run = (msg: EditorMessage) => {
+      const step = handleMessage(stateRef.current, msg, options());
       if (msg.event === 'init') {
         // draw.io runs in the frame of the accepted hello: the probe of this modal cannot remove it any more.
         dispatchLoad('init');
       }
-      step.send.forEach(reply);
-      if (step.result) {
-        onSave(step.result);
-      }
-      if (step.close) {
-        onClose();
+      apply(step);
+      if (step.export) {
+        inflate(step.export, step.state.seq);
       }
     };
     const bindPort = (port: MessagePort, base: string) => {
@@ -139,7 +192,7 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
         }
         const msg = parseMessage(m.data);
         if (msg) {
-          run(msg, (action) => port.postMessage(JSON.stringify(action)));
+          run(msg);
         }
       };
     };
@@ -162,7 +215,16 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [target, token]);
+  }, [target, token, apply, inflate]);
+
+  // An export with no reply in time stores nothing. Its late reply is stale: exportFailed moved the phase on.
+  useEffect(() => {
+    if (waiting === undefined) {
+      return;
+    }
+    const timer = setTimeout(() => apply(exportFailed(stateRef.current, waiting, EXPORT_TIMEOUT)), EXPORT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [waiting, apply]);
 
   // A new srcdoc document (theme change) must send a new hello in time.
   useEffect(() => {
@@ -202,9 +264,14 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
     return () => clearTimeout(timer);
   }, [load]);
 
+  // Strict Mode replays this effect: the setup makes the editor live again after the replayed cleanup.
   useEffect(() => {
     const ref = portRef;
-    return () => ref.current?.close();
+    live.current = true;
+    return () => {
+      live.current = false;
+      ref.current?.close();
+    };
   }, []);
 
   const heading = mode === 'edit' ? 'draw.io editor' : 'Exporting diagram';
@@ -251,6 +318,22 @@ export function DrawioModal({ xml, title, mode, isDark, onSave, onClose }: Drawi
               Close
             </Button>
           </Alert>
+        )}
+        {!failure && exportFailure && (
+          <Alert title={exportFailure} severity="error" data-testid="dmap-export-failure">
+            {mode === 'edit' ? (
+              <p>Save again. The last saved diagram is unchanged.</p>
+            ) : (
+              <Button data-testid="dmap-editor-close" variant="secondary" onClick={onClose}>
+                Close
+              </Button>
+            )}
+          </Alert>
+        )}
+        {!failure && queued && (
+          <div role="status" className={styles.status} data-testid="dmap-export-queued">
+            <Spinner inline /> {EDITOR_BUSY}
+          </div>
         )}
         {!failure && ((load !== 'ready' && load !== 'running') || phase === 'init') && (
           <div role="status" className={styles.status}>
