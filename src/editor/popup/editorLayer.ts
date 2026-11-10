@@ -19,7 +19,7 @@ export interface StageSelection {
 }
 
 /** The sets of the cells that a selection tags, and the union of them. */
-interface Tagged {
+export interface Tagged {
   selected: Set<string>;
   extra: Set<string>;
   missed: Set<string>;
@@ -30,7 +30,7 @@ interface Tagged {
   all: Set<string>;
 }
 
-function tag(selection: StageSelection): Tagged {
+export function tagSelection(selection: StageSelection): Tagged {
   const { selected, primary, extra, missed, affected, highlight, lighter } = selection;
   const sets = {
     selected: new Set(selected),
@@ -52,6 +52,25 @@ function tag(selection: StageSelection): Tagged {
 
 const flag = (on: boolean) => (on ? 'true' : 'false');
 
+/** The `data-dmap-*` flags of the cell `id`: the cell group and its outline in the stage carry the same ones. */
+export function cellFlags(tagged: Tagged, id: string): Record<string, 'true' | 'false'> {
+  return {
+    'data-dmap-selected': flag(tagged.selected.has(id)),
+    'data-dmap-primary': flag(id === tagged.primary),
+    'data-dmap-extra': flag(tagged.extra.has(id)),
+    'data-dmap-missed': flag(tagged.missed.has(id)),
+    'data-dmap-affected': flag(tagged.affected.has(id)),
+    'data-dmap-highlight': flag(tagged.highlight.has(id)),
+    'data-dmap-lighter': flag(tagged.lighter.has(id)),
+  };
+}
+
+/** The cell `id` has an outline: a flag other than `primary` (that one only moves the outline out) is on. */
+export const isOutlined = (tagged: Tagged, id: string) =>
+  [tagged.selected, tagged.extra, tagged.missed, tagged.affected, tagged.highlight, tagged.lighter].some((set) =>
+    set.has(id)
+  );
+
 export interface EditorLayer {
   /** Write the editor attributes for `selection`. Only the cells that the old or the new selection tags change. */
   apply: (selection: StageSelection) => void;
@@ -71,7 +90,7 @@ export function createEditorLayer(index: CellIndex): EditorLayer {
 
   return {
     apply(selection) {
-      const next = tag(selection);
+      const next = tagSelection(selection);
       const touch = last === null ? index.keys() : new Set([...last, ...next.all]);
       for (const id of touch) {
         const cell = index.get(id);
@@ -82,13 +101,7 @@ export function createEditorLayer(index: CellIndex): EditorLayer {
           tabindex: '0',
           role: 'button',
           'aria-label': `${id} diagram element`,
-          'data-dmap-selected': flag(next.selected.has(id)),
-          'data-dmap-primary': flag(id === next.primary),
-          'data-dmap-extra': flag(next.extra.has(id)),
-          'data-dmap-missed': flag(next.missed.has(id)),
-          'data-dmap-affected': flag(next.affected.has(id)),
-          'data-dmap-highlight': flag(next.highlight.has(id)),
-          'data-dmap-lighter': flag(next.lighter.has(id)),
+          ...cellFlags(next, id),
         });
       }
       last = next.all;

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { paintedClientBox } from '../../render/paintedBox';
 
 /** The pointer moves less than this distance, in CSS pixels, and the press is a click, not a band. */
 const BAND_SLOP = 4;
@@ -32,8 +33,14 @@ interface Band {
   moved: boolean;
 }
 
-const overlaps = (a: BoxRect, b: DOMRect | BoxRect) =>
+const overlaps = (a: BoxRect, b: BoxRect) =>
   a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+
+/** The band touches what the element paints (`paintedClientBox`), not the box of a 100% HTML label in it. */
+const touches = (area: BoxRect, el: Element) => {
+  const b = paintedClientBox(el);
+  return !!b && overlaps(area, { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height });
+};
 
 /**
  * The box select of the diagram stage: Shift + drag with a mouse or a pen.
@@ -189,7 +196,7 @@ export function useBoxSelect({ wrapperRef, targets, onSelect, ignore }: BoxSelec
       }
       markClick();
       const { targets: list, onSelect: select } = latest.current;
-      select(list().flatMap(({ id, el: target }) => (overlaps(area, target.getBoundingClientRect()) ? [id] : [])));
+      select(list().flatMap(({ id, el: target }) => (touches(area, target) ? [id] : [])));
     };
     const onCancel = (e: PointerEvent) => {
       const b = band.current;

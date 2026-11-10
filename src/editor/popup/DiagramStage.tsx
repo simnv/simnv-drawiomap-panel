@@ -5,6 +5,7 @@ import { IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import type { Badge } from '../split/cellsForPath';
 import { cellAt } from '../../interact/hit';
 import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../../legend/highlight';
+import { paintedClientBox } from '../../render/paintedBox';
 import type { ViewBox } from '../../render/zoom';
 import { DEFAULT_OPTIONS, type PatchMap, type ZoomOptions } from '../../types';
 import { usePanZoom } from '../../stage/usePanZoom';
@@ -13,7 +14,14 @@ import { useStageLayout } from '../../stage/useStageLayout';
 import { useStagePaint } from '../../stage/useStagePaint';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
 import { boxTargets } from './boxTargets';
-import { createEditorLayer, type EditorLayer, type StageSelection } from './editorLayer';
+import {
+  cellFlags,
+  createEditorLayer,
+  isOutlined,
+  tagSelection,
+  type EditorLayer,
+  type StageSelection,
+} from './editorLayer';
 import { useBoxSelect } from './useBoxSelect';
 
 export type { StageSelection };
@@ -48,7 +56,23 @@ interface BadgePlace {
   top: number;
 }
 
+/** The outline of a tagged cell: its painted box in px from the top-left corner of the stage, and its flags. */
+interface OutlinePlace extends BadgePlace {
+  width: number;
+  height: number;
+  flags: Record<string, string>;
+}
+
 const FIT: ZoomOptions = { ...DEFAULT_OPTIONS.zoom, mode: 'fit', percent: 100, align: 'center', minScale: 0 };
+
+/** The focus shows: a keyboard focus, not the focus of a click. An engine without `:focus-visible` shows it. */
+const focusVisible = (el: Element) => {
+  try {
+    return el.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+};
 
 const sameBox = (a: ViewBox | undefined, b: ViewBox | undefined) =>
   !!a && !!b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
@@ -133,9 +157,10 @@ export function DiagramStage({
     if (wrapper && badges?.size) {
       const origin = wrapper.getBoundingClientRect();
       for (const id of badges.keys()) {
-        const box = stage.index.get(id)?.group.getBoundingClientRect();
+        const group = stage.index.get(id)?.group;
+        const box = group && paintedClientBox(group);
         if (box) {
-          next.push({ id, left: box.right - origin.left, top: box.top - origin.top });
+          next.push({ id, left: box.x + box.width - origin.left, top: box.y - origin.top });
         }
       }
     }
@@ -178,6 +203,42 @@ export function DiagramStage({
   useEffect(() => {
     layerRef.current?.apply({ selected, affected, highlight, lighter, primary, extra, missed });
   }, [stage.index, selected, affected, highlight, lighter, primary, extra, missed]);
+
+  // The outlines of the tagged cells. A CSS outline on the cell group would take the box of the group, and the
+  // 100% foreignObject of a draw.io HTML label makes that box the whole viewport: the outline goes around the painted
+  // box (`paintedClientBox`) in an overlay. A layout effect, after the layout of the view: no frame shows it behind.
+  const tagged = useMemo(
+    () => tagSelection({ selected, affected, highlight, lighter, primary, extra, missed }),
+    [selected, affected, highlight, lighter, primary, extra, missed]
+  );
+  // The cell with the keyboard focus: the focus ring of the browser would take the box of the group too.
+  const [focused, setFocused] = useState<string | null>(null);
+  const [outlines, setOutlines] = useState<OutlinePlace[]>([]);
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    const next: OutlinePlace[] = [];
+    const ids = new Set([...tagged.all].filter((id) => isOutlined(tagged, id)));
+    // a group that a new root replaced loses the focus with no blur: the ring follows only the active element
+    const ring = focused !== null && stage.index.get(focused)?.group === document.activeElement ? focused : null;
+    if (ring !== null) {
+      ids.add(ring);
+    }
+    if (wrapper && ids.size) {
+      const origin = wrapper.getBoundingClientRect();
+      for (const id of ids) {
+        const group = stage.index.get(id)?.group;
+        const box = group && paintedClientBox(group);
+        if (box && (box.width > 0 || box.height > 0)) {
+          const { x, y, width, height } = box;
+          const flags = { ...cellFlags(tagged, id), 'data-dmap-focus': id === ring ? 'true' : 'false' };
+          next.push({ id, left: x - origin.left, top: y - origin.top, width, height, flags });
+        }
+      }
+    }
+    // The places come from the layout of the external SVG DOM.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOutlines((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
+  }, [tagged, focused, stage.index, view, size]);
   // The cells that the highlight does not hold dim (the dimming of the legend, spec 5.3).
   useEffect(() => {
     const root = stage.root;
@@ -212,6 +273,11 @@ export function DiagramStage({
         }
         pick(e.target, e.shiftKey);
       }}
+      onFocus={(e) => {
+        const id = e.target.getAttribute('data-cell-id');
+        setFocused(id !== null && stage.index.has(id) && focusVisible(e.target) ? id : null);
+      }}
+      onBlur={() => setFocused(null)}
       onKeyDown={(e) => {
         if ((e.key === 'Enter' || e.key === ' ') && pick(e.target, e.shiftKey)) {
           e.preventDefault();
@@ -223,6 +289,16 @@ export function DiagramStage({
         <ChartLayer {...chartLayer} root={stage.root} cells={stage.index} viewport={viewport} revision={revision} />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
+      {outlines.map(({ id, left, top, width, height, flags }) => (
+        <div
+          key={id}
+          className={styles.outline}
+          data-testid="dmap-cell-outline"
+          data-dmap-outline={id}
+          {...flags}
+          style={{ left, top, width, height }}
+        />
+      ))}
       {places.map(({ id, left, top }) => {
         const badge = badges?.get(id);
         return badge ? (
@@ -280,20 +356,33 @@ const getStyles = (theme: GrafanaTheme2) => ({
     height: '100%',
     '& > svg': { display: 'block' },
     // Every cell can be selected: the pointer says so.
-    "& [data-cell-id][role='button']": { cursor: 'pointer' },
-    '& [data-dmap-affected="true"]': { outline: '2px dashed currentColor' },
-    '& [data-dmap-selected="true"]': { outline: '3px solid currentColor' },
-    // The last selected cell is the one that the single-cell sections edit.
-    '& [data-dmap-primary="true"]': { outlineOffset: '2px' },
-    // A proposed selector would also match these cells.
-    '& [data-dmap-extra="true"]': { outline: `3px dashed ${theme.colors.warning.border}`, outlineOffset: '2px' },
-    // The proposed selector misses these selected cells.
-    '& [data-dmap-missed="true"]': { outline: `3px double ${theme.colors.error.border}`, outlineOffset: '2px' },
-    '& [data-dmap-highlight="true"]': { outline: '3px dotted currentColor' },
-    // The cells of the classes that extend the class under the cursor.
-    '& [data-dmap-lighter="true"]': { outline: '2px dotted currentColor', opacity: 0.6 },
+    // The outline of the group would take its box (the whole viewport with an HTML label): the outlines are drawn in
+    // the overlay (`outline`), the focus ring too.
+    "& [data-cell-id][role='button']": { cursor: 'pointer', outline: 'none' },
+    // The cells of the classes that extend the class under the cursor. Their outline is in `outline`.
+    '& [data-dmap-lighter="true"]': { opacity: 0.6 },
     [`& .${LEGEND_MEMBER}`]: { transition: 'opacity 120ms' },
     [`& svg.${LEGEND_ACTIVE} .${LEGEND_MEMBER}:not(.${LEGEND_HIT}):not(:has(.${LEGEND_HIT}))`]: { opacity: 0.2 },
+  }),
+  // The outline of a tagged cell, on its painted box. The order of the rules is the order of precedence: a later
+  // flag wins. It does not catch the pointer.
+  outline: css({
+    position: 'absolute',
+    zIndex: 1,
+    pointerEvents: 'none',
+    // The keyboard focus. The flags of the selection come later and win, as they did over the focus ring.
+    '&[data-dmap-focus="true"]': { outline: `2px solid ${theme.colors.primary.border}` },
+    '&[data-dmap-affected="true"]': { outline: '2px dashed currentColor' },
+    '&[data-dmap-selected="true"]': { outline: '3px solid currentColor' },
+    // The last selected cell is the one that the single-cell sections edit.
+    '&[data-dmap-primary="true"]': { outlineOffset: '2px' },
+    // A proposed selector would also match these cells.
+    '&[data-dmap-extra="true"]': { outline: `3px dashed ${theme.colors.warning.border}`, outlineOffset: '2px' },
+    // The proposed selector misses these selected cells.
+    '&[data-dmap-missed="true"]': { outline: `3px double ${theme.colors.error.border}`, outlineOffset: '2px' },
+    '&[data-dmap-highlight="true"]': { outline: '3px dotted currentColor' },
+    // The cells of the classes that extend the class under the cursor.
+    '&[data-dmap-lighter="true"]': { outline: '2px dotted currentColor', opacity: 0.6 },
   }),
   // A badge: its centre is on the top-right corner of its cell. It does not catch the pointer.
   badge: css({

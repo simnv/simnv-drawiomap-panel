@@ -8,6 +8,7 @@ import { useStage } from '../../stage/useStage';
 import type { ViewBox } from '../../render/zoom';
 import type { CellPatch, PatchMap } from '../../types';
 import type { Badge } from '../split/cellsForPath';
+import { clearTextRanges, clientRect, fakeLayout, fakeTextRanges } from '../../render/layoutTestKit';
 
 const svg = readFileSync(resolve(__dirname, '../../fixtures/authoring.svg'), 'utf8');
 const NONE: StageSelection = { selected: [], affected: [], highlight: [] };
@@ -521,5 +522,146 @@ describe('DiagramStage box select', () => {
     expect(cell('device-2').getAttribute('data-dmap-extra')).toBe('true');
     expect(cell('link-1').getAttribute('data-dmap-missed')).toBe('true');
     expect(cell('device-1').getAttribute('data-dmap-missed')).toBe('false');
+  });
+});
+
+describe('DiagramStage painted boxes', () => {
+  // A hand-drawn diagram with draw.io HTML labels: each label is a foreignObject of 100% x 100%, so the client box of
+  // a cell group is the whole stage (800 x 600 here). node-a paints at 100..220 x 50..110, node-b at 400..520 x 80..140.
+  const handHtml = readFileSync(resolve(__dirname, '../../../fixtures/demo/svg/hand-html-labels.svg'), 'utf8');
+  const rectOf = clientRect;
+  const shapes: Record<string, [number, number, number, number]> = {
+    'node-a': [100, 50, 220, 110],
+    'node-b': [400, 80, 520, 140],
+    note: [0, 0, 0, 0],
+  };
+  const texts: Record<string, [number, number, number, number]> = {
+    'rtr-a': [145, 72, 175, 86],
+    'rtr-b': [445, 102, 475, 116],
+    uplink: [290, 60, 322, 73],
+    'site 23 uplinks': [250, 400, 330, 414],
+  };
+  beforeEach(() => {
+    fakeLayout((el) => {
+      const id = el.closest('[data-cell-id]')?.getAttribute('data-cell-id') ?? '';
+      if (el.localName === 'rect' && shapes[id]) {
+        return rectOf(...shapes[id]);
+      }
+      // edge-ab: its stroke and its arrow
+      return el.localName === 'path' && id === 'edge-ab' ? rectOf(220, 60, 400, 110) : undefined;
+    });
+    fakeTextRanges(Object.fromEntries(Object.entries(texts).map(([text, box]) => [text, rectOf(...box)])));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearTextRanges();
+  });
+
+  const outline = (id: string) =>
+    document.querySelector(`[data-testid="dmap-cell-outline"][data-dmap-outline="${id}"]`);
+  const placeOf = (el: Element | null) => {
+    const s = (el as HTMLElement).style;
+    return [s.left, s.top, s.width, s.height];
+  };
+
+  it('outlines a selected HTML-label cell around the shape it paints, not around the whole stage', async () => {
+    render(<Harness svg={handHtml} selection={{ ...NONE, selected: ['node-a'], primary: 'node-a' }} />);
+    await frame();
+    const box = outline('node-a');
+    expect(placeOf(box)).toEqual(['100px', '50px', '120px', '60px']);
+    expect(box!.getAttribute('data-dmap-selected')).toBe('true');
+    expect(box!.getAttribute('data-dmap-primary')).toBe('true');
+    // the cell group keeps its flags for the tests and the styles of the stage
+    const group = screen.getByTestId('dmap-popup-stage').querySelector('g[data-cell-id="node-a"]')!;
+    expect(group.getAttribute('data-dmap-selected')).toBe('true');
+  });
+
+  it('outlines each tagged cell once, with the flags of the selection, and only the tagged cells', async () => {
+    const view = render(
+      <Harness
+        svg={handHtml}
+        selection={{ ...NONE, selected: ['node-a'], highlight: ['edge-ab'], affected: ['node-b'] }}
+      />
+    );
+    await frame();
+    const all = screen.getAllByTestId('dmap-cell-outline').map((el) => el.getAttribute('data-dmap-outline'));
+    expect(all.sort()).toEqual(['edge-ab', 'node-a', 'node-b']);
+    // the edge: its stroke and its label text, which sits above the stroke
+    expect(placeOf(outline('edge-ab'))).toEqual(['220px', '60px', '180px', '50px']);
+    expect(outline('edge-ab')!.getAttribute('data-dmap-highlight')).toBe('true');
+    expect(outline('node-b')!.getAttribute('data-dmap-affected')).toBe('true');
+    view.rerender(<Harness svg={handHtml} selection={NONE} />);
+    await frame();
+    expect(screen.queryAllByTestId('dmap-cell-outline')).toHaveLength(0);
+  });
+
+  it('draws the keyboard focus of a cell on its painted box, below the selection flags', async () => {
+    render(<Harness svg={handHtml} />);
+    await frame();
+    const group = screen.getByTestId('dmap-popup-stage').querySelector('g[data-cell-id="node-b"]') as SVGGElement;
+    await act(async () => {
+      group.focus();
+    });
+    await frame();
+    const box = outline('node-b');
+    expect(placeOf(box)).toEqual(['400px', '80px', '120px', '60px']);
+    expect(box!.getAttribute('data-dmap-focus')).toBe('true');
+    expect(box!.getAttribute('data-dmap-selected')).toBe('false');
+    await act(async () => {
+      group.blur();
+    });
+    await frame();
+    expect(outline('node-b')).toBeNull();
+  });
+
+  it('puts the badge of an HTML-label cell on the top-right corner of the shape it paints', async () => {
+    render(<Harness svg={handHtml} badges={new Map([['node-a', { count: 2, red: false }]])} />);
+    await frame();
+    const [badge] = screen.getAllByTestId('dmap-cell-badge');
+    expect([badge.style.left, badge.style.top]).toEqual(['220px', '50px']);
+  });
+
+  it('a box select takes only the HTML-label cells that the band touches', () => {
+    Object.assign(HTMLElement.prototype, {
+      setPointerCapture: vi.fn(),
+      releasePointerCapture: vi.fn(),
+      hasPointerCapture: () => true,
+    });
+    try {
+      const onBox = vi.fn();
+      render(<Harness svg={handHtml} onBox={onBox} />);
+      const wrapper = screen.getByTestId('dmap-popup-stage').parentElement as HTMLElement;
+      const mouse = { pointerType: 'mouse', pointerId: 1, button: 0 };
+      // around node-a only
+      fireEvent.pointerDown(wrapper, { ...mouse, shiftKey: true, clientX: 90, clientY: 40 });
+      fireEvent.pointerMove(wrapper, { ...mouse, clientX: 200, clientY: 100 });
+      fireEvent.pointerUp(wrapper, { ...mouse, clientX: 200, clientY: 100 });
+      expect(onBox).toHaveBeenLastCalledWith(['node-a']);
+      // an empty corner of the stage: nothing
+      fireEvent.pointerDown(wrapper, { ...mouse, shiftKey: true, clientX: 600, clientY: 450 });
+      fireEvent.pointerMove(wrapper, { ...mouse, clientX: 780, clientY: 590 });
+      fireEvent.pointerUp(wrapper, { ...mouse, clientX: 780, clientY: 590 });
+      expect(onBox).toHaveBeenLastCalledWith([]);
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, 'setPointerCapture');
+      Reflect.deleteProperty(HTMLElement.prototype, 'releasePointerCapture');
+      Reflect.deleteProperty(HTMLElement.prototype, 'hasPointerCapture');
+    }
+  });
+
+  it('a cell without an HTML label keeps the box of its group: outline and badge', async () => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.getAttribute('data-cell-id') === 'device-1' ? rectOf(100, 50, 160, 90) : rectOf(0, 0, 800, 600);
+    });
+    render(
+      <Harness
+        selection={{ ...NONE, selected: ['device-1'] }}
+        badges={new Map([['device-1', { count: 1, red: false }]])}
+      />
+    );
+    await frame();
+    expect(placeOf(outline('device-1'))).toEqual(['100px', '50px', '60px', '40px']);
+    const [badge] = screen.getAllByTestId('dmap-cell-badge');
+    expect([badge.style.left, badge.style.top]).toEqual(['160px', '50px']);
   });
 });

@@ -1,5 +1,5 @@
 import type { CellIndex, ZoomAlign, ZoomOptions } from '../types';
-import { applyMatrix, toRoot } from './geometry';
+import { paintedBox } from './paintedBox';
 
 export interface ViewBox {
   x: number;
@@ -174,30 +174,11 @@ export function pinchView(
   return { x: anchor.x - (mid.x - rect.left - ox) / k, y: anchor.y - (mid.y - rect.top - oy) / k, w, h };
 }
 
-/** The box of a cell group in the user space of its svg; undefined when the engine gives no finite box. */
+/** The painted box of a cell group in the user space of its svg (`paintedBox`); undefined when it has none. */
 function cellBox(group: SVGGElement): { x0: number; y0: number; x1: number; y1: number } | undefined {
   const root = group.ownerSVGElement;
-  if (!root || typeof group.getBBox !== 'function') {
-    return undefined;
-  }
-  try {
-    const b = group.getBBox();
-    const m = toRoot(group, root);
-    if (!m || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) {
-      return undefined;
-    }
-    const corners = [
-      [b.x, b.y],
-      [b.x + b.width, b.y],
-      [b.x, b.y + b.height],
-      [b.x + b.width, b.y + b.height],
-    ].map(([x, y]) => applyMatrix(m, { x, y }));
-    const xs = corners.map((p) => p.x);
-    const ys = corners.map((p) => p.y);
-    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
-  } catch {
-    return undefined;
-  }
+  const b = root ? paintedBox(group, root) : undefined;
+  return b && { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
 }
 
 /**

@@ -13,14 +13,12 @@ import {
   scaleOf,
   drawnStrokeWidth,
   originalStrokeWidth,
-  toMatrix,
   toRoot,
-  usable,
   type Matrix,
   type Point,
 } from './geometry';
+import { paintedBox, screenCtm } from './paintedBox';
 import {
-  aabbOf,
   boundsOf,
   labelsVisible,
   LABEL_SIDES,
@@ -363,155 +361,6 @@ function stageFont(root: SVGSVGElement): string {
   return family || FALLBACK_FONT;
 }
 
-/* ---------- coordinates ---------- */
-
-/** The axis-aligned box of `rect` mapped through `m`. */
-function mapRect(rect: Rect, m: Matrix): Rect {
-  return aabbOf(
-    [
-      { x: rect.x, y: rect.y },
-      { x: rect.x + rect.width, y: rect.y },
-      { x: rect.x + rect.width, y: rect.y + rect.height },
-      { x: rect.x, y: rect.y + rect.height },
-    ].map((p) => applyMatrix(m, p))
-  )!;
-}
-
-const num = (el: Element, name: string) => parseFloat(el.getAttribute(name) ?? '') || 0;
-
-/** The box of an element from its attributes, in its own user space: the jsdom road, where `getBBox` is missing. */
-function attributeBox(el: Element): Rect | undefined {
-  switch (el.localName) {
-    case 'rect':
-    case 'image':
-    case 'foreignObject':
-      return { x: num(el, 'x'), y: num(el, 'y'), width: num(el, 'width'), height: num(el, 'height') };
-    case 'circle': {
-      const r = num(el, 'r');
-      return { x: num(el, 'cx') - r, y: num(el, 'cy') - r, width: 2 * r, height: 2 * r };
-    }
-    case 'ellipse': {
-      const rx = num(el, 'rx');
-      const ry = num(el, 'ry');
-      return { x: num(el, 'cx') - rx, y: num(el, 'cy') - ry, width: 2 * rx, height: 2 * ry };
-    }
-    case 'path':
-      return aabbOf(parsePathPoints(el.getAttribute('d') ?? ''));
-    case 'text': {
-      // no layout in jsdom: 0.6 em per glyph on the baseline, the anchor from the text or an ancestor
-      const size = parseFloat(el.closest('[font-size]')?.getAttribute('font-size') ?? '') || 12;
-      const width = 0.6 * size * (el.textContent ?? '').length;
-      const anchor = el.closest('[text-anchor]')?.getAttribute('text-anchor');
-      const x = num(el, 'x') - (anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0);
-      return { x, y: num(el, 'y') - size, width, height: size * 1.25 };
-    }
-    case 'polygon':
-    case 'polyline': {
-      const nums = (el.getAttribute('points') ?? '')
-        .trim()
-        .split(/[\s,]+/)
-        .map(Number);
-      return aabbOf(nums.flatMap((v, i) => (i % 2 ? [{ x: nums[i - 1], y: v }] : [])));
-    }
-    default:
-      return undefined;
-  }
-}
-
-const union = (a: Rect | undefined, b: Rect): Rect =>
-  a
-    ? aabbOf([
-        { x: a.x, y: a.y },
-        { x: a.x + a.width, y: a.y + a.height },
-        { x: b.x, y: b.y },
-        { x: b.x + b.width, y: b.y + b.height },
-      ])!
-    : b;
-
-/** A foreignObject sized in percent (draw.io: 100% x 100%, overflow visible): its own box is the whole viewport. */
-const isFluid = (el: Element) =>
-  el.localName === 'foreignObject' && ['width', 'height'].some((a) => (el.getAttribute(a) ?? '').trim().endsWith('%'));
-
-/**
- * The box of the HTML content of a fluid foreignObject in root units: the union of the line boxes of its text nodes
- * (a range per text node; a range over the elements would add the 1 px wide flex wrapper with its padding that
- * draw.io uses to position the text). Where ranges have no layout (jsdom), the box of its first element child.
- * The foreignObject box is never used. Undefined when the content has no box.
- */
-function htmlBox(fo: Element, root: SVGSVGElement, rootCtm?: Matrix): Rect | undefined {
-  const empty = (r: { width: number; height: number } | undefined) => !r || !(r.width > 0) || !(r.height > 0);
-  let r: { x: number; y: number; width: number; height: number } | undefined;
-  const probe = document.createRange();
-  if (typeof probe.getBoundingClientRect === 'function') {
-    const walker = document.createTreeWalker(fo, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      if (!node.textContent?.trim()) {
-        continue;
-      }
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      const b = range.getBoundingClientRect();
-      if (!empty(b)) {
-        r = union(r, { x: b.x, y: b.y, width: b.width, height: b.height });
-      }
-    }
-  } else {
-    r = fo.firstElementChild?.getBoundingClientRect();
-  }
-  if (!r || empty(r) || ![r.x, r.y, r.width, r.height].every(Number.isFinite)) {
-    return undefined;
-  }
-  // screen pixels into root units; a root without a screen matrix (jsdom) keeps them as they are
-  const base = rootCtm ?? screenCtm(root);
-  if (!base) {
-    return { x: r.x, y: r.y, width: r.width, height: r.height };
-  }
-  return usable(base) ? mapRect({ x: r.x, y: r.y, width: r.width, height: r.height }, invert(base)) : undefined;
-}
-
-/** The screen matrix of the root, read once per pass and passed down: every `toRoot` of the pass needs it. */
-const screenCtm = (root: SVGSVGElement): Matrix | undefined =>
-  typeof root.getScreenCTM === 'function' ? toMatrix(root.getScreenCTM()) : undefined;
-
-/** The painted box of an element in root user units, or undefined when it cannot be read. */
-function rootBox(el: Element, root: SVGSVGElement, rootCtm?: Matrix): Rect | undefined {
-  const g = el as SVGGraphicsElement;
-  if (isFluid(el)) {
-    return htmlBox(el, root, rootCtm);
-  }
-  // a group with a fluid foreignObject inside: its own box would be the viewport, so take the union of the children
-  const fluidInside = Array.from(el.querySelectorAll('foreignObject')).some(isFluid);
-  if (typeof g.getBBox === 'function' && !fluidInside) {
-    try {
-      const m = toRoot(el, root, rootCtm);
-      const b = g.getBBox();
-      if (!m || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) {
-        return undefined;
-      }
-      return mapRect({ x: b.x, y: b.y, width: b.width, height: b.height }, m);
-    } catch {
-      return undefined;
-    }
-  }
-  if (el.localName === 'g' || el.localName === 'a' || el.localName === 'switch') {
-    let box: Rect | undefined;
-    // a switch draws its first usable child: the foreignObject, not the image fallback after it
-    const fo =
-      el.localName === 'switch' ? Array.from(el.children).find((c) => c.localName === 'foreignObject') : undefined;
-    for (const child of fo ? [fo] : Array.from(el.children)) {
-      const b = rootBox(child, root, rootCtm);
-      // an empty child (a box of 0 x 0 at the origin) would stretch the union
-      if (b && (b.width > 0 || b.height > 0)) {
-        box = union(box, b);
-      }
-    }
-    return box;
-  }
-  const local = attributeBox(el);
-  const m = local && toRoot(el, root, rootCtm);
-  return local && m ? mapRect(local, m) : undefined;
-}
-
 /* ---------- obstacles ---------- */
 
 const hasHalves = (patches: PatchMap, cellId: string) => {
@@ -574,14 +423,14 @@ export function stageObstacles(
 ): Obstacle[] {
   const out: Obstacle[] = [];
   const rect = (el: Element | undefined, clearance = 0) => {
-    const box = el && rootBox(el, root, rootCtm);
+    const box = el && paintedBox(el, root, rootCtm);
     if (box) {
       out.push({ kind: 'rect', rect: box, clearance });
     }
   };
   const bodies = new Map<string, Rect>();
   for (const [cellId, entry] of index) {
-    const box = !entry.line && entry.shape ? rootBox(entry.shape, root, rootCtm) : undefined;
+    const box = !entry.line && entry.shape ? paintedBox(entry.shape, root, rootCtm) : undefined;
     if (box) {
       bodies.set(cellId, box);
     }
