@@ -615,9 +615,15 @@ describe('DiagramStage painted boxes', () => {
     click.mockRestore();
     await frame();
     expect(ring()).toBeNull();
-    // a key press: the keyboard is in use, the browser shows :focus-visible from now on
+    // a modifier alone is no keyboard use for the browser: still no ring
     await act(async () => {
       fireEvent.keyDown(groupOf('node-b'), { key: 'Shift' });
+    });
+    await frame();
+    expect(ring()).toBeNull();
+    // a key press: the keyboard is in use, the browser shows :focus-visible from now on
+    await act(async () => {
+      fireEvent.keyDown(groupOf('node-b'), { key: 'ArrowDown' });
     });
     await frame();
     expect(ring()!.getAttribute('data-dmap-focus')).toBe('node-b');
@@ -639,7 +645,7 @@ describe('DiagramStage painted boxes', () => {
     await frame();
     await act(async () => {
       groupOf('node-a').focus();
-      fireEvent.keyDown(groupOf('node-a'), { key: 'Shift' });
+      fireEvent.keyDown(groupOf('node-a'), { key: 'ArrowDown' });
     });
     await frame();
     expect(outline('node-a')!.getAttribute('data-dmap-selected')).toBe('true');

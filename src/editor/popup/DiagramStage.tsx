@@ -11,7 +11,7 @@ import { usePanZoom } from '../../stage/usePanZoom';
 import type { Stage } from '../../stage/useStage';
 import { useStageLayout } from '../../stage/useStageLayout';
 import { useStagePaint } from '../../stage/useStagePaint';
-import { CellFocusRing } from '../../stage/CellFocusRing';
+import { CellFocusRing, FOCUSABLE_CELL } from '../../stage/CellFocusRing';
 import { useCellPlaces } from '../../stage/useCellPlaces';
 import { ChartLayer, type ChartLayerProps } from '../../visuals/ChartLayer';
 import { boxTargets } from './boxTargets';
@@ -171,13 +171,13 @@ export function DiagramStage({
 
   // The outlines of the tagged cells and the badges, on the painted boxes of their cells (`useCellPlaces`). A CSS
   // outline on the cell group would take the box of the group, and the 100% foreignObject of a draw.io HTML label
-  // makes that box the whole viewport. The hook comes after `useStageLayout`: it maps the boxes to the new view.
+  // makes that box the whole viewport. The hook maps the boxes after each write of the view box.
   const placed = useMemo(
     () => [...new Set([...[...tagged.all].filter((id) => isOutlined(tagged, id)), ...(badges?.keys() ?? [])])],
     [tagged, badges]
   );
   const layout = useMemo(() => `${size.width}x${size.height}${JSON.stringify(view)}`, [size, view]);
-  const places = useCellPlaces(stage, placed, wrapperRef, layout);
+  const places = useCellPlaces(stage, placed, wrapperRef);
   // The cells that the highlight does not hold dim (the dimming of the legend, spec 5.3).
   useEffect(() => {
     const root = stage.root;
@@ -234,7 +234,7 @@ export function DiagramStage({
           />
         ) : null
       )}
-      <CellFocusRing stage={stage} wrapperRef={wrapperRef} container={viewport} layout={layout} offset={FOCUS_GAP} />
+      <CellFocusRing stage={stage} wrapperRef={wrapperRef} container={viewport} offset={FOCUS_GAP} />
       {places.map(({ id, left, top, width }) => {
         const badge = badges?.get(id);
         return badge ? (
@@ -294,7 +294,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     // Every cell can be selected: the pointer says so.
     // The outline of the group would take its box (the whole viewport with an HTML label): the outlines are drawn in
     // the overlay (`outline`), the focus ring in `CellFocusRing`.
-    "& [data-cell-id][role='button']": { cursor: 'pointer', outline: 'none' },
+    [`& ${FOCUSABLE_CELL}`]: { outline: 'none' },
+    "& [data-cell-id][role='button']": { cursor: 'pointer' },
     // The cells of the classes that extend the class under the cursor. Their outline is in `outline`.
     '& [data-dmap-lighter="true"]': { opacity: 0.6 },
     [`& .${LEGEND_MEMBER}`]: { transition: 'opacity 120ms' },

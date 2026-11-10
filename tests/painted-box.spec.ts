@@ -212,7 +212,8 @@ test('view mode: the focus ring and the card that Enter pins sit at a cell with 
   expect(group.width).toBeGreaterThan(2 * shape.width);
 
   await cell.focus();
-  await page.keyboard.press('Shift');
+  // a key that is keyboard use for the browser (a modifier alone is not) and that does not scroll the page
+  await page.keyboard.press('ArrowRight');
   await expect(ring(panel)).toHaveAttribute('data-dmap-focus', 'pg-node~rtr-a');
   const shown = await box(ring(panel));
   expect(shown.width, JSON.stringify({ shown, shape })).toBeLessThan(1.5 * shape.width);
@@ -231,5 +232,103 @@ test('view mode: the focus ring and the card that Enter pins sit at a cell with 
   expect(at.x, JSON.stringify({ at, shape })).toBeLessThan(shape.x + shape.width);
   if (process.env.PAINTED_BOX_SHOTS) {
     await page.screenshot({ path: `${process.env.PAINTED_BOX_SHOTS}/view-card-pinned.png` });
+  }
+});
+
+/** The gaps between the ring and the client rectangle of a cell group, right after each of `steps` wheel steps. */
+async function ringGapsInWheelSteps(scope: Locator, cellId: string, steps: number, ms: number) {
+  return scope.evaluate(
+    async (el, { cellId, steps, ms }) => {
+      // the diagram, not an icon of a control
+      const svg = el.querySelector('[data-testid="dmap-stage"] > svg, [data-testid="dmap-popup-stage"] > svg')!;
+      const group = el.querySelector(`[data-cell-id="${cellId}"]`)!;
+      const frame = () => new Promise((done) => requestAnimationFrame(() => done(null)));
+      const out: number[] = [];
+      for (let i = 0; i < steps; i++) {
+        const r = svg.getBoundingClientRect();
+        const at = { clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
+        svg.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true, ...at }));
+        await frame();
+        await frame();
+        const ring = el.querySelector('[data-testid="dmap-cell-focus"]')?.getBoundingClientRect();
+        const g = group.getBoundingClientRect();
+        out.push(
+          ring
+            ? Math.max(
+                Math.abs(ring.left - g.left),
+                Math.abs(ring.top - g.top),
+                Math.abs(ring.right - g.right),
+                Math.abs(ring.bottom - g.bottom)
+              )
+            : Infinity
+        );
+        await new Promise((done) => setTimeout(done, ms));
+      }
+      return out;
+    },
+    { cellId, steps, ms }
+  );
+}
+
+test('the focus ring follows each wheel step in the split editor', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  const uid = await createDiagram(config);
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const dialog = await openSplitEditor(page);
+  const cell = popupCell(dialog, 'device-1');
+  await cell.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(ring(dialog)).toHaveAttribute('data-dmap-focus', 'device-1');
+  const before = await viewBox(dialog);
+  // each step is a commit of the view in the split editor; measure right after it, with no later paint to help
+  const gaps = await ringGapsInWheelSteps(popupStage(dialog).locator('..'), 'device-1', 3, 300);
+  expect(await viewBox(dialog)).not.toBe(before);
+  expect(Math.max(...gaps), JSON.stringify(gaps)).toBeLessThanOrEqual(0.5);
+  if (process.env.PAINTED_BOX_SHOTS) {
+    await dialog.screenshot({ path: `${process.env.PAINTED_BOX_SHOTS}/ring-after-wheel.png` });
+  }
+});
+
+test('view mode: the focus ring follows a stream of wheel steps (the live view of the gesture)', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}) => {
+  const uid = await createDiagram(config, { zoom: { mode: 'fit', wheel: true, pan: true } });
+  const dashboardPage = await gotoDashboardPage({ uid });
+  const panel = (await dashboardPage.getPanelByTitle('Sanitized topology 1')).locator;
+  const cell = panel.locator('[data-cell-id="device-1"]').first();
+  await expect(cell).toHaveAttribute('tabindex', '0');
+  await cell.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(ring(panel)).toHaveAttribute('data-dmap-focus', 'device-1');
+  const before = await panel.getByTestId('dmap-stage').locator(':scope > svg').getAttribute('viewBox');
+  // 40 ms apart: the panel commits the view only after the stream, each step is a live write of the view box
+  const gaps = await ringGapsInWheelSteps(panel.getByTestId('dmap-panel'), 'device-1', 4, 40);
+  expect(await panel.getByTestId('dmap-stage').locator(':scope > svg').getAttribute('viewBox')).not.toBe(before);
+  expect(Math.max(...gaps), JSON.stringify(gaps)).toBeLessThanOrEqual(0.5);
+});
+
+test('view mode: a linked legend row of the diagram shows one focus ring, not the ring of the browser too', async ({
+  page,
+  gotoDashboardPage,
+}) => {
+  await gotoDashboardPage({ uid: 'drawiomap-demo' });
+  const panel = page.getByTestId('dmap-panel').first();
+  const row = panel.locator('[data-cell-id="pg-legendRow~symbol:provider"]');
+  await expect(row).toHaveAttribute('tabindex', '0');
+  await row.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(row).toBeFocused();
+  await expect(ring(panel)).toHaveAttribute('data-dmap-focus', 'pg-legendRow~symbol:provider');
+  await expect(ring(panel)).toHaveCount(1);
+  expect(await row.evaluate((g) => getComputedStyle(g).outlineStyle)).toBe('none');
+  if (process.env.PAINTED_BOX_SHOTS) {
+    await panel.screenshot({ path: `${process.env.PAINTED_BOX_SHOTS}/legend-row-ring.png` });
   }
 });
