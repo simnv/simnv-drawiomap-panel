@@ -13,6 +13,7 @@ The panel removes every `<style>` element from the SVG. It keeps only the `--ge-
 ## Pages
 
 - [Install](install.md): zip, Grafana CLI, Docker, manual install.
+- [First diagram](first-diagram.md): draw two nodes and a link by hand, bind them to queries, check the colours.
 - [Bindings](bindings.md): import a diagram, join cells to queries, classes, match, templates, rows, the match report.
 - [Colours, status and legend](colours.md): field config colours, status band, status paint, legend, last data timestamp.
 - [Links](links.md): capacity, arrow styles, link value labels.

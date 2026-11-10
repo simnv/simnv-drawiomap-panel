@@ -54,6 +54,7 @@ The cell turns green when its host is up.
 
 - [Guide index](docs/guide/index.md): how it works, known limits.
 - [Install](docs/guide/install.md): Grafana CLI, Docker, manual.
+- [First diagram](docs/guide/first-diagram.md): draw a small diagram by hand and bind it to queries.
 - [Bindings](docs/guide/bindings.md): import a diagram, classes, match, templates, rows, the match report.
 - [Colours, status and legend](docs/guide/colours.md): thresholds, status band, legend.
 - [Links](docs/guide/links.md): capacity, arrow styles, value labels.
