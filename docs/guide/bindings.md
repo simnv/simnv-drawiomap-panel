@@ -78,7 +78,7 @@ In panel edit, select **Edit bindings** on the panel (top-left corner) or in the
 
 The preview follows a valid draft. Move the cursor in YAML to highlight the affected cells; select a report entry to move to its YAML path and highlight its cells. Select a cell to open its inspector and move the cursor to its override or class. The inspector shows its attributes, class chain, override, and, for each use, the query, matchers, series count and up to eight label sets and values. For an edge it also shows the ends and the direction of each half.
 
-Set `bind` and `key` for one cell with **Set bind and key**. An empty field removes that attribute. Shift-click cells or drag a selection box with Shift, then use **Assign class** to set `bind` on all selected cells; their keys stay. For an edge, use **key is at the target** or **key is at the source** to set or clear `at=target`. On a generated panel the inspector says that the generator writes `at` again at the next build; change the link in the generator source. These writes change page 1 of the draft diagram in both XML and SVG. If the page is compressed (a diagram that a plugin version before 1.5.2 stored), open it in draw.io and save it once before a write.
+Set `bind` and `key` for one cell with **Set bind and key**. An empty field removes that attribute. Shift-click cells or drag a selection box with Shift, then use **Assign class** to set `bind` on all selected cells; their keys stay. For an edge, use **key is at the target** or **key is at the source** to set or clear `at=target`. On a generated panel the inspector says that the generator writes `at` again at the next build; change the link in the generator source. These writes change page 1 of the draft diagram in both XML and SVG. If the page is compressed (a diagram that a plugin version before 1.5.3 stored), open it in draw.io and save it once before a write.
 
 Use **Undo** and **Redo** for diagram writes. Ctrl+Z (Cmd+Z on a Mac) undoes the text when the code box has the focus; in other places it undoes the last diagram write. **Apply** saves the valid YAML and diagram draft to the panel options; save the dashboard to keep the changes. **Apply** is off while the YAML does not parse. An error in one class or one override does not turn it off. Closing with an unapplied draft asks for confirmation. If the saved panel changes while the editor is open, choose **Reload** to discard the draft or **Keep my draft** before applying it.
 
@@ -106,7 +106,7 @@ The inspector can write `bind` and `key`, and can set or clear `at=target` on an
 
 A dashboard that a generator wrote is **generator-owned**. The generator writes its classes, its overrides and its attributes again at each build. A hand edit of them in the panel is lost at the next deploy, unless the generator reads it back first (its `pull` step). Change a generated panel in the generator source.
 
-**Page 1 only.** A diagram with several pages shows page 1, and v4 binds page 1 only. A cell on another page stays unbound. A diagram whose page is compressed (stored by a plugin version before 1.5.2) gives no ends for ordinary links (`no-edge-ends`): open it in draw.io once and save it.
+**Page 1 only.** A diagram with several pages shows page 1, and v4 binds page 1 only. A cell on another page stays unbound. A diagram whose page is compressed (stored by a plugin version before 1.5.3) gives no ends for ordinary links (`no-edge-ends`): open it in draw.io once and save it.
 
 ### Classes
 

@@ -110,7 +110,7 @@ GitHub is the primary repository. GitHub Actions runs two workflows:
 
 The actions are pinned by commit SHA. Dependabot (`.github/dependabot.yml`) proposes updates each week.
 
-To release: set the version in `package.json` and the heading in `CHANGELOG.md`, run `npm run e2e:release`, commit and push `main`. Run `npm run ci:status -- --wait`: GitHub Actions and Woodpecker must both pass on the commit. Then `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. Push at most 3 tags at a time: GitHub starts no tag workflow for a push with more tags. For such a tag, run `release.yml` by hand.
+To release: set the version in `package.json` and the heading in `CHANGELOG.md` (`## X.Y.Z`, with no suffix; while a version has no tag, its heading can be `## X.Y.Z (Unreleased)`), run `npm run e2e:release`, commit and push `main`. Run `npm run ci:status -- --wait`: GitHub Actions and Woodpecker must both pass on the commit. Then `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. Push at most 3 tags at a time: GitHub starts no tag workflow for a push with more tags. For such a tag, run `release.yml` by hand.
 
 Woodpecker CI (v3, docker backend) runs the e2e tests on a Forgejo mirror of the GitHub repository. It runs the workflow `.woodpecker/ci.yaml` on a push to `main`, pull request and manual events (the mirror also copies the Dependabot branches; GitHub Actions checks those). The benches multiply their time budgets by 6 when `CI` is set (GitHub Actions and Woodpecker set it). `DMAP_BENCH_BUDGET_SCALE` sets another multiplier. One workflow runs all steps in order, because workflows do not share a workspace. A failed step fails the workflow, and the steps after it do not run.
 

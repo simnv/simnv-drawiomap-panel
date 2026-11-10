@@ -1,23 +1,27 @@
 # Changelog
 
-## 1.5.2 (Unreleased)
+## 1.5.3
 
 - Fixed the right click in the draw.io editor in Safari on macOS. A quick two-finger tap on the trackpad panned the canvas with each later pointer move, and the menu opened only on the next right click. Safari sends that tap as a right press with no release. The editor frame now adds the missing release, so the menu opens at once. A right-button drag still pans.
 - Fixed the stored diagram XML of the draw.io editor: a save, an import and pasted XML stored page 1 compressed, so **Set bind and key** and **Assign class** in the split editor failed with "Open the diagram in draw.io once and save it", and a new save did not help. The panel now inflates the pages of the export before it stores the diagram, so the SVG and the XML come from one snapshot of the editor. A diagram that an older version stored: open it in draw.io once and save it.
 - Fixed the split editor for diagrams with draw.io HTML labels (the default for a hand-drawn diagram): the outline of a selected or highlighted cell showed as two bars at the sides of the diagram, a box select took every cell with a label, the count badges sat at the corner of the diagram, and a zoom to the highlighted cells showed the whole diagram. An HTML label fills the whole diagram in the SVG, so the box of its cell did too. The editor now uses the box of what the cell draws: its shape and the content of its label (text, images, tables). The outlines follow a zoom, a pan and a write of a cell attribute. Diagrams without HTML labels do not change. An outline is now drawn above the diagram: it keeps its full opacity when the legend dims the cell, and it shows above a chart region.
 - Fixed the keyboard focus on a cell with a draw.io HTML label, in the panel and in the split editor: the focus ring of the browser showed as two bars at the sides of the diagram, and a card that Enter pinned opened at the bottom of the diagram. A ring in the theme colour now shows around the cell, also on a selected cell in the split editor, after a click and then a key, and during a zoom with the wheel. A linked legend row of the diagram shows the same ring, and no browser ring. The pinned card opens below the cell.
 - The draw.io editor gives up on an export with no reply in 60 s and says so. The last saved diagram stays. A save during an export waits, and its export starts after the reply (the editor runs one export at a time).
+- Added the guide page [First diagram](docs/guide/first-diagram.md): draw two nodes and a link by hand in the bundled editor, bind them to queries and check the colours.
+
+## 1.5.2
+
 - Security: updated the bundled DOMPurify HTML and SVG sanitiser from 3.2.6 to 3.4.17. It fixes several published sanitiser advisories. The sanitised output of the test diagrams does not change.
 - Changed the build tools: create-plugin 8.0.2, Vitest 4 and the other development dependencies. The source code of the plugin does not change. `npm audit` has no critical findings. The remaining findings are listed in `docs/security.md`.
 - Added a troubleshooting section to the install guide (`docs/guide/install.md`). In `allow_loading_unsigned_plugins`, put no spaces after the commas: Grafana does not remove them, and then it does not load the plugin.
 - The development stack: `docker compose up` stops with a message when `dist/` has no built plugin. Before, every Grafana showed "Panel plugin not found".
 
-## 1.5.1 (Unreleased)
+## 1.5.1
 
 - Added support for Grafana 12.3. The plugin needs Grafana `>=12.3.0` (it needed `>=12.4.0`). It builds against `@grafana/*` 12.4.13 and the 12.3.11 types also compile. The test stack has Grafana 12.3.11 and runs the `matrix` e2e project on it (`npm run e2e:12.3`). Restart Grafana after you install this version: `plugin.json` changed.
 - Fixed the question "Discard changes?" of the split editor: it had no accessible name on Grafana 12.3. A screen reader now reads its title on 12.3, 12.4 and 13.2.
 
-## 1.5.0 (Unreleased)
+## 1.5.0
 
 - Changed the docs. The README is now short. The option reference moved to `docs/guide/`. The development notes moved to `CONTRIBUTING.md`. The plugin catalogue shows the README and four screenshots (`info.screenshots` in `plugin.json`). The build rewrites the relative links of `dist/README.md` to absolute URLs of the release tag.
 - Added the last data timestamp: the time of the newest sample of the panel data, at the bottom of the panel beside the legend. The text has the date with the year, the time and the UTC offset in the dashboard time zone, for example `2026-10-31 14:32:05 +01:00`. Its tooltip says "Last data timestamp" and gives the time zone name and the age. The new option **Show last data timestamp** (`legend.timestamp`, group **Legend**) is on by default, also for saved panels without it. The timestamp and the legend share the bottom row and never overlap at their start places, also on a narrow panel and on a phone.
@@ -35,7 +39,7 @@
 - Fixed the hover card and the phone sheet: the value line of a combined up/down row no longer clips at the right edge. A line that is too wide wraps between the up and the down part. The row title stays visible.
 - Cleaned the demo dashboard: the L3 panel has an empty match report (it had 15 warnings) and no cell without data. The offline LTE modem is the one down cell, and its link is not bound: it is drawn grey and idle. The generator writes only the series that the cells select, and the `dmap_v4_*` series for both routers.
 
-## 1.4.0 (Unreleased)
+## 1.4.0
 
 - Added the class and cell override field `arrow`: `point`, `triangle` or `none`. A subclass inherits the style through `extends`.
 - Changed the default link head to `point`. Its base equals the drawn stroke width and has no wings. Saved configs that omit `arrow` use this default.
@@ -43,32 +47,32 @@
 - The split editor completes the `arrow` key and its values. Hover text explains each style and the default.
 - The match report flags `arrow` on a node class. Link labels reserve the selected head shape, including a bent point.
 
-## 1.3.1 (Unreleased)
+## 1.3.1
 
 - Changed the link load scale of the colour legend: its threshold steps show as one bar with a segment of the same width for each step, hard colour stops between the segments and the step values under the bar. Before, each step was a separate swatch (`< 60%`, `≥ 60%`, `≥ 85%`). Each segment still highlights the links of its step on hover, on focus and on a tap. The collapsed chip shows the same hard stops. The link load bar no longer merges with a status block that has the same steps.
 
-## 1.3.0 (Unreleased)
+## 1.3.0
 
 This version removes the option `legend.maxBlocks`. The panel ignores a saved value.
 
-- Changed the colour legend: blocks with the same content (the same texts and colours in the same order, the same gradient) merge into one block. Its title lists the queries, joined with `·`. The pointer or the focus on an entry highlights the cells of all these queries.
+- Changed the colour legend: blocks with the same content (the same texts and colours in the same order, the same gradient) merge into one block. Its title lists the queries, joined with a middle dot (`·`) between spaces. The pointer or the focus on an entry highlights the cells of all these queries.
 - Changed the title of a status block in the legend: it is the **Display name** of the field config, else the query name (refId). Before, it could be the name of one series from the legend format, for example `scrape_up node-rtr-a`.
 - Removed the legend option **Maximum scales** (`legend.maxBlocks`) and its `+N more` line. The legend shows all blocks and scrolls.
 - The **Edit bindings** button in the panel corner shows its text next to the link icon.
 - The **Edit bindings** button of the options pane moved from the **Diagram** group to the **Bindings** group, above the YAML.
 - Link value labels use a font size of 9 (was 8): no text that the panel draws on the diagram is smaller than 9. The labels hide below 7 CSS px per glyph, as before, so they now show from a view scale of 7/9.
 
-## 1.2.2 (Unreleased)
+## 1.2.2
 
 - Fixed links that Safari stopped drawing after the dashboard was open for a long time with the tab in the background (both halves and the arrow heads went, and came back later or on a reload). Each link with a value label on its stroke had an SVG `<mask>` that cut the stroke under the text, and only such links went. The cut is now a gap in the dash pattern of the half: no mask, no `url(#id)` reference.
 
-## 1.2.1 (Unreleased)
+## 1.2.1
 
 - Fixed link value labels that stood far from their link. On a short link a label stands beside the arrow head of its half as it is drawn, not beyond the widest head: at a low load it is 8 units nearer, and it moves out when the head grows. When the text of a link or another obstacle sends one half away from its stroke, the other half stays on its own stroke if it is free there.
 - Fixed a false `class-no-cells` warning for a base class when a cell binds a class that extends it, directly or through a chain.
 - Fixed a second XML declaration in the saved diagram after a write in the split editor in Chromium: the browser serializer writes the declaration of the document, and the panel added the saved one again. Draw.io and `gen_drawiomap pull` refuse such a document.
 
-## 1.2.0 (Unreleased)
+## 1.2.0
 
 The 1.1.0 tag comes first: do not release 1.2.0 before it.
 
@@ -79,7 +83,7 @@ The 1.1.0 tag comes first: do not release 1.2.0 before it.
 - The writes change page 1 of the diagram, in XML and SVG. They need an uncompressed page 1.
 - **Undo** and **Redo** keep up to 50 diagram versions. **Apply** saves the config and the diagram together. A save in another tab shows a conflict banner.
 
-## 1.1.0 (Unreleased)
+## 1.1.0
 
 Binding model v4. This is the first version that reads the v4 config. A config of version 3 or older binds nothing: the diagram renders, the panel shows one note, and you write the config again as version 4 (or regenerate it). There is no migration. Regenerate the dashboards of a generator in the same change as this release.
 
@@ -93,7 +97,7 @@ Binding model v4. This is the first version that reads the v4 config. A config o
 - The panel reads page 1 of a diagram only, and binds page 1 only.
 - Removed: the bindings popup, the pattern selectors, the named queries, the combined row, the `display` settings and the v3 config. The popup results are archived in `docs/archive/acceptance-v3-popup.md`.
 
-## 1.0.0 (Unreleased)
+## 1.0.0
 
 Initial release.
 
