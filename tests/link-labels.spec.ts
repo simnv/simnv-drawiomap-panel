@@ -4,7 +4,7 @@ import { devices, type Locator } from '@playwright/test';
 import type { ConfigV4, LinkLabelMode } from '../src/model/v4';
 import { demoConfigV4, handDrawnConfigV4 } from '../src/fixtures/demo-config';
 import { pointOnHalf, touch } from './authoring-controls';
-import { expect, test, promTarget, type DiagramPanel, type PanelTarget } from './authoring-fixtures';
+import { expect, test, promTarget, withDemoBindings, type DiagramPanel, type PanelTarget } from './authoring-fixtures';
 
 /*
  * The link value labels (docs/superpowers/specs/2026-10-25-link-value-labels-design.md, section 8). The demo L3
@@ -34,17 +34,6 @@ function labelledConfig(base: ConfigV4, className: string, mode: LinkLabelMode):
 }
 const demoL3Config = (mode: LinkLabelMode) => labelledConfig(demoConfigV4, 'wan', mode);
 const handDrawnConfig = (mode: LinkLabelMode) => labelledConfig(handDrawnConfigV4, 'hand-links', mode);
-
-/** The older HTML-label export uses the same cell ids. Copy only their v4 join attributes from the demo. */
-function withDemoBindings(svg: string): string {
-  const attrs = new Map(
-    Array.from(demoSvg.matchAll(/<g\b[^>]*data-cell-id="([^"]+)"[^>]*>/g), ([tag, id]) => [
-      id,
-      tag.match(/data-meta-(?:bind|key|port|cap|at)="[^"]*"/g)?.join(' ') ?? '',
-    ])
-  );
-  return svg.replace(/<g data-cell-id="([^"]+)"/g, (tag, id: string) => `${tag} ${attrs.get(id) ?? ''}`);
-}
 
 const labelsOf = (panel: Locator) => panel.locator('text.dmap-link-label');
 const label = (panel: Locator, cell: string, half: 'a2b' | 'b2a') =>

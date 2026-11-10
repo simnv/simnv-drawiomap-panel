@@ -15,8 +15,8 @@ import { aabbOf, type Rect } from './labelPlacement';
  * `paintedClientBox` in client pixels (the outline, the badges and the box select of the split editor).
  */
 
-/** The axis-aligned box of `rect` mapped through `m`. */
-function mapRect(rect: Rect, m: Matrix): Rect {
+/** The axis-aligned box of `rect` mapped through `m`. A root box and `screenCtm(root)` give the client box. */
+export function mapRect(rect: Rect, m: Matrix): Rect {
   return aabbOf(
     [
       { x: rect.x, y: rect.y },
@@ -95,11 +95,15 @@ const isFluid = (el: Element) =>
 
 const hasFluid = (el: Element) => Array.from(el.querySelectorAll('foreignObject')).some(isFluid);
 
+/** Label content that draws without a text node: an image, a drawing, a rule or a table (a table can be empty). */
+const DRAWN = 'img, svg, canvas, video, picture, iframe, object, embed, hr, table';
+
 /**
  * The box of the HTML content of a fluid foreignObject in client pixels: the union of the line boxes of its text nodes
  * (a range per text node; a range over the elements would add the 1 px wide flex wrapper with its padding that
- * draw.io uses to position the text). Where ranges have no layout (jsdom), the box of its first element child.
- * The foreignObject box is never used. Undefined when the content has no box.
+ * draw.io uses to position the text) and of the elements that draw without text (`DRAWN`). Where ranges have no
+ * layout (jsdom), the box of its first element child. The foreignObject box is never used. Undefined when the content
+ * has no box.
  */
 function htmlClientBox(fo: Element): Rect | undefined {
   let r: Rect | undefined;
@@ -113,6 +117,12 @@ function htmlClientBox(fo: Element): Rect | undefined {
       const range = document.createRange();
       range.selectNodeContents(node);
       const b = range.getBoundingClientRect();
+      if (!empty(b)) {
+        r = union(r, fromClient(b));
+      }
+    }
+    for (const el of Array.from(fo.querySelectorAll(DRAWN))) {
+      const b = el.getBoundingClientRect();
       if (!empty(b)) {
         r = union(r, fromClient(b));
       }

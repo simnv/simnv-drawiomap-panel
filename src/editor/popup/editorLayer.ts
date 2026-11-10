@@ -73,7 +73,7 @@ export const isOutlined = (tagged: Tagged, id: string) =>
 
 export interface EditorLayer {
   /** Write the editor attributes for `selection`. Only the cells that the old or the new selection tags change. */
-  apply: (selection: StageSelection) => void;
+  apply: (selection: StageSelection, tagged?: Tagged) => void;
   /** Remove the editor layer from every cell. The next `apply` writes every cell again. */
   clear: () => void;
 }
@@ -89,8 +89,9 @@ export function createEditorLayer(index: CellIndex): EditorLayer {
   let last: Set<string> | null = null;
 
   return {
-    apply(selection) {
-      const next = tagSelection(selection);
+    apply(selection, tagged) {
+      // a caller that tagged the selection already (the outlines of the stage) passes it
+      const next = tagged ?? tagSelection(selection);
       const touch = last === null ? index.keys() : new Set([...last, ...next.all]);
       for (const id of touch) {
         const cell = index.get(id);

@@ -2,15 +2,15 @@
 
 The canvas shows only colours. The values show in a card:
 
-| Action                             | Result                                                                                               |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Move the mouse on a link or a node | The card shows near the pointer. It goes away when the pointer leaves the cell.                      |
-| Click a cell                       | The card stays (it is pinned). It has a close button (✕), clickable rows and the footer links.       |
-| Click another cell                 | The pinned card moves to that cell.                                                                  |
-| Esc, ✕, or a click outside         | The pinned card closes.                                                                              |
-| Tap a cell (phone, tablet)         | The card opens pinned. Devices without hover (`(hover: none)`) do not open a card on a pointer move. |
-| Tab to a cell, then Enter or Space | The card opens pinned. Esc closes it and the focus goes back to the cell.                            |
-| Move over a chart in a pinned card | A crosshair and the Grafana tooltip show the time and the value of each series (see below).          |
+| Action                             | Result                                                                                                                 |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Move the mouse on a link or a node | The card shows near the pointer. It goes away when the pointer leaves the cell.                                        |
+| Click a cell                       | The card stays (it is pinned). It has a close button (✕), clickable rows and the footer links.                         |
+| Click another cell                 | The pinned card moves to that cell.                                                                                    |
+| Esc, ✕, or a click outside         | The pinned card closes.                                                                                                |
+| Tap a cell (phone, tablet)         | The card opens pinned. Devices without hover (`(hover: none)`) do not open a card on a pointer move.                   |
+| Tab to a cell, then Enter or Space | A ring shows around the cell. The card opens pinned below the cell. Esc closes it and the focus goes back to the cell. |
+| Move over a chart in a pinned card | A crosshair and the Grafana tooltip show the time and the value of each series (see below).                            |
 
 ![Pinned card](images/card-pinned.png)
 

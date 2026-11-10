@@ -15,6 +15,7 @@ import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applie
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
+import { CellFocusRing } from '../stage/CellFocusRing';
 import { DEFER_ABOVE, useStage } from '../stage/useStage';
 import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
@@ -63,6 +64,11 @@ const styles = {
     width: 100%;
     & > svg {
       display: block;
+    }
+    /* The outline of a cell group takes the box of the group, the whole viewport with a draw.io HTML label: the focus
+       ring is CellFocusRing, on the painted box. */
+    & [data-cell-id][role='button'] {
+      outline: none;
     }
     /* Only cells that open a card show the hand cursor. Other cells keep the parent cursor. */
     & [data-cell-id][role='button']:not([${INTERACTIVE_ATTR}]) {
@@ -485,6 +491,12 @@ function DrawioMapPanelView(props: ViewProps) {
         />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
+      <CellFocusRing
+        stage={stage}
+        wrapperRef={wrapperRef}
+        container={viewport}
+        layout={`${width}x${stageHeight}${JSON.stringify(view)}`}
+      />
       <CornerControls
         ref={corner}
         bandHeight={band.height}

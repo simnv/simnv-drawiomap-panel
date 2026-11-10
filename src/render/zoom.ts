@@ -1,5 +1,6 @@
 import type { CellIndex, ZoomAlign, ZoomOptions } from '../types';
-import { paintedBox } from './paintedBox';
+import type { Matrix } from './geometry';
+import { paintedBox, screenCtm } from './paintedBox';
 
 export interface ViewBox {
   x: number;
@@ -174,10 +175,22 @@ export function pinchView(
   return { x: anchor.x - (mid.x - rect.left - ox) / k, y: anchor.y - (mid.y - rect.top - oy) / k, w, h };
 }
 
-/** The painted box of a cell group in the user space of its svg (`paintedBox`); undefined when it has none. */
-function cellBox(group: SVGGElement): { x0: number; y0: number; x1: number; y1: number } | undefined {
+/**
+ * The painted box of a cell group in the user space of its svg (`paintedBox`); undefined when it has none. `ctms`
+ * keeps the screen matrix of each root for one pass.
+ */
+function cellBox(
+  group: SVGGElement,
+  ctms: Map<SVGSVGElement, Matrix | undefined>
+): { x0: number; y0: number; x1: number; y1: number } | undefined {
   const root = group.ownerSVGElement;
-  const b = root ? paintedBox(group, root) : undefined;
+  if (!root) {
+    return undefined;
+  }
+  if (!ctms.has(root)) {
+    ctms.set(root, screenCtm(root));
+  }
+  const b = paintedBox(group, root, ctms.get(root));
   return b && { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
 }
 
@@ -188,9 +201,10 @@ function cellBox(group: SVGGElement): { x0: number; y0: number; x1: number; y1: 
  */
 export function fitCells(index: CellIndex, ids: string[], base: ViewBox, margin: number): ViewBox {
   let union: { x0: number; y0: number; x1: number; y1: number } | undefined;
+  const ctms = new Map<SVGSVGElement, Matrix | undefined>();
   for (const id of ids) {
     const group = index.get(id)?.group;
-    const box = group && cellBox(group);
+    const box = group && cellBox(group, ctms);
     if (box) {
       union = union
         ? {

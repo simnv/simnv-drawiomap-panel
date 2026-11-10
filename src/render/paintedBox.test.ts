@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clearTextRanges, clientRect, fakeLayout, fakeTextRanges } from './layoutTestKit';
+import { afterEach, describe, expect, it } from 'vitest';
+import { clearFakeLayout, clearTextRanges, clientRect, fakeLayout, fakeTextRanges } from './layoutTestKit';
 import { paintedBox, paintedClientBox } from './paintedBox';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -18,7 +18,7 @@ const cell = (root: Element, id: string) => root.querySelector(`[data-cell-id="$
 const rect = (x: number, y: number, width: number, height: number) => clientRect(x, y, x + width, y + height);
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  clearFakeLayout();
   clearTextRanges();
   document.body.innerHTML = '';
 });
@@ -59,9 +59,15 @@ describe('paintedClientBox', () => {
     expect(paintedClientBox(group)).toEqual({ x: 120, y: 20, width: 199, height: 43 });
   });
 
-  it('a text cell with an empty shape: the text of the label', () => {
+  it('a text cell: its rect with no fill and no stroke still has its box, and the text of the label is inside it', () => {
     const root = mount(handHtml);
-    // a shape that is not drawn (display: none) has an empty box at the origin: it does not stretch the union
+    fakeLayout((el) => (el.localName === 'rect' ? rect(140, 200, 160, 30) : undefined));
+    fakeTextRanges({ 'site 23 uplinks': rect(180, 210, 80, 14) });
+    expect(paintedClientBox(cell(root, 'note'))).toEqual({ x: 140, y: 200, width: 160, height: 30 });
+  });
+
+  it('a part with an empty box (display: none: 0 x 0 at the origin) does not stretch the union', () => {
+    const root = mount(handHtml);
     fakeLayout((el) => (el.localName === 'rect' ? rect(0, 0, 0, 0) : undefined));
     fakeTextRanges({ 'site 23 uplinks': rect(180, 210, 80, 14) });
     expect(paintedClientBox(cell(root, 'note'))).toEqual({ x: 180, y: 210, width: 80, height: 14 });
@@ -75,6 +81,17 @@ describe('paintedClientBox', () => {
       el.localName === 'rect' ? rect(0, 0, 0, 0) : el === wrapper ? rect(170, 205, 100, 20) : undefined
     );
     expect(paintedClientBox(group)).toEqual({ x: 170, y: 205, width: 100, height: 20 });
+  });
+
+  it('label content with no text (an image, a table) counts with its own box', () => {
+    const root = mount(handHtml);
+    const group = cell(root, 'note');
+    const label = group.querySelector('foreignObject div div div')!;
+    label.innerHTML = '<img src="data:," width="40" height="40">';
+    const img = label.querySelector('img')!;
+    fakeLayout((el) => (el.localName === 'rect' ? rect(0, 0, 0, 0) : el === img ? rect(200, 195, 40, 40) : undefined));
+    fakeTextRanges({});
+    expect(paintedClientBox(group)).toEqual({ x: 200, y: 195, width: 40, height: 40 });
   });
 
   it('an HTML label with no text box and no shape: no box', () => {

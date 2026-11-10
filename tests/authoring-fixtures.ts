@@ -24,6 +24,18 @@ export const svg = fs.readFileSync('src/fixtures/authoring.svg', 'utf8');
 export const xml = fs.readFileSync('src/fixtures/authoring.drawio', 'utf8');
 
 /** A Grafana panel target. A target with no `datasource` uses the default datasource. */
+/** The older HTML-label export of demo-l3 uses the same cell ids. Copy only their v4 join attributes from the demo. */
+export function withDemoBindings(svg: string): string {
+  const demoSvg = fs.readFileSync('fixtures/demo/svg/demo-l3.svg', 'utf8');
+  const attrs = new Map(
+    Array.from(demoSvg.matchAll(/<g\b[^>]*data-cell-id="([^"]+)"[^>]*>/g), ([tag, id]) => [
+      id,
+      tag.match(/data-meta-(?:bind|key|port|cap|at)="[^"]*"/g)?.join(' ') ?? '',
+    ])
+  );
+  return svg.replace(/<g data-cell-id="([^"]+)"/g, (tag, id: string) => `${tag} ${attrs.get(id) ?? ''}`);
+}
+
 export type PanelTarget = { refId: string; datasource?: { type: string; uid: string } } & Record<string, unknown>;
 export type FieldConfig = { defaults: Record<string, unknown>; overrides: unknown[] };
 /** The provisioned datasources (provisioning/datasources/). */
