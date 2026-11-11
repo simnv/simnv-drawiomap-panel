@@ -952,9 +952,9 @@ describe('renderLinkLabels: backgrounds', () => {
     expect(bodies.some((r) => r.width > 1000)).toBe(false);
     // the vertical WAN link: the labels read bottom to top, on the stroke
     expect(byHalf(root, 'a2b', ISP_A)!.getAttribute('transform')).toMatch(/^rotate\(-90 /);
-    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(188.37, 0);
+    expect(Number(byHalf(root, 'a2b', ISP_A)!.getAttribute('x'))).toBeCloseTo(95.47, 0);
   });
-  it('the short WAN link (104 units) keeps both value labels beside the reserved heads of the widest halves', () => {
+  it('the short WAN link (142 units) keeps both value labels beside the reserved heads of the widest halves', () => {
     const { root, index } = build(readFileSync(resolve(__dirname, '../../fixtures/demo/svg/demo-l3.svg'), 'utf8'));
     const ISP_A = 'pg-link~isp-a:pppoe->rtr-a:wan1';
     const patches: PatchMap = new Map([[ISP_A, linkPatch(ISP_A, { a2b: half(), b2a: half(), labelMode: 'value' })]]);

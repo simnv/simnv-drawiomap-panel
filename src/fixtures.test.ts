@@ -8,11 +8,11 @@ const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 describe('fixtures', () => {
   it('demo-l3 carries the portograph contract', () => {
     const s = svg('demo-l3');
-    expect(count(s, /data-cell-id="/g)).toBe(108);
+    expect(count(s, /data-cell-id="/g)).toBe(100);
     expect(count(s, /data-meta-pg-kind="link"/g)).toBe(10);
     expect(count(s, /data-meta-pg-kind="node"/g)).toBe(10);
     expect(count(s, /data-meta-pg-kind="port"/g)).toBe(20);
-    expect(count(s, /data-meta-pg-kind="link-label"/g)).toBe(8);
+    expect(count(s, /data-meta-pg-kind="link-label"/g)).toBe(2);
     expect(s).toContain('data-meta-pg-schema="1"');
     expect(s).toContain('data-meta-pg-id="isp-a:pppoe-&gt;rtr-a:wan1"');
   });
@@ -28,8 +28,8 @@ describe('fixtures', () => {
   it('legacy-html-labels keeps the HTML-label path covered', () => {
     // An html=1 variant of demo-l3: <switch><foreignObject/><image PNG/></switch>.
     const s = svg('legacy-html-labels');
-    expect(count(s, /<foreignObject/g)).toBe(53);
-    expect(count(s, /<switch/g)).toBe(54);
+    expect(count(s, /<foreignObject/g)).toBe(52);
+    expect(count(s, /<switch/g)).toBe(53);
     expect(s).toContain('data-meta-pg-kind="node"');
   });
   it('demo-l1 carries author meta attributes, explicit link ids and parallel links', () => {

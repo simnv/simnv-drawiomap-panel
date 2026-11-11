@@ -5,7 +5,7 @@ const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshot
 test('renders the diagram and colours links from synthetic traffic', async ({ gotoDashboardPage }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
-  await expect(panel.locator.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+  await expect(panel.locator.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '100');
   const half = (cell: string, dir: string) =>
     panel.locator.locator(`polyline.dmap-half[data-dmap-half="${dir}"][data-dmap-cell="${cell}"]`);
   await expect(half('pg-link~isp-a:pppoe->rtr-a:wan1', 'a2b')).toHaveAttribute('data-dmap-step', '0');
@@ -26,9 +26,9 @@ test('renders the diagram and colours links from synthetic traffic', async ({ go
 test('link labels stay above the coloured link halves', async ({ gotoDashboardPage }) => {
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
-  const link = 'pg-link~isp-a:pppoe->rtr-a:wan1';
+  const link = 'pg-link~isp-b:pppoe->rtr-b:pppoe';
   await expect(panel.locator.locator(`polyline.dmap-half[data-dmap-cell="${link}"]`)).toHaveCount(2);
-  const label = panel.locator.locator(`[data-cell-id="pg-linkLabel~isp-a:pppoe->rtr-a:wan1"] text`);
+  const label = panel.locator.locator(`[data-cell-id="pg-linkLabel~isp-b:pppoe->rtr-b:pppoe"] text`);
   const hit = await label.evaluate((el) => {
     const r = el.getBoundingClientRect();
     const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
