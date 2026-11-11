@@ -302,11 +302,13 @@ describe('endCap (I14, amended lazy lookup)', () => {
 
   it('does not read capacity from a prototype', () => {
     const meta = cell('link', {}, true);
-    const ctx = context(
-      [meta, cell('port', Object.create({ cap: '1G', capacity: '2G' }))],
-      [],
-      [['link', { source: 'port' }]]
-    );
+    const port = cell('port');
+    port.attrs = Object.create({ cap: '1G', capacity: '2G' });
+    expect(port.attrs.cap).toBe('1G');
+    expect(port.attrs.capacity).toBe('2G');
+    expect(Object.hasOwn(port.attrs, 'cap')).toBe(false);
+    expect(Object.hasOwn(port.attrs, 'capacity')).toBe(false);
+    const ctx = context([meta, port], [], [['link', { source: 'port' }]]);
     expect(endCap(meta, { end: 'source', reason: 'own', needs: [] }, ctx)).toEqual({ cellId: 'port' });
   });
 });
@@ -401,7 +403,12 @@ describe('measuredEnd (AC3)', () => {
   });
 
   it('does not infer port from pg-port or at from a prototype', () => {
-    const meta = cell('link', Object.create({ at: 'target', key: 'prototype' }), true);
+    const meta = cell('link', {}, true);
+    meta.attrs = Object.create({ at: 'target', key: 'prototype' });
+    expect(meta.attrs.at).toBe('target');
+    expect(meta.attrs.key).toBe('prototype');
+    expect(Object.hasOwn(meta.attrs, 'at')).toBe(false);
+    expect(Object.hasOwn(meta.attrs, 'key')).toBe(false);
     const ctx = context([meta, cell('a', { key: 'rtr-a', 'pg-port': 'br-lan' })], [], [['link', { source: 'a' }]]);
     expect(measuredEnd(meta, ['key', 'port'], () => ctx)).toEqual({
       end: 'none',
