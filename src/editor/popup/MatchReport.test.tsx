@@ -522,3 +522,42 @@ it('keeps unmeasured information after warnings, out of the tab count, and selec
   fireEvent.click(within(items[1]).getAllByRole('button')[0]);
   expect(onPick).toHaveBeenCalledWith({ kind: 'entry', path: 'classes.lan', cells: ['l'] });
 });
+
+describe('MatchReport counts of identity', () => {
+  const warning: ReportEntry = { kind: 'no-series', cls: 'dev', use: 'classes.dev.status', cellIds: ['b'] };
+  const info: ReportEntry = { kind: 'unmeasured-link', cls: 'lan', attrs: ['key'], cellIds: ['l'] };
+  const none = { cells: 1, zero: 0, one: 1, many: 0 };
+
+  it('opens the first tab with a warning, not a class that has only the information entry', () => {
+    const perClass = new Map([
+      ['lan', none],
+      ['dev', none],
+    ]);
+    render(<MatchReport entries={[info, warning]} counts={{ perClass, perUse: new Map() }} onPick={() => {}} />);
+    expect(active()).toBe('dev1');
+  });
+
+  it('opens the first tab with the information entry when no class has a warning', () => {
+    const perClass = new Map([
+      ['dev', none],
+      ['lan', none],
+    ]);
+    render(<MatchReport entries={[info]} counts={{ perClass, perUse: new Map() }} onPick={() => {}} />);
+    expect(active()).toBe('lan');
+  });
+
+  it('shows the unmeasured links and the cells with an inherited value as their own numbers, only when not 0', () => {
+    const perClass = new Map([
+      ['lan', { ...none, unmeasured: 3, inherited: 1 }],
+      ['dev', { ...none, unmeasured: 0, inherited: 0 }],
+    ]);
+    render(<MatchReport entries={[]} counts={{ perClass, perUse: new Map() }} onPick={() => {}} />);
+    const lan = within(report()).getByRole('tabpanel');
+    expect(within(lan).getByTestId('dmap-report-unmeasured').textContent).toBe('3 links have no measured end');
+    expect(within(lan).getByTestId('dmap-report-inherited').textContent).toBe('1 cell reads an inherited value');
+    fireEvent.click(tabOf('dev'));
+    const dev = within(report()).getByRole('tabpanel');
+    expect(within(dev).queryByTestId('dmap-report-unmeasured')).toBeNull();
+    expect(within(dev).queryByTestId('dmap-report-inherited')).toBeNull();
+  });
+});

@@ -34,7 +34,7 @@ const frame = (refId: string, labels: Labels): DataFrame => ({
 
 type Cell = [id: string, attrs: Record<string, string>, isEdge?: boolean];
 
-function counts(config: unknown, cells: Cell[], frames: DataFrame[], refs: string[]) {
+function counts(config: unknown, cells: Cell[], frames: DataFrame[], refs: string[], xml?: string) {
   const metas: CellMeta[] = cells.map(([id, attrs, isEdge]) => cellMetaFromAttrs(id, attrs, isEdge ?? false));
   applyContract(metas);
   const index = new Map(metas.map((meta) => [meta.id, { meta } as CellEntry]));
@@ -56,7 +56,7 @@ function counts(config: unknown, cells: Cell[], frames: DataFrame[], refs: strin
     },
   };
   const validated = validateConfig(config);
-  return reportCounts(bindV4({ index, validated, data, ctx }), validated.classes);
+  return reportCounts(bindV4({ index, xml, validated, data, ctx }), validated.classes);
 }
 
 describe('reportCounts (spec 4 "Counts")', () => {
@@ -76,7 +76,7 @@ describe('reportCounts (spec 4 "Counts")', () => {
       ],
       ['up']
     );
-    expect(r.perClass.get('host')).toEqual({ cells: 3, zero: 1, one: 0, many: 2 });
+    expect(r.perClass.get('host')).toEqual({ cells: 3, zero: 1, one: 0, many: 2, unmeasured: 0, inherited: 0 });
     expect(r.perUse.get('classes.host.status')).toEqual({ zero: 1, one: 0, many: 2 });
   });
 
@@ -102,9 +102,9 @@ describe('reportCounts (spec 4 "Counts")', () => {
     expect(r.perUse.get('classes.device.rows[0]')).toEqual({ zero: 1, one: 2, many: 0 });
     expect(r.perUse.get('classes.host.status')).toEqual({ zero: 0, one: 2, many: 0 });
     // the abstract class has its cell, with no use; the first use of switch is its row
-    expect(r.perClass.get('device')).toEqual({ cells: 1, zero: 0, one: 0, many: 0 });
-    expect(r.perClass.get('host')).toEqual({ cells: 2, zero: 0, one: 2, many: 0 });
-    expect(r.perClass.get('switch')).toEqual({ cells: 1, zero: 0, one: 1, many: 0 });
+    expect(r.perClass.get('device')).toEqual({ cells: 1, zero: 0, one: 0, many: 0, unmeasured: 0, inherited: 0 });
+    expect(r.perClass.get('host')).toEqual({ cells: 2, zero: 0, one: 2, many: 0, unmeasured: 0, inherited: 0 });
+    expect(r.perClass.get('switch')).toEqual({ cells: 1, zero: 0, one: 1, many: 0, unmeasured: 0, inherited: 0 });
     expect([...r.perUse.keys()].sort()).toEqual(['classes.device.rows[0]', 'classes.host.status']);
   });
 
@@ -115,8 +115,8 @@ describe('reportCounts (spec 4 "Counts")', () => {
       [],
       ['up']
     );
-    expect(r.perClass.get('spare')).toEqual({ cells: 0, zero: 0, one: 0, many: 0 });
-    expect(r.perClass.get('host')).toEqual({ cells: 0, zero: 0, one: 0, many: 0 });
+    expect(r.perClass.get('spare')).toEqual({ cells: 0, zero: 0, one: 0, many: 0, unmeasured: 0, inherited: 0 });
+    expect(r.perClass.get('host')).toEqual({ cells: 0, zero: 0, one: 0, many: 0, unmeasured: 0, inherited: 0 });
     expect(r.perClass.has('nope')).toBe(false);
     expect(r.perUse.size).toBe(0);
   });
@@ -138,6 +138,32 @@ describe('reportCounts (spec 4 "Counts")', () => {
     expect(r.perUse.get('classes.link.up')).toEqual({ zero: 0, one: 1, many: 0 });
     expect(r.perUse.get('classes.link.down')).toEqual({ zero: 1, one: 0, many: 0 });
     // the first use of a link-only class is `up`
-    expect(r.perClass.get('link')).toEqual({ cells: 1, zero: 0, one: 1, many: 0 });
+    expect(r.perClass.get('link')).toEqual({ cells: 1, zero: 0, one: 1, many: 0, unmeasured: 0, inherited: 0 });
+  });
+
+  it('counts the unmeasured links and the cells that read an inherited value as their own numbers', () => {
+    const xml =
+      '<mxfile><diagram id="p" name="P"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="n1" parent="1" vertex="1"/><mxCell id="p1" parent="n1" vertex="1"/>' +
+      '<mxCell id="n2" parent="1" vertex="1"/><mxCell id="p2" parent="n2" vertex="1"/>' +
+      '<mxCell id="l1" parent="1" edge="1" source="p1" target="n2"/>' +
+      '<mxCell id="l2" parent="1" edge="1" source="p2" target="n2"/>' +
+      '</root></mxGraphModel></diagram></mxfile>';
+    const r = counts(
+      { version: 4, classes: { link: { match: { key: 'job', port: 'device' }, up: 'tx', down: 'rx' } } },
+      [
+        ['n1', { key: 'n1' }],
+        ['p1', { port: 'eth0' }],
+        ['n2', {}],
+        ['p2', {}],
+        ['l1', { bind: 'link' }, true],
+        ['l2', { bind: 'link' }, true],
+      ],
+      [frame('tx', { job: 'n1', device: 'eth0' })],
+      ['tx', 'rx'],
+      xml
+    );
+    // l1 reads key and port from its source end; l2 has no end that gives them: it has no use and no first-use count
+    expect(r.perClass.get('link')).toEqual({ cells: 2, zero: 0, one: 1, many: 0, unmeasured: 1, inherited: 1 });
   });
 });

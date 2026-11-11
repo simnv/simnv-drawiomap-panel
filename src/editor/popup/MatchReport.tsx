@@ -31,16 +31,19 @@ export interface ReportFollow {
 export interface MatchReportProps {
   /** The `yaml` entries of the code box, then the report of the bind. */
   entries: ReportEntry[];
-  counts: ReturnType<typeof reportCounts>;
+  counts: { perClass: Map<string, ClassCountsView>; perUse: ReturnType<typeof reportCounts>['perUse'] };
   config?: ConfigV4 | null;
   onPick: (pick: ReportPick) => void;
   /** The group of the cursor or of the clicked cell. A group with no tab keeps the tab. */
   follow?: ReportFollow;
 }
 
+/** The counts of a class (`ClassCounts`); the numbers of identity are optional for a caller that has none. */
+type ClassCountsView = SeriesCounts & { cells: number; unmeasured?: number; inherited?: number };
+
 interface Group {
   cls?: string;
-  cells?: SeriesCounts & { cells: number };
+  cells?: ClassCountsView;
   uses: Array<[UsePath, SeriesCounts]>;
   entries: ReportGroup[];
 }
@@ -70,6 +73,9 @@ function groupsOf({ entries, counts, config }: Pick<MatchReportProps, 'entries' 
   return other ? [...groups.values(), other] : [...groups.values()];
 }
 
+/** The information entry of spec I10: a tab with only these opens after a tab with a warning. */
+const isInformation = (row: ReportGroup) => row.entries[0].kind === 'unmeasured-link';
+
 /** The key of the tab of a group: the class name, or null for the entries without a class. */
 const keyOf = (group: Group) => group.cls ?? null;
 
@@ -77,7 +83,7 @@ const keyOf = (group: Group) => group.cls ?? null;
  * The match report below the code box (spec 4): one tab per class (in the order of the config), then a tab for the
  * entries without a class. A tab shows the number of cells and the cells with 0, 1 and more series of their first use,
  * the same counts per use, and the entries of the class; the label of the tab counts the entries. A click on a row
- * moves the cursor to its YAML place (spec 5.3). The tab follows `follow`; it starts at the first tab with entries.
+ * moves the cursor to its YAML place (spec 5.3). The tab follows `follow`; it starts at the first tab with a warning, else at the first tab with entries.
  */
 export function MatchReport({ entries, counts, config, onPick, follow }: MatchReportProps) {
   const styles = useStyles2(getStyles);
@@ -108,6 +114,7 @@ export function MatchReport({ entries, counts, config, onPick, follow }: MatchRe
   };
   const current =
     groups.find((g) => chosen !== undefined && keyOf(g) === chosen) ??
+    groups.find((g) => g.entries.some((row) => !isInformation(row))) ??
     groups.find((g) => g.entries.length) ??
     groups[0];
   const tabRefs = useRef<Array<HTMLElement | null>>([]);
@@ -157,7 +164,7 @@ export function MatchReport({ entries, counts, config, onPick, follow }: MatchRe
                 id={`${id}-tab-${i}`}
                 aria-controls={group === current ? panelId : undefined}
                 label={group.cls ?? 'Not in a class'}
-                counter={group.entries.filter((row) => row.entries[0].kind !== 'unmeasured-link').length || undefined}
+                counter={group.entries.filter((row) => !isInformation(row)).length || undefined}
                 active={group === current}
                 onChangeTab={() => choose(keyOf(group))}
               />
@@ -191,8 +198,19 @@ function GroupBody({
   onPick: (pick: ReportPick) => void;
 }) {
   const styles = useStyles2(getStyles);
+  const { unmeasured = 0, inherited = 0 } = group.cells ?? {};
   return (
     <>
+      {unmeasured ? (
+        <p className={styles.note} data-testid="dmap-report-unmeasured">
+          {`${unmeasured} ${unmeasured === 1 ? 'link has' : 'links have'} no measured end`}
+        </p>
+      ) : null}
+      {inherited ? (
+        <p className={styles.note} data-testid="dmap-report-inherited">
+          {`${inherited} ${inherited === 1 ? 'cell reads' : 'cells read'} an inherited value`}
+        </p>
+      ) : null}
       {group.cells || group.uses.length ? (
         <table className={styles.table}>
           <thead>
@@ -315,6 +333,7 @@ function CountRow(props: { label: string; cells?: number; counts: SeriesCounts; 
 const getStyles = (theme: GrafanaTheme2) => ({
   report: css({ padding: theme.spacing(0, 1, 1), fontSize: theme.typography.bodySmall.fontSize }),
   empty: css({ color: theme.colors.text.secondary }),
+  note: css({ color: theme.colors.text.secondary, margin: theme.spacing(0, 0, 0.5) }),
   // The tabs stay at the top while the panel scrolls.
   tabs: css({
     position: 'sticky',

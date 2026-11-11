@@ -1,15 +1,15 @@
 import React, { useId, useState } from 'react';
 import { css } from '@emotion/css';
-import { formattedValueToString, getDisplayProcessor, type GrafanaTheme2 } from '@grafana/data';
+import { formattedValueToString, getDisplayProcessor, getValueFormat, type GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, Input, useStyles2, useTheme2 } from '@grafana/ui';
 import type { BindResultV4 } from '../../binding/bindV4';
-import { attrOf } from '../../binding/cellAttrs';
 import { effectiveClass } from '../../binding/classes';
 import type { EndContext } from '../../binding/edgeEnds';
 import { linkFeeds } from '../../binding/linkFeeds';
-import { createRegexCache, parseMatchBlock, resolveBlock } from '../../binding/matcher';
+import { inheritableNames, type MeasuredEnd } from '../../binding/identity';
+import { parseMatchBlock } from '../../binding/matcher';
 import { shownField, type Show } from '../../binding/rowData';
-import type { Use } from '../../binding/uses';
+import { listUses, type Use } from '../../binding/uses';
 import type { validateConfig } from '../../model/validate';
 import type { Series } from '../../query/snapshot';
 import type { CellIndex, CellMeta } from '../../types';
@@ -73,17 +73,80 @@ const written = (use: Use) =>
     .map(([attr, value]) => `${attr}: ${Array.isArray(value) ? `[${value.join(', ')}]` : value}`)
     .join('; ');
 
-/** The matchers of a use with the attributes of the cell put in (`resolved` of `resolveBlock`), or why they fail. */
-function resolvedText(use: Use, meta: CellMeta, ends: EndContext): string {
-  const parsed = parseMatchBlock(use.match, use.path);
-  if (!parsed.ok) {
-    return parsed.errors.map((e) => e.message).join('; ');
+/** The matchers of a use with the attributes of the cell put in, or why they fail: the text comes from the bind (I26). */
+function resolvedText(bound: BindResultV4, cellId: string, use: Use): string {
+  const resolved = bound.resolved.get(cellId)?.get(use.path);
+  if (!resolved) {
+    return '';
   }
-  const result = resolveBlock(parsed.block, attrOf(() => ends)(meta), createRegexCache());
-  if (!result.ok) {
-    return result.kind === 'missing-attr' ? `Missing attribute ${result.attr}` : result.message;
+  return 'problem' in resolved
+    ? resolved.problem
+    : resolved.matchers.map((m) => `${m.label}${m.op}${JSON.stringify(m.value)}`).join(', ');
+}
+
+/** The inheritable names that the match blocks of the uses read (I6). */
+const readNames = (uses: readonly Use[]) =>
+  inheritableNames(
+    uses.flatMap((use) => {
+      const parsed = parseMatchBlock(use.match, use.path);
+      return parsed.ok ? parsed.block.requiredAttrs : [];
+    })
+  );
+
+/** The names of a list in one text: `key, port`. */
+const names = (list: readonly string[]) => list.join(', ');
+
+/**
+ * The line "Measured end" (I23). The names are the identity names of the link. A link with a part of an identity
+ * (reason `own`, rule 5) can read a missing name from its source end: `inherited` tells which.
+ */
+export function measuredText(meta: CellMeta, measured: MeasuredEnd, bound: BindResultV4, uses: readonly Use[]): string {
+  const { needs } = measured;
+  switch (measured.reason) {
+    case 'at':
+      return `${measured.end}: at=${measured.end} on the link`;
+    case 'only':
+      return `${measured.end}: only this end gives ${names(needs)}`;
+    case 'both':
+      return `${measured.end}: both ends give ${names(needs)}. Set at=target to measure the target end.`;
+    case 'none':
+      return `none: no end gives ${names(needs)}. Put them on a port, or on the link.`;
+    case 'own': {
+      // Rule 2 has no dependent use: every use is end-free, so the link has all the names that its uses read.
+      const read = needs.length ? needs : readNames(uses);
+      if (!read.length) {
+        return `${measured.end}: no use of the link needs an identity from an end`;
+      }
+      const own = read.filter((name) => Object.hasOwn(meta.attrs, name));
+      const fromEnd = read.filter((name) => !own.includes(name) && bound.inherited.get(meta.id)?.has(name));
+      const missing = read.filter((name) => !own.includes(name) && !fromEnd.includes(name));
+      return [
+        own.length
+          ? `${measured.end}: the link has ${names(own)} itself`
+          : `${measured.end}: the link has no identity itself`,
+        ...(fromEnd.length ? [`the ${measured.end} end gives ${names(fromEnd)}`] : []),
+        ...(missing.length ? [`${names(missing)} ${missing.length === 1 ? 'is' : 'are'} missing`] : []),
+      ].join('; ');
+    }
   }
-  return result.resolved.map((m) => `${m.label}${m.op}${JSON.stringify(m.value)}`).join(', ');
+}
+
+/** The capacity of one geometric direction with its source (I14, I25). */
+function capacityText(
+  capacity: { amount?: number; source: string; cellId?: string },
+  meta: CellMeta,
+  ends: EndContext
+) {
+  if (capacity.amount === undefined) {
+    return 'none';
+  }
+  const amount = formattedValueToString(getValueFormat('bps')(capacity.amount));
+  if (capacity.source === 'series') {
+    return `${amount} (capacity query)`;
+  }
+  return capacity.cellId === undefined || capacity.cellId === meta.id
+    ? `${amount} (cap of the link)`
+    : `${amount} (cap of ${endName(capacity.cellId, ends)})`;
 }
 
 /**
@@ -160,6 +223,7 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
   const styles = useStyles2(getStyles);
   const { meta, ends, bound, validated, listId, onWrite } = props;
   const { bind, key, ...others } = meta.attrs;
+  const inherited = [...(bound.inherited.get(meta.id) ?? [])].filter(([name]) => !Object.hasOwn(meta.attrs, name));
   const cls = bind !== undefined ? validated.classes.get(bind) : undefined;
   const override = validated.parsed.config?.overrides[meta.id];
   const text = cls && effectiveClass(cls, override, meta.id).text;
@@ -200,12 +264,21 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
             <dd>{value}</dd>
           </React.Fragment>
         ))}
+        {inherited.map(([name, origin]) => (
+          <React.Fragment key={`inherited ${name}`}>
+            <dt>{name}</dt>
+            <dd data-testid="dmap-inspector-inherited">
+              {`${origin.value} (from ${originName(origin.cellId, ends)})`}
+            </dd>
+          </React.Fragment>
+        ))}
       </dl>
       {uses.map((use) => (
         <UseDetails
           key={use.path}
           use={use}
-          resolved={resolvedText(use, meta, ends)}
+          resolved={resolvedText(bound, meta.id, use)}
+          feed={feedText(use, meta)}
           series={bound.series.get(meta.id)?.get(use.path) ?? []}
           show={showOf(use, text)}
         />
@@ -243,6 +316,23 @@ function BindKey(props: { meta: CellMeta; listId: string; onWrite: InspectorV4Pr
   );
 }
 
+/** The origin of an inherited value: the label of the giving cell, else its id (I23). */
+function originName(cellId: string, ends: EndContext): string {
+  return oneLine(ends.index.get(cellId)?.meta.labelText) || cellId;
+}
+
+/** The end of a directional use and where it comes from (I13, I23). */
+function feedText(use: Use, meta: CellMeta): string | undefined {
+  if (use.end === undefined) {
+    return undefined;
+  }
+  const own = Object.hasOwn(meta.attrs, 'at');
+  if (own) {
+    return `${use.end} end (at=${meta.attrs.at} on the ${meta.isEdge ? 'link' : 'cell'})`;
+  }
+  return use.end === 'target' ? 'target end (inferred)' : 'source end';
+}
+
 const oneLine = (text: string | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
 
 /**
@@ -267,22 +357,56 @@ export function endName(id: string | undefined, ends: EndContext): string | unde
   return oneLine(meta.labelText) || id;
 }
 
-/** The ends of an edge, the end that the key names and the feed of each half (spec 3.8, 5.4). Write 3 of spec 5.5. */
+/** The capacity of each direction with its source, from the bind (I25), or nothing for a link with none. */
+function CapacityLine({ meta, bound, ends }: { meta: CellMeta; bound: BindResultV4; ends: EndContext }) {
+  const styles = useStyles2(getStyles);
+  const capacity = bound.capacity.get(meta.id);
+  if (!capacity) {
+    return null;
+  }
+  return (
+    <p className={styles.line} data-testid="dmap-inspector-capacity">
+      {`Capacity: a → b ${capacityText(capacity.a2b, meta, ends)}, b → a ${capacityText(capacity.b2a, meta, ends)}`}
+    </p>
+  );
+}
+
+/** The ends of an edge, the measured end and the feed of each half (spec 3.8, 5.4, I23). Write 3 of spec 5.5. */
 function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   const styles = useStyles2(getStyles);
-  const { meta, ends, validated, generated, onWrite } = props;
-  const at = meta.attrs.at;
+  const { meta, ends, bound, validated, generated, onWrite } = props;
+  const hasAt = Object.hasOwn(meta.attrs, 'at');
   const cls = meta.attrs.bind !== undefined ? validated.classes.get(meta.attrs.bind) : undefined;
   const eff = cls && effectiveClass(cls, validated.parsed.config?.overrides[meta.id], meta.id);
-  const feeds = linkFeeds(at, 'tx', 'rx');
+  const uses = bound.uses.get(meta.id) ?? [];
+  const measured = bound.measured.get(meta.id);
+  // The end of the `up` and `down` uses (Use.end); the measured end, else the own `at`, when the link has none.
+  const feedEnd =
+    uses.find((use) => use.kind === 'up')?.end ??
+    uses.find((use) => use.kind === 'down')?.end ??
+    (measured ? (measured.end === 'target' ? 'target' : 'source') : meta.attrs.at === 'target' ? 'target' : 'source');
+  const feeds = linkFeeds(feedEnd, 'tx', 'rx');
   const half = (direction: string) => `${direction} (${(direction === 'tx' ? eff?.up : eff?.down) ?? 'no query'})`;
   const end = ends.ends.get(meta.id);
-  const atTarget = at === 'target';
   const sourceName = endName(end?.source, ends);
   const targetName = endName(end?.target, ends);
   // Two ends with one name: the cell id tells them apart, as visible text.
   const same = sourceName !== undefined && sourceName === targetName;
-  const keyedName = atTarget ? targetName : sourceName;
+  const measuredEnd = measured ? measured.end : feedEnd;
+  const keyedName = measuredEnd === 'target' ? targetName : sourceName;
+  // The dependent uses of an unmeasured link are not in its list: show them as the YAML has them.
+  const notMeasured =
+    measured?.end === 'none' && cls && eff
+      ? listUses(meta, eff).filter((use) => !uses.some((kept) => kept.path === use.path))
+      : [];
+  // The button writes the other end. With an inferred end it writes the end that the bind does not measure.
+  const otherEnd = hasAt
+    ? meta.attrs.at === 'target'
+      ? null
+      : 'target'
+    : measuredEnd === 'target'
+      ? 'source'
+      : 'target';
   return (
     <>
       <h4 className={styles.subtitle}>Link</h4>
@@ -298,20 +422,48 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
           {same && end?.target ? <span className={styles.note}> ({end.target})</span> : null}
         </dd>
       </dl>
-      <p className={styles.line} data-testid="dmap-inspector-keyed">
-        {`The key names the ${atTarget ? 'target' : 'source'} end${keyedName ? ` (${keyedName})` : ''}.`}
-      </p>
+      {measured ? (
+        <p className={styles.line} data-testid="dmap-inspector-measured">
+          {measuredText(meta, measured, bound, uses)}
+        </p>
+      ) : null}
+      {measuredEnd !== 'none' ? (
+        <p className={styles.line} data-testid="dmap-inspector-keyed">
+          {`The key names the ${measuredEnd} end${keyedName ? ` (${keyedName})` : ''}.`}
+        </p>
+      ) : null}
       <p className={styles.line} data-testid="dmap-inspector-a2b">{`a → b: ${half(feeds.a2b)}`}</p>
       <p className={styles.line} data-testid="dmap-inspector-b2a">{`b → a: ${half(feeds.b2a)}`}</p>
+      <CapacityLine meta={meta} bound={bound} ends={ends} />
+      {notMeasured.length ? (
+        <>
+          <h4 className={styles.subtitle}>Not measured</h4>
+          <ul className={styles.series} data-testid="dmap-inspector-not-measured">
+            {notMeasured.map((use) => (
+              <li key={use.path}>{`${use.path}: ${written(use)}`}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       <div className={styles.form}>
         <Button
           size="sm"
           variant="secondary"
           data-testid="dmap-inspector-at"
-          onClick={() => onWrite([{ id: meta.id, attrs: { at: atTarget ? null : 'target' } }])}
+          onClick={() => onWrite([{ id: meta.id, attrs: { at: otherEnd } }])}
         >
-          {atTarget ? 'Use the source end' : 'Use the target end'}
+          {otherEnd === null ? 'Use the source end' : `Use the ${otherEnd} end`}
         </Button>
+        {hasAt ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="dmap-inspector-infer"
+            onClick={() => onWrite([{ id: meta.id, attrs: { at: null } }])}
+          >
+            Infer the end
+          </Button>
+        ) : null}
         {generated ? (
           <span className={styles.note} data-testid="dmap-inspector-generated">
             This panel is generated. The next build writes <code>at</code> from the source of the link: the catalogue
@@ -323,10 +475,10 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   );
 }
 
-function UseDetails(props: { use: Use; resolved: string; series: Series[]; show: Show }) {
+function UseDetails(props: { use: Use; resolved: string; feed?: string; series: Series[]; show: Show }) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
-  const { use, resolved, series, show } = props;
+  const { use, resolved, feed, series, show } = props;
   const more = series.length - LABEL_SETS;
   return (
     <section className={styles.use} data-testid="dmap-inspector-use" data-dmap-use={use.path}>
@@ -338,6 +490,12 @@ function UseDetails(props: { use: Use; resolved: string; series: Series[]; show:
         <dd data-testid="dmap-inspector-written">{written(use)}</dd>
         <dt>Resolved</dt>
         <dd data-testid="dmap-inspector-resolved">{resolved}</dd>
+        {feed ? (
+          <>
+            <dt>Feed</dt>
+            <dd data-testid="dmap-inspector-feed">{feed}</dd>
+          </>
+        ) : null}
         <dt>Series</dt>
         <dd data-testid="dmap-inspector-count" className={series.length ? undefined : styles.zero}>
           {`${series.length} series`}

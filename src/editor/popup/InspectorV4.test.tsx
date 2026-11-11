@@ -389,6 +389,218 @@ describe('InspectorV4', () => {
   });
 });
 
+/** A plain draw.io diagram: ports inside nodes, links with `bind` only (spec I8, I23). */
+function inferred() {
+  type Cell = { id: string; label: string; attrs?: Record<string, string>; parent?: string; edge?: [string, string] };
+  const cells: Cell[] = [
+    { id: 'n1', label: 'Node 1', attrs: { key: 'n1' } },
+    { id: 'n2', label: 'Node 2', attrs: { key: 'n2' } },
+    { id: 'n3', label: 'Node 3', attrs: { key: 'n3' } },
+    { id: 'n4', label: 'Node 4' },
+    { id: 'p1', label: 'p1', parent: 'n1' },
+    { id: 'p2', label: 'p2', parent: 'n2', attrs: { bind: 'portc', port: 'eth0', cap: '100M' } },
+    { id: 'p3', label: 'p3', parent: 'n3', attrs: { port: 'eth1' } },
+    { id: 'p4', label: 'p4', parent: 'n4' },
+    { id: 'e_only', label: '', attrs: { bind: 'link' }, edge: ['p1', 'p2'] },
+    { id: 'e_both', label: '', attrs: { bind: 'link' }, edge: ['p2', 'p3'] },
+    { id: 'e_at', label: '', attrs: { bind: 'link', at: 'target' }, edge: ['p2', 'p3'] },
+    { id: 'e_own', label: '', attrs: { bind: 'link', key: 'n1', port: 'eth0' }, edge: ['p1', 'p4'] },
+    { id: 'e_part', label: '', attrs: { bind: 'link5', port: 'eth9' }, edge: ['p1', 'p4'] },
+    { id: 'e_none', label: '', attrs: { bind: 'link' }, edge: ['p4', 'n4'] },
+    { id: 'e_ov', label: '', attrs: { bind: 'link' }, edge: ['p1', 'p2'] },
+    { id: 'm1', label: 'M', attrs: { bind: 'multi', key: 'n1' } },
+  ];
+  const attr = (a: Record<string, string> = {}) => Object.entries(a).map(([k, v]) => `${k}="${v}"`);
+  const xml =
+    '<mxfile><diagram id="p1" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+    cells
+      .map((c) => {
+        const [a, b] = c.edge ?? [];
+        const geometry = `<mxCell parent="${c.parent ?? '1'}" ${c.edge ? `edge="1" source="${a}" target="${b}"` : 'vertex="1"'}/>`;
+        return `<object id="${c.id}" label="${c.label}" ${attr(c.attrs).join(' ')}>${geometry}</object>`;
+      })
+      .join('') +
+    '</root></mxGraphModel></diagram></mxfile>';
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100">' +
+    cells
+      .map((c, i) => {
+        const meta = Object.entries(c.attrs ?? {}).map(([k, v]) => `data-meta-${k}="${v}"`);
+        const shape = c.edge
+          ? `<path d="M ${i} 15 L ${i + 40} 15" fill="none" pointer-events="stroke"/>`
+          : `<rect x="${i * 10}" width="40" height="30"/><text>${c.label}</text>`;
+        return `<g data-cell-id="${c.id}" ${meta.join(' ')}>${shape}</g>`;
+      })
+      .join('') +
+    '</svg>';
+  const config = {
+    version: 4,
+    classes: {
+      link: { match: { key: 'job', port: 'device' }, up: 'tx', down: 'rx' },
+      link5: {
+        match: { key: 'job', port: 'device' },
+        up: 'tx',
+        rows: [{ kind: 'value', query: 'tx', match: { key: 'job', site: 'site' } }],
+      },
+      portc: { match: { key: 'job', port: 'device' }, status: 'up' },
+      multi: {
+        match: { key: 'job' },
+        status: 'up',
+        text: { query: 'up' },
+        rows: [{ kind: 'history', query: 'up' }],
+        chart: { kind: 'history', query: 'up' },
+      },
+    },
+    overrides: { e_ov: { match: { key: 'node', port: 'iface' } } },
+  };
+  const base = data();
+  const now = Date.now();
+  const frame = (refId: string, labels: Record<string, string>, value: number) =>
+    toDataFrame({
+      refId,
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [now - 60_000, now] },
+        { name: 'Value', type: FieldType.number, values: [value - 1, value], labels },
+      ],
+    });
+  const series = [
+    frame('up', { job: 'n2', device: 'eth0' }, 1),
+    frame('up', { job: 'n1' }, 1),
+    frame('tx', { job: 'n2', device: 'eth0' }, 100),
+    frame('rx', { job: 'n2', device: 'eth0' }, 5),
+    frame('tx', { job: 'n3', device: 'eth1' }, 100),
+    frame('rx', { job: 'n3', device: 'eth1' }, 5),
+    frame('tx', { node: 'n2', iface: 'eth0' }, 100),
+    frame('rx', { node: 'n2', iface: 'eth0' }, 5),
+  ];
+  return editorProps({
+    options: { config, diagram: { xml, svg, hash: 'inferred-1', updatedAt: '' } } as unknown as Options,
+    data: {
+      ...base,
+      series,
+      request: { ...base.request!, targets: ['up', 'tx', 'rx'].map((refId) => ({ refId })) },
+    },
+  });
+}
+
+describe('InspectorV4 with an inferred identity', () => {
+  let rect: { mockRestore(): void };
+  beforeEach(() => {
+    fake.reset();
+    rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(
+        () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0 }) as DOMRect
+      );
+  });
+  afterEach(() => rect.mockRestore());
+
+  const open = async (id: string) => {
+    render(<SplitEditor {...inferred()} />);
+    await frame();
+    fireEvent.click(cell(id));
+  };
+  const use = (path: string) =>
+    within(inspector())
+      .getAllByTestId('dmap-inspector-use')
+      .find((el) => el.dataset.dmapUse === path)!;
+
+  it('shows an inherited value with its origin in the attribute list', async () => {
+    await open('p2');
+    const attrs = within(field('attrs'));
+    expect(attrs.getByText('key').nextSibling?.textContent).toBe('n2 (from Node 2)');
+    expect(attrs.getByText('port').nextSibling?.textContent).toBe('eth0');
+    // the use of the port shows the matchers with the inherited key, not "Missing attribute"
+    expect(within(use('classes.portc.status')).getByTestId('dmap-inspector-resolved').textContent).toBe(
+      'job="n2", device="eth0"'
+    );
+    expect(within(use('classes.portc.status')).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+  });
+
+  it('shows a name of a cell that is not inherited as its own value only', async () => {
+    await open('e_own');
+    expect(within(field('attrs')).queryByText(/from /)).toBeNull();
+  });
+
+  it.each([
+    ['e_at', 'target: at=target on the link'],
+    ['e_only', 'target: only this end gives key, port'],
+    ['e_both', 'source: both ends give key, port. Set at=target to measure the target end.'],
+    ['e_own', 'source: the link has key, port itself'],
+    // rule 5: the link has port; the source end gives key; no end gives site
+    ['e_part', 'source: the link has port itself; the source end gives key; site is missing'],
+    ['e_none', 'none: no end gives key, port. Put them on a port, or on the link.'],
+  ])('says why the measured end of %s is what it is', async (id, text) => {
+    await open(id);
+    expect(field('measured').textContent).toBe(text);
+  });
+
+  it('shows the feed of an inferred target: the lines a → b and b → a name the flipped queries', async () => {
+    await open('e_only');
+    expect(field('keyed').textContent).toBe('The key names the target end (p2).');
+    expect(field('a2b').textContent).toBe('a → b: rx (rx)');
+    expect(field('b2a').textContent).toBe('b → a: tx (tx)');
+    const up = use('classes.link.up');
+    expect(within(up).getByTestId('dmap-inspector-resolved').textContent).toBe('job="n2", device="eth0"');
+    expect(within(up).getByTestId('dmap-inspector-feed').textContent).toBe('target end (inferred)');
+    expect(within(up).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+  });
+
+  it('keeps the unflipped lines for an inferred source', async () => {
+    await open('e_own');
+    expect(field('a2b').textContent).toBe('a → b: tx (tx)');
+    expect(within(use('classes.link.up')).getByTestId('dmap-inspector-feed').textContent).toBe('source end');
+  });
+
+  it('resolves the match of an override with the inherited value', async () => {
+    await open('e_ov');
+    expect(within(use('classes.link.up')).getByTestId('dmap-inspector-resolved').textContent).toBe(
+      'node="n2", iface="eth0"'
+    );
+  });
+
+  it('names the end cell that gives the capacity', async () => {
+    await open('e_only');
+    expect(field('capacity').textContent).toBe('Capacity: a → b 100 Mb/s (cap of p2), b → a 100 Mb/s (cap of p2)');
+  });
+
+  it('lists the dependent uses of an unmeasured link as not measured, with their match as written', async () => {
+    await open('e_none');
+    const list = field('not-measured');
+    expect(list.textContent).toContain('classes.link.up');
+    expect(list.textContent).toContain('key: job; port: device');
+    expect(within(inspector()).queryAllByTestId('dmap-inspector-use')).toHaveLength(0);
+  });
+
+  it('gives each of status, text, a history row and a chart its matcher text', async () => {
+    await open('m1');
+    const uses = within(inspector()).getAllByTestId('dmap-inspector-use');
+    expect(uses.map((u) => u.dataset.dmapUse)).toEqual([
+      'classes.multi.status',
+      'classes.multi.text',
+      'classes.multi.rows[0]',
+      'classes.multi.chart',
+    ]);
+    for (const el of uses) {
+      expect(within(el).getByTestId('dmap-inspector-resolved').textContent).toBe('job="n1"');
+    }
+  });
+
+  it('writes the other end for an inferred end, and removes at with "Infer the end"', async () => {
+    await open('e_only');
+    expect(field('at').textContent).toBe('Use the source end');
+    expect(within(inspector()).queryByTestId('dmap-inspector-infer')).toBeNull();
+    fireEvent.click(field('at'));
+    await frame();
+    expect(cell('e_only').getAttribute('data-meta-at')).toBe('source');
+    expect(field('measured').textContent).toBe('source: at=source on the link');
+    fireEvent.click(field('infer'));
+    await frame();
+    expect(cell('e_only').hasAttribute('data-meta-at')).toBe(false);
+    expect(field('measured').textContent).toBe('target: only this end gives key, port');
+  });
+});
+
 describe('endName', () => {
   const meta = (m: Partial<CellMeta> & { id: string }): CellEntry =>
     ({ meta: { key: m.id, attrs: {}, labelText: '', isEdge: false, kind: 'node', ...m } }) as unknown as CellEntry;
