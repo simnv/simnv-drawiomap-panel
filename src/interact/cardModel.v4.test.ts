@@ -12,7 +12,8 @@ import {
   type PanelData,
   type TimeRange,
 } from '@grafana/data';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { assignTitles } from '../adapter/cellTitle';
 import { applyContract, cellMetaFromAttrs } from '../adapter/portograph';
 import { bindContextFor } from '../binding/context';
 import { bindV4 } from '../binding/bindV4';
@@ -103,6 +104,97 @@ const clients = (rows: unknown[], extra: Record<string, unknown> = {}) => ({
 });
 const ssidFrames = (n: number, values: (i: number) => Array<number | null> = (i) => [i, i + 1, i + 2]) =>
   Array.from({ length: n }, (_, i) => frame('clients', { job: 'ap-1', ssid: `s${i}` }, values(i)));
+
+describe('buildCardV4: drawn link titles', () => {
+  const fixture = (target: Record<string, string> = {}, link: Record<string, string> = {}) => {
+    const index = indexOf([
+      ['0', { 'pg-schema': '1' }],
+      ['a', { 'pg-kind': 'node', 'pg-id': 'a', label: 'A' }],
+      ['b', { 'pg-kind': 'node', 'pg-id': 'b', label: 'B' }],
+      ['c', { 'pg-kind': 'node', 'pg-id': 'c', label: 'C', ...target }],
+      ['d', { 'pg-kind': 'node', 'pg-id': 'd', label: 'Switch C' }],
+      [
+        'l',
+        { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'a', 'pg-to': 'b', bind: 'lan', key: 'l', cap: '1G', ...link },
+        true,
+      ],
+    ]);
+    assignTitles([...index.values()].map((entry) => entry.meta));
+    const validated = validateConfig({ version: 4, classes: { lan: { match: { key: 'job' }, up: 'tx' } } });
+    const data = panelData([frame('tx', { job: 'l' })]);
+    return { index, validated, data };
+  };
+  const reconnected = '<mxGraphModel><root><mxCell id="l" edge="1" source="a" target="c"/></root></mxGraphModel>';
+
+  it('uses the reconnected target in the card title and reads XML only when the card opens', () => {
+    const { index, validated, data } = fixture();
+    expect(index.get('l')?.meta.title).toBe('A ↔ B');
+    const xml = reconnected;
+    const ctx = { theme, replaceVariables: (s: string) => s, index, xml, validated, data };
+    const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
+    try {
+      const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+      expect(parse).not.toHaveBeenCalled();
+      for (let i = 0; i < 20; i++) {
+        expect(buildCardV4('l', bound, ctx).title).toBe('A ↔ C');
+      }
+      expect(parse).toHaveBeenCalledTimes(1);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it.each([
+    ['source="missing" target="c"', 'A ↔ C'],
+    ['source="c" target="missing"', 'C ↔ B'],
+    ['source="c"', 'C ↔ B'],
+    ['target="c"', 'A ↔ C'],
+    ['', 'A ↔ B'],
+  ])('uses per-end pg fallback for %s', (ends, expected) => {
+    const { index, validated, data } = fixture();
+    const xml = `<mxGraphModel><root><mxCell id="l" edge="1" ${ends}/></root></mxGraphModel>`;
+    const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+    expect(buildCardV4('l', bound, { theme, replaceVariables: (s) => s, index, xml, validated, data }).title).toBe(
+      expected
+    );
+  });
+
+  it('keeps the pg title for a compressed page', () => {
+    const { index, validated, data } = fixture();
+    const xml = '<mxfile><diagram id="p1">7VnRbtowFP0a</diagram></mxfile>';
+    const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+    expect(buildCardV4('l', bound, { theme, replaceVariables: (s) => s, index, xml, validated, data }).title).toBe(
+      'A ↔ B'
+    );
+  });
+
+  it.each([
+    ['', 'A (a) ↔ A (c)'],
+    ['ch1', 'A ↔ A (ch1)'],
+  ])('keeps title disambiguation after a reconnect, with link label %j', (label, expected) => {
+    const { index, validated, data } = fixture({ label: 'A' }, { label });
+    const xml = reconnected;
+    const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+    expect(buildCardV4('l', bound, { theme, replaceVariables: (s) => s, index, xml, validated, data }).title).toBe(
+      expected
+    );
+  });
+
+  it('names the drawn port with its node and port labels', () => {
+    const { index, validated, data } = fixture({
+      'pg-kind': 'port',
+      'pg-id': 'd:eth1',
+      'pg-node': 'd',
+      'pg-port': 'eth1',
+      label: 'Port C',
+    });
+    const xml = reconnected;
+    const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+    expect(buildCardV4('l', bound, { theme, replaceVariables: (s) => s, index, xml, validated, data }).title).toBe(
+      'A ↔ Switch C Port C'
+    );
+  });
+});
 
 describe('buildCardV4: link row capacity (spec 3.8, A4)', () => {
   const traffic = [

@@ -54,8 +54,8 @@ export function useBoundDiagram(inputs: BoundDiagramInputs): BoundDiagram {
   }, [stale, bound.patches]);
   const { theme, replaceVariables, fieldThresholds } = bindContext;
   const cardContext = useMemo(
-    (): CardContextV4 => ({ theme, replaceVariables, fieldThresholds, index, validated, data }),
-    [theme, replaceVariables, fieldThresholds, index, validated, data]
+    (): CardContextV4 => ({ theme, replaceVariables, fieldThresholds, index, xml, validated, data }),
+    [theme, replaceVariables, fieldThresholds, index, xml, validated, data]
   );
   return { validated, bound, patches, cardContext };
 }

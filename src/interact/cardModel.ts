@@ -8,6 +8,7 @@ import {
   LinkModel,
 } from '@grafana/data';
 import type { CardContext, CellPatch } from '../types';
+import { cellFinder, cellTitle } from '../adapter/cellTitle';
 import { defaultUrlTitle } from './links';
 import { halfState, type HalfContext } from '../binding/engine';
 import type { StatusView } from '../binding/status';
@@ -16,6 +17,7 @@ import { noDataColor } from '../binding/color';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 import type { BindInputV4, BindResultV4, PatchV4 } from '../binding/bindV4';
 import { effectiveClass } from '../binding/classes';
+import { endContextOf } from '../binding/edgeEnds';
 import { cadenceOf, freshnessMs, staleCheck } from '../binding/freshness';
 import { linkFeeds } from '../binding/linkFeeds';
 import { directionHistory, isInstant, shownField, snapshotV4 } from '../binding/rowData';
@@ -155,8 +157,8 @@ export interface CardModelV4 {
   links: LinkModel[];
 }
 
-/** The inputs of the bind give the class of the cell (its freshness), the frames (the line labels) and the range. */
-export type CardContextV4 = CardContext & Pick<BindInputV4, 'index' | 'validated' | 'data'>;
+/** The bind inputs give the class, frames, range and optional XML for the drawn link title. */
+export type CardContextV4 = CardContext & Pick<BindInputV4, 'index' | 'xml' | 'validated' | 'data'>;
 
 /** Eight distinct hues from the Grafana classic palette, in stable line order. */
 function lineColor(theme: GrafanaTheme2, i: number): string {
@@ -183,7 +185,15 @@ interface UseData {
  */
 export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContextV4): CardModelV4 {
   const meta = ctx.index.get(cellId)?.meta;
-  const title = meta ? meta.title || meta.labelText || meta.key : cellId;
+  let title = meta ? meta.title || meta.labelText || meta.key : cellId;
+  if (meta?.kind === 'link' && ctx.xml !== undefined) {
+    // Read available XML only when a link card opens. SVG-only callers keep their indexed title.
+    const ends = endContextOf(ctx.xml, ctx.index).ends.get(cellId);
+    title = cellTitle(meta, cellFinder([...ctx.index.values()].map((entry) => entry.meta)), true, {
+      source: ends?.source === undefined ? undefined : ctx.index.get(ends.source)?.meta,
+      target: ends?.target === undefined ? undefined : ctx.index.get(ends.target)?.meta,
+    });
+  }
   const card: CardModelV4 = { title, rows: [], links: [] };
   const patch = bound.patches.get(cellId);
   if (!patch) {
