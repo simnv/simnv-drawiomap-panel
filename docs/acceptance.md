@@ -179,4 +179,40 @@ centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The
 
 The baseline for the bench of the inferred identity plan (spec `docs/superpowers/specs/2026-11-11-inferred-identity-design.md`, steps S0 and S9) is the commit `a915fcd449b1d352715b259050ee59dc91419f37` of `main`.
 The golden record (`src/binding/identity.golden.test.ts`) was made on that commit.
-Step S9 measures the case of today on that commit and on the branch after S5, and writes the numbers here.
+
+S9, 2026-11-11. The branch is `simnv/ii-s9`, with engine code from `99744cb` after S5.
+Both checkouts used the same `node_modules`, Node 26.13.0 and Vitest 5.1.0 on an Apple M5 Pro.
+The baseline ran in a detached worktree under `/tmp`. Its source did not change.
+
+| Case                      | Runs per process | Process medians              | Median of the three medians |
+| ------------------------- | ---------------- | ---------------------------- | --------------------------- |
+| Baseline, own attributes  | 20               | 3.299 ms, 3.284 ms, 4.096 ms | 3.299 ms                    |
+| Branch, own attributes    | 20               | 3.271 ms, 3.529 ms, 4.033 ms | 3.529 ms                    |
+| Branch, inferred identity | 20               | 4.562 ms, 4.492 ms, 5.058 ms | 4.562 ms                    |
+
+Command, three processes per checkout:
+`npx vitest run src/binding/bind.v4.bench.test.ts --maxWorkers=1 --silent=false`.
+The baseline has only the own-attribute case. Each branch process runs both cases.
+Each baseline process passed 3 tests. Each branch process passed 4 tests.
+The extra tests check distinct regexes and malformed matchers. They do not contribute to the medians.
+
+The six processes ran in one session, from 12:52:55 to 12:53:36, UTC+05:00.
+The one-minute loads before the baseline processes were 2.29, 2.25 and 2.23.
+The loads before the branch processes were 3.49, 3.42 and 3.55.
+Process checks before and after each process found no competing Vitest, Playwright, compose startup or draw.io export job.
+Earlier trial runs are excluded. A competing job appeared during some trials.
+
+Both cases have 300 bound cells, 1000 distinct series, one sample per series and seed 42.
+The inferred diagram has 300 links with only `bind` plus structural `pg-*` attributes, 300 nodes with `key`, and 600 ports.
+Only 300 ports have `port`. The measured end alternates between source and target.
+Each measured pass checks every bound cell's selected value after the timer stops.
+The inferred pass also checks the measured end of each link.
+The timer covers `bindV4` with a new panel data identity per refresh.
+Fixture creation, SVG indexing, config validation and assertions are outside the timer.
+The first inferred pass includes the end-map build. The later passes use the same diagram and its cached maps.
+This unit bench does not measure browser paint or a dashboard refresh.
+
+**FAIL, AC18:** the own-attribute median increased by 6.97%, above the 5% budget.
+The limit is 3.464 ms. The measured branch median is 3.529 ms.
+The inferred case passes its separate budget: 4.562 / 3.529 = 1.293, below 1.5.
+Its limit is 5.294 ms. S9 makes no engine changes to reduce these times.
