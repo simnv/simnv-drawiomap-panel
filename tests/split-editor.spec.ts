@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises';
 import { devices } from '@playwright/test';
 import type { APIRequestContext, Locator, Request } from '@playwright/test';
 import type { ConfigV4 } from '../src/model/v4';
@@ -103,6 +104,8 @@ test(
   }
 );
 
+const at0 = (dialog: Locator) => inspector(dialog).getByTestId('dmap-inspector-at');
+
 test('the cursor lights the cells of its path and zooms; a report entry lights its cells and moves the cursor (P3.5)', async ({
   page,
   config,
@@ -161,6 +164,21 @@ test('the cursor lights the cells of its path and zooms; a report entry lights i
   expect((await codeCursor(dialog)).lineNumber).toBe(rowStart);
   await expect(codeBox(dialog)).toHaveClass(/focused/);
   await expect(inspector(dialog)).toHaveCount(0);
+
+  // A selection replaces the highlight: nothing stays outlined, and the selected cell is not dimmed. Escape ends a
+  // highlight before it closes the editor.
+  await popupCell(dialog, 'device-1').click();
+  await expect.poll(() => flagged(dialog, 'highlight')).toEqual([]);
+  await expect(popupCell(dialog, 'device-1')).not.toHaveClass(/dmap-legend-member/);
+  await matchReport(dialog)
+    .getByRole('button', { name: /^classes\.routers\.rows\[2\]: 2 cells have no series/ })
+    .click();
+  await expect.poll(() => flagged(dialog, 'highlight')).toEqual(['device-1', 'device-2']);
+  // The code box keeps its own Escape (Monaco handles it); a focus on the diagram gives it to the editor.
+  await popupCell(dialog, 'device-1').focus();
+  await page.keyboard.press('Escape');
+  await expect.poll(() => flagged(dialog, 'highlight')).toEqual([]);
+  await expect(dialog).toBeVisible();
 });
 
 test('a click on a cell opens the inspector and moves the cursor to its class; "key is at the target" swaps the halves (P3.6)', async ({
@@ -194,19 +212,23 @@ test('a click on a cell opens the inspector and moves the cursor to its class; "
   await expect(inspector(dialog).getByTestId('dmap-inspector-id')).toHaveText('link-1');
   const [link] = await codeLines(dialog, /^ {2}directional-link:$/);
   await expect.poll(async () => (await codeCursor(dialog)).lineNumber).toBe(link);
-  await expect(inspector(dialog).getByTestId('dmap-inspector-source')).toHaveText('device-1');
-  await expect(inspector(dialog).getByTestId('dmap-inspector-target')).toHaveText('device-2');
-  await expect(inspector(dialog).getByTestId('dmap-inspector-keyed')).toHaveText('The key names the source end.');
+  await expect(inspector(dialog).getByTestId('dmap-inspector-source')).toHaveAttribute('title', 'device-1');
+  await expect(inspector(dialog).getByTestId('dmap-inspector-target')).toHaveAttribute('title', 'device-2');
+  await expect(inspector(dialog).getByTestId('dmap-inspector-keyed')).toHaveText(/^The key names the source end/);
+  // The link section is in view without a scroll (the default height of the report row).
+  await expect(at0(dialog)).toBeInViewport();
+  await mkdir('/tmp/s1b', { recursive: true });
+  await dialog.screenshot({ path: '/tmp/s1b/inspector-link.png' });
   await expect(inspector(dialog).getByTestId('dmap-inspector-a2b')).toHaveText('a → b: tx (tx)');
   // A hand-made panel: no note about the generator.
   await expect(inspector(dialog).getByTestId('dmap-inspector-generated')).toHaveCount(0);
 
-  const at = inspector(dialog).getByTestId('dmap-inspector-at');
-  await expect(at).toHaveText('key is at the target');
+  const at = at0(dialog);
+  await expect(at).toHaveText('Use the target end');
   await at.click();
   await expect(popupCell(dialog, 'link-1')).toHaveAttribute('data-meta-at', 'target');
-  await expect(at).toHaveText('key is at the source');
-  await expect(inspector(dialog).getByTestId('dmap-inspector-keyed')).toHaveText('The key names the target end.');
+  await expect(at).toHaveText('Use the source end');
+  await expect(inspector(dialog).getByTestId('dmap-inspector-keyed')).toHaveText(/^The key names the target end/);
   await expect(inspector(dialog).getByTestId('dmap-inspector-a2b')).toHaveText('a → b: rx (rx)');
   await expect.poll(labels).toEqual({ a2b: before.b2a, b2a: before.a2b });
 });
