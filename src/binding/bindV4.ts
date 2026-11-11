@@ -466,9 +466,10 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   function bindCell(meta: CellMeta, eff: ResolvedClass): void {
     const cls = eff.name;
     let uses = listUses(meta, eff);
-    const required = new Map<MatchV4, readonly string[]>();
+    let required: Map<MatchV4, readonly string[]> | undefined;
     let end: MeasuredEnd | undefined;
     if (meta.isEdge) {
+      required = new Map();
       for (const use of uses) {
         const parsed = blockOf(use).parsed;
         required.set(use.match, parsed.ok ? parsed.block.requiredAttrs : []);
@@ -483,7 +484,8 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
     const byPath = new Map<UsePath, Series[]>();
     const results = new Map<UsePath, UseResult>();
-    const selections = new Map<string, Selection>();
+    // One use needs no memo of its selection.
+    const selections = uses.length > 1 ? new Map<string, Selection>() : undefined;
     out.uses.set(meta.id, uses);
     out.series.set(meta.id, byPath);
     const resolved: NonNullable<ReturnType<typeof out.resolved.get>> = new Map();
@@ -492,11 +494,13 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     for (const use of uses) {
       const unknown = targets && !targets.has(use.refId);
       const q = unknown ? { snapshot: NO_TARGET, series: [], selected: new Set<Series>() } : query(use.refId);
-      const key = JSON.stringify([use.refId, use.match]);
-      let selection = selections.get(key);
+      const key = selections && JSON.stringify([use.refId, use.match]);
+      let selection = key === undefined ? undefined : selections!.get(key);
       if (!selection) {
         selection = select(use, meta, q);
-        selections.set(key, selection);
+        if (key !== undefined) {
+          selections!.set(key, selection);
+        }
       }
       resolved.set(
         use.path,
@@ -520,7 +524,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
 
     if (end?.reason === 'both') {
-      const dependent = uses.filter((use) => !isEndFree(meta, required.get(use.match)!));
+      const dependent = uses.filter((use) => !isEndFree(meta, required!.get(use.match)!));
       if (
         dependent.length &&
         dependent.every((use) => {
