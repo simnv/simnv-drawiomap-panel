@@ -231,6 +231,32 @@ test('a click on a cell opens the inspector and moves the cursor to its class; "
   await expect.poll(labels).toEqual({ a2b: before.b2a, b2a: before.a2b });
 });
 
+test('the attribute row adds port=x to a cell, shows it in the list and Undo removes it (T3c)', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  const uid = await createDiagram(config);
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const dialog = await openSplitEditor(page);
+
+  // The authoring diagram has no portograph port; a plain cell takes the same attribute row.
+  await popupCell(dialog, 'device-2').click();
+  const panel = inspector(dialog);
+  await panel.getByRole('textbox', { name: 'Attribute name' }).fill('Port');
+  await panel.getByRole('textbox', { name: 'Attribute value' }).fill('x');
+  await panel.getByRole('button', { name: 'Add attribute', exact: true }).click();
+  await expect(popupCell(dialog, 'device-2')).toHaveAttribute('data-meta-port', 'x');
+  await expect(panel.getByTestId('dmap-inspector-attrs').getByText('port', { exact: true })).toBeVisible();
+  await mkdir('/tmp/t3c', { recursive: true });
+  await dialog.screenshot({ path: '/tmp/t3c/inspector-attrs.png' });
+
+  await dialog.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(popupCell(dialog, 'device-2')).not.toHaveAttribute('data-meta-port', /.*/);
+  await expect(panel.getByTestId('dmap-inspector-attrs').getByText('port', { exact: true })).toHaveCount(0);
+});
+
 test(
   'assign a class to 3 cells, Apply, save and reload; the XML wraps a bare mxCell; a draw.io save keeps the attributes (P3.7)',
   { tag: '@matrix' },

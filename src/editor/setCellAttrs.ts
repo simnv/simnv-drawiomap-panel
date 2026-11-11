@@ -4,7 +4,7 @@ import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { createXmlElement, parseXml, serializeXml } from '../util/xml';
 
-export { META_KEY, RESERVED_META } from '../model/cellAttrNames';
+export { attrNameProblem, isReservedAttr, META_KEY, RESERVED_META } from '../model/cellAttrNames';
 
 /** Read the uncompressed model of page 1 without changing later pages. */
 function firstModel(doc: Document): Element {

@@ -80,6 +80,8 @@ The preview follows a valid draft. Move the cursor in YAML to highlight the affe
 
 The highlight (from the cursor or a report entry) and the selection are two ways to point at cells, and the highlight dims all other cells. So the highlight ends when you select a cell, box-select, click the empty stage, press **Escape** (when the focus is not in the code box), or use **Undo**, **Redo** or a write. The first **Escape** only ends the highlight; the next one closes the editor.
 
+The **Attributes** list of one cell writes any attribute that is not reserved. Each such attribute has **Edit** and **Remove**. To add one, type a name and a value in **Add attribute** and press **Enter** or select the button. **Escape** cancels an edit or an add. The name follows the rule of the YAML (a letter or `_` first, then letters, digits, `_` or `-`) and the editor writes it in lowercase. An empty value counts as present. The names `pg-*`, `id`, `label`, `placeholders` and `xml*` are reserved and show read-only; `bind`, `key` and `at` have their own controls. An inherited value shows with the cell that gave it; **Set here** copies it to the cell as an own attribute. For a link, the inspector also shows the attributes of its measured end (both ends when no end is measured); **Select the source end** or **Select the target end** selects that cell, so you can add `port` or `cap` there. On a generated panel the inspector says that the next build writes these attributes again.
+
 Set `bind` and `key` for one cell with **Set bind and key**. An empty field removes that attribute. Shift-click cells or drag a selection box with Shift, then use **Assign class** to set `bind` on all selected cells; their keys stay. For an edge, the inspector says which end the key names (for example "The key names the target end (rtr-a · br-lan)."). Use **Use the target end** or **Use the source end** to write `at=target` or `at=source`. The button always writes the end it names, also when the link would infer that end. An own `at` also sets the feed of the uses that match on the link itself, so a cleared `at` could change them. When the link has `at`, **Infer the end** removes it. On a generated panel the inspector says that the generator writes `at` again at the next build; change the link in the generator source. These writes change page 1 of the draft diagram in both XML and SVG. If the page is compressed (a diagram that a plugin version before 1.5.3 stored), open it in draw.io and save it once before a write.
 
 Use **Undo** and **Redo** for diagram writes. Ctrl+Z (Cmd+Z on a Mac) undoes the text when the code box has the focus; in other places it undoes the last diagram write. **Apply** saves the valid YAML and diagram draft to the panel options; the text "Applied to the panel. Save the dashboard to keep it." shows next to the button until the draft changes again. Save the dashboard to keep the changes. **Apply** is off while the YAML does not parse. An error in one class or one override does not turn it off. Closing with an unapplied draft asks for confirmation. If the saved panel changes while the editor is open, choose **Reload** to discard the draft or **Keep my draft** before applying it.
@@ -116,10 +118,11 @@ Attribute names are lowercase ASCII. The editor writes them in lowercase (`setCe
 | `label`    | The label of the cell. Read it as `${label}`.                                                                                                                     |
 | other      | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                                                  |
 
-The inspector can write `bind` and `key`, and can set or clear `at=target` on an edge. For other attributes:
+The inspector of the split editor can write `bind`, `key`, `at` and any other attribute that is not reserved (see [Split editor](#split-editor)). There are three ways to set an attribute:
 
+- In the inspector: select the cell, then use **Add attribute** in the **Attributes** list.
 - The generator or the `meta` of the portograph source writes them.
-- You set them in draw.io with **Edit Data** (Ctrl+M) in the embedded editor: **Diagram → Edit in draw.io**, select the cell, press Ctrl+M, add the attribute, then **Save**.
+- In draw.io with **Edit Data** (Ctrl+M) in the embedded editor: **Diagram → Edit in draw.io**, select the cell, press Ctrl+M, add the attribute, then **Save**.
 
 #### Inherited names
 

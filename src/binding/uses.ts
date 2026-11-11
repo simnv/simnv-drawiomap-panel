@@ -33,6 +33,21 @@ export function fieldPath(cls: ResolvedClass, field: string): string {
   return cls.origins[field] ?? yamlPath(['classes', cls.name, field]);
 }
 
+function endOf(cell: CellMeta, plan: UsePlan | undefined, match: MatchV4): 'source' | 'target' | 'drop' {
+  return plan ? plan(match) : cell.attrs.at === 'target' ? 'target' : 'source';
+}
+
+function addUse(uses: Use[], cell: CellMeta, plan: UsePlan | undefined, use: Use): void {
+  if (use.kind === 'up' || use.kind === 'down') {
+    const end = endOf(cell, plan, use.match);
+    if (end !== 'drop') {
+      uses.push({ ...use, end });
+    }
+  } else if (!plan || plan(use.match) !== 'drop') {
+    uses.push(use);
+  }
+}
+
 /**
  * The uses of one cell from its effective class (the class after the override of the cell): the status, the text,
  * one use per row query, the chart, and on an edge the `up`, `down` and `capacity` uses. An abstract class (no
@@ -46,15 +61,9 @@ export function listUses(cell: CellMeta, cls: ResolvedClass, plan?: UsePlan): Us
   }
   const at = (field: string) => fieldPath(cls, field);
   const uses: Use[] = [];
-  const endOf = (match: MatchV4) => plan?.(match) ?? (cell.attrs.at === 'target' ? 'target' : 'source');
-  const add = (use: Use) => {
-    const end = endOf(use.match);
-    if (end !== 'drop') {
-      uses.push(use.kind === 'up' || use.kind === 'down' ? { ...use, end } : use);
-    }
-  };
+  const add = (use: Use) => addUse(uses, cell, plan, use);
   const feeds = (match: MatchV4, up: string, down: string) => {
-    const end = endOf(match);
+    const end = endOf(cell, plan, match);
     return end === 'drop' ? undefined : { ...linkFeeds(end, up, down), end };
   };
   if (cls.status !== undefined) {

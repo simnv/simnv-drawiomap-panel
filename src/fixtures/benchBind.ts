@@ -47,6 +47,41 @@ export function buildBenchFixture(opts: { cells: number; series: number; seed: n
   };
 }
 
+/** Build links whose identity comes from one port and its node. Alternate the measured end. */
+export function buildInferredBenchFixture(opts: { links: number; series: number; seed: number }): BenchFixture {
+  const own = buildBenchFixture({ cells: opts.links, series: opts.series, seed: opts.seed });
+  const groups = ['<g data-cell-id="0" data-meta-pg-schema="1"></g>'];
+  const cellIds: string[] = [];
+  for (const [i, node] of own.cellIds.entries()) {
+    const peer = own.cellIds[(i + 1) % opts.links];
+    const id = `demo-link-${i}`;
+    const ends = [`${node}:measured`, `${peer}:peer`];
+    if (i % 2 !== 0) {
+      ends.reverse();
+    }
+    groups.push(
+      `<g data-cell-id="pg-node~${node}" data-meta-pg-kind="node" data-meta-pg-id="${node}" data-meta-key="${node}"><rect width="40" height="20"/></g>`,
+      `<g data-cell-id="pg-port~${node}~measured~1" data-meta-pg-kind="port" data-meta-pg-id="${node}:measured" data-meta-pg-node="${node}" data-meta-pg-port="measured" data-meta-port="if-${i}"><rect width="10" height="10"/></g>`,
+      `<g data-cell-id="pg-port~${node}~peer~1" data-meta-pg-kind="port" data-meta-pg-id="${node}:peer" data-meta-pg-node="${node}" data-meta-pg-port="peer"><rect width="10" height="10"/></g>`,
+      `<g data-cell-id="${id}" data-meta-pg-kind="link" data-meta-pg-id="${id}" data-meta-pg-from="${ends[0]}" data-meta-pg-to="${ends[1]}" data-meta-bind="link"><path d="M 0 0 L 50 0" fill="none" pointer-events="stroke"/></g>`
+    );
+    cellIds.push(id);
+  }
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">${groups.join('')}</svg>`,
+    cellIds,
+    data: {
+      ...own.data,
+      series: own.data.series.map((frame, i) => ({
+        ...frame,
+        fields: frame.fields.map((field) =>
+          field.type === FieldType.number ? { ...field, labels: { ...field.labels, device: `if-${i}` } } : field
+        ),
+      })),
+    },
+  };
+}
+
 /** Keep the v3 adapter separate from the fixture that later models reuse. */
 export function benchV3Config(fixture: BenchFixture): unknown {
   return {

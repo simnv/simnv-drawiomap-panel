@@ -2,6 +2,7 @@ import React, { useId, useState } from 'react';
 import { css } from '@emotion/css';
 import { formattedValueToString, getDisplayProcessor, getValueFormat, type GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, Input, useStyles2, useTheme2 } from '@grafana/ui';
+import { AttributeList, type EndAttrs } from './AttributeList';
 import type { BindResultV4 } from '../../binding/bindV4';
 import { effectiveClass } from '../../binding/classes';
 import type { EndContext } from '../../binding/edgeEnds';
@@ -35,6 +36,8 @@ export interface InspectorV4Props {
   /** The message of the last write that the diagram refused. */
   error?: string;
   onWrite: (cells: CellWrite[]) => void;
+  /** Select one other cell, for example the end of a link. */
+  onSelectCell: (id: string) => void;
   onClose: () => void;
 }
 
@@ -227,8 +230,13 @@ function AssignClass(props: { cells: CellMeta[]; listId: string; onWrite: Inspec
 function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string }) {
   const styles = useStyles2(getStyles);
   const { meta, ends, bound, validated, listId, onWrite } = props;
-  const { bind, key, ...others } = meta.attrs;
-  const inherited = [...(bound.inherited.get(meta.id) ?? [])].filter(([name]) => !Object.hasOwn(meta.attrs, name));
+  const { bind } = meta.attrs;
+  const inherited = [...(bound.inherited.get(meta.id) ?? [])]
+    .filter(([name]) => !Object.hasOwn(meta.attrs, name))
+    .map(([name, origin]): [string, typeof origin & { origin: string }] => [
+      name,
+      { ...origin, origin: originName(origin.cellId, ends) },
+    ]);
   const cls = bind !== undefined ? validated.classes.get(bind) : undefined;
   const override = validated.parsed.config?.overrides[meta.id];
   const text = cls && effectiveClass(cls, override, meta.id).text;
@@ -259,25 +267,17 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
           </>
         ) : null}
       </dl>
-      <BindKey key={`${meta.id}\n${bind}\n${key}`} meta={meta} listId={listId} onWrite={onWrite} />
+      <BindKey key={`${meta.id}\n${bind}\n${meta.attrs.key}`} meta={meta} listId={listId} onWrite={onWrite} />
       {meta.isEdge ? <EdgeEnds {...props} /> : null}
-      <h4 className={styles.subtitle}>Attributes</h4>
-      <dl className={styles.list} data-testid="dmap-inspector-attrs">
-        {Object.entries(others).map(([name, value]) => (
-          <React.Fragment key={name}>
-            <dt>{name}</dt>
-            <dd>{value}</dd>
-          </React.Fragment>
-        ))}
-        {inherited.map(([name, origin]) => (
-          <React.Fragment key={`inherited ${name}`}>
-            <dt>{name}</dt>
-            <dd data-testid="dmap-inspector-inherited">
-              {`${origin.value} (from ${originName(origin.cellId, ends)})`}
-            </dd>
-          </React.Fragment>
-        ))}
-      </dl>
+      <AttributeList
+        key={meta.id}
+        meta={meta}
+        inherited={inherited}
+        endCells={endCells(meta, ends, bound)}
+        generated={props.generated}
+        onWrite={(attrs) => onWrite([{ id: meta.id, attrs }])}
+        onSelectCell={props.onSelectCell}
+      />
       {uses.map((use) => (
         <UseDetails
           key={use.path}
@@ -290,6 +290,21 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
       ))}
     </>
   );
+}
+
+/** The end cells of a link whose attributes the inspector shows: the measured end, else both ends. */
+function endCells(meta: CellMeta, ends: EndContext, bound: BindResultV4): EndAttrs[] {
+  if (!meta.isEdge) {
+    return [];
+  }
+  const link = ends.ends.get(meta.id);
+  const measured = bound.measured.get(meta.id)?.end;
+  const sides = measured === 'source' || measured === 'target' ? [measured] : (['source', 'target'] as const);
+  return sides.flatMap((side) => {
+    const id = link?.[side];
+    const end = id === undefined ? undefined : ends.index.get(id)?.meta;
+    return id !== undefined && end ? [{ side, id, name: endName(id, ends) ?? id, attrs: end.attrs }] : [];
+  });
 }
 
 /** Write 1 of spec 5.5: `bind` and `key` of one cell. An empty field removes the attribute. */
