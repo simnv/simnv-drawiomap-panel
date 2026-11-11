@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The panel reads the cell attribute `capacity` (the link limit in bit/s, as in the portograph contract) as a second name of `cap`. The order for a link is: the class `capacity` query, then `cap`, then `capacity`. `cap` wins when both are set; if their values differ, the report has the new entry `cap-conflict`. A `capacity` that does not parse gives `bad-cap` when `cap` is absent.
+
 ## 1.5.3
 
 - Fixed the right click in the draw.io editor in Safari on macOS. A quick two-finger tap on the trackpad panned the canvas with each later pointer move, and the menu opened only on the next right click. Safari sends that tap as a right press with no release. The editor frame now adds the missing release, so the menu opens at once. A right-button drag still pans.

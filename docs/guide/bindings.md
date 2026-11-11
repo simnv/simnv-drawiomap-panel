@@ -84,22 +84,37 @@ Set `bind` and `key` for one cell with **Set bind and key**. An empty field remo
 
 Use **Undo** and **Redo** for diagram writes. Ctrl+Z (Cmd+Z on a Mac) undoes the text when the code box has the focus; in other places it undoes the last diagram write. **Apply** saves the valid YAML and diagram draft to the panel options; the text "Applied to the panel. Save the dashboard to keep it." shows next to the button until the draft changes again. Save the dashboard to keep the changes. **Apply** is off while the YAML does not parse. An error in one class or one override does not turn it off. Closing with an unapplied draft asks for confirmation. If the saved panel changes while the editor is open, choose **Reload** to discard the draft or **Keep my draft** before applying it.
 
+#### Completion
+
+The code box suggests names while you type. It sends no query: it reads the loaded series and the cells of the diagram.
+
+- **Keys.** Inside a class, an override, a row, `text` or a `chart`, it suggests the keys of that map. For a row or a chart with a `kind`, it suggests the keys of that kind.
+- **Class names.** After `extends:`, it suggests the other classes of the draft.
+- **RefIds.** For `status`, `up`, `down`, `capacity` (also `a2b` and `b2a`), `text.query` and the `query` of a row or a chart, it suggests the refIds of the loaded series.
+- **Cell attributes.** On the left of a `match` entry, it suggests the attribute names of the cells of the class and of the classes that extend it. In an override, it suggests the attribute names of that cell.
+- **Labels.** In a matcher value, it suggests the label names of the series of the query that the use reads. After `="` it suggests the values of that label. A value that plain YAML cannot hold is written in quotes.
+- **Placeholders.** After `${`, it suggests the attribute names, then `from.` and `to.`.
+- **Arrow.** `arrow` shows its help on hover, and its values (`point`, `triangle`, `none`) come with the same help.
+
+The **bind** field of the inspector also suggests the names of the classes of the draft. The same list serves **Assign class**.
+
 ### Cell attributes
 
 A cell has attributes: the `data-meta-*` attributes of the exported SVG, written by draw.io, or by portograph from the `meta` of a node. The panel reads page 1 only.
 
 Attribute names are lowercase ASCII. The editor writes them in lowercase (`setCellAttrs` also replaces case variants and removes all variants for `null`).
 
-| Attribute | Use                                                                                                                                        |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bind`    | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                              |
-| `key`     | The main identity of the cell, for example a host name or an interface name. The class `match` and the templates read it.                  |
-| `port`    | A second identity, for example the interface of a host. Use any other name for a third one.                                                |
-| `at`      | A link only. `at=target` tells that `key` and `port` name the target end of the link. Else they name the source end (see [Links](#links)). |
-| `cap`     | A link only. The capacity when the class has no `capacity` series: `1G`, or `50M/10M` for a→b/b→a (see [Capacity](links.md#capacity)).     |
-| `id`      | The draw.io cell id. Read it as `${id}`.                                                                                                   |
-| `label`   | The label of the cell. Read it as `${label}`.                                                                                              |
-| other     | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                           |
+| Attribute  | Use                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bind`     | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                              |
+| `key`      | The main identity of the cell, for example a host name or an interface name. The class `match` and the templates read it.                  |
+| `port`     | A second identity, for example the interface of a host. Use any other name for a third one.                                                |
+| `at`       | A link only. `at=target` tells that `key` and `port` name the target end of the link. Else they name the source end (see [Links](#links)). |
+| `cap`      | A link only. The capacity when the class has no `capacity` series: `1G`, or `50M/10M` for a→b/b→a (see [Capacity](links.md#capacity)).     |
+| `capacity` | A link only. The second name of `cap`, as in the portograph contract: same grammar. `cap` wins when both are set.                          |
+| `id`       | The draw.io cell id. Read it as `${id}`.                                                                                                   |
+| `label`    | The label of the cell. Read it as `${label}`.                                                                                              |
+| other      | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                           |
 
 The inspector can write `bind` and `key`, and can set or clear `at=target` on an edge. For other attributes:
 
@@ -151,6 +166,27 @@ An invalid class, and the classes below it, make their cells unavailable. The ot
 | `port: device`                             | A second pair: the label `device` equals the attribute `port`.                      |
 | `key: entity="switch.${key}_k${port}"`     | A template. It reads any attribute of the cell; each one that it reads is required. |
 | `key: [instance=~"${key}:.*", job="node"]` | A list. All matchers must pass.                                                     |
+
+#### Read the end cells of a link
+
+A matcher value can read an attribute of the cell at one end of a link: `${from.name}` for the source end and `${to.name}` for the target end. The panel looks for the attribute in the end cell first. If the end cell does not have it, the panel looks in the next cell: for a port cell, its node cell; for a shape inside a container, the container; and so on up to the layer. The first cell that has the attribute gives the value. If no cell has it, the cell gets `missing-attr`.
+
+A portograph link that has only `bind` can use this form. The link has no `key` and no `port`, but its ends do:
+
+```yaml
+classes:
+  lan:
+    match:
+      id:
+        - job="${from.job}"
+        - device="${from.device}"
+    up: lan_tx
+    down: lan_rx
+```
+
+The record key is `id`. A record key must be an attribute that the cell has, and every cell has `id`. The value does not read it: each matcher reads only `${from.…}`. The key only makes the block valid.
+
+This form fixes the measured end to the source end of the link. To measure the other end, read `${to.…}` in the values and set `at=target` on the link (see [Links](#links)). Then the halves a→b and b→a follow the end that you measure.
 
 A row, `text` and `chart` can have their own `match`. It replaces the `match` of the class as a whole; it does not add to it. A filter that does not depend on a cell belongs in the query, not in `match`.
 
@@ -317,7 +353,7 @@ classes:
 
 A class with `up`, `down` or `capacity` applies to a link (an edge cell).
 
-- The ends of a portograph link come from `pg-from` and `pg-to`. An ordinary draw.io edge has its ends in the `source` and `target` of its cell in page 1 of the stored XML. An attribute on the port cell wins over the same attribute on the node cell. When the end cell has no such attribute, the panel looks in its parents up to the layer (a shape inside a container). `${from.key}` and `${to.key}` read the attribute at an end.
+- The ends of a portograph link come from `pg-from` and `pg-to`. An ordinary draw.io edge has its ends in the `source` and `target` of its cell in page 1 of the stored XML. An attribute on the port cell wins over the same attribute on the node cell. When the end cell has no such attribute, the panel looks in its parents up to the layer (a shape inside a container). `${from.key}` and `${to.key}` read the attribute at an end. A matcher can read any attribute at an end: see [Read the end cells of a link](#read-the-end-cells-of-a-link).
 - The half at the start of the drawn path is **a→b**. The `key` and the other matched attributes name the interface at the source end. a→b takes `up` (transmit) and b→a takes `down` (receive). With `at=target` the attributes name the target end, and a→b takes `down`. The stroke of each half, the link value label and the `updown` row of the card follow the same rule.
 - With a capacity, the colour input is the percent of the capacity. Without one, it is the raw value. See [How colours and thresholds work](colours.md#how-colours-and-thresholds-work).
 - For the capacity, see [Capacity](links.md#capacity).
@@ -349,7 +385,8 @@ The report of the split editor has one tab for each class, in the order of the c
 | `duplicate-series`                                            | Two frames hold different values at one time for equal labels.                          |
 | `unit-mismatch`                                               | The units of the series cannot convert to one unit.                                     |
 | `capacity-fallback`                                           | The capacity series cannot give a value (the reason says why); the next source applies. |
-| `bad-cap`                                                     | The attribute `cap` does not parse.                                                     |
+| `bad-cap`                                                     | The attribute `cap` (or `capacity`, when `cap` is absent) does not parse.               |
+| `cap-conflict`                                                | The attributes `cap` and `capacity` are both set and differ. `cap` is used.             |
 | `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                      |
 | `unused-field`                                                | A link field on a class whose cells are not links.                                      |
 | `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.      |
