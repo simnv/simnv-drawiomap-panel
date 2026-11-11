@@ -62,6 +62,8 @@ GRAFANA_URL=http://localhost:3013 node scripts/bench/card-hover.mjs
 
 The demo network in `fixtures/demo/` is fictional. Its `.yaml` sources are portograph input; `npx portograph render fixtures/demo/demo-l3.yaml --format drawio --output fixtures/demo/demo-l3.drawio` makes the `.drawio` file again.
 
+`./scripts/export-fixtures.sh` exports the fixtures to SVG in a Docker container that is pinned by digest: `rlespinasse/drawio-desktop-headless@sha256:617683fbcbc373fa30901999e05b83f5874f0e3165e177245ceb1d69154f2c54` (draw.io 32.6.1, image built 2026-10-26). The same input gives the same bytes on each run (the script also replaces the random SVG id of draw.io with a fixed one). `DRAWIO_LOCAL=1 ./scripts/export-fixtures.sh` uses the local `drawio` CLI instead; its output can differ from the committed files. To change the pin, update the digest in the script and here.
+
 The acceptance results are in [docs/acceptance.md](docs/acceptance.md). The decision records are in [docs/adr/](docs/adr/). The option reference is in [docs/guide/](docs/guide/index.md).
 
 ## E2E suites

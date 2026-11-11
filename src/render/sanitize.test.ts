@@ -101,7 +101,7 @@ describe('sanitizeSvg: adversarial input', () => {
 describe('sanitizeSvg: draw.io export', () => {
   it('drops PNG label fallbacks inside <switch> and keeps foreignObject', () => {
     const r = sanitizeSvg(legacy);
-    expect(r.removed.images).toBe(53);
+    expect(r.removed.images).toBe(52);
     expect(r.svg).not.toMatch(/<image[^>]*data:image\/png/);
     expect(r.foreignObjects).toBeGreaterThan(0);
     expect(r.warnings[0]).toMatch(/foreignObject/);
@@ -116,7 +116,7 @@ describe('sanitizeSvg: draw.io export', () => {
   });
   it('keeps data-cell-id, data-meta-*, pointer-events and light-dark styles', () => {
     const r = sanitizeSvg(l3);
-    expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(108);
+    expect((r.svg.match(/data-cell-id="/g) ?? []).length).toBe(100);
     expect(r.svg).toContain('data-meta-pg-id="isp-a:pppoe-&gt;rtr-a:wan1"');
     expect(r.svg).toContain('pointer-events="stroke"');
     expect(r.svg).toContain('light-dark(');

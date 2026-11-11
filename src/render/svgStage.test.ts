@@ -31,14 +31,14 @@ describe('buildCellIndex on demo-l3', () => {
   const root = mountSvg(c, fixture('demo-l3'));
   const index = buildCellIndex(root);
   it('indexes every data-cell-id group', () => {
-    expect(index.size).toBe(108);
+    expect(index.size).toBe(100);
   });
   it('maps pg kinds', () => {
     const kinds = cellMetas(index).reduce<Record<string, number>>(
       (acc, m) => ((acc[m.kind] = (acc[m.kind] ?? 0) + 1), acc),
       {}
     );
-    expect(kinds).toMatchObject({ link: 10, node: 10, port: 20, 'link-label': 8 });
+    expect(kinds).toMatchObject({ link: 10, node: 10, port: 20, 'link-label': 2 });
   });
   it('finds the edge polyline and the decoded id', () => {
     const e = index.get('pg-link~isp-a:pppoe->rtr-a:wan1')!;
@@ -136,7 +136,7 @@ describe('buildCellIndex and pg-schema', () => {
     const svg = fixture('demo-l3').replace(/\sdata-meta-pg-schema="1"/, '');
     const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
     const metas = cellMetas(index);
-    expect(metas.length).toBe(108);
+    expect(metas.length).toBe(100);
     expect(metas.every((m) => m.kind === 'other' && m.key === m.id && !m.from)).toBe(true);
   });
 });

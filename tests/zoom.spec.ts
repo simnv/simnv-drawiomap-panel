@@ -11,7 +11,7 @@ const width = (vb: string | null) => Number((vb ?? '').split(' ')[2]);
 
 async function openPanel(dashboardPage: DashboardPage) {
   const panel = (await dashboardPage.getPanelByTitle('demo-lab L3')).locator;
-  await expect(panel.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+  await expect(panel.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '100');
   return panel;
 }
 
@@ -154,10 +154,10 @@ test.describe('live zoom on the desktop', () => {
       await fits('view after a window resize');
       await page.setViewportSize({ width: 1440, height: 900 });
       await gotoDashboardPage({ uid: 'drawiomap-demo', queryParams: new URLSearchParams({ viewPanel: 'panel-1' }) });
-      await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+      await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '100');
       await fits('panel view');
       const edit = await gotoPanelEditPage({ dashboard: { uid: 'drawiomap-demo' }, id: '1' });
-      await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '108');
+      await expect(page.getByTestId('dmap-panel')).toHaveAttribute('data-dmap-cells', '100');
       // The corner in panel edit holds the "Edit bindings" button of the split editor (spec 5.1).
       await expect(page.getByTestId('dmap-edit-bindings')).toBeVisible();
       await fits('panel edit');

@@ -33,7 +33,13 @@ export function withDemoBindings(svg: string): string {
       tag.match(/data-meta-(?:bind|key|port|cap|at)="[^"]*"/g)?.join(' ') ?? '',
     ])
   );
-  return svg.replace(/<g data-cell-id="([^"]+)"/g, (tag, id: string) => `${tag} ${attrs.get(id) ?? ''}`);
+  // The export of the portograph 0.2.0 layout has these attributes already. Add only those that are missing.
+  return svg.replace(/<g data-cell-id="([^"]+)"[^>]*>/g, (tag, id: string) => {
+    const missing = (attrs.get(id) ?? '')
+      .split(/\s+(?=data-meta-)/)
+      .filter((a) => a && !tag.includes(` ${a.split('=')[0]}=`));
+    return missing.length ? tag.replace(/>$/, ` ${missing.join(' ')}>`) : tag;
+  });
 }
 
 export type PanelTarget = { refId: string; datasource?: { type: string; uid: string } } & Record<string, unknown>;
