@@ -99,6 +99,10 @@ function cellPlace(text: string, id: string, bind: string | undefined): number |
   if (place !== undefined) {
     return place;
   }
+  // A cell with no bind and no override has no place in the text: the cursor stays where it is.
+  if (bind === undefined) {
+    return undefined;
+  }
   const classes = isMap(doc.contents) ? doc.contents.get('classes', true) : undefined;
   if (!isNode(classes) || !classes.range) {
     return undefined;
@@ -137,6 +141,8 @@ export function SplitEditor({
   /** The diagram with the writes of the inspector (spec 5.5). The writes go into the draw.io XML and the SVG (D19). */
   const [versions, setVersions] = useState(() => history<Diagram | undefined>(opts.diagram));
   const diagram = versions.present;
+  // Apply feedback: shown until the next change of the text or the diagram, also when a change is reverted.
+  const [applied, setApplied] = useState(false);
   const [base, setBase] = useState(() => baseRevision(options));
   const [savedText, setSavedText] = useState(() => toYaml(options.config));
   const [savedDiagram, setSavedDiagram] = useState(options.diagram);
@@ -170,6 +176,7 @@ export function SplitEditor({
       }
       textRef.current = next;
       setText(next);
+      setApplied(false);
       clearTimeout(settleTimer.current);
       settleTimer.current = setTimeout(settle, SETTLE_MS);
     },
@@ -180,6 +187,7 @@ export function SplitEditor({
   const marks = checked.marks;
   const yamlEntries = useMemo(() => readDraft(settledText).entries, [settledText]);
 
+  const cursorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const stage = useStage(stageRef, diagram?.svg);
   const { min, max } = opts.linkWidth;
@@ -237,6 +245,17 @@ export function SplitEditor({
     [selected, lit.cells, lit.lighter]
   );
 
+  /**
+   * The highlight and the selection are two ways to point at cells. The highlight dims all other cells, also the
+   * selected one, so a selection (and Escape, a click on the empty stage, an edit of the diagram) ends the highlight.
+   */
+  const clearLit = useCallback(() => {
+    clearTimeout(cursorTimer.current);
+    setEntryCells(null);
+    setCursorPath(null);
+  }, []);
+  const litNow = lit.cells.length + lit.lighter.length > 0;
+
   // The stage zooms to the highlighted cells when the set changes (spec 5.3).
   const [view, setView] = useState<ViewBox | null>(null);
   const fitIds = useMemo(() => [...lit.cells, ...lit.lighter], [lit.cells, lit.lighter]);
@@ -283,7 +302,6 @@ export function SplitEditor({
   }, []);
 
   const [instance, setInstance] = useState<Instance>();
-  const cursorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onEditorDidMount = useCallback((editor: MonacoEditor, monaco: Monaco) => {
     // The focus starts in the code box (P3.13). Until Monaco loads, the dialog root holds the focus. A focus that the
     // user moved to an element of the dialog stays there.
@@ -363,6 +381,7 @@ export function SplitEditor({
   /** A click on a cell selects it and moves the cursor to its class (spec 5.4). Shift adds it or takes it out. */
   const onSelect = useCallback(
     (id: string, { shift }: { shift: boolean }) => {
+      clearLit();
       if (shift) {
         setSelected((old) => (old.includes(id) ? old.filter((other) => other !== id) : [...old, id]));
         return;
@@ -382,11 +401,14 @@ export function SplitEditor({
         editor.revealLineInCenter(position.lineNumber);
       }
     },
-    [instance, stage.index]
+    [instance, stage.index, clearLit]
   );
   const onBox = useCallback(
-    (ids: string[]) => setSelected((old) => [...old, ...ids.filter((id) => !old.includes(id))]),
-    []
+    (ids: string[]) => {
+      clearLit();
+      setSelected((old) => [...old, ...ids.filter((id) => !old.includes(id))]);
+    },
+    [clearLit]
   );
 
   const [writeError, setWriteError] = useState<string>();
@@ -398,13 +420,29 @@ export function SplitEditor({
       try {
         const next = setCellAttrs(diagram, cells);
         setVersions((old) => pushVersion(old, next));
+        setApplied(false);
+        clearLit();
         setWriteError(undefined);
       } catch (error) {
         setWriteError(error instanceof Error ? error.message : String(error));
       }
     },
-    [diagram]
+    [diagram, clearLit]
   );
+  const onUndo = useCallback(() => {
+    clearLit();
+    if (versions.past.length) {
+      setApplied(false);
+    }
+    setVersions(undo);
+  }, [clearLit, versions.past.length]);
+  const onRedo = useCallback(() => {
+    clearLit();
+    if (versions.future.length) {
+      setApplied(false);
+    }
+    setVersions(redo);
+  }, [clearLit, versions.future.length]);
   const onCloseInspector = useCallback(() => {
     setSelected([]);
     setWriteError(undefined);
@@ -427,9 +465,10 @@ export function SplitEditor({
     id: OVERLAY_ID,
     dialogRef: bodyRef,
     enabled: !!onClose && !discard,
-    onEscape: requestClose,
-    onUndo: () => setVersions(undo),
-    onRedo: () => setVersions(redo),
+    // The first Escape ends a highlight; the next one closes the popup.
+    onEscape: () => (litNow ? clearLit() : requestClose()),
+    onUndo,
+    onRedo,
   });
   const reload = () => {
     const nextText = toYaml(options.config);
@@ -444,6 +483,7 @@ export function SplitEditor({
     setSavedDiagram(options.diagram);
     setVersions(history(options.diagram));
     setBase(baseRevision(options));
+    setApplied(false);
     setSelected([]);
     setCursorPath(null);
     setEntryCells(null);
@@ -465,6 +505,7 @@ export function SplitEditor({
     setBase(baseRevision(next));
     setSavedText(textRef.current);
     setSavedDiagram(diagram);
+    setApplied(true);
   };
 
   const layout = (
@@ -491,6 +532,7 @@ export function SplitEditor({
           selection={selection}
           onSelect={onSelect}
           onBox={onBox}
+          onBackground={clearLit}
           chartLayer={chartLayer}
           hash={diagram?.hash}
           linkWidth={opts.linkWidth}
@@ -538,15 +580,18 @@ export function SplitEditor({
       )}
       <div className={styles.layout}>{layout}</div>
       <div className={styles.actions}>
-        <Button variant="secondary" disabled={!versions.past.length} onClick={() => setVersions(undo)}>
+        <Button variant="secondary" disabled={!versions.past.length} onClick={onUndo}>
           Undo
         </Button>
-        <Button variant="secondary" disabled={!versions.future.length} onClick={() => setVersions(redo)}>
+        <Button variant="secondary" disabled={!versions.future.length} onClick={onRedo}>
           Redo
         </Button>
         <Button disabled={!onOptionsChange || conflict || (!pending && !('json' in checked))} onClick={apply}>
           Apply
         </Button>
+        <span role="status" aria-live="polite" className={styles.status} data-testid="dmap-apply-status">
+          {applied ? 'Applied to the panel. Save the dashboard to keep it.' : ''}
+        </span>
       </div>
       {/* Mount the question only while it is open: the Grafana 12.3 Modal names itself on its first mount, and a closed Modal has no title yet. */}
       {discard && (
@@ -591,7 +636,8 @@ export function BindingsPopup(props: BindingsPopupProps) {
 const styles = {
   body: css({ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }),
   layout: css({ flex: 1, minHeight: 0 }),
-  actions: css({ display: 'flex', gap: 8, padding: 8 }),
+  actions: css({ display: 'flex', gap: 8, padding: 8, alignItems: 'center' }),
+  status: css({ opacity: 0.8 }),
   code: css({ height: '100%' }),
   // The report and the inspector scroll on their own. A narrow pane puts the inspector below the report.
   below: css({

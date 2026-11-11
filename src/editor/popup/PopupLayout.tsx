@@ -27,8 +27,10 @@ const TABS: Array<{ id: PopupTab; label: string }> = [
 type Pane = 'code' | 'below';
 const LIMITS = {
   code: { initial: 480, min: 280, max: 960 },
-  below: { initial: 240, min: 120, max: 640 },
+  below: { initial: 320, min: 120, max: 640 },
 };
+/** Without a stored size, the report row takes this share of the container, but at least `LIMITS.below.initial`. */
+const BELOW_SHARE = 0.4;
 /** The diagram keeps at least this width when the code box grows. */
 const MIN_STAGE = 240;
 /** The top row (code box and diagram) keeps at least this height when the report pane grows. */
@@ -45,24 +47,32 @@ interface Sizes {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-function readSizes(): Sizes {
+/** The sizes of the user, and whether the user set the height of the report row (a stored size always wins). */
+function readSizes(): { sizes: Sizes; belowSet: boolean } {
   const sizes = { code: LIMITS.code.initial, below: LIMITS.below.initial };
+  let belowSet = false;
   try {
     const stored = JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY) ?? 'null');
     for (const pane of ['code', 'below'] as const) {
       if (typeof stored?.[pane] === 'number' && Number.isFinite(stored[pane])) {
         sizes[pane] = clamp(stored[pane], LIMITS[pane].min, LIMITS[pane].max);
+        belowSet ||= pane === 'below';
       }
     }
   } catch {
     // Private mode or a broken value: use the defaults.
   }
-  return sizes;
+  return { sizes, belowSet };
 }
 
-function writeSizes(sizes: Sizes) {
+/** The default height of the report row in a container of this height: 40 %, at least 320 px. */
+const defaultBelow = (height: number) =>
+  height ? clamp(Math.round(height * BELOW_SHARE), LIMITS.below.initial, LIMITS.below.max) : LIMITS.below.initial;
+
+/** The report height goes to the storage only when the user set it: else the default of the container stays live. */
+function writeSizes(sizes: Sizes, belowSet: boolean) {
   try {
-    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(sizes));
+    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(belowSet ? sizes : { code: sizes.code }));
   } catch {
     // The storage is full or blocked: the sizes last until the popup closes.
   }
@@ -106,7 +116,9 @@ export interface PopupLayoutProps {
 export function PopupLayout({ code, stage, below, activeTab, onTabChange }: PopupLayoutProps) {
   const styles = useStyles2(getStyles);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sizes, setSizes] = useState(readSizes);
+  const [read] = useState(readSizes);
+  const [sizes, setSizes] = useState(read.sizes);
+  const [belowSet, setBelowSet] = useState(read.belowSet);
   // The size of the container: the restored sizes must fit it at the start and after each resize.
   const [box, setBox] = useState({ width: 0, height: 0 });
   useLayoutEffect(() => {
@@ -128,7 +140,10 @@ export function PopupLayout({ code, stage, below, activeTab, onTabChange }: Popu
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const shown = useMemo(() => fitSizes(sizes, box.width, box.height), [sizes, box]);
+  const shown = useMemo(
+    () => fitSizes(belowSet ? sizes : { ...sizes, below: defaultBelow(box.height) }, box.width, box.height),
+    [sizes, belowSet, box]
+  );
   const tabs = box.width > 0 && box.width < TABS_BELOW;
   const [ownTab, setOwnTab] = useState<PopupTab>('code');
   const tab = activeTab ?? ownTab;
@@ -169,6 +184,7 @@ export function PopupLayout({ code, stage, below, activeTab, onTabChange }: Popu
     shownRef.current = shown;
   });
   const latest = useRef(sizes);
+  const belowSetRef = useRef(belowSet);
   /** The largest size of a pane: the container keeps the minimum of the diagram and of the top row. */
   const maxFor = useCallback((pane: Pane) => {
     const el = containerRef.current;
@@ -182,8 +198,12 @@ export function PopupLayout({ code, stage, below, activeTab, onTabChange }: Popu
     latest.current = next;
     shownRef.current = next;
     setSizes(next);
+    if (pane === 'below') {
+      belowSetRef.current = true;
+      setBelowSet(true);
+    }
   }, []);
-  const commit = useCallback(() => writeSizes(latest.current), []);
+  const commit = useCallback(() => writeSizes(latest.current, belowSetRef.current), []);
 
   // The three panes stay mounted in both modes: the stage index and the code box keep their state. A hidden pane has
   // `display: none`. The slots keep their place, so a mode change does not remount a pane.

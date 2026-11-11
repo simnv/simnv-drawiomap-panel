@@ -41,7 +41,7 @@ describe('PopupLayout', () => {
     expect(codeHandle().getAttribute('aria-orientation')).toBe('vertical');
     expect(reportHandle().getAttribute('aria-orientation')).toBe('horizontal');
     expect(size('dmap-pane-code')).toBe(480);
-    expect(size('dmap-pane-report')).toBe(240);
+    expect(size('dmap-pane-report')).toBe(320);
   });
 
   it('fits a stored size to a small dialog: the diagram keeps 240 px and the top row 200 px', () => {
@@ -60,6 +60,40 @@ describe('PopupLayout', () => {
     expect(size('dmap-pane-report')).toBe(492);
     expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ code: 900, below: 600 });
     box.mockRestore();
+  });
+
+  it('gives the report row 40 % of the dialog (at least 320 px) when no size is stored', () => {
+    const tall = measure(1400, 1000);
+    const first = render(layout());
+    expect(size('dmap-pane-report')).toBe(400);
+    first.unmount();
+    tall.mockRestore();
+    const short = measure(1400, 600);
+    render(layout());
+    expect(size('dmap-pane-report')).toBe(320);
+    short.mockRestore();
+  });
+
+  it('a stored height of the report row wins over the 40 % default', () => {
+    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify({ code: 480, below: 200 }));
+    const box = measure(1400, 1000);
+    render(layout());
+    expect(size('dmap-pane-report')).toBe(200);
+    box.mockRestore();
+  });
+
+  it('a resize of the code pane alone keeps the report height on the default of the container', () => {
+    const tall = measure(1400, 1000);
+    const first = render(layout());
+    fireEvent.keyDown(codeHandle(), { key: 'ArrowRight' });
+    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ code: 496 });
+    first.unmount();
+    tall.mockRestore();
+    const smaller = measure(1400, 900);
+    render(layout());
+    expect(size('dmap-pane-code')).toBe(496);
+    expect(size('dmap-pane-report')).toBe(360);
+    smaller.mockRestore();
   });
 
   it('keeps the diagram shrinkable and clipped', () => {
@@ -82,7 +116,7 @@ describe('PopupLayout', () => {
     fireEvent.pointerDown(reportHandle(), { clientY: 500, pointerId: 1 });
     fireEvent.pointerMove(reportHandle(), { clientY: 450, pointerId: 1 });
     fireEvent.pointerUp(reportHandle(), { clientY: 450, pointerId: 1 });
-    expect(size('dmap-pane-report')).toBe(290);
+    expect(size('dmap-pane-report')).toBe(370);
   });
 
   it('resizes with the keys of each orientation and limits the sizes', () => {
@@ -90,9 +124,9 @@ describe('PopupLayout', () => {
     fireEvent.keyDown(codeHandle(), { key: 'ArrowRight' });
     expect(size('dmap-pane-code')).toBe(496);
     fireEvent.keyDown(reportHandle(), { key: 'ArrowUp', shiftKey: true });
-    expect(size('dmap-pane-report')).toBe(304);
+    expect(size('dmap-pane-report')).toBe(384);
     fireEvent.keyDown(reportHandle(), { key: 'ArrowDown' });
-    expect(size('dmap-pane-report')).toBe(288);
+    expect(size('dmap-pane-report')).toBe(368);
     fireEvent.keyDown(codeHandle(), { key: 'Home' });
     expect(size('dmap-pane-code')).toBe(280);
     fireEvent.pointerDown(reportHandle(), { clientY: 500, pointerId: 1 });
@@ -105,11 +139,11 @@ describe('PopupLayout', () => {
     const first = render(layout());
     fireEvent.keyDown(codeHandle(), { key: 'ArrowRight', shiftKey: true });
     fireEvent.keyDown(reportHandle(), { key: 'ArrowUp' });
-    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ code: 544, below: 256 });
+    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ code: 544, below: 336 });
     first.unmount();
     render(layout());
     expect(size('dmap-pane-code')).toBe(544);
-    expect(size('dmap-pane-report')).toBe(256);
+    expect(size('dmap-pane-report')).toBe(336);
   });
 
   it('resets a pane on a double click', () => {

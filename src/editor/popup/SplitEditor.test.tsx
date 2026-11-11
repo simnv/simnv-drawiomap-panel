@@ -541,6 +541,120 @@ describe('SplitEditor', () => {
     expect(lit()).toEqual(target === 'path-only' ? ['c'] : []);
   });
 
+  describe('the highlight and the selection', () => {
+    const entry = () => screen.getAllByRole('button', { name: /^classes\.dev\.status/ })[0];
+    const dimmed = () =>
+      screen.getByTestId('dmap-popup-stage').querySelector('svg')!.classList.contains('dmap-legend-active');
+
+    it('a click on a cell replaces the highlight of a report entry: nothing stays dimmed or outlined', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      fireEvent.click(entry());
+      expect(lit().length).toBeGreaterThan(0);
+      expect(dimmed()).toBe(true);
+      fireEvent.click(cell('c'));
+      expect(lit()).toEqual([]);
+      expect(dimmed()).toBe(false);
+      expect(cell('c').classList.contains('dmap-legend-member')).toBe(false);
+    });
+
+    it('a click on a cell replaces the highlight of the cursor path', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      cursorAt('dev:');
+      expect(lit()).toEqual(['a', 'b']);
+      fireEvent.click(cell('c'));
+      expect(lit()).toEqual([]);
+      expect(dimmed()).toBe(false);
+    });
+
+    it('a click on the empty stage ends the highlight', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      fireEvent.click(entry());
+      expect(lit().length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByTestId('dmap-popup-stage'));
+      expect(lit()).toEqual([]);
+      expect(dimmed()).toBe(false);
+    });
+
+    it('Escape ends the highlight first and closes the popup on the next press', async () => {
+      const onClose = vi.fn();
+      render(<BindingsPopup {...editorProps()} onOptionsChange={vi.fn()} onClose={onClose} />);
+      await frame();
+      fireEvent.click(entry());
+      expect(lit().length).toBeGreaterThan(0);
+      fireEvent.keyDown(screen.getByTestId('dmap-bindings-popup'), { key: 'Escape' });
+      expect(lit()).toEqual([]);
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.keyDown(screen.getByTestId('dmap-bindings-popup'), { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('Undo and Redo do not bring a highlight back or keep one', async () => {
+      render(<SplitEditor {...writableProps()} />);
+      await frame();
+      writeKey('draft-key');
+      cursorAt('dev:');
+      expect(lit()).toEqual(['a', 'b']);
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      expect(lit()).toEqual([]);
+      expect(dimmed()).toBe(false);
+      cursorAt('dev:');
+      fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+      expect(lit()).toEqual([]);
+      expect(dimmed()).toBe(false);
+    });
+  });
+
+  describe('the feedback of Apply', () => {
+    const status = () => screen.getByTestId('dmap-apply-status');
+
+    it('says "Applied" in a polite live region until the draft changes again', async () => {
+      render(<SplitEditor {...editorProps()} onOptionsChange={vi.fn()} />);
+      await frame();
+      expect(status().getAttribute('aria-live')).toBe('polite');
+      expect(status().textContent).toBe('');
+      type(fake.text.replace('status: up', 'status: down'));
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(status().textContent).toBe('Applied to the panel. Save the dashboard to keep it.');
+      type(fake.text.replace('status: down', 'status: up'));
+      expect(status().textContent).toBe('');
+    });
+
+    it('does not say "Applied" again when a change is reverted to the applied text or diagram', async () => {
+      render(<SplitEditor {...writableProps()} onOptionsChange={vi.fn()} />);
+      await frame();
+      const applied = fake.text.replace('status: up', 'status: down');
+      type(applied);
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(status().textContent).not.toBe('');
+      type(applied.replace('status: down', 'status: up'));
+      type(applied);
+      settle();
+      expect(status().textContent).toBe('');
+    });
+
+    it('does not say "Applied" again when a diagram write is undone and redone', async () => {
+      render(<SplitEditor {...writableProps()} onOptionsChange={vi.fn()} />);
+      await frame();
+      writeKey('draft-key');
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(status().textContent).not.toBe('');
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+      settle();
+      expect(status().textContent).toBe('');
+    });
+
+    it('says nothing when the host does not take the options', async () => {
+      render(<SplitEditor {...editorProps()} />);
+      await frame();
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(status().textContent).toBe('');
+    });
+  });
+
   it('does not zoom again when the cell set stays the same', () => {
     render(<SplitEditor {...editorProps()} />);
     cursorAt('dev:');
