@@ -79,7 +79,7 @@ export interface BindResultV4 {
   /** Bound edge id to its measured end, including unmeasured links (I26). */
   measured: Map<string, MeasuredEnd>;
   /** Cell id to each use path and its resolved matchers or problem (I26). */
-  resolved: Map<string, Map<UsePath, { matchers: ResolvedMatcher[] } | { problem: string }>>;
+  resolved: Map<string, Map<UsePath, { matchers: ResolvedMatcher[] } | { problem: string; detail?: string }>>;
   report: ReportEntry[];
   /** the sorted unique moments after which a status turns stale; the clock reads again after each */
   deadlines: number[];
@@ -200,7 +200,7 @@ interface Block {
 interface Selection {
   series: Series[];
   resolved?: ResolvedMatcher[];
-  problem?: { reason: string; entry?: (cls: string, path: UsePath) => CellsFree };
+  problem?: { reason: string; detail?: string; entry?: (cls: string, path: UsePath) => CellsFree };
 }
 
 /** The result of one use for one cell. */
@@ -358,6 +358,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
         series: [],
         problem: {
           reason: 'Matcher error',
+          detail: message,
           entry: (cls, path) => ({ kind: 'matcher-error', cls, path, text, message }),
         },
       };
@@ -500,7 +501,12 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       }
       resolved.set(
         use.path,
-        selection.problem ? { problem: selection.problem.reason } : { matchers: selection.resolved! }
+        selection.problem
+          ? {
+              problem: selection.problem.reason,
+              ...(selection.problem.detail ? { detail: selection.problem.detail } : {}),
+            }
+          : { matchers: selection.resolved! }
       );
       let result: UseResult;
       if (unknown) {

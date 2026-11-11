@@ -302,7 +302,12 @@ it('groups identity causes by name set, targets their class and puts information
   const groups = groupReport([info, warning, { ...info, attrs: ['port', 'key'] }, { ...info, attrs: ['site'] }]);
   expect(groups.map((g) => g.entries[0].kind)).toEqual(['end-ambiguous', 'unmeasured-link', 'unmeasured-link']);
   expect(groups[1].entries).toHaveLength(2);
-  expect(groups[1].uses[0].target).toEqual({ path: 'classes.lan', cells: ['l'] });
+  // the target is the class itself: a use label would repeat the class name
+  expect(groups[1].uses).toEqual([]);
+  expect(reportGroupLine(groups[1], true)).not.toContain('used by');
+  expect(reportGroupLine(groups[0], true)).toBe(
+    'lan: 1 link: both ends give the identity, the source end has no series. Set at=target if the target end has the counters.'
+  );
 });
 
 it.each([1, 2])('uses link grammar for identity entries with %s links', (n) => {

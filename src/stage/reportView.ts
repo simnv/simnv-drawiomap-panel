@@ -136,7 +136,11 @@ export function groupReport(entries: readonly ReportEntry[], config?: ConfigV4 |
       groups.set(key, group);
     }
     group.entries.push(entry);
-    if (target.path && !group.uses.some((use) => use.target.path === target.path)) {
+    if (
+      target.path &&
+      target.path !== (cls && classPath(cls)) &&
+      !group.uses.some((use) => use.target.path === target.path)
+    ) {
       group.uses.push({ label: reportUse(target.path, cls, config), target });
     }
   }
