@@ -19,7 +19,7 @@ import { bindV4 } from '../binding/bindV4';
 import { validateConfig } from '../model/validate';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
 import { tooltipRows } from '../visuals/hoverSample';
-import { buildCardV4, MAX_LINES, type CardContextV4, type HistoryRowV4 } from './cardModel';
+import { buildCardV4, chartRowV4, MAX_LINES, type CardContextV4, type HistoryRowV4 } from './cardModel';
 
 const theme = createTheme();
 const bindCtx = bindContextFor({ theme, replaceVariables: (s) => s, timeZone: 'utc', linkWidth: { min: 2, max: 10 } });
@@ -425,5 +425,132 @@ describe('buildCardV4: N lines (spec 3.7)', () => {
       frame('up', { job: 'ap-1' }, [null, null, null]),
     ]);
     expect(model.rows[0]).toMatchObject({ kind: 'status', status: 'missing', text: 'No value' });
+  });
+});
+
+describe('card and chart feeds from Use.end (S4c)', () => {
+  const build = (at?: string, rowOwn = false, chartOwn = false, halves = true) => {
+    const index = indexOf([
+      ['a', {}],
+      ['b', { key: 'node-b' }],
+      ['p', {}],
+      ['l', { bind: 'lan', cap: '50M/10M', ...(at ? { at } : {}) }, true],
+    ]);
+    const validated = validateConfig({
+      version: 4,
+      classes: {
+        lan: {
+          match: { key: 'job' },
+          ...(halves ? { up: 'tx', down: 'rx' } : {}),
+          rows: [{ kind: 'updown', up: 'tx', down: 'rx', ...(rowOwn ? { match: { id: 'edge' } } : {}) }],
+          chart: { kind: 'updown', up: 'tx', down: 'rx', ...(chartOwn ? { match: { id: 'edge' } } : {}) },
+        },
+      },
+    });
+    const data = panelData([
+      frame('tx', { job: 'node-b', edge: 'l' }, [5e6, 6e6, 7e6], { unit: 'bps' }),
+      frame('rx', { job: 'node-b', edge: 'l' }, [1e6, 1.5e6, 2e6], { unit: 'bps' }),
+    ]);
+    const xml =
+      '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="a" parent="1"/><mxCell id="b" parent="1"/><mxCell id="p" parent="b"/>' +
+      '<mxCell id="l" parent="1" edge="1" source="a" target="p"/></root></mxGraphModel>';
+    const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+    const ctx: CardContextV4 = { theme, replaceVariables: (s) => s, index, validated, data };
+    const row = buildCardV4('l', bound, ctx).rows[0];
+    const chart = chartRowV4(
+      { cellId: 'l', path: 'classes.lan.chart', chart: { kind: 'updown', up: 'tx', down: 'rx' } },
+      bound,
+      ctx
+    )!;
+    return { row, chart, bound };
+  };
+  const directionValues = (row: ReturnType<typeof build>['row']) =>
+    row.directions!.map((d) => ({
+      direction: d.direction,
+      mirrored: d.mirrored,
+      text: d.text,
+      color: d.color,
+      values: d.history.state === 'ready' ? d.history.values : [],
+    }));
+
+  it('AC9/13: inferred target matches explicit target in the row and the chart', () => {
+    const inferred = build();
+    const explicit = build('target');
+    expect(directionValues(inferred.row)).toEqual(directionValues(explicit.row));
+    expect(directionValues(inferred.chart)).toEqual(directionValues(explicit.chart));
+    for (const row of [inferred.row, inferred.chart]) {
+      expect(row.directions!.map((d) => d.text)).toEqual(['7 Mb/s · 70% of 10 Mb/s', '2 Mb/s · 4% of 50 Mb/s']);
+      expect(row.directions![0].history).toMatchObject({ values: [5e6, 6e6, 7e6] });
+      expect(row.directions![1].history).toMatchObject({ values: [1e6, 1.5e6, 2e6] });
+    }
+  });
+
+  it.each([
+    [true, false],
+    [false, true],
+    [true, true],
+  ])('AC22: row own=%s and chart own=%s keep their own feeds', (rowOwn, chartOwn) => {
+    const { row, chart, bound } = build(undefined, rowOwn, chartOwn);
+    expect(bound.patches.get('l')?.link?.a2b?.value).toBe(2e6);
+    for (const [model, own] of [
+      [row, rowOwn],
+      [chart, chartOwn],
+    ] as const) {
+      expect(model.directions!.map((d) => d.text)).toEqual(
+        own
+          ? ['7 Mb/s · 14% of 50 Mb/s', '2 Mb/s · 20% of 10 Mb/s']
+          : ['7 Mb/s · 70% of 10 Mb/s', '2 Mb/s · 4% of 50 Mb/s']
+      );
+    }
+  });
+
+  it('AC22: adding dependent halves does not change an end-free row or chart', () => {
+    const before = build(undefined, true, true, false);
+    const after = build(undefined, true, true, true);
+    expect(directionValues(after.row)).toEqual(directionValues(before.row));
+    expect(directionValues(after.chart)).toEqual(directionValues(before.chart));
+    expect(after.bound.measured.get('l')).toMatchObject({ end: 'target', reason: 'only' });
+  });
+
+  it.each([false, true])('AC13: preserves at=target on a vertex, port=%s', (port) => {
+    const index = indexOf([
+      ['0', { 'pg-schema': '1' }],
+      ['n', { 'pg-kind': 'node', 'pg-id': 'rtr-a' }],
+      [
+        'v',
+        {
+          bind: 'lan',
+          key: 'node-a',
+          at: 'target',
+          ...(port
+            ? {
+                'pg-kind': 'port',
+                'pg-id': 'rtr-a:eth1',
+                'pg-node': 'rtr-a',
+                'pg-port': 'eth1',
+              }
+            : {}),
+        },
+      ],
+    ]);
+    const chart = { kind: 'updown' as const, up: 'tx', down: 'rx' };
+    const validated = validateConfig({ version: 4, classes: { lan: { match: { key: 'job' }, rows: [chart], chart } } });
+    const data = panelData([
+      frame('tx', { job: 'node-a' }, [7e6], { unit: 'bps' }),
+      frame('rx', { job: 'node-a' }, [2e6], { unit: 'bps' }),
+    ]);
+    const bound = bindV4({ index, validated, data, ctx: bindCtx });
+    const ctx: CardContextV4 = { theme, replaceVariables: (s) => s, index, validated, data };
+    const row = buildCardV4('v', bound, ctx).rows[0];
+    const region = chartRowV4({ cellId: 'v', path: 'classes.lan.chart', chart }, bound, ctx)!;
+    expect(bound.measured.has('v')).toBe(false);
+    expect(bound.uses.get('v')!.every((u) => u.end === 'target')).toBe(true);
+    for (const model of [row, region]) {
+      expect(model.directions!.map((d) => [d.direction, d.text, d.mirrored])).toEqual([
+        ['up', '7 Mb/s', false],
+        ['down', '2 Mb/s', true],
+      ]);
+    }
   });
 });
