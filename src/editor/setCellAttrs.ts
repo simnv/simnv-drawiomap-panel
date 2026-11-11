@@ -1,10 +1,10 @@
 import { parseSvg } from '../render/sanitize';
+import { isWritableCellAttr } from '../model/cellAttrNames';
 import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { createXmlElement, parseXml, serializeXml } from '../util/xml';
 
-const META_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
-const RESERVED_META = /^(?:pg-.*|id|label|placeholders|xml.*)$/i;
+export { META_KEY, RESERVED_META } from '../model/cellAttrNames';
 
 /** Read the uncompressed model of page 1 without changing later pages. */
 function firstModel(doc: Document): Element {
@@ -75,7 +75,7 @@ export function setCellAttrs(
 ): Diagram {
   for (const { attrs } of cells) {
     for (const name of Object.keys(attrs)) {
-      if (!META_KEY.test(name) || RESERVED_META.test(name)) {
+      if (!isWritableCellAttr(name)) {
         throw new Error(`Invalid cell attribute name: ${name}`);
       }
     }

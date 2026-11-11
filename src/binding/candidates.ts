@@ -1,4 +1,5 @@
 import type { DataFrame, Labels } from '@grafana/data';
+import { isWritableCellAttr } from '../model/cellAttrNames';
 import { indexSeries } from '../query/seriesIndex';
 import type { CellIndex } from '../types';
 import type { BindResultV4 } from './bindV4';
@@ -19,6 +20,34 @@ export interface Candidate {
 export interface CandidateContext {
   index: CellIndex;
   ends: EndContext;
+}
+
+type IndexedSeries = ReturnType<typeof indexSeries>['series'];
+const queryIndexes = new WeakMap<DataFrame[], Map<string, IndexedSeries>>();
+const NO_FRAMES: DataFrame[] = [];
+
+/** Query results keep their array identity until refresh. Scan their samples once for candidate lookup. */
+function candidateSeries(frames: DataFrame[], refId: string): IndexedSeries {
+  let byRef = queryIndexes.get(frames);
+  if (!byRef) {
+    byRef = new Map();
+    queryIndexes.set(frames, byRef);
+  }
+  let series = byRef.get(refId);
+  if (!series) {
+    // Copy labels before the shared index reads them. Ignore values outside the Labels contract.
+    const safeFrames = frames.map((frame) => ({
+      ...frame,
+      fields: frame.fields.map((field) => ({
+        ...field,
+        state: field.state && { ...field.state },
+        labels: stringLabels(field.labels),
+      })),
+    }));
+    series = indexSeries(safeFrames, refId).series;
+    byRef.set(refId, series);
+  }
+  return series;
 }
 
 /** Find identity repairs for one selected cell. The bind never calls this function. */
@@ -50,7 +79,7 @@ export function candidatesFor(
     }
   }
   const found: Candidate[] = [];
-  const queries = new Map<string, ReturnType<typeof indexSeries>['series']>();
+  const trialIndex = new Map(ctx.index);
   for (const use of result.uses.get(cellId) ?? []) {
     if (result.series.get(cellId)?.get(use.path)?.length !== 0) {
       continue;
@@ -66,20 +95,7 @@ export function candidatesFor(
     if (!parsed.ok) {
       continue;
     }
-    let seriesForRef = queries.get(use.refId);
-    if (!seriesForRef) {
-      // Copy labels before the shared index reads them. Ignore values outside the Labels contract.
-      const frames = (framesByRefId.get(use.refId) ?? []).map((frame) => ({
-        ...frame,
-        fields: frame.fields.map((field) => ({
-          ...field,
-          state: field.state && { ...field.state },
-          labels: stringLabels(field.labels),
-        })),
-      }));
-      seriesForRef = indexSeries(frames, use.refId).series;
-      queries.set(use.refId, seriesForRef);
-    }
+    const seriesForRef = candidateSeries(framesByRefId.get(use.refId) ?? NO_FRAMES, use.refId);
     for (const series of seriesForRef) {
       for (const matcher of parsed.block.matchers) {
         // Regex matchers do not give candidate attribute values.
@@ -94,26 +110,50 @@ export function candidatesFor(
           continue;
         }
         const { attr, value } = repair;
-        const resolved = resolveBlock(parsed.block, (name) => (name === attr ? value : attrs(name)), cache);
-        if (resolved.ok && resolved.test(series.labels)) {
-          const via = selected.get(use.refId)?.has(labelKey(series.labels)) ? 'any' : 'orphan';
-          const end = measured?.end;
-          const geometric = attr.startsWith('from.') ? 'source' : attr.startsWith('to.') ? 'target' : undefined;
-          const target = geometric
-            ? ctx.ends.ends.get(cellId)?.[geometric]
-            : meta.isEdge && !Object.hasOwn(meta.attrs, attr) && !isOwnOnly(attr) && end && end !== 'none'
-              ? ctx.ends.ends.get(cellId)?.[end]
-              : cellId;
-          if (target !== undefined) {
-            found.push({
-              use: use.path,
-              target,
-              attr: geometric ? attr.slice(attr.indexOf('.') + 1) : attr,
-              value,
-              labels: series.labels,
-              via,
-            });
+        const via = selected.get(use.refId)?.has(labelKey(series.labels)) ? 'any' : 'orphan';
+        const end = measured?.end;
+        const geometric = attr.startsWith('from.') ? 'source' : attr.startsWith('to.') ? 'target' : undefined;
+        const target = geometric
+          ? ctx.ends.ends.get(cellId)?.[geometric]
+          : meta.isEdge && !Object.hasOwn(meta.attrs, attr) && !isOwnOnly(attr) && end && end !== 'none'
+            ? ctx.ends.ends.get(cellId)?.[end]
+            : cellId;
+        const writeAttr = geometric ? attr.slice(attr.indexOf('.') + 1) : attr;
+        // Class and feed controls can change the use itself. They are not identity repairs.
+        if (!isWritableCellAttr(writeAttr) || ['at', 'bind'].includes(writeAttr.toLowerCase())) {
+          continue;
+        }
+        const original = target === undefined ? undefined : ctx.index.get(target);
+        if (original && target !== undefined) {
+          const canonical = writeAttr.toLowerCase();
+          const writtenAttrs = {
+            ...Object.fromEntries(
+              Object.entries(original.meta.attrs).filter(([name]) => name.toLowerCase() !== canonical)
+            ),
+            [canonical]: value,
+          };
+          trialIndex.set(target, {
+            ...original,
+            meta: { ...original.meta, attrs: writtenAttrs },
+          });
+          const trialIdentity = createIdentity(() => ({ ...ctx.ends, index: trialIndex }));
+          const reader = trialIndex.get(cellId)!.meta;
+          if (reader.isEdge && measured) {
+            trialIdentity.measure(reader, measured.needs);
           }
+          const resolved = resolveBlock(parsed.block, trialIdentity.attr(reader), cache);
+          trialIndex.set(target, original);
+          if (!resolved.ok || !resolved.test(series.labels)) {
+            continue;
+          }
+          found.push({
+            use: use.path,
+            target,
+            attr: writeAttr,
+            value,
+            labels: series.labels,
+            via,
+          });
         }
       }
     }

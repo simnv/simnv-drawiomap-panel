@@ -4,7 +4,7 @@ import { cellMetaFromAttrs } from '../adapter/portograph';
 import { validateConfig } from '../model/validate';
 import type { CellEntry, CellIndex } from '../types';
 import { bindV4 } from './bindV4';
-import { candidatesFor } from './candidates';
+import { candidatesFor, type Candidate } from './candidates';
 import { bindContextFor } from './context';
 import { endContextOf } from './edgeEnds';
 
@@ -42,10 +42,158 @@ function setup(match: Record<string, string | string[]>, cells: Cell[], frames: 
     [...new Set(frames.map((f) => f.refId!))].map((ref) => [ref, frames.filter((f) => f.refId === ref)])
   );
   const ctx = { index, ends: endContextOf(xml, index) };
-  return { result, byRef, ctx, candidates: (id = 'a') => candidatesFor(id, result, byRef, ctx) };
+  return {
+    result,
+    byRef,
+    ctx,
+    candidates: (id = 'a') => candidatesFor(id, result, byRef, ctx),
+    after: (candidate: Candidate) =>
+      setup(
+        match,
+        cells.map(([id, attrs, edge]): Cell => [
+          id,
+          id === candidate.target ? { ...attrs, [candidate.attr]: candidate.value } : attrs,
+          edge,
+        ]),
+        frames,
+        xml
+      ).result,
+  };
 }
 
 describe('candidatesFor', () => {
+  it('does not read sample arrays again for a stable query result', () => {
+    const input = frame({ job: 'node-rtr-a' });
+    const { candidates } = setup({ key: 'job' }, [['a', { bind: 'host', key: 'wrong' }]], [input]);
+    let reads = 0;
+    for (const field of input.fields) {
+      const value = field.values[0];
+      Object.defineProperty(field.values, '0', {
+        get: () => {
+          reads++;
+          return value;
+        },
+        configurable: true,
+      });
+    }
+    const first = candidates();
+    const afterFirst = reads;
+    expect(first.map((c) => c.value)).toEqual(['node-rtr-a']);
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(candidates()).toEqual(first);
+    expect(reads).toBe(afterFirst);
+  });
+
+  it('rebuilds candidate lookup for a new query result array', () => {
+    const { candidates, byRef } = setup(
+      { key: 'job' },
+      [['a', { bind: 'host', key: 'wrong' }]],
+      [frame({ job: 'node-rtr-a' })]
+    );
+    expect(candidates().map((c) => c.value)).toEqual(['node-rtr-a']);
+    byRef.set('up', [frame({ job: 'node-rtr-b' })]);
+    expect(candidates().map((c) => c.value)).toEqual(['node-rtr-b']);
+  });
+
+  it.each(['id', 'label', 'placeholders', 'pg-id', 'pg-node', 'xml', 'xmlData', 'XMLDATA'])(
+    'does not propose the reserved attribute %s, directly or through an end',
+    (name) => {
+      const direct = setup({ [name]: 'job' }, [['a', { bind: 'host', [name]: 'old' }]], [frame({ job: 'new' })]);
+      const xml =
+        '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="pa" parent="1"/><mxCell id="pb" parent="1"/>' +
+        '<mxCell id="a" edge="1" parent="1" source="pa" target="pb"/></root></mxGraphModel>';
+      const geometric = setup(
+        { id: `job="\${to.${name}}"` },
+        [
+          ['pa', {}],
+          ['pb', { [name]: 'old' }],
+          ['a', { bind: 'host' }, true],
+        ],
+        [frame({ job: 'new' })],
+        xml
+      );
+      expect(direct.candidates()).toEqual([]);
+      expect(geometric.candidates()).toEqual([]);
+    }
+  );
+
+  it('checks the lowercase attribute write that the editor makes', () => {
+    const { candidates } = setup({ KEY: 'job' }, [['a', { bind: 'host', KEY: 'old' }]], [frame({ job: 'new' })]);
+    expect(candidates()).toEqual([]);
+  });
+
+  it.each([
+    { job: 'new', other: 'old' },
+    { job: 'old', other: 'new' },
+  ])('rejects a repair when aliases disagree after the write: %j', (labels) => {
+    const xml =
+      '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="pa" parent="1"/><mxCell id="pb" parent="1"/>' +
+      '<mxCell id="a" edge="1" parent="1" source="pa" target="pb"/></root></mxGraphModel>';
+    const { candidates } = setup(
+      { key: 'other', id: 'job="${to.key}"' },
+      [
+        ['pa', {}],
+        ['pb', { key: 'old' }],
+        ['a', { bind: 'host' }, true],
+      ],
+      [frame(labels)],
+      xml
+    );
+    expect(candidates()).toEqual([]);
+  });
+
+  it('offers an alias repair only when a fresh bind selects the series after the write', () => {
+    const xml =
+      '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="pa" parent="1"/><mxCell id="pb" parent="1"/>' +
+      '<mxCell id="a" edge="1" parent="1" source="pa" target="pb"/></root></mxGraphModel>';
+    const labels = { job: 'new', other: 'new' };
+    const { candidates, after } = setup(
+      { key: 'other', id: 'job="${to.key}"' },
+      [
+        ['pa', {}],
+        ['pb', { key: 'old' }],
+        ['a', { bind: 'host' }, true],
+      ],
+      [frame(labels)],
+      xml
+    );
+    const found = candidates();
+    expect(found.map(({ target, attr, value }) => ({ target, attr, value }))).toEqual([
+      { target: 'pb', attr: 'key', value: 'new' },
+    ]);
+    for (const candidate of found) {
+      expect(
+        after(candidate)
+          .series.get('a')
+          ?.get(candidate.use)
+          ?.map((s) => s.labels)
+      ).toEqual([labels]);
+    }
+  });
+
+  it('never proposes changes to the class or measured-end controls', () => {
+    const xml =
+      '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="pa" parent="1"/><mxCell id="pb" parent="1"/>' +
+      '<mxCell id="a" edge="1" parent="1" source="pa" target="pb"/></root></mxGraphModel>';
+    const link = setup(
+      { at: 'side', key: 'job' },
+      [
+        ['pa', { key: 'node-rtr-a' }],
+        ['pb', { key: 'node-rtr-b' }],
+        ['a', { bind: 'host', at: 'source' }, true],
+      ],
+      [frame({ side: 'target', job: 'node-rtr-a' })],
+      xml
+    );
+    const cls = setup({ bind: 'job' }, [['a', { bind: 'host' }]], [frame({ job: 'unknown-class' })]);
+    expect(link.candidates()).toEqual([]);
+    expect(cls.candidates()).toEqual([]);
+  });
+
   it('offers an orphan series for a wrong key', () => {
     const { candidates } = setup(
       { key: 'job' },
