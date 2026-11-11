@@ -304,6 +304,22 @@ describe('DrawioMapPanel', () => {
     expect(screen.getByTestId('dmap-warning-badge').getAttribute('title')).toMatch(/version 3/);
   });
 
+  it('uses one grouped cause and readable uses in the warning tooltip', async () => {
+    const config = withClass('node-up', {
+      match: { absent: 'job' },
+      status: 'up',
+      rows: [{ kind: 'history', query: 'up', label: 'state' }],
+      url: '/d/demo?key=${absent}',
+    });
+    render(<DrawioMapPanel {...props({ options: { ...options, config } })} />);
+    const badge = await screen.findByTestId('dmap-warning-badge');
+    const lines = badge.getAttribute('title')!.split('\n');
+    const causes = lines.filter((line) => line.startsWith('node-up:') && line.includes('no attribute `absent`'));
+    expect(causes).toHaveLength(1);
+    expect(causes[0]).toMatch(/used by status, rows\[0\] \(state\), url/);
+    expect(causes[0]).not.toContain('classes.node-up');
+  });
+
   it('attaches only the chart regions of the classes and keeps a query error inside its region', async () => {
     const restore = stubRegionGeometry();
     try {

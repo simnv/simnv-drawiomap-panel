@@ -502,7 +502,13 @@ export function SplitEditor({
       below={
         <div className={styles.below}>
           <div className={styles.report}>
-            <MatchReport entries={entries} counts={counts} onPick={onPick} follow={follow} />
+            <MatchReport
+              entries={entries}
+              counts={counts}
+              config={validated.parsed.config}
+              onPick={onPick}
+              follow={follow}
+            />
           </div>
           {selected.length ? (
             <div className={styles.inspector}>

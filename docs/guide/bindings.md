@@ -322,9 +322,46 @@ A class with `up`, `down` or `capacity` applies to a link (an edge cell).
 
 ### The match report
 
-On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the count, and its tooltip lists the entries. In panel edit, use **Edit bindings** to open the split editor and its report. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
+On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the number of grouped causes. Its tooltip uses the same cause text and short use names as the editor. In panel edit, use **Edit bindings** to open the split editor and its report. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
 
-The report of the split editor has one tab for each class, in the order of the config. A tab shows the cell counts of the class and its entries. The number after the class name is the number of entries. The entries that have no class (for example a YAML error, `unknown-class`, `unknown-override` or `orphan-series`) are in the last tab, **Not in a class**. The report opens the first tab that has entries. When you move the cursor into a class, or select a cell, the report opens the tab of that class. The cursor in `overrides` opens **Not in a class**. To move between the tabs with the keyboard, focus a tab and use the arrow keys, Home and End.
+The report of the split editor has one tab for each class, in the order of the config. A tab shows the cell counts of the class and its entries. The number after the class name is the number of grouped causes. The entries that have no class (for example a YAML error, `unknown-class`, `unknown-override` or `orphan-series`) are in the last tab, **Not in a class**. The report opens the first tab that has entries. When you move the cursor into a class, or select a cell, the report opens the tab of that class. The cursor in `overrides` opens **Not in a class**. To move between the tabs with the keyboard, focus a tab and use the arrow keys, Home and End.
+
+The report groups entries only for display. The bind keeps every per-path entry for YAML markers and other tools.
+For example, one missing `key` on three cells gives one row, **3 cells have no attribute `key`**.
+The secondary line lists the uses, such as `status`, `rows[0] (load 1m)`, `url` and `urlTitle`.
+Select a use to move the cursor to its full YAML path and highlight its cells.
+Select the cause text to select the first use and the same cells.
+Class tabs omit the `classes.<name>.` prefix. A row shows its configured label when it has one.
+Override paths stay explicit because they name a different cell.
+
+Within each tab, `missing-attr`, `unknown-ref`, `matcher-error` and `no-series` come first, in that order.
+The other causes keep their original order. Uses within one cause also keep their original order.
+The summary columns **No series**, **One series** and **Several** count cells with zero, one and more than one series.
+The class summary uses each cell's first use. The rows below it count each use separately.
+
+Every group key includes the kind, class and same cell set. Cell order does not affect the key.
+The following table gives the extra cause key. Different keys stay in separate rows.
+
+| Kind                                                                                   | Extra cause key                                   |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `missing-attr`                                                                         | Attribute name                                    |
+| `unknown-ref`                                                                          | refId                                             |
+| `matcher-error`                                                                        | Matcher text and error message                    |
+| `no-series`, `template-unresolved`, `unused-field`, `class-no-match`, `class-no-cells` | None                                              |
+| `many-series`                                                                          | Same cell id and series count pairs, in any order |
+| `unit-mismatch`                                                                        | Same unit set, in any order                       |
+| `capacity-fallback`, `no-edge-ends`                                                    | Reason                                            |
+| `bad-cap`                                                                              | Attribute value                                   |
+| `class-cycle`, `class-unknown-parent`, `class-invalid-parent`                          | None                                              |
+| `unknown-class`                                                                        | Bind name                                         |
+| `unknown-override`                                                                     | Cell id                                           |
+| `schema`                                                                               | Full YAML path and message                        |
+| `yaml`                                                                                 | Line and message                                  |
+| `outdated-config`                                                                      | Version                                           |
+| `query-unavailable`                                                                    | refId, state and message                          |
+| `many-fields`, `invalid-series`                                                        | refId and message                                 |
+| `orphan-series`                                                                        | refId, label sets and overflow count              |
+| `duplicate-series`                                                                     | refId and labels                                  |
 
 | Entry                                                         | Meaning                                                                                 |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
