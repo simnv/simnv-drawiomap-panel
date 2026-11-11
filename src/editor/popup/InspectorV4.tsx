@@ -1,9 +1,17 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
-import { formattedValueToString, getDisplayProcessor, getValueFormat, type GrafanaTheme2 } from '@grafana/data';
+import {
+  formattedValueToString,
+  type DataFrame,
+  getDisplayProcessor,
+  getValueFormat,
+  type GrafanaTheme2,
+} from '@grafana/data';
 import { Button, IconButton, Input, useStyles2, useTheme2 } from '@grafana/ui';
 import { AttributeList, type EndAttrs } from './AttributeList';
+import { Suggestions } from './Suggestions';
 import type { BindResultV4 } from '../../binding/bindV4';
+import { candidatesFor } from '../../binding/candidates';
 import { effectiveClass } from '../../binding/classes';
 import type { EndContext } from '../../binding/edgeEnds';
 import { linkFeeds } from '../../binding/linkFeeds';
@@ -13,6 +21,7 @@ import { shownField, type Show } from '../../binding/rowData';
 import { listUses, type Use } from '../../binding/uses';
 import type { validateConfig } from '../../model/validate';
 import type { Series } from '../../query/snapshot';
+import { canonicalAttrName } from '../../model/cellAttrNames';
 import type { CellIndex, CellMeta } from '../../types';
 
 /** One write of spec 5.5: the attributes to set on one cell. `null` removes the attribute. */
@@ -28,6 +37,8 @@ export interface InspectorV4Props {
   /** The edge ends of the draft diagram (spec 3.8.1), read once per diagram. */
   ends: EndContext;
   bound: BindResultV4;
+  /** The frames of the panel data for each query, for the key suggestions. */
+  framesByRefId?: ReadonlyMap<string, DataFrame[]>;
   validated: ReturnType<typeof validateConfig>;
   /** The class names of the draft: the items of the bind field (spec 5.6). */
   classNames: string[];
@@ -87,6 +98,18 @@ function resolvedText(bound: BindResultV4, cellId: string, use: Use): string {
       ? `${resolved.problem}: ${resolved.detail}`
       : resolved.problem
     : resolved.matchers.map((m) => `${m.label}${m.op}${JSON.stringify(m.value)}`).join(', ');
+}
+
+/** A use of the cell has no series: the only case that has suggestions. */
+const problemOf = (id: string, bound: BindResultV4) =>
+  (bound.uses.get(id) ?? []).some((use) => bound.series.get(id)?.get(use.path)?.length === 0);
+
+/** The name of the target of a suggestion. Two ends of a link with one name get their cell id, as in the end rows. */
+function suggestionName(id: string, meta: CellMeta, ends: EndContext): string {
+  const name = endName(id, ends) ?? id;
+  const end = ends.ends.get(meta.id);
+  const same = meta.isEdge && end !== undefined && endName(end.source, ends) === endName(end.target, ends);
+  return same && (id === end.source || id === end.target) ? `${name} (${id})` : name;
 }
 
 /** The inheritable names that the match blocks of the uses read (I6). */
@@ -241,6 +264,15 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
   const override = validated.parsed.config?.overrides[meta.id];
   const text = cls && effectiveClass(cls, override, meta.id).text;
   const uses = bound.uses.get(meta.id) ?? [];
+  const { framesByRefId, index } = props;
+  const problem = problemOf(meta.id, bound);
+  // Only the selected cell, and only when a use has no series: the bind never runs the search. The search
+  // reads the data of the panel, so an unrelated render (the YAML text, the cursor, the zoom) does not repeat it.
+  const candidates = useMemo(
+    () =>
+      problemOf(meta.id, bound) && framesByRefId ? candidatesFor(meta.id, bound, framesByRefId, { index, ends }) : [],
+    [meta.id, bound, framesByRefId, index, ends]
+  );
   return (
     <>
       <dl className={styles.list}>
@@ -286,6 +318,18 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
           feed={feedText(use, meta)}
           series={bound.series.get(meta.id)?.get(use.path) ?? []}
           show={showOf(use, text)}
+          suggestions={
+            problem ? (
+              <Suggestions
+                candidates={candidates.filter((c) => c.use === use.path)}
+                cellId={meta.id}
+                nameOf={(id) => suggestionName(id, meta, ends)}
+                regex={hasRegex(use)}
+                generated={props.generated}
+                onApply={(c) => onWrite([{ id: c.target, attrs: { [canonicalAttrName(c.attr)]: c.value } }])}
+              />
+            ) : null
+          }
         />
       ))}
     </>
@@ -498,10 +542,23 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   );
 }
 
-function UseDetails(props: { use: Use; resolved: string; feed?: string; series: Series[]; show: Show }) {
+/** The use has a regex matcher: the engine gives no candidate for it. */
+function hasRegex(use: Use): boolean {
+  const parsed = parseMatchBlock(use.match, use.path);
+  return parsed.ok && parsed.block.matchers.some((m) => m.op !== '=');
+}
+
+function UseDetails(props: {
+  use: Use;
+  resolved: string;
+  feed?: string;
+  series: Series[];
+  show: Show;
+  suggestions?: React.ReactNode;
+}) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
-  const { use, resolved, feed, series, show } = props;
+  const { use, resolved, feed, series, show, suggestions } = props;
   const more = series.length - LABEL_SETS;
   return (
     <section className={styles.use} data-testid="dmap-inspector-use" data-dmap-use={use.path}>
@@ -533,7 +590,9 @@ function UseDetails(props: { use: Use; resolved: string; feed?: string; series: 
           ))}
           {more > 0 ? <li>+{more} more</li> : null}
         </ul>
-      ) : null}
+      ) : (
+        suggestions
+      )}
     </section>
   );
 }

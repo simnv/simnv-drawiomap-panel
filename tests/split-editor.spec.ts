@@ -231,6 +231,41 @@ test('a click on a cell opens the inspector and moves the cursor to its class; "
   await expect.poll(labels).toEqual({ a2b: before.b2a, b2a: before.a2b });
 });
 
+test('a removed port gives a suggestion in the inspector; applying it brings the series back (T3a-UI)', async ({
+  page,
+  config,
+  createDiagram,
+  gotoPanelEditPage,
+}) => {
+  const uid = await createDiagram(config);
+  await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+  const dialog = await openSplitEditor(page);
+
+  await popupCell(dialog, 'link-1').click();
+  const panel = inspector(dialog);
+  const use = panel.locator('[data-dmap-use="classes.directional-link.up"]');
+  await expect(use.getByTestId('dmap-inspector-count')).toHaveText('1 series');
+  await expect(panel.getByTestId('dmap-inspector-suggestions')).toHaveCount(0);
+
+  await panel.getByRole('button', { name: 'Remove port' }).click();
+  await expect(popupCell(dialog, 'link-1')).not.toHaveAttribute('data-meta-port', /.*/);
+  await expect(use.getByTestId('dmap-inspector-count')).toHaveText('0 series');
+  const row = use.getByTestId('dmap-inspector-suggestion').first();
+  await expect(row).toContainText('Set port = wan1');
+  // The link has no port itself now: the measured end (the source) takes the write, and the button names it.
+  await expect(row.getByRole('button')).toHaveText(/^Set on /);
+  await row.scrollIntoViewIfNeeded();
+  await mkdir('/tmp/t3a-ui', { recursive: true });
+  await dialog.screenshot({ path: '/tmp/t3a-ui/suggestion.png' });
+
+  await row.getByRole('button').click();
+  await expect(popupCell(dialog, 'device-1')).toHaveAttribute('data-meta-port', 'wan1');
+  // The selection stays on the link, and its use has a series again.
+  await expect(panel.getByTestId('dmap-inspector-id')).toHaveText('link-1');
+  await expect(use.getByTestId('dmap-inspector-count')).toHaveText('1 series');
+  await expect(panel.getByTestId('dmap-inspector-suggestions')).toHaveCount(0);
+});
+
 test('the attribute row adds port=x to a cell, shows it in the list and Undo removes it (T3c)', async ({
   page,
   config,

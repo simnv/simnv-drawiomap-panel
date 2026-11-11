@@ -30,7 +30,20 @@ vi.mock('@grafana/ui', async (importOriginal) => ({
   CodeEditor: kit.CodeEditor,
 }));
 
-const { SplitEditor } = await import('./SplitEditor');
+// Count the calls of the candidate engine; the real function still runs.
+const engine = await vi.hoisted(async () => ({ calls: 0 }));
+vi.mock('../../binding/candidates', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../binding/candidates')>();
+  return {
+    ...real,
+    candidatesFor: (...args: Parameters<typeof real.candidatesFor>) => {
+      engine.calls++;
+      return real.candidatesFor(...args);
+    },
+  };
+});
+
+const { SplitEditor, CURSOR_WAIT_MS } = await import('./SplitEditor');
 
 /** `a`, `b` bind `dev`, `c` binds `sw`, `d` is a bare `mxCell` with no bind, `e` is an edge from `a` to `c`. */
 const SVG =
@@ -972,5 +985,156 @@ describe('InspectorV4 attribute row', () => {
     document.removeEventListener('keydown', bubbled);
     expect((nameInput() as HTMLInputElement).value).toBe('');
     expect(bubbled).not.toHaveBeenCalled();
+  });
+});
+
+describe('InspectorV4 suggestions', () => {
+  let rect: { mockRestore(): void };
+  beforeEach(() => {
+    fake.reset();
+    rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(
+        () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0 }) as DOMRect
+      );
+  });
+  afterEach(() => rect.mockRestore());
+
+  const spare = () =>
+    toDataFrame({
+      refId: 'up',
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [Date.now()] },
+        { name: 'Value', type: FieldType.number, values: [1], labels: { job: 'spare' } },
+      ],
+    });
+  const withSpare = () => {
+    const p = props();
+    return { ...p, data: { ...p.data, series: [...p.data.series, spare()] } };
+  };
+  const suggestions = () => within(inspector()).queryAllByTestId('dmap-inspector-suggestion');
+
+  it('shows a suggestion under a use with no series, the orphan first, with its labels and a badge', async () => {
+    render(<SplitEditor {...withSpare()} />);
+    await frame();
+    fireEvent.click(cell('b'));
+    const rows = suggestions();
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows[0].textContent).toContain('Set key = spare on B');
+    expect(rows[0].textContent).toContain('job="spare"');
+    expect(within(rows[0]).getByText('unused series')).toBeTruthy();
+    expect(within(rows[1]).queryByText('unused series')).toBeNull();
+  });
+
+  it('shows nothing for a use that has series, and no empty box', async () => {
+    render(<SplitEditor {...withSpare()} />);
+    await frame();
+    fireEvent.click(cell('c'));
+    expect(within(inspector()).queryByTestId('dmap-inspector-suggestions')).toBeNull();
+    expect(within(inspector()).queryByText(/No suggestion/)).toBeNull();
+  });
+
+  it('applies a suggestion with Undo and Redo, and the use gets one series', async () => {
+    render(<SplitEditor {...withSpare()} />);
+    await frame();
+    fireEvent.click(cell('b'));
+    fireEvent.click(within(suggestions()[0]).getByRole('button', { name: 'Set it' }));
+    await frame();
+    expect(cell('b').getAttribute('data-meta-key')).toBe('spare');
+    const [use] = within(inspector()).getAllByTestId('dmap-inspector-use');
+    expect(within(use).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+    expect(within(inspector()).queryByTestId('dmap-inspector-suggestions')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await frame();
+    expect(cell('b').getAttribute('data-meta-key')).toBe('b');
+    expect(suggestions().length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    await frame();
+    expect(cell('b').getAttribute('data-meta-key')).toBe('spare');
+  });
+
+  it('says on the button that the write goes to the end port, and keeps the link selected', async () => {
+    const p = inferred();
+    const diagram = p.options.diagram!;
+    const options = {
+      ...p.options,
+      diagram: {
+        ...diagram,
+        xml: diagram.xml.replace('port="eth0" cap', 'port="eth9" cap'),
+        svg: diagram.svg.replace('data-meta-port="eth0"', 'data-meta-port="eth9"'),
+      },
+    } as Options;
+    render(<SplitEditor {...p} options={options} />);
+    await frame();
+    fireEvent.click(cell('e_only'));
+    const [row] = suggestions();
+    expect(row.textContent).toContain('Set port = eth0 on p2');
+    fireEvent.click(within(row).getByRole('button', { name: 'Set on p2' }));
+    await frame();
+    expect(cell('p2').getAttribute('data-meta-port')).toBe('eth0');
+    expect(field('id').textContent).toBe('e_only');
+    const use = within(inspector())
+      .getAllByTestId('dmap-inspector-use')
+      .find((el) => el.dataset.dmapUse === 'classes.link.up')!;
+    expect(within(use).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+  });
+
+  it('names an end with its cell id when both ends have the same name', async () => {
+    const p = inferred();
+    const diagram = p.options.diagram!;
+    const options = {
+      ...p.options,
+      diagram: {
+        ...diagram,
+        xml: diagram.xml
+          .replace('port="eth0" cap', 'port="eth9" cap')
+          .replace('<object id="p2" label="p2"', '<object id="p2" label="p1"'),
+        svg: diagram.svg
+          .replace('data-meta-port="eth0"', 'data-meta-port="eth9"')
+          .replace('<text>p2</text>', '<text>p1</text>'),
+      },
+    } as Options;
+    render(<SplitEditor {...p} options={options} />);
+    await frame();
+    fireEvent.click(cell('e_only'));
+    const [row] = suggestions();
+    expect(row.textContent).toContain('Set port = eth0 on p1 (p2)');
+    expect(within(row).getByRole('button', { name: 'Set on p1 (p2)' })).toBeTruthy();
+  });
+
+  it('unchanged inputs: a cursor update does not search again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      engine.calls = 0;
+      const p = withSpare();
+      render(<SplitEditor {...p} />);
+      await frame();
+      fireEvent.click(cell('b'));
+      expect(suggestions().length).toBeGreaterThan(0);
+      const before = engine.calls;
+      expect(before).toBeGreaterThan(0);
+      const lit = () =>
+        Array.from(stage().querySelectorAll('[data-dmap-highlight="true"]')).map((el) =>
+          el.getAttribute('data-cell-id')
+        );
+      const litBefore = lit();
+      // The cursor in the code box lights the cells of its path, after the wait. The data, draft and selection stay.
+      act(() => fake.moveTo(fake.text.indexOf('dev:')));
+      act(() => {
+        vi.advanceTimersByTime(CURSOR_WAIT_MS);
+      });
+      expect(lit()).not.toEqual(litBefore);
+      expect(engine.calls).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says there is no suggestion for a regex match', async () => {
+    render(<SplitEditor {...inferred()} />);
+    await frame();
+    fireEvent.click(cell('b1'));
+    expect(within(inspector()).getByText('No suggestion for a regex match.')).toBeTruthy();
+    expect(suggestions()).toHaveLength(0);
   });
 });
