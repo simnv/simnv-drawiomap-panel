@@ -8,6 +8,7 @@ const names = [
   'buildCard',
   'buildCellIndex',
   'buildLegend',
+  'candidatesFor',
   'cellMetas',
   'compileMatcher',
   'createIdentity',

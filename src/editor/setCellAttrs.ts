@@ -1,33 +1,10 @@
 import { parseSvg } from '../render/sanitize';
+import { canonicalAttrName, isWritableCellAttr } from '../model/cellAttrNames';
 import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { createXmlElement, parseXml, serializeXml } from '../util/xml';
 
-const META_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
-const RESERVED_META = /^(?:pg-.*|id|label|placeholders|xml.*)$/i;
-
-/** The attributes that the panel or draw.io own: the inspector shows them and never writes them. */
-export const isReservedAttr = (name: string) => RESERVED_META.test(name);
-
-/**
- * Why a name cannot be a cell attribute, or `undefined` when it can. The rule is the `ident` rule of the YAML
- * (src/model/v4.ts), plus the reserved names of this file. Give the name in lowercase.
- */
-export function attrNameProblem(name: string): string | undefined {
-  if (!name) {
-    return 'Enter a name.';
-  }
-  if (name === '__proto__') {
-    return 'The name __proto__ is not allowed.';
-  }
-  if (!META_KEY.test(name)) {
-    return 'Use a letter or _ first, then letters, digits, _ or -.';
-  }
-  if (isReservedAttr(name)) {
-    return `The name ${name} is reserved. The panel or draw.io owns it.`;
-  }
-  return undefined;
-}
+export { attrNameProblem, isReservedAttr, META_KEY, RESERVED_META } from '../model/cellAttrNames';
 
 /** Read the uncompressed model of page 1 without changing later pages. */
 function firstModel(doc: Document): Element {
@@ -82,7 +59,7 @@ function wrapCell(cell: Element): Element {
 /** Replace all case variants with one lowercase name, or remove them all. */
 function writeAttribute(el: Element, name: string, value: string | null): void {
   for (const attr of Array.from(el.attributes)) {
-    if (attr.name.toLowerCase() === name) {
+    if (canonicalAttrName(attr.name) === name) {
       el.removeAttributeNode(attr);
     }
   }
@@ -98,7 +75,7 @@ export function setCellAttrs(
 ): Diagram {
   for (const { attrs } of cells) {
     for (const name of Object.keys(attrs)) {
-      if (!META_KEY.test(name) || isReservedAttr(name)) {
+      if (!isWritableCellAttr(name)) {
         throw new Error(`Invalid cell attribute name: ${name}`);
       }
     }
@@ -128,7 +105,7 @@ export function setCellAttrs(
     const wrapper = wrapCell(cell);
     index.set(id, wrapper);
     for (const [name, value] of Object.entries(attrs)) {
-      const canonical = name.toLowerCase();
+      const canonical = canonicalAttrName(name);
       writeAttribute(wrapper, canonical, value);
       writeAttribute(matches[0], `data-meta-${canonical}`, value);
     }

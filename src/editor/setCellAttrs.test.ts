@@ -170,10 +170,32 @@ describe('setCellAttrs', () => {
     expect(() => setCellAttrs(diagram(), [{ id: 'unknown', attrs: { bind: 'host' } }])).toThrow(/page 1/);
   });
 
-  it.each(['pg-x', 'PG-X', 'id', 'ID', 'label', 'placeholders', 'xmlns', 'xmlThing', '1key', 'a:b', 'a.b', 'a b', ''])(
-    'refuses the attribute name %j',
+  it.each([
+    'pg-x',
+    'PG-X',
+    'id',
+    'ID',
+    'label',
+    'placeholders',
+    'xmlns',
+    'xmlThing',
+    '__proto__',
+    '__PROTO__',
+    '1key',
+    'a:b',
+    'a.b',
+    'a b',
+    '',
+  ])('refuses the attribute name %j', (name) => {
+    expect(() => setCellAttrs(diagram(), [{ id: 'host-a', attrs: { [name]: null } }])).toThrow(/attribute name/i);
+  });
+
+  it.each(['\u212A', '\u212Aey', 'a\u212A', '\u0130', '\u0130d', 'a\u0130'])(
+    'refuses non-ASCII %j and preserves an existing key',
     (name) => {
-      expect(() => setCellAttrs(diagram(), [{ id: 'host-a', attrs: { [name]: null } }])).toThrow(/attribute name/i);
+      const input = diagram();
+      expect(() => setCellAttrs(input, [{ id: 'host-a', attrs: { [name]: 'new' } }])).toThrow(/attribute name/i);
+      expect(parse(input.xml).getElementById('host-a')?.getAttribute('key')).toBe('host-a');
     }
   );
 
