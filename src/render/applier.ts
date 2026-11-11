@@ -1,5 +1,6 @@
 import { createTheme, type GrafanaTheme2 } from '@grafana/data';
 import type { CellEntry, CellIndex, CellPatch, HalfState, PatchMap } from '../types';
+import { diagramTitle } from '../binding/diagramTitle';
 import {
   alphaOf,
   linkStatusPaint,
@@ -280,13 +281,18 @@ function applyUnavailable(entry: CellEntry, patch: CellPatch): void {
   }
 }
 
-function tag(entry: CellEntry, patch: CellPatch, target: string | undefined, interactive: boolean): void {
+function tag(
+  entry: CellEntry,
+  patch: CellPatch,
+  target: string | undefined,
+  interactive: boolean,
+  label: string
+): void {
   if (target) {
     entry.group.setAttribute('data-dmap-target', target);
   }
   // Keyboard access: Tab moves to the cell, Enter or Space opens its card. A cell without a card is not a button.
   // tabindex, role and aria-label go into the applier layer: the binding editor writes the same attributes.
-  const label = entry.meta.title || entry.meta.labelText || entry.meta.key;
   const view = patch.unavailable ? { state: 'unavailable', reason: patch.unavailable.reason } : patch.statusView;
   setOwnedAttrs(entry.group, 'applier', {
     ...(interactive ? { tabindex: '0', role: 'button' } : {}),
@@ -377,6 +383,8 @@ export interface ColourScheme {
 export interface ApplyContext {
   theme: GrafanaTheme2;
   osDark: boolean;
+  /** The current diagram XML for the accessible link title. */
+  xml?: string;
 }
 
 let fallbackTheme: GrafanaTheme2 | undefined;
@@ -395,11 +403,11 @@ const sameScheme = (a: ColourScheme, b: ColourScheme) =>
 
 /**
  * The fields of a patch that the writes above read, as one string. Two patches with the same key draw the same
- * picture, so a cell whose key did not change is not touched on a refresh. The cell label of `aria-label` comes
- * from the entry, constant per index. The status part holds each status field that a write reads: a new colour with
+ * picture, so a cell whose key did not change is not touched on a refresh. The resolved title also enters the key:
+ * new XML can change `aria-label` with the same index. The status part holds each status field that a write reads: a new colour with
  * the same state and text paints the cell again (spec 3.4).
  */
-export function applyKey(patch: CellPatch, interactive: boolean): string {
+export function applyKey(patch: CellPatch, interactive: boolean, title?: string): string {
   const half = (h: HalfState | undefined) => (h ? [h.status, h.color, h.width, h.stepIndex] : null);
   const s = patch.shape;
   const u = patch.unavailable;
@@ -411,6 +419,7 @@ export function applyKey(patch: CellPatch, interactive: boolean): string {
     l ? [half(l.a2b), half(l.b2a)] : null,
     v ? [v.state, v.severity, v.color ?? null, v.text ?? null, v.refId, v.reason] : null,
     interactive,
+    title,
   ]);
 }
 
@@ -433,11 +442,15 @@ export function applyPatches(
   const all = same && !sameScheme(previous.scheme, scheme);
   const keys = new Map<string, string>();
   const changed = new Set<string>();
+  const titles = new Map<string, string>();
   for (const [id, patch] of patches) {
-    if (!index.has(id)) {
+    const entry = index.get(id);
+    if (!entry) {
       continue;
     }
-    const key = applyKey(patch, !interactive || interactive.has(id));
+    const title = diagramTitle(entry.meta, index, ctx.xml);
+    titles.set(id, title);
+    const key = applyKey(patch, !interactive || interactive.has(id), title);
     keys.set(id, key);
     if (all || before.get(id) !== key) {
       changed.add(id);
@@ -501,7 +514,7 @@ export function applyPatches(
     if (border) {
       applyStatus(entry, border, width, tint);
     }
-    tag(entry, patch, target, button);
+    tag(entry, patch, target, button, titles.get(entry.meta.id)!);
   });
   return { index, scheme, keys };
 }

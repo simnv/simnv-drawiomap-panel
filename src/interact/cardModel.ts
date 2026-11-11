@@ -8,7 +8,6 @@ import {
   LinkModel,
 } from '@grafana/data';
 import type { CardContext, CellPatch } from '../types';
-import { cellFinder, cellTitle } from '../adapter/cellTitle';
 import { defaultUrlTitle } from './links';
 import { halfState, type HalfContext } from '../binding/engine';
 import type { StatusView } from '../binding/status';
@@ -17,7 +16,7 @@ import { noDataColor } from '../binding/color';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 import type { BindInputV4, BindResultV4, PatchV4 } from '../binding/bindV4';
 import { effectiveClass } from '../binding/classes';
-import { endContextOf } from '../binding/edgeEnds';
+import { diagramTitle } from '../binding/diagramTitle';
 import { cadenceOf, freshnessMs, staleCheck } from '../binding/freshness';
 import { linkFeeds } from '../binding/linkFeeds';
 import { directionHistory, isInstant, shownField, snapshotV4 } from '../binding/rowData';
@@ -185,15 +184,7 @@ interface UseData {
  */
 export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContextV4): CardModelV4 {
   const meta = ctx.index.get(cellId)?.meta;
-  let title = meta ? meta.title || meta.labelText || meta.key : cellId;
-  if (meta?.kind === 'link' && ctx.xml !== undefined) {
-    // Read available XML only when a link card opens. SVG-only callers keep their indexed title.
-    const ends = endContextOf(ctx.xml, ctx.index).ends.get(cellId);
-    title = cellTitle(meta, cellFinder([...ctx.index.values()].map((entry) => entry.meta)), true, {
-      source: ends?.source === undefined ? undefined : ctx.index.get(ends.source)?.meta,
-      target: ends?.target === undefined ? undefined : ctx.index.get(ends.target)?.meta,
-    });
-  }
+  const title = meta ? diagramTitle(meta, ctx.index, ctx.xml) : cellId;
   const card: CardModelV4 = { title, rows: [], links: [] };
   const patch = bound.patches.get(cellId);
   if (!patch) {
