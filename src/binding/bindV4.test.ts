@@ -1471,9 +1471,13 @@ describe('bindV4: capacity from the end (S5, I14, I25)', () => {
   });
 
   it('AC24: a link whose capacity query gives both directions never reads the ends', () => {
-    // Without the XML the ends would give `no-edge-ends`; the entry shows that the ends were not asked for.
-    const all = cells({}, {}, { cap: '5M', key: 'tgt' });
-    const r = run(hostConfig({ link: cls }), all, [...frames, frame('speed', { job: 'tgt' }, [1e9], { unit: 'bps' })]);
+    // A compressed page gives `no-edge-ends` whenever the ends are read. The control case shows that.
+    const compressed = '<mxfile><diagram id="d">eJxLy8kvT85ILCpRAAAA</diagram></mxfile>';
+    const speed = frame('speed', { job: 'tgt' }, [1e9], { unit: 'bps' });
+    const read = run(hostConfig({ link: cls }), cells({}, {}, {}), [...frames, speed], { xml: compressed });
+    expect(entries(read.report, 'no-edge-ends').length).toBe(1);
+    const all = cells({}, {}, { key: 'tgt' });
+    const r = run(hostConfig({ link: cls }), all, [...frames, speed], { xml: compressed });
     expect(r.capacity.get('l')?.a2b).toEqual({ amount: 1e9, source: 'series' });
     expect(entries(r.report, 'no-edge-ends')).toEqual([]);
   });
