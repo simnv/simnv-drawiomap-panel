@@ -15,6 +15,8 @@ export const REPORT_KINDS = [
   'matcher-error',
   'template-unresolved',
   'query-unavailable',
+  'unmeasured-link',
+  'end-ambiguous',
   'no-series',
   'many-series',
   'orphan-series',
@@ -45,6 +47,8 @@ export type ReportEntry =
   | { kind: 'matcher-error'; cls: string; path: string; text: string; message: string; cellIds: string[] }
   | { kind: 'template-unresolved'; cls: string; path: string; cellIds: string[] }
   | { kind: 'query-unavailable'; refId: string; state: 'error' | 'loading'; message: string }
+  | { kind: 'unmeasured-link'; cls: string; attrs: string[]; cellIds: string[] }
+  | { kind: 'end-ambiguous'; cls: string; cellIds: string[] }
   | { kind: 'no-series'; cls: string; use: UsePath; cellIds: string[] }
   | { kind: 'many-series'; cls: string; use: UsePath; cells: Array<{ id: string; count: number }> }
   | { kind: 'orphan-series'; refId: string; labels: Labels[]; more: number }

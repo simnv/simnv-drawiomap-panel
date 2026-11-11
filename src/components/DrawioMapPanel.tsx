@@ -242,7 +242,10 @@ function DrawioMapPanelView(props: ViewProps) {
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
-    const warnings = groupReport(bound.report, validated.parsed.config).map((row) => reportGroupLine(row, true));
+    const warnings = groupReport(
+      bound.report.filter((entry) => entry.kind !== 'unmeasured-link'),
+      validated.parsed.config
+    ).map((row) => reportGroupLine(row, true));
     if (legacyRules) {
       warnings.unshift(legacyRulesWarning(legacyRules));
     }

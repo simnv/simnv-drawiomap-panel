@@ -275,8 +275,6 @@ function queryRowV4(
 
 /** The data of the uses of one cell, and the stale check of a row (spec 3.5 step 6). */
 interface UseReader {
-  /** the `at` attribute of the cell: which end the key names (spec 3.8.2) */
-  at?: string;
   dataOf(path: string): UseData | undefined;
   capacityOf(direction: 'a2b' | 'b2a'): Parameters<typeof halfState>[2];
   staleOf(data: UseData[]): { stale: boolean; staleAfter?: number };
@@ -350,7 +348,7 @@ function readerOf(cellId: string, bound: BindResultV4, ctx: CardContextV4): UseR
     }
     return staleAfter === undefined ? { stale } : { stale, staleAfter };
   };
-  return { at: meta?.attrs.at, dataOf, capacityOf, staleOf };
+  return { dataOf, capacityOf, staleOf };
 }
 
 /** The fields of a row that format and bound a value: the `show` fields, `reduce`, `min` and `max`. */
@@ -506,7 +504,7 @@ function updownRow(
   stale: { stale: boolean; staleAfter?: number }
 ): CardRowV4 {
   const row = (data[0].use.row ?? {}) as RowFields & { up?: string; down?: string };
-  const feeds = linkFeeds(reader.at, 'up', 'down');
+  const feeds = linkFeeds(data[0].use.end, 'up', 'down');
   const byDirection = { [feeds.a2b]: data[0], [feeds.b2a]: data[1] } as Record<'up' | 'down', UseData>;
   const allSeries = data.flatMap((d) => d.series);
   const units = unitFactors(allSeries);

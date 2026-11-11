@@ -560,7 +560,7 @@ describe('bindV4: the owner chain (spec 4, S3)', () => {
     expect(r.inherited.size).toBe(0);
   });
 
-  it('an edge still reads only itself: it does not read the owner or an end', () => {
+  it('an edge reads its measured end after S4b', () => {
     const cells: Cell[] = [
       ...portCells(),
       ['l', { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'rtr-a:eth1', 'pg-to': 'rtr-a', bind: 'lan' }, true],
@@ -568,8 +568,8 @@ describe('bindV4: the owner chain (spec 4, S3)', () => {
     const r = run(hostConfig({ lan: { match: { key: 'job' }, status: 'up' } }), cells, [
       frame('up', { job: 'node-rtr-a' }),
     ]);
-    expect(entries(r.report, 'missing-attr')).toMatchObject([{ attr: 'key', cellIds: ['l'] }]);
-    expect(r.inherited.has('l')).toBe(false);
+    expect(entries(r.report, 'missing-attr')).toEqual([]);
+    expect(r.inherited.get('l')?.get('key')).toMatchObject({ value: 'node-rtr-a', via: 'end' });
   });
 
   it('${from.key} of an edge still reads the geometric end', () => {
@@ -1105,5 +1105,254 @@ describe('bindV4: the cells of a class and the origin of the match of a cell', (
     expect(r.matchOrigins.get('a')).toBe('classes.host.match');
     expect(r.matchOrigins.get('b')).toBe('overrides.b.match');
     expect(r.matchOrigins.has('z')).toBe(false);
+  });
+});
+
+describe('bindV4: measured links (S4b)', () => {
+  const xml =
+    '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+    '<mxCell id="a" parent="1"/><mxCell id="pa" parent="a"/>' +
+    '<mxCell id="b" parent="1"/><mxCell id="pb" parent="b"/>' +
+    '<mxCell id="l" edge="1" parent="1" source="pa" target="pb"/>' +
+    '<mxCell id="l2" edge="1" parent="1" source="pa" target="pb"/></root></mxGraphModel>';
+  const cells = (end: 'source' | 'target' | 'both' | 'none', attrs: Record<string, string> = {}): Cell[] => [
+    ['a', { key: 'a' }],
+    ['b', { key: 'b' }],
+    ['pa', { ...(end === 'source' || end === 'both' ? { port: 'eth1' } : {}), 'pg-port': 'p-a' }],
+    ['pb', { ...(end === 'target' || end === 'both' ? { port: 'eth1' } : {}), 'pg-port': 'p-b' }],
+    ['l', { bind: 'lan', cap: '50M/10M', ...attrs }, true],
+  ];
+  const lan = {
+    match: { key: 'job', port: 'device' },
+    up: 'tx',
+    down: 'rx',
+    linkLabel: 'value',
+    rows: [{ kind: 'updown', up: 'tx', down: 'rx' }],
+    chart: { kind: 'updown', up: 'tx', down: 'rx' },
+    url: '/d/demo?key=${key}&from=${from.key}&to=${to.key}&port=${from.pg-port}',
+  };
+  const traffic = (job = 'b') => [
+    frame('tx', { job, device: 'eth1' }, [7e6], { unit: 'bps' }),
+    frame('rx', { job, device: 'eth1' }, [2e6], { unit: 'bps' }),
+  ];
+  const bind = (
+    cls: unknown,
+    c: Cell[],
+    frames: DataFrame[] = [],
+    opts: DataOptions = {},
+    overrides?: Record<string, unknown>
+  ) => run(hostConfig({ lan: cls }, overrides), c, frames, { ...opts, xml });
+
+  it.each(['source', 'target'] as const)(
+    'AC5/8/9: infers %s with the same series, halves, label and URL as explicit identity',
+    (end) => {
+      const key = end === 'source' ? 'a' : 'b';
+      const inferred = bind(lan, cells(end), traffic(key));
+      const explicit = bind(lan, cells(end, { key, port: 'eth1', at: end }), traffic(key));
+      expect(inferred.report).toEqual([]);
+      expect(inferred.measured.get('l')).toMatchObject({ end, reason: 'only', needs: ['key', 'port'] });
+      expect(inferred.series.get('l')).toEqual(explicit.series.get('l'));
+      expect(patch(inferred, 'l').link).toEqual(patch(explicit, 'l').link);
+      expect(patch(inferred, 'l').urls).toEqual([{ url: `/d/demo?key=${key}&from=a&to=b&port=p-a` }]);
+      expect(
+        inferred.uses
+          .get('l')!
+          .filter((u) => u.end)
+          .every((u) => u.end === end)
+      ).toBe(true);
+      expect(patch(inferred, 'l').link?.a2b?.value).toBe(end === 'target' ? 2e6 : 7e6);
+    }
+  );
+
+  it('AC6: drops dependent uses, leaves no patch, and groups by sorted identity names', () => {
+    const c = [...cells('none'), ['l2', { bind: 'lan' }, true] as Cell];
+    const r = bind({ ...lan, url: undefined }, c, [], {}, { l2: { match: { site: 'site' } } });
+    expect(r.uses.get('l')).toEqual([]);
+    expect(r.patches.has('l')).toBe(false);
+    expect(r.patches.has('l2')).toBe(false);
+    expect(r.cells.get('lan')).toEqual(['l', 'l2']);
+    expect(r.report).toEqual([
+      { kind: 'unmeasured-link', cls: 'lan', attrs: ['key', 'port'], cellIds: ['l'] },
+      { kind: 'unmeasured-link', cls: 'lan', attrs: ['site'], cellIds: ['l2'] },
+    ]);
+  });
+
+  it('AC6: a partial own identity still gives missing-attr', () => {
+    const r = bind(lan, cells('none', { key: 'a' }), traffic('a'));
+    expect(r.measured.get('l')).toMatchObject({ end: 'source', reason: 'own' });
+    expect(entries(r.report, 'missing-attr')).toContainEqual(expect.objectContaining({ attr: 'port' }));
+    expect(entries(r.report, 'unmeasured-link')).toEqual([]);
+  });
+
+  it.each(['none', 'target'] as const)('AC21: ignores an unread class match with %s identity', (end) => {
+    const cls = {
+      match: { key: 'job' },
+      text: { query: 'tx', match: { id: 'edge' } },
+      rows: [{ kind: 'updown', up: 'tx', down: 'rx', match: { id: 'edge' } }],
+      chart: { kind: 'value', query: 'tx', match: { id: 'edge' } },
+      url: '/d/demo?edge=${id}',
+    };
+    const r = bind(cls, cells(end), [frame('tx', { edge: 'l' }, [7e6]), frame('rx', { edge: 'l' }, [2e6])]);
+    expect(r.report).toEqual([]);
+    expect(r.measured.get('l')).toEqual({ end: 'source', reason: 'own', needs: [] });
+    expect(r.uses.get('l')!.map((u) => u.refId)).toEqual(['tx', 'tx', 'rx', 'tx']);
+    expect(patch(r, 'l').shape?.value).toBe(7e6);
+    expect(patch(r, 'l').urls).toEqual([{ url: '/d/demo?edge=l' }]);
+  });
+
+  it('AC22: flips dependent halves and keeps the end-free row at source', () => {
+    const r = bind(
+      { ...lan, url: undefined, rows: [{ kind: 'updown', up: 'tx', down: 'rx', match: { id: 'edge' } }] },
+      cells('target'),
+      [
+        ...traffic(),
+        frame('tx', { edge: 'l' }, [7e6], { unit: 'bps' }),
+        frame('rx', { edge: 'l' }, [2e6], { unit: 'bps' }),
+      ]
+    );
+    expect(r.report).toEqual([]);
+    expect(
+      r.uses
+        .get('l')!
+        .filter((u) => u.kind === 'row')
+        .map((u) => [u.refId, u.end])
+    ).toEqual([
+      ['tx', 'source'],
+      ['rx', 'source'],
+    ]);
+    expect(
+      r.uses
+        .get('l')!
+        .filter((u) => u.kind === 'up' || u.kind === 'down')
+        .map((u) => u.end)
+    ).toEqual(['target', 'target']);
+    expect(patch(r, 'l').link?.a2b?.value).toBe(2e6);
+  });
+
+  it.each(['${id}', '${from.id}', '${key}'])('AC23: keeps end-free rows and resolves unmeasured URL %s', (url) => {
+    const cls = {
+      ...lan,
+      url: `/d/demo?key=${url}`,
+      rows: [
+        { kind: 'value', query: 'own', match: { id: 'edge' } },
+        { kind: 'history', query: 'tx' },
+        { kind: 'metadata', label: 'Site', text: '${site}' },
+      ],
+    };
+    const r = bind(cls, cells('none'), [frame('own', { edge: 'l' }, [42])]);
+    expect(r.uses.get('l')!.map((u) => u.refId)).toEqual(['own']);
+    expect(patch(r, 'l').link).toBeUndefined();
+    expect(patch(r, 'l').rowsV4).toEqual([{ path: 'classes.lan.rows[0]', kind: 'value' }]);
+    expect(patch(r, 'l').urls).toEqual(
+      url === '${key}' ? [] : [{ url: `/d/demo?key=${url === '${id}' ? 'l' : 'pa'}` }]
+    );
+    expect(entries(r.report, 'missing-attr')).toEqual([
+      { kind: 'missing-attr', cls: 'lan', path: 'classes.lan.rows[2].text', attr: 'site', cellIds: ['l'] },
+    ]);
+    expect(entries(r.report, 'no-series')).toEqual([]);
+  });
+
+  it.each(['empty', 'ready', 'many', 'loading', 'error', 'missing', 'unknown'] as const)(
+    'AC11: ambiguity with dependent query %s',
+    (state) => {
+      const frames = [frame('own', { edge: 'l' })];
+      if (state === 'ready' || state === 'many') {
+        frames.push(frame('tx', { job: 'a', device: 'eth1' }));
+      }
+      if (state === 'many') {
+        frames.push(frame('tx', { job: 'a', device: 'eth1', extra: '1' }));
+      }
+      const cls = {
+        match: { key: 'job', port: 'device', ...(state === 'missing' ? { label: 'label' } : {}) },
+        status: 'tx',
+        rows: [{ kind: 'value', query: 'own', match: { id: 'edge' } }],
+      };
+      const opts =
+        state === 'loading'
+          ? { refs: ['tx'], state: LoadingState.Loading }
+          : state === 'error'
+            ? { refs: ['tx'], state: LoadingState.Error, errors: [{ refId: 'tx', message: 'Failed' }] }
+            : state === 'unknown'
+              ? {}
+              : { refs: ['tx'] };
+      const r = bind(cls, cells('both'), frames, opts);
+      expect(entries(r.report, 'end-ambiguous')).toEqual(
+        state === 'empty' ? [{ kind: 'end-ambiguous', cls: 'lan', cellIds: ['l'] }] : []
+      );
+    }
+  );
+
+  it('AC11: a URL without query uses never has an ambiguous end', () => {
+    const r = bind({ match: { key: 'job' }, url: '/d/demo?id=${id}' }, cells('both'));
+    expect(r.report).toEqual([]);
+    expect(r.measured.get('l')?.reason).toBe('own');
+  });
+
+  it('AC25: records all shared, directional, unknown and failed use paths', () => {
+    const cls = {
+      match: { key: 'job' },
+      status: 'tx',
+      text: { query: 'tx' },
+      up: 'tx',
+      down: 'rx',
+      rows: [
+        { kind: 'history', query: 'tx' },
+        { kind: 'updown', up: 'tx', down: 'rx' },
+        { kind: 'value', query: 'unknown' },
+        { kind: 'value', query: 'tx', match: { cap: 'cap' } },
+      ],
+      chart: { kind: 'history', query: 'tx' },
+    };
+    const c = cells('target', { cap: '50M/10M' });
+    c[0][1] = {};
+    const r = bind(cls, c, [frame('tx', { job: 'b' }), frame('rx', { job: 'b' })]);
+    const resolved = r.resolved.get('l')!;
+    expect([...resolved.keys()]).toEqual(r.uses.get('l')!.map((u) => u.path));
+    for (const use of r.uses.get('l')!) {
+      expect(resolved.get(use.path)).toEqual({
+        matchers: [
+          {
+            label: use.path.endsWith('rows[3]') ? 'cap' : 'job',
+            op: '=',
+            value: use.path.endsWith('rows[3]') ? '50M/10M' : 'b',
+          },
+        ],
+      });
+    }
+    expect(resolved.get('classes.lan.status')).toEqual(resolved.get('classes.lan.text'));
+    const failed = bind({ match: { cap: 'cap' }, status: 'tx' }, [['l', { bind: 'lan' }, true]], [], { refs: ['tx'] });
+    expect(failed.resolved.get('l')?.get('classes.lan.status')).toEqual({ problem: 'Missing attribute cap' });
+  });
+
+  it.each(['none', 'at', 'site'] as const)('AC28: unions dependent names, variant %s', (variant) => {
+    const cls = {
+      ...lan,
+      url: undefined,
+      chart: undefined,
+      rows: [
+        { kind: 'updown', up: 'siteTx', down: 'siteRx', match: { site: 'site' } },
+        { kind: 'value', query: 'own', match: { id: 'edge' } },
+      ],
+    };
+    const c = cells('target', variant === 'at' ? { at: 'target' } : variant === 'site' ? { site: 'hq' } : {});
+    const r = bind(cls, c, [
+      ...traffic(),
+      frame('own', { edge: 'l' }),
+      frame('siteTx', { site: 'hq' }),
+      frame('siteRx', { site: 'hq' }),
+    ]);
+    if (variant === 'none') {
+      expect(r.measured.get('l')).toEqual({ end: 'none', reason: 'none', needs: ['key', 'port', 'site'] });
+      expect(entries(r.report, 'unmeasured-link')).toEqual([
+        { kind: 'unmeasured-link', cls: 'lan', attrs: ['key', 'port', 'site'], cellIds: ['l'] },
+      ]);
+      expect(r.uses.get('l')!.map((u) => u.refId)).toEqual(['own']);
+      expect(entries(r.report, 'missing-attr')).toEqual([]);
+    } else {
+      expect(r.measured.get('l')).toMatchObject({ end: 'target', reason: variant === 'at' ? 'at' : 'only' });
+      expect(entries(r.report, 'unmeasured-link')).toEqual([]);
+      expect(entries(r.report, 'missing-attr').length).toBe(variant === 'at' ? 2 : 0);
+      expect(patch(r, 'l').link?.a2b?.value).toBe(2e6);
+    }
   });
 });

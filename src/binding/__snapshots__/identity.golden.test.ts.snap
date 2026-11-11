@@ -5396,7 +5396,7 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
 }
 `;
 
-exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the capacity use lacks key on main; the row shows 14% of the own cap 1`] = `
+exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the inferred capacity query wins over the own cap; the row shows 1% 1`] = `
 {
   "cells": {
     "link-8": {
@@ -5410,7 +5410,7 @@ exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the ca
                 "history": "ready",
                 "label": "↑",
                 "mirrored": false,
-                "text": "7 Mb/s · 14% of 50 Mb/s",
+                "text": "7 Mb/s · 1% of 1 Gb/s",
                 "times": [
                   0,
                   60000,
@@ -5427,7 +5427,7 @@ exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the ca
                 "history": "ready",
                 "label": "↓",
                 "mirrored": true,
-                "text": "2 Mb/s · 20% of 10 Mb/s",
+                "text": "2 Mb/s · <1% of 1 Gb/s",
                 "times": [
                   0,
                   60000,
@@ -5448,7 +5448,7 @@ exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the ca
             "kind": "updown",
             "stale": false,
             "state": "ready",
-            "text": "↑ 7 Mb/s · 14% of 50 Mb/s  ↓ 2 Mb/s · 20% of 10 Mb/s",
+            "text": "↑ 7 Mb/s · 1% of 1 Gb/s  ↓ 2 Mb/s · <1% of 1 Gb/s",
             "title": "Traffic",
           },
         ],
@@ -5461,7 +5461,9 @@ exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the ca
         },
       ],
       "series": {
-        "classes.link.capacity": [],
+        "classes.link.capacity": [
+          "{job="tgt"}",
+        ],
         "classes.link.rows[0].a2b": [
           "{edge="link-8"}",
         ],
@@ -5491,26 +5493,6 @@ exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the ca
       "link-8",
     ],
   },
-  "report": [
-    {
-      "attr": "key",
-      "cellIds": [
-        "link-8",
-      ],
-      "cls": "link",
-      "kind": "missing-attr",
-      "path": "classes.link.capacity",
-    },
-    {
-      "kind": "orphan-series",
-      "labels": [
-        {
-          "job": "tgt",
-        },
-      ],
-      "more": 0,
-      "refId": "speed",
-    },
-  ],
+  "report": [],
 }
 `;

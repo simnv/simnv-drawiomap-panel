@@ -34,6 +34,8 @@ export function entryTarget(entry: ReportEntry): EntryTarget {
     case 'class-no-cells':
       return { path: classPath(entry.cls), cells: [] };
     case 'class-no-match':
+    case 'unmeasured-link':
+    case 'end-ambiguous':
       return { path: classPath(entry.cls), cells: entry.cellIds };
     case 'unknown-override':
       return { path: yamlPath(['overrides', entry.cellId]), cells: [] };
@@ -96,6 +98,8 @@ export function reportUse(path: string, displayedClass: string | undefined, conf
  * Every key includes kind, class and the unordered cell set. The extra cause key is:
  *
  * | Kind | Extra cause key |
+ * | unmeasured-link | unordered identity name set |
+ * | end-ambiguous | none |
  * | missing-attr | attribute |
  * | unknown-ref | refId |
  * | matcher-error | matcher text and error message |
@@ -117,7 +121,7 @@ export function reportUse(path: string, displayedClass: string | undefined, conf
  * | duplicate-series | refId and labels |
  *
  * Missing attributes, unknown refs, matcher errors and no-series rows come first, in that order.
- * Other rows, including bad-cap and cap-conflict, keep their source order.
+ * Information about unmeasured links comes last. Other rows keep their source order.
  * Uses keep their source paths and source order.
  */
 export function groupReport(entries: readonly ReportEntry[], config?: ConfigV4 | null): ReportGroup[] {
@@ -137,6 +141,9 @@ export function groupReport(entries: readonly ReportEntry[], config?: ConfigV4 |
     }
   }
   const priority = (group: ReportGroup) => {
+    if (group.entries[0].kind === 'unmeasured-link') {
+      return 5;
+    }
     const at = ['missing-attr', 'unknown-ref', 'matcher-error', 'no-series'].indexOf(group.entries[0].kind);
     return at < 0 ? 4 : at;
   };
@@ -145,6 +152,10 @@ export function groupReport(entries: readonly ReportEntry[], config?: ConfigV4 |
 
 function causeOf(entry: ReportEntry): unknown {
   switch (entry.kind) {
+    case 'unmeasured-link':
+      return [...new Set(entry.attrs)].sort();
+    case 'end-ambiguous':
+      return null;
     case 'missing-attr':
       return entry.attr;
     case 'unknown-ref':
@@ -208,6 +219,10 @@ const have = (n: number) => (n === 1 ? 'has' : 'have');
 /** The line of a report entry in the warning list of the panel (spec 4: view mode shows the count). */
 export function reportLine(entry: ReportEntry): string {
   switch (entry.kind) {
+    case 'unmeasured-link':
+      return `${counted(entry.cellIds.length, 'link')} ${have(entry.cellIds.length)} no measured end (no end gives ${entry.attrs.join(', ')})`;
+    case 'end-ambiguous':
+      return `${counted(entry.cellIds.length, 'link')}: both ends give the identity, the source end has no series. Set at=target if the target end has the counters.`;
     case 'schema':
       return `${entry.path}: ${entry.message}`;
     case 'yaml':

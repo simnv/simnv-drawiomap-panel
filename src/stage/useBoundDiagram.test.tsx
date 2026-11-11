@@ -153,6 +153,8 @@ describe('useBoundDiagram', () => {
 
 describe('reportLine', () => {
   const samples: Record<ReportEntry['kind'], ReportEntry> = {
+    'unmeasured-link': { kind: 'unmeasured-link', cls: 'link', attrs: ['key', 'port'], cellIds: ['l'] },
+    'end-ambiguous': { kind: 'end-ambiguous', cls: 'link', cellIds: ['l'] },
     schema: { kind: 'schema', path: 'classes.host', message: 'Unknown key' },
     yaml: { kind: 'yaml', line: 3, message: 'Bad indent' },
     'outdated-config': { kind: 'outdated-config', version: 3 },

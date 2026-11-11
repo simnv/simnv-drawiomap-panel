@@ -358,6 +358,20 @@ A class with `up`, `down` or `capacity` applies to a link (an edge cell).
 - With a capacity, the colour input is the percent of the capacity. Without one, it is the raw value. See [How colours and thresholds work](colours.md#how-colours-and-thresholds-work).
 - For the capacity, see [Capacity](links.md#capacity).
 
+A link can read its identity from an end. Put `key` on the node, `port` on the port cell, and `bind` on the link.
+The panel collects the missing identity names from all dependent query uses.
+With no own `at`, one end that gives all names becomes the measured end. If both ends qualify, the source wins.
+An own `at` selects an end. An own attribute on the link wins over an end attribute.
+`${from.key}` and `${to.key}` keep their geometric meaning.
+
+A directional use that needs an end follows that end. A use whose match resolves on the link keeps its own feed.
+For example, a row with `match: {id: edge}` keeps the source feed when the halves infer the target.
+A capacity query that now resolves through the end wins over the link's own `cap`, as for any capacity query.
+
+A link with no identity, no `at`, and no end that gives all names is unmeasured.
+Its dependent uses give no warnings and no grey halves. Its own query uses and templates can still show.
+A link with part of an identity keeps `missing-attr` for the missing names.
+
 ### The match report
 
 On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the number of grouped causes. Its tooltip uses the same cause text and short use names as the editor. In panel edit, use **Edit bindings** to open the split editor and its report. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
@@ -374,6 +388,7 @@ A row shows its configured label when it has one. The source class keeps inherit
 Override paths stay explicit because they name a different cell.
 
 Within each tab, `missing-attr`, `unknown-ref`, `matcher-error` and `no-series` come first, in that order.
+Unmeasured link information comes after all warnings. It is absent from the view badge and the class tab count.
 The other causes, including `bad-cap` and `cap-conflict`, keep their original order. Uses within one cause also keep their original order.
 The summary columns **No series**, **One series** and **Several** count cells with zero, one and more than one series.
 The class summary uses each cell's first use. The rows below it count each use separately.
@@ -383,6 +398,8 @@ The following table gives the extra cause key. Different keys stay in separate r
 
 | Kind                                                                                   | Extra cause key                                   |
 | -------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `unmeasured-link`                                                                      | Same identity name set, in any order              |
+| `end-ambiguous`                                                                        | None                                              |
 | `missing-attr`                                                                         | Attribute name                                    |
 | `unknown-ref`                                                                          | refId                                             |
 | `matcher-error`                                                                        | Matcher text and error message                    |
@@ -403,32 +420,34 @@ The following table gives the extra cause key. Different keys stay in separate r
 | `orphan-series`                                                                        | refId, label sets and overflow count              |
 | `duplicate-series`                                                                     | refId and labels                                  |
 
-| Entry                                                         | Meaning                                                                                 |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `schema`                                                      | A field has a wrong name, type or form. The entry gives the YAML path.                  |
-| `yaml`                                                        | A YAML syntax error. The editor only.                                                   |
-| `outdated-config`                                             | The config has version 3 or older.                                                      |
-| `class-no-match`                                              | Cells bind a class that has no `match`.                                                 |
-| `class-cycle`, `class-unknown-parent`, `class-invalid-parent` | The chain of `extends` has an error. The class and the classes below it are invalid.    |
-| `unknown-ref`                                                 | No panel target has this refId.                                                         |
-| `unknown-class`                                               | Cells have a `bind` that names no class.                                                |
-| `unknown-override`                                            | An override names a cell id that the diagram does not have.                             |
-| `missing-attr`                                                | A cell lacks an attribute that the match or a template reads.                           |
-| `matcher-error`                                               | A regex is not in the dialect, or does not compile.                                     |
-| `template-unresolved`                                         | `${labels.x}` or `${value}` found zero or many series.                                  |
-| `query-unavailable`                                           | A query failed or is loading.                                                           |
-| `no-series`                                                   | Cells have no series for a use.                                                         |
-| `many-series`                                                 | A use found more than one series where one is expected.                                 |
-| `orphan-series`                                               | Series that no cell selects. The entry lists 50 label sets at most, then "+N more".     |
-| `many-fields`, `invalid-series`                               | A frame has more than one numeric field, or a field fails the checks.                   |
-| `duplicate-series`                                            | Two frames hold different values at one time for equal labels.                          |
-| `unit-mismatch`                                               | The units of the series cannot convert to one unit.                                     |
-| `capacity-fallback`                                           | The capacity series cannot give a value (the reason says why); the next source applies. |
-| `bad-cap`                                                     | The attribute `cap` (or `capacity`, when `cap` is absent) does not parse.               |
-| `cap-conflict`                                                | The attributes `cap` and `capacity` are both set and differ. `cap` is used.             |
-| `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                      |
-| `unused-field`                                                | A link field on a class whose cells are not links.                                      |
-| `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.      |
+| Entry                                                         | Meaning                                                                                                                           |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`                                                      | A field has a wrong name, type or form. The entry gives the YAML path.                                                            |
+| `yaml`                                                        | A YAML syntax error. The editor only.                                                                                             |
+| `outdated-config`                                             | The config has version 3 or older.                                                                                                |
+| `class-no-match`                                              | Cells bind a class that has no `match`.                                                                                           |
+| `class-cycle`, `class-unknown-parent`, `class-invalid-parent` | The chain of `extends` has an error. The class and the classes below it are invalid.                                              |
+| `unknown-ref`                                                 | No panel target has this refId.                                                                                                   |
+| `unknown-class`                                               | Cells have a `bind` that names no class.                                                                                          |
+| `unknown-override`                                            | An override names a cell id that the diagram does not have.                                                                       |
+| `missing-attr`                                                | A cell lacks an attribute that the match or a template reads.                                                                     |
+| `matcher-error`                                               | A regex is not in the dialect, or does not compile.                                                                               |
+| `template-unresolved`                                         | `${labels.x}` or `${value}` found zero or many series.                                                                            |
+| `query-unavailable`                                           | A query failed or is loading.                                                                                                     |
+| `unmeasured-link`                                             | No end gives the identity names. This entry is information. Select it to highlight the links.                                     |
+| `end-ambiguous`                                               | Both ends give the identity, but no dependent use selects a series at the source. Check the target and set `at=target` if needed. |
+| `no-series`                                                   | Cells have no series for a use.                                                                                                   |
+| `many-series`                                                 | A use found more than one series where one is expected.                                                                           |
+| `orphan-series`                                               | Series that no cell selects. The entry lists 50 label sets at most, then "+N more".                                               |
+| `many-fields`, `invalid-series`                               | A frame has more than one numeric field, or a field fails the checks.                                                             |
+| `duplicate-series`                                            | Two frames hold different values at one time for equal labels.                                                                    |
+| `unit-mismatch`                                               | The units of the series cannot convert to one unit.                                                                               |
+| `capacity-fallback`                                           | The capacity series cannot give a value (the reason says why); the next source applies.                                           |
+| `bad-cap`                                                     | The attribute `cap` (or `capacity`, when `cap` is absent) does not parse.                                                         |
+| `cap-conflict`                                                | The attributes `cap` and `capacity` are both set and differ. `cap` is used.                                                       |
+| `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                                                                |
+| `unused-field`                                                | A link field on a class whose cells are not links.                                                                                |
+| `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.                                                |
 
 `no-series` and `orphan-series` are how you find a wrong `match`.
 
