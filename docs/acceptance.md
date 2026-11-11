@@ -237,10 +237,22 @@ about 6.17 MB against 6.15 to 6.18 MB for the baseline. `BindResultV4.resolved` 
 A median of 20 runs stays sensitive to the pause period: a later change that adds garbage for each cell can show the
 same step.
 
-After the merge of `main` at `86692f6` (S6 and S7), 2026-11-11: no valid timing exists. The Mac went to sleep on
-battery at about 13:56 and woke for some seconds in each five minutes. Five interleaved attempts (8 processes for
-each checkout) ran in these wake windows. In each attempt the baseline also moved, with process medians from 3.22 to
-7.24 ms, so the attempts do not compare the engines. `caffeinate -i` did not keep the Mac awake.
-The evidence after the merge is: the merge changes only the error path of the bind (the `detail` of a matcher
-problem), and one bind allocates 6.16 to 6.19 MB against 6.18 to 6.20 MB for the baseline (three processes, 60 binds
-each). The verdict above stays until someone repeats the interleaved run on an awake Mac.
+After the merge of `main` at `86692f6` (S6 and S7), 2026-11-11, the coordinator repeated the run on the awake Mac.
+The command and the interleaved sequence are the same as above, with 8 processes for each checkout, from 16:07:10 to
+16:10:50, UTC+05:00. The one-minute load before each process was between 1.02 and 2.28, and no other Vitest or
+Playwright process ran. The Mac was on battery (59%) with `caffeinate -i -s`. On battery the absolute times are
+higher than in the table above, also for the baseline. Thus the claim is the ratio in this one interleaved session,
+not the absolute time.
+
+| Case                      | Processes | Median of the process medians | Quartiles (q1 to q3) | Range             |
+| ------------------------- | --------- | ----------------------------- | -------------------- | ----------------- |
+| Baseline, own attributes  | 8         | 3.594 ms                      | 3.401 to 3.647 ms    | 3.278 to 4.292 ms |
+| Branch, own attributes    | 8         | 3.422 ms                      | 3.246 to 3.588 ms    | 3.210 to 3.625 ms |
+| Branch, inferred identity | 8         | 4.446 ms                      | 4.350 to 4.740 ms    | 4.323 to 5.860 ms |
+
+**PASS, AC18, after the merge:** the own-attribute ratio is 3.422 / 3.594 = 0.952, a change of -4.8% (budget: +5%).
+The inferred ratio is 4.446 / 3.422 = 1.30, below 1.5.
+The merge changes only the error path of the bind (the `detail` of a matcher problem). One bind allocates 6.16 to
+6.19 MB against 6.18 to 6.20 MB for the baseline (three processes, 60 binds each).
+Five earlier attempts after the merge are not valid and are not in the table: the Mac was in sleep on battery and ran
+the processes only in short wake windows.
