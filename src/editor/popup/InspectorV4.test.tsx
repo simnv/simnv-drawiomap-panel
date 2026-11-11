@@ -244,7 +244,7 @@ describe('InspectorV4', () => {
     }
   });
 
-  it('sets at=target with "Use the target end", then clears it with "Use the source end"', async () => {
+  it('sets at=target with "Use the target end", then at=source with "Use the source end"', async () => {
     render(<SplitEditor {...props()} />);
     await frame();
     fireEvent.click(cell('e'));
@@ -257,7 +257,7 @@ describe('InspectorV4', () => {
     expect(field('at').textContent).toBe('Use the source end');
     fireEvent.click(field('at'));
     await frame();
-    expect(cell('e').hasAttribute('data-meta-at')).toBe(false);
+    expect(cell('e').getAttribute('data-meta-at')).toBe('source');
     expect(field('at').textContent).toBe('Use the target end');
   });
 
@@ -408,6 +408,7 @@ function inferred() {
     { id: 'e_part', label: '', attrs: { bind: 'link5', port: 'eth9' }, edge: ['p1', 'p4'] },
     { id: 'e_none', label: '', attrs: { bind: 'link' }, edge: ['p4', 'n4'] },
     { id: 'e_ov', label: '', attrs: { bind: 'link' }, edge: ['p1', 'p2'] },
+    { id: 'e_mix', label: '', attrs: { bind: 'mixed' }, edge: ['p1', 'p2'] },
     { id: 'e_att', label: '', attrs: { bind: 'link', at: 'target' }, edge: ['p1', 'p2'] },
     { id: 'e_order', label: '', attrs: { bind: 'link5o', port: 'eth9' }, edge: ['p1', 'p4'] },
     { id: 'b1', label: 'B1', attrs: { bind: 'bad', key: 'n1' } },
@@ -449,6 +450,12 @@ function inferred() {
       link5o: { match: { site: 'site', key: 'job', port: 'device' }, up: 'tx' },
       bad: { match: { key: 'job=~"${key}(?=x)"' }, status: 'up' },
       badu: { match: { key: 'job=~"${key}(?=x)"' }, status: 'nosuch' },
+      mixed: {
+        match: { key: 'job', port: 'device' },
+        up: 'tx',
+        down: 'rx',
+        rows: [{ kind: 'updown', up: 'tx', down: 'rx', match: { id: 'edge' } }],
+      },
       portc: { match: { key: 'job', port: 'device' }, status: 'up' },
       multi: {
         match: { key: 'job' },
@@ -507,7 +514,7 @@ describe('InspectorV4 with an inferred identity', () => {
     await frame();
     fireEvent.click(cell(id));
   };
-  const use = (path: string) =>
+  const sectionOf = (path: string) =>
     within(inspector())
       .getAllByTestId('dmap-inspector-use')
       .find((el) => el.dataset.dmapUse === path)!;
@@ -518,10 +525,10 @@ describe('InspectorV4 with an inferred identity', () => {
     expect(attrs.getByText('key').nextSibling?.textContent).toBe('n2 (from Node 2)');
     expect(attrs.getByText('port').nextSibling?.textContent).toBe('eth0');
     // the use of the port shows the matchers with the inherited key, not "Missing attribute"
-    expect(within(use('classes.portc.status')).getByTestId('dmap-inspector-resolved').textContent).toBe(
+    expect(within(sectionOf('classes.portc.status')).getByTestId('dmap-inspector-resolved').textContent).toBe(
       'job="n2", device="eth0"'
     );
-    expect(within(use('classes.portc.status')).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+    expect(within(sectionOf('classes.portc.status')).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
   });
 
   it('shows a name of a cell that is not inherited as its own value only', async () => {
@@ -547,7 +554,7 @@ describe('InspectorV4 with an inferred identity', () => {
     expect(field('keyed').textContent).toBe('The key names the target end (p2).');
     expect(field('a2b').textContent).toBe('a → b: rx (rx)');
     expect(field('b2a').textContent).toBe('b → a: tx (tx)');
-    const up = use('classes.link.up');
+    const up = sectionOf('classes.link.up');
     expect(within(up).getByTestId('dmap-inspector-resolved').textContent).toBe('job="n2", device="eth0"');
     expect(within(up).getByTestId('dmap-inspector-feed').textContent).toBe('target end (inferred)');
     expect(within(up).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
@@ -556,12 +563,12 @@ describe('InspectorV4 with an inferred identity', () => {
   it('keeps the unflipped lines for an inferred source', async () => {
     await open('e_own');
     expect(field('a2b').textContent).toBe('a → b: tx (tx)');
-    expect(within(use('classes.link.up')).getByTestId('dmap-inspector-feed').textContent).toBe('source end');
+    expect(within(sectionOf('classes.link.up')).getByTestId('dmap-inspector-feed').textContent).toBe('source end');
   });
 
   it('resolves the match of an override with the inherited value', async () => {
     await open('e_ov');
-    expect(within(use('classes.link.up')).getByTestId('dmap-inspector-resolved').textContent).toBe(
+    expect(within(sectionOf('classes.link.up')).getByTestId('dmap-inspector-resolved').textContent).toBe(
       'node="n2", iface="eth0"'
     );
   });
@@ -611,25 +618,45 @@ describe('InspectorV4 with an inferred identity', () => {
     );
   });
 
-  it('writes the end that the button names, also when removing at would infer the other end', async () => {
-    // explicit at=target, only the target gives the identity: "source" must write at=source, not clear at
+  it('writes the end that the button names, at every step', async () => {
+    // explicit at=target, only the target gives the identity: "source" writes at=source
     await open('e_att');
     expect(field('at').textContent).toBe('Use the source end');
     fireEvent.click(field('at'));
     await frame();
     expect(cell('e_att').getAttribute('data-meta-at')).toBe('source');
     expect(field('measured').textContent).toBe('source: at=source on the link');
-    // explicit source: "target" equals the inferred end, so it clears at
+    // explicit source: "target" writes at=target, also when that equals the inferred end
     expect(field('at').textContent).toBe('Use the target end');
     fireEvent.click(field('at'));
     await frame();
-    expect(cell('e_att').hasAttribute('data-meta-at')).toBe(false);
-    expect(field('measured').textContent).toBe('target: only this end gives key, port');
-    // inferred target again: "source" writes at=source
+    expect(cell('e_att').getAttribute('data-meta-at')).toBe('target');
+    expect(field('measured').textContent).toBe('target: at=target on the link');
     expect(field('at').textContent).toBe('Use the source end');
     fireEvent.click(field('at'));
     await frame();
     expect(cell('e_att').getAttribute('data-meta-at')).toBe('source');
+  });
+
+  it('writes the named end always, so an end-free row follows it too', async () => {
+    await open('e_mix');
+    const feed = (path: string) => within(sectionOf(path)).getByTestId('dmap-inspector-feed').textContent;
+    // inferred target for the halves; the end-free row keeps the source feed (I13)
+    expect(feed('classes.mixed.up')).toBe('target end (inferred)');
+    expect(feed('classes.mixed.rows[0].a2b')).toBe('source end');
+    // "source": every use moves to the source
+    fireEvent.click(field('at'));
+    await frame();
+    expect(cell('e_mix').getAttribute('data-meta-at')).toBe('source');
+    expect(feed('classes.mixed.up')).toBe('source end (at=source on the link)');
+    expect(feed('classes.mixed.rows[0].a2b')).toBe('source end (at=source on the link)');
+    // "target" writes at=target, not a clear: the row moves to the target feed with the halves
+    expect(field('at').textContent).toBe('Use the target end');
+    fireEvent.click(field('at'));
+    await frame();
+    expect(cell('e_mix').getAttribute('data-meta-at')).toBe('target');
+    expect(feed('classes.mixed.up')).toBe('target end (at=target on the link)');
+    expect(feed('classes.mixed.rows[0].a2b')).toBe('target end (at=target on the link)');
   });
 
   it('writes the other end for an inferred end, and removes at with "Infer the end"', async () => {

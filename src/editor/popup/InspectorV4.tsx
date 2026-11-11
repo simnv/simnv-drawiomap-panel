@@ -6,7 +6,7 @@ import type { BindResultV4 } from '../../binding/bindV4';
 import { effectiveClass } from '../../binding/classes';
 import type { EndContext } from '../../binding/edgeEnds';
 import { linkFeeds } from '../../binding/linkFeeds';
-import { inheritableNames, measuredEnd as inferEnd, ownerAttr, type MeasuredEnd } from '../../binding/identity';
+import { inheritableNames, ownerAttr, type MeasuredEnd } from '../../binding/identity';
 import { parseMatchBlock } from '../../binding/matcher';
 import { shownField, type Show } from '../../binding/rowData';
 import { listUses, type Use } from '../../binding/uses';
@@ -412,10 +412,8 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
     : measuredEnd === 'target'
       ? 'source'
       : 'target';
-  // Remove `at` only when the link then measures the wanted end itself; else write the wanted end.
-  const { at: _at, ...withoutAt } = meta.attrs;
-  const inferred = measured ? inferEnd({ ...meta, attrs: withoutAt }, measured.needs, () => ends).end : 'source';
-  const otherEnd = inferred === wanted ? null : wanted;
+  // An own `at` also sets the feed of the end-free uses (I13): the button always writes the end it names.
+
   return (
     <>
       <h4 className={styles.subtitle}>Link</h4>
@@ -460,7 +458,7 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
           size="sm"
           variant="secondary"
           data-testid="dmap-inspector-at"
-          onClick={() => onWrite([{ id: meta.id, attrs: { at: otherEnd } }])}
+          onClick={() => onWrite([{ id: meta.id, attrs: { at: wanted } }])}
         >
           {`Use the ${wanted} end`}
         </Button>
