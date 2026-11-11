@@ -1,5 +1,7 @@
+import type { MatchV4 } from '../model/v4';
 import type { CellMeta } from '../types';
 import { endAttr, type EndContext } from './edgeEnds';
+import type { UsePlan } from './uses';
 
 /** A name that only the cell itself gives (I3). */
 export function isOwnOnly(name: string): boolean {
@@ -65,6 +67,22 @@ export type EndReason = 'at' | 'own' | 'only' | 'both';
 export type MeasuredEnd =
   | { end: 'source' | 'target'; reason: EndReason; cellId?: string; needs: string[] }
   | { end: 'none'; reason: 'none'; needs: string[] };
+
+/**
+ * Plan each match's feed or drop its dependent uses when unmeasured (I9, I13).
+ * `blocks` maps each match used by the cell to its parsed required names.
+ */
+export function usePlan(meta: CellMeta, blocks: ReadonlyMap<MatchV4, readonly string[]>, end: MeasuredEnd): UsePlan {
+  return (match) => {
+    if (Object.hasOwn(meta.attrs, 'at')) {
+      return meta.attrs.at === 'target' ? 'target' : 'source';
+    }
+    if (isEndFree(meta, blocks.get(match)!)) {
+      return 'source';
+    }
+    return end.end === 'none' ? 'drop' : end.end;
+  };
+}
 
 /** Select the measured end from the identity names, without reading series (I7). */
 export function measuredEnd(meta: CellMeta, needs: readonly string[], ctx: () => EndContext): MeasuredEnd {

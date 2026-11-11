@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import { netL2Pilot } from '../fixtures/pilots-v4';
+import type { MatchV4 } from '../model/v4';
 import { validateConfig } from '../model/validate';
 import { effectiveClass } from './classes';
 import { listUses } from './uses';
@@ -155,5 +156,126 @@ describe('listUses', () => {
   it('an abstract class lists no use', () => {
     const { classes } = classesOf(netL2Pilot());
     expect(listUses(node({ bind: 'device' }), classes.get('device')!)).toEqual([]);
+  });
+
+  const directionalClass = () =>
+    classesOf({
+      version: 4,
+      classes: {
+        link: {
+          match: { key: 'job' },
+          status: 'state',
+          text: { query: 'label' },
+          rows: [
+            { kind: 'value', query: 'value' },
+            { kind: 'history', query: 'history' },
+            { kind: 'updown', up: 'tx', down: 'rx' },
+          ],
+          chart: { kind: 'updown', up: 'chart_tx', down: 'chart_rx' },
+          up: 'tx',
+          down: 'rx',
+          capacity: { a2b: 'speed_ab', b2a: 'speed_ba' },
+        },
+      },
+    }).classes.get('link')!;
+
+  it.each([
+    [{}, 'source', 'tx', 'rx'],
+    [{ at: 'source' }, 'source', 'tx', 'rx'],
+    [{ at: 'target' }, 'target', 'rx', 'tx'],
+    [{ at: '' }, 'source', 'tx', 'rx'],
+    [{ at: 'other' }, 'source', 'tx', 'rx'],
+  ] as const)('with no plan, own attributes %j set the end of each directional edge use', (attrs, end, a2b, b2a) => {
+    const uses = listUses(edge({ bind: 'link', key: 'rtr-a', ...attrs }), directionalClass());
+    expect(uses.map((u) => [u.path, u.refId, u.end])).toEqual([
+      ['classes.link.status', 'state', undefined],
+      ['classes.link.text', 'label', undefined],
+      ['classes.link.rows[0]', 'value', undefined],
+      ['classes.link.rows[1]', 'history', undefined],
+      ['classes.link.rows[2].a2b', a2b, end],
+      ['classes.link.rows[2].b2a', b2a, end],
+      ['classes.link.chart.a2b', end === 'target' ? 'chart_rx' : 'chart_tx', end],
+      ['classes.link.chart.b2a', end === 'target' ? 'chart_tx' : 'chart_rx', end],
+      ['classes.link.up', 'tx', end],
+      ['classes.link.down', 'rx', end],
+      ['classes.link.capacity.a2b', 'speed_ab', undefined],
+      ['classes.link.capacity.b2a', 'speed_ba', undefined],
+    ]);
+  });
+
+  it.each<Record<string, string>>([{}, { 'pg-kind': 'port', 'pg-node': 'rtr-a' }])(
+    'with no plan, a vertex with %j keeps its own at=target feed (N2)',
+    (attrs) => {
+      const uses = listUses(node({ bind: 'link', key: 'rtr-a', at: 'target', ...attrs }), directionalClass());
+      expect(uses.filter((u) => u.row?.kind === 'updown').map((u) => [u.path, u.refId, u.end])).toEqual([
+        ['classes.link.rows[2].a2b', 'rx', 'target'],
+        ['classes.link.rows[2].b2a', 'tx', 'target'],
+        ['classes.link.chart.a2b', 'chart_rx', 'target'],
+        ['classes.link.chart.b2a', 'chart_tx', 'target'],
+      ]);
+      expect(uses.some((u) => ['up', 'down', 'capacity'].includes(u.kind))).toBe(false);
+    }
+  );
+
+  it.each(['source', 'target', 'drop'] as const)('a %s plan applies to every use of the class match', (end) => {
+    const uses = listUses(edge({ bind: 'link', at: 'target' }), directionalClass(), () => end);
+    if (end === 'drop') {
+      expect(uses).toEqual([]);
+      return;
+    }
+    expect(uses.map((u) => [u.path, u.refId, u.end])).toEqual([
+      ['classes.link.status', 'state', undefined],
+      ['classes.link.text', 'label', undefined],
+      ['classes.link.rows[0]', 'value', undefined],
+      ['classes.link.rows[1]', 'history', undefined],
+      ['classes.link.rows[2].a2b', end === 'target' ? 'rx' : 'tx', end],
+      ['classes.link.rows[2].b2a', end === 'target' ? 'tx' : 'rx', end],
+      ['classes.link.chart.a2b', end === 'target' ? 'chart_rx' : 'chart_tx', end],
+      ['classes.link.chart.b2a', end === 'target' ? 'chart_tx' : 'chart_rx', end],
+      ['classes.link.up', 'tx', end],
+      ['classes.link.down', 'rx', end],
+      ['classes.link.capacity.a2b', 'speed_ab', undefined],
+      ['classes.link.capacity.b2a', 'speed_ba', undefined],
+    ]);
+  });
+
+  it('uses the plan of each text, row and chart match, while it keeps their paths and order', () => {
+    const { classes, parsed } = classesOf({
+      version: 4,
+      classes: {
+        base: {
+          match: { key: 'job' },
+          status: 'state',
+          text: { query: 'label', match: { id: 'edge' } },
+          rows: [
+            { kind: 'updown', up: 'own_tx', down: 'own_rx', match: { id: 'edge' } },
+            { kind: 'history', query: 'site_history', match: { site: 'site' } },
+          ],
+          up: 'tx',
+          down: 'rx',
+          capacity: 'speed',
+        },
+        link: {
+          extends: 'base',
+          chart: { kind: 'updown', up: 'chart_tx', down: 'chart_rx', match: { port: 'device' } },
+        },
+      },
+      overrides: { e1: { rows: [{ kind: 'value', query: 'extra', match: { id: 'edge' } }] } },
+    });
+    const cls = effectiveClass(classes.get('link')!, parsed.config!.overrides.e1, 'e1');
+    const plan = (match: MatchV4) => ('site' in match ? 'drop' : 'id' in match ? 'source' : 'target');
+    const uses = listUses(edge({ bind: 'link' }), cls, plan);
+    expect(uses.map((u) => [u.path, u.refId, u.end])).toEqual([
+      ['classes.base.status', 'state', undefined],
+      ['classes.base.text', 'label', undefined],
+      ['classes.base.rows[0].a2b', 'own_tx', 'source'],
+      ['classes.base.rows[0].b2a', 'own_rx', 'source'],
+      ['overrides.e1.rows[0]', 'extra', undefined],
+      ['classes.link.chart.a2b', 'chart_rx', 'target'],
+      ['classes.link.chart.b2a', 'chart_tx', 'target'],
+      ['classes.base.up', 'tx', 'target'],
+      ['classes.base.down', 'rx', 'target'],
+      ['classes.base.capacity', 'speed', undefined],
+    ]);
   });
 });
