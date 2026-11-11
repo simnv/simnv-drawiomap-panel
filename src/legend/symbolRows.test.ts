@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
-import { bindSymbolLegend, symbolOfLegendId, type RowMarks } from './symbolRows';
+import { bindSymbolLegend, symbolGroups, symbolOfLegendId, type RowMarks } from './symbolRows';
 
 const node = (id: string, symbol?: string) =>
   `<g data-cell-id="pg-node~${id}" data-meta-pg-kind="node" data-meta-pg-id="${id}"${
@@ -138,5 +138,20 @@ describe('bindSymbolLegend', () => {
     onChange.mockClear();
     el('pg-legendRow~symbol:router').dispatchEvent(pointer('pointerover', 'mouse'));
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('a symbol that holds % or ~ (the contract writes %25 and %7e in the attribute and in the row id)', () => {
+  it('the nodes group under the decoded symbol, the same one that the row id gives', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = mountSvg(
+      host,
+      `<svg><g data-cell-id="0" data-meta-pg-schema="1"></g>${node('a', 'cpe%7ea')}${node('b', '100%25')}
+      <g data-cell-id="pg-legendRow~symbol:cpe%7ea"><rect/></g></svg>`
+    );
+    const groups = symbolGroups(buildCellIndex(root));
+    expect(groups.get(symbolOfLegendId('pg-legendRow~symbol:cpe%7ea')!)).toEqual(['pg-node~a']);
+    expect(groups.get(symbolOfLegendId('pg-legendRow~symbol:100%25')!)).toEqual(['pg-node~b']);
   });
 });
