@@ -3,6 +3,7 @@ import type { Use } from './binding/uses';
 import { chartRowV4 } from './interact/cardModel';
 
 export { attrOf } from './binding/cellAttrs';
+export { candidatesFor, type Candidate, type CandidateContext } from './binding/candidates';
 export { edgeEnds, endAttr } from './binding/edgeEnds';
 export {
   createIdentity,
