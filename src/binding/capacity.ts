@@ -28,9 +28,23 @@ export interface CapacityV4Input {
   capacityAttr?: string;
   /** the snapshot of a refId and its series that the class match selects for the cell */
   series: (refId: string) => { snapshot: QuerySnapshot; series: Series[] };
-  /** the class and the cells of the report entries */
+  /** the class of the report entries */
   cls?: string;
-  cellIds?: string[];
+  /** the link: the cell of its entries and of `LinkCapacity.cellId` */
+  cellId?: string;
+  /**
+   * The measured end cell with its own `cap` and `capacity` and the end of the link (I14). The function runs only
+   * when the link has neither `cap` nor `capacity` and a direction has no value from the `capacity` query.
+   * `at` is the measured end: `cap=50M/10M` on the end cell is transmit/receive (I15).
+   */
+  end?: () => EndCapacity | undefined;
+}
+
+export interface EndCapacity {
+  cellId: string;
+  cap?: string;
+  capacity?: string;
+  at: 'source' | 'target';
 }
 
 /** One value of `cap`: SI and decimal (3.8.4). */
@@ -93,19 +107,52 @@ function speedOf(result: { snapshot: QuerySnapshot; series: Series[] }): { bits:
 export interface LinkCapacity {
   amount?: number;
   source: CapacitySource;
+  /** the cell that gave an attribute capacity: the link or its measured end cell */
+  cellId?: string;
+}
+
+/** The attribute pair `cap` / `capacity` of one cell (stage 1a): the value, and the entries for the cell. */
+function attrPair(
+  cap: string | undefined,
+  alt: string | undefined,
+  cellId: string | undefined,
+  entries: ReportEntry[]
+) {
+  const cellIds = cellId === undefined ? [] : [cellId];
+  const parsedCap = cap === undefined ? undefined : parseCap(cap);
+  const parsedAlt = alt === undefined ? undefined : parseCap(alt);
+  // `cap` wins. An explicit `cap` that does not parse stays visible: it does not fall through to `capacity`.
+  if (cap !== undefined && parsedCap === undefined) {
+    entries.push({ kind: 'bad-cap', attr: 'cap', value: cap, cellIds });
+  } else if (cap !== undefined && alt !== undefined) {
+    if (parsedAlt?.a2b !== parsedCap?.a2b || parsedAlt?.b2a !== parsedCap?.b2a) {
+      entries.push({ kind: 'cap-conflict', cap, capacity: alt, cellIds });
+    }
+  } else if (alt !== undefined && parsedAlt === undefined) {
+    entries.push({ kind: 'bad-cap', attr: 'capacity', value: alt, cellIds });
+  }
+  return cap !== undefined ? parsedCap : parsedAlt;
 }
 
 /**
- * The v4 capacity of a link, per geometric direction (spec 3.8.4): the `capacity` refId of the class, else the cell
- * attribute `cap`, else the cell attribute `capacity`, else none (the half shows the raw rate and no percent). The one place of this chain: the bind and
- * the card read it from here. A speed that falls through gives `capacity-fallback` with the reason; a `cap` (or a `capacity` when `cap` is absent) that
- * does not parse gives `bad-cap`; two attributes with different values give `cap-conflict`. The capacities follow the geometry: `at=target` changes only the feeds (`linkFeeds`), not
- * this result (A4).
+ * The v4 capacity of a link, per geometric direction (spec 3.8.4, I14): for each direction the first of the
+ * `capacity` refId of the class, the cell attribute `cap`, the cell attribute `capacity`, the same two attributes of
+ * the measured end cell, else none (the half shows the raw rate and no percent). The one place of this chain: the
+ * bind computes it once for each link, the halves and the card read it from `BindResultV4.capacity`. A speed that
+ * falls through gives `capacity-fallback` with the reason; a `cap` (or a `capacity` when `cap` is absent) that does not
+ * parse gives `bad-cap` and does not fall through to the end; two attributes with different values give
+ * `cap-conflict`. The entries of the link name the link, those of the end cell name the end cell. The capacities
+ * follow the geometry: `at=target` changes only the feeds (`linkFeeds`), not this result (A4); an end pair maps
+ * transmit/receive to a→b/b→a with the end (I15).
  */
-export function capacityV4(input: CapacityV4Input): { a2b: LinkCapacity; b2a: LinkCapacity; report: ReportEntry[] } {
+export function capacityV4(input: CapacityV4Input): {
+  a2b: LinkCapacity;
+  b2a: LinkCapacity;
+  report: ReportEntry[];
+} {
   const report: ReportEntry[] = [];
   const cls = input.cls ?? '';
-  const cellIds = input.cellIds ?? [];
+  const cellIds = input.cellId === undefined ? [] : [input.cellId];
   const refs = typeof input.capacity === 'string' ? { a2b: input.capacity, b2a: input.capacity } : input.capacity;
   const speeds = new Map<string, number | undefined>();
   const speed = (refId: string | undefined): number | undefined => {
@@ -122,24 +169,29 @@ export function capacityV4(input: CapacityV4Input): { a2b: LinkCapacity; b2a: Li
     return speeds.get(refId);
   };
   const bySpeed = { a2b: speed(refs?.a2b), b2a: speed(refs?.b2a) };
-  // `cap` wins. An explicit `cap` that does not parse stays visible: it does not fall through to `capacity`.
-  const cap = input.cap === undefined ? undefined : parseCap(input.cap);
-  const alt = input.capacityAttr === undefined ? undefined : parseCap(input.capacityAttr);
-  if (input.cap !== undefined && cap === undefined) {
-    report.push({ kind: 'bad-cap', attr: 'cap', value: input.cap, cellIds });
-  } else if (input.cap !== undefined && input.capacityAttr !== undefined) {
-    if (alt?.a2b !== cap?.a2b || alt?.b2a !== cap?.b2a) {
-      report.push({ kind: 'cap-conflict', cap: input.cap, capacity: input.capacityAttr, cellIds });
+  const attr = attrPair(input.cap, input.capacityAttr, input.cellId, report);
+  const linkHasAttr = input.cap !== undefined || input.capacityAttr !== undefined;
+  // The end is read once, and only when a direction has nothing from the query and the link has no attribute.
+  let end: { cellId: string; pair?: { a2b: number; b2a: number } } | undefined;
+  if (!linkHasAttr && input.end && (bySpeed.a2b === undefined || bySpeed.b2a === undefined)) {
+    const found = input.end();
+    if (found) {
+      const pair = attrPair(found.cap, found.capacity, found.cellId, report);
+      // On an end cell the pair is transmit/receive; measured at the target, a→b is the receive value.
+      end = {
+        cellId: found.cellId,
+        pair: pair && (found.at === 'target' ? { a2b: pair.b2a, b2a: pair.a2b } : pair),
+      };
     }
-  } else if (input.capacityAttr !== undefined && alt === undefined) {
-    report.push({ kind: 'bad-cap', attr: 'capacity', value: input.capacityAttr, cellIds });
   }
-  const attr = input.cap !== undefined ? cap : alt;
-  const of = (dir: 'a2b' | 'b2a'): LinkCapacity =>
-    bySpeed[dir] !== undefined
-      ? { amount: bySpeed[dir], source: 'series' }
-      : attr
-        ? { amount: attr[dir], source: 'attr' }
-        : { source: 'none' };
+  const of = (dir: 'a2b' | 'b2a'): LinkCapacity => {
+    if (bySpeed[dir] !== undefined) {
+      return { amount: bySpeed[dir], source: 'series' };
+    }
+    if (attr) {
+      return { amount: attr[dir], source: 'attr', ...(input.cellId === undefined ? {} : { cellId: input.cellId }) };
+    }
+    return end?.pair ? { amount: end.pair[dir], source: 'attr', cellId: end.cellId } : { source: 'none' };
+  };
   return { a2b: of('a2b'), b2a: of('b2a'), report };
 }

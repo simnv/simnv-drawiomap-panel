@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FieldType, type Field } from '@grafana/data';
 import type { QuerySnapshot, Series } from '../query/snapshot';
-import { capacityV4, type CapacityV4Input } from './capacity';
+import { capacityV4, type CapacityV4Input, type EndCapacity } from './capacity';
 import { linkFeeds } from './linkFeeds';
 
 const READY: QuerySnapshot = { state: 'ready', frames: [], fetchedAt: 0, fromCache: false };
@@ -23,7 +23,7 @@ const queries =
 const input = (over: Partial<CapacityV4Input>): CapacityV4Input => ({
   series: queries({}),
   cls: 'uplink',
-  cellIds: ['e1'],
+  cellId: 'e1',
   ...over,
 });
 /** The amounts of the chain, in the shape of the report. */
@@ -40,7 +40,7 @@ describe('capacityV4: the chain of spec 3.8.4', () => {
     );
     expect([r.a2b, r.b2a]).toEqual([
       { amount: 1e9, source: 'series' },
-      { amount: 50e6, source: 'attr' },
+      { amount: 50e6, source: 'attr', cellId: 'e1' },
     ]);
     expect(capacityV4(input({})).a2b).toEqual({ source: 'none' });
   });
@@ -219,5 +219,82 @@ describe('capacityV4: the attribute capacity (second name of cap)', () => {
     );
     expect(r.a2b).toEqual({ amount: 5e9, source: 'series' });
     expect(r.report).toEqual([{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['e1'] }]);
+  });
+});
+
+describe('capacityV4: the measured end cell (I14, I15)', () => {
+  const endOf =
+    (over: Partial<EndCapacity> = {}) =>
+    (): EndCapacity => ({ cellId: 'p1', at: 'source', ...over });
+  const throws = () => {
+    throw new Error('the end must not be read');
+  };
+
+  it('order: query, link cap, link capacity, end cap, end capacity, none', () => {
+    const q = queries({ S: ready(speed([1e9])) });
+    // 1: the query wins over the link and the end
+    expect(capacityV4(input({ capacity: 'S', series: q, cap: '5M', end: throws })).a2b).toEqual({
+      amount: 1e9,
+      source: 'series',
+    });
+    // 2 and 3: the link attributes win over the end
+    expect(capacityV4(input({ cap: '5M', end: throws })).a2b).toEqual({ amount: 5e6, source: 'attr', cellId: 'e1' });
+    expect(capacityV4(input({ capacityAttr: '6M', end: throws })).a2b).toEqual({
+      amount: 6e6,
+      source: 'attr',
+      cellId: 'e1',
+    });
+    // 4: cap of the end; 5: capacity of the end; 4 wins over 5
+    expect(capacityV4(input({ end: endOf({ cap: '7M' }) })).a2b).toEqual({ amount: 7e6, source: 'attr', cellId: 'p1' });
+    expect(capacityV4(input({ end: endOf({ capacity: '8M' }) })).b2a).toEqual({
+      amount: 8e6,
+      source: 'attr',
+      cellId: 'p1',
+    });
+    expect(capacityV4(input({ end: endOf({ cap: '7M', capacity: '7M' }) })).a2b.amount).toBe(7e6);
+    // 6: none
+    expect(capacityV4(input({ end: endOf() })).a2b).toEqual({ source: 'none' });
+    expect(capacityV4(input({ end: () => undefined })).a2b).toEqual({ source: 'none' });
+  });
+
+  it('cap=50M/10M on a port measured at the source: a→b is transmit; at the target: a→b is receive', () => {
+    const source = capacityV4(input({ end: endOf({ cap: '50M/10M', at: 'source' }) }));
+    expect([source.a2b.amount, source.b2a.amount]).toEqual([50e6, 10e6]);
+    const target = capacityV4(input({ end: endOf({ cap: '50M/10M', at: 'target' }) }));
+    expect([target.a2b.amount, target.b2a.amount]).toEqual([10e6, 50e6]);
+  });
+
+  it('asks for the end only when a direction has no value from the query', () => {
+    const both = queries({ A: ready(speed([1e9])), B: ready(speed([2e9])) });
+    expect(() => capacityV4(input({ capacity: { a2b: 'A', b2a: 'B' }, series: both, end: throws }))).not.toThrow();
+    const one = capacityV4(
+      input({
+        capacity: { a2b: 'A', b2a: 'B' },
+        series: queries({ A: ready(speed([1e9])) }),
+        end: endOf({ cap: '3M' }),
+      })
+    );
+    expect([one.a2b, one.b2a]).toEqual([
+      { amount: 1e9, source: 'series' },
+      { amount: 3e6, source: 'attr', cellId: 'p1' },
+    ]);
+  });
+
+  it('an own cap that does not parse does not read the end', () => {
+    const r = capacityV4(input({ cap: 'abc', end: throws }));
+    expect(r.a2b).toEqual({ source: 'none' });
+    expect(r.report).toEqual([{ kind: 'bad-cap', attr: 'cap', value: 'abc', cellIds: ['e1'] }]);
+  });
+
+  it('bad-cap and cap-conflict of the end name the end cell', () => {
+    expect(capacityV4(input({ end: endOf({ cap: 'x' }) })).report).toEqual([
+      { kind: 'bad-cap', attr: 'cap', value: 'x', cellIds: ['p1'] },
+    ]);
+    expect(capacityV4(input({ end: endOf({ capacity: 'y' }) })).report).toEqual([
+      { kind: 'bad-cap', attr: 'capacity', value: 'y', cellIds: ['p1'] },
+    ]);
+    const conflict = capacityV4(input({ end: endOf({ cap: '1G', capacity: '2G' }) }));
+    expect(conflict.a2b.amount).toBe(1e9);
+    expect(conflict.report).toEqual([{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['p1'] }]);
   });
 });

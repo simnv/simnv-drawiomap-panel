@@ -1282,6 +1282,18 @@ describe('bindV4: measured links (S4b)', () => {
     }
   );
 
+  it.each(['only', 'at'] as const)(
+    'AC11: reason %s never gives end-ambiguous, also with an empty dependent query',
+    (r) => {
+      const cls = { match: { key: 'job', port: 'device' }, status: 'tx' };
+      const c = r === 'only' ? cells('target') : cells('both', { at: 'target' });
+      const result = bind(cls, c, [frame('tx', { job: 'other', device: 'none' })], { refs: ['tx'] });
+      expect(result.measured.get('l')?.reason).toBe(r);
+      expect(entries(result.report, 'no-series').length).toBe(1);
+      expect(entries(result.report, 'end-ambiguous')).toEqual([]);
+    }
+  );
+
   it('AC11: a URL without query uses never has an ambiguous end', () => {
     const r = bind({ match: { key: 'job' }, url: '/d/demo?id=${id}' }, cells('both'));
     expect(r.report).toEqual([]);
@@ -1354,5 +1366,115 @@ describe('bindV4: measured links (S4b)', () => {
       expect(entries(r.report, 'missing-attr').length).toBe(variant === 'at' ? 2 : 0);
       expect(patch(r, 'l').link?.a2b?.value).toBe(2e6);
     }
+  });
+});
+
+describe('bindV4: capacity from the end (S5, I14, I25)', () => {
+  const xml =
+    '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+    '<mxCell id="a" parent="1"/><mxCell id="pa" parent="a"/>' +
+    '<mxCell id="b" parent="1"/><mxCell id="pb" parent="b"/>' +
+    '<mxCell id="l" edge="1" parent="1" source="pa" target="pb"/></root></mxGraphModel>';
+  const cells = (b: Record<string, string>, pb: Record<string, string>, l: Record<string, string>, pa = {}): Cell[] => [
+    ['a', {}],
+    ['b', b],
+    ['pa', pa],
+    ['pb', pb],
+    ['l', { bind: 'link', ...l }, true],
+  ];
+  const cls = {
+    match: { key: 'job' },
+    capacity: 'speed',
+    rows: [{ kind: 'updown', up: 'tx', down: 'rx', match: { id: 'edge' } }],
+  };
+  const frames = [
+    frame('tx', { edge: 'l' }, [7e6], { unit: 'bps' }),
+    frame('rx', { edge: 'l' }, [2e6], { unit: 'bps' }),
+  ];
+  const bind = (c: Record<string, unknown>, cs: Cell[], f: DataFrame[] = frames) =>
+    run(hostConfig({ link: c }), cs, f, { xml });
+
+  it('AC24: a link with only an updown row and a port cap has a capacity with the cell of the port', () => {
+    const r = bind({ match: { id: 'id' }, rows: cls.rows }, cells({}, {}, {}, { cap: '50M/10M' }));
+    expect(r.patches.get('l')?.link).toBeUndefined();
+    expect(r.capacity.get('l')).toEqual({
+      a2b: { amount: 50e6, source: 'attr', cellId: 'pa' },
+      b2a: { amount: 10e6, source: 'attr', cellId: 'pa' },
+    });
+    expect(r.report).toEqual([]);
+  });
+
+  it('AC10: cap=50M/10M on a port measured at the target maps receive to a→b', () => {
+    const r = bind(cls, cells({ key: 'tgt' }, { cap: '50M/10M' }, {}));
+    expect(r.measured.get('l')).toMatchObject({ end: 'target', reason: 'only' });
+    expect(r.capacity.get('l')?.a2b).toEqual({ amount: 10e6, source: 'attr', cellId: 'pb' });
+    expect(r.capacity.get('l')?.b2a).toEqual({ amount: 50e6, source: 'attr', cellId: 'pb' });
+  });
+
+  it('AC10: the link cap wins over the end, and a cap of the link that does not parse does not read the end', () => {
+    expect(bind(cls, cells({ key: 'tgt' }, { cap: '50M' }, { cap: '5M' })).capacity.get('l')?.a2b).toEqual({
+      amount: 5e6,
+      source: 'attr',
+      cellId: 'l',
+    });
+    const bad = bind(cls, cells({ key: 'tgt' }, { cap: '50M' }, { cap: 'abc' }));
+    expect(bad.capacity.get('l')?.a2b).toEqual({ source: 'none' });
+    expect(entries(bad.report, 'bad-cap')).toEqual([{ kind: 'bad-cap', attr: 'cap', value: 'abc', cellIds: ['l'] }]);
+  });
+
+  it('AC24: bad-cap and cap-conflict of a port name the port cell', () => {
+    const bad = bind(cls, cells({ key: 'tgt' }, { cap: 'x' }, {}));
+    expect(entries(bad.report, 'bad-cap')).toEqual([{ kind: 'bad-cap', attr: 'cap', value: 'x', cellIds: ['pb'] }]);
+    const conflict = bind(cls, cells({ key: 'tgt' }, { cap: '1G', capacity: '2G' }, {}));
+    expect(entries(conflict.report, 'cap-conflict')).toEqual([
+      { kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['pb'] },
+    ]);
+  });
+
+  it('AC10: a capacity series matches through the inferred identity and wins over the end', () => {
+    const r = bind(cls, cells({ key: 'tgt' }, { cap: '50M' }, {}), [
+      ...frames,
+      frame('speed', { job: 'tgt' }, [1e9], { unit: 'bps' }),
+    ]);
+    expect(r.capacity.get('l')?.a2b).toEqual({ amount: 1e9, source: 'series' });
+  });
+
+  it('AC26 (from S5): the inferred capacity query gives 1G with the source series', () => {
+    const r = bind(cls, cells({ key: 'tgt' }, {}, { cap: '50M/10M' }), [
+      ...frames,
+      frame('speed', { job: 'tgt' }, [1e9], { unit: 'bps' }),
+    ]);
+    expect(r.report).toEqual([]);
+    expect(r.capacity.get('l')).toEqual({
+      a2b: { amount: 1e9, source: 'series' },
+      b2a: { amount: 1e9, source: 'series' },
+    });
+  });
+
+  it('AC27: an unmeasured link keeps the own cap for the end-free row, with no fallback entry', () => {
+    const r = bind(cls, cells({}, {}, { cap: '50M/10M' }), [
+      ...frames,
+      frame('speed', { job: 'tgt' }, [1e9], { unit: 'bps' }),
+    ]);
+    expect(r.measured.get('l')).toMatchObject({ end: 'none' });
+    expect(r.uses.get('l')!.some((u) => u.kind === 'capacity')).toBe(false);
+    expect(r.capacity.get('l')).toEqual({
+      a2b: { amount: 50e6, source: 'attr', cellId: 'l' },
+      b2a: { amount: 10e6, source: 'attr', cellId: 'l' },
+    });
+    expect(r.report.map((e) => e.kind)).toEqual(['unmeasured-link']);
+  });
+
+  it('an unmeasured link has no end cell: a port cap gives nothing', () => {
+    const r = bind(cls, cells({}, { cap: '50M' }, {}, { cap: '50M' }));
+    expect(r.capacity.get('l')).toEqual({ a2b: { source: 'none' }, b2a: { source: 'none' } });
+  });
+
+  it('AC24: a link whose capacity query gives both directions never reads the ends', () => {
+    // Without the XML the ends would give `no-edge-ends`; the entry shows that the ends were not asked for.
+    const all = cells({}, {}, { cap: '5M', key: 'tgt' });
+    const r = run(hostConfig({ link: cls }), all, [...frames, frame('speed', { job: 'tgt' }, [1e9], { unit: 'bps' })]);
+    expect(r.capacity.get('l')?.a2b).toEqual({ amount: 1e9, source: 'series' });
+    expect(entries(r.report, 'no-edge-ends')).toEqual([]);
   });
 });

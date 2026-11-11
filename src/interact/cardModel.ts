@@ -13,7 +13,6 @@ import { halfState, type HalfContext } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
 import { noDataColor } from '../binding/color';
-import { capacityV4 } from '../binding/capacity';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 import type { BindInputV4, BindResultV4, PatchV4 } from '../binding/bindV4';
 import { effectiveClass } from '../binding/classes';
@@ -310,21 +309,8 @@ function readerOf(cellId: string, bound: BindResultV4, ctx: CardContextV4): UseR
     return { use, snapshot, series };
   };
 
-  const speedSeries = (refId: string) => {
-    const use = uses.find((u) => u.kind === 'capacity' && u.refId === refId);
-    const d = use ? dataOf(use.path) : undefined;
-    return d && !d.problem
-      ? { snapshot: d.snapshot, series: d.series }
-      : { snapshot: { state: 'empty' as const, fetchedAt: 0, fromCache: false }, series: [] };
-  };
-  const capacity = meta?.isEdge
-    ? capacityV4({
-        capacity: eff?.capacity,
-        cap: meta.attrs.cap,
-        capacityAttr: meta.attrs.capacity,
-        series: speedSeries,
-      })
-    : undefined;
+  // I25: the bind computes the capacity once for each link; the card has no end context.
+  const capacity = bound.capacity.get(cellId);
   const capacityOf: UseReader['capacityOf'] = (direction) => capacity?.[direction] ?? { source: 'none' };
 
   /** Spec 3.5 step 6: the row is stale when one of its series is stale. A relative range gives a deadline. */
