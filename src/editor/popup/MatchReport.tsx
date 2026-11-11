@@ -157,7 +157,7 @@ export function MatchReport({ entries, counts, config, onPick, follow }: MatchRe
                 id={`${id}-tab-${i}`}
                 aria-controls={group === current ? panelId : undefined}
                 label={group.cls ?? 'Not in a class'}
-                counter={group.entries.length || undefined}
+                counter={group.entries.filter((row) => row.entries[0].kind !== 'unmeasured-link').length || undefined}
                 active={group === current}
                 onChangeTab={() => choose(keyOf(group))}
               />

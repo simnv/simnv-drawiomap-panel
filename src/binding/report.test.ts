@@ -21,6 +21,8 @@ describe('S4 report contract', () => {
       'matcher-error',
       'template-unresolved',
       'query-unavailable',
+      'unmeasured-link',
+      'end-ambiguous',
       'no-series',
       'many-series',
       'orphan-series',
@@ -101,6 +103,17 @@ describe('S4 report contract', () => {
       refId: string;
       state: 'error' | 'loading';
       message: string;
+    }>();
+    expectTypeOf<Extract<ReportEntry, { kind: 'unmeasured-link' }>>().toEqualTypeOf<{
+      kind: 'unmeasured-link';
+      cls: string;
+      attrs: string[];
+      cellIds: string[];
+    }>();
+    expectTypeOf<Extract<ReportEntry, { kind: 'end-ambiguous' }>>().toEqualTypeOf<{
+      kind: 'end-ambiguous';
+      cls: string;
+      cellIds: string[];
     }>();
     expectTypeOf<Extract<ReportEntry, { kind: 'no-series' }>>().toEqualTypeOf<{
       kind: 'no-series';

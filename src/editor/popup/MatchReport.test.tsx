@@ -503,3 +503,22 @@ describe('MatchReport', () => {
     expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
   });
 });
+
+it('keeps unmeasured information after warnings, out of the tab count, and selects its links', () => {
+  const onPick = vi.fn();
+  render(
+    <MatchReport
+      entries={[
+        { kind: 'unmeasured-link', cls: 'lan', attrs: ['key', 'port'], cellIds: ['l'] },
+        { kind: 'end-ambiguous', cls: 'lan', cellIds: ['other'] },
+      ]}
+      counts={{ perClass: new Map(), perUse: new Map() }}
+      onPick={onPick}
+    />
+  );
+  expect(screen.getByRole('tab').textContent).toBe('lan1');
+  const items = screen.getAllByRole('listitem');
+  expect(items[0].textContent).toContain('both ends');
+  fireEvent.click(within(items[1]).getAllByRole('button')[0]);
+  expect(onPick).toHaveBeenCalledWith({ kind: 'entry', path: 'classes.lan', cells: ['l'] });
+});

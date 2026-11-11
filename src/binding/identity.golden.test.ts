@@ -317,6 +317,8 @@ const pretty = (entries: unknown) => JSON.stringify(entries, null, 1);
 /** The report of a compatibility case is empty (S0). */
 function expectEmptyReport(env: Env) {
   expect(pretty(env.result.report)).toBe('[]');
+  expect(env.result.inherited.size).toBe(0);
+  expect([...env.result.measured.values()].every((end) => end.reason === 'at' || end.reason === 'own')).toBe(true);
 }
 
 /** Every bound cell has the uses and the series that its class gives: a case with no series proves nothing. */
@@ -652,7 +654,7 @@ describe('golden record: compatibility cases (AC4)', () => {
 // ---- case 8: the one case that changes on purpose (S4b, C6, AC26) ----
 
 describe('golden record: the case that changes in S4b', () => {
-  it('case 8 (C6, AC26): the capacity use lacks key on main; the row shows 14% of the own cap', () => {
+  it('case 8 (C6, AC26): the inferred capacity query wins over the own cap; the row shows 1%', () => {
     const config = {
       version: 4,
       classes: {
@@ -677,11 +679,12 @@ describe('golden record: the case that changes in S4b', () => {
       frame('speed', { job: 'tgt' }, [1e9, 1e9, 1e9], unit),
     ];
     const env = bindCase({ config, cells, frames });
-    // main: the capacity use has `missing-attr`; the series of `speed` has no cell
-    expect(env.result.report.map((e) => e.kind).sort()).toEqual(['missing-attr', 'orphan-series']);
-    expect(env.result.report.find((e) => e.kind === 'missing-attr')).toMatchObject({
-      path: 'classes.link.capacity',
-      attr: 'key',
+    expect(env.result.report).toEqual([]);
+    expect(env.result.measured.get('link-8')).toMatchObject({ end: 'target', reason: 'only' });
+    expect(env.result.inherited.get('link-8')?.get('key')).toMatchObject({ value: 'tgt', cellId: 'pg-node~dst' });
+    expect(env.result.uses.get('link-8')?.find((u) => u.path.endsWith('rows[0].a2b'))).toMatchObject({
+      refId: 'tx',
+      end: 'source',
     });
     const row = buildCardV4('link-8', env.result, {
       theme,
@@ -690,7 +693,7 @@ describe('golden record: the case that changes in S4b', () => {
       validated: env.validated,
       data: env.data,
     }).rows[0];
-    expect(row.directions?.[0].text).toContain('14%');
+    expect(row.directions?.[0].text).toBe('7 Mb/s · 1% of 1 Gb/s');
     expect(record(env)).toMatchSnapshot();
   });
 });

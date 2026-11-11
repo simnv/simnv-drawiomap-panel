@@ -2166,3 +2166,26 @@ describe('DrawioMapPanel deferred diagram', () => {
     expect(links()).toContain('https://example.org/new-url');
   });
 });
+
+it('AC12: unmeasured links add no view warning or link patch', async () => {
+  const diagramSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="l" data-meta-bind="lan"><path d="M0 0L100 100" fill="none" pointer-events="stroke"/></g></svg>';
+  const config: ConfigV4 = {
+    version: 4,
+    freshness: '3x',
+    overrides: {},
+    classes: { lan: { match: { key: 'job' }, up: 'tx' } },
+  };
+  const { findByTestId } = render(
+    <DrawioMapPanel
+      {...props({
+        options: { ...options, diagram: { ...options.diagram!, svg: diagramSvg, hash: fnv1a(diagramSvg) }, config },
+      })}
+    />
+  );
+  const wrapper = await findByTestId('dmap-panel');
+  await waitFor(() => expect(wrapper.getAttribute('data-dmap-cells')).toBe('1'));
+  expect(wrapper.getAttribute('data-dmap-warnings')).toBe('0');
+  expect(wrapper.getAttribute('data-dmap-patched')).toBe('0');
+  expect(screen.queryByTestId('dmap-warning-badge')).toBeNull();
+});

@@ -24,6 +24,8 @@ describe('groupReport', () => {
   });
 
   const samples: Record<ReportEntry['kind'], ReportEntry> = {
+    'unmeasured-link': { kind: 'unmeasured-link', cls: 'dev', attrs: ['key', 'port'], cellIds: ['a'] },
+    'end-ambiguous': { kind: 'end-ambiguous', cls: 'dev', cellIds: ['a'] },
     schema: { kind: 'schema', path: 'classes.dev.bad', message: 'Unknown field' },
     yaml: { kind: 'yaml', line: 2, message: 'Bad indent' },
     'outdated-config': { kind: 'outdated-config', version: 3 },
@@ -292,4 +294,23 @@ describe('groupReport', () => {
       expect(reportLine(entry)).not.toMatch(/1 cells|1 edges|1 series select /);
     }
   });
+});
+
+it('groups identity causes by name set, targets their class and puts information last', () => {
+  const info: ReportEntry = { kind: 'unmeasured-link', cls: 'lan', attrs: ['key', 'port'], cellIds: ['l'] };
+  const warning: ReportEntry = { kind: 'end-ambiguous', cls: 'lan', cellIds: ['l'] };
+  const groups = groupReport([info, warning, { ...info, attrs: ['port', 'key'] }, { ...info, attrs: ['site'] }]);
+  expect(groups.map((g) => g.entries[0].kind)).toEqual(['end-ambiguous', 'unmeasured-link', 'unmeasured-link']);
+  expect(groups[1].entries).toHaveLength(2);
+  expect(groups[1].uses[0].target).toEqual({ path: 'classes.lan', cells: ['l'] });
+});
+
+it.each([1, 2])('uses link grammar for identity entries with %s links', (n) => {
+  const cellIds = Array.from({ length: n }, (_, i) => `l${i}`);
+  expect(reportLine({ kind: 'unmeasured-link', cls: 'lan', attrs: ['key', 'port'], cellIds })).toBe(
+    `${n} ${n === 1 ? 'link has' : 'links have'} no measured end (no end gives key, port)`
+  );
+  expect(reportLine({ kind: 'end-ambiguous', cls: 'lan', cellIds })).toBe(
+    `${n} ${n === 1 ? 'link' : 'links'}: both ends give the identity, the source end has no series. Set at=target if the target end has the counters.`
+  );
 });

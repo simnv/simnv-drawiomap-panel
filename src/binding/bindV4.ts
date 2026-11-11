@@ -1,5 +1,5 @@
 import { formattedValueToString, type Field, type PanelData } from '@grafana/data';
-import type { RowV4 } from '../model/v4';
+import type { MatchV4, RowV4 } from '../model/v4';
 import type { validateConfig } from '../model/validate';
 import { reduceAcross } from '../query/reduce';
 import { equalityKey, indexSeries } from '../query/seriesIndex';
@@ -9,11 +9,18 @@ import { capacityV4, type LinkCapacity } from './capacity';
 import { effectiveClass, type ResolvedClass } from './classes';
 import { noDataColor } from './color';
 import { endContextOf, type EndContext } from './edgeEnds';
-import { createIdentity, type AttrOrigin } from './identity';
+import {
+  createIdentity,
+  identityNames,
+  isEndFree,
+  usePlan as planUses,
+  type AttrOrigin,
+  type MeasuredEnd,
+} from './identity';
 import { halfState } from './engine';
 import { cadenceOf, freshnessMs, staleCheck, type FreshnessPatch } from './freshness';
 import { linkFeeds } from './linkFeeds';
-import { createRegexCache, parseMatchBlock, resolveBlock, type ParseResult } from './matcher';
+import { createRegexCache, parseMatchBlock, resolveBlock, type ParseResult, type ResolvedMatcher } from './matcher';
 import type { ReportEntry, UsePath } from './report';
 import type { StatusView } from './status';
 import { NO_DATA_TEXT, statusOfUse, type StatusV4 } from './statusV4';
@@ -66,6 +73,10 @@ export interface BindResultV4 {
   matchOrigins: Map<string, string>;
   /** cell id → each name that the bind read from another cell, with the cell that gave it (spec I26) */
   inherited: Map<string, Map<string, AttrOrigin>>;
+  /** Bound edge id to its measured end, including unmeasured links (I26). */
+  measured: Map<string, MeasuredEnd>;
+  /** Cell id to each use path and its resolved matchers or problem (I26). */
+  resolved: Map<string, Map<UsePath, { matchers: ResolvedMatcher[] } | { problem: string }>>;
   report: ReportEntry[];
   /** the sorted unique moments after which a status turns stale; the clock reads again after each */
   deadlines: number[];
@@ -185,6 +196,7 @@ interface Block {
  */
 interface Selection {
   series: Series[];
+  resolved?: ResolvedMatcher[];
   problem?: { reason: string; entry?: (cls: string, path: UsePath) => CellsFree };
 }
 
@@ -247,6 +259,8 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     cells: new Map(),
     matchOrigins: new Map(),
     inherited: new Map(),
+    measured: new Map(),
+    resolved: new Map(),
     report: [],
     deadlines: [],
   };
@@ -273,25 +287,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   };
   const identity = createIdentity(ends);
   out.inherited = identity.inherited;
-  /**
-   * A vertex reads itself, then its owner chain. An edge reads only itself (reason `own`) until the measured end is
-   * wired in; `${from.…}`/`${to.…}` stay geometric for each cell.
-   */
-  const attrOf = (meta: CellMeta) => {
-    const read = identity.attr(meta);
-    if (!meta.isEdge) {
-      return read;
-    }
-    return (name: string): string | undefined => {
-      if (name.startsWith('from.') || name.startsWith('to.')) {
-        return read(name);
-      }
-      if (name === 'id') {
-        return meta.id;
-      }
-      return Object.hasOwn(meta.attrs, name) ? meta.attrs[name] : undefined;
-    };
-  };
+  const attrOf = identity.attr;
 
   const query = (refId: string): Query => {
     let found = queries.get(refId);
@@ -380,7 +376,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     }
     const series = candidates.filter((s) => resolved.test(s.labels));
     series.forEach((s) => q.selected.add(s));
-    return { series };
+    return { series, resolved: resolved.resolved };
   };
 
   const unavailable = (meta: CellMeta, reason: string) => {
@@ -465,26 +461,48 @@ export function bindV4(input: BindInputV4): BindResultV4 {
 
   function bindCell(meta: CellMeta, eff: ResolvedClass): void {
     const cls = eff.name;
-    const uses = listUses(meta, eff);
+    let uses = listUses(meta, eff);
+    const required = new Map<MatchV4, readonly string[]>();
+    let end: MeasuredEnd | undefined;
+    if (meta.isEdge) {
+      for (const use of uses) {
+        const parsed = blockOf(use).parsed;
+        required.set(use.match, parsed.ok ? parsed.block.requiredAttrs : []);
+      }
+      const needs = identityNames(meta, [...required.values()]);
+      end = identity.measure(meta, needs);
+      out.measured.set(meta.id, end);
+      uses = listUses(meta, eff, planUses(meta, required, end));
+      if (end.end === 'none') {
+        report.cell({ kind: 'unmeasured-link', cls, attrs: needs }, meta.id);
+      }
+    }
     const byPath = new Map<UsePath, Series[]>();
     const results = new Map<UsePath, UseResult>();
     const selections = new Map<string, Selection>();
     out.uses.set(meta.id, uses);
     out.series.set(meta.id, byPath);
+    const resolved: NonNullable<ReturnType<typeof out.resolved.get>> = new Map();
+    out.resolved.set(meta.id, resolved);
 
     for (const use of uses) {
+      const unknown = targets && !targets.has(use.refId);
+      const q = unknown ? { snapshot: NO_TARGET, series: [], selected: new Set<Series>() } : query(use.refId);
+      const key = JSON.stringify([use.refId, use.match]);
+      let selection = selections.get(key);
+      if (!selection) {
+        selection = select(use, meta, q);
+        selections.set(key, selection);
+      }
+      resolved.set(
+        use.path,
+        selection.problem ? { problem: selection.problem.reason } : { matchers: selection.resolved! }
+      );
       let result: UseResult;
-      if (targets && !targets.has(use.refId)) {
+      if (unknown) {
         report.once({ kind: 'unknown-ref', cls, path: use.path, refId: use.refId });
         result = { snapshot: NO_TARGET, series: [], problem: 'Unknown query' };
       } else {
-        const q = query(use.refId);
-        const key = JSON.stringify([use.refId, use.match]);
-        let selection = selections.get(key);
-        if (!selection) {
-          selection = select(use, meta, q);
-          selections.set(key, selection);
-        }
         const problem = selection.problem;
         result = { snapshot: q.snapshot, series: selection.series, problem: problem?.reason };
         if (problem?.entry) {
@@ -495,6 +513,23 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       }
       byPath.set(use.path, result.series);
       results.set(use.path, result);
+    }
+
+    if (end?.reason === 'both') {
+      const dependent = uses.filter((use) => !isEndFree(meta, required.get(use.match)!));
+      if (
+        dependent.length &&
+        dependent.every((use) => {
+          const result = results.get(use.path)!;
+          return (
+            !result.problem &&
+            (result.snapshot.state === 'ready' || result.snapshot.state === 'empty') &&
+            !result.series.length
+          );
+        })
+      ) {
+        report.cell({ kind: 'end-ambiguous', cls }, meta.id);
+      }
     }
 
     // An updown chart shares one numeric scale across both uses.
@@ -546,10 +581,13 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     if (textUse && eff.text) {
       patch.shape = textShape(results.get(textUse.path)!, eff.text);
     }
-    if (meta.isEdge && (eff.up !== undefined || eff.down !== undefined)) {
+    if (meta.isEdge && uses.some((use) => use.kind === 'up' || use.kind === 'down')) {
       patch.link = linkHalves(meta, eff, uses, results);
     }
-    templates(meta, eff, scope, patch);
+    templates(meta, eff, scope, patch, uses, end?.end === 'none' ? end.needs : []);
+    if (end?.end === 'none' && !uses.length && !patch.urls.length && !patch.rowsV4?.length) {
+      return;
+    }
     out.patches.set(meta.id, patch);
   }
 
@@ -658,10 +696,11 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       const { cellIds: _cells, ...rest } = entry as CellsEntry;
       report.cell(rest as CellsFree, meta.id);
     }
-    const feeds = linkFeeds(meta.attrs.at, 'up', 'down');
     const link: NonNullable<PatchV4['link']> = { labelMode: eff.linkLabel ?? 'none', arrow: eff.arrow ?? 'point' };
     for (const dir of ['a2b', 'b2a'] as const) {
-      const use = uses.find((u) => u.kind === feeds[dir]);
+      const use = uses.find(
+        (u) => (u.kind === 'up' || u.kind === 'down') && linkFeeds(u.end, 'up', 'down')[dir] === u.kind
+      );
       if (!use) {
         continue;
       }
@@ -688,11 +727,20 @@ export function bindV4(input: BindInputV4): BindResultV4 {
    * reads an attribute the cell lacks gives `missing-attr`; `${labels.x}` or `${value}` with no single status series
    * gives `template-unresolved`. Such an item is not shown.
    */
-  function templates(meta: CellMeta, eff: ResolvedClass, scope: TemplateScopeV4, patch: PatchV4): void {
+  function templates(
+    meta: CellMeta,
+    eff: ResolvedClass,
+    scope: TemplateScopeV4,
+    patch: PatchV4,
+    uses: Use[],
+    quiet: string[]
+  ): void {
     const cls = eff.name;
     const resolves = (text: string, path: string): boolean => {
       const r = resolveTemplateV4(text, scope);
-      r.missing.forEach((attr) => report.cell({ kind: 'missing-attr', cls, path, attr }, meta.id));
+      r.missing
+        .filter((attr) => !quiet.includes(attr))
+        .forEach((attr) => report.cell({ kind: 'missing-attr', cls, path, attr }, meta.id));
       if (r.unresolved.length) {
         report.cell({ kind: 'template-unresolved', cls, path }, meta.id);
       }
@@ -724,7 +772,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
         }
         return [label === undefined ? { path, kind: row.kind, url: href } : { path, kind: row.kind, label, url: href }];
       }
-      return [{ path, kind: row.kind }];
+      return uses.some((use) => use.path === path || use.path === `${path}.a2b`) ? [{ path, kind: row.kind }] : [];
     });
   }
 
