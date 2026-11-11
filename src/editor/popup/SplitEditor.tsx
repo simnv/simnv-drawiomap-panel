@@ -9,6 +9,8 @@ import { endContextOf, type EndContext } from '../../binding/edgeEnds';
 import { snapshotV4 } from '../../binding/rowData';
 import { check, rangeOf, toYaml } from '../../options/ConfigYamlEditor';
 import { readYaml } from '../../options/yamlConfig';
+import { isEmptyConfig } from '../../model/starter';
+import { StarterNotice, starterText } from '../../options/StarterNotice';
 import { configUpdate } from '../../options/storedConfig';
 import { indexSeries } from '../../query/seriesIndex';
 import { fitCells, type ViewBox } from '../../render/zoom';
@@ -505,6 +507,15 @@ export function SplitEditor({
     setApplied(true);
   };
 
+  const read = useMemo(() => readYaml(settledText), [settledText]);
+  const emptyConfig = read.ok && isEmptyConfig(read.value);
+  const insertStarter = () => {
+    if (diagram) {
+      onEdit(starterText(diagram, refIdsOf(data)));
+      settle();
+    }
+  };
+
   const layout = (
     <PopupLayout
       code={
@@ -581,6 +592,7 @@ export function SplitEditor({
           </Button>
         </Alert>
       )}
+      {emptyConfig && diagram?.svg ? <StarterNotice onInsert={insertStarter} /> : null}
       <div className={styles.layout}>{layout}</div>
       <div className={styles.actions}>
         <Button variant="secondary" disabled={!versions.past.length} onClick={onUndo}>

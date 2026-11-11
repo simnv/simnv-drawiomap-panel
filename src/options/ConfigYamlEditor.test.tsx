@@ -230,4 +230,47 @@ describe('LazyConfigYamlEditor', () => {
     });
     expect((await screen.findByTestId('code-editor')).getAttribute('data-language')).toBe('yaml');
   });
+
+  describe('the starter config', () => {
+    const diagram = {
+      xml: '<mxGraphModel><root><mxCell id="1"/></root></mxGraphModel>',
+      svg: '<svg><g data-cell-id="0"></g></svg>',
+    };
+    const mountEmpty = (value: unknown, withDiagram = true) => {
+      const onChange = vi.fn();
+      const props = {
+        value,
+        onChange,
+        context: { data: [{ refId: 'up' }, { refId: 'tx' }], options: withDiagram ? { diagram } : {} },
+        item: {},
+      } as unknown as EditorProps;
+      render(<ConfigYamlEditor {...props} />);
+      return onChange;
+    };
+
+    it('shows the notice and does not write on its own', () => {
+      const onChange = mountEmpty(undefined);
+      expect(screen.getByText(/give cells `bind`/)).toBeTruthy();
+      expect(editor().value).toBe('');
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('inserts the starter and stores it', () => {
+      const onChange = mountEmpty({});
+      fireEvent.click(screen.getByRole('button', { name: 'Insert a starter config' }));
+      expect(editor().value).toContain('version: 4');
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Insert a starter config')).toBeNull();
+    });
+
+    it('shows no notice for a stored config', () => {
+      mountEmpty(stored);
+      expect(screen.queryByText('Insert a starter config')).toBeNull();
+    });
+
+    it('shows no notice without a diagram', () => {
+      mountEmpty(undefined, false);
+      expect(screen.queryByText('Insert a starter config')).toBeNull();
+    });
+  });
 });
