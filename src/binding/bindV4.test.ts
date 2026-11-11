@@ -479,6 +479,148 @@ describe('bindV4: the report kinds of spec 4', () => {
   });
 });
 
+describe('bindV4: the owner chain (spec 4, S3)', () => {
+  const xmlOf = (cells: string) =>
+    `<mxfile><diagram id="p1" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>${cells}` +
+    '</root></mxGraphModel></diagram></mxfile>';
+  const PORT = { match: { key: 'job', port: 'device' }, status: 'up' };
+  const portCells = (): Cell[] => [
+    ['0', { 'pg-schema': '1' }],
+    ['n', { 'pg-kind': 'node', 'pg-id': 'rtr-a', key: 'node-rtr-a' }],
+    [
+      'p',
+      { 'pg-kind': 'port', 'pg-id': 'rtr-a:eth1', 'pg-node': 'rtr-a', 'pg-port': 'eth1', bind: 'iface', port: 'eth1' },
+    ],
+  ];
+
+  it('a port with bind and port reads key from its node and binds', () => {
+    const r = run(hostConfig({ iface: PORT }), portCells(), [
+      frame('up', { job: 'node-rtr-a', device: 'eth1' }),
+      frame('up', { job: 'node-rtr-a', device: 'eth2' }),
+    ]);
+    expect(entries(r.report, 'missing-attr')).toEqual([]);
+    expect(entries(r.report, 'no-series')).toEqual([]);
+    const selected = [...r.series.get('p')!.values()].flat();
+    expect(selected.map((s) => s.labels.device)).toEqual(['eth1']);
+    expect(r.inherited.get('p')?.get('key')).toEqual({ value: 'node-rtr-a', cellId: 'n', via: 'owner' });
+    expect(r.inherited.get('p')?.has('port')).toBe(false);
+  });
+
+  it('a shape in a container reads key from the container, and the container from its own container', () => {
+    const xml = xmlOf('<mxCell id="g1" parent="1"/><mxCell id="g2" parent="g1"/><mxCell id="s" parent="g2"/>');
+    const r = run(
+      hostConfig({ host: HOST }),
+      [
+        ['g1', { key: 'outer' }],
+        ['g2', {}],
+        ['s', { bind: 'host' }],
+      ],
+      [frame('up', { job: 'outer' })],
+      { xml }
+    );
+    expect(r.report).toEqual([]);
+    expect(r.inherited.get('s')?.get('key')).toMatchObject({ value: 'outer', cellId: 'g1', via: 'owner' });
+  });
+
+  it('a template ${site} reads the container', () => {
+    const xml = xmlOf('<mxCell id="g" parent="1"/><mxCell id="s" parent="g"/>');
+    const r = run(
+      hostConfig({ host: { ...HOST, url: '/d/x?site=${site}' } }),
+      [
+        ['g', { site: 'hq', key: 'k' }],
+        ['s', { bind: 'host' }],
+      ],
+      [frame('up', { job: 'k' })],
+      { xml }
+    );
+    expect(patch(r, 's').urls.map((u) => u.url)).toEqual(['/d/x?site=hq']);
+    expect(r.inherited.get('s')?.get('site')).toMatchObject({ value: 'hq', cellId: 'g' });
+  });
+
+  it('an own-only name is never read from an owner: missing-attr', () => {
+    const xml = xmlOf('<mxCell id="g" parent="1"/><mxCell id="s" parent="g"/>');
+    const r = run(
+      hostConfig({ host: { match: { cap: 'job' }, status: 'up' } }),
+      [
+        ['g', { cap: '1G' }],
+        ['s', { bind: 'host' }],
+      ],
+      [frame('up', { job: '1G' })],
+      { xml }
+    );
+    expect(entries(r.report, 'missing-attr')).toMatchObject([{ attr: 'cap', cellIds: ['s'] }]);
+    expect(r.inherited.get('s')).toBeUndefined();
+  });
+
+  it('an own value wins over the owner, and an empty own value counts', () => {
+    const cells = portCells();
+    cells[2][1].key = '';
+    const r = run(hostConfig({ iface: PORT }), cells, [frame('up', { job: '', device: 'eth1' })]);
+    expect([...r.series.get('p')!.values()].flat()).toHaveLength(1);
+    expect(r.inherited.size).toBe(0);
+  });
+
+  it('an edge still reads only itself: it does not read the owner or an end', () => {
+    const cells: Cell[] = [
+      ...portCells(),
+      ['l', { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'rtr-a:eth1', 'pg-to': 'rtr-a', bind: 'lan' }, true],
+    ];
+    const r = run(hostConfig({ lan: { match: { key: 'job' }, status: 'up' } }), cells, [
+      frame('up', { job: 'node-rtr-a' }),
+    ]);
+    expect(entries(r.report, 'missing-attr')).toMatchObject([{ attr: 'key', cellIds: ['l'] }]);
+    expect(r.inherited.has('l')).toBe(false);
+  });
+
+  it('${from.key} of an edge still reads the geometric end', () => {
+    const cells: Cell[] = [
+      ...portCells(),
+      [
+        'l',
+        { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'rtr-a:eth1', 'pg-to': 'rtr-a', bind: 'lan', key: 'x' },
+        true,
+      ],
+    ];
+    const r = run(hostConfig({ iface: PORT, lan: { match: { key: 'name="${from.key}"' }, status: 'up' } }), cells, [
+      frame('up', { name: 'node-rtr-a' }),
+    ]);
+    expect(entries(r.report, 'missing-attr')).toEqual([]);
+    expect([...r.series.get('l')!.values()].flat()).toHaveLength(1);
+  });
+
+  it('a bind where each cell has its attributes never asks for the ends', () => {
+    const compressed =
+      '<mxfile><diagram id="p1" name="Page-1">7ZbBbqMwEIafhqsLGEhyTNJ0u9JWqtTDnh2YgFWDkW2a5O13DCbg</diagram></mxfile>';
+    const r = run(
+      hostConfig({ host: HOST }),
+      [
+        ['a', { bind: 'host', key: 'a' }],
+        ['l', { bind: 'host', key: 'b' }, true],
+      ],
+      [frame('up', { job: 'a' })],
+      { xml: compressed }
+    );
+    expect(entries(r.report, 'no-edge-ends')).toEqual([]);
+    expect(r.inherited.size).toBe(0);
+  });
+
+  it('a vertex that lacks a name gives no-edge-ends on a compressed page', () => {
+    const compressed =
+      '<mxfile><diagram id="p1" name="Page-1">7ZbBbqMwEIafhqsLGEhyTNJ0u9JWqtTDnh2YgFWDkW2a5O13DCbg</diagram></mxfile>';
+    const r = run(
+      hostConfig({ host: HOST }),
+      [
+        ['a', { bind: 'host' }],
+        ['e', {}, true],
+      ],
+      [frame('up', { job: 'x' })],
+      { xml: compressed }
+    );
+    expect(entries(r.report, 'missing-attr')).toMatchObject([{ attr: 'key', cellIds: ['a'] }]);
+    expect(entries(r.report, 'no-edge-ends')).toMatchObject([{ reason: 'compressed page', cellIds: ['e'] }]);
+  });
+});
+
 describe('bindV4: the engine', () => {
   it('the cells of an invalid class are unavailable with "Binding is not valid"; other classes bind', () => {
     const r = run(

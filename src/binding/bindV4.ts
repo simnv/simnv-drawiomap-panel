@@ -5,11 +5,11 @@ import { reduceAcross } from '../query/reduce';
 import { equalityKey, indexSeries } from '../query/seriesIndex';
 import type { QuerySnapshot, Series } from '../query/snapshot';
 import type { BindContext, CellIndex, CellMeta, HalfState, SeriesInfo, StatusV4Fields } from '../types';
-import { attrOf as cellAttrs } from './cellAttrs';
 import { capacityV4, type LinkCapacity } from './capacity';
 import { effectiveClass, type ResolvedClass } from './classes';
 import { noDataColor } from './color';
-import { edgeEnds, type EndContext } from './edgeEnds';
+import { endContextOf, type EndContext } from './edgeEnds';
+import { createIdentity, type AttrOrigin } from './identity';
 import { halfState } from './engine';
 import { cadenceOf, freshnessMs, staleCheck, type FreshnessPatch } from './freshness';
 import { linkFeeds } from './linkFeeds';
@@ -64,6 +64,8 @@ export interface BindResultV4 {
   cells: Map<string, string[]>;
   /** cell id → the YAML path of the `match` of the cell after its override; no entry for a cell that does not bind */
   matchOrigins: Map<string, string>;
+  /** cell id → each name that the bind read from another cell, with the cell that gave it (spec I26) */
+  inherited: Map<string, Map<string, AttrOrigin>>;
   report: ReportEntry[];
   /** the sorted unique moments after which a status turns stale; the clock reads again after each */
   deadlines: number[];
@@ -244,6 +246,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     series: new Map(),
     cells: new Map(),
     matchOrigins: new Map(),
+    inherited: new Map(),
     report: [],
     deadlines: [],
   };
@@ -259,16 +262,36 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   const blocks = new Map<string, Block>();
   let endContext: EndContext | undefined;
 
-  /** The edge ends, read only when a use or a template reads `${from.…}` or `${to.…}`. */
+  /** The ends and owners, read on the first cell that lacks an own attribute or reads `${from.…}`/`${to.…}` (spec 7.2). */
   const ends = (): EndContext => {
     if (!endContext) {
-      const found = edgeEnds(input.xml, index);
+      const found = endContextOf(input.xml, index);
       found.report.forEach((entry) => report.once(entry));
-      endContext = { index, ends: found.ends, parents: found.parents };
+      endContext = found;
     }
     return endContext;
   };
-  const attrOf = cellAttrs(ends);
+  const identity = createIdentity(ends);
+  out.inherited = identity.inherited;
+  /**
+   * A vertex reads itself, then its owner chain. An edge reads only itself (reason `own`) until the measured end is
+   * wired in; `${from.…}`/`${to.…}` stay geometric for each cell.
+   */
+  const attrOf = (meta: CellMeta) => {
+    const read = identity.attr(meta);
+    if (!meta.isEdge) {
+      return read;
+    }
+    return (name: string): string | undefined => {
+      if (name.startsWith('from.') || name.startsWith('to.')) {
+        return read(name);
+      }
+      if (name === 'id') {
+        return meta.id;
+      }
+      return Object.hasOwn(meta.attrs, name) ? meta.attrs[name] : undefined;
+    };
+  };
 
   const query = (refId: string): Query => {
     let found = queries.get(refId);
