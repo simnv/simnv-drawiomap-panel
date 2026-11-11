@@ -1,7 +1,7 @@
 # Inferred identity: identity on the port, the link reads it
 
-- Status: draft, revision 3 after review rounds 1 and 2 (Codex "Astra", findings R1–R7 and N1–N6, all accepted:
-  section 16),
+- Status: draft, revision 4 after review rounds 1 to 3 (Codex "Astra", findings R1–R7, N1–N6, P1 and P2, all
+  accepted: section 16),
   2026-11-11. The owner approved the model on 2026-11-11 ("stage 2" of the binding UX
   audit). This spec designs it in detail and records each point where the design differs from the approved model
   (section 12).
@@ -596,8 +596,10 @@ Unit (vitest):
 - **AC3** `measuredEnd`: one test for each row of the table of 5.2, and: `at=source` with an instrumented target
   stays `source`; a link with its own `port` and no `key` infers the end that gives `key`; a class `match` that no
   use reads adds no identity name; the identity names are the sorted union over the dependent uses.
-- **AC4** The golden record of S0 is unchanged after each step. For its fixtures `inherited` is empty and each
-  reason is `at` or `own`.
+- **AC4** The golden record of S0, cases 1 to 7 (the compatibility cases), is unchanged after each step. For these
+  cases `inherited` is empty and each reason is `at` or `own`. Case 8 is not a compatibility case: it has the state
+  of `main` up to S4a, and the state "after" of AC26 from S4b on (the reason `only`, `key` inherited from the target
+  node).
 - **AC5** A link with only `bind` between a node with `key` and a port with `port` binds the same series, the same
   halves and the same URL as the same link with `key`, `port` and `at` written on it, for the source and for the
   target.
@@ -655,9 +657,12 @@ Compatibility and storage (review round 1):
   with an unknown refId, a use with `missing-attr` (the problem).
 - **AC26** (N3, C6) The class `match: {key: job}`, `capacity: speed`, an `updown` row `match: {id: edge}`; the edge
   has `bind` and `cap=50M/10M`; transmit 7M; the target gives `key`, and `speed` gives 1G for it. On `main`: the row
-  shows 14 % and the report has `missing-attr` for `classes.link.capacity`. After: `rows[0].a2b` keeps the `up`
-  refId and the source feed, the row shows 0.7 % of 1G, the capacity source is `series`, and the `missing-attr` is
-  gone.
+  shows the text `14%` and the report has `missing-attr` for `classes.link.capacity`. After (from S4b on, when the
+  `capacity` use first resolves; the card of today already reads the series of that use): `rows[0].a2b` keeps the
+  `up` refId and the source feed, the capacity is 1G, the load is 0.7 % as a number, the row shows the text `1%`
+  (the percent text is a whole number, `percentText` in `src/binding/engine.ts`; this feature does not change that
+  format), and the `missing-attr` is gone. From S5 on, also: `BindResultV4.capacity` holds 1G with the source
+  `series` for the link.
 - **AC27** (N4) The class of AC26, no end gives `key`: the link is unmeasured; the `capacity` use is not in the
   list; the row shows 14 % of the own `cap`; the report has the `unmeasured-link` entry and no `capacity-fallback`,
   no `missing-attr` and no `no-series`.
@@ -751,8 +756,9 @@ check of S7 (AC19) runs again on the result that has S6.
      own match. Each on an edge with only `bind` (and `at=target` on one), with a trap `key` on the target node.
   7. Vertices (N2): a port cell and a plain vertex, each with own `key`, `at=target`, an `updown` row and an
      `updown` chart; transmit 7M and receive 2M. The record holds the card and the chart lines.
-  8. The capacity change C6 (AC26): record the state of `main` (14 %, `missing-attr` for the `capacity` use). This
-     case is the one that S5 changes on purpose: S5 updates its snapshot and no other.
+  8. The capacity change C6 (AC26): record the state of `main` (the text `14%`, `missing-attr` for the `capacity`
+     use). This case is the one that changes on purpose, in S4b: S4b updates its snapshot and no other. No later
+     step changes it again.
 - Acceptance: the test passes on `main` with no change in `src/` outside the test and the copies; each case except
   case 8 has an empty report.
 
@@ -825,7 +831,11 @@ check of S7 (AC19) runs again on the result that has S6.
   6. Add the two kinds to `REPORT_KINDS` and `ReportEntry`; `reportLine` gives the lines of I10 and I12.
 - Between S4b and S4c the card of a link with an inferred target still reads `meta.attrs.at`. Do not merge S4b to
   `main` without S4c.
-- Acceptance: the listed checks; AC4; the bench of today within its budget (run it once, print the median).
+- Case 8 of the record changes in this step: the `capacity` use resolves through the target, the card reads its
+  series and shows `1%`, and the `missing-attr` goes away. Assert the state "after" of AC26 (without the part "from
+  S5 on") in a test, then update the snapshot of case 8 only, and say so in the commit message.
+- Acceptance: the listed checks; AC26 (the part up to S4b); AC4 (cases 1 to 7 unchanged, case 8 in its new state);
+  the bench of today within its budget (run it once, print the median).
 
 ### S4c. The feeds of the card and the chart
 
@@ -836,7 +846,8 @@ check of S7 (AC19) runs again on the result that has S6.
   the chart).
 - Code: `updownRow` and the chart reader take the feed from `Use.end` of their uses; `UseReader.at` goes away. A
   vertex works through the same field (S4a sets it from the own `at`).
-- Acceptance: the listed checks; AC4, with case 7 of the record (the vertex card and chart).
+- Acceptance: the listed checks; AC4, with case 7 of the record (the vertex card and chart); case 8 keeps the state
+  of S4b.
 
 ### S5. Capacity from the end
 
@@ -856,8 +867,9 @@ check of S7 (AC19) runs again on the result that has S6.
      `eff.capacity`: a dropped use is "no query" (N4). `linkHalves` reads `out.capacity`. Before you narrow the set of edges, check with a search for `capacityOf`
      and `'capacity'` (a chart range) that no other reader needs a capacity; if one does, add its edges.
   3. `cardModel.readerOf`: `capacityOf` reads `bound.capacity`; remove its call of `capacityV4`.
-- Acceptance: AC10, AC24, AC26, AC27; AC4 for each case of the record except case 8, whose snapshot this step
-  updates to the values of AC26 (say so in the commit message).
+- Acceptance: AC10, AC24, AC26 (with the part "from S5 on"), AC27; AC4: no case of the record changes in this step,
+  also not case 8 (the card texts stay; the new assertions on `BindResultV4.capacity` are in the tests of this
+  step, not in the record).
 
 ### S6. The inspector and the report views
 
@@ -958,3 +970,10 @@ Review round 2 (on 005a2af): R1, R2 and R4–R7 resolved. New findings, all acce
 
 Also from round 2: S4 is now S4a, S4b and S4c; AC28 checks the union rule in the bind and the report; AC23 keeps
 `${from.id}` on an unmeasured link.
+
+Review round 3 (on 63b9215): N1–N6 resolved. Two findings, both accepted:
+
+| Finding    | Check against the code                                                                              | Resolution                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| P1 (major) | `cardModel.readerOf` reads the `capacity` use and its series, so the card changes when S4b resolves | case 8 changes in S4b, not S5; AC4 covers cases 1 to 7; S4b, S4c and S5 state the phase |
+| P2 (minor) | `percentText` gives a whole percent: 0.7 % shows as `1%`                                            | AC26 names the number 0.7 % and the text `1%`                                           |
