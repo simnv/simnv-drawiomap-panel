@@ -227,8 +227,14 @@ const cardRow = (row: CardRowV4 | undefined) =>
       text: d.text,
       mirrored: d.mirrored,
       history: d.history.state,
+      times: d.history.state === 'ready' ? [...d.history.timestamps] : undefined,
+      values: d.history.state === 'ready' ? d.history.values.map((v) => (v === null ? null : number(v))) : undefined,
     })),
-    lines: row.lines?.map((l) => ({ label: l.label, values: l.values.map((v) => number(v ?? undefined)) })),
+    lines: row.lines?.map((l) => ({
+      label: l.label,
+      times: l.times,
+      values: l.values.map((v) => (v === null ? null : number(v))),
+    })),
     more: row.more,
     domain: row.domain?.map(number),
   };

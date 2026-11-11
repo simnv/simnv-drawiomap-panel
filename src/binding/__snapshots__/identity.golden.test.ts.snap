@@ -15,6 +15,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↑",
                 "mirrored": false,
                 "text": "19.0 Mb/s · 2% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  17106663.6,
+                  18057033.8,
+                  19007404,
+                ],
               },
               {
                 "direction": "down",
@@ -22,6 +32,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↓",
                 "mirrored": true,
                 "text": "33.0 Mb/s · 3% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  29704442.4,
+                  31354689.2,
+                  33004936,
+                ],
               },
             ],
             "domain": [
@@ -145,6 +165,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↑",
                 "mirrored": false,
                 "text": "28.0 Mb/s · 3% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  25206663.6,
+                  26607033.8,
+                  28007404,
+                ],
               },
               {
                 "direction": "down",
@@ -152,6 +182,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↓",
                 "mirrored": true,
                 "text": "10.0 Mb/s · 1% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  9004442.4,
+                  9504689.2,
+                  10004936,
+                ],
               },
             ],
             "domain": [
@@ -275,6 +315,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↑",
                 "mirrored": false,
                 "text": "38.0 Mb/s · 4% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  34206663.6,
+                  36107033.8,
+                  38007404,
+                ],
               },
               {
                 "direction": "down",
@@ -282,6 +332,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↓",
                 "mirrored": true,
                 "text": "6.00 Mb/s · 1% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  5404442.4,
+                  5704689.2,
+                  6004936,
+                ],
               },
             ],
             "domain": [
@@ -405,6 +465,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↑",
                 "mirrored": false,
                 "text": "30.0 Mb/s · 3% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  27006663.6,
+                  28507033.8,
+                  30007404,
+                ],
               },
               {
                 "direction": "down",
@@ -412,6 +482,16 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
                 "label": "↓",
                 "mirrored": true,
                 "text": "48.0 Mb/s · 5% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  43204442.4,
+                  45604689.2,
+                  48004936,
+                ],
               },
             ],
             "domain": [
@@ -632,6 +712,11 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
             "lines": [
               {
                 "label": "rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   40501110.6,
                   42751172.3,
@@ -655,6 +740,11 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
             "lines": [
               {
                 "label": "rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   9002221.2,
                   9502344.6,
@@ -769,6 +859,11 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
             "lines": [
               {
                 "label": "sw-a1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   18909995.4,
                   19960550.7,
@@ -862,6 +957,11 @@ exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the 
             "lines": [
               {
                 "label": "sw-a2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   28809995.4,
                   30410550.7,
@@ -1041,6 +1141,11 @@ exports[`golden record: compatibility cases (AC4) > case 2: boilerPilot with a c
             "lines": [
               {
                 "label": "wb7",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   18006663.6,
                   19007033.8,
@@ -1207,6 +1312,11 @@ exports[`golden record: compatibility cases (AC4) > case 2: boilerPilot with a c
             "lines": [
               {
                 "label": "sensor.wb_mrwm2_mon1_urms_l1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   41405553,
                   43705861.5,
@@ -1215,6 +1325,11 @@ exports[`golden record: compatibility cases (AC4) > case 2: boilerPilot with a c
               },
               {
                 "label": "sensor.wb_mrwm2_mon1_urms_l2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   41405553,
                   43705861.5,
@@ -1283,6 +1398,11 @@ exports[`golden record: compatibility cases (AC4) > case 2: boilerPilot with a c
             "lines": [
               {
                 "label": "switch.wb_mr6cu_m1_k1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   45004442.4,
                   47504689.2,
@@ -1343,6 +1463,11 @@ exports[`golden record: compatibility cases (AC4) > case 2: boilerPilot with a c
             "lines": [
               {
                 "label": "switch.wb_mr6cu_m2_k2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   8104442.4,
                   8554689.2,
@@ -1433,6 +1558,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "41 Mb/s · 41% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  36900000,
+                  38950000,
+                  41000000,
+                ],
               },
               {
                 "direction": "down",
@@ -1440,6 +1575,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "10 Mb/s · 10% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  9000000,
+                  9500000,
+                  10000000,
+                ],
               },
             ],
             "domain": [
@@ -1541,6 +1686,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "24 Mb/s · 24% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  21600000,
+                  22800000,
+                  24000000,
+                ],
               },
               {
                 "direction": "down",
@@ -1548,6 +1703,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "4 Mb/s · 4% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  3600000,
+                  3800000,
+                  4000000,
+                ],
               },
             ],
             "domain": [
@@ -1649,6 +1814,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "480 Mb/s · 48% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  432000000,
+                  456000000,
+                  480000000,
+                ],
               },
               {
                 "direction": "down",
@@ -1656,6 +1831,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "96 Mb/s · 10% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  86400000,
+                  91200000,
+                  96000000,
+                ],
               },
             ],
             "domain": [
@@ -1764,6 +1949,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "20 Mb/s · 20% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18000000,
+                  19000000,
+                  20000000,
+                ],
               },
               {
                 "direction": "down",
@@ -1771,6 +1966,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "8 Mb/s · 8% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  7200000,
+                  7600000,
+                  8000000,
+                ],
               },
             ],
             "domain": [
@@ -1879,6 +2084,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "400 kb/s · <1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  360000,
+                  380000,
+                  400000,
+                ],
               },
               {
                 "direction": "down",
@@ -1886,6 +2101,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "160 kb/s · <1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  144000,
+                  152000,
+                  160000,
+                ],
               },
             ],
             "domain": [
@@ -1987,6 +2212,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "90 Mb/s · 90% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  81000000,
+                  85500000,
+                  90000000,
+                ],
               },
               {
                 "direction": "down",
@@ -1994,6 +2229,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "16 Mb/s · 16% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  14400000,
+                  15200000,
+                  16000000,
+                ],
               },
             ],
             "domain": [
@@ -2095,6 +2340,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "3.20 Mb/s · 3% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  2880000,
+                  3040000,
+                  3200000,
+                ],
               },
               {
                 "direction": "down",
@@ -2102,6 +2357,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "2.40 Mb/s · 2% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  2160000,
+                  2280000,
+                  2400000,
+                ],
               },
             ],
             "domain": [
@@ -2203,6 +2468,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "1.60 Mb/s · 2% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1440000,
+                  1520000,
+                  1600000,
+                ],
               },
               {
                 "direction": "down",
@@ -2210,6 +2485,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "800 kb/s · 1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  720000,
+                  760000,
+                  800000,
+                ],
               },
             ],
             "domain": [
@@ -2311,6 +2596,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↑",
                 "mirrored": false,
                 "text": "1.20 Mb/s · 1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1080000,
+                  1140000,
+                  1200000,
+                ],
               },
               {
                 "direction": "down",
@@ -2318,6 +2613,16 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
                 "label": "↓",
                 "mirrored": true,
                 "text": "720 kb/s · 1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  648000,
+                  684000,
+                  720000,
+                ],
               },
             ],
             "domain": [
@@ -2421,6 +2726,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-isp-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -2444,6 +2754,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-isp-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.26,
                   1.33,
@@ -2525,6 +2840,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-isp-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -2548,6 +2868,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-isp-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.53,
                   1.615,
@@ -2629,6 +2954,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-lte",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0,
                   0,
@@ -2652,6 +2982,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-lte",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.44,
                   1.52,
@@ -2733,6 +3068,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-net-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -2756,6 +3096,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-net-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -2837,6 +3182,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-net-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -2860,6 +3210,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-net-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.99,
                   1.045,
@@ -2941,6 +3296,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-proxy-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -2964,6 +3324,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-proxy-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.62,
                   1.71,
@@ -3045,6 +3410,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-proxy-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -3068,6 +3438,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-proxy-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.71,
                   1.805,
@@ -3149,6 +3524,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-radio",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -3172,6 +3552,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-radio",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.35,
                   1.425,
@@ -3257,6 +3642,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   37.8,
                   39.9,
@@ -3280,6 +3670,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -3303,6 +3698,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.08,
                   1.14,
@@ -3326,6 +3726,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   18,
                   19,
@@ -3334,6 +3739,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   36,
                   38,
@@ -3342,6 +3752,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   54,
                   57,
@@ -3365,6 +3780,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   9,
                   9.5,
@@ -3373,6 +3793,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   18.9,
                   19.95,
@@ -3381,6 +3806,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   28.8,
                   30.4,
@@ -3389,6 +3819,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-3",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   38.7,
                   40.85,
@@ -3397,6 +3832,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-4",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   48.6,
                   51.3,
@@ -3405,6 +3845,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-5",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   54,
                   57,
@@ -3413,6 +3858,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-6",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   63.9,
                   67.45,
@@ -3421,6 +3871,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-7",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   73.8,
                   77.9,
@@ -3555,6 +4010,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-rtr-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   20.7,
                   21.85,
@@ -3578,6 +4038,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-rtr-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   0.9,
                   0.95,
@@ -3601,6 +4066,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "node-rtr-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   1.17,
                   1.235,
@@ -3624,6 +4094,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   18,
                   19,
@@ -3632,6 +4107,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   36,
                   38,
@@ -3640,6 +4120,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   54,
                   57,
@@ -3663,6 +4148,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
             "lines": [
               {
                 "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   9,
                   9.5,
@@ -3671,6 +4161,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   18.9,
                   19.95,
@@ -3679,6 +4174,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   28.8,
                   30.4,
@@ -3687,6 +4187,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-3",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   38.7,
                   40.85,
@@ -3695,6 +4200,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-4",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   48.6,
                   51.3,
@@ -3703,6 +4213,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-5",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   54,
                   57,
@@ -3711,6 +4226,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-6",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   63.9,
                   67.45,
@@ -3719,6 +4239,11 @@ exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is tod
               },
               {
                 "label": "line-7",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
                 "values": [
                   73.8,
                   77.9,
@@ -3886,6 +4411,16 @@ exports[`golden record: compatibility cases (AC4) > case 4 (R1, AC21): row, text
                 "label": "↑",
                 "mirrored": false,
                 "text": "34.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  30602221.2,
+                  32302344.6,
+                  34002468,
+                ],
               },
               {
                 "direction": "down",
@@ -3893,6 +4428,16 @@ exports[`golden record: compatibility cases (AC4) > case 4 (R1, AC21): row, text
                 "label": "↓",
                 "mirrored": true,
                 "text": "2.00 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1801110.6,
+                  1901172.3,
+                  2001234,
+                ],
               },
             ],
             "domain": [
@@ -3995,6 +4540,16 @@ exports[`golden record: compatibility cases (AC4) > case 4 (R1, AC21): row, text
                 "label": "↑",
                 "mirrored": false,
                 "text": "34.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  30602221.2,
+                  32302344.6,
+                  34002468,
+                ],
               },
               {
                 "direction": "down",
@@ -4002,6 +4557,16 @@ exports[`golden record: compatibility cases (AC4) > case 4 (R1, AC21): row, text
                 "label": "↓",
                 "mirrored": true,
                 "text": "2.00 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1801110.6,
+                  1901172.3,
+                  2001234,
+                ],
               },
             ],
             "domain": [
@@ -4099,6 +4664,16 @@ exports[`golden record: compatibility cases (AC4) > case 5 (R2, AC22): updown ro
                 "label": "↑",
                 "mirrored": false,
                 "text": "7 Mb/s · 14% of 50 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
               },
               {
                 "direction": "down",
@@ -4106,6 +4681,16 @@ exports[`golden record: compatibility cases (AC4) > case 5 (R2, AC22): updown ro
                 "label": "↓",
                 "mirrored": true,
                 "text": "2 Mb/s · 20% of 10 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
               },
             ],
             "domain": [
@@ -4173,6 +4758,16 @@ exports[`golden record: compatibility cases (AC4) > case 6: extends, a replaced 
                 "label": "↑",
                 "mirrored": false,
                 "text": "22.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  19801110.6,
+                  20901172.3,
+                  22001234,
+                ],
               },
               {
                 "direction": "down",
@@ -4180,6 +4775,16 @@ exports[`golden record: compatibility cases (AC4) > case 6: extends, a replaced 
                 "label": "↓",
                 "mirrored": true,
                 "text": "44 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  39600000,
+                  41800000,
+                  44000000,
+                ],
               },
             ],
             "domain": [
@@ -4234,6 +4839,16 @@ exports[`golden record: compatibility cases (AC4) > case 6: extends, a replaced 
                 "label": "↑",
                 "mirrored": false,
                 "text": "29.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  26101110.6,
+                  27551172.3,
+                  29001234,
+                ],
               },
               {
                 "direction": "down",
@@ -4241,6 +4856,16 @@ exports[`golden record: compatibility cases (AC4) > case 6: extends, a replaced 
                 "label": "↓",
                 "mirrored": true,
                 "text": "15 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  13500000,
+                  14250000,
+                  15000000,
+                ],
               },
             ],
             "domain": [
@@ -4379,6 +5004,16 @@ exports[`golden record: compatibility cases (AC4) > case 6: extends, a replaced 
                 "label": "↑",
                 "mirrored": false,
                 "text": "48.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  43205553,
+                  45605861.5,
+                  48006170,
+                ],
               },
               {
                 "direction": "down",
@@ -4386,6 +5021,16 @@ exports[`golden record: compatibility cases (AC4) > case 6: extends, a replaced 
                 "label": "↓",
                 "mirrored": true,
                 "text": "12.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  10804442.4,
+                  11404689.2,
+                  12004936,
+                ],
               },
             ],
             "domain": [
@@ -4466,6 +5111,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
                 "label": "↑",
                 "mirrored": false,
                 "text": "7 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
               },
               {
                 "direction": "down",
@@ -4473,6 +5128,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
                 "label": "↓",
                 "mirrored": true,
                 "text": "2 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
               },
             ],
             "domain": [
@@ -4497,6 +5162,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
             "label": "↑",
             "mirrored": false,
             "text": "7 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              6300000,
+              6650000,
+              7000000,
+            ],
           },
           {
             "direction": "down",
@@ -4504,6 +5179,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
             "label": "↓",
             "mirrored": true,
             "text": "2 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              1800000,
+              1900000,
+              2000000,
+            ],
           },
         ],
         "domain": [
@@ -4569,6 +5254,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
                 "label": "↑",
                 "mirrored": false,
                 "text": "7 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
               },
               {
                 "direction": "down",
@@ -4576,6 +5271,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
                 "label": "↓",
                 "mirrored": true,
                 "text": "2 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
               },
             ],
             "domain": [
@@ -4600,6 +5305,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
             "label": "↑",
             "mirrored": false,
             "text": "7 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              6300000,
+              6650000,
+              7000000,
+            ],
           },
           {
             "direction": "down",
@@ -4607,6 +5322,16 @@ exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and
             "label": "↓",
             "mirrored": true,
             "text": "2 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              1800000,
+              1900000,
+              2000000,
+            ],
           },
         ],
         "domain": [
@@ -4686,6 +5411,16 @@ exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the ca
                 "label": "↑",
                 "mirrored": false,
                 "text": "7 Mb/s · 14% of 50 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
               },
               {
                 "direction": "down",
@@ -4693,6 +5428,16 @@ exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the ca
                 "label": "↓",
                 "mirrored": true,
                 "text": "2 Mb/s · 20% of 10 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
               },
             ],
             "domain": [
