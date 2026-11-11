@@ -421,12 +421,13 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
           {targetName ?? 'unknown'}
           {same && end?.target ? <span className={styles.note}> ({end.target})</span> : null}
         </dd>
+        {measured ? (
+          <>
+            <dt>Measured end</dt>
+            <dd data-testid="dmap-inspector-measured">{measuredText(meta, measured, bound, uses)}</dd>
+          </>
+        ) : null}
       </dl>
-      {measured ? (
-        <p className={styles.line} data-testid="dmap-inspector-measured">
-          {measuredText(meta, measured, bound, uses)}
-        </p>
-      ) : null}
       {measuredEnd !== 'none' ? (
         <p className={styles.line} data-testid="dmap-inspector-keyed">
           {`The key names the ${measuredEnd} end${keyedName ? ` (${keyedName})` : ''}.`}
