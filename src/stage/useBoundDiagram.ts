@@ -109,7 +109,9 @@ export function reportLine(entry: ReportEntry): string {
     case 'capacity-fallback':
       return `classes.${entry.cls}.capacity: ${entry.reason}`;
     case 'bad-cap':
-      return `cap "${entry.value}" is not a capacity (${entry.cellIds.length} cells)`;
+      return `${entry.attr} "${entry.value}" is not a capacity (${entry.cellIds.length} cells)`;
+    case 'cap-conflict':
+      return `cap "${entry.cap}" and capacity "${entry.capacity}" differ, cap wins over the attribute capacity (${entry.cellIds.length} cells)`;
     case 'no-edge-ends':
       return `${entry.cellIds.length} edges have no ends: ${entry.reason}`;
     case 'unused-field':

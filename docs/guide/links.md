@@ -4,13 +4,14 @@
 
 A link has a capacity for each geometric direction, a→b and b→a. For each direction the panel uses the first source that gives a value:
 
-| Order | Source                | Example                   | Notes                                                                                                                                                  |
-| ----- | --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | A series (`capacity`) | `capacity: speed`         | A refId, or `{ a2b: speed_a, b2a: speed_b }`. The class `match` selects the series. The unit of the field converts the value to bit/s (`Bps` times 8). |
-| 2     | The attribute `cap`   | `cap=1G` or `cap=50M/10M` | `1G` is 10⁹ bit/s for both directions. `50M/10M` is 50 Mbit/s a→b and 10 Mbit/s b→a.                                                                   |
-| 3     | None                  |                           | The half shows the raw rate and no percent.                                                                                                            |
+| Order | Source                                      | Example                   | Notes                                                                                                                                                  |
+| ----- | ------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | The capacity query (class field `capacity`) | `capacity: speed`         | A refId, or `{ a2b: speed_a, b2a: speed_b }`. The class `match` selects the series. The unit of the field converts the value to bit/s (`Bps` times 8). |
+| 2     | The attribute `cap`                         | `cap=1G` or `cap=50M/10M` | `1G` is 10⁹ bit/s for both directions. `50M/10M` is 50 Mbit/s a→b and 10 Mbit/s b→a.                                                                   |
+| 3     | The attribute `capacity`                    | `capacity=1000000000`     | The name that the portograph contract uses. Same grammar as `cap`. `cap` wins when both are set; if the values differ, the report has `cap-conflict`.  |
+| 4     | None                                        |                           | The half shows the raw rate and no percent.                                                                                                            |
 
-The panel uses a `capacity` series only when its query is ready and exactly one series gives a finite value above 0 in a rate unit. Else it falls through to `cap` and the report has `capacity-fallback` with the reason: no series, many series, not positive, not finite, not a rate, query failed. A `cap` that does not parse gives `bad-cap` and no capacity for that cell. One value is a number with an optional `k`, `K`, `M`, `G` or `T` (SI, decimal): `^\d+(\.\d+)?[kKMGT]?$`.
+The panel uses a `capacity` series only when its query is ready and exactly one series gives a finite value above 0 in a rate unit. Else it falls through to `cap` and the report has `capacity-fallback` with the reason: no series, many series, not positive, not finite, not a rate, query failed. A `cap` that does not parse gives `bad-cap` and no capacity for that cell; the panel does not use `capacity` then. A `capacity` attribute that does not parse gives `bad-cap` too, when `cap` is absent. One value is a number with an optional `k`, `K`, `M`, `G` or `T` (SI, decimal): `^\d+(\.\d+)?[kKMGT]?$`.
 
 The capacities follow the geometry. `at=target` changes only which counter feeds which direction, not the capacities. Example: `cap=50M/10M`, `at=target`, rx 8 Mbit/s: a→b shows 8 Mbit/s and 16 %. The field **Max** is not a capacity.
 

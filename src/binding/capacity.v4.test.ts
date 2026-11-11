@@ -145,18 +145,24 @@ describe('capacityV4: bad-cap', () => {
   it.each(['abc', '1e9', '-1G', '0', '0.0M', '1G/', '/1G', '1G/2G/3G', '1 G', '1g', '1Gi', ''])(
     'cap=%j gives bad-cap and no capacity',
     (cap) => {
-      expect(chain(input({ cap }))).toEqual({ report: [{ kind: 'bad-cap', value: cap, cellIds: ['e1'] }] });
+      expect(chain(input({ cap }))).toEqual({
+        report: [{ kind: 'bad-cap', attr: 'cap', value: cap, cellIds: ['e1'] }],
+      });
     }
   );
 
   it('cap=abc gives bad-cap also when the capacity refId gives a value', () => {
     const r = chain(input({ capacity: 'S', cap: 'abc', series: queries({ S: ready(speed([1e9])) }) }));
-    expect(r).toEqual({ a2b: 1e9, b2a: 1e9, report: [{ kind: 'bad-cap', value: 'abc', cellIds: ['e1'] }] });
+    expect(r).toEqual({
+      a2b: 1e9,
+      b2a: 1e9,
+      report: [{ kind: 'bad-cap', attr: 'cap', value: 'abc', cellIds: ['e1'] }],
+    });
   });
 
   it('a value too large to be finite gives bad-cap', () => {
     const cap = `${'9'.repeat(400)}T`;
-    expect(chain(input({ cap }))).toEqual({ report: [{ kind: 'bad-cap', value: cap, cellIds: ['e1'] }] });
+    expect(chain(input({ cap }))).toEqual({ report: [{ kind: 'bad-cap', attr: 'cap', value: cap, cellIds: ['e1'] }] });
   });
 });
 
@@ -170,5 +176,48 @@ describe('capacityV4 with at=target (A4)', () => {
     expect((rates[feeds.a2b] / cap.a2b!) * 100).toBeCloseTo(16);
     // the capacities follow the geometry: b→a stays 10 Mbit/s and takes tx
     expect((rates[feeds.b2a] / cap.b2a!) * 100).toBeCloseTo(20);
+  });
+});
+
+describe('capacityV4: the attribute capacity (second name of cap)', () => {
+  it('uses capacity when cap is absent, with the grammar of cap', () => {
+    expect(chain(input({ capacityAttr: '1000000000' }))).toEqual({ a2b: 1e9, b2a: 1e9, report: [] });
+    expect(chain(input({ capacityAttr: '50M/10M' }))).toEqual({ a2b: 5e7, b2a: 1e7, report: [] });
+  });
+  it('gives no entry when cap and capacity are equal', () => {
+    expect(chain(input({ cap: '1G', capacityAttr: '1000000000' }))).toEqual({ a2b: 1e9, b2a: 1e9, report: [] });
+  });
+  it('cap wins and cap-conflict shows when the values differ', () => {
+    expect(chain(input({ cap: '1G', capacityAttr: '2G' }))).toEqual({
+      a2b: 1e9,
+      b2a: 1e9,
+      report: [{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['e1'] }],
+    });
+  });
+  it('gives cap-conflict, not bad-cap, for a capacity that does not parse next to a valid cap', () => {
+    expect(chain(input({ cap: '1G', capacityAttr: 'x' })).report).toEqual([
+      { kind: 'cap-conflict', cap: '1G', capacity: 'x', cellIds: ['e1'] },
+    ]);
+  });
+  it('gives bad-cap for a capacity that does not parse when cap is absent', () => {
+    expect(chain(input({ capacityAttr: 'x' }))).toEqual({
+      a2b: undefined,
+      b2a: undefined,
+      report: [{ kind: 'bad-cap', attr: 'capacity', value: 'x', cellIds: ['e1'] }],
+    });
+  });
+  it('does not fall through to capacity when cap does not parse', () => {
+    expect(chain(input({ cap: 'x', capacityAttr: '1G' }))).toEqual({
+      a2b: undefined,
+      b2a: undefined,
+      report: [{ kind: 'bad-cap', attr: 'cap', value: 'x', cellIds: ['e1'] }],
+    });
+  });
+  it('lets a series win over both attributes', () => {
+    const r = capacityV4(
+      input({ capacity: 'S', cap: '1G', capacityAttr: '2G', series: queries({ S: ready(speed([5e9])) }) })
+    );
+    expect(r.a2b).toEqual({ amount: 5e9, source: 'series' });
+    expect(r.report).toEqual([{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['e1'] }]);
   });
 });
