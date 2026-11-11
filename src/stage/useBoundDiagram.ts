@@ -8,7 +8,7 @@ import { useStaleStatusV4 } from '../visuals/useSampleStale';
 
 export interface BoundDiagramInputs {
   index: CellIndex;
-  /** the draw.io XML of the diagram: the ends of an ordinary edge come from it (spec 3.8.1) */
+  /** The diagram XML: its drawn ends take precedence over the export-time portograph ends. */
   xml: string | undefined;
   /** `Options.config`, as saved */
   config: unknown;
@@ -54,8 +54,8 @@ export function useBoundDiagram(inputs: BoundDiagramInputs): BoundDiagram {
   }, [stale, bound.patches]);
   const { theme, replaceVariables, fieldThresholds } = bindContext;
   const cardContext = useMemo(
-    (): CardContextV4 => ({ theme, replaceVariables, fieldThresholds, index, validated, data }),
-    [theme, replaceVariables, fieldThresholds, index, validated, data]
+    (): CardContextV4 => ({ theme, replaceVariables, fieldThresholds, index, xml, validated, data }),
+    [theme, replaceVariables, fieldThresholds, index, xml, validated, data]
   );
   return { validated, bound, patches, cardContext };
 }

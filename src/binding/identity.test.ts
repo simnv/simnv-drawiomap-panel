@@ -30,7 +30,7 @@ function context(
       { meta, group: document.createElementNS('http://www.w3.org/2000/svg', 'g'), arrows: [], original: {} },
     ])
   );
-  return { index, parents: new Map(parents), ends: new Map(ends) };
+  return { index, parents: new Map(parents), ends: new Map(ends), edited: new Map() };
 }
 
 const ownOnly = ['bind', 'at', 'cap', 'capacity', 'label', 'id', 'pg-kind', 'pg-port', 'pg-custom'];

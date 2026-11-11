@@ -43,6 +43,8 @@ export interface DiagramStageProps {
   chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision'>;
   /** The hash of the shown diagram. The stage writes it as `data-dmap-hash`, as the panel does. */
   hash?: string;
+  /** The current draft XML for accessible link titles. */
+  xml?: string;
   /** The link width range of the panel: the value labels keep `linkWidth.max / 2` clear of the strokes. */
   linkWidth?: { min: number; max: number };
   /** The count of series per cell for the path under the cursor (spec 5.3). Red for 0. */
@@ -74,6 +76,7 @@ export function DiagramStage({
   onBackground,
   chartLayer,
   hash,
+  xml,
   linkWidth,
   badges,
   ...controlled
@@ -128,7 +131,7 @@ export function DiagramStage({
   }, []);
 
   // The draft patches, the overlay and the value labels: the preview shows the label mode while the user edits it.
-  useStagePaint(stage, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth });
+  useStagePaint(stage, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth, xml });
 
   // Fit the diagram into the pane. A pane with no size yet keeps the layout.
   useStageLayout(stage, FIT, size.width && size.height ? size : undefined, view, stageRef);

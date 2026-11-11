@@ -1109,6 +1109,44 @@ describe('bindV4: the cells of a class and the origin of the match of a cell', (
 });
 
 describe('bindV4: measured links (S4b)', () => {
+  it('follows a reconnected target for measurement, identity, end templates and capacity', () => {
+    const r = run(
+      hostConfig({
+        lan: {
+          match: { key: 'job', port: 'device' },
+          up: 'tx',
+          down: 'rx',
+          rows: [{ kind: 'value', query: 'tag', match: { key: 'site="${to.site}"' } }],
+        },
+      }),
+      [
+        ['0', { 'pg-schema': '1' }],
+        ['a', { 'pg-kind': 'node', 'pg-id': 'a' }],
+        ['old', { 'pg-kind': 'port', 'pg-id': 'b:eth0', key: 'old', port: 'eth0', site: 'old', cap: '1G' }],
+        ['c', { 'pg-kind': 'node', 'pg-id': 'c', key: 'new' }],
+        ['new', { 'pg-kind': 'port', 'pg-id': 'c:eth1', 'pg-node': 'c', port: 'eth1', site: 'new', cap: '50M/10M' }],
+        ['l', { bind: 'lan', 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'a', 'pg-to': 'b:eth0' }, true],
+      ],
+      [
+        frame('tx', { job: 'new', device: 'eth1' }, [100]),
+        frame('rx', { job: 'new', device: 'eth1' }, [5]),
+        frame('tag', { site: 'new' }, [7]),
+      ],
+      { xml: '<mxGraphModel><root><mxCell id="l" edge="1" source="a" target="new"/></root></mxGraphModel>' }
+    );
+    expect(r.measured.get('l')).toMatchObject({ end: 'target', reason: 'only', cellId: 'new' });
+    expect(r.inherited.get('l')?.get('key')).toEqual({ value: 'new', cellId: 'c', via: 'end' });
+    expect(r.resolved.get('l')?.get('classes.lan.rows[0]')).toMatchObject({
+      matchers: [{ label: 'site', value: 'new' }],
+    });
+    expect(patch(r, 'l').link).toMatchObject({ a2b: { value: 5 }, b2a: { value: 100 } });
+    expect(r.capacity.get('l')).toEqual({
+      a2b: { amount: 10e6, source: 'attr', cellId: 'new' },
+      b2a: { amount: 50e6, source: 'attr', cellId: 'new' },
+    });
+    expect(r.report).toEqual([]);
+  });
+
   const xml =
     '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
     '<mxCell id="a" parent="1"/><mxCell id="pa" parent="a"/>' +

@@ -134,6 +134,29 @@ describe('InspectorV4', () => {
   });
   afterEach(() => rect.mockRestore());
 
+  it.each(['source', 'target'] as const)(
+    'explains a drawn %s end that differs from the export-time end',
+    async (end) => {
+      const svg = SVG.replace('</svg>', '<g data-cell-id="0" data-meta-pg-schema="1"/></svg>')
+        .replace('data-cell-id="a"', 'data-cell-id="a" data-meta-pg-kind="node" data-meta-pg-id="a"')
+        .replace('data-cell-id="c"', 'data-cell-id="c" data-meta-pg-kind="node" data-meta-pg-id="c"')
+        .replace(
+          'data-cell-id="e"',
+          'data-cell-id="e" data-meta-pg-kind="link" data-meta-pg-id="e" data-meta-pg-from="a" data-meta-pg-to="c"'
+        );
+      const xml = XML.replace(end === 'source' ? 'source="a"' : 'target="c"', `${end}="b"`);
+      render(<SplitEditor {...props({ diagram: { xml, svg, hash: `reconnected-${end}`, updatedAt: '' } })} />);
+      await frame();
+      fireEvent.click(cell('e'));
+      expect(field(end).textContent).toBe('B');
+      expect(
+        within(inspector()).getByText(
+          `The drawn ${end} end differs from pg-${end === 'source' ? 'from' : 'to'} (export time); the panel uses the drawn end.`
+        )
+      ).toBeTruthy();
+    }
+  );
+
   it('shows nothing until a click on a cell', async () => {
     render(<SplitEditor {...props()} />);
     await frame();
@@ -693,6 +716,7 @@ describe('endName', () => {
   const ctx = (entries: CellEntry[], parents: Array<[string, string]> = []): EndContext => ({
     index: new Map(entries.map((e) => [e.meta.id, e])),
     ends: new Map(),
+    edited: new Map(),
     parents: new Map(parents),
   });
 

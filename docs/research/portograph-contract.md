@@ -322,7 +322,10 @@ its further lines can sit about 1 px a line off the SVG, and the export reports 
 
 This section belongs to the panel copy, not to the portograph source. The panel reads the attributes of a port cell
 in this way: its own `data-meta-*` attributes first, then the attributes of its node cell, which `pg-node` names.
-A link ends on the port cell of `pg-from` and `pg-to`, or on the node cell for an anonymous port. The panel reads
-`pg-from` and `pg-to` as the ends at export time (section 3). `pg-port` is not a value of the attribute `port`: only
+A link first uses each `source` or `target` from page 1 of the stored XML when the named cell is in the index.
+Otherwise, that end uses `pg-from` or `pg-to`: the named port cell, else the node cell. These attributes record
+the ends at export time (section 3), so a reconnect in draw.io takes precedence. A split run resolves each end
+separately; a compressed page uses only the portograph ends. The inspector explains when a drawn end differs
+from a resolved portograph end. This difference is not a report error. `pg-port` is not a value of the attribute `port`: only
 an explicit attribute on the port marks an interface that has counters. The names `bind`, `at`, `cap`, `capacity`,
 `id`, `label` and `pg-*` stay on the cell itself: the panel never reads them from the node.

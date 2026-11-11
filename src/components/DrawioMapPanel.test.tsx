@@ -1435,6 +1435,30 @@ describe('DrawioMapPanel cards only for cells with content', () => {
     }
   });
 
+  it('updates the interactive link aria-label after a reconnect with the same SVG and values', async () => {
+    const svg = structureSvg(['pg-link~a-b']).replace(
+      '</svg>',
+      '<g data-cell-id="pg-node~c" data-meta-pg-kind="node" data-meta-pg-id="c"><text>C</text></g></svg>'
+    );
+    const panel = (target: string) =>
+      structurePanel(['pg-link~a-b'], {
+        diagram: {
+          svg,
+          xml: `<mxGraphModel><root><mxCell id="pg-link~a-b" edge="1" source="pg-node~a" target="pg-node~${target}"/></root></mxGraphModel>`,
+          hash: 'reconnect-accessible-title',
+          updatedAt: '',
+        },
+      });
+    const { container, rerender } = render(<DrawioMapPanel {...panel('b')} />);
+    const link = () => container.querySelector('[data-cell-id="pg-link~a-b"]')!;
+    await waitFor(() => expect(link().getAttribute('aria-label')).toBe('A ↔ B'));
+    const original = link();
+    expect(original.getAttribute('role')).toBe('button');
+    rerender(<DrawioMapPanel {...panel('c')} />);
+    await waitFor(() => expect(link().getAttribute('aria-label')).toBe('A ↔ C'));
+    expect(link()).toBe(original);
+  });
+
   it('Hover kinds selects the cells that open a card', async () => {
     render(<DrawioMapPanel {...structurePanel(ALL, { hover: { kinds: ['node', 'group'] } })} />);
     await hover('lab');
