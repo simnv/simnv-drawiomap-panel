@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyContract, cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellEntry, CellIndex, CellMeta } from '../types';
-import { edgeEnds, endAttr } from './edgeEnds';
+import { edgeEnds, endAttr, endContextOf } from './edgeEnds';
 
 /** A cell index as buildCellIndex gives it: the metas after the contract, no DOM. */
 function indexOf(cells: Array<[id: string, attrs: Record<string, string>, isEdge?: boolean]>): CellIndex {
@@ -195,5 +195,53 @@ describe('edgeEnds: no-edge-ends', () => {
     expect(r.report).toEqual([
       { kind: 'no-edge-ends', reason: 'the diagram XML does not parse', cellIds: ['e1', 'e2'] },
     ]);
+  });
+});
+
+describe('endContextOf: the cache', () => {
+  const cells = [
+    ['0', { 'pg-schema': '1' }],
+    ['e', {}, true],
+  ] as Array<[string, Record<string, string>, boolean?]>;
+  const xml = page('<mxCell id="e" edge="1" parent="1" source="a" target="b"/>');
+
+  it('gives the same object for the same index and the same XML', () => {
+    const index = indexOf(cells);
+    const first = endContextOf(xml, index);
+    for (let i = 0; i < 20; i++) {
+      expect(endContextOf(xml, index)).toBe(first);
+    }
+  });
+
+  it('builds again for a new XML text, and again for the next one', () => {
+    const index = indexOf(cells);
+    const first = endContextOf(xml, index);
+    const other = endContextOf(page('<mxCell id="e" edge="1" parent="1" source="b" target="a"/>'), index);
+    expect(other).not.toBe(first);
+    expect(other.ends.get('e')).toEqual({ source: 'b', target: 'a' });
+    expect(endContextOf(xml, index)).not.toBe(other);
+  });
+
+  it('builds again for a new index with the same XML', () => {
+    const first = endContextOf(xml, indexOf(cells));
+    const next = endContextOf(xml, indexOf(cells));
+    expect(next).not.toBe(first);
+  });
+
+  it('keeps no-edge-ends in the cached result', () => {
+    const index = indexOf(cells);
+    const compressed = '<mxfile><diagram id="p1">eJzLSM3JyQcABiwCFQ==</diagram></mxfile>';
+    const first = endContextOf(compressed, index);
+    expect(first.report).toEqual([{ kind: 'no-edge-ends', reason: 'compressed page', cellIds: ['e'] }]);
+    expect(endContextOf(compressed, index).report).toBe(first.report);
+  });
+
+  it('serves a missing XML and has the index and the maps of edgeEnds', () => {
+    const index = indexOf(cells);
+    const ctx = endContextOf(undefined, index);
+    expect(ctx.index).toBe(index);
+    expect(endContextOf(undefined, index)).toBe(ctx);
+    expect(ctx.ends).toEqual(edgeEnds(undefined, index).ends);
+    expect(ctx.parents).toEqual(edgeEnds(undefined, index).parents);
   });
 });
