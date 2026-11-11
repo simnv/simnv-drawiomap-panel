@@ -190,6 +190,15 @@ describe('setCellAttrs', () => {
     expect(() => setCellAttrs(diagram(), [{ id: 'host-a', attrs: { [name]: null } }])).toThrow(/attribute name/i);
   });
 
+  it.each(['\u212A', '\u212Aey', 'a\u212A', '\u0130', '\u0130d', 'a\u0130'])(
+    'refuses non-ASCII %j and preserves an existing key',
+    (name) => {
+      const input = diagram();
+      expect(() => setCellAttrs(input, [{ id: 'host-a', attrs: { [name]: 'new' } }])).toThrow(/attribute name/i);
+      expect(parse(input.xml).getElementById('host-a')?.getAttribute('key')).toBe('host-a');
+    }
+  );
+
   it.each(['<mxfile>', '<mxGraphModel><root></mxGraphModel>', '<mxfile/>'])(
     'refuses invalid XML or a missing page',
     (xml) => {

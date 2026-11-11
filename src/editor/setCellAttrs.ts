@@ -1,5 +1,5 @@
 import { parseSvg } from '../render/sanitize';
-import { isWritableCellAttr } from '../model/cellAttrNames';
+import { canonicalAttrName, isWritableCellAttr } from '../model/cellAttrNames';
 import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { createXmlElement, parseXml, serializeXml } from '../util/xml';
@@ -59,7 +59,7 @@ function wrapCell(cell: Element): Element {
 /** Replace all case variants with one lowercase name, or remove them all. */
 function writeAttribute(el: Element, name: string, value: string | null): void {
   for (const attr of Array.from(el.attributes)) {
-    if (attr.name.toLowerCase() === name) {
+    if (canonicalAttrName(attr.name) === name) {
       el.removeAttributeNode(attr);
     }
   }
@@ -105,7 +105,7 @@ export function setCellAttrs(
     const wrapper = wrapCell(cell);
     index.set(id, wrapper);
     for (const [name, value] of Object.entries(attrs)) {
-      const canonical = name.toLowerCase();
+      const canonical = canonicalAttrName(name);
       writeAttribute(wrapper, canonical, value);
       writeAttribute(matches[0], `data-meta-${canonical}`, value);
     }

@@ -1,5 +1,5 @@
 import type { DataFrame, Labels } from '@grafana/data';
-import { isWritableCellAttr } from '../model/cellAttrNames';
+import { canonicalAttrName, isWritableCellAttr } from '../model/cellAttrNames';
 import { indexSeries } from '../query/seriesIndex';
 import type { CellIndex } from '../types';
 import type { BindResultV4 } from './bindV4';
@@ -120,15 +120,15 @@ export function candidatesFor(
             : cellId;
         const writeAttr = geometric ? attr.slice(attr.indexOf('.') + 1) : attr;
         // Class and feed controls can change the use itself. They are not identity repairs.
-        if (!isWritableCellAttr(writeAttr) || ['at', 'bind'].includes(writeAttr.toLowerCase())) {
+        if (!isWritableCellAttr(writeAttr) || ['at', 'bind'].includes(canonicalAttrName(writeAttr))) {
           continue;
         }
         const original = target === undefined ? undefined : ctx.index.get(target);
         if (original && target !== undefined) {
-          const canonical = writeAttr.toLowerCase();
+          const canonical = canonicalAttrName(writeAttr);
           const writtenAttrs = {
             ...Object.fromEntries(
-              Object.entries(original.meta.attrs).filter(([name]) => name.toLowerCase() !== canonical)
+              Object.entries(original.meta.attrs).filter(([name]) => canonicalAttrName(name) !== canonical)
             ),
             [canonical]: value,
           };

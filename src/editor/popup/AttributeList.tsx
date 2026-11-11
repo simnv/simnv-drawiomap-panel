@@ -4,7 +4,7 @@ import { Button, IconButton, Input, useStyles2 } from '@grafana/ui';
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { AttrOrigin } from '../../binding/identity';
 import type { CellMeta } from '../../types';
-import { attrNameProblem, isReservedAttr } from '../../model/cellAttrNames';
+import { attrNameProblem, canonicalAttrName, isReservedAttr } from '../../model/cellAttrNames';
 
 /** One shown end cell of a link: its side, readable name, id and attributes. */
 export interface EndAttrs {
@@ -63,7 +63,7 @@ export function AttributeList(props: AttributeListProps) {
   void _key;
 
   const submitAdd = () => {
-    const lower = name.trim().toLowerCase();
+    const lower = canonicalAttrName(name.trim());
     const found = addProblem(lower, meta);
     setProblem(found);
     if (found) {
