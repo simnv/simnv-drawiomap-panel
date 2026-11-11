@@ -17,20 +17,26 @@ const tokensOf = (refId: string): string[] =>
     .filter(Boolean);
 
 const hasToken = (refId: string, words: readonly string[]) => tokensOf(refId).some((t) => words.includes(t));
-const hasPart = (refId: string, part: string) => refId.toLowerCase().includes(part);
 
-/** The pairs of names of the transmit and the receive counter. Each test is on one refId. */
-const PAIRS: ReadonlyArray<[(refId: string) => boolean, (refId: string) => boolean]> = [
-  [(r) => hasPart(r, 'tx'), (r) => hasPart(r, 'rx')],
-  [(r) => hasToken(r, ['out']), (r) => hasToken(r, ['in'])],
-  [(r) => hasToken(r, ['up']), (r) => hasToken(r, ['down'])],
+/** The pairs of names of the transmit and the receive counter (the up half first). */
+const PAIRS: ReadonlyArray<[string, string]> = [
+  ['tx', 'rx'],
+  ['out', 'in'],
+  ['up', 'down'],
 ];
 
-/** The refIds of the two halves of a link, or undefined when no pair of names fits. */
+/**
+ * The refIds of the two halves of a link, or undefined when no pair of names fits. A whole token (`lan_tx`) wins over a
+ * fragment (`txbytes`); the fragment counts only for `tx` and `rx` and only when no refId has the token.
+ */
 function linkPair(refIds: readonly string[]): { up: string; down: string } | undefined {
-  for (const [isUp, isDown] of PAIRS) {
-    const up = refIds.find(isUp);
-    const down = refIds.find((r) => r !== up && isDown(r));
+  for (const [upWord, downWord] of PAIRS) {
+    const fragment = upWord === 'tx';
+    const find = (word: string, skip?: string) =>
+      refIds.find((r) => r !== skip && hasToken(r, [word])) ??
+      (fragment ? refIds.find((r) => r !== skip && r.toLowerCase().includes(word)) : undefined);
+    const up = find(upWord);
+    const down = up === undefined ? undefined : find(downWord, up);
     if (up !== undefined && down !== undefined) {
       return { up, down };
     }
@@ -62,7 +68,10 @@ export function buildStarter({ portograph, edges, refIds }: StarterInput): Recor
   return { version: 4, freshness: '3x', classes };
 }
 
-/** True for a config with no `version` and no classes: nothing, `{}` or an empty text. */
+/**
+ * True for a config with nothing authored: no value, `{}`, or only an empty `classes` or `overrides`. A `version`, an
+ * override, a `build` or any other field makes it not empty, so the starter never replaces existing work.
+ */
 export function isEmptyConfig(value: unknown): boolean {
   if (value === undefined || value === null) {
     return true;
@@ -70,13 +79,13 @@ export function isEmptyConfig(value: unknown): boolean {
   if (typeof value !== 'object' || Array.isArray(value)) {
     return false;
   }
-  const config = value as Record<string, unknown>;
-  const classes = config.classes;
-  const noClasses =
-    classes === undefined ||
-    classes === null ||
-    (typeof classes === 'object' && Object.keys(classes as object).length === 0);
-  return config.version === undefined && noClasses;
+  return Object.entries(value).every(
+    ([key, item]) =>
+      (key === 'classes' || key === 'overrides') &&
+      (item === undefined ||
+        item === null ||
+        (typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length === 0))
+  );
 }
 
 /**

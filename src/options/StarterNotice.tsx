@@ -16,7 +16,7 @@ export function starterText(diagram: Diagram, refIds: readonly string[]): string
 export function StarterNotice({ onInsert }: { onInsert: () => void }) {
   return (
     <div role="status" data-testid="dmap-starter-notice" style={{ marginBottom: 8 }}>
-      <p>The config is empty. {STARTER_NOTICE}</p>
+      <p>The config is empty. Select Insert a starter config. {STARTER_NOTICE}</p>
       <Button variant="secondary" icon="plus" data-testid="dmap-starter-insert" onClick={onInsert}>
         Insert a starter config
       </Button>

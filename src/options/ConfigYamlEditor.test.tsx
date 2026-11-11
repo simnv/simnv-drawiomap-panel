@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { grafanaUpdate, saveOptions } from '../fixtures/grafanaOptions';
+import { publishEditedRefIds } from '../query/panelTargets';
 import { writeYaml } from './yamlConfig';
 
 interface Marker {
@@ -261,6 +262,22 @@ describe('LazyConfigYamlEditor', () => {
       expect(editor().value).toContain('version: 4');
       expect(onChange).toHaveBeenCalledTimes(1);
       expect(screen.queryByText('Insert a starter config')).toBeNull();
+    });
+
+    it('reads the targets of the panel, also a target with no frame', () => {
+      publishEditedRefIds(['up', 'tx', 'rx']);
+      try {
+        mountEmpty({});
+        fireEvent.click(screen.getByRole('button', { name: 'Insert a starter config' }));
+        expect(editor().value).toContain('status: up');
+      } finally {
+        publishEditedRefIds(undefined);
+      }
+    });
+
+    it('shows the first step in the notice', () => {
+      mountEmpty(undefined);
+      expect(screen.getByText(/The config is empty\. Select Insert a starter config\. Then give cells/)).toBeTruthy();
     });
 
     it('shows no notice for a stored config', () => {

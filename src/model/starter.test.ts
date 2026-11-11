@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildStarter, isEmptyConfig, starterFacts } from './starter';
+import { readYaml, writeYaml } from '../options/yamlConfig';
 import { validateConfig } from './validate';
+
+const readYamlValue = (text: string) => {
+  const read = readYaml(text);
+  return read.ok ? read.value : 'unreadable';
+};
 
 type Case = [string, Parameters<typeof buildStarter>[0], Record<string, unknown>];
 
@@ -43,6 +49,16 @@ const cases: Case[] = [
     { portograph: false, edges: false, refIds: ['A', 'node_state'] },
     { node: node('node_state') },
   ],
+  [
+    'ctx_switches is not tx',
+    { portograph: true, edges: true, refIds: ['up', 'ctx_switches', 'tx', 'rx'] },
+    { node: node('up'), link: { match: { key: 'job', port: 'device' }, up: 'tx', down: 'rx' } },
+  ],
+  [
+    'a tx fragment counts when no token has it',
+    { portograph: true, edges: true, refIds: ['A', 'txbytes', 'rxbytes'] },
+    { node: node('A'), link: { match: { key: 'job', port: 'device' }, up: 'txbytes', down: 'rxbytes' } },
+  ],
 ];
 
 describe('buildStarter', () => {
@@ -64,10 +80,22 @@ describe('isEmptyConfig', () => {
     [{ version: 4, classes: {} }, false],
     [{ version: 4, classes: { a: {} } }, false],
     [{ classes: { a: {} } }, false],
+    [{ overrides: { 'cell-1': { status: 'up' } } }, false],
+    [{ version: 4 }, false],
+    [{ build: { generator: 'x' } }, false],
+    [{ overrides: {} }, true],
     [[], false],
     ['text', false],
   ])('%j is %s', (value, expected) => {
     expect(isEmptyConfig(value)).toBe(expected);
+  });
+});
+
+describe('isEmptyConfig after a round trip', () => {
+  it('stored {} as YAML and back is empty; a version-only text is not', () => {
+    expect(isEmptyConfig(readYamlValue(writeYaml({})))).toBe(true);
+    expect(isEmptyConfig(readYamlValue(writeYaml({ overrides: { a: { status: 'up' } } })))).toBe(false);
+    expect(isEmptyConfig(readYamlValue(''))).toBe(true);
   });
 });
 

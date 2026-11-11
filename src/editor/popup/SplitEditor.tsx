@@ -12,6 +12,7 @@ import { readYaml } from '../../options/yamlConfig';
 import { isEmptyConfig } from '../../model/starter';
 import { StarterNotice, starterText } from '../../options/StarterNotice';
 import { configUpdate } from '../../options/storedConfig';
+import { refIdsOf } from '../../query/panelTargets';
 import { indexSeries } from '../../query/seriesIndex';
 import { fitCells, type ViewBox } from '../../render/zoom';
 import { useBoundDiagram } from '../../stage/useBoundDiagram';
@@ -60,12 +61,6 @@ export const SETTLE_MS = 150;
 const FIT_MARGIN = 0.03;
 const MARKER_OWNER = 'drawiomap-split-editor';
 const NO_CELLS: CellSet = { cells: [], lighter: [], badges: new Map() };
-
-/** The refIds of the panel targets; without a request, the refIds of the loaded frames. */
-function refIdsOf(data: PanelData): string[] {
-  const refIds = data.request ? data.request.targets.map((t) => t.refId) : data.series.map((f) => f.refId);
-  return [...new Set(refIds.filter((refId): refId is string => !!refId))];
-}
 
 /** The start of the key at a path of plain keys, or undefined when the text has no such key. */
 function keyStart(doc: Document, parts: string[]): number | undefined {
