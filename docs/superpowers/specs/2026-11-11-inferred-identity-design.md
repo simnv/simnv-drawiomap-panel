@@ -340,8 +340,13 @@ export function measuredEnd(meta: CellMeta, needs: readonly string[], ctx: () =>
 /** I8: a name of a link through its measured end. */
 export function linkAttr(meta: CellMeta, name: string, end: MeasuredEnd, ctx: () => EndContext): AttrOrigin | undefined;
 
-/** I14: `cap` and `capacity` of the measured end cell. */
-export function endCap(end: MeasuredEnd, ctx: EndContext): { cellId: string; cap?: string; capacity?: string } | undefined;
+/**
+ * I14: `cap` and `capacity` of the measured end cell. `meta` is the link: the end cell is
+ * `ctx.ends.get(meta.id)?.source` or `.target` for `end.end`. `MeasuredEnd.cellId` is set only when `measuredEnd`
+ * read the end context (reasons `only` and `both`); for `at` and `own` it is absent, and `endCap` finds the end cell
+ * from the link (amendment after S1, 2026-11-11).
+ */
+export function endCap(meta: CellMeta, end: MeasuredEnd, ctx: EndContext): { cellId: string; cap?: string; capacity?: string } | undefined;
 
 /**
  * The resolver of one bind. `attr` reads `from.<x>` and `to.<x>` with `endAttr`, an edge with `linkAttr`, each other
