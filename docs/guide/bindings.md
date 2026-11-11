@@ -104,22 +104,38 @@ A cell has attributes: the `data-meta-*` attributes of the exported SVG, written
 
 Attribute names are lowercase ASCII. The editor writes them in lowercase (`setCellAttrs` also replaces case variants and removes all variants for `null`).
 
-| Attribute  | Use                                                                                                                                        |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bind`     | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                              |
-| `key`      | The main identity of the cell, for example a host name or an interface name. The class `match` and the templates read it.                  |
-| `port`     | A second identity, for example the interface of a host. Use any other name for a third one.                                                |
-| `at`       | A link only. `at=target` tells that `key` and `port` name the target end of the link. Else they name the source end (see [Links](#links)). |
-| `cap`      | A link only. The capacity when the class has no `capacity` series: `1G`, or `50M/10M` for a→b/b→a (see [Capacity](links.md#capacity)).     |
-| `capacity` | A link only. The second name of `cap`, as in the portograph contract: same grammar. `cap` wins when both are set.                          |
-| `id`       | The draw.io cell id. Read it as `${id}`.                                                                                                   |
-| `label`    | The label of the cell. Read it as `${label}`.                                                                                              |
-| other      | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                           |
+| Attribute  | Use                                                                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bind`     | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                                                     |
+| `key`      | The main identity of the cell, for example a host name or an interface name. The class `match` and the templates read it.                                         |
+| `port`     | A second identity, for example the interface of a host. Use any other name for a third one.                                                                       |
+| `at`       | A link only. `at=target` selects the target end as the measured end. `at=source` selects the source end. No `at`: the panel infers the end (see [Links](#links)). |
+| `cap`      | A link only. The capacity when the class has no `capacity` series: `1G`, or `50M/10M` for a→b/b→a (see [Capacity](links.md#capacity)).                            |
+| `capacity` | A link only. The second name of `cap`, as in the portograph contract: same grammar. `cap` wins when both are set.                                                 |
+| `id`       | The draw.io cell id. Read it as `${id}`.                                                                                                                          |
+| `label`    | The label of the cell. Read it as `${label}`.                                                                                                                     |
+| other      | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                                                  |
 
 The inspector can write `bind` and `key`, and can set or clear `at=target` on an edge. For other attributes:
 
 - The generator or the `meta` of the portograph source writes them.
 - You set them in draw.io with **Edit Data** (Ctrl+M) in the embedded editor: **Diagram → Edit in draw.io**, select the cell, press Ctrl+M, add the attribute, then **Save**.
+
+#### Inherited names
+
+A cell does not need all its identity itself. The panel reads a name from the cell, then from its **owner chain**:
+
+- A portograph port cell has its node cell as owner. A port without `key` reads the `key` of its node.
+- A shape inside a container has the container as owner, and that container has its own container, up to the layer.
+- The first cell that has the name gives the value. An empty value counts as present.
+
+These names are **own-only**: the cell must carry them itself. The panel never reads them from an owner or from an end of a link: `bind`, `at`, `cap`, `capacity`, `id`, `label` and each name `pg-*`. A port does not join the class of its node, and it does not read the `cap` of its node.
+
+No name is special. `key` and `port` follow the same rule as `job` or `device`. The panel does not read `pg-port` as the value of `port`: write `port` on a port that has counters. This is the mark "this interface has counters".
+
+The inspector shows each inherited value with the cell that gave it, for example `key  node-rtr-a  (from rtr-a)`.
+
+A link does not read the container of its edge. A link gets its identity from its ends (see [Links](#links)).
 
 A dashboard that a generator wrote is **generator-owned**. The generator writes its classes, its overrides and its attributes again at each build. A hand edit of them in the panel is lost at the next deploy, unless the generator reads it back first (its `pull` step). Change a generated panel in the generator source.
 
@@ -171,7 +187,7 @@ An invalid class, and the classes below it, make their cells unavailable. The ot
 
 A matcher value can read an attribute of the cell at one end of a link: `${from.name}` for the source end and `${to.name}` for the target end. The panel looks for the attribute in the end cell first. If the end cell does not have it, the panel looks in the next cell: for a port cell, its node cell; for a shape inside a container, the container; and so on up to the layer. The first cell that has the attribute gives the value. If no cell has it, the cell gets `missing-attr`.
 
-A portograph link that has only `bind` can use this form. The link has no `key` and no `port`, but its ends do:
+This is the explicit form. It stays valid, but it is no longer the usual way to bind a portograph link. Put `key` on the node, `port` on the port and `bind` on the link, and the panel reads the ends itself (see [Links](#links)). Use `${from.…}` and `${to.…}` when you want one fixed geometric end, whatever the panel infers. A portograph link that has only `bind` can use this form too. The link has no `key` and no `port`, but its ends do:
 
 ```yaml
 classes:
@@ -186,7 +202,7 @@ classes:
 
 The record key is `id`. A record key must be an attribute that the cell has, and every cell has `id`. The value does not read it: each matcher reads only `${from.…}`. The key only makes the block valid.
 
-This form fixes the measured end to the source end of the link. To measure the other end, read `${to.…}` in the values and set `at=target` on the link (see [Links](#links)). Then the halves a→b and b→a follow the end that you measure.
+`${from.…}` always names the source end and `${to.…}` always names the target end. They do not follow the measured end, and they also read the own-only names (`${from.pg-port}`, `${from.label}`). To measure the other end, read `${to.…}` in the values and set `at=target` on the link (see [Links](#links)). Then the halves a→b and b→a follow the end that you measure.
 
 A row, `text` and `chart` can have their own `match`. It replaces the `match` of the class as a whole; it does not add to it. A filter that does not depend on a cell belongs in the query, not in `match`.
 
@@ -213,12 +229,13 @@ When the result of a query has no label that names the cell, change the query so
 
 A template is the text of `url`, `urlTitle`, a `metadata` row and a `drilldown` row, and the string of a matcher. The scope:
 
-| Placeholder                  | Value                                                                                          |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| `${name}`                    | The attribute `name` of the cell. `${id}` is the cell id. `${label}` is the attribute `label`. |
-| `${from.name}`, `${to.name}` | An attribute of the cell at that end of a link (see [Links](#links)).                          |
-| `${labels.name}`             | A label of the status series of the cell. Only when the status use selects exactly one series. |
-| `${value}`                   | The formatted status value. The same condition.                                                |
+| Placeholder                  | Value                                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `${name}`                    | The attribute `name` of the cell. `${id}` is the cell id. `${label}` is the attribute `label`.                             |
+| `${from.name}`, `${to.name}` | An attribute of the cell at the source or target end of a link. They do not follow the measured end (see [Links](#links)). |
+| `${name}` on a link          | The link itself, else the owner chain of its measured end (see [Links](#links)).                                           |
+| `${labels.name}`             | A label of the status series of the cell. Only when the status use selects exactly one series.                             |
+| `${value}`                   | The formatted status value. The same condition.                                                                            |
 
 `${name}` is always a cell attribute. There is no `cell.` prefix. A missing attribute is a `missing-attr` entry, never a dashboard variable: the item is not shown. `${labels.x}` and `${value}` with no series or many series give `template-unresolved`. A `${` that starts none of the forms here and no `${name:format}` is a `schema` entry in a URL, a `metadata` text and a `drilldown`. `${__name}` is a cell attribute; write `$__name` for a Grafana variable.
 
@@ -354,23 +371,58 @@ classes:
 A class with `up`, `down` or `capacity` applies to a link (an edge cell).
 
 - The ends of a portograph link come from `pg-from` and `pg-to`. An ordinary draw.io edge has its ends in the `source` and `target` of its cell in page 1 of the stored XML. An attribute on the port cell wins over the same attribute on the node cell. When the end cell has no such attribute, the panel looks in its parents up to the layer (a shape inside a container). `${from.key}` and `${to.key}` read the attribute at an end. A matcher can read any attribute at an end: see [Read the end cells of a link](#read-the-end-cells-of-a-link).
-- The half at the start of the drawn path is **a→b**. The `key` and the other matched attributes name the interface at the source end. a→b takes `up` (transmit) and b→a takes `down` (receive). With `at=target` the attributes name the target end, and a→b takes `down`. The stroke of each half, the link value label and the `updown` row of the card follow the same rule.
+- The half at the start of the drawn path is **a→b**. The matched attributes name the interface at the measured end (see below). With the source as measured end, a→b takes `up` (transmit) and b→a takes `down` (receive). With the target as measured end (`at=target`, or inferred), a→b takes `down`. The stroke of each half, the link value label and the `updown` row of the card follow the same rule.
 - With a capacity, the colour input is the percent of the capacity. Without one, it is the raw value. See [How colours and thresholds work](colours.md#how-colours-and-thresholds-work).
 - For the capacity, see [Capacity](links.md#capacity).
 
-A link can read its identity from an end. Put `key` on the node, `port` on the port cell, and `bind` on the link.
-The panel collects the missing identity names from all dependent query uses.
-With no own `at`, one end that gives all names becomes the measured end. If both ends qualify, the source wins.
-An own `at` selects an end. An own attribute on the link wins over an end attribute.
-`${from.key}` and `${to.key}` keep their geometric meaning.
+#### A link reads its identity from an end
 
-A directional use that needs an end follows that end. A use whose match resolves on the link keeps its own feed.
-For example, a row with `match: {id: edge}` keeps the source feed when the halves infer the target.
-A capacity query that now resolves through the end wins over the link's own `cap`, as for any capacity query.
+Write the identity once, on the thing that owns it:
 
-A link with no identity, no `at`, and no end that gives all names is unmeasured.
-Its dependent uses give no warnings and no grey halves. Its own query uses and templates can still show.
-A link with part of an identity keeps `missing-attr` for the missing names.
+- `key` (or `job`, `device`) on the **node**.
+- `port` on the **port cell**, only on a port that has counters.
+- `bind` on the **link**. The link needs no other attribute.
+
+The panel reads each query use of the link (status, text, rows, chart, `up`, `down`, `capacity`) with its own `match`. A use is **end-free** when the link has all the names of its match itself (for example a row with `match: {id: edge}`). Such a use works as before. Each other use is **dependent**: it needs names that the link lacks. The **identity names** are these names, for all dependent uses of the link.
+
+The **measured end** is the end whose interface gives the counters. The panel selects it with the first rule that applies:
+
+| Order | Condition                                                          | Measured end                                       |
+| ----- | ------------------------------------------------------------------ | -------------------------------------------------- |
+| 1     | The link has `at`.                                                 | The target for `at=target`, else the source.       |
+| 2     | The link has no dependent use.                                     | The source.                                        |
+| 3     | Only one end gives all the identity names that the link lacks.     | That end.                                          |
+| 4     | Both ends give them.                                               | The source.                                        |
+| 5     | No end gives them, and the link has a part of the identity itself. | The source. The missing names give `missing-attr`. |
+| 6     | No end gives them, and the link has no identity name.              | None: the link is **unmeasured**.                  |
+
+An end gives the names when its end cell, or the owner chain of that cell, has each missing name. An own attribute of the link wins over the same name on the end. The own-only names come from the link only.
+
+The feed follows the end. A directional use that needs an end (`up`, `down`, an `updown` row or chart) reads the counters at the measured end. With the target as measured end, a→b takes `down`, as for `at=target`. A use whose match resolves on the link itself keeps the source feed. For example, a row with `match: {id: edge}` keeps the source feed when the halves infer the target. The inspector shows the end of each use.
+
+`${key}` in a template of a link reads the measured end. `${from.key}` and `${to.key}` keep their geometric meaning.
+
+The capacity can also come from the end: see [Capacity](links.md#capacity). A `capacity` query that resolves through the end wins over the `cap` of the link, as any capacity query does.
+
+**An unmeasured link** has dependent uses, no `at`, no identity name and no end that gives the names. The panel is quiet about it: its dependent uses give no warning and no grey half. Its end-free uses and its templates that need no identity name still work. A link with only `bind` between two cells without counters gets no patch and no card. The report has one `unmeasured-link` entry for each class and name set (information, not a warning).
+
+**When both ends qualify**, the source wins. This is safe when both ends have series for the queries of the class, and for a tunnel. It is not safe when the two ends use different exporters. Then the source can have no series, and the report has `end-ambiguous`. There are two fixes:
+
+- Set `at=target` on the link.
+- Give the attribute a name that follows the exporter family: `device` on the ports of one family and `port` on the ports of the other. Then the match of the class finds only one end.
+
+**Exceptions.**
+
+- A counter on a VLAN interface or a tunnel: write `port` (the name of that interface) on the link. The link keeps this `port` and reads `key` from the node at the end.
+- A port with two links and one counter for each link: write the identity on each link.
+- An anonymous port has no cell. The link reads the node cell.
+- A split link (`pg-run`) is not tested. A run with `pg-from` and `pg-to` resolves as the other runs. A run without them can be unmeasured.
+
+An ordinary draw.io edge works the same way: its ends are `source` and `target` in page 1, and a shape reads its container.
+
+#### A port class
+
+A port cell can bind a class itself. A port with `bind` and its own `port` reads `key` from its node. So a port class with `status`, `text`, `chart` or an `updown` row binds the counters of the interface, with no copy of the node identity. This is the way for a bus that has no link cell. `up`, `down` and `capacity` still need a link (a port gives `unused-field`).
 
 ### The match report
 
