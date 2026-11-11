@@ -11,6 +11,7 @@ import { noDataColor } from './color';
 import { endContextOf, type EndContext } from './edgeEnds';
 import {
   createIdentity,
+  endCap,
   identityNames,
   isEndFree,
   usePlan as planUses,
@@ -73,6 +74,8 @@ export interface BindResultV4 {
   matchOrigins: Map<string, string>;
   /** cell id → each name that the bind read from another cell, with the cell that gave it (spec I26) */
   inherited: Map<string, Map<string, AttrOrigin>>;
+  /** Bound edge id to the capacity of each geometric direction, with the cell that gave an attribute (I25). */
+  capacity: Map<string, { a2b: LinkCapacity; b2a: LinkCapacity }>;
   /** Bound edge id to its measured end, including unmeasured links (I26). */
   measured: Map<string, MeasuredEnd>;
   /** Cell id to each use path and its resolved matchers or problem (I26). */
@@ -260,6 +263,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     matchOrigins: new Map(),
     inherited: new Map(),
     measured: new Map(),
+    capacity: new Map(),
     resolved: new Map(),
     report: [],
     deadlines: [],
@@ -581,6 +585,9 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     if (textUse && eff.text) {
       patch.shape = textShape(results.get(textUse.path)!, eff.text);
     }
+    if (meta.isEdge && uses.some(needsCapacity)) {
+      capacityOfEdge(meta, eff, uses, results, end);
+    }
     if (meta.isEdge && uses.some((use) => use.kind === 'up' || use.kind === 'down')) {
       patch.link = linkHalves(meta, eff, uses, results);
     }
@@ -670,32 +677,65 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     };
   }
 
-  /** Spec 3.8: the feed of each half (`linkFeeds`), its capacity (`capacityV4`) and its state (`halfState`). */
+  /** A use that reads the capacity of a link: a half, a `capacity` query, an `updown` row or chart. */
+  function needsCapacity(use: Use): boolean {
+    return use.kind === 'up' || use.kind === 'down' || use.kind === 'capacity' || use.row?.kind === 'updown';
+  }
+
+  /**
+   * I25: the capacity of each geometric direction of one link, once for each bound edge. The `capacity` refIds come
+   * from the `capacity` uses in the list of the edge: a dropped use is "no query". The end cell is read lazily.
+   */
+  function capacityOfEdge(
+    meta: CellMeta,
+    eff: ResolvedClass,
+    uses: Use[],
+    results: Map<UsePath, UseResult>,
+    end: MeasuredEnd | undefined
+  ): void {
+    const capacityUses = uses.filter((u) => u.kind === 'capacity');
+    const refIdOf = (suffix: string) => capacityUses.find((u) => u.path.endsWith(suffix))?.refId;
+    const capacityQuery = !capacityUses.length
+      ? undefined
+      : typeof eff.capacity === 'string'
+        ? capacityUses[0].refId
+        : { a2b: refIdOf('.a2b')!, b2a: refIdOf('.b2a')! };
+    const speedSeries = (refId: string) => {
+      const use = capacityUses.find((u) => u.refId === refId);
+      const r = use ? results.get(use.path)! : undefined;
+      return r && !r.problem ? { snapshot: r.snapshot, series: r.series } : { snapshot: NO_TARGET, series: [] };
+    };
+    const measuredAt = end?.end === 'source' || end?.end === 'target' ? end.end : undefined;
+    const capacity = capacityV4({
+      capacity: capacityQuery,
+      cap: meta.attrs.cap,
+      capacityAttr: meta.attrs.capacity,
+      series: speedSeries,
+      cls: eff.name,
+      cellId: meta.id,
+      end:
+        end && measuredAt
+          ? () => {
+              const found = endCap(meta, end, ends());
+              return found && { ...found, at: measuredAt };
+            }
+          : undefined,
+    });
+    for (const entry of capacity.report) {
+      const { cellIds, ...rest } = entry as CellsEntry;
+      cellIds.forEach((id) => report.cell(rest as CellsFree, id));
+    }
+    out.capacity.set(meta.id, { a2b: capacity.a2b, b2a: capacity.b2a });
+  }
+
+  /** Spec 3.8: the feed of each half (`linkFeeds`), its capacity (`BindResultV4.capacity`) and its state (`halfState`). */
   function linkHalves(
     meta: CellMeta,
     eff: ResolvedClass,
     uses: Use[],
     results: Map<UsePath, UseResult>
   ): PatchV4['link'] {
-    const cls = eff.name;
-    const capacityUses = uses.filter((u) => u.kind === 'capacity');
-    const speedSeries = (refId: string) => {
-      const use = capacityUses.find((u) => u.refId === refId);
-      const r = use ? results.get(use.path)! : undefined;
-      return r && !r.problem ? { snapshot: r.snapshot, series: r.series } : { snapshot: NO_TARGET, series: [] };
-    };
-    const capacity = capacityV4({
-      capacity: eff.capacity,
-      cap: meta.attrs.cap,
-      capacityAttr: meta.attrs.capacity,
-      series: speedSeries,
-      cls,
-      cellIds: [meta.id],
-    });
-    for (const entry of capacity.report) {
-      const { cellIds: _cells, ...rest } = entry as CellsEntry;
-      report.cell(rest as CellsFree, meta.id);
-    }
+    const capacity = out.capacity.get(meta.id)!;
     const link: NonNullable<PatchV4['link']> = { labelMode: eff.linkLabel ?? 'none', arrow: eff.arrow ?? 'point' };
     for (const dir of ['a2b', 'b2a'] as const) {
       const use = uses.find(

@@ -554,3 +554,73 @@ describe('card and chart feeds from Use.end (S4c)', () => {
     }
   });
 });
+
+describe('card capacity from BindResultV4.capacity (S5)', () => {
+  const build = () => {
+    const index = indexOf([
+      ['a', {}],
+      ['b', {}],
+      ['pa', {}],
+      ['pb', {}],
+      ['l', { bind: 'lan', cap: '50M/10M' }, true],
+    ]);
+    const validated = validateConfig({
+      version: 4,
+      classes: {
+        lan: {
+          match: { key: 'job' },
+          capacity: 'speed',
+          rows: [{ kind: 'updown', up: 'tx', down: 'rx', match: { id: 'edge' } }],
+        },
+      },
+    });
+    const data = panelData([
+      frame('tx', { edge: 'l' }, [5e6, 6e6, 7e6], { unit: 'bps' }),
+      frame('rx', { edge: 'l' }, [1e6, 1.5e6, 2e6], { unit: 'bps' }),
+      frame('speed', { job: 'node-b' }, [1e9], { unit: 'bps' }),
+    ]);
+    const xml =
+      '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="a" parent="1"/><mxCell id="b" parent="1"/><mxCell id="pa" parent="a"/><mxCell id="pb" parent="b"/>' +
+      '<mxCell id="l" parent="1" edge="1" source="pa" target="pb"/></root></mxGraphModel>';
+    const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+    const ctx: CardContextV4 = { theme, replaceVariables: (s) => s, index, validated, data };
+    return { row: buildCardV4('l', bound, ctx).rows[0], bound };
+  };
+
+  it('AC24: an updown row with no halves shows the percent of the cap of the measured end port', () => {
+    // The row is end-free, so the link has no dependent use: it measures the source, and the source port has the cap.
+    const index = indexOf([
+      ['a', {}],
+      ['pa', { cap: '50M/10M' }],
+      ['b', {}],
+      ['l', { bind: 'lan' }, true],
+    ]);
+    const validated = validateConfig({
+      version: 4,
+      classes: { lan: { match: { id: 'edge' }, rows: [{ kind: 'updown', up: 'tx', down: 'rx' }] } },
+    });
+    const data = panelData([
+      frame('tx', { edge: 'l' }, [5e6, 6e6, 7e6], { unit: 'bps' }),
+      frame('rx', { edge: 'l' }, [1e6, 1.5e6, 2e6], { unit: 'bps' }),
+    ]);
+    const xml =
+      '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="a" parent="1"/><mxCell id="pa" parent="a"/><mxCell id="b" parent="1"/>' +
+      '<mxCell id="l" parent="1" edge="1" source="pa" target="b"/></root></mxGraphModel>';
+    const bound = bindV4({ index, xml, validated, data, ctx: bindCtx });
+    const ctx: CardContextV4 = { theme, replaceVariables: (s) => s, index, validated, data };
+    expect(bound.capacity.get('l')?.a2b).toEqual({ amount: 50e6, source: 'attr', cellId: 'pa' });
+    expect(buildCardV4('l', bound, ctx).rows[0].directions!.map((d) => d.text)).toEqual([
+      '7 Mb/s · 14% of 50 Mb/s',
+      '2 Mb/s · 20% of 10 Mb/s',
+    ]);
+  });
+
+  it('AC27: an unmeasured link with a dependent capacity query: the card shows 14% of the own cap', () => {
+    const { row, bound } = build();
+    expect(bound.measured.get('l')).toMatchObject({ end: 'none' });
+    expect(bound.report.map((e) => e.kind)).toEqual(['unmeasured-link']);
+    expect(row.directions!.map((d) => d.text)).toEqual(['7 Mb/s · 14% of 50 Mb/s', '2 Mb/s · 20% of 10 Mb/s']);
+  });
+});
