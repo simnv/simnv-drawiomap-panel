@@ -7,6 +7,8 @@ import type { ViewBox } from './zoom';
 
 export interface PaintOptions {
   theme: GrafanaTheme2;
+  /** The current diagram XML for accessible link titles. */
+  xml?: string;
   /** The OS prefers a dark colour scheme: an input of the applier's colour scheme. */
   osDark: boolean;
   /** The link width range of the panel: the value labels keep `linkWidth.max / 2` clear of the strokes. */
@@ -29,8 +31,8 @@ export function paintStage(
   previous: Applied | undefined,
   opts: PaintOptions
 ): Applied {
-  const { theme, osDark, linkWidth, bounds, interactive } = opts;
-  const applied = applyPatches(index, patches, previous, interactive, { theme, osDark });
+  const { theme, osDark, linkWidth, bounds, interactive, xml } = opts;
+  const applied = applyPatches(index, patches, previous, interactive, { theme, osDark, xml });
   renderOverlay(root, index, patches, { theme, maxWidth: linkWidth.max, minWidth: linkWidth.min });
   renderLinkLabels(root, index, patches, { theme, linkWidth, bounds });
   return applied;

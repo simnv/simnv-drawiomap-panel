@@ -39,6 +39,64 @@ describe('edgeEnds: a portograph link', () => {
     expect(r.report).toEqual([]);
   });
 
+  it.each(['source', 'target'] as const)('uses the drawn %s end and records the edit without a report entry', (end) => {
+    const xml = page(`<object id="${link}"><mxCell edge="1" ${end}="pg-node~rtr-a"/></object>`);
+    const ctx = endContextOf(xml, index);
+    expect(ctx.ends.get(link)?.[end]).toBe('pg-node~rtr-a');
+    expect(ctx.edited.get(link)).toEqual([end]);
+    expect(ctx.report).toEqual([]);
+  });
+
+  it('keeps a consistent drawn end and does not mark it as edited', () => {
+    const xml = page(
+      `<object id="${link}"><mxCell edge="1" source="pg-port~rtr-a~wan~1" target="pg-node~isp-a"/></object>`
+    );
+    const r = edgeEnds(xml, index);
+    expect(r.ends.get(link)).toEqual({ source: 'pg-port~rtr-a~wan~1', target: 'pg-node~isp-a' });
+    expect(r.edited.size).toBe(0);
+  });
+
+  it('records both edited ends of one link', () => {
+    const xml = page(
+      `<object id="${link}"><mxCell edge="1" source="pg-node~isp-a" target="pg-port~rtr-a~wan~1"/></object>`
+    );
+    expect(edgeEnds(xml, index).edited.get(link)).toEqual(['source', 'target']);
+  });
+
+  it('falls back to the pg end when the drawn cell is absent from the index', () => {
+    const xml = page(
+      `<object id="${link}"><mxCell edge="1" source="missing-source" target="missing-target"/></object>`
+    );
+    const r = edgeEnds(xml, index);
+    expect(r.ends.get(link)).toEqual({ source: 'pg-port~rtr-a~wan~1', target: 'pg-node~isp-a' });
+    expect(r.edited.size).toBe(0);
+  });
+
+  it('resolves each end separately on the first, middle and last split runs', () => {
+    const idx = new Map(index);
+    const original = index.get(link)!;
+    for (const id of ['run0', 'run1', 'run2']) {
+      idx.set(id, { ...original, meta: { ...original.meta, id } });
+    }
+    const r = edgeEnds(
+      page(
+        '<mxCell id="run0" edge="1" source="pg-node~rtr-a"/>' +
+          '<mxCell id="run1" edge="1"/>' +
+          '<mxCell id="run2" edge="1" target="pg-port~rtr-a~wan~1"/>'
+      ),
+      idx
+    );
+    expect(r.ends.get('run0')).toEqual({ source: 'pg-node~rtr-a', target: 'pg-node~isp-a' });
+    expect(r.ends.get('run1')).toEqual({ source: 'pg-port~rtr-a~wan~1', target: 'pg-node~isp-a' });
+    expect(r.ends.get('run2')).toEqual({ source: 'pg-port~rtr-a~wan~1', target: 'pg-port~rtr-a~wan~1' });
+    expect(r.edited).toEqual(
+      new Map([
+        ['run0', ['source']],
+        ['run2', ['target']],
+      ])
+    );
+  });
+
   it('${from.key} reads the port cell before the node cell', () => {
     const ctx = context(undefined, index);
     expect(endAttr(link, 'from', 'key', ctx)).toBe('rtr-a:wan');
@@ -162,6 +220,11 @@ describe('edgeEnds: an ordinary draw.io edge', () => {
     expect(r.report).toEqual([]);
     expect(endAttr('e1', 'from', 'key', context(undefined, index))).toBeUndefined();
   });
+
+  it('an XML end outside the index gives no end when there is no pg end', () => {
+    const r = edgeEnds(page('<mxCell id="e1" edge="1" source="missing"/>'), index);
+    expect(r.ends.has('e1')).toBe(false);
+  });
 });
 
 describe('edgeEnds: no-edge-ends', () => {
@@ -187,6 +250,7 @@ describe('edgeEnds: no-edge-ends', () => {
     ]);
     const r = edgeEnds(`<mxfile><diagram id="p1">7VnRbtowFP0a</diagram></mxfile>`, idx);
     expect(r.ends.get('l')).toEqual({ source: 'pg-node~rtr-a', target: 'pg-node~rtr-a' });
+    expect(r.edited.size).toBe(0);
     expect(r.report).toEqual([]);
   });
 
@@ -201,6 +265,8 @@ describe('edgeEnds: no-edge-ends', () => {
 describe('endContextOf: the cache', () => {
   const cells = [
     ['0', { 'pg-schema': '1' }],
+    ['a', {}],
+    ['b', {}],
     ['e', {}, true],
   ] as Array<[string, Record<string, string>, boolean?]>;
   const xml = page('<mxCell id="e" edge="1" parent="1" source="a" target="b"/>');

@@ -319,7 +319,7 @@ function DrawioMapPanelView(props: ViewProps) {
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
 
   // Apply patches, redraw the overlay and the value labels once per frame.
-  useStagePaint(stage, result.patches, { theme, linkWidth: opts.linkWidth, interactive });
+  useStagePaint(stage, result.patches, { theme, linkWidth: opts.linkWidth, interactive, xml: opts.diagram?.xml });
   // The cells that open a card get the interactive mark. The applier, the overlay and the labels do not read or write
   // it, so its place in the frame does not matter.
   useEffect(() => {

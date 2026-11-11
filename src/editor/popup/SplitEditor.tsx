@@ -546,6 +546,7 @@ export function SplitEditor({
           onBackground={clearLit}
           chartLayer={chartLayer}
           hash={diagram?.hash}
+          xml={diagram?.xml}
           linkWidth={opts.linkWidth}
           badges={entryCells ? undefined : lit.badges}
           view={view}

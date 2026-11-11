@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyContract, cellMetaFromAttrs } from '../adapter/portograph';
 import { bindV4 } from '../binding/bindV4';
 import { bindContextFor } from '../binding/context';
+import { buildCardV4 } from '../interact/cardModel';
 import { REPORT_KINDS, type ReportEntry } from '../binding/report';
 import { validateConfig } from '../model/validate';
 import type { CellEntry, CellIndex } from '../types';
@@ -81,6 +82,35 @@ beforeEach(() => {
 });
 
 describe('useBoundDiagram', () => {
+  it('updates the card title when the XML ends change with the same index', () => {
+    const metas = [
+      cellMetaFromAttrs('0', { 'pg-schema': '1' }, false),
+      ...['a', 'b', 'c'].map((id) =>
+        cellMetaFromAttrs(id, { 'pg-kind': 'node', 'pg-id': id, label: id.toUpperCase() }, false)
+      ),
+      cellMetaFromAttrs(
+        'l',
+        { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'a', 'pg-to': 'b', bind: 'lan', key: 'node-rtr-a', cap: '1G' },
+        true
+      ),
+    ];
+    applyContract(metas);
+    const index: CellIndex = new Map(metas.map((meta) => [meta.id, { meta } as CellEntry]));
+    const xml = (target: string) =>
+      `<mxGraphModel><root><mxCell id="l" edge="1" source="a" target="${target}"/></root></mxGraphModel>`;
+    const fixed = inputsOf({
+      index,
+      xml: xml('b'),
+      config: { version: 4, classes: { lan: { match: { key: 'job' }, up: 'up' } } },
+    });
+    const { result, rerender } = renderHook((inputs: BoundDiagramInputs) => useBoundDiagram(inputs), {
+      initialProps: fixed,
+    });
+    expect(buildCardV4('l', result.current.bound, result.current.cardContext).title).toBe('A ↔ B');
+    rerender({ ...fixed, xml: xml('c') });
+    expect(buildCardV4('l', result.current.bound, result.current.cardContext).title).toBe('A ↔ C');
+  });
+
   it('binds a cell of a valid config and gives a patch with a status view', () => {
     const inputs = inputsOf();
     const { result } = renderHook(() => useBoundDiagram(inputs));

@@ -57,24 +57,28 @@ function portTitle(cell: CellMeta, find: FindCell): string {
 }
 
 /** One end of a link: the node label plus the port label for a port, the node label for a node. */
-function endTitle(end: Endpoint, find: FindCell): string {
+function endCellTitle(cell: CellMeta, find: FindCell): string {
+  return (cell.kind === 'port' ? portTitle(cell, find) : oneLine(cell.labelText)) || cell.key;
+}
+
+type TitleEnd = { raw: string; title: string };
+
+/** The export-time end, for an SVG-only index that has no XML. */
+function exportTitleEnd(end: Endpoint, find: FindCell): TitleEnd {
   const cell = find(end.raw);
-  if (cell?.kind === 'port') {
-    return portTitle(cell, find) || end.raw;
-  }
-  if (cell) {
-    return oneLine(cell.labelText) || end.raw;
-  }
-  return [nodeName(find, end.node), end.port ?? ''].filter(Boolean).join(' ');
+  return {
+    raw: end.raw,
+    title: cell ? endCellTitle(cell, find) : [nodeName(find, end.node), end.port ?? ''].filter(Boolean).join(' '),
+  };
 }
 
 /**
  * "<from> ↔ <to>". When both ends read the same, the title adds what tells them apart: the label of the link
  * (its own, else its pg-linkLabel text, which attachLinkLabels copies to labelText), else the id of each end.
  */
-function linkTitle(from: Endpoint, to: Endpoint, labelText: string, find: FindCell): string {
-  const a = endTitle(from, find);
-  const b = endTitle(to, find);
+function linkTitle(from: TitleEnd, to: TitleEnd, labelText: string): string {
+  const a = from.title;
+  const b = to.title;
   if (a !== b) {
     return `${a}${SEPARATOR}${b}`;
   }
@@ -133,13 +137,28 @@ function captionOf(cell: CellMeta, find: FindCell): string {
  * A link without both ends and a port without a node use the label.
  * The last fallback is the id. With `portograph` (the diagram has pg-schema) a cell without pg-id shows its decoded
  * cell id; any other id stays raw. Without pg-schema nothing is decoded and no port or link cell exists.
+ * Pass `resolved` when XML ends are available. A partial result falls back to the link label, never to stale ends.
+ * Without it, the SVG-only index uses the export-time ends without a read of the XML.
  */
-export function cellTitle(cell: CellMeta, find: FindCell, portograph = true): string {
+export function cellTitle(
+  cell: CellMeta,
+  find: FindCell,
+  portograph = true,
+  resolved?: { source?: CellMeta; target?: CellMeta }
+): string {
   let title = '';
   if (cell.kind === 'port') {
     title = portTitle(cell, find);
-  } else if (cell.kind === 'link' && cell.from && cell.to) {
-    title = linkTitle(cell.from, cell.to, cell.labelText, find);
+  } else if (cell.kind === 'link') {
+    if (resolved?.source && resolved.target) {
+      title = linkTitle(
+        { raw: resolved.source.key, title: endCellTitle(resolved.source, find) },
+        { raw: resolved.target.key, title: endCellTitle(resolved.target, find) },
+        cell.labelText
+      );
+    } else if (!resolved && cell.from && cell.to) {
+      title = linkTitle(exportTitleEnd(cell.from, find), exportTitleEnd(cell.to, find), cell.labelText);
+    }
   }
   const decode = portograph && !cell.attrs['pg-id'];
   // a node part shows the title of its node even when it has a label of its own (a description)
