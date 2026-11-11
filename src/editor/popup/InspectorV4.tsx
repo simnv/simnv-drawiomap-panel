@@ -494,6 +494,11 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
           </>
         ) : null}
       </dl>
+      {ends.edited.get(meta.id)?.map((end) => (
+        <p key={end} className={styles.line}>
+          {`The drawn ${end} end differs from pg-${end === 'source' ? 'from' : 'to'} (export time); the panel uses the drawn end.`}
+        </p>
+      ))}
       {measuredEnd !== 'none' ? (
         <p className={styles.line} data-testid="dmap-inspector-keyed">
           {`The key names the ${measuredEnd} end${keyedName ? ` (${keyedName})` : ''}.`}

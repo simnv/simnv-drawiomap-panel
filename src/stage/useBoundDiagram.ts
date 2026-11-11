@@ -8,7 +8,7 @@ import { useStaleStatusV4 } from '../visuals/useSampleStale';
 
 export interface BoundDiagramInputs {
   index: CellIndex;
-  /** the draw.io XML of the diagram: the ends of an ordinary edge come from it (spec 3.8.1) */
+  /** The diagram XML: its drawn ends take precedence over the export-time portograph ends. */
   xml: string | undefined;
   /** `Options.config`, as saved */
   config: unknown;

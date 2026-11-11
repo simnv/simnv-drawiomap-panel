@@ -388,7 +388,8 @@ classes:
 
 A class with `up`, `down` or `capacity` applies to a link (an edge cell).
 
-- The ends of a portograph link come from `pg-from` and `pg-to`. An ordinary draw.io edge has its ends in the `source` and `target` of its cell in page 1 of the stored XML. An attribute on the port cell wins over the same attribute on the node cell. When the end cell has no such attribute, the panel looks in its parents up to the layer (a shape inside a container). `${from.key}` and `${to.key}` read the attribute at an end. A matcher can read any attribute at an end: see [Read the end cells of a link](#read-the-end-cells-of-a-link).
+- Each end first uses the `source` or `target` of the edge in page 1 of the stored XML. The named cell must be in the cell index. Otherwise, that end uses `pg-from` or `pg-to`, which record the ends at export time. A compressed page gives no XML ends, so the panel uses the portograph ends. A reconnect in draw.io thus changes the end that the panel reads. The inspector explains when a drawn end differs from its portograph end. This is not a report error.
+- An attribute on the port cell wins over the same attribute on the node cell. When the end cell has no such attribute, the panel looks in its parents up to the layer (a shape inside a container). `${from.key}` and `${to.key}` read the attribute at an end. A matcher can read any attribute at an end: see [Read the end cells of a link](#read-the-end-cells-of-a-link).
 - The half at the start of the drawn path is **a→b**. The matched attributes name the interface at the measured end (see below). With the source as measured end, a→b takes `up` (transmit) and b→a takes `down` (receive). With the target as measured end (`at=target`, or inferred), a→b takes `down`. The stroke of each half, the link value label and the `updown` row of the card follow the same rule.
 - With a capacity, the colour input is the percent of the capacity. Without one, it is the raw value. See [How colours and thresholds work](colours.md#how-colours-and-thresholds-work).
 - For the capacity, see [Capacity](links.md#capacity).
@@ -434,7 +435,7 @@ The capacity can also come from the end: see [Capacity](links.md#capacity). A `c
 - A counter on a VLAN interface or a tunnel: write `port` (the name of that interface) on the link. The link keeps this `port` and reads `key` from the node at the end.
 - A port with two links and one counter for each link: write the identity on each link.
 - An anonymous port has no cell. The link reads the node cell.
-- A split link (`pg-run`) is not tested. A run with `pg-from` and `pg-to` resolves as the other runs. A run without them can be unmeasured.
+- Each split run (`pg-run`) resolves its ends separately. The first run has a drawn source; the last run has a drawn target. Each missing end uses `pg-from` or `pg-to` when available. A run without those attributes can be unmeasured. The panel does not join the runs.
 
 An ordinary draw.io edge works the same way: its ends are `source` and `target` in page 1, and a shape reads its container.
 

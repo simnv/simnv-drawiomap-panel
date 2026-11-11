@@ -11,6 +11,8 @@ export interface EdgeEndIds {
 export interface EdgeEnds {
   /** edge cell id → its end cells */
   ends: Map<string, EdgeEndIds>;
+  /** edge cell id → the drawn ends that differ from the resolved export-time ends */
+  edited: Map<string, Array<'source' | 'target'>>;
   /**
    * cell id → the next cell to search for an end attribute: the node cell of a port, else the parent of the cell in
    * the XML (a shape inside a container). A cell below a layer has no entry: the search stops at the layer.
@@ -23,6 +25,7 @@ export interface EdgeEnds {
 export interface EndContext {
   index: CellIndex;
   ends: ReadonlyMap<string, EdgeEndIds>;
+  edited: ReadonlyMap<string, ReadonlyArray<'source' | 'target'>>;
   parents: ReadonlyMap<string, string>;
 }
 
@@ -96,10 +99,9 @@ function pageOf(xml: string): Page {
 const portKey = (e: Endpoint) => `${e.node}:${e.port}${e.ordinal > 1 ? `#${e.ordinal}` : ''}`;
 
 /**
- * The ends of each edge of the index (spec 3.8.1). A portograph link ends on the port cell of `pg-from`/`pg-to` when
- * the endpoint names a port, else on the node cell. An end that this does not give comes from the `source`/`target`
- * of the edge in page 1 of `xml`. Pass `xml` only when a bound class reads `${from.…}` or `${to.…}`, or when the
- * editor is open. A page that does not give the ends (a compressed page) gives `no-edge-ends` with the edges that
+ * The ends of each edge of the index (spec 3.8.1). Each end uses page 1's `source`/`target` when that cell is in the
+ * index. Else it uses `pg-from`/`pg-to`: the named port cell, else the node cell. Pass the diagram XML whenever a
+ * caller reads ends. A page that does not give the ends (a compressed page) gives `no-edge-ends` with the edges that
  * lack an end.
  */
 export function edgeEnds(xml: string | undefined, index: CellIndex): EdgeEnds {
@@ -115,7 +117,25 @@ export function edgeEnds(xml: string | undefined, index: CellIndex): EdgeEnds {
   const pgEnd = (e: Endpoint | undefined) =>
     e && ((e.port !== undefined ? ports.get(portKey(e)) : undefined) ?? nodes.get(e.node));
   const xmlEnds = 'ends' in page ? page.ends : undefined;
-  const result: EdgeEnds = { ends: new Map(), parents: new Map('parents' in page ? page.parents : []), report: [] };
+  const result: EdgeEnds = {
+    ends: new Map(),
+    edited: new Map(),
+    parents: new Map('parents' in page ? page.parents : []),
+    report: [],
+  };
+  const endOf = (id: string, end: 'source' | 'target', endpoint: Endpoint | undefined) => {
+    const drawn = xmlEnds?.get(id)?.[end];
+    const exported = pgEnd(endpoint);
+    if (drawn === undefined || !index.has(drawn)) {
+      return exported;
+    }
+    if (exported !== undefined && drawn !== exported) {
+      const edited = result.edited.get(id) ?? [];
+      edited.push(end);
+      result.edited.set(id, edited);
+    }
+    return drawn;
+  };
   const lacking: string[] = [];
   for (const { meta } of index.values()) {
     if (meta.kind === 'port') {
@@ -124,8 +144,8 @@ export function edgeEnds(xml: string | undefined, index: CellIndex): EdgeEnds {
         result.parents.set(meta.id, node); // port cell before node cell
       }
     }
-    const source = pgEnd(meta.from) ?? xmlEnds?.get(meta.id)?.source;
-    const target = pgEnd(meta.to) ?? xmlEnds?.get(meta.id)?.target;
+    const source = endOf(meta.id, 'source', meta.from);
+    const target = endOf(meta.id, 'target', meta.to);
     if (source !== undefined || target !== undefined) {
       result.ends.set(meta.id, {
         ...(source !== undefined ? { source } : {}),
@@ -155,8 +175,8 @@ export function endContextOf(xml: string | undefined, index: CellIndex): EndCont
   if (cached && cached.xml === xml) {
     return cached.context;
   }
-  const { ends, parents, report } = edgeEnds(xml, index);
-  const context = { index, ends, parents, report };
+  const { ends, edited, parents, report } = edgeEnds(xml, index);
+  const context = { index, ends, edited, parents, report };
   contexts.set(index, { xml, context });
   return context;
 }
