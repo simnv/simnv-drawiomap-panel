@@ -53,9 +53,9 @@ const group = (name: string) => {
 const active = () => tabs().find((t) => t.getAttribute('aria-selected') === 'true')?.textContent;
 /** The cells of a count row: cells, 0 series, 1 series, more. The first column is the button of the row. */
 const counts = (scope: HTMLElement, label: string) =>
-  Array.from(within(scope).getByRole('button', { name: label }).closest('tr')!.querySelectorAll('td')).map(
-    (td) => td.textContent
-  );
+  Array.from(
+    within(within(scope).getByRole('table')).getByRole('button', { name: label }).closest('tr')!.querySelectorAll('td')
+  ).map((td) => td.textContent);
 const lit = () =>
   Array.from(screen.getByTestId('dmap-popup-stage').querySelectorAll('[data-dmap-highlight="true"]')).map((el) =>
     el.getAttribute('data-cell-id')
@@ -79,8 +79,8 @@ describe('MatchReport in the split editor', () => {
     const dev = group('Class dev');
     // per class: the cells, then the cells with 0, 1 and more series of their first use
     expect(counts(dev, 'dev, first use')).toEqual(['2', '1', '1', '0']);
-    expect(counts(dev, 'classes.dev.status')).toEqual(['', '1', '1', '0']);
-    expect(within(dev).getByRole('button', { name: 'classes.dev.status: 1 cells have no series' })).toBeTruthy();
+    expect(counts(dev, 'status')).toEqual(['', '1', '1', '0']);
+    expect(within(dev).getByRole('button', { name: '1 cell has no series' })).toBeTruthy();
     const sw = group('Class sw');
     expect(counts(sw, 'sw, first use')).toEqual(['1', '0', '1', '0']);
     expect(within(sw).queryAllByRole('listitem')).toHaveLength(0);
@@ -92,7 +92,7 @@ describe('MatchReport in the split editor', () => {
     type(fake.text.replace('key: job', 'key: host'));
     settle();
     expect(counts(group('Class dev'), 'dev, first use')).toEqual(['2', '2', '0', '0']);
-    expect(within(group('Class dev')).getByRole('button', { name: 'classes.dev.status: 2 cells have no series' }));
+    expect(within(group('Class dev')).getByRole('button', { name: '2 cells have no series' }));
     // a YAML error is an entry of its own, and the counts stay at the last valid draft
     type('version: 4\nclasses: [\n');
     settle();
@@ -112,7 +112,7 @@ describe('MatchReport in the split editor', () => {
       />
     );
     const entry = within(group('Class dev')).getByRole('button', {
-      name: 'classes.dev.arrow: not used on 2 cells that are not edges',
+      name: 'Not used on 2 cells that are not edges',
     });
     fireEvent.click(entry);
     expect(fake.editor.setPosition).toHaveBeenLastCalledWith(positionOf('arrow: none'));
@@ -121,7 +121,7 @@ describe('MatchReport in the split editor', () => {
 
   it('a click on an entry highlights its cells and moves the cursor to its path', () => {
     render(<SplitEditor {...editorProps()} />);
-    fireEvent.click(within(group('Class dev')).getByRole('button', { name: /cells have no series/ }));
+    fireEvent.click(within(group('Class dev')).getByRole('button', { name: /cell has no series/ }));
     expect(lit()).toEqual(['b']);
     expect(zoom.fitCells).toHaveBeenCalledTimes(1);
     expect(zoom.fitCells.mock.calls[0][1]).toEqual(['b']);
@@ -140,7 +140,7 @@ describe('MatchReport in the split editor', () => {
 
   it('a click on a count row moves the cursor and lights the cells of its path, as a cursor move does', () => {
     render(<SplitEditor {...editorProps()} />);
-    fireEvent.click(within(group('Class dev')).getByRole('button', { name: 'classes.dev.status' }));
+    fireEvent.click(within(within(group('Class dev')).getByRole('table')).getByRole('button', { name: 'status' }));
     expect(fake.editor.setPosition).toHaveBeenCalledWith(positionOf('status: up'));
     expect(lit()).toEqual(['a', 'b']);
     fireEvent.click(within(group('Class sw')).getByRole('button', { name: 'sw, first use' }));
@@ -152,7 +152,7 @@ describe('MatchReport in the split editor', () => {
     render(<SplitEditor {...editorProps()} />);
     act(() => fake.moveTo(fake.text.indexOf('sw:')));
     act(() => vi.advanceTimersByTime(100));
-    fireEvent.click(within(group('Class dev')).getByRole('button', { name: /cells have no series/ }));
+    fireEvent.click(within(group('Class dev')).getByRole('button', { name: /cell has no series/ }));
     expect(lit()).toEqual(['b']);
     act(() => vi.advanceTimersByTime(150));
     expect(lit()).toEqual(['b']);
@@ -206,7 +206,7 @@ describe('MatchReport in the split editor', () => {
     act(() => vi.advanceTimersByTime(150));
     expect(lit()).toEqual(['a', 'b']);
     expect(zoom.fitCells).toHaveBeenCalledTimes(1);
-    fireEvent.click(within(group('Class spare')).getByRole('button', { name: /no cell binds this class/ }));
+    fireEvent.click(within(group('Class spare')).getByRole('button', { name: /No cell binds this class/ }));
     expect(fake.editor.setPosition).toHaveBeenCalledWith(positionOf('spare:'));
     expect(lit()).toEqual([]);
     expect(zoom.fitCells).toHaveBeenCalledTimes(1);
@@ -215,6 +215,62 @@ describe('MatchReport in the split editor', () => {
 
 describe('MatchReport', () => {
   const empty = { perClass: new Map(), perUse: new Map() };
+
+  it('shows one cause row with a clickable use for each original path', () => {
+    const onPick = vi.fn();
+    const entries: ReportEntry[] = ['status', 'rows[0]', 'url'].map((use) => ({
+      kind: 'missing-attr',
+      cls: 'dev',
+      path: `classes.dev.${use}`,
+      attr: 'key',
+      cellIds: ['a', 'b'],
+    }));
+    const config = {
+      version: 4 as const,
+      freshness: '1h',
+      overrides: {},
+      classes: { dev: { rows: [{ kind: 'value' as const, query: 'load', label: 'load 1m' }] } },
+    };
+    render(<MatchReport entries={entries} counts={empty} config={config} onPick={onPick} />);
+    expect(tabOf('dev').textContent).toBe('dev1');
+    const row = within(report()).getByRole('listitem');
+    fireEvent.click(within(row).getByRole('button', { name: '2 cells have no attribute `key`' }));
+    expect(onPick).toHaveBeenLastCalledWith({ kind: 'entry', path: 'classes.dev.status', cells: ['a', 'b'] });
+    expect(within(row).getByText(/Used by/)).toBeTruthy();
+    for (const [label, path] of [
+      ['status', 'status'],
+      ['rows[0] (load 1m)', 'rows[0]'],
+      ['url', 'url'],
+    ]) {
+      fireEvent.click(within(row).getByRole('button', { name: label }));
+      expect(onPick).toHaveBeenLastCalledWith({ kind: 'entry', path: `classes.dev.${path}`, cells: ['a', 'b'] });
+    }
+  });
+
+  it.each([undefined, 'load'])('names the source class on inherited row links when both labels are %s', (label) => {
+    const onPick = vi.fn();
+    const config = {
+      version: 4 as const,
+      freshness: '1h',
+      overrides: {},
+      classes: {
+        base: { match: { key: 'job' }, rows: [{ kind: 'value' as const, query: 'load', label }] },
+        child: { extends: 'base', rows: [{ kind: 'value' as const, query: 'load', label }] },
+      },
+    };
+    const entries: ReportEntry[] = ['base', 'child'].map((source) => ({
+      kind: 'no-series',
+      cls: 'child',
+      use: `classes.${source}.rows[0]`,
+      cellIds: ['a'],
+    }));
+    render(<MatchReport entries={entries} counts={empty} config={config} onPick={onPick} />);
+    const row = within(group('Class child')).getByRole('listitem');
+    fireEvent.click(within(row).getByRole('button', { name: label ? 'base.rows[0] (load)' : 'base.rows[0]' }));
+    expect(onPick).toHaveBeenLastCalledWith({ kind: 'entry', path: 'classes.base.rows[0]', cells: ['a'] });
+    fireEvent.click(within(row).getByRole('button', { name: label ? 'rows[0] (load)' : 'rows[0]' }));
+    expect(onPick).toHaveBeenLastCalledWith({ kind: 'entry', path: 'classes.child.rows[0]', cells: ['a'] });
+  });
 
   it('puts only the active tab before the report controls in the tab order', () => {
     const perClass = new Map([
@@ -332,9 +388,9 @@ describe('MatchReport', () => {
     const perClass = new Map([['dev', { cells: 2, zero: 1, one: 1, many: 0 }]]);
     const perUse = new Map([['classes.dev.status', { zero: 1, one: 1, many: 0 }]]);
     render(<MatchReport entries={entries} counts={{ perClass, perUse }} onPick={onPick} />);
-    fireEvent.click(screen.getByRole('button', { name: 'classes.dev.status: 1 cells have no series' }));
+    fireEvent.click(screen.getByRole('button', { name: '1 cell has no series' }));
     expect(onPick).toHaveBeenLastCalledWith({ kind: 'entry', path: 'classes.dev.status', cells: ['b'] });
-    fireEvent.click(screen.getByRole('button', { name: 'classes.dev.status' }));
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'status' }));
     expect(onPick).toHaveBeenLastCalledWith({ kind: 'path', path: 'classes.dev.status' });
     fireEvent.click(screen.getByRole('button', { name: 'dev, first use' }));
     expect(onPick).toHaveBeenLastCalledWith({ kind: 'path', path: 'classes.dev' });

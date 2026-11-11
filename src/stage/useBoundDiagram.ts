@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
 import type { PanelData } from '@grafana/data';
 import { bindV4, statusViewOf, type BindResultV4, type PatchV4 } from '../binding/bindV4';
-import type { ReportEntry } from '../binding/report';
 import type { CardContextV4 } from '../interact/cardModel';
 import { validateConfig } from '../model/validate';
-import { yamlPath } from '../model/yamlPath';
 import type { BindContext, CellIndex } from '../types';
 import { useStaleStatusV4 } from '../visuals/useSampleStale';
 
@@ -62,59 +60,4 @@ export function useBoundDiagram(inputs: BoundDiagramInputs): BoundDiagram {
   return { validated, bound, patches, cardContext };
 }
 
-/** The line of a report entry in the warning list of the panel (spec 4: view mode shows the count). */
-export function reportLine(entry: ReportEntry): string {
-  switch (entry.kind) {
-    case 'schema':
-      return `${entry.path}: ${entry.message}`;
-    case 'yaml':
-      return `line ${entry.line}: ${entry.message}`;
-    case 'outdated-config':
-      return `This configuration has version ${String(entry.version)}. The panel reads version 4 only: write the config again as version 4.`;
-    case 'query-unavailable':
-      return `${entry.refId}: ${entry.message}`;
-    case 'orphan-series':
-      return `${entry.refId}: ${entry.labels.length + entry.more} series select no cell`;
-    case 'many-fields':
-    case 'invalid-series':
-      return `${entry.refId}: ${entry.message}`;
-    case 'duplicate-series':
-      return `${entry.refId}: duplicate series ${JSON.stringify(entry.labels)}`;
-    case 'unknown-ref':
-      return `${entry.path}: no panel query has refId ${entry.refId}`;
-    case 'unknown-class':
-      return `${entry.cellIds.length} cells bind unknown class ${entry.bind}`;
-    case 'unknown-override':
-      return `${yamlPath(['overrides', entry.cellId])}: the diagram has no such cell`;
-    case 'class-no-cells':
-      return `classes.${entry.cls}: no cell binds this class`;
-    case 'class-no-match':
-      return `classes.${entry.cls}: the class has no match`;
-    case 'class-cycle':
-    case 'class-unknown-parent':
-    case 'class-invalid-parent':
-      return `classes.${entry.cls}: ${entry.kind}`;
-    case 'missing-attr':
-      return `${entry.path}: ${entry.cellIds.length} cells have no attribute ${entry.attr}`;
-    case 'matcher-error':
-      return `${entry.path}: ${entry.message}`;
-    case 'template-unresolved':
-      return `${entry.path}: the template does not resolve for ${entry.cellIds.length} cells`;
-    case 'no-series':
-      return `${entry.use}: ${entry.cellIds.length} cells have no series`;
-    case 'many-series':
-      return `${entry.use}: ${entry.cells.length} cells have more than one series`;
-    case 'unit-mismatch':
-      return `${entry.use}: the units ${entry.units.join(', ')} do not convert`;
-    case 'capacity-fallback':
-      return `classes.${entry.cls}.capacity: ${entry.reason}`;
-    case 'bad-cap':
-      return `${entry.attr} "${entry.value}" is not a capacity (${entry.cellIds.length} cells)`;
-    case 'cap-conflict':
-      return `cap "${entry.cap}" and capacity "${entry.capacity}" differ, cap wins over the attribute capacity (${entry.cellIds.length} cells)`;
-    case 'no-edge-ends':
-      return `${entry.cellIds.length} edges have no ends: ${entry.reason}`;
-    case 'unused-field':
-      return `classes.${entry.cls}.${entry.field}: not used on ${entry.cellIds.length} cells that are not edges`;
-  }
-}
+export { reportLine } from './reportView';

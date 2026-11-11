@@ -159,9 +159,7 @@ test('the cursor lights the cells of its path and zooms; a report entry lights i
   await matchReport(dialog)
     .getByRole('tab', { name: /^routers/ })
     .click();
-  await matchReport(dialog)
-    .getByRole('button', { name: /^classes\.routers\.rows\[2\]: 2 cells have no series/ })
-    .click();
+  await matchReport(dialog).getByRole('button', { name: '2 cells have no series' }).click();
   await expect.poll(() => flagged(dialog, 'highlight')).toEqual(['device-1', 'device-2']);
   expect((await codeCursor(dialog)).lineNumber).toBe(rowStart);
   await expect(codeBox(dialog)).toHaveClass(/focused/);
@@ -172,9 +170,7 @@ test('the cursor lights the cells of its path and zooms; a report entry lights i
   await popupCell(dialog, 'device-1').click();
   await expect.poll(() => flagged(dialog, 'highlight')).toEqual([]);
   await expect(popupCell(dialog, 'device-1')).not.toHaveClass(/dmap-legend-member/);
-  await matchReport(dialog)
-    .getByRole('button', { name: /^classes\.routers\.rows\[2\]: 2 cells have no series/ })
-    .click();
+  await matchReport(dialog).getByRole('button', { name: '2 cells have no series' }).click();
   await expect.poll(() => flagged(dialog, 'highlight')).toEqual(['device-1', 'device-2']);
   // The code box keeps its own Escape (Monaco handles it); a focus on the diagram gives it to the editor.
   await popupCell(dialog, 'device-1').focus();
@@ -332,7 +328,7 @@ test(
     const [statusLine] = await codeLines(dialog, /^ {4}status: 42$/);
     await expect.poll(async () => (await codeMarkers(dialog)).map((m) => m.line)).toContain(statusLine);
     await report.getByRole('tab', { name: /^routers/ }).click();
-    await expect(report.getByRole('button', { name: /^classes\.routers\.status: / })).toBeVisible();
+    await expect(report.getByRole('button', { name: /^status: / })).toBeVisible();
     await expect(apply).toBeEnabled();
     // The draft binds: the routers lose the status of the saved config.
     await expect(popupCell(dialog, 'device-1')).not.toHaveAttribute('data-dmap-status', 'normal');

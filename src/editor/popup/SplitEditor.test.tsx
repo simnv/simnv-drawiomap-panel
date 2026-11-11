@@ -524,25 +524,25 @@ describe('SplitEditor', () => {
       />
     );
     await frame();
-    fireEvent.click(screen.getByRole('button', { name: 'classes.dev.status: 1 cells have no series' }));
+    fireEvent.click(screen.getByRole('button', { name: '1 cell has no series' }));
     expect(lit()).toEqual(['b']);
     // the report shows one class at a time: open the tab of the entry
     if (target === 'path-only') {
       fireEvent.click(screen.getByRole('tab', { name: /^sw/ }));
-      fireEvent.click(screen.getByRole('button', { name: 'classes.sw.status: no panel query has refId missing' }));
+      fireEvent.click(screen.getByRole('button', { name: 'No panel query has refId missing' }));
       expect(fake.editor.setPosition).toHaveBeenLastCalledWith(
         fake.model.getPositionAt(fake.text.indexOf('status: missing'))
       );
     } else {
       fireEvent.click(screen.getByRole('tab', { name: /^Not in a class/ }));
-      fireEvent.click(screen.getByRole('button', { name: /up: 1 series select no cell/ }));
+      fireEvent.click(screen.getByRole('button', { name: /up: 1 series selects no cell/ }));
     }
     act(() => vi.advanceTimersByTime(150));
     expect(lit()).toEqual(target === 'path-only' ? ['c'] : []);
   });
 
   describe('the highlight and the selection', () => {
-    const entry = () => screen.getAllByRole('button', { name: /^classes\.dev\.status/ })[0];
+    const entry = () => screen.getByRole('button', { name: '1 cell has no series' });
     const dimmed = () =>
       screen.getByTestId('dmap-popup-stage').querySelector('svg')!.classList.contains('dmap-legend-active');
 

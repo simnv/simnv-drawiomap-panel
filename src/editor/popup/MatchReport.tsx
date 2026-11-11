@@ -3,83 +3,22 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Tab, TabsBar, useStyles2 } from '@grafana/ui';
 import type { ReportEntry, UsePath } from '../../binding/report';
-import { parsePath, yamlPath } from '../../model/yamlPath';
-import { reportLine } from '../../stage/useBoundDiagram';
+import type { ConfigV4 } from '../../model/v4';
+import { yamlPath } from '../../model/yamlPath';
+import {
+  classOfPath,
+  entryTarget,
+  groupReport,
+  reportGroupLine,
+  reportUse,
+  type ReportGroup,
+  type ReportPick,
+} from '../../stage/reportView';
 import type { reportCounts, SeriesCounts } from '../split/reportCounts';
 
-/** The YAML place of a report entry (a path or a line) and its cells (spec 4). */
-export interface EntryTarget {
-  path?: string;
-  line?: number;
-  cells: string[];
-}
-
-/**
- * A click in the report. A count row gives a path: the editor lights the cells of the path, as a cursor move does
- * (spec 5.3). An entry gives its own cells: the editor lights them; an entry with no cells moves the cursor only.
- */
-export type ReportPick = { kind: 'path'; path: string } | ({ kind: 'entry' } & EntryTarget);
+export { classOfPath, entryTarget, type EntryTarget, type ReportPick } from '../../stage/reportView';
 
 const classPath = (cls: string, ...rest: string[]) => yamlPath(['classes', cls, ...rest]);
-
-/** The YAML place and the cells of a report entry. */
-export function entryTarget(entry: ReportEntry): EntryTarget {
-  switch (entry.kind) {
-    case 'yaml':
-      return { line: entry.line, cells: [] };
-    case 'schema':
-    case 'unknown-ref':
-      return { path: entry.path, cells: [] };
-    case 'outdated-config':
-      return { path: 'version', cells: [] };
-    case 'class-cycle':
-    case 'class-unknown-parent':
-    case 'class-invalid-parent':
-      return { path: classPath(entry.cls, 'extends'), cells: [] };
-    case 'class-no-cells':
-      return { path: classPath(entry.cls), cells: [] };
-    case 'class-no-match':
-      return { path: classPath(entry.cls), cells: entry.cellIds };
-    case 'unknown-override':
-      return { path: yamlPath(['overrides', entry.cellId]), cells: [] };
-    case 'missing-attr':
-    case 'matcher-error':
-    case 'template-unresolved':
-      return { path: entry.path, cells: entry.cellIds };
-    case 'no-series':
-    case 'unit-mismatch':
-      return { path: entry.use, cells: entry.cellIds };
-    case 'many-series':
-      return { path: entry.use, cells: entry.cells.map((c) => c.id) };
-    case 'capacity-fallback':
-      return { path: classPath(entry.cls, 'capacity'), cells: entry.cellIds };
-    case 'unused-field':
-      return { path: classPath(entry.cls, entry.field), cells: entry.cellIds };
-    case 'unknown-class':
-    case 'bad-cap':
-    case 'cap-conflict':
-    case 'no-edge-ends':
-      return { cells: entry.cellIds };
-    case 'query-unavailable':
-    case 'orphan-series':
-    case 'many-fields':
-    case 'invalid-series':
-    case 'duplicate-series':
-      return { cells: [] };
-  }
-}
-
-/** The class of a path: `classes.<c>…` gives `c`. */
-export function classOfPath(path: string | undefined): string | undefined {
-  if (!path) {
-    return undefined;
-  }
-  const [root, name] = parsePath(path);
-  return root === 'classes' && typeof name === 'string' ? name : undefined;
-}
-
-/** The class of an entry: its `cls`, else the class of its path. */
-const classOf = (entry: ReportEntry) => ('cls' in entry ? entry.cls : classOfPath(entryTarget(entry).path));
 
 /**
  * A request to open the tab of a group: a class name, or null for the entries without a class. Each new object opens
@@ -93,6 +32,7 @@ export interface MatchReportProps {
   /** The `yaml` entries of the code box, then the report of the bind. */
   entries: ReportEntry[];
   counts: ReturnType<typeof reportCounts>;
+  config?: ConfigV4 | null;
   onPick: (pick: ReportPick) => void;
   /** The group of the cursor or of the clicked cell. A group with no tab keeps the tab. */
   follow?: ReportFollow;
@@ -102,11 +42,11 @@ interface Group {
   cls?: string;
   cells?: SeriesCounts & { cells: number };
   uses: Array<[UsePath, SeriesCounts]>;
-  entries: ReportEntry[];
+  entries: ReportGroup[];
 }
 
 /** One group per class (in the order of the config), then the classes that only entries name, then the rest. */
-function groupsOf({ entries, counts }: Pick<MatchReportProps, 'entries' | 'counts'>): Group[] {
+function groupsOf({ entries, counts, config }: Pick<MatchReportProps, 'entries' | 'counts' | 'config'>): Group[] {
   const groups = new Map<string | undefined, Group>();
   const groupOf = (cls: string | undefined) => {
     let group = groups.get(cls);
@@ -122,8 +62,8 @@ function groupsOf({ entries, counts }: Pick<MatchReportProps, 'entries' | 'count
   for (const [use, of] of counts.perUse) {
     groupOf(classOfPath(use)).uses.push([use, of]);
   }
-  for (const entry of entries) {
-    groupOf(classOf(entry)).entries.push(entry);
+  for (const row of groupReport(entries, config)) {
+    groupOf(row.cls).entries.push(row);
   }
   const other = groups.get(undefined);
   groups.delete(undefined);
@@ -139,9 +79,9 @@ const keyOf = (group: Group) => group.cls ?? null;
  * the same counts per use, and the entries of the class; the label of the tab counts the entries. A click on a row
  * moves the cursor to its YAML place (spec 5.3). The tab follows `follow`; it starts at the first tab with entries.
  */
-export function MatchReport({ entries, counts, onPick, follow }: MatchReportProps) {
+export function MatchReport({ entries, counts, config, onPick, follow }: MatchReportProps) {
   const styles = useStyles2(getStyles);
-  const groups = groupsOf({ entries, counts });
+  const groups = groupsOf({ entries, counts, config });
   const id = useId();
   // The tab of the user or of the last follow request; undefined: no choice yet.
   const [chosen, setChosen] = useState<string | null | undefined>(follow?.group);
@@ -233,7 +173,7 @@ export function MatchReport({ entries, counts, onPick, follow }: MatchReportProp
           className={styles.group}
           data-testid="dmap-match-report-panel"
         >
-          <GroupBody group={current} onPick={onPick} />
+          <GroupBody group={current} config={config} onPick={onPick} />
         </div>
       ) : null}
     </section>
@@ -241,7 +181,15 @@ export function MatchReport({ entries, counts, onPick, follow }: MatchReportProp
 }
 
 /** The counts and the entries of one group. */
-function GroupBody({ group, onPick }: { group: Group; onPick: (pick: ReportPick) => void }) {
+function GroupBody({
+  group,
+  config,
+  onPick,
+}: {
+  group: Group;
+  config?: ConfigV4 | null;
+  onPick: (pick: ReportPick) => void;
+}) {
   const styles = useStyles2(getStyles);
   return (
     <>
@@ -249,11 +197,17 @@ function GroupBody({ group, onPick }: { group: Group; onPick: (pick: ReportPick)
         <table className={styles.table}>
           <thead>
             <tr>
-              <th scope="col">Path</th>
+              <th scope="col">Use</th>
               <th scope="col">Cells</th>
-              <th scope="col">0 series</th>
-              <th scope="col">1 series</th>
-              <th scope="col">More</th>
+              <th scope="col" title="Cells with no series">
+                No series
+              </th>
+              <th scope="col" title="Cells with one series">
+                One series
+              </th>
+              <th scope="col" title="Cells with more than one series">
+                Several
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -266,23 +220,45 @@ function GroupBody({ group, onPick }: { group: Group; onPick: (pick: ReportPick)
               />
             ) : null}
             {group.uses.map(([use, of]) => (
-              <CountRow key={use} label={use} counts={of} onClick={() => onPick({ kind: 'path', path: use })} />
+              <CountRow
+                key={use}
+                label={reportUse(use, group.cls, config)}
+                counts={of}
+                onClick={() => onPick({ kind: 'path', path: use })}
+              />
             ))}
           </tbody>
         </table>
       ) : null}
       {group.entries.length ? (
         <ul className={styles.entries}>
-          {group.entries.map((entry, i) => (
+          {group.entries.map((row, i) => (
             <li key={i}>
               <button
                 type="button"
                 className={styles.link}
-                onClick={() => onPick({ kind: 'entry', ...entryTarget(entry) })}
+                onClick={() => onPick({ kind: 'entry', ...entryTarget(row.entries[0]) })}
               >
-                {reportLine(entry)}
-                <EntryDetails entry={entry} />
+                {reportGroupLine(row)}
+                <EntryDetails entry={row.entries[0]} />
               </button>
+              {row.uses.length ? (
+                <div className={styles.uses}>
+                  Used by{' '}
+                  {row.uses.map((use, j) => (
+                    <React.Fragment key={use.target.path}>
+                      {j ? ', ' : null}
+                      <button
+                        type="button"
+                        className={styles.link}
+                        onClick={() => onPick({ kind: 'entry', ...use.target })}
+                      >
+                        {use.label}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -357,6 +333,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   // a count of 0 is a problem: the cells have no series
   zero: css({ color: theme.colors.error.text }),
   entries: css({ listStyle: 'none', margin: theme.spacing(0.5, 0, 0), padding: 0 }),
+  uses: css({ color: theme.colors.text.secondary, marginBottom: theme.spacing(0.5), overflowWrap: 'anywhere' }),
   details: css({
     display: 'block',
     paddingLeft: theme.spacing(1),

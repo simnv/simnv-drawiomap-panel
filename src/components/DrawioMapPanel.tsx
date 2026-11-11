@@ -19,7 +19,8 @@ import { CellFocusRing, FOCUSABLE_CELL } from '../stage/CellFocusRing';
 import { DEFER_ABOVE, useStage } from '../stage/useStage';
 import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
-import { reportLine, useBoundDiagram } from '../stage/useBoundDiagram';
+import { useBoundDiagram } from '../stage/useBoundDiagram';
+import { groupReport, reportGroupLine } from '../stage/reportView';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { legendCorners } from './legendCorners';
@@ -229,7 +230,7 @@ function DrawioMapPanelView(props: ViewProps) {
   );
   // The bind runs on new data, a new diagram or a new config; the clock runs only the stale pass (spec 3.5).
   // While the deferred build of a large diagram runs, the stage is empty: nothing of another diagram binds or shows.
-  const { bound, patches, cardContext } = useBoundDiagram({
+  const { validated, bound, patches, cardContext } = useBoundDiagram({
     index: stage.index,
     xml: opts.diagram?.xml,
     config: options.config,
@@ -241,12 +242,12 @@ function DrawioMapPanelView(props: ViewProps) {
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
-    const warnings = bound.report.map(reportLine);
+    const warnings = groupReport(bound.report, validated.parsed.config).map((row) => reportGroupLine(row, true));
     if (legacyRules) {
       warnings.unshift(legacyRulesWarning(legacyRules));
     }
     return { patches: patches as Map<string, CellPatch>, warnings, bandRows: bandRowsV4(patches) };
-  }, [bound, patches, legacyRules]);
+  }, [bound, patches, legacyRules, validated.parsed.config]);
 
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);
