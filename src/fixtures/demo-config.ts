@@ -5,10 +5,11 @@ import type { ClassV4, ConfigV4, RowV4 } from '../model/v4';
  * in stack/metrics-gen/gen.py, through the panel targets of demo/dashboard.template.json. The refId of a target is
  * its query name: lan_tx, lan_rx, wan_tx, wan_rx, speed, up, load, cpu, v4_samples and v4_nine.
  *
- * A link carries key=<job>, port=<device> and at=source or at=target: the end that owns the transmit and receive
- * counters. tx is up and rx is down, so the halves follow the geometric direction of the link (spec 3.8.2).
- * LAN links use key=node-rtr-a or node-rtr-b, port=br-lan and at=target; their capacity is the speed series of the
- * same port. WAN and tunnel links carry cap=100M. The cells get these attributes in fixtures/demo/demo-l3.yaml.
+ * A link carries only `bind`. Each node has key=<job>. Each measured port has port=<device> (and cap=100M on the
+ * WAN, tunnel and relay ports). The link takes the instrumented end, key and port from its two cells (reason `only`),
+ * and the end sets the direction: tx is up and rx is down, so the halves follow the geometric direction of the
+ * link (spec 3.8.2). The capacity of a LAN link is the speed series of the router port. The cells get these
+ * attributes in fixtures/demo/demo-l3.yaml.
  */
 
 /** A link class: the transmit and receive targets, one updown row, the URL of the interface. */
