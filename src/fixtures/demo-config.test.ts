@@ -1,9 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createTheme, FieldType, MappingType, type FieldConfig } from '@grafana/data';
+import {
+  createTheme,
+  dateTime,
+  FieldType,
+  LoadingState,
+  MappingType,
+  type DataFrame,
+  type FieldConfig,
+  type Labels,
+} from '@grafana/data';
 
+import { bindV4 } from '../binding/bindV4';
 import { effectiveClass } from '../binding/classes';
+import { bindContextFor } from '../binding/context';
 import { createRegexCache, parseMatchBlock, resolveBlock } from '../binding/matcher';
 import { statusOfUse } from '../binding/statusV4';
 import { toBitsPerSecond } from '../binding/units';
@@ -11,6 +22,7 @@ import { resolveUrlV4 } from '../interact/links';
 import type { ConfigV4, MatchV4 } from '../model/v4';
 import { validateConfig } from '../model/validate';
 import type { Series } from '../query/snapshot';
+import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { authoringConfigV4 } from './authoring-config';
 import { demoConfigV4, handDrawnConfigV4 } from './demo-config';
 
@@ -280,5 +292,127 @@ describe('v4 demo configs', () => {
     expect(refIds(1)).toEqual(used(demoConfigV4));
     expect(refIds(2)).toEqual(used(handDrawnConfigV4));
     expect(refIds(3)).toEqual(used(authoringConfigV4));
+  });
+
+  // AC16: the demo with the inferred identity selects the same series as the golden record of the old export
+  describe('demo-l3 with the inferred identity', () => {
+    const read = (path: string) => readFileSync(resolve(__dirname, path), 'utf8');
+    const frame = (refId: string, labels: Labels, last: number, config: FieldConfig = {}): DataFrame => ({
+      refId,
+      length: 3,
+      fields: [
+        { name: 'Time', type: FieldType.time, config: {}, values: [0, 60_000, 120_000] },
+        { name: 'Value', type: FieldType.number, config, labels, values: [last * 0.9, last * 0.95, last] },
+      ],
+    });
+    // the series of stack/metrics-gen/gen.py
+    const frames = (): DataFrame[] => {
+      const unit = { unit: 'bps' };
+      const ports: Array<[string, string, string]> = [
+        ['lan', 'node-rtr-a', 'br-lan'],
+        ['lan', 'node-rtr-b', 'br-lan'],
+        ['lan', 'node-rtr-a', 'ts0'],
+        ['lan', 'node-rtr-a', 'tun0'],
+        ['lan', 'node-rtr-b', 'tun0'],
+        ['lan', 'node-proxy-a', 'relay-out'],
+        ['wan', 'node-isp-a', 'pppoe'],
+        ['wan', 'node-radio', 'dhcp'],
+        ['wan', 'node-isp-b', 'pppoe'],
+      ];
+      const jobs = ['net-a', 'net-b', 'rtr-a', 'rtr-b', 'isp-a', 'radio', 'lte', 'isp-b', 'proxy-a', 'proxy-b'].map(
+        (n) => `node-${n}`
+      );
+      return [
+        ...ports.flatMap(([kind, job, device], i) => [
+          frame(`${kind}_tx`, { job, device }, 8_000_000 * (i + 1), unit),
+          frame(`${kind}_rx`, { job, device }, 1_000_000 * (i + 1), unit),
+        ]),
+        frame('speed', { job: 'node-rtr-a', device: 'br-lan' }, 125_000_000, { unit: 'Bps' }),
+        frame('speed', { job: 'node-rtr-b', device: 'br-lan' }, 12_500_000, { unit: 'Bps' }),
+        ...jobs.map((job, i) => frame('up', { job }, i === 6 ? 0 : 1)),
+        ...jobs.map((job, i) => frame('load', { job }, 1 + 0.1 * i)),
+        frame('cpu', { job: 'node-rtr-a' }, 42, unit),
+        frame('cpu', { job: 'node-rtr-b' }, 23, unit),
+        ...['node-rtr-a', 'node-rtr-b'].flatMap((job) => [
+          ...[0, 1, 2].map((i) => frame('v4_samples', { job, line: `line-${i}` }, 20 * (i + 1))),
+          ...Array.from({ length: 9 }, (_, i) => frame('v4_nine', { job, line: `line-${i}` }, (i + 1) * 10)),
+        ]),
+      ];
+    };
+    const bindOf = (svg: string, xml: string) => {
+      const index = buildCellIndex(mountSvg(document.createElement('div'), read(svg)));
+      const range = { from: dateTime(0), to: dateTime(120_000), raw: { from: dateTime(0), to: dateTime(120_000) } };
+      const result = bindV4({
+        index,
+        xml: read(xml),
+        validated: validateConfig(demoConfigV4),
+        data: { series: frames(), state: LoadingState.Done, timeRange: range },
+        ctx: bindContextFor({
+          theme: createTheme(),
+          replaceVariables: (text) => text,
+          timeZone: 'utc',
+          linkWidth: { min: 2, max: 10 },
+        }),
+      });
+      return { index, result };
+    };
+    const linkSeries = ({ index, result }: ReturnType<typeof bindOf>) =>
+      Object.fromEntries(
+        [...index.values()]
+          .filter((entry) => entry.meta.attrs['pg-kind'] === 'link')
+          .map((entry) => [
+            entry.meta.id,
+            Object.fromEntries(
+              [...(result.series.get(entry.meta.id) ?? [])].map(([path, list]) => [
+                path,
+                list.map((s) => JSON.stringify(Object.entries(s.labels).sort())).sort(),
+              ])
+            ),
+          ])
+      );
+
+    it('selects, for each link id, the series of the golden record, with an empty report', () => {
+      const golden = bindOf('./golden/demo-l3-2026-11-11.svg', './golden/demo-l3-2026-11-11.drawio');
+      const now = bindOf('../../fixtures/demo/svg/demo-l3.svg', '../../fixtures/demo/demo-l3.drawio');
+      const before = linkSeries(golden);
+      const after = linkSeries(now);
+      expect(Object.keys(before).length).toBeGreaterThan(0);
+      expect(Object.values(before).some((paths) => Object.keys(paths).length > 0)).toBe(true);
+      expect(after).toEqual(before);
+      expect(now.result.report).toEqual([]);
+    });
+
+    it('keeps the join attributes of the SVG cells equal to those of the .drawio objects', () => {
+      const join = (text: string, attrs: RegExp) =>
+        Object.fromEntries(
+          [...text.matchAll(attrs)]
+            .map(([tag, id]) => [
+              id,
+              [...tag.matchAll(/ (?:data-meta-)?(bind|key|port|at|cap)="([^"]*)"/g)]
+                .map((m) => `${m[1]}=${m[2]}`)
+                .sort(),
+            ])
+            .filter(([, list]) => list.length > 0)
+        );
+      const fromSvg = join(read('../../fixtures/demo/svg/demo-l3.svg'), /<g data-cell-id="([^"]+)"[^>]*>/g);
+      const fromXml = join(read('../../fixtures/demo/demo-l3.drawio'), /<object id="([^"]+)"[^>]*>/g);
+      expect(Object.keys(fromXml).length).toBeGreaterThan(20);
+      expect(fromSvg).toEqual(fromXml);
+    });
+
+    it('has key, port and at on no link, and key on each node of a measured end', () => {
+      for (const attr of ['key', 'port', 'at']) {
+        const links = [
+          ...read('../../fixtures/demo/svg/demo-l3.svg').matchAll(
+            new RegExp(`<g [^>]*data-meta-pg-kind="link"[^>]*data-meta-${attr}="`, 'g')
+          ),
+        ];
+        expect(links, attr).toHaveLength(0);
+      }
+      const xml = read('../../fixtures/demo/demo-l3.drawio');
+      for (const tag of xml.match(/<object [^>]*pg-kind="link"[^>]*>/g) ?? []) {
+        expect(tag).not.toMatch(/ (key|port|at)="/);
+      }
+    });
   });
 });
