@@ -648,6 +648,42 @@ describe('bindV4: the engine', () => {
     expect(entries(r.report, 'missing-attr')).toEqual([]);
   });
 
+  it('a portograph link with only bind reads its ends through the record key id', () => {
+    const r = run(
+      {
+        version: 4,
+        classes: {
+          lan: {
+            match: { id: ['job="${from.job}"', 'device="${from.device}"'] },
+            up: 'lan_tx',
+            down: 'lan_rx',
+          },
+        },
+      },
+      [
+        ['0', { 'pg-schema': '1' }],
+        ['n', { 'pg-kind': 'node', 'pg-id': 'sw-a', job: 'sw-a' }],
+        ['p', { 'pg-kind': 'port', 'pg-id': 'sw-a:eth1', 'pg-node': 'sw-a', device: 'eth1' }],
+        ['m', { 'pg-kind': 'node', 'pg-id': 'sw-b', job: 'sw-b' }],
+        ['l', { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'sw-a:eth1', 'pg-to': 'sw-b', bind: 'lan' }, true],
+      ],
+      [
+        frame('lan_tx', { job: 'sw-a', device: 'eth1' }, [5]),
+        frame('lan_rx', { job: 'sw-a', device: 'eth1' }, [7]),
+        frame('lan_tx', { job: 'sw-b', device: 'eth1' }, [9]),
+      ]
+    );
+    expect(entries(r.report, 'missing-attr')).toEqual([]);
+    expect(
+      r.series
+        .get('l')
+        ?.get('classes.lan.up')
+        ?.map((s) => s.labels)
+    ).toEqual([{ job: 'sw-a', device: 'eth1' }]);
+    expect(patch(r, 'l').link?.a2b).toMatchObject({ status: 'ok', value: 5 });
+    expect(patch(r, 'l').link?.b2a).toMatchObject({ status: 'ok', value: 7 });
+  });
+
   describe('an end attribute named as an Object.prototype member (gate A1)', () => {
     const xml =
       '<mxfile><diagram id="p1" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>' +
