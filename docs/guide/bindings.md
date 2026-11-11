@@ -88,16 +88,17 @@ A cell has attributes: the `data-meta-*` attributes of the exported SVG, written
 
 Attribute names are lowercase ASCII. The editor writes them in lowercase (`setCellAttrs` also replaces case variants and removes all variants for `null`).
 
-| Attribute | Use                                                                                                                                        |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bind`    | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                              |
-| `key`     | The main identity of the cell, for example a host name or an interface name. The class `match` and the templates read it.                  |
-| `port`    | A second identity, for example the interface of a host. Use any other name for a third one.                                                |
-| `at`      | A link only. `at=target` tells that `key` and `port` name the target end of the link. Else they name the source end (see [Links](#links)). |
-| `cap`     | A link only. The capacity when the class has no `capacity` series: `1G`, or `50M/10M` for a→b/b→a (see [Capacity](links.md#capacity)).     |
-| `id`      | The draw.io cell id. Read it as `${id}`.                                                                                                   |
-| `label`   | The label of the cell. Read it as `${label}`.                                                                                              |
-| other     | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                           |
+| Attribute  | Use                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bind`     | The name of the class of the cell. No `bind`: no binding. A `bind` that names no class gives `unknown-class`.                              |
+| `key`      | The main identity of the cell, for example a host name or an interface name. The class `match` and the templates read it.                  |
+| `port`     | A second identity, for example the interface of a host. Use any other name for a third one.                                                |
+| `at`       | A link only. `at=target` tells that `key` and `port` name the target end of the link. Else they name the source end (see [Links](#links)). |
+| `cap`      | A link only. The capacity when the class has no `capacity` series: `1G`, or `50M/10M` for a→b/b→a (see [Capacity](links.md#capacity)).     |
+| `capacity` | A link only. The second name of `cap`, as in the portograph contract: same grammar. `cap` wins when both are set.                          |
+| `id`       | The draw.io cell id. Read it as `${id}`.                                                                                                   |
+| `label`    | The label of the cell. Read it as `${label}`.                                                                                              |
+| other      | Any name of letters, digits, `_` and `-`. The names `pg-*` belong to portograph.                                                           |
 
 The inspector can write `bind` and `key`, and can set or clear `at=target` on an edge. For other attributes:
 
@@ -347,7 +348,8 @@ The report of the split editor has one tab for each class, in the order of the c
 | `duplicate-series`                                            | Two frames hold different values at one time for equal labels.                          |
 | `unit-mismatch`                                               | The units of the series cannot convert to one unit.                                     |
 | `capacity-fallback`                                           | The capacity series cannot give a value (the reason says why); the next source applies. |
-| `bad-cap`                                                     | The attribute `cap` does not parse.                                                     |
+| `bad-cap`                                                     | The attribute `cap` (or `capacity`, when `cap` is absent) does not parse.               |
+| `cap-conflict`                                                | The attributes `cap` and `capacity` are both set and differ. `cap` is used.             |
 | `no-edge-ends`                                                | The ends of an ordinary edge are not readable (a compressed page).                      |
 | `unused-field`                                                | A link field on a class whose cells are not links.                                      |
 | `class-no-cells`                                              | No cell binds this class or a class that extends it. An abstract class gives none.      |

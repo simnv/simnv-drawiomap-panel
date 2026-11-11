@@ -57,6 +57,7 @@ export function entryTarget(entry: ReportEntry): EntryTarget {
       return { path: classPath(entry.cls, entry.field), cells: entry.cellIds };
     case 'unknown-class':
     case 'bad-cap':
+    case 'cap-conflict':
     case 'no-edge-ends':
       return { cells: entry.cellIds };
     case 'query-unavailable':

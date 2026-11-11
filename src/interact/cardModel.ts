@@ -320,7 +320,12 @@ function readerOf(cellId: string, bound: BindResultV4, ctx: CardContextV4): UseR
       : { snapshot: { state: 'empty' as const, fetchedAt: 0, fromCache: false }, series: [] };
   };
   const capacity = meta?.isEdge
-    ? capacityV4({ capacity: eff?.capacity, cap: meta.attrs.cap, series: speedSeries })
+    ? capacityV4({
+        capacity: eff?.capacity,
+        cap: meta.attrs.cap,
+        capacityAttr: meta.attrs.capacity,
+        series: speedSeries,
+      })
     : undefined;
   const capacityOf: UseReader['capacityOf'] = (direction) => capacity?.[direction] ?? { source: 'none' };
 

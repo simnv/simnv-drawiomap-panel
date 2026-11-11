@@ -30,6 +30,7 @@ describe('S4 report contract', () => {
       'unit-mismatch',
       'capacity-fallback',
       'bad-cap',
+      'cap-conflict',
       'no-edge-ends',
       'unused-field',
       'class-no-cells',
@@ -145,6 +146,12 @@ describe('S4 report contract', () => {
     expectTypeOf<Extract<ReportEntry, { kind: 'bad-cap' }>>().toEqualTypeOf<{
       kind: 'bad-cap';
       value: string;
+      cellIds: string[];
+    }>();
+    expectTypeOf<Extract<ReportEntry, { kind: 'cap-conflict' }>>().toEqualTypeOf<{
+      kind: 'cap-conflict';
+      cap: string;
+      capacity: string;
       cellIds: string[];
     }>();
     expectTypeOf<Extract<ReportEntry, { kind: 'no-edge-ends' }>>().toEqualTypeOf<{

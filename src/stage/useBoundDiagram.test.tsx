@@ -200,6 +200,7 @@ describe('reportLine', () => {
     },
     'capacity-fallback': { kind: 'capacity-fallback', cls: 'link', reason: 'No unit', cellIds: ['node-rtr-a'] },
     'bad-cap': { kind: 'bad-cap', value: 'fast', cellIds: ['node-rtr-a'] },
+    'cap-conflict': { kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['node-rtr-a'] },
     'no-edge-ends': { kind: 'no-edge-ends', reason: 'compressed page', cellIds: ['node-rtr-a'] },
     'unused-field': { kind: 'unused-field', cls: 'host', field: 'up', cellIds: ['node-rtr-a'] },
     'class-no-cells': { kind: 'class-no-cells', cls: 'host' },

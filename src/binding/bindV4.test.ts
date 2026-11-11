@@ -385,6 +385,29 @@ describe('bindV4: the report kinds of spec 4', () => {
     expect(patch(r, 'l').link?.a2b?.percent).toBeUndefined();
   });
 
+  it('the attribute capacity is the second name of cap (portograph contract)', () => {
+    const cfg = hostConfig({ lan: { match: { key: 'name' }, up: 'tx' } });
+    const frames = [frame('tx', { name: 'sw-a' }, [5e8], { unit: 'bps' })];
+    const of = (attrs: Record<string, string>) => {
+      const r = run(cfg, [link(attrs)], frames);
+      return {
+        half: patch(r, 'l').link?.a2b,
+        report: r.report.filter((e) => e.kind === 'bad-cap' || e.kind === 'cap-conflict'),
+      };
+    };
+    const only = of({ capacity: '1000000000' });
+    expect(only.half).toMatchObject({ capacity: 1e9, capacitySource: 'attr', percent: 50 });
+    expect(only.report).toEqual([]);
+    expect(of({ cap: '1G', capacity: '1000000000' }).report).toEqual([]);
+    const differ = of({ cap: '1G', capacity: '2G' });
+    expect(differ.half).toMatchObject({ capacity: 1e9 });
+    expect(differ.report).toEqual([{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['l'] }]);
+    expect(of({ capacity: 'abc' }).report).toEqual([{ kind: 'bad-cap', value: 'abc', cellIds: ['l'] }]);
+    const badCap = of({ cap: 'abc', capacity: '1G' });
+    expect(badCap.half?.capacity).toBeUndefined();
+    expect(badCap.report).toEqual([{ kind: 'bad-cap', value: 'abc', cellIds: ['l'] }]);
+  });
+
   it('no-edge-ends: a compressed page gives no ends when a class reads ${from.…}', () => {
     const xml =
       '<mxfile><diagram id="p1" name="Page-1">7ZbBbqMwEIafhqsLGEhyTNJ0u9JWqtTDnh2YgFWDkW2a5O13DCbg</diagram></mxfile>';

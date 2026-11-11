@@ -24,6 +24,8 @@ export interface CapacityV4Input {
   capacity?: string | { a2b: string; b2a: string };
   /** the cell attribute `cap`: `1G`, or `50M/10M` for a→b/b→a */
   cap?: string;
+  /** the cell attribute `capacity`: the name of the portograph contract, same grammar as `cap`; `cap` wins */
+  capacityAttr?: string;
   /** the snapshot of a refId and its series that the class match selects for the cell */
   series: (refId: string) => { snapshot: QuerySnapshot; series: Series[] };
   /** the class and the cells of the report entries */
@@ -95,9 +97,9 @@ export interface LinkCapacity {
 
 /**
  * The v4 capacity of a link, per geometric direction (spec 3.8.4): the `capacity` refId of the class, else the cell
- * attribute `cap`, else none (the half shows the raw rate and no percent). The one place of this chain: the bind and
- * the card read it from here. A speed that falls through gives `capacity-fallback` with the reason; a `cap` that does
- * not parse gives `bad-cap`. The capacities follow the geometry: `at=target` changes only the feeds (`linkFeeds`), not
+ * attribute `cap`, else the cell attribute `capacity`, else none (the half shows the raw rate and no percent). The one place of this chain: the bind and
+ * the card read it from here. A speed that falls through gives `capacity-fallback` with the reason; a `cap` (or a `capacity` when `cap` is absent) that
+ * does not parse gives `bad-cap`; two attributes with different values give `cap-conflict`. The capacities follow the geometry: `at=target` changes only the feeds (`linkFeeds`), not
  * this result (A4).
  */
 export function capacityV4(input: CapacityV4Input): { a2b: LinkCapacity; b2a: LinkCapacity; report: ReportEntry[] } {
@@ -120,15 +122,24 @@ export function capacityV4(input: CapacityV4Input): { a2b: LinkCapacity; b2a: Li
     return speeds.get(refId);
   };
   const bySpeed = { a2b: speed(refs?.a2b), b2a: speed(refs?.b2a) };
+  // `cap` wins. An explicit `cap` that does not parse stays visible: it does not fall through to `capacity`.
   const cap = input.cap === undefined ? undefined : parseCap(input.cap);
+  const alt = input.capacityAttr === undefined ? undefined : parseCap(input.capacityAttr);
   if (input.cap !== undefined && cap === undefined) {
     report.push({ kind: 'bad-cap', value: input.cap, cellIds });
+  } else if (input.cap !== undefined && input.capacityAttr !== undefined) {
+    if (alt?.a2b !== cap?.a2b || alt?.b2a !== cap?.b2a) {
+      report.push({ kind: 'cap-conflict', cap: input.cap, capacity: input.capacityAttr, cellIds });
+    }
+  } else if (input.capacityAttr !== undefined && alt === undefined) {
+    report.push({ kind: 'bad-cap', value: input.capacityAttr, cellIds });
   }
+  const attr = input.cap !== undefined ? cap : alt;
   const of = (dir: 'a2b' | 'b2a'): LinkCapacity =>
     bySpeed[dir] !== undefined
       ? { amount: bySpeed[dir], source: 'series' }
-      : cap
-        ? { amount: cap[dir], source: 'attr' }
+      : attr
+        ? { amount: attr[dir], source: 'attr' }
         : { source: 'none' };
   return { a2b: of('a2b'), b2a: of('b2a'), report };
 }

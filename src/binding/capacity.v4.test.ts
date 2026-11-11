@@ -172,3 +172,45 @@ describe('capacityV4 with at=target (A4)', () => {
     expect((rates[feeds.b2a] / cap.b2a!) * 100).toBeCloseTo(20);
   });
 });
+
+describe('capacityV4: the attribute capacity (second name of cap)', () => {
+  it('uses capacity when cap is absent, with the grammar of cap', () => {
+    expect(chain(input({ capacityAttr: '1000000000' }))).toEqual({ a2b: 1e9, b2a: 1e9, report: [] });
+    expect(chain(input({ capacityAttr: '50M/10M' }))).toEqual({ a2b: 5e7, b2a: 1e7, report: [] });
+  });
+  it('gives no entry when cap and capacity are equal', () => {
+    expect(chain(input({ cap: '1G', capacityAttr: '1000000000' }))).toEqual({ a2b: 1e9, b2a: 1e9, report: [] });
+  });
+  it('cap wins and cap-conflict shows when the values differ', () => {
+    expect(chain(input({ cap: '1G', capacityAttr: '2G' }))).toEqual({
+      a2b: 1e9,
+      b2a: 1e9,
+      report: [{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['e1'] }],
+    });
+  });
+  it('gives cap-conflict, not bad-cap, for a capacity that does not parse next to a valid cap', () => {
+    expect(chain(input({ cap: '1G', capacityAttr: 'x' })).report).toEqual([
+      { kind: 'cap-conflict', cap: '1G', capacity: 'x', cellIds: ['e1'] },
+    ]);
+  });
+  it('gives bad-cap for a capacity that does not parse when cap is absent', () => {
+    expect(chain(input({ capacityAttr: 'x' }))).toEqual({
+      a2b: undefined,
+      b2a: undefined,
+      report: [{ kind: 'bad-cap', value: 'x', cellIds: ['e1'] }],
+    });
+  });
+  it('does not fall through to capacity when cap does not parse', () => {
+    expect(chain(input({ cap: 'x', capacityAttr: '1G' }))).toEqual({
+      a2b: undefined,
+      b2a: undefined,
+      report: [{ kind: 'bad-cap', value: 'x', cellIds: ['e1'] }],
+    });
+  });
+  it('lets a series win over both attributes', () => {
+    const r = capacityV4(
+      input({ capacity: 'S', cap: '1G', capacityAttr: '2G', series: queries({ S: ready(speed([5e9])) }) })
+    );
+    expect(r.a2b).toEqual({ amount: 5e9, source: 'series' });
+  });
+});
