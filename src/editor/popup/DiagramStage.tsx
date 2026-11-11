@@ -37,6 +37,8 @@ export interface DiagramStageProps {
   onSelect: (cellId: string, options: { shift: boolean }) => void;
   /** A box select ended: the cells that the band touches, to add to the selection. */
   onBox?: (cellIds: string[]) => void;
+  /** A click on the empty stage (no cell, no drag, no shift). */
+  onBackground?: () => void;
   /** The chart uses of the bind (spec 3.9). Without it the stage shows no charts. */
   chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision'>;
   /** The hash of the shown diagram. The stage writes it as `data-dmap-hash`, as the panel does. */
@@ -69,6 +71,7 @@ export function DiagramStage({
   selection,
   onSelect,
   onBox,
+  onBackground,
   chartLayer,
   hash,
   linkWidth,
@@ -209,7 +212,9 @@ export function DiagramStage({
           e.stopPropagation();
           return;
         }
-        pick(e.target, e.shiftKey);
+        if (!pick(e.target, e.shiftKey) && !e.shiftKey) {
+          onBackground?.();
+        }
       }}
       onKeyDown={(e) => {
         if ((e.key === 'Enter' || e.key === ' ') && pick(e.target, e.shiftKey)) {

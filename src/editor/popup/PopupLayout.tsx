@@ -27,8 +27,10 @@ const TABS: Array<{ id: PopupTab; label: string }> = [
 type Pane = 'code' | 'below';
 const LIMITS = {
   code: { initial: 480, min: 280, max: 960 },
-  below: { initial: 240, min: 120, max: 640 },
+  below: { initial: 320, min: 120, max: 640 },
 };
+/** Without a stored size, the report row takes this share of the container, but at least `LIMITS.below.initial`. */
+const BELOW_SHARE = 0.4;
 /** The diagram keeps at least this width when the code box grows. */
 const MIN_STAGE = 240;
 /** The top row (code box and diagram) keeps at least this height when the report pane grows. */
@@ -45,20 +47,27 @@ interface Sizes {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-function readSizes(): Sizes {
+/** The sizes of the user, and whether the user set the height of the report row (a stored size always wins). */
+function readSizes(): { sizes: Sizes; belowSet: boolean } {
   const sizes = { code: LIMITS.code.initial, below: LIMITS.below.initial };
+  let belowSet = false;
   try {
     const stored = JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY) ?? 'null');
     for (const pane of ['code', 'below'] as const) {
       if (typeof stored?.[pane] === 'number' && Number.isFinite(stored[pane])) {
         sizes[pane] = clamp(stored[pane], LIMITS[pane].min, LIMITS[pane].max);
+        belowSet ||= pane === 'below';
       }
     }
   } catch {
     // Private mode or a broken value: use the defaults.
   }
-  return sizes;
+  return { sizes, belowSet };
 }
+
+/** The default height of the report row in a container of this height: 40 %, at least 320 px. */
+const defaultBelow = (height: number) =>
+  height ? clamp(Math.round(height * BELOW_SHARE), LIMITS.below.initial, LIMITS.below.max) : LIMITS.below.initial;
 
 function writeSizes(sizes: Sizes) {
   try {
@@ -106,7 +115,9 @@ export interface PopupLayoutProps {
 export function PopupLayout({ code, stage, below, activeTab, onTabChange }: PopupLayoutProps) {
   const styles = useStyles2(getStyles);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sizes, setSizes] = useState(readSizes);
+  const [read] = useState(readSizes);
+  const [sizes, setSizes] = useState(read.sizes);
+  const [belowSet, setBelowSet] = useState(read.belowSet);
   // The size of the container: the restored sizes must fit it at the start and after each resize.
   const [box, setBox] = useState({ width: 0, height: 0 });
   useLayoutEffect(() => {
@@ -128,7 +139,10 @@ export function PopupLayout({ code, stage, below, activeTab, onTabChange }: Popu
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const shown = useMemo(() => fitSizes(sizes, box.width, box.height), [sizes, box]);
+  const shown = useMemo(
+    () => fitSizes(belowSet ? sizes : { ...sizes, below: defaultBelow(box.height) }, box.width, box.height),
+    [sizes, belowSet, box]
+  );
   const tabs = box.width > 0 && box.width < TABS_BELOW;
   const [ownTab, setOwnTab] = useState<PopupTab>('code');
   const tab = activeTab ?? ownTab;
@@ -182,6 +196,9 @@ export function PopupLayout({ code, stage, below, activeTab, onTabChange }: Popu
     latest.current = next;
     shownRef.current = next;
     setSizes(next);
+    if (pane === 'below') {
+      setBelowSet(true);
+    }
   }, []);
   const commit = useCallback(() => writeSizes(latest.current), []);
 

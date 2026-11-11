@@ -2,7 +2,9 @@ import React from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dateTime, FieldType, toDataFrame, type PanelData } from '@grafana/data';
-import type { Options } from '../../types';
+import type { EndContext } from '../../binding/edgeEnds';
+import type { CellEntry, CellMeta, Options } from '../../types';
+import { endName } from './InspectorV4';
 import { demoData, editorProps } from './splitTestKit';
 
 // @grafana/ui reads matchMedia (uPlot) and localStorage (logger) when it loads. Set them before the imports run.
@@ -184,39 +186,64 @@ describe('InspectorV4', () => {
     expect(fake.editor.setPosition).toHaveBeenLastCalledWith(
       expect.objectContaining({ lineNumber: lineOf(/^\s+dev:/) })
     );
-    // `d` has no bind: the end of `classes`, the line before `overrides`
+  });
+
+  it('does not move the cursor when the cell has no bind and no override', async () => {
+    render(<SplitEditor {...props()} />);
+    await frame();
+    fireEvent.click(cell('b'));
+    fake.editor.setPosition.mockClear();
+    fake.editor.revealLineInCenter.mockClear();
+    // `d` has no bind and no override: it has no place in the text
     fireEvent.click(cell('d'));
-    expect(fake.editor.setPosition).toHaveBeenLastCalledWith(expect.objectContaining({ lineNumber: overrides - 1 }));
-    expect(fake.editor.revealLineInCenter).toHaveBeenLastCalledWith(overrides - 1);
+    expect(fake.editor.setPosition).not.toHaveBeenCalled();
+    expect(fake.editor.revealLineInCenter).not.toHaveBeenCalled();
   });
 
   it('shows the ends of an edge, the end that the key names and the arrow of each half', async () => {
     render(<SplitEditor {...props()} />);
     await frame();
     fireEvent.click(cell('e'));
-    expect(field('source').textContent).toBe('a');
-    expect(field('target').textContent).toBe('c');
-    expect(field('keyed').textContent).toBe('The key names the source end.');
+    // the label of the cell, the cell id stays in the title
+    expect(field('source').textContent).toBe('A');
+    expect(field('source').getAttribute('title')).toBe('a');
+    expect(field('target').textContent).toBe('C');
+    expect(field('target').getAttribute('title')).toBe('c');
+    expect(within(inspector()).getByText('Source end (a)')).toBeTruthy();
+    expect(within(inspector()).getByText('Target end (b)')).toBeTruthy();
+    expect(field('keyed').textContent).toBe('The key names the source end (A).');
     expect(field('a2b').textContent).toBe('a → b: tx (tx)');
     expect(field('b2a').textContent).toBe('b → a: rx (rx)');
-    expect(field('at').textContent).toBe('key is at the target');
+    expect(field('at').textContent).toBe('Use the target end');
   });
 
-  it('sets at=target with "key is at the target", then clears it with "key is at the source"', async () => {
+  it('shows the link section before the attributes and the uses', async () => {
+    render(<SplitEditor {...props()} />);
+    await frame();
+    fireEvent.click(cell('e'));
+    const link = within(inspector()).getByRole('heading', { name: 'Link' });
+    const attrs = within(inspector()).getByRole('heading', { name: 'Attributes' });
+    expect(link.compareDocumentPosition(attrs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const use of within(inspector()).queryAllByTestId('dmap-inspector-use')) {
+      expect(link.compareDocumentPosition(use) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it('sets at=target with "Use the target end", then clears it with "Use the source end"', async () => {
     render(<SplitEditor {...props()} />);
     await frame();
     fireEvent.click(cell('e'));
     fireEvent.click(field('at'));
     await frame();
     expect(cell('e').getAttribute('data-meta-at')).toBe('target');
-    expect(field('keyed').textContent).toBe('The key names the target end.');
+    expect(field('keyed').textContent).toBe('The key names the target end (C).');
     expect(field('a2b').textContent).toBe('a → b: rx (rx)');
     expect(field('b2a').textContent).toBe('b → a: tx (tx)');
-    expect(field('at').textContent).toBe('key is at the source');
+    expect(field('at').textContent).toBe('Use the source end');
     fireEvent.click(field('at'));
     await frame();
     expect(cell('e').hasAttribute('data-meta-at')).toBe(false);
-    expect(field('at').textContent).toBe('key is at the target');
+    expect(field('at').textContent).toBe('Use the target end');
   });
 
   it('shows the generated-panel note next to the button on a generated panel only', async () => {
@@ -344,5 +371,41 @@ describe('InspectorV4', () => {
       'Open the diagram in draw.io once and save it'
     );
     expect(cell('d').hasAttribute('data-meta-bind')).toBe(false);
+  });
+});
+
+describe('endName', () => {
+  const meta = (m: Partial<CellMeta> & { id: string }): CellEntry =>
+    ({ meta: { key: m.id, attrs: {}, labelText: '', isEdge: false, kind: 'node', ...m } }) as unknown as CellEntry;
+  const ctx = (entries: CellEntry[], parents: Array<[string, string]> = []): EndContext => ({
+    index: new Map(entries.map((e) => [e.meta.id, e])),
+    ends: new Map(),
+    parents: new Map(parents),
+  });
+
+  it('names a portograph port by its node label and port', () => {
+    const c = ctx(
+      [
+        meta({ id: 'pg-node~rtr-a', labelText: 'Router A' }),
+        meta({ id: 'pg-port~rtr-a~br-lan~1', kind: 'port', labelText: 'br-lan', attrs: { 'pg-node': 'rtr-a' } }),
+      ],
+      [['pg-port~rtr-a~br-lan~1', 'pg-node~rtr-a']]
+    );
+    expect(endName('pg-port~rtr-a~br-lan~1', c)).toBe('Router A · br-lan');
+  });
+
+  it('falls back to pg-node and pg-port, then to the id', () => {
+    const c = ctx([
+      meta({ id: 'p1', kind: 'port', attrs: { 'pg-node': 'rtr-a', 'pg-port': 'lan' } }),
+      meta({ id: 'x' }),
+    ]);
+    expect(endName('p1', c)).toBe('rtr-a · lan');
+    expect(endName('x', c)).toBe('x');
+    expect(endName('unknown-cell', c)).toBe('unknown-cell');
+    expect(endName(undefined, c)).toBeUndefined();
+  });
+
+  it('names a plain draw.io end by its label on one line', () => {
+    expect(endName('n', ctx([meta({ id: 'n', labelText: 'Core\n switch' })]))).toBe('Core switch');
   });
 });

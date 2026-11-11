@@ -191,6 +191,7 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
         ) : null}
       </dl>
       <BindKey key={`${meta.id}\n${bind}\n${key}`} meta={meta} listId={listId} onWrite={onWrite} />
+      {meta.isEdge ? <EdgeEnds {...props} /> : null}
       <h4 className={styles.subtitle}>Attributes</h4>
       <dl className={styles.list} data-testid="dmap-inspector-attrs">
         {Object.entries(others).map(([name, value]) => (
@@ -200,7 +201,6 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
           </React.Fragment>
         ))}
       </dl>
-      {meta.isEdge ? <EdgeEnds {...props} /> : null}
       {uses.map((use) => (
         <UseDetails
           key={use.path}
@@ -243,6 +243,30 @@ function BindKey(props: { meta: CellMeta; listId: string; onWrite: InspectorV4Pr
   );
 }
 
+const oneLine = (text: string | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+/**
+ * A readable name for the cell at one end of an edge: `node · port` for a portograph port (the labels, else
+ * `pg-node` and `pg-port`), the label for any other cell, else the cell id.
+ */
+export function endName(id: string | undefined, ends: EndContext): string | undefined {
+  if (id === undefined) {
+    return undefined;
+  }
+  const meta = ends.index.get(id)?.meta;
+  if (!meta) {
+    return id;
+  }
+  if (meta.kind === 'port') {
+    const parent = ends.parents.get(id);
+    const nodeCell = parent !== undefined ? ends.index.get(parent)?.meta : undefined;
+    const node = oneLine(nodeCell?.labelText) || meta.attrs['pg-node'] || '';
+    const port = oneLine(meta.labelText) || meta.attrs['pg-port'] || '';
+    return [node, port].filter(Boolean).join(' · ') || id;
+  }
+  return oneLine(meta.labelText) || id;
+}
+
 /** The ends of an edge, the end that the key names and the feed of each half (spec 3.8, 5.4). Write 3 of spec 5.5. */
 function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   const styles = useStyles2(getStyles);
@@ -254,17 +278,24 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   const half = (direction: string) => `${direction} (${(direction === 'tx' ? eff?.up : eff?.down) ?? 'no query'})`;
   const end = ends.ends.get(meta.id);
   const atTarget = at === 'target';
+  const sourceName = endName(end?.source, ends);
+  const targetName = endName(end?.target, ends);
+  const keyedName = atTarget ? targetName : sourceName;
   return (
     <>
       <h4 className={styles.subtitle}>Link</h4>
       <dl className={styles.list}>
-        <dt>Source end</dt>
-        <dd data-testid="dmap-inspector-source">{end?.source ?? 'unknown'}</dd>
-        <dt>Target end</dt>
-        <dd data-testid="dmap-inspector-target">{end?.target ?? 'unknown'}</dd>
+        <dt>Source end (a)</dt>
+        <dd data-testid="dmap-inspector-source" title={end?.source}>
+          {sourceName ?? 'unknown'}
+        </dd>
+        <dt>Target end (b)</dt>
+        <dd data-testid="dmap-inspector-target" title={end?.target}>
+          {targetName ?? 'unknown'}
+        </dd>
       </dl>
       <p className={styles.line} data-testid="dmap-inspector-keyed">
-        {atTarget ? 'The key names the target end.' : 'The key names the source end.'}
+        {`The key names the ${atTarget ? 'target' : 'source'} end${keyedName ? ` (${keyedName})` : ''}.`}
       </p>
       <p className={styles.line} data-testid="dmap-inspector-a2b">{`a → b: ${half(feeds.a2b)}`}</p>
       <p className={styles.line} data-testid="dmap-inspector-b2a">{`b → a: ${half(feeds.b2a)}`}</p>
@@ -275,7 +306,7 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
           data-testid="dmap-inspector-at"
           onClick={() => onWrite([{ id: meta.id, attrs: { at: atTarget ? null : 'target' } }])}
         >
-          {atTarget ? 'key is at the source' : 'key is at the target'}
+          {atTarget ? 'Use the source end' : 'Use the target end'}
         </Button>
         {generated ? (
           <span className={styles.note} data-testid="dmap-inspector-generated">
