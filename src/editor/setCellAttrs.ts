@@ -6,6 +6,29 @@ import { createXmlElement, parseXml, serializeXml } from '../util/xml';
 const META_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const RESERVED_META = /^(?:pg-.*|id|label|placeholders|xml.*)$/i;
 
+/** The attributes that the panel or draw.io own: the inspector shows them and never writes them. */
+export const isReservedAttr = (name: string) => RESERVED_META.test(name);
+
+/**
+ * Why a name cannot be a cell attribute, or `undefined` when it can. The rule is the `ident` rule of the YAML
+ * (src/model/v4.ts), plus the reserved names of this file. Give the name in lowercase.
+ */
+export function attrNameProblem(name: string): string | undefined {
+  if (!name) {
+    return 'Enter a name.';
+  }
+  if (name === '__proto__') {
+    return 'The name __proto__ is not allowed.';
+  }
+  if (!META_KEY.test(name)) {
+    return 'Use a letter or _ first, then letters, digits, _ or -.';
+  }
+  if (isReservedAttr(name)) {
+    return `The name ${name} is reserved. The panel or draw.io owns it.`;
+  }
+  return undefined;
+}
+
 /** Read the uncompressed model of page 1 without changing later pages. */
 function firstModel(doc: Document): Element {
   const root = doc.documentElement;
@@ -75,7 +98,7 @@ export function setCellAttrs(
 ): Diagram {
   for (const { attrs } of cells) {
     for (const name of Object.keys(attrs)) {
-      if (!META_KEY.test(name) || RESERVED_META.test(name)) {
+      if (!META_KEY.test(name) || isReservedAttr(name)) {
         throw new Error(`Invalid cell attribute name: ${name}`);
       }
     }

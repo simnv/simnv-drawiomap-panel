@@ -561,6 +561,7 @@ export function SplitEditor({
                 generated={options.build !== undefined}
                 error={writeError}
                 onWrite={onWrite}
+                onSelectCell={(id) => onSelect(id, { shift: false })}
                 onClose={onCloseInspector}
               />
             </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dateTime, FieldType, toDataFrame, type PanelData } from '@grafana/data';
 import type { EndContext } from '../../binding/edgeEnds';
@@ -707,5 +707,197 @@ describe('endName', () => {
 
   it('names a plain draw.io end by its label on one line', () => {
     expect(endName('n', ctx([meta({ id: 'n', labelText: 'Core\n switch' })]))).toBe('Core switch');
+  });
+});
+
+describe('InspectorV4 attribute row', () => {
+  let rect: { mockRestore(): void };
+  beforeEach(() => {
+    fake.reset();
+    rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(
+        () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0 }) as DOMRect
+      );
+  });
+  afterEach(() => rect.mockRestore());
+
+  const open = async (id: string, over: Partial<Options> = {}) => {
+    const p = inferred();
+    render(<SplitEditor {...p} options={{ ...p.options, ...over } as Options} />);
+    await frame();
+    fireEvent.click(cell(id));
+  };
+  const attrs = () => field('attrs');
+  const nameInput = () => within(inspector()).getByRole('textbox', { name: 'Attribute name' });
+  const valueInput = () => within(inspector()).getByRole('textbox', { name: 'Attribute value' });
+  const add = (name: string, value: string) => {
+    fireEvent.change(nameInput(), { target: { value: name } });
+    fireEvent.change(valueInput(), { target: { value: value } });
+    fireEvent.click(within(inspector()).getByRole('button', { name: 'Add attribute' }));
+  };
+
+  it('adds an attribute in lowercase, with Undo and Redo', async () => {
+    await open('p1');
+    add('Port', 'x');
+    await frame();
+    expect(cell('p1').getAttribute('data-meta-port')).toBe('x');
+    expect(within(attrs()).getByText('port').nextSibling?.textContent).toBe('x');
+    expect((nameInput() as HTMLInputElement).value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await frame();
+    expect(cell('p1').hasAttribute('data-meta-port')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    await frame();
+    expect(cell('p1').getAttribute('data-meta-port')).toBe('x');
+  });
+
+  it('allows an empty value', async () => {
+    await open('p1');
+    add('port', '');
+    await frame();
+    expect(cell('p1').getAttribute('data-meta-port')).toBe('');
+    expect(within(attrs()).getByText('port')).toBeTruthy();
+  });
+
+  it('adds with Enter in the name or the value field', async () => {
+    await open('p1');
+    fireEvent.change(nameInput(), { target: { value: 'site' } });
+    fireEvent.change(valueInput(), { target: { value: 'north' } });
+    fireEvent.keyDown(valueInput(), { key: 'Enter' });
+    await frame();
+    expect(cell('p1').getAttribute('data-meta-site')).toBe('north');
+  });
+
+  it.each([
+    ['', 'Enter a name.'],
+    ['1x', 'Use a letter or _ first'],
+    ['a b', 'Use a letter or _ first'],
+    ['__proto__', 'not allowed'],
+    ['pg-kind', 'reserved'],
+    ['ID', 'reserved'],
+    ['label', 'reserved'],
+    ['placeholders', 'reserved'],
+    ['xmlns', 'reserved'],
+    ['bind', 'bind and key'],
+    ['key', 'bind and key'],
+    ['at', 'end'],
+  ])('refuses the name %j with an inline error', async (name, message) => {
+    await open('p1');
+    const before = cell('p1').getAttributeNames();
+    add(name, 'v');
+    await frame();
+    expect(within(inspector()).getByTestId('dmap-inspector-attr-error').textContent).toContain(message);
+    expect(cell('p1').getAttributeNames()).toEqual(before);
+  });
+
+  it('refuses a name that the cell has already', async () => {
+    await open('p2');
+    add('port', 'x');
+    expect(within(inspector()).getByTestId('dmap-inspector-attr-error').textContent).toContain('Edit');
+    expect(cell('p2').getAttribute('data-meta-port')).toBe('eth0');
+  });
+
+  it('edits a value; Escape cancels the edit', async () => {
+    await open('p2');
+    fireEvent.click(within(attrs()).getByRole('button', { name: 'Edit port' }));
+    const input = within(attrs()).getByRole('textbox', { name: 'Value of port' });
+    fireEvent.change(input, { target: { value: 'eth7' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(within(attrs()).queryByRole('textbox', { name: 'Value of port' })).toBeNull();
+    expect(cell('p2').getAttribute('data-meta-port')).toBe('eth0');
+    fireEvent.click(within(attrs()).getByRole('button', { name: 'Edit port' }));
+    const again = within(attrs()).getByRole('textbox', { name: 'Value of port' });
+    expect((again as HTMLInputElement).value).toBe('eth0');
+    fireEvent.change(again, { target: { value: 'eth7' } });
+    fireEvent.keyDown(again, { key: 'Enter' });
+    await frame();
+    expect(cell('p2').getAttribute('data-meta-port')).toBe('eth7');
+  });
+
+  it('removes an attribute', async () => {
+    await open('p2');
+    fireEvent.click(within(attrs()).getByRole('button', { name: 'Remove cap' }));
+    await frame();
+    expect(cell('p2').hasAttribute('data-meta-cap')).toBe(false);
+    expect(within(attrs()).queryByText('cap')).toBeNull();
+  });
+
+  it('keeps bind, key, at and the reserved names read-only', async () => {
+    await open('e_at');
+    expect(within(attrs()).getByText('at')).toBeTruthy();
+    expect(within(attrs()).queryByRole('button', { name: /^(Edit|Remove) (at|bind|key)$/ })).toBeNull();
+    expect(within(attrs()).queryByRole('button', { name: 'Edit bind' })).toBeNull();
+  });
+
+  it('keeps a pg-* attribute read-only', async () => {
+    const p = inferred();
+    const xml = p.options.diagram!.xml.replace('id="p1" label="p1"', 'id="p1" label="p1" pg-port="e0"');
+    const svg = p.options.diagram!.svg.replace('<g data-cell-id="p1"', '<g data-cell-id="p1" data-meta-pg-port="e0"');
+    render(<SplitEditor {...p} options={{ ...p.options, diagram: { ...p.options.diagram, xml, svg } } as Options} />);
+    await frame();
+    fireEvent.click(cell('p1'));
+    expect(within(attrs()).getByText('pg-port').nextSibling?.textContent).toBe('e0');
+    expect(within(attrs()).queryByRole('button', { name: /pg-port/ })).toBeNull();
+  });
+
+  it('offers "Set here" for an inherited value and copies it as an own attribute', async () => {
+    await open('p2');
+    const inheritedKey = within(attrs()).getByText('key').nextSibling as HTMLElement;
+    expect(inheritedKey.textContent).toBe('n2 (from Node 2)');
+    expect(cell('p2').hasAttribute('data-meta-key')).toBe(false);
+    fireEvent.click(within(attrs()).getByRole('button', { name: 'Set key here' }));
+    await frame();
+    expect(cell('p2').getAttribute('data-meta-key')).toBe('n2');
+    expect(within(attrs()).queryByRole('button', { name: 'Set key here' })).toBeNull();
+  });
+
+  it('shows the attributes of the measured end of a link, and "Select the ... end" selects it', async () => {
+    await open('e_only');
+    const measured = field('measured').textContent!;
+    const end = measured.startsWith('source') ? 'source' : 'target';
+    const target = end === 'source' ? 'p1' : 'p2';
+    const block = within(inspector()).getByTestId('dmap-inspector-end-attrs');
+    expect(block.textContent).toContain(target === 'p2' ? 'eth0' : 'n1');
+    expect(within(block).queryByRole('button', { name: /^(Edit|Remove)/ })).toBeNull();
+    fireEvent.click(within(block).getByRole('button', { name: `Select the ${end} end` }));
+    await frame();
+    expect(field('id').textContent).toBe(target);
+    expect(within(inspector()).queryByTestId('dmap-inspector-end-attrs')).toBeNull();
+  });
+
+  it('shows both ends of a link that no end measures', async () => {
+    await open('e_none');
+    const blocks = within(inspector()).getAllByTestId('dmap-inspector-end-attrs');
+    expect(blocks).toHaveLength(2);
+    expect(within(inspector()).getByRole('button', { name: 'Select the source end' })).toBeTruthy();
+    expect(within(inspector()).getByRole('button', { name: 'Select the target end' })).toBeTruthy();
+  });
+
+  it('shows no end block for a vertex', async () => {
+    await open('p2');
+    expect(within(inspector()).queryByTestId('dmap-inspector-end-attrs')).toBeNull();
+  });
+
+  it('shows the generated-panel note for the attributes on a generated panel only', async () => {
+    await open('p1');
+    expect(within(inspector()).queryByTestId('dmap-inspector-attrs-generated')).toBeNull();
+    cleanup();
+    await open('p1', { build: 'b0c1' } as Partial<Options>);
+    expect(field('attrs-generated').textContent).toMatch(/next build writes these attributes again/);
+  });
+
+  it('labels each control', async () => {
+    await open('p2');
+    expect(within(attrs()).getByRole('button', { name: 'Edit port' })).toBeTruthy();
+    expect(within(attrs()).getByRole('button', { name: 'Remove port' })).toBeTruthy();
+    expect(nameInput()).toBeTruthy();
+    expect(valueInput()).toBeTruthy();
+  });
+
+  it('is not offered for a multi-select', async () => {
+    await open('p1');
+    fireEvent.click(cell('p2'), { shiftKey: true });
+    expect(within(inspector()).queryByRole('textbox', { name: 'Attribute name' })).toBeNull();
   });
 });
