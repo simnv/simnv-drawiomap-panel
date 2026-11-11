@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
 import {
   formattedValueToString,
@@ -98,6 +98,18 @@ function resolvedText(bound: BindResultV4, cellId: string, use: Use): string {
       ? `${resolved.problem}: ${resolved.detail}`
       : resolved.problem
     : resolved.matchers.map((m) => `${m.label}${m.op}${JSON.stringify(m.value)}`).join(', ');
+}
+
+/** A use of the cell has no series: the only case that has suggestions. */
+const problemOf = (id: string, bound: BindResultV4) =>
+  (bound.uses.get(id) ?? []).some((use) => bound.series.get(id)?.get(use.path)?.length === 0);
+
+/** The name of the target of a suggestion. Two ends of a link with one name get their cell id, as in the end rows. */
+function suggestionName(id: string, meta: CellMeta, ends: EndContext): string {
+  const name = endName(id, ends) ?? id;
+  const end = ends.ends.get(meta.id);
+  const same = meta.isEdge && end !== undefined && endName(end.source, ends) === endName(end.target, ends);
+  return same && (id === end.source || id === end.target) ? `${name} (${id})` : name;
 }
 
 /** The inheritable names that the match blocks of the uses read (I6). */
@@ -253,9 +265,14 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
   const text = cls && effectiveClass(cls, override, meta.id).text;
   const uses = bound.uses.get(meta.id) ?? [];
   const { framesByRefId, index } = props;
-  const problem = uses.some((use) => bound.series.get(meta.id)?.get(use.path)?.length === 0);
-  // Only the selected cell, and only when a use has no series: the bind never runs the search.
-  const candidates = problem && framesByRefId ? candidatesFor(meta.id, bound, framesByRefId, { index, ends }) : [];
+  const problem = problemOf(meta.id, bound);
+  // Only the selected cell, and only when a use has no series: the bind never runs the search. The search
+  // reads the data of the panel, so an unrelated render (the YAML text, the cursor, the zoom) does not repeat it.
+  const candidates = useMemo(
+    () =>
+      problemOf(meta.id, bound) && framesByRefId ? candidatesFor(meta.id, bound, framesByRefId, { index, ends }) : [],
+    [meta.id, bound, framesByRefId, index, ends]
+  );
   return (
     <>
       <dl className={styles.list}>
@@ -306,7 +323,7 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
               <Suggestions
                 candidates={candidates.filter((c) => c.use === use.path)}
                 cellId={meta.id}
-                nameOf={(id) => endName(id, ends) ?? id}
+                nameOf={(id) => suggestionName(id, meta, ends)}
                 regex={hasRegex(use)}
                 generated={props.generated}
                 onApply={(c) => onWrite([{ id: c.target, attrs: { [canonicalAttrName(c.attr)]: c.value } }])}

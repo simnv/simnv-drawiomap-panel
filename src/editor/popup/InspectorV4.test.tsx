@@ -30,6 +30,19 @@ vi.mock('@grafana/ui', async (importOriginal) => ({
   CodeEditor: kit.CodeEditor,
 }));
 
+// Count the calls of the candidate engine; the real function still runs.
+const engine = await vi.hoisted(async () => ({ calls: 0 }));
+vi.mock('../../binding/candidates', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../binding/candidates')>();
+  return {
+    ...real,
+    candidatesFor: (...args: Parameters<typeof real.candidatesFor>) => {
+      engine.calls++;
+      return real.candidatesFor(...args);
+    },
+  };
+});
+
 const { SplitEditor } = await import('./SplitEditor');
 
 /** `a`, `b` bind `dev`, `c` binds `sw`, `d` is a bare `mxCell` with no bind, `e` is an edge from `a` to `c`. */
@@ -1064,6 +1077,45 @@ describe('InspectorV4 suggestions', () => {
       .getAllByTestId('dmap-inspector-use')
       .find((el) => el.dataset.dmapUse === 'classes.link.up')!;
     expect(within(use).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+  });
+
+  it('names an end with its cell id when both ends have the same name', async () => {
+    const p = inferred();
+    const diagram = p.options.diagram!;
+    const options = {
+      ...p.options,
+      diagram: {
+        ...diagram,
+        xml: diagram.xml
+          .replace('port="eth0" cap', 'port="eth9" cap')
+          .replace('<object id="p2" label="p2"', '<object id="p2" label="p1"'),
+        svg: diagram.svg
+          .replace('data-meta-port="eth0"', 'data-meta-port="eth9"')
+          .replace('<text>p2</text>', '<text>p1</text>'),
+      },
+    } as Options;
+    render(<SplitEditor {...p} options={options} />);
+    await frame();
+    fireEvent.click(cell('e_only'));
+    const [row] = suggestions();
+    expect(row.textContent).toContain('Set port = eth0 on p1 (p2)');
+    expect(within(row).getByRole('button', { name: 'Set on p1 (p2)' })).toBeTruthy();
+  });
+
+  it('runs the candidate engine once for the same inputs, not on every render', async () => {
+    const p = withSpare();
+    const { rerender } = render(<SplitEditor {...p} />);
+    await frame();
+    fireEvent.click(cell('b'));
+    expect(suggestions().length).toBeGreaterThan(0);
+    const before = engine.calls;
+    expect(before).toBeGreaterThan(0);
+    // unrelated renders: the cursor in the code box lights cells; the data, the draft and the selection stay
+    act(() => fake.moveTo(fake.text.indexOf('classes:')));
+    act(() => fake.moveTo(fake.text.indexOf('link:')));
+    rerender(<SplitEditor {...p} />);
+    await frame();
+    expect(engine.calls).toBe(before);
   });
 
   it('says there is no suggestion for a regex match', async () => {
