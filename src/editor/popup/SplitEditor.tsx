@@ -5,7 +5,7 @@ import { Alert, Button, CodeEditor, ConfirmModal, useTheme2, type Monaco, type M
 import { isMap, isNode, isScalar, type Document } from 'yaml';
 import type { BindResultV4 } from '../../binding/bindV4';
 import { bindContextFor } from '../../binding/context';
-import { edgeEnds, type EndContext } from '../../binding/edgeEnds';
+import { endContextOf, type EndContext } from '../../binding/edgeEnds';
 import { snapshotV4 } from '../../binding/rowData';
 import { check, rangeOf, toYaml } from '../../options/ConfigYamlEditor';
 import { readYaml } from '../../options/yamlConfig';
@@ -211,10 +211,7 @@ export function SplitEditor({
   });
   const shown = useMemo((): BindResultV4 => ({ ...bound, patches }), [bound, patches]);
   // The edge ends of the inspector (spec 3.8.1): once per diagram, not per open of the inspector.
-  const ends = useMemo((): EndContext => {
-    const found = edgeEnds(diagram?.xml, stage.index);
-    return { index: stage.index, ends: found.ends, parents: found.parents };
-  }, [diagram?.xml, stage.index]);
+  const ends = useMemo((): EndContext => endContextOf(diagram?.xml, stage.index), [diagram?.xml, stage.index]);
   const chartLayer = useMemo(
     () => ({ charts: chartUsesV4(bound), bound: shown, ctx: cardContext }),
     [bound, shown, cardContext]

@@ -142,6 +142,25 @@ export function edgeEnds(xml: string | undefined, index: CellIndex): EdgeEnds {
   return result;
 }
 
+/** The last result of `endContextOf` for one cell index and one XML text. */
+const contexts = new WeakMap<CellIndex, { xml: string | undefined; context: EndContext & { report: ReportEntry[] } }>();
+
+/**
+ * `edgeEnds` as an `EndContext`, kept for the cell index and the XML text. The ends and the owners depend only on the
+ * diagram, so the panel builds them once for each diagram and not on each data refresh. A new XML text or a new index
+ * builds again. The bind and the split editor both call it.
+ */
+export function endContextOf(xml: string | undefined, index: CellIndex): EndContext & { report: ReportEntry[] } {
+  const cached = contexts.get(index);
+  if (cached && cached.xml === xml) {
+    return cached.context;
+  }
+  const { ends, parents, report } = edgeEnds(xml, index);
+  const context = { index, ends, parents, report };
+  contexts.set(index, { xml, context });
+  return context;
+}
+
 /**
  * An attribute of the cell at one end of an edge, for `${from.<name>}` and `${to.<name>}` (spec 3.3, 3.8.1). The end
  * cell first, then its parents up to the layer: for a port the node cell, for a shape inside a container the
