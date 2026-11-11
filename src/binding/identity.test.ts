@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
+import type { MatchV4 } from '../model/v4';
 import type { CellIndex, CellMeta } from '../types';
 import { edgeEnds, type EndContext } from './edgeEnds';
 import {
@@ -12,7 +13,9 @@ import {
   linkAttr,
   measuredEnd,
   ownerAttr,
+  usePlan,
 } from './identity';
+import { parseMatchBlock } from './matcher';
 
 const cell = (id: string, attrs: Record<string, string> = {}, isEdge = false) => cellMetaFromAttrs(id, attrs, isEdge);
 
@@ -444,5 +447,65 @@ describe('identity names (I6, AC3)', () => {
     ]);
     expect(identityNames(meta, [])).toEqual([]);
     expect(identityNames(meta, [['site', 'key'], ['id']])).toEqual([]);
+  });
+});
+
+describe('usePlan (I9, I13)', () => {
+  const ownMatch: MatchV4 = { key: 'job' };
+  const dependentMatch: MatchV4 = { port: 'device' };
+  const geometricMatch: MatchV4 = { id: 'edge="${from.key}"' };
+  const blocks = new Map<MatchV4, readonly string[]>([
+    [ownMatch, ['key']],
+    [dependentMatch, ['port']],
+    [geometricMatch, ['id', 'from.key', 'to.port', 'cap', 'label', 'pg-kind']],
+  ]);
+
+  it.each(['source', 'target'] as const)('keeps end-free blocks at source when the measured end is %s', (end) => {
+    const plan = usePlan(cell('link', { key: '' }, true), blocks, { end, reason: 'only', needs: ['port'] });
+    expect(plan(ownMatch)).toBe('source');
+    expect(plan(geometricMatch)).toBe('source');
+    expect(plan(dependentMatch)).toBe(end);
+  });
+
+  it('drops only the dependent blocks of an unmeasured link', () => {
+    const plan = usePlan(cell('link', { key: '' }, true), blocks, { end: 'none', reason: 'none', needs: ['port'] });
+    expect(plan(ownMatch)).toBe('source');
+    expect(plan(geometricMatch)).toBe('source');
+    expect(plan(dependentMatch)).toBe('drop');
+  });
+
+  it.each([
+    ['target', 'target'],
+    ['source', 'source'],
+    ['', 'source'],
+    ['other', 'source'],
+  ])('own at=%j controls each block before dependence or a drop', (at, want) => {
+    const plan = usePlan(cell('link', { key: '', at }, true), blocks, { end: 'none', reason: 'none', needs: ['port'] });
+    expect(plan(ownMatch)).toBe(want);
+    expect(plan(geometricMatch)).toBe(want);
+    expect(plan(dependentMatch)).toBe(want);
+  });
+
+  it('does not treat prototype at or identity names as own values', () => {
+    const meta = cell('link', {}, true);
+    meta.attrs = Object.create({ at: 'target', key: 'rtr-a' });
+    const plan = usePlan(meta, blocks, { end: 'none', reason: 'none', needs: ['key', 'port'] });
+    expect(plan(ownMatch)).toBe('drop');
+    expect(plan(dependentMatch)).toBe('drop');
+    expect(plan(geometricMatch)).toBe('source');
+  });
+
+  it('uses required placeholder names as well as the record keys of a match', () => {
+    const match: MatchV4 = { id: 'job="${site}"' };
+    const parsed = parseMatchBlock(match, 'classes.link.match');
+    if (!parsed.ok) {
+      throw new Error('the match must parse');
+    }
+    const plan = usePlan(cell('link', {}, true), new Map([[match, parsed.block.requiredAttrs]]), {
+      end: 'target',
+      reason: 'only',
+      needs: ['site'],
+    });
+    expect(plan(match)).toBe('target');
   });
 });
