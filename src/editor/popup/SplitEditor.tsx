@@ -9,7 +9,10 @@ import { endContextOf, type EndContext } from '../../binding/edgeEnds';
 import { snapshotV4 } from '../../binding/rowData';
 import { check, rangeOf, toYaml } from '../../options/ConfigYamlEditor';
 import { readYaml } from '../../options/yamlConfig';
+import { isEmptyConfig } from '../../model/starter';
+import { StarterNotice, starterText } from '../../options/StarterNotice';
 import { configUpdate } from '../../options/storedConfig';
+import { refIdsOf } from '../../query/panelTargets';
 import { indexSeries } from '../../query/seriesIndex';
 import { fitCells, type ViewBox } from '../../render/zoom';
 import { useBoundDiagram } from '../../stage/useBoundDiagram';
@@ -58,12 +61,6 @@ export const SETTLE_MS = 150;
 const FIT_MARGIN = 0.03;
 const MARKER_OWNER = 'drawiomap-split-editor';
 const NO_CELLS: CellSet = { cells: [], lighter: [], badges: new Map() };
-
-/** The refIds of the panel targets; without a request, the refIds of the loaded frames. */
-function refIdsOf(data: PanelData): string[] {
-  const refIds = data.request ? data.request.targets.map((t) => t.refId) : data.series.map((f) => f.refId);
-  return [...new Set(refIds.filter((refId): refId is string => !!refId))];
-}
 
 /** The start of the key at a path of plain keys, or undefined when the text has no such key. */
 function keyStart(doc: Document, parts: string[]): number | undefined {
@@ -505,6 +502,15 @@ export function SplitEditor({
     setApplied(true);
   };
 
+  const read = useMemo(() => readYaml(settledText), [settledText]);
+  const emptyConfig = read.ok && isEmptyConfig(read.value);
+  const insertStarter = () => {
+    if (diagram) {
+      onEdit(starterText(diagram, refIdsOf(data)));
+      settle();
+    }
+  };
+
   const layout = (
     <PopupLayout
       code={
@@ -582,6 +588,7 @@ export function SplitEditor({
           </Button>
         </Alert>
       )}
+      {emptyConfig && diagram?.svg ? <StarterNotice onInsert={insertStarter} /> : null}
       <div className={styles.layout}>{layout}</div>
       <div className={styles.actions}>
         <Button variant="secondary" disabled={!versions.past.length} onClick={onUndo}>

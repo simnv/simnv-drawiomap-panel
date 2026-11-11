@@ -75,6 +75,44 @@ describe('SplitEditor', () => {
     rect.mockRestore();
   });
 
+  describe('the starter config', () => {
+    const emptyProps = (config: unknown) => {
+      const props = editorProps();
+      return { ...props, options: { ...props.options, config } as Options };
+    };
+
+    it('shows a notice and a button for an empty config, and writes nothing on its own', () => {
+      render(<SplitEditor {...emptyProps(undefined)} />);
+      expect(screen.getByTestId('dmap-starter-notice').textContent).toContain('give cells `bind`');
+      expect(editor().value).toBe('');
+    });
+
+    it('inserts a starter built from the diagram and the targets (an unreadable XML counts as having edges)', () => {
+      render(<SplitEditor {...emptyProps({})} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Insert a starter config' }));
+      expect(editor().value).toBe(
+        writeYaml({
+          version: 4,
+          freshness: '3x',
+          classes: { node: { match: { key: 'job' }, status: 'up' }, link: { match: { key: 'job', port: 'device' } } },
+        })
+      );
+      act(() => vi.advanceTimersByTime(SETTLE_MS));
+      expect(screen.queryByTestId('dmap-starter-notice')).toBeNull();
+    });
+
+    it('shows no notice for a config with classes', () => {
+      render(<SplitEditor {...editorProps()} />);
+      expect(screen.queryByTestId('dmap-starter-notice')).toBeNull();
+    });
+
+    it('shows no notice without a diagram', () => {
+      const props = emptyProps(undefined);
+      render(<SplitEditor {...props} options={{ ...props.options, diagram: undefined }} />);
+      expect(screen.queryByTestId('dmap-starter-notice')).toBeNull();
+    });
+  });
+
   it('shows the stored JSON as YAML', () => {
     render(<SplitEditor {...editorProps()} />);
     expect(editor().value).toBe(writeYaml(CONFIG));

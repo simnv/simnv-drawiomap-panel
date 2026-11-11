@@ -45,7 +45,7 @@ In the stack, `node-rtr-a` is up, `node-lte` is down, and the link carries about
 
 In the panel options, go to **Bindings** and select **Edit bindings**. The dialog has the YAML on the left and the diagram on the right.
 
-1. Paste this YAML in the code box.
+1. Select **Insert a starter config** above the code box (it shows while the config is empty), or paste this YAML in the code box. The starter reads the diagram and the targets of the panel and gives a similar config.
 
    ```yaml
    version: 4

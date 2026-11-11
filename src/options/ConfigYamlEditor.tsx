@@ -7,6 +7,8 @@ import { validateConfig } from '../model/validate';
 import { parsePath, yamlPath } from '../model/yamlPath';
 import type { Options } from '../types';
 import { configUpdate, sortedJson } from './storedConfig';
+import { isEmptyConfig } from '../model/starter';
+import { StarterNotice, starterText } from './StarterNotice';
 import { readYaml, writeYaml } from './yamlConfig';
 
 type Props = StandardEditorProps<unknown, Record<string, never>, Options>;
@@ -28,6 +30,11 @@ interface Check {
 }
 
 const OWNER = 'drawiomap-config';
+
+/** The refIds of the returned frames: the options pane gets no targets from Grafana. */
+const framesRefIds = (frames: Array<{ refId?: string }>): string[] => [
+  ...new Set(frames.map((f) => f.refId).filter((r): r is string => !!r)),
+];
 
 export const toYaml = (value: unknown): string => (value === undefined || value === null ? '' : writeYaml(value));
 
@@ -152,7 +159,7 @@ export function check(text: string): Check {
  * the JSON, with `undefined` for each removed key (see `configUpdate`). Else the text stays in the box and nothing is
  * stored.
  */
-export default function ConfigYamlEditor({ value, onChange }: Props) {
+export default function ConfigYamlEditor({ value, onChange, context }: Props) {
   const [text, setText] = useState(() => toYaml(value));
   const [result, setResult] = useState(() => check(text));
   /** True after an edit that was not stored. */
@@ -212,8 +219,20 @@ export default function ConfigYamlEditor({ value, onChange }: Props) {
 
   const onEditorDidMount = useCallback((editor: MonacoEditor, monaco: Monaco) => setInstance({ editor, monaco }), []);
 
+  const diagram = context.options?.diagram;
+  const empty = (() => {
+    const read = readYaml(text);
+    return read.ok && isEmptyConfig(read.value);
+  })();
+  const insertStarter = () => {
+    if (diagram) {
+      onEdit(starterText(diagram, framesRefIds(context.data ?? []), false));
+    }
+  };
+
   return (
     <div>
+      {empty && diagram?.svg ? <StarterNotice onInsert={insertStarter} framesOnly /> : null}
       <CodeEditor
         value={text}
         language="yaml"
