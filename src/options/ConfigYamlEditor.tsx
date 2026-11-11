@@ -8,7 +8,6 @@ import { parsePath, yamlPath } from '../model/yamlPath';
 import type { Options } from '../types';
 import { configUpdate, sortedJson } from './storedConfig';
 import { isEmptyConfig } from '../model/starter';
-import { editedRefIds } from '../query/panelTargets';
 import { StarterNotice, starterText } from './StarterNotice';
 import { readYaml, writeYaml } from './yamlConfig';
 
@@ -32,7 +31,7 @@ interface Check {
 
 const OWNER = 'drawiomap-config';
 
-/** The refIds of the returned frames: the fallback when the panel published no targets. */
+/** The refIds of the returned frames: the options pane gets no targets from Grafana. */
 const framesRefIds = (frames: Array<{ refId?: string }>): string[] => [
   ...new Set(frames.map((f) => f.refId).filter((r): r is string => !!r)),
 ];
@@ -227,13 +226,13 @@ export default function ConfigYamlEditor({ value, onChange, context }: Props) {
   })();
   const insertStarter = () => {
     if (diagram) {
-      onEdit(starterText(diagram, editedRefIds() ?? framesRefIds(context.data ?? [])));
+      onEdit(starterText(diagram, framesRefIds(context.data ?? []), false));
     }
   };
 
   return (
     <div>
-      {empty && diagram?.svg ? <StarterNotice onInsert={insertStarter} /> : null}
+      {empty && diagram?.svg ? <StarterNotice onInsert={insertStarter} framesOnly /> : null}
       <CodeEditor
         value={text}
         language="yaml"

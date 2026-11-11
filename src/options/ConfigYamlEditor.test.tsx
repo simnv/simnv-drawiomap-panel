@@ -2,7 +2,6 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { grafanaUpdate, saveOptions } from '../fixtures/grafanaOptions';
-import { publishEditedRefIds } from '../query/panelTargets';
 import { writeYaml } from './yamlConfig';
 
 interface Marker {
@@ -264,15 +263,22 @@ describe('LazyConfigYamlEditor', () => {
       expect(screen.queryByText('Insert a starter config')).toBeNull();
     });
 
-    it('reads the targets of the panel, also a target with no frame', () => {
-      publishEditedRefIds(['up', 'tx', 'rx']);
-      try {
-        mountEmpty({});
-        fireEvent.click(screen.getByRole('button', { name: 'Insert a starter config' }));
-        expect(editor().value).toContain('status: up');
-      } finally {
-        publishEditedRefIds(undefined);
-      }
+    it('builds the starter from the frames: tx and rx give no status', () => {
+      const onChange = vi.fn();
+      const props = {
+        value: undefined,
+        onChange,
+        context: { data: [{ refId: 'tx' }, { refId: 'rx' }], options: { diagram } },
+        item: {},
+      } as unknown as EditorProps;
+      render(<ConfigYamlEditor {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Insert a starter config' }));
+      expect(editor().value).not.toContain('status');
+    });
+
+    it('says that the starter uses the queries that returned data', () => {
+      mountEmpty(undefined);
+      expect(screen.getByText(/For all panel queries, use Edit bindings\./)).toBeTruthy();
     });
 
     it('shows the first step in the notice', () => {

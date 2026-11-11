@@ -7,6 +7,8 @@ export interface StarterInput {
   /** The diagram has at least one edge. */
   edges: boolean;
   refIds: readonly string[];
+  /** When no refId looks like up or state, use the first refId (default). Else leave `status` out. */
+  guessStatus?: boolean;
 }
 
 const tokensOf = (refId: string): string[] =>
@@ -45,16 +47,16 @@ function linkPair(refIds: readonly string[]): { up: string; down: string } | und
 }
 
 /** The refId for the status of a node: the first one that looks like up or state, else the first one. */
-function statusRefId(refIds: readonly string[]): string | undefined {
-  return refIds.find((r) => hasToken(r, ['up', 'state', 'status'])) ?? refIds[0];
+function statusRefId(refIds: readonly string[], guess: boolean): string | undefined {
+  return refIds.find((r) => hasToken(r, ['up', 'state', 'status'])) ?? (guess ? refIds[0] : undefined);
 }
 
 /**
  * A starter config (version 4) for a diagram and the targets of the panel. The result has no `schema` entry in
  * `validateConfig`. The cells have no `bind` yet, so the report shows `class-no-cells` until the user binds them.
  */
-export function buildStarter({ portograph, edges, refIds }: StarterInput): Record<string, unknown> {
-  const status = statusRefId(refIds);
+export function buildStarter({ portograph, edges, refIds, guessStatus = true }: StarterInput): Record<string, unknown> {
+  const status = statusRefId(refIds, guessStatus);
   const classes: Record<string, unknown> = {
     node: { match: { key: 'job' }, ...(status === undefined ? {} : { status }) },
   };

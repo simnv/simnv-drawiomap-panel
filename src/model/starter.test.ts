@@ -71,6 +71,20 @@ describe('buildStarter', () => {
   });
 });
 
+describe('buildStarter without a guess', () => {
+  it('leaves status out when no refId looks like up or state', () => {
+    const config = buildStarter({ portograph: true, edges: true, refIds: ['tx', 'rx'], guessStatus: false });
+    expect(config.classes).toEqual({
+      node: { match: { key: 'job' } },
+      link: { match: { key: 'job', port: 'device' }, up: 'tx', down: 'rx' },
+    });
+  });
+  it('still takes an up-like refId', () => {
+    const config = buildStarter({ portograph: false, edges: false, refIds: ['up'], guessStatus: false });
+    expect(config.classes).toEqual({ node: node('up') });
+  });
+});
+
 describe('isEmptyConfig', () => {
   it.each([
     [undefined, true],

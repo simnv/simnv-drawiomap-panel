@@ -34,7 +34,6 @@ import { highlightCells, LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../leg
 import { bindSymbolLegend } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
 import { currentAddress, subscribe } from '../editor/popup/popupBus';
-import { publishEditedRefIds, refIdsOf } from '../query/panelTargets';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
 
 /** The address of the open edit session of this panel, or an empty string when the panel is not in panel edit. */
@@ -146,15 +145,6 @@ export function DrawioMapPanel(props: PanelProps<Options>) {
     return subscribe(currentAddress(), openPopup);
     // The session is the address: a new one subscribes again.
   }, [session, editing, openPopup]);
-  // The options pane builds the starter config from the targets of the panel in edit.
-  const refIdKey = editing ? refIdsOf(props.data).join('\n') : undefined;
-  useEffect(() => {
-    if (refIdKey === undefined) {
-      return;
-    }
-    publishEditedRefIds(refIdKey ? refIdKey.split('\n') : []);
-    return () => publishEditedRefIds(undefined);
-  }, [refIdKey]);
   const closePopup = useCallback(() => setPopup(false), []);
   // Sandbox hosts do not provide a definite percentage-height containing block.
   return (
