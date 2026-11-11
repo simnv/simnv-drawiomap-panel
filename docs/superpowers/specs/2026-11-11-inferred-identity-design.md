@@ -1,6 +1,7 @@
 # Inferred identity: identity on the port, the link reads it
 
-- Status: draft, revision 2 after review round 1 (Codex "Astra", findings R1–R7, all accepted: section 16),
+- Status: draft, revision 3 after review rounds 1 and 2 (Codex "Astra", findings R1–R7 and N1–N6, all accepted:
+  section 16),
   2026-11-11. The owner approved the model on 2026-11-11 ("stage 2" of the binding UX
   audit). This spec designs it in detail and records each point where the design differs from the approved model
   (section 12).
@@ -11,7 +12,7 @@
   on `main` (864485b), and the editor fixes of c5d97af (readable link ends, the `at` action).
 - Scope: the panel (`src/`), the demo fixtures, the guide. No change of the config schema: the config stays
   `version: 4`. The generator of the consumer team does not change.
-- Decisions of this spec have the ids **I1–I26**. Acceptance checks have the ids **AC1–AC24**. Plan steps have the
+- Decisions of this spec have the ids **I1–I26**. Acceptance checks have the ids **AC1–AC28**. Plan steps have the
   ids **S0–S9**.
 - Privacy: all examples use the demo network (`fixtures/demo/`).
 
@@ -227,17 +228,20 @@ at one end is down, the link moves to the other end with no notice.
 The feed of a directional use (`up`, `down`, an `updown` row, an `updown` chart) follows the end that gives the
 identity of that use:
 
-| The link and the use          | The end of the use            |
-| ----------------------------- | ----------------------------- |
-| the link has its own `at`     | `at` (as today), for each use |
-| no `at`, the use is end-free  | the source (as today)         |
-| no `at`, the use is dependent | the measured end of the link  |
+| The cell and the use                 | The end of the use            |
+| ------------------------------------ | ----------------------------- |
+| the cell has its own `at`            | `at` (as today), for each use |
+| a vertex with no `at`                | the source (as today)         |
+| a link with no `at`, an end-free use | the source (as today)         |
+| a link with no `at`, a dependent use | the measured end of the link  |
 
 `linkFeeds` takes the end of the use: `target` flips the feeds exactly as `at=target` does today (v4 spec 3.8.2).
-Each use of an edge records its end (`Use.end`), and the stroke, the link label, the card row and the chart read
-it from there. Reason: the flip exists because the matched attributes name an interface at one end. A use that
-matches through the link itself (`match: {id: edge}`) names no interface of the inferred end, so the inference must
-not change its direction (review R2).
+Each directional use of each cell records its end (`Use.end`), and the stroke, the link label, the card row and the
+chart read it from there. A vertex is in the table because today an `updown` row or chart of a vertex or a port
+follows the own `at` of that cell (`listUses` flips before it tests the edge). That stays: a vertex has no measured
+end and no inference of the feed (review N2). Reason for the link rows: the flip exists because the matched
+attributes name an interface at one end. A use that matches through the link itself (`match: {id: edge}`) names no
+interface of the inferred end, so the inference must not change its direction (review R2).
 
 Thus the rule "one feed for all views" of v4 spec 3.8.3 holds for each use, and for all uses of a link that have the
 same kind of match. A link can have two feeds only when it has no `at`, a dependent use and an end-free directional
@@ -271,7 +275,9 @@ measured at the source, a→b is the transmit value; measured at the target, a�
 does not know the direction of its links, and a port can have two links.
 
 **I16. The `capacity` series.** The `capacity` uses read the class `match`, so they match through the same inferred
-identity. `{a2b, b2a}` stays geometric (A4).
+identity. `{a2b, b2a}` stays geometric (A4). A `capacity` query that resolves through an inferred identity is source 1
+of I14: it counts before the `cap` of the link, also for an end-free row of that link. This changes the percent of
+such a row; section 8.2 lists it as the intended change C6 (review N3).
 
 **I25. One capacity for each link, in the bind result.** Today the bind computes the capacity only for a link with
 `up` or `down` (`linkHalves`), and the card computes it again on its own (`cardModel.readerOf`); a link with only
@@ -289,6 +295,10 @@ interface LinkCapacity { amount?: number; source: CapacitySource; cellId?: strin
 - The end lookup stays lazy: `capacityV4` takes the end as a function and calls it only when the link has neither
   `cap` nor `capacity` and a direction has no value from the `capacity` query. A class whose `capacity` query gives
   both directions never asks for the ends.
+- The capacity pass reads the `capacity` uses that are in the list of the link, not the `capacity` field of the
+  class. On an unmeasured link the dependent `capacity` use is not in the list, so the pass works as for a class
+  with no `capacity` query: no `capacity-fallback`, and the `cap` of the link still serves the end-free rows (review
+  N4).
 - The entries keep their cells: `bad-cap` and `cap-conflict` of an end cell name the end cell; those of the link and
   `capacity-fallback` name the link. Today `bindV4.ts` replaces the cells of each capacity entry with the edge id;
   that changes.
@@ -357,8 +367,8 @@ Users of the resolver:
 | the inspector            | `BindResultV4.measured`, `inherited`, `resolved`, `capacity` and `Use.end` (I26)                |
 
 `listUses(cell, cls, plan?)`: `plan(match)` gives `'source'`, `'target'` or `'drop'` for the uses of one match
-block. With no plan the function works as today (`cell.attrs.at`), so its other callers do not change. Each use of
-an edge gets `end: 'source' | 'target'`.
+block. With no plan the function works as today (`cell.attrs.at`), so its other callers do not change. A vertex
+never has a plan. Each directional use of each cell, vertex or edge, gets `end: 'source' | 'target'` (5.6).
 
 **I26.** `BindResultV4` gets four fields. The card and the inspector read them; they do not run the inference again.
 
@@ -373,7 +383,12 @@ resolved: Map<string, Map<UsePath, { matchers: ResolvedMatcher[] } | { problem: 
 capacity: Map<string, { a2b: LinkCapacity; b2a: LinkCapacity }>;
 ```
 
-`resolved` holds the arrays that `resolveBlock` already makes, so it costs one map entry for each use.
+`resolved` has one entry for each use of each bound cell, with no hole. The bind resolves a match block once for
+each pair (refId, match) of a cell and shares the selection between the uses (`selections` in `bindCell`), so the
+resolved matchers live in the shared `Selection`, and the loop over the uses writes the entry of each use path: also
+for a use that shares a selection, and for a use whose refId no target has (its entry holds the matchers and the
+series stay empty; when the block does not resolve, the problem). It holds the arrays that `resolveBlock` already
+makes, so it costs one map entry for each use and no second resolve (review N1).
 
 `src/binding/cellAttrs.ts` stays as the own-attribute reader for the harness export (`attrOf`); the bind does not
 use it. `src/harness.ts` also exports the functions of `identity.ts`.
@@ -421,29 +436,35 @@ skipped the whole cell (review R1, R2). The rule of this revision is stated for 
    value.
 2. **Uses.** A query use that resolves today on a link is end-free (5.1). It stays in the list, with the same
    matcher values, the same path and the same feed (`at`, else the source: 5.6). Thus it selects the same series for
-   the same direction. A use of a vertex that resolves today reads only own values and does not change.
+   the same direction. A use of a vertex that resolves today reads only own values and keeps its feed (the own `at`).
+   This rule covers the selection and the feed of the use. It does not cover a value that the panel derives with the
+   capacity (the percent, the colour by percent): rule 4.
 3. **Templates.** A template that resolves today reads only own values and gives the same text.
-4. **Capacity.** The capacity of a link changes only when the link has neither `cap` nor `capacity`, a direction has
-   no value from the `capacity` query, and the measured end cell has `cap` or `capacity` (C4).
+4. **Capacity.** The capacity of a link changes only in two cases. (a) The link has neither `cap` nor `capacity`, a
+   direction has no value from the `capacity` query, and the measured end cell has `cap` or `capacity` (C4). (b) A
+   `capacity` use of the link has `missing-attr` today and resolves through the inferred identity (C6). In case (b)
+   the percent of each directional use of the link changes, also of an end-free row.
 
 Consequences:
 
 - A use that has `no-series` today keeps it: it resolves today, so rule 2 applies. No use can move from `no-series`
   to a wrong series.
 - The only items that change are uses and templates that have `missing-attr` today, and the capacity of rule 4.
+  Case (b) of rule 4 also needs a `missing-attr` today (of the `capacity` use), so the next point holds.
 - A cell with no `missing-attr` entry today, and no capacity change of rule 4, gives the same patch, the same series,
   the same card and the same report entries. The golden record (S0) checks this with the configurations of the
   review: row, text and chart matches on the cell id, an asymmetric own `cap`, `extends` and overrides.
 
 ### 8.2 The intended changes
 
-| Id  | Today                                                                                               | After                                                                                                                                                    |
-| --- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1  | a vertex lacks a name that its owner chain has: `missing-attr`                                      | the value of the owner; the inspector shows the origin                                                                                                   |
-| C2  | a use or a template of a link lacks a name that the measured end has: `missing-attr`                | the value of the end; the feed of a dependent use follows the end (5.6)                                                                                  |
-| C3  | a link with no identity and no instrumented end: `missing-attr` for each dependent use, grey halves | an unmeasured link: its dependent uses are quiet, one `unmeasured-link` information entry; the rest binds as today (5.4)                                 |
-| C4  | a link with no `cap`; its end cell has `cap` or `capacity`: no capacity                             | the capacity of the end cell (I14, I15)                                                                                                                  |
-| C5  | a compressed page, a config with no `from.`/`to.`: no `no-edge-ends`                                | `no-edge-ends` when the bind asks for the ends: a bound cell lacks an own attribute, or a link has no own capacity and a direction has no capacity value |
+| Id  | Today                                                                                                 | After                                                                                                                                                                                                                  |
+| --- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1  | a vertex lacks a name that its owner chain has: `missing-attr`                                        | the value of the owner; the inspector shows the origin                                                                                                                                                                 |
+| C2  | a use or a template of a link lacks a name that the measured end has: `missing-attr`                  | the value of the end; the feed of a dependent use follows the end (5.6)                                                                                                                                                |
+| C3  | a link with no identity and no instrumented end: `missing-attr` for each dependent use, grey halves   | an unmeasured link: its dependent uses are quiet, one `unmeasured-link` information entry; the rest binds as today (5.4)                                                                                               |
+| C4  | a link with no `cap`; its end cell has `cap` or `capacity`: no capacity                               | the capacity of the end cell (I14, I15)                                                                                                                                                                                |
+| C6  | a link whose `capacity` use lacks a name (`missing-attr`), so its `cap` or nothing gives the capacity | the `capacity` query resolves through the measured end and wins over `cap` (I14); the percent of each half and each `updown` row of the link changes, also of an end-free row; the `missing-attr` of the use goes away |
+| C5  | a compressed page, a config with no `from.`/`to.`: no `no-edge-ends`                                  | `no-edge-ends` when the bind asks for the ends: a bound cell lacks an own attribute, or a link has no own capacity and a direction has no capacity value                                                               |
 
 ### 8.3 The risk of a wrong series
 
@@ -557,6 +578,7 @@ alone; the paint of a port pill. They need a mesh bus fixture from portograph.
 | "the attributes that the class match needs"               | the names that the dependent uses of the link read, each use with its own match block (I6)             | a class match that no use reads must not decide anything (review R1, R2)            |
 | "the feed flips by the chosen end exactly as `at=target`" | for each use: a use that resolves on the link itself keeps the feed of today (I13)                     | else the inference changes the direction and the percent of a row that works today  |
 | "a link where no end gives them stays quiet" (the cell)   | only its dependent uses are quiet; its end-free uses and its templates bind as today (I9)              | a working row or URL must not go away                                               |
+| "an own attribute on the link wins" (capacity)            | an inferred `capacity` query still counts before the own `cap`, as the order of today (I14, C6)        | one capacity pair for each link; the query is the live value                        |
 | "one summary entry or a class-level opt-in"               | one information entry for each class, not counted in view mode (I10); no opt-in                        | no schema change                                                                    |
 | "`cap` on the measured port counts after the link's own"  | kept; on an end cell `a/b` is transmit/receive, not a→b/b→a (I15); an own `cap` that fails stops (I14) | a port has no geometry; the rule of stage 1a for a bad value                        |
 | "both qualify → source first"                             | kept; plus `end-ambiguous` when the choice finds no series (I12)                                       | source first is safe for tunnels, not for two exporter families                     |
@@ -587,8 +609,9 @@ Unit (vitest):
   `target`, shapes in containers) gives the same series for each link.
 - **AC8** `${key}` in a URL of a link reads the measured end; `${from.key}` and `${to.key}` read the geometric ends,
   also when the measured end is the target; `${from.pg-port}` works.
-- **AC9** The feed: an inferred `target` gives the same halves, link label, `updown` row and `updown` chart as
-  `at=target`, and each of these uses has `end: 'target'`.
+- **AC9** The feed, on a link whose directional uses are all dependent (the class match on each): an inferred
+  `target` gives the same halves, link label, `updown` row and `updown` chart as `at=target`, and each of these uses
+  has `end: 'target'`. AC22 covers a link with two feeds.
 - **AC10** Capacity: each row of the table of I14; `cap=50M/10M` on a port measured at the source and at the target
   (I15); an own `cap` that does not parse does not read the end; `bad-cap` of an end names the end cell; a
   `capacity` series matches through the inferred identity.
@@ -597,13 +620,16 @@ Unit (vitest):
   entry stays; a class with a URL and no query use → no entry.
 - **AC12** The view mode warning list has no `unmeasured-link` line; the split editor shows it in the class tab and
   does not count it.
-- **AC13** The card of a link with an inferred `target` shows the same rows as with `at=target`.
+- **AC13** The card of a link with an inferred `target`, all directional uses dependent, shows the same rows as with
+  `at=target`. The card and the chart of a vertex and of a port with own `key`, `at=target` and an `updown` row and
+  chart (transmit 7M, receive 2M) show the same lines as on `main`.
 - **AC14** Twenty binds of one index and one XML call the build of the end maps once; a new XML builds again.
 - **AC15** The inspector: the origin of an inherited value; each text of the table of I23; the `at` action writes
   `at`. For a port that inherits `key` and for a link with an inferred target: the section of each use shows the
   resolved matcher text with the inherited value (`job="node-rtr-a", device="br-lan"`), not "Missing attribute"; the
   lines "a → b" and "b → a" name the queries of the flipped feed; the same with an override `match`. The capacity
-  line names the end cell.
+  line names the end cell. A class with `status`, `text`, a `history` row and a chart on one query and one match:
+  each of the four sections has its matcher text; a use with an unknown refId has its text too.
 - **AC16** The demo: `fixtures/demo/demo-l3.yaml` has `key`, `port` and `at` on no link; the bind of the new export
   selects, for each link id, the same series as the golden record of the old export, with an empty report.
 
@@ -618,11 +644,29 @@ Compatibility and storage (review round 1):
   the row does not, and each use holds its `end`.
 - **AC23** (R1) An unmeasured link with a mix: the dependent uses are not in the list and give no entry; an end-free
   row binds; a URL with `${id}` shows; a URL with `${key}` does not show and gives no `missing-attr`; a `metadata`
-  text with `${site}` (not an identity name) gives `missing-attr`; `patch.link` is absent.
+  text with `${site}` (not an identity name) gives `missing-attr`; a URL with `${from.id}` shows (the reader of an
+  unmeasured link is the own reader with `from.`/`to.`, not a raw read of the attributes); `patch.link` is absent.
 - **AC24** (R4) `BindResultV4.capacity`: a link with only an `updown` row and a port `cap` has a capacity with the
-  `cellId` of the port, and its card shows the percent; a class whose `capacity` query gives both directions never
-  asks for the ends (an `ends` function that throws); `bad-cap` of a port names the port cell and the click in the
-  report selects it; `bad-cap` of the link names the link.
+  `cellId` of the port, and its card shows the percent; a link with all its attributes whose `capacity` query gives
+  both directions never calls the end function of the capacity fallback (pass a function that throws); `bad-cap` of
+  a port names the port cell and the click in the report selects it; `bad-cap` of the link names the link.
+- **AC25** (N1) `BindResultV4.resolved` has an entry for each use path of each bound cell: uses that share one
+  selection (status, text, row and chart on one query and match), an `updown` row before `up` and `down`, a use
+  with an unknown refId, a use with `missing-attr` (the problem).
+- **AC26** (N3, C6) The class `match: {key: job}`, `capacity: speed`, an `updown` row `match: {id: edge}`; the edge
+  has `bind` and `cap=50M/10M`; transmit 7M; the target gives `key`, and `speed` gives 1G for it. On `main`: the row
+  shows 14 % and the report has `missing-attr` for `classes.link.capacity`. After: `rows[0].a2b` keeps the `up`
+  refId and the source feed, the row shows 0.7 % of 1G, the capacity source is `series`, and the `missing-attr` is
+  gone.
+- **AC27** (N4) The class of AC26, no end gives `key`: the link is unmeasured; the `capacity` use is not in the
+  list; the row shows 14 % of the own `cap`; the report has the `unmeasured-link` entry and no `capacity-fallback`,
+  no `missing-attr` and no `no-series`.
+- **AC28** (the union rule) A class `match: {key: job, port: device}` with `up`, `down` and two rows: an `updown`
+  row with `match: {site: site}` and a `value` row with `match: {id: edge}`. A link with only `bind`; the target
+  gives `key` and `port`; no cell gives `site`. (a) No `at`: the link is unmeasured, the entry names `key, port,
+site`, the `value` row binds, no `missing-attr`. (b) `at=target`: the halves bind at the target, the `site` row
+  gives `missing-attr`, no `unmeasured-link`. (c) `site` on the link, no `at`: the reason is `only`, the target,
+  and all uses bind.
 
 Checks by command:
 
@@ -638,21 +682,25 @@ Checks by command:
 Rules for each step: tests first; one step is one branch and one worker session; the gate of AC17; an adversarial
 review for each diff in `src/`. "Parallel" names the steps that can run at the same time in separate worktrees.
 
-| Step | Title                                 | Needs      | Parallel with |
-| ---- | ------------------------------------- | ---------- | ------------- |
-| S0   | Golden record                         | —          | S1, S2        |
-| S1   | The resolver module                   | —          | S0, S2        |
-| S2   | The end cache                         | —          | S0, S1        |
-| S3   | Owner chain in the bind               | S0, S1, S2 | —             |
-| S4   | Measured end in the bind and the card | S3         | —             |
-| S5   | Capacity from the end                 | S4         | S8            |
-| S6   | The inspector and the report views    | S5         | S8            |
-| S7   | The demo fixtures                     | S5         | S6, S9        |
-| S8   | The guide and the contract note       | S4         | S5, S6, S7    |
-| S9   | The bench record                      | S5         | S6, S7        |
+| Step | Title                               | Needs      | Parallel with |
+| ---- | ----------------------------------- | ---------- | ------------- |
+| S0   | Golden record                       | —          | S1, S2        |
+| S1   | The resolver module                 | —          | S0, S2        |
+| S2   | The end cache                       | —          | S0, S1        |
+| S3   | Owner chain in the bind             | S0, S1, S2 | —             |
+| S4a  | The use plan and `listUses`         | S3         | —             |
+| S4b  | The measured end in the bind        | S4a        | —             |
+| S4c  | The feeds of the card and the chart | S4b        | —             |
+| S5   | Capacity from the end               | S4c        | S8            |
+| S6   | The inspector and the report views  | S5         | S7, S8, S9    |
+| S7   | The demo fixtures                   | S5         | S6, S9        |
+| S8   | The guide and the contract note     | S4c        | S5, S6, S7    |
+| S9   | The bench record                    | S5         | S6, S7        |
 
 S6 needs S5 because the inspector shows the capacity of `BindResultV4.capacity` and both steps change the readers of
-the bind result. S5 and S6 do not run in parallel.
+the bind result. S5 and S6 do not run in parallel. S4a, S4b and S4c are sequential; "S4" in this spec means all
+three. S2 can be written beside S0, but its golden acceptance waits for the record of S0. The last split-editor
+check of S7 (AC19) runs again on the result that has S6.
 
 ### S0. Golden record (tests only)
 
@@ -662,14 +710,29 @@ the bind result. S5 and S6 do not run in parallel.
   source), the URLs and the rows; for each edge the card model (`buildCardV4`: the text and the state of each row,
   so the percent of an `updown` row is in the record); and the report. It does not keep `patch.scope`.
 - Each case must have an empty report on `main` before the snapshot is written (assert it in the test). When a
-  report is not empty, correct the frames or the targets of the case, not the expectation.
-  1. The pilot `netL2Pilot()` on cells in the generated form: two nodes with `bind` and `key`, their port cells
-     (`pg-kind=port`, `pg-node`), links with `bind`, `key`, `port` and `at` (one with `at=source`, one with
-     `at=target`, one with `cap`), `pg-from` and `pg-to`. Traps: the node at the other end has another `key`; the
-     port cells at both ends have another `port`. Frames for both nodes and all ports, so a wrong read selects a
-     series and shows.
-  2. The pilot `boilerPilot()` on cells with own `key` and `port`, each relay cell inside a container that has
-     another `key`.
+  report is not empty, correct the cells, the frames or the targets of the case, not the expectation.
+- The baseline: write the commit of `main` that the record was made on (`git rev-parse main`) into the header of
+  the test file and into `docs/acceptance.md` under "Inferred identity: bench". S9 measures that commit.
+- Case 8 is the one exception to the empty report rule (see there).
+  1. The pilot `netL2Pilot()`, the whole config, on cells in the generated form. Each concrete class has a cell,
+     and each trap series belongs to another cell, so the report is empty:
+     - Nodes with `bind`, `key` and `object_class`: `rtr-a` (`host`), `sw-a1` and `sw-a2` (`unifi-switch`), `ap-a`
+       (`unifi-client`), `cam-1` (`camera`).
+     - Port cells (`pg-kind=port`, `pg-node`, no `bind`) for each named link end. The port cell at the far end of a
+       link carries a `port` attribute with the port value of another link (the trap).
+     - Links of the class `lan`, each with `bind`, `key`, `port`, `at`, `path_role`, `pg-from` and `pg-to`:
+       `sw-a1:p3 → sw-a2:p16` with `key=sw-a1 port=3 at=source` (its target port cell has `port=16`);
+       `sw-a1:p4 → sw-a2:p15` with `key=sw-a2 port=15 at=target` (its source port cell has `port=3`);
+       `sw-a2:p16 → rtr-a:eth1` with the id `pg-link~p-a1-15` (the override of the pilot) and
+       `key=sw-a2 port=16 at=source`; `sw-a1:p5 → cam-1` (an anonymous end) with `key=sw-a1 port=5 at=source`.
+       Thus a wrong read of the first link through its target selects the series of `sw-a2` port 16, which the third
+       link owns: the record shows it, and the report has no `orphan-series`.
+     - Frames: one series for each use of each cell (take the list from `result.uses`), with unequal transmit and
+       receive values, and a `unifi_port_speed` series for each link (so no `capacity-fallback`).
+  2. The pilot `boilerPilot()`, the whole config: one cell or more for each concrete class (`controller`,
+     `relay-module`, `relay-output`, `mains-monitor`, `boiler`) with own `key` (and `port`); each relay cell is
+     inside a container that has another `key` (the trap; the container is the `relay-module` cell of another
+     module, so its series has an owner).
   3. Demo L3: the SVG and the `.drawio` of today with `demoConfigV4`. Build the index as the bench does
      (`buildCellIndex(mountSvg(…))`, `src/binding/bind.v4.bench.test.ts`) and pass the XML to `bindV4`. Give one
      frame for each series that a use of `demoConfigV4` selects. Make the list from the config, not by hand: bind
@@ -686,8 +749,12 @@ the bind result. S5 and S6 do not run in parallel.
   6. `extends` and overrides: a child class that inherits a row with `match: {id: edge}` from its parent; a cell
      override that replaces the class `match` with `{id: edge}`; a cell override that adds an `updown` row with its
      own match. Each on an edge with only `bind` (and `at=target` on one), with a trap `key` on the target node.
-- Acceptance: the test passes on `main` with no change in `src/` outside the test and the copies; each case has an
-  empty report.
+  7. Vertices (N2): a port cell and a plain vertex, each with own `key`, `at=target`, an `updown` row and an
+     `updown` chart; transmit 7M and receive 2M. The record holds the card and the chart lines.
+  8. The capacity change C6 (AC26): record the state of `main` (14 %, `missing-attr` for the `capacity` use). This
+     case is the one that S5 changes on purpose: S5 updates its snapshot and no other.
+- Acceptance: the test passes on `main` with no change in `src/` outside the test and the copies; each case except
+  case 8 has an empty report.
 
 ### S1. The resolver module (no wiring)
 
@@ -723,36 +790,59 @@ the bind result. S5 and S6 do not run in parallel.
   `inherited` to `BindResultV4`.
 - Acceptance: AC1 at the bind level, AC4.
 
-### S4. Measured end in the bind and the card
+### S4a. The use plan and `listUses`
 
-- Files: `src/binding/bindV4.ts`, `src/binding/uses.ts`, `src/binding/linkFeeds.ts` (the doc comment),
+- Files: `src/binding/uses.ts`, `src/binding/uses.test.ts`, `src/binding/identity.ts`, `src/binding/identity.test.ts`.
+- Tests first: `listUses` with no plan gives the uses of today plus `end` on each directional use, for an edge and
+  for a vertex with `at=target` (N2); with a plan: `source`, `target` and `drop` for each match block, `Use.end` set;
+  a new pure function `usePlan(meta, blocks, end)` in `identity.ts` gives the plan of 5.6 (own `at`; end-free;
+  dependent; unmeasured → `drop`).
+- Code: `listUses(cell, cls, plan?)` and `Use.end`. No caller changes: the bind still calls it with no plan.
+- Acceptance: the tests; AC4 (the record does not change: `end` is not in the record).
+
+### S4b. The measured end in the bind
+
+- Files: `src/binding/bindV4.ts`, `src/binding/bindV4.test.ts`, `src/binding/linkFeeds.ts` (the doc comment),
   `src/binding/report.ts`, `src/stage/useBoundDiagram.ts` (`reportLine`), `src/components/DrawioMapPanel.tsx` (the
-  warning list drops `unmeasured-link`), `src/interact/cardModel.ts`, `src/editor/popup/MatchReport.tsx`
-  (`entryTarget` for the two kinds), and the tests of each.
-- Tests first: AC5, AC6, AC8, AC9, AC11, AC12 (the view mode part), AC13, AC21, AC22, AC23; `uses.test.ts`:
-  `listUses` with a plan (source, target, drop; `Use.end`), and with no plan as today.
+  warning list drops `unmeasured-link`), `src/editor/popup/MatchReport.tsx` (`entryTarget` for the two kinds), and
+  the tests of each.
+- Tests first: AC5, AC6, AC8, AC9 (the halves and the uses), AC11, AC12 (the view mode part), AC21, AC22 (the uses
+  and the halves), AC23, AC25, AC28.
 - Code:
   1. In `bindCell`, for an edge: list the uses once with no plan to get the match block of each use; parse each
      block (`blockOf`); `needs = identityNames(meta, blocks)`; `end = identity.measure(meta, needs)`; set
-     `out.measured`.
-  2. The plan of a block: with an own `at`, the end of `at`; for an end-free block, `source`; for a dependent block,
-     `end.end`, or `drop` when the link is unmeasured. `uses = listUses(meta, eff, plan)`.
-  3. For an unmeasured link: `report.cell({ kind: 'unmeasured-link', cls, attrs: needs }, id)`. The templates run
-     with a reader of own attributes; a missing name that is in `needs` gives no entry and hides the item. When
-     `uses` is empty and the templates give no URL and no row: no patch, return. `patch.link` only when a use of
-     kind `up` or `down` is in `uses`.
-  4. `linkHalves` reads the end of the `up` and `down` uses (`Use.end`), not `meta.attrs.at`.
-  5. `end-ambiguous` (AC11): after the uses of an edge with the reason `both`, over its dependent uses only.
-  6. `out.resolved`: in `select`, keep `resolved.resolved` or the reason of the problem for each use path (I26).
-  7. `cardModel`: `updownRow` reads `data[0].use.end`; `UseReader.at` goes away.
-  8. Add the two kinds to `REPORT_KINDS` and `ReportEntry`; `reportLine` gives the lines of I10 and I12.
+     `out.measured`; `uses = listUses(meta, eff, usePlan(…))`. A vertex keeps the call with no plan.
+  2. For an unmeasured link: `report.cell({ kind: 'unmeasured-link', cls, attrs: needs }, id)`. The templates run
+     with the reader of today (own attributes, `id`, `from.`/`to.`); a missing name that is in `needs` gives no
+     entry and hides the item. When `uses` is empty and the templates give no URL and no row: no patch, return.
+     `patch.link` only when a use of kind `up` or `down` is in `uses`.
+  3. `linkHalves` reads the end of the `up` and `down` uses (`Use.end`), not `meta.attrs.at`.
+  4. `end-ambiguous` (AC11): after the uses of an edge with the reason `both`, over its dependent uses only.
+  5. `out.resolved` (N1): `Selection` gets `resolved?: ResolvedMatcher[]`; `select` sets it. The loop over the
+     uses in `bindCell` writes `out.resolved` for each use path from the selection of the use (new or shared), and
+     for the unknown-ref branch it resolves the block once through the same cache of selections and writes the
+     entry with no series.
+  6. Add the two kinds to `REPORT_KINDS` and `ReportEntry`; `reportLine` gives the lines of I10 and I12.
+- Between S4b and S4c the card of a link with an inferred target still reads `meta.attrs.at`. Do not merge S4b to
+  `main` without S4c.
 - Acceptance: the listed checks; AC4; the bench of today within its budget (run it once, print the median).
+
+### S4c. The feeds of the card and the chart
+
+- Files: `src/interact/cardModel.ts`, `src/interact/cardModel.v4.test.ts`, and each other reader of the feed that a
+  search for `linkFeeds(` and `attrs.at` finds outside `src/binding/` and the inspector (the chart reader near
+  `cardModel.ts:263`).
+- Tests first: AC13; AC22 (the card: the row keeps the percent of 50M while the halves flip); AC9 (the card row and
+  the chart).
+- Code: `updownRow` and the chart reader take the feed from `Use.end` of their uses; `UseReader.at` goes away. A
+  vertex works through the same field (S4a sets it from the own `at`).
+- Acceptance: the listed checks; AC4, with case 7 of the record (the vertex card and chart).
 
 ### S5. Capacity from the end
 
 - Files: `src/binding/capacity.ts`, `src/binding/capacity.v4.test.ts`, `src/binding/bindV4.ts`,
   `src/binding/bindV4.test.ts`, `src/interact/cardModel.ts`, `src/interact/cardModel.v4.test.ts`.
-- Tests first: AC10, AC24.
+- Tests first: AC10, AC24, AC26, AC27.
 - Code:
   1. `CapacityV4Input` gets `end?: () => { cellId: string; cap?: string; capacity?: string; at: 'source' |
 'target' } | undefined` and `cellId` (the link). `capacityV4` calls `end` only when the link has neither `cap`
@@ -762,10 +852,12 @@ the bind result. S5 and S6 do not run in parallel.
   2. `bindV4`: a function `capacityOfEdge` runs for each bound edge that has an `up`, `down` or `capacity` use or an
      `updown` row or chart, also when the edge has no `patch.link`. It stores the result in `out.capacity` and
      passes each entry to the report with the cells of the entry (do not replace them with the edge id).
-     `linkHalves` reads `out.capacity`. Before you narrow the set of edges, check with a search for `capacityOf`
+     It takes the `capacity` refIds from the `capacity` uses that are in the list of the edge, not from
+     `eff.capacity`: a dropped use is "no query" (N4). `linkHalves` reads `out.capacity`. Before you narrow the set of edges, check with a search for `capacityOf`
      and `'capacity'` (a chart range) that no other reader needs a capacity; if one does, add its edges.
   3. `cardModel.readerOf`: `capacityOf` reads `bound.capacity`; remove its call of `capacityV4`.
-- Acceptance: AC10, AC24, AC4 (the card texts of the golden record do not change).
+- Acceptance: AC10, AC24, AC26, AC27; AC4 for each case of the record except case 8, whose snapshot this step
+  updates to the values of AC26 (say so in the commit message).
 
 ### S6. The inspector and the report views
 
@@ -817,7 +909,9 @@ build:dashboard`. Check with `git diff --stat` that only the expected files chan
 - Files: `src/binding/bind.v4.bench.test.ts`, `src/fixtures/benchBind.ts` (a builder of the inferred case),
   `docs/acceptance.md`.
 - Code: the new case of section 11 with value checks after each pass; print both medians.
-- Run each case three times with `--maxWorkers=1`, on `main` before S3 and on the branch after S5, in one session.
+- Run each case three times with `--maxWorkers=1`, in one session: on the baseline commit that S0 recorded (a
+  detached worktree of that commit; the new case does not exist there, so only the case of today runs) and on the
+  branch after S5. Do not measure a `main` that moves.
 - Acceptance: AC18; the numbers go into `docs/acceptance.md` under "Inferred identity: bench".
 
 ## 15. Open points
@@ -833,6 +927,9 @@ build:dashboard`. Check with `git diff --stat` that only the expected files chan
    The owner can prefer the alternative with a `missing-attr`-free compatibility exception; this spec does not.
 6. New in revision 2: the identity names are a union over the dependent uses (5.1). One row that reads a name that
    no end gives makes the whole link unmeasured. A rule "the end that serves the most uses" is possible later.
+7. New in revision 3: a `capacity` query that the inference resolves wins over the own `cap` of the link, also for a
+   row that binds today (C6, AC26). The alternative, "an own `cap` wins over an inferred capacity query", needs a
+   second capacity pair for each link; this spec does not take it.
 
 ## 16. Review round 1 (Codex "Astra", on d4a4473)
 
@@ -847,3 +944,17 @@ All findings are accepted. Each was checked against the code.
 | R5 (minor)   | a class with no query use makes the old predicate true with an empty set                                            | the predicate reads the dependent uses only (I12); AC11                                                          |
 | R6 (minor)   | `Report.cell` groups by the whole entry, so different `attrs` give two entries                                      | one entry for each class and sorted name set, by design (I10); AC6                                               |
 | R7 (minor)   | `router-cpu` reads `v4_samples` and `v4_nine` (`demo-config.ts`)                                                    | S0 takes the refIds from the uses of the config and needs an empty report first                                  |
+
+Review round 2 (on 005a2af): R1, R2 and R4–R7 resolved. New findings, all accepted:
+
+| Finding    | Check against the code                                                                                   | Resolution                                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| N1 (major) | `bindCell` caches one `Selection` for each (refId, match) and the unknown-ref branch skips `select`      | the resolved matchers live in `Selection`; the loop over the uses writes each path (I26); AC25     |
+| N2 (major) | `listUses` flips on `cell.attrs.at` before it tests the edge, so a vertex row follows its own `at` today | each directional use of each cell has `Use.end`; a vertex uses its own `at` (I13); S0 case 7; AC13 |
+| N3 (major) | `capacityV4` puts the query before `cap`; one pair serves the halves and the rows                        | accepted as the intended change C6; rule 2 of I21 covers the selection and the feed only; AC26     |
+| N4 (major) | `linkHalves` passes `eff.capacity`, and a missing use becomes an empty snapshot → `capacity-fallback`    | the capacity pass reads the listed `capacity` uses (I25); AC27                                     |
+| N5 (minor) | AC9 and AC13 were universal, AC22 has two feeds                                                          | AC9 and AC13 are for links whose directional uses are all dependent; AC24 names the fallback only  |
+| N6 (minor) | the pilot has five concrete classes; two nodes give `class-no-cells`, the traps give `orphan-series`     | S0 case 1 and 2 give a cell to each class and an owner to each trap series; the baseline is pinned |
+
+Also from round 2: S4 is now S4a, S4b and S4c; AC28 checks the union rule in the bind and the report; AC23 keeps
+`${from.id}` on an unmeasured link.
