@@ -43,7 +43,7 @@ vi.mock('../../binding/candidates', async (importOriginal) => {
   };
 });
 
-const { SplitEditor } = await import('./SplitEditor');
+const { SplitEditor, CURSOR_WAIT_MS } = await import('./SplitEditor');
 
 /** `a`, `b` bind `dev`, `c` binds `sw`, `d` is a bare `mxCell` with no bind, `e` is an edge from `a` to `c`. */
 const SVG =
@@ -1102,20 +1102,32 @@ describe('InspectorV4 suggestions', () => {
     expect(within(row).getByRole('button', { name: 'Set on p1 (p2)' })).toBeTruthy();
   });
 
-  it('runs the candidate engine once for the same inputs, not on every render', async () => {
-    const p = withSpare();
-    const { rerender } = render(<SplitEditor {...p} />);
-    await frame();
-    fireEvent.click(cell('b'));
-    expect(suggestions().length).toBeGreaterThan(0);
-    const before = engine.calls;
-    expect(before).toBeGreaterThan(0);
-    // unrelated renders: the cursor in the code box lights cells; the data, the draft and the selection stay
-    act(() => fake.moveTo(fake.text.indexOf('classes:')));
-    act(() => fake.moveTo(fake.text.indexOf('link:')));
-    rerender(<SplitEditor {...p} />);
-    await frame();
-    expect(engine.calls).toBe(before);
+  it('unchanged inputs: a cursor update does not search again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      engine.calls = 0;
+      const p = withSpare();
+      render(<SplitEditor {...p} />);
+      await frame();
+      fireEvent.click(cell('b'));
+      expect(suggestions().length).toBeGreaterThan(0);
+      const before = engine.calls;
+      expect(before).toBeGreaterThan(0);
+      const lit = () =>
+        Array.from(stage().querySelectorAll('[data-dmap-highlight="true"]')).map((el) =>
+          el.getAttribute('data-cell-id')
+        );
+      const litBefore = lit();
+      // The cursor in the code box lights the cells of its path, after the wait. The data, draft and selection stay.
+      act(() => fake.moveTo(fake.text.indexOf('dev:')));
+      act(() => {
+        vi.advanceTimersByTime(CURSOR_WAIT_MS);
+      });
+      expect(lit()).not.toEqual(litBefore);
+      expect(engine.calls).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says there is no suggestion for a regex match', async () => {
