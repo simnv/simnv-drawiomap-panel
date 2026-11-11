@@ -1,9 +1,17 @@
 import React, { useId, useState } from 'react';
 import { css } from '@emotion/css';
-import { formattedValueToString, getDisplayProcessor, getValueFormat, type GrafanaTheme2 } from '@grafana/data';
+import {
+  formattedValueToString,
+  type DataFrame,
+  getDisplayProcessor,
+  getValueFormat,
+  type GrafanaTheme2,
+} from '@grafana/data';
 import { Button, IconButton, Input, useStyles2, useTheme2 } from '@grafana/ui';
 import { AttributeList, type EndAttrs } from './AttributeList';
+import { Suggestions } from './Suggestions';
 import type { BindResultV4 } from '../../binding/bindV4';
+import { candidatesFor } from '../../binding/candidates';
 import { effectiveClass } from '../../binding/classes';
 import type { EndContext } from '../../binding/edgeEnds';
 import { linkFeeds } from '../../binding/linkFeeds';
@@ -13,6 +21,7 @@ import { shownField, type Show } from '../../binding/rowData';
 import { listUses, type Use } from '../../binding/uses';
 import type { validateConfig } from '../../model/validate';
 import type { Series } from '../../query/snapshot';
+import { canonicalAttrName } from '../../model/cellAttrNames';
 import type { CellIndex, CellMeta } from '../../types';
 
 /** One write of spec 5.5: the attributes to set on one cell. `null` removes the attribute. */
@@ -28,6 +37,8 @@ export interface InspectorV4Props {
   /** The edge ends of the draft diagram (spec 3.8.1), read once per diagram. */
   ends: EndContext;
   bound: BindResultV4;
+  /** The frames of the panel data for each query, for the key suggestions. */
+  framesByRefId?: ReadonlyMap<string, DataFrame[]>;
   validated: ReturnType<typeof validateConfig>;
   /** The class names of the draft: the items of the bind field (spec 5.6). */
   classNames: string[];
@@ -241,6 +252,10 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
   const override = validated.parsed.config?.overrides[meta.id];
   const text = cls && effectiveClass(cls, override, meta.id).text;
   const uses = bound.uses.get(meta.id) ?? [];
+  const { framesByRefId, index } = props;
+  const problem = uses.some((use) => bound.series.get(meta.id)?.get(use.path)?.length === 0);
+  // Only the selected cell, and only when a use has no series: the bind never runs the search.
+  const candidates = problem && framesByRefId ? candidatesFor(meta.id, bound, framesByRefId, { index, ends }) : [];
   return (
     <>
       <dl className={styles.list}>
@@ -286,6 +301,18 @@ function CellDetails(props: InspectorV4Props & { meta: CellMeta; listId: string 
           feed={feedText(use, meta)}
           series={bound.series.get(meta.id)?.get(use.path) ?? []}
           show={showOf(use, text)}
+          suggestions={
+            problem ? (
+              <Suggestions
+                candidates={candidates.filter((c) => c.use === use.path)}
+                cellId={meta.id}
+                nameOf={(id) => endName(id, ends) ?? id}
+                regex={hasRegex(use)}
+                generated={props.generated}
+                onApply={(c) => onWrite([{ id: c.target, attrs: { [canonicalAttrName(c.attr)]: c.value } }])}
+              />
+            ) : null
+          }
         />
       ))}
     </>
@@ -498,10 +525,23 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   );
 }
 
-function UseDetails(props: { use: Use; resolved: string; feed?: string; series: Series[]; show: Show }) {
+/** The use has a regex matcher: the engine gives no candidate for it. */
+function hasRegex(use: Use): boolean {
+  const parsed = parseMatchBlock(use.match, use.path);
+  return parsed.ok && parsed.block.matchers.some((m) => m.op !== '=');
+}
+
+function UseDetails(props: {
+  use: Use;
+  resolved: string;
+  feed?: string;
+  series: Series[];
+  show: Show;
+  suggestions?: React.ReactNode;
+}) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
-  const { use, resolved, feed, series, show } = props;
+  const { use, resolved, feed, series, show, suggestions } = props;
   const more = series.length - LABEL_SETS;
   return (
     <section className={styles.use} data-testid="dmap-inspector-use" data-dmap-use={use.path}>
@@ -533,7 +573,9 @@ function UseDetails(props: { use: Use; resolved: string; feed?: string; series: 
           ))}
           {more > 0 ? <li>+{more} more</li> : null}
         </ul>
-      ) : null}
+      ) : (
+        suggestions
+      )}
     </section>
   );
 }

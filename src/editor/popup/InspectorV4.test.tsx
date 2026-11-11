@@ -974,3 +974,103 @@ describe('InspectorV4 attribute row', () => {
     expect(bubbled).not.toHaveBeenCalled();
   });
 });
+
+describe('InspectorV4 suggestions', () => {
+  let rect: { mockRestore(): void };
+  beforeEach(() => {
+    fake.reset();
+    rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(
+        () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0 }) as DOMRect
+      );
+  });
+  afterEach(() => rect.mockRestore());
+
+  const spare = () =>
+    toDataFrame({
+      refId: 'up',
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [Date.now()] },
+        { name: 'Value', type: FieldType.number, values: [1], labels: { job: 'spare' } },
+      ],
+    });
+  const withSpare = () => {
+    const p = props();
+    return { ...p, data: { ...p.data, series: [...p.data.series, spare()] } };
+  };
+  const suggestions = () => within(inspector()).queryAllByTestId('dmap-inspector-suggestion');
+
+  it('shows a suggestion under a use with no series, the orphan first, with its labels and a badge', async () => {
+    render(<SplitEditor {...withSpare()} />);
+    await frame();
+    fireEvent.click(cell('b'));
+    const rows = suggestions();
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows[0].textContent).toContain('Set key = spare on B');
+    expect(rows[0].textContent).toContain('job="spare"');
+    expect(within(rows[0]).getByText('unused series')).toBeTruthy();
+    expect(within(rows[1]).queryByText('unused series')).toBeNull();
+  });
+
+  it('shows nothing for a use that has series, and no empty box', async () => {
+    render(<SplitEditor {...withSpare()} />);
+    await frame();
+    fireEvent.click(cell('c'));
+    expect(within(inspector()).queryByTestId('dmap-inspector-suggestions')).toBeNull();
+    expect(within(inspector()).queryByText(/No suggestion/)).toBeNull();
+  });
+
+  it('applies a suggestion with Undo and Redo, and the use gets one series', async () => {
+    render(<SplitEditor {...withSpare()} />);
+    await frame();
+    fireEvent.click(cell('b'));
+    fireEvent.click(within(suggestions()[0]).getByRole('button', { name: 'Set it' }));
+    await frame();
+    expect(cell('b').getAttribute('data-meta-key')).toBe('spare');
+    const [use] = within(inspector()).getAllByTestId('dmap-inspector-use');
+    expect(within(use).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+    expect(within(inspector()).queryByTestId('dmap-inspector-suggestions')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await frame();
+    expect(cell('b').getAttribute('data-meta-key')).toBe('b');
+    expect(suggestions().length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    await frame();
+    expect(cell('b').getAttribute('data-meta-key')).toBe('spare');
+  });
+
+  it('says on the button that the write goes to the end port, and keeps the link selected', async () => {
+    const p = inferred();
+    const diagram = p.options.diagram!;
+    const options = {
+      ...p.options,
+      diagram: {
+        ...diagram,
+        xml: diagram.xml.replace('port="eth0" cap', 'port="eth9" cap'),
+        svg: diagram.svg.replace('data-meta-port="eth0"', 'data-meta-port="eth9"'),
+      },
+    } as Options;
+    render(<SplitEditor {...p} options={options} />);
+    await frame();
+    fireEvent.click(cell('e_only'));
+    const [row] = suggestions();
+    expect(row.textContent).toContain('Set port = eth0 on p2');
+    fireEvent.click(within(row).getByRole('button', { name: 'Set on p2' }));
+    await frame();
+    expect(cell('p2').getAttribute('data-meta-port')).toBe('eth0');
+    expect(field('id').textContent).toBe('e_only');
+    const use = within(inspector())
+      .getAllByTestId('dmap-inspector-use')
+      .find((el) => el.dataset.dmapUse === 'classes.link.up')!;
+    expect(within(use).getByTestId('dmap-inspector-count').textContent).toBe('1 series');
+  });
+
+  it('says there is no suggestion for a regex match', async () => {
+    render(<SplitEditor {...inferred()} />);
+    await frame();
+    fireEvent.click(cell('b1'));
+    expect(within(inspector()).getByText('No suggestion for a regex match.')).toBeTruthy();
+    expect(suggestions()).toHaveLength(0);
+  });
+});

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import type { FieldConfigSource, PanelData, PanelProps } from '@grafana/data';
+import type { DataFrame, FieldConfigSource, PanelData, PanelProps } from '@grafana/data';
 import { Alert, Button, CodeEditor, ConfirmModal, useTheme2, type Monaco, type MonacoEditor } from '@grafana/ui';
 import { isMap, isNode, isScalar, type Document } from 'yaml';
 import type { BindResultV4 } from '../../binding/bindV4';
@@ -214,6 +214,14 @@ export function SplitEditor({
     [bound, shown, cardContext]
   );
   const entries = useMemo(() => [...yamlEntries, ...bound.report], [yamlEntries, bound.report]);
+  // The frames of each query, one array for each refId, for the key suggestions of the inspector.
+  const framesByRefId = useMemo(() => {
+    const byRef = new Map<string, DataFrame[]>();
+    for (const frame of data.series) {
+      byRef.set(frame.refId ?? '', [...(byRef.get(frame.refId ?? '') ?? []), frame]);
+    }
+    return byRef;
+  }, [data.series]);
   const counts = useMemo(() => reportCounts(bound, validated.classes), [bound, validated.classes]);
 
   // The highlight: the cells of the path under the cursor, or the cells of the report entry of the last click.
@@ -562,6 +570,7 @@ export function SplitEditor({
                 index={stage.index}
                 ends={ends}
                 bound={bound}
+                framesByRefId={framesByRefId}
                 validated={validated}
                 classNames={classNames}
                 generated={options.build !== undefined}

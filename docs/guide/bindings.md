@@ -102,6 +102,19 @@ The code box suggests names while you type. It sends no query: it reads the load
 
 The **bind** field of the inspector also suggests the names of the classes of the draft. The same list serves **Assign class**.
 
+#### Key suggestions
+
+When a use of the selected cell has no series, the inspector looks in the data of the panel for a series that the use would match if one attribute had another value. It shows these suggestions under the use:
+
+- Each row reads "Set `port` = `eth1` on Node 1 · eth1". The label set of the series is under it. A badge **unused series** means that no cell uses this series yet.
+- Unused series come first. The inspector shows at most 8 suggestions.
+- **Set it** writes the attribute in the draft, the same way as the **Attributes** list does. **Undo** and **Redo** work. On a generated panel, the next build writes the attributes again.
+- When the attribute belongs to another cell, for example the measured end port of a link, the button names that cell: **Set on rtr-a · eth1**. The selection stays on the link, so you see the use get its series.
+- A use with a regex matcher and no other suggestion shows "No suggestion for a regex match."
+- A use that has series shows nothing.
+
+The inspector checks each suggestion by the same identity rules as the bind. It never suggests `bind`, `at` or a reserved name.
+
 ### Cell attributes
 
 A cell has attributes: the `data-meta-*` attributes of the exported SVG, written by draw.io, or by portograph from the `meta` of a node. The panel reads page 1 only.
