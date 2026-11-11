@@ -6,7 +6,7 @@ import type { Diagram } from '../types';
 import { fnv1a } from '../util/hash';
 import { inflatePages } from './inflate';
 import { EditorAction, EditorMessage, exportDone, handleMessage, initialState, ProtocolOptions } from './protocol';
-import { setCellAttrs } from './setCellAttrs';
+import { attrNameProblem, isReservedAttr, setCellAttrs } from './setCellAttrs';
 
 const model = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
   <object id="host-a" label="Host A" bind="host" key="host-a" port="1" pg-kind="node"><mxCell parent="1" vertex="1" style="rounded=1;"><mxGeometry width="80" height="40" as="geometry"/></mxCell></object>
@@ -345,5 +345,20 @@ describe('the stored diagram of the bundled editor', () => {
     expect(state.phase).toBe('done');
     const d: Diagram = { ...result!, hash: fnv1a(result!.svg + result!.xml), updatedAt: '' };
     expect(parse(write(d).xml).getElementById('host-a')?.getAttribute('bind')).toBe('server');
+  });
+});
+
+describe('attrNameProblem', () => {
+  it('accepts a name of the YAML rule and refuses the reserved ones', () => {
+    expect(attrNameProblem('port')).toBeUndefined();
+    expect(attrNameProblem('my-attr_2')).toBeUndefined();
+    expect(attrNameProblem('')).toBeDefined();
+    expect(attrNameProblem('2a')).toBeDefined();
+    expect(attrNameProblem('__proto__')).toBeDefined();
+    for (const name of ['pg-x', 'id', 'label', 'placeholders', 'xmlns']) {
+      expect(attrNameProblem(name)).toMatch(/reserved/);
+      expect(isReservedAttr(name)).toBe(true);
+    }
+    expect(isReservedAttr('bind')).toBe(false);
   });
 });
