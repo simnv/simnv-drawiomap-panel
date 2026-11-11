@@ -52,7 +52,7 @@ export type ReportEntry =
   | { kind: 'duplicate-series'; refId: string; labels: Labels }
   | { kind: 'unit-mismatch'; cls: string; use: UsePath; units: string[]; cellIds: string[] }
   | { kind: 'capacity-fallback'; cls: string; reason: string; cellIds: string[] }
-  | { kind: 'bad-cap'; value: string; cellIds: string[] }
+  | { kind: 'bad-cap'; attr: 'cap' | 'capacity'; value: string; cellIds: string[] }
   | { kind: 'cap-conflict'; cap: string; capacity: string; cellIds: string[] }
   | { kind: 'no-edge-ends'; reason: string; cellIds: string[] }
   | { kind: 'unused-field'; cls: string; field: string; cellIds: string[] }

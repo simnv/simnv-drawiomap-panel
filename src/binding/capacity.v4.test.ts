@@ -145,18 +145,24 @@ describe('capacityV4: bad-cap', () => {
   it.each(['abc', '1e9', '-1G', '0', '0.0M', '1G/', '/1G', '1G/2G/3G', '1 G', '1g', '1Gi', ''])(
     'cap=%j gives bad-cap and no capacity',
     (cap) => {
-      expect(chain(input({ cap }))).toEqual({ report: [{ kind: 'bad-cap', value: cap, cellIds: ['e1'] }] });
+      expect(chain(input({ cap }))).toEqual({
+        report: [{ kind: 'bad-cap', attr: 'cap', value: cap, cellIds: ['e1'] }],
+      });
     }
   );
 
   it('cap=abc gives bad-cap also when the capacity refId gives a value', () => {
     const r = chain(input({ capacity: 'S', cap: 'abc', series: queries({ S: ready(speed([1e9])) }) }));
-    expect(r).toEqual({ a2b: 1e9, b2a: 1e9, report: [{ kind: 'bad-cap', value: 'abc', cellIds: ['e1'] }] });
+    expect(r).toEqual({
+      a2b: 1e9,
+      b2a: 1e9,
+      report: [{ kind: 'bad-cap', attr: 'cap', value: 'abc', cellIds: ['e1'] }],
+    });
   });
 
   it('a value too large to be finite gives bad-cap', () => {
     const cap = `${'9'.repeat(400)}T`;
-    expect(chain(input({ cap }))).toEqual({ report: [{ kind: 'bad-cap', value: cap, cellIds: ['e1'] }] });
+    expect(chain(input({ cap }))).toEqual({ report: [{ kind: 'bad-cap', attr: 'cap', value: cap, cellIds: ['e1'] }] });
   });
 });
 
@@ -197,14 +203,14 @@ describe('capacityV4: the attribute capacity (second name of cap)', () => {
     expect(chain(input({ capacityAttr: 'x' }))).toEqual({
       a2b: undefined,
       b2a: undefined,
-      report: [{ kind: 'bad-cap', value: 'x', cellIds: ['e1'] }],
+      report: [{ kind: 'bad-cap', attr: 'capacity', value: 'x', cellIds: ['e1'] }],
     });
   });
   it('does not fall through to capacity when cap does not parse', () => {
     expect(chain(input({ cap: 'x', capacityAttr: '1G' }))).toEqual({
       a2b: undefined,
       b2a: undefined,
-      report: [{ kind: 'bad-cap', value: 'x', cellIds: ['e1'] }],
+      report: [{ kind: 'bad-cap', attr: 'cap', value: 'x', cellIds: ['e1'] }],
     });
   });
   it('lets a series win over both attributes', () => {
@@ -212,5 +218,6 @@ describe('capacityV4: the attribute capacity (second name of cap)', () => {
       input({ capacity: 'S', cap: '1G', capacityAttr: '2G', series: queries({ S: ready(speed([5e9])) }) })
     );
     expect(r.a2b).toEqual({ amount: 5e9, source: 'series' });
+    expect(r.report).toEqual([{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['e1'] }]);
   });
 });

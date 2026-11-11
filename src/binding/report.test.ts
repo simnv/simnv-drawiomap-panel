@@ -145,6 +145,7 @@ describe('S4 report contract', () => {
     }>();
     expectTypeOf<Extract<ReportEntry, { kind: 'bad-cap' }>>().toEqualTypeOf<{
       kind: 'bad-cap';
+      attr: 'cap' | 'capacity';
       value: string;
       cellIds: string[];
     }>();

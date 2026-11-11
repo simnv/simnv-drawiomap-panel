@@ -199,7 +199,7 @@ describe('reportLine', () => {
       cellIds: ['node-rtr-a'],
     },
     'capacity-fallback': { kind: 'capacity-fallback', cls: 'link', reason: 'No unit', cellIds: ['node-rtr-a'] },
-    'bad-cap': { kind: 'bad-cap', value: 'fast', cellIds: ['node-rtr-a'] },
+    'bad-cap': { kind: 'bad-cap', attr: 'cap', value: 'fast', cellIds: ['node-rtr-a'] },
     'cap-conflict': { kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['node-rtr-a'] },
     'no-edge-ends': { kind: 'no-edge-ends', reason: 'compressed page', cellIds: ['node-rtr-a'] },
     'unused-field': { kind: 'unused-field', cls: 'host', field: 'up', cellIds: ['node-rtr-a'] },
@@ -210,6 +210,21 @@ describe('reportLine', () => {
     const line = reportLine(samples[kind]);
     expect(line.trim()).not.toBe('');
     expect(line).not.toContain('\n');
+  });
+
+  it('names the attribute that does not parse in bad-cap', () => {
+    expect(reportLine({ kind: 'bad-cap', attr: 'capacity', value: 'abc', cellIds: ['l'] })).toBe(
+      'capacity "abc" is not a capacity (1 cells)'
+    );
+    expect(reportLine({ kind: 'bad-cap', attr: 'cap', value: 'abc', cellIds: ['l'] })).toBe(
+      'cap "abc" is not a capacity (1 cells)'
+    );
+  });
+
+  it('words cap-conflict as attribute precedence only, also when a series wins', () => {
+    expect(reportLine({ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['l'] })).toBe(
+      'cap "1G" and capacity "2G" differ, cap wins over the attribute capacity (1 cells)'
+    );
   });
 
   it('has a sample for each report kind', () => {

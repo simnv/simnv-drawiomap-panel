@@ -126,13 +126,13 @@ export function capacityV4(input: CapacityV4Input): { a2b: LinkCapacity; b2a: Li
   const cap = input.cap === undefined ? undefined : parseCap(input.cap);
   const alt = input.capacityAttr === undefined ? undefined : parseCap(input.capacityAttr);
   if (input.cap !== undefined && cap === undefined) {
-    report.push({ kind: 'bad-cap', value: input.cap, cellIds });
+    report.push({ kind: 'bad-cap', attr: 'cap', value: input.cap, cellIds });
   } else if (input.cap !== undefined && input.capacityAttr !== undefined) {
     if (alt?.a2b !== cap?.a2b || alt?.b2a !== cap?.b2a) {
       report.push({ kind: 'cap-conflict', cap: input.cap, capacity: input.capacityAttr, cellIds });
     }
   } else if (input.capacityAttr !== undefined && alt === undefined) {
-    report.push({ kind: 'bad-cap', value: input.capacityAttr, cellIds });
+    report.push({ kind: 'bad-cap', attr: 'capacity', value: input.capacityAttr, cellIds });
   }
   const attr = input.cap !== undefined ? cap : alt;
   const of = (dir: 'a2b' | 'b2a'): LinkCapacity =>
