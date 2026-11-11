@@ -1,31 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
-function normalize(svg: string): string {
-  const file = join(mkdtempSync(join(tmpdir(), 'svgid-')), 'x.svg');
-  writeFileSync(file, svg);
-  execFileSync('python3', [join(__dirname, '../scripts/normalize-svg-id.py'), file, 'demo']);
-  return readFileSync(file, 'utf8');
-}
+// @ts-expect-error the helper is a plain Node ES module with no types
+import { normalizeSvgId } from '../scripts/normalize-svg-id.mjs';
 
-describe('scripts/normalize-svg-id.py', () => {
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" id="ge-svg-aB3_x-9"><style>#ge-svg-aB3_x-9 { --a: 1; }</style>' +
-    '<g data-cell-id="ge-svg-cell" data-meta-key="ge-svg-key"><text>ge-svg-label</text></g></svg>';
+const normalize = normalizeSvgId as (svg: string, name: string) => string;
 
-  it('replaces the id of the root svg and its references only', () => {
-    const out = normalize(svg);
-    expect(out).toContain('id="ge-svg-demo"');
-    expect(out).toContain('#ge-svg-demo {');
-    expect(out).not.toContain('aB3_x-9');
+const ID = 'ge-svg-aB3_x-9';
+const head = '<?xml version="1.0"?>\n<!-- ' + ID + ' -->\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x.dtd">\n';
+const svg =
+  head +
+  `<svg xmlns="http://www.w3.org/2000/svg" id="${ID}"><style>#${ID} { --a: 1; } #${ID}-x { --b: 2; }</style>` +
+  `<defs><linearGradient id="g"/></defs><rect fill="url(#${ID})" style="filter: url(#${ID})"/><use href="#${ID}"/>` +
+  `<!-- #${ID} --><g data-cell-id="1" id="${ID}" data-meta-key="${ID}" data-meta-note="url(#${ID})"><text>${ID}</text></g></svg>`;
+
+describe('scripts/normalize-svg-id.mjs', () => {
+  const out = normalize(svg, 'demo');
+  it('changes the id of the root svg and its real references', () => {
+    expect(out).toContain('<svg xmlns="http://www.w3.org/2000/svg" id="ge-svg-demo">');
+    expect(out).toContain('#ge-svg-demo { --a: 1; }');
+    expect(out).toContain('fill="url(#ge-svg-demo)"');
+    expect(out).toContain('style="filter: url(#ge-svg-demo)"');
+    expect(out).toContain('<use href="#ge-svg-demo"/>');
   });
-  it('keeps a cell id, a key and a label that contain the prefix', () => {
-    const out = normalize(svg);
-    expect(out).toContain('data-cell-id="ge-svg-cell"');
-    expect(out).toContain('data-meta-key="ge-svg-key"');
-    expect(out).toContain('<text>ge-svg-label</text>');
+  it('keeps a label, a data-meta value, a comment, another id and a longer id that contain the same string', () => {
+    expect(out).toContain(`<text>${ID}</text>`);
+    expect(out).toContain(`data-meta-key="${ID}"`);
+    expect(out).toContain(`data-meta-note="url(#${ID})"`);
+    expect(out).toContain(`<g data-cell-id="1" id="${ID}"`);
+    expect(out).toContain(`<!-- #${ID} -->`);
+    expect(out.startsWith(head)).toBe(true);
+    expect(out).toContain(`#${ID}-x { --b: 2; }`);
+  });
+  it('does nothing when the root has no generated id', () => {
+    const plain = '<svg xmlns="http://www.w3.org/2000/svg" id="a"><text>x</text></svg>';
+    expect(normalize(plain, 'demo')).toBe(plain);
   });
 });

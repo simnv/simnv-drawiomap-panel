@@ -41,6 +41,6 @@ for f in "$root"/fixtures/demo/*.drawio "$root"/fixtures/hand/*.drawio "$tmp/leg
   n=$(basename "$f" .drawio)
   export_svg "$f" "$out_dir/$n.svg"
   # draw.io writes a random id (ge-svg-<random>) into the root <svg>. Replace only that id with a fixed one: same input, same bytes.
-  python3 "$root/scripts/normalize-svg-id.py" "$out_dir/$n.svg" "$n"
+  node "$root/scripts/normalize-svg-id.mjs" "$out_dir/$n.svg" "$n"
   printf '%-20s %8d bytes, %3d cells\n' "$n" "$(wc -c <"$out_dir/$n.svg")" "$(grep -o 'data-cell-id=' "$out_dir/$n.svg" | wc -l)"
 done
