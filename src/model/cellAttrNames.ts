@@ -23,5 +23,5 @@ export function attrNameProblem(name: string): string | undefined {
 
 /** True when the editor can write this cell attribute name. */
 export function isWritableCellAttr(name: string): boolean {
-  return META_KEY.test(name) && !RESERVED_META.test(name);
+  return attrNameProblem(name.toLowerCase()) === undefined;
 }

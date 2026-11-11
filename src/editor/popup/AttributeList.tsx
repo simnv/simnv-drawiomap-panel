@@ -4,7 +4,7 @@ import { Button, IconButton, Input, useStyles2 } from '@grafana/ui';
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { AttrOrigin } from '../../binding/identity';
 import type { CellMeta } from '../../types';
-import { attrNameProblem, isReservedAttr } from '../setCellAttrs';
+import { attrNameProblem, isReservedAttr } from '../../model/cellAttrNames';
 
 /** One shown end cell of a link: its side, readable name, id and attributes. */
 export interface EndAttrs {

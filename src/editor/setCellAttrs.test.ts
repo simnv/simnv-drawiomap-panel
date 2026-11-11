@@ -170,12 +170,25 @@ describe('setCellAttrs', () => {
     expect(() => setCellAttrs(diagram(), [{ id: 'unknown', attrs: { bind: 'host' } }])).toThrow(/page 1/);
   });
 
-  it.each(['pg-x', 'PG-X', 'id', 'ID', 'label', 'placeholders', 'xmlns', 'xmlThing', '1key', 'a:b', 'a.b', 'a b', ''])(
-    'refuses the attribute name %j',
-    (name) => {
-      expect(() => setCellAttrs(diagram(), [{ id: 'host-a', attrs: { [name]: null } }])).toThrow(/attribute name/i);
-    }
-  );
+  it.each([
+    'pg-x',
+    'PG-X',
+    'id',
+    'ID',
+    'label',
+    'placeholders',
+    'xmlns',
+    'xmlThing',
+    '__proto__',
+    '__PROTO__',
+    '1key',
+    'a:b',
+    'a.b',
+    'a b',
+    '',
+  ])('refuses the attribute name %j', (name) => {
+    expect(() => setCellAttrs(diagram(), [{ id: 'host-a', attrs: { [name]: null } }])).toThrow(/attribute name/i);
+  });
 
   it.each(['<mxfile>', '<mxGraphModel><root></mxGraphModel>', '<mxfile/>'])(
     'refuses invalid XML or a missing page',
