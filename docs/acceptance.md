@@ -179,4 +179,80 @@ centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The
 
 The baseline for the bench of the inferred identity plan (spec `docs/superpowers/specs/2026-11-11-inferred-identity-design.md`, steps S0 and S9) is the commit `a915fcd449b1d352715b259050ee59dc91419f37` of `main`.
 The golden record (`src/binding/identity.golden.test.ts`) was made on that commit.
-Step S9 measures the case of today on that commit and on the branch after S5, and writes the numbers here.
+
+S9, 2026-11-11. The branch is `simnv/ii-s9`, with the engine code after S5 and the allocation fix of S9 (below).
+Both checkouts used the same `node_modules`, Node 26.13.0 and Vitest 5.1.0 on an Apple M5 Pro.
+The baseline ran in a detached worktree under `/tmp`. Its source did not change.
+
+| Case                      | Runs per process | Processes | Median of the process medians | Quartiles (q1 to q3) | Range             |
+| ------------------------- | ---------------- | --------- | ----------------------------- | -------------------- | ----------------- |
+| Baseline, own attributes  | 20               | 16        | 3.311 ms                      | 3.265 to 3.406 ms    | 3.220 to 3.463 ms |
+| Branch, own attributes    | 20               | 16        | 3.276 ms                      | 3.223 to 3.430 ms    | 3.200 to 3.485 ms |
+| Branch, inferred identity | 20               | 16        | 4.402 ms                      | 4.351 to 4.457 ms    | 4.299 to 4.498 ms |
+
+Process medians, in the sequence of the run:
+
+- Baseline, own: 3.323, 3.257, 3.439, 3.264, 3.220, 3.295, 3.300, 3.277, 3.267, 3.425, 3.394, 3.261, 3.338, 3.463, 3.362, 3.410.
+- Branch, own: 3.450, 3.230, 3.485, 3.225, 3.423, 3.215, 3.285, 3.325, 3.209, 3.200, 3.415, 3.268, 3.228, 3.222, 3.432, 3.454.
+- Branch, inferred: 4.498, 4.419, 4.463, 4.299, 4.437, 4.367, 4.346, 4.330, 4.383, 4.394, 4.476, 4.430, 4.397, 4.325, 4.408, 4.476.
+
+Command, one process at a time:
+`npx vitest run src/binding/bind.v4.bench.test.ts --maxWorkers=1 --silent=false`.
+The processes alternate between the checkouts: baseline, branch, branch, baseline, and so on, 16 processes for each.
+The baseline has only the own-attribute case. Each branch process runs both cases.
+Each baseline process passed 3 tests. Each branch process passed 4 tests.
+The extra tests check distinct regexes and malformed matchers. They do not contribute to the medians.
+
+The 32 processes ran in one session, from 13:28:59 to 13:29:58, UTC+05:00.
+Before each process, the one-minute load was between 2.12 and 2.53, and `pgrep` found no Vitest or Playwright process.
+
+Both cases have 300 bound cells, 1000 distinct series, one sample per series and seed 42.
+The inferred diagram has 300 links with only `bind` plus structural `pg-*` attributes, 300 nodes with `key`, and 600 ports.
+Only 300 ports have `port`. The measured end alternates between source and target.
+Each measured pass checks every bound cell's selected value after the timer stops.
+The inferred pass also checks the measured end of each link.
+The timer covers `bindV4` with a new panel data identity per refresh.
+Fixture creation, SVG indexing, config validation and assertions are outside the timer.
+The first inferred pass includes the end-map build. The later passes use the same diagram and its cached maps.
+This unit bench does not measure browser paint or a dashboard refresh.
+
+**PASS, AC18:** the own-attribute median is 3.276 ms against 3.311 ms, a change of -1.1%. The limit is 3.477 ms (5%).
+The inferred case passes its separate budget: 4.402 / 3.276 = 1.344, below 1.5. Its limit is 4.914 ms.
+
+The first S9 measurement (three processes for each checkout, not interleaved) gave +6.97% for the own-attribute case.
+A second measurement confirmed it: 20 interleaved processes for each engine, with the same test file and the same
+checkout directory, gave 3.289 ms for the baseline engine and 3.528 ms for the engine of `79c43a4` (+7.3%).
+The cause was memory, not CPU work:
+
+- One bind of this fixture allocates about 6.2 MB. The engine of `79c43a4` allocated about 170 KB more (+2.8%).
+- A run with no collector pause took the same time on the two engines, about 3.1 to 3.3 ms.
+- A collector pause adds about 1 ms to a run. With the baseline, a pause came in each fourth or fifth run.
+  With +2.8%, a pause came in each fourth run. One more slow run in 20 moves the median of the 20 runs.
+  The process medians have two groups, near 3.27 ms and near 3.50 ms. The baseline was always in the first group.
+
+Thus the bench metric showed a step of about 7% for a real cost of about 1%. The fix removes the added garbage for a
+cell that needs no identity from another cell: no map of required names for a vertex, no origin record for an own
+attribute, shared helper functions in `listUses` in place of closures for each call, and no selection memo for a cell with one use. One bind now allocates
+about 6.17 MB against 6.15 to 6.18 MB for the baseline. `BindResultV4.resolved` stays as it is.
+A median of 20 runs stays sensitive to the pause period: a later change that adds garbage for each cell can show the
+same step.
+
+After the merge of `main` at `86692f6` (S6 and S7), 2026-11-11, the coordinator repeated the run on the awake Mac.
+The command and the interleaved sequence are the same as above, with 8 processes for each checkout, from 16:07:10 to
+16:10:50, UTC+05:00. The one-minute load before each process was between 1.02 and 2.28, and no other Vitest or
+Playwright process ran. The Mac was on battery (59%) with `caffeinate -i -s`. On battery the absolute times are
+higher than in the table above, also for the baseline. Thus the claim is the ratio in this one interleaved session,
+not the absolute time.
+
+| Case                      | Processes | Median of the process medians | Quartiles (q1 to q3) | Range             |
+| ------------------------- | --------- | ----------------------------- | -------------------- | ----------------- |
+| Baseline, own attributes  | 8         | 3.594 ms                      | 3.401 to 3.647 ms    | 3.278 to 4.292 ms |
+| Branch, own attributes    | 8         | 3.422 ms                      | 3.246 to 3.588 ms    | 3.210 to 3.625 ms |
+| Branch, inferred identity | 8         | 4.446 ms                      | 4.350 to 4.740 ms    | 4.323 to 5.860 ms |
+
+**PASS, AC18, after the merge:** the own-attribute ratio is 3.422 / 3.594 = 0.952, a change of -4.8% (budget: +5%).
+The inferred ratio is 4.446 / 3.422 = 1.30, below 1.5.
+The merge changes only the error path of the bind (the `detail` of a matcher problem). One bind allocates 6.16 to
+6.19 MB against 6.18 to 6.20 MB for the baseline (three processes, 60 binds each).
+Five earlier attempts after the merge are not valid and are not in the table: the Mac was in sleep on battery and ran
+the processes only in short wake windows.

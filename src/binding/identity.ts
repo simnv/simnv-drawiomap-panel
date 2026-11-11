@@ -183,6 +183,10 @@ export function createIdentity(ends: () => EndContext): {
       if (name.startsWith('from.') || name.startsWith('to.')) {
         origin = geometricAttr(meta, name, ends());
       } else {
+        // Most reads end at an own value. It needs no origin record, and the bind makes less garbage.
+        if (name !== 'id' && Object.hasOwn(meta.attrs, name)) {
+          return meta.attrs[name];
+        }
         origin = ownAttr(meta, name);
         if (!origin && !isOwnOnly(name)) {
           origin = meta.isEdge
