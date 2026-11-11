@@ -217,6 +217,21 @@ describe('InspectorV4', () => {
     expect(field('at').textContent).toBe('Use the target end');
   });
 
+  it('shows the cell id as visible text when both ends have the same name', async () => {
+    const same = SVG.replace('<text>C</text>', '<text>A</text>');
+    render(
+      <SplitEditor
+        {...props({
+          diagram: { xml: XML.replace('label="C"', 'label="A"'), svg: same, hash: 'inspect-2', updatedAt: '' },
+        })}
+      />
+    );
+    await frame();
+    fireEvent.click(cell('e'));
+    expect(field('source').textContent).toBe('A (a)');
+    expect(field('target').textContent).toBe('A (c)');
+  });
+
   it('shows the link section before the attributes and the uses', async () => {
     render(<SplitEditor {...props()} />);
     await frame();

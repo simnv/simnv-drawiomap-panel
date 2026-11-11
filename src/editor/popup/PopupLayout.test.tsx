@@ -82,6 +82,20 @@ describe('PopupLayout', () => {
     box.mockRestore();
   });
 
+  it('a resize of the code pane alone keeps the report height on the default of the container', () => {
+    const tall = measure(1400, 1000);
+    const first = render(layout());
+    fireEvent.keyDown(codeHandle(), { key: 'ArrowRight' });
+    expect(JSON.parse(window.localStorage.getItem(PANES_STORAGE_KEY)!)).toEqual({ code: 496 });
+    first.unmount();
+    tall.mockRestore();
+    const smaller = measure(1400, 900);
+    render(layout());
+    expect(size('dmap-pane-code')).toBe(496);
+    expect(size('dmap-pane-report')).toBe(360);
+    smaller.mockRestore();
+  });
+
   it('keeps the diagram shrinkable and clipped', () => {
     render(layout());
     const centre = screen.getByTestId('dmap-pane-stage');

@@ -280,6 +280,8 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
   const atTarget = at === 'target';
   const sourceName = endName(end?.source, ends);
   const targetName = endName(end?.target, ends);
+  // Two ends with one name: the cell id tells them apart, as visible text.
+  const same = sourceName !== undefined && sourceName === targetName;
   const keyedName = atTarget ? targetName : sourceName;
   return (
     <>
@@ -288,10 +290,12 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
         <dt>Source end (a)</dt>
         <dd data-testid="dmap-inspector-source" title={end?.source}>
           {sourceName ?? 'unknown'}
+          {same && end?.source ? <span className={styles.note}> ({end.source})</span> : null}
         </dd>
         <dt>Target end (b)</dt>
         <dd data-testid="dmap-inspector-target" title={end?.target}>
           {targetName ?? 'unknown'}
+          {same && end?.target ? <span className={styles.note}> ({end.target})</span> : null}
         </dd>
       </dl>
       <p className={styles.line} data-testid="dmap-inspector-keyed">

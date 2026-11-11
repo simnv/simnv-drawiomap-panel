@@ -141,6 +141,8 @@ export function SplitEditor({
   /** The diagram with the writes of the inspector (spec 5.5). The writes go into the draw.io XML and the SVG (D19). */
   const [versions, setVersions] = useState(() => history<Diagram | undefined>(opts.diagram));
   const diagram = versions.present;
+  // Apply feedback: shown until the next change of the text or the diagram, also when a change is reverted.
+  const [applied, setApplied] = useState(false);
   const [base, setBase] = useState(() => baseRevision(options));
   const [savedText, setSavedText] = useState(() => toYaml(options.config));
   const [savedDiagram, setSavedDiagram] = useState(options.diagram);
@@ -174,6 +176,7 @@ export function SplitEditor({
       }
       textRef.current = next;
       setText(next);
+      setApplied(false);
       clearTimeout(settleTimer.current);
       settleTimer.current = setTimeout(settle, SETTLE_MS);
     },
@@ -417,6 +420,7 @@ export function SplitEditor({
       try {
         const next = setCellAttrs(diagram, cells);
         setVersions((old) => pushVersion(old, next));
+        setApplied(false);
         clearLit();
         setWriteError(undefined);
       } catch (error) {
@@ -427,12 +431,18 @@ export function SplitEditor({
   );
   const onUndo = useCallback(() => {
     clearLit();
+    if (versions.past.length) {
+      setApplied(false);
+    }
     setVersions(undo);
-  }, [clearLit]);
+  }, [clearLit, versions.past.length]);
   const onRedo = useCallback(() => {
     clearLit();
+    if (versions.future.length) {
+      setApplied(false);
+    }
     setVersions(redo);
-  }, [clearLit]);
+  }, [clearLit, versions.future.length]);
   const onCloseInspector = useCallback(() => {
     setSelected([]);
     setWriteError(undefined);
@@ -442,8 +452,6 @@ export function SplitEditor({
   const conflict = hasConflict(base, options);
   const dirty = text !== savedText || diagram !== savedDiagram;
   const [discard, setDiscard] = useState(false);
-  // Apply feedback: shown until the next change of the draft.
-  const [applied, setApplied] = useState(false);
   const requestClose = useCallback(() => {
     settle();
     if (dirty) {
@@ -582,7 +590,7 @@ export function SplitEditor({
           Apply
         </Button>
         <span role="status" aria-live="polite" className={styles.status} data-testid="dmap-apply-status">
-          {applied && !dirty && !pending ? 'Applied to the panel. Save the dashboard to keep it.' : ''}
+          {applied ? 'Applied to the panel. Save the dashboard to keep it.' : ''}
         </span>
       </div>
       {/* Mount the question only while it is open: the Grafana 12.3 Modal names itself on its first mount, and a closed Modal has no title yet. */}

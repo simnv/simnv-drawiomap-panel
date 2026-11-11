@@ -69,9 +69,10 @@ function readSizes(): { sizes: Sizes; belowSet: boolean } {
 const defaultBelow = (height: number) =>
   height ? clamp(Math.round(height * BELOW_SHARE), LIMITS.below.initial, LIMITS.below.max) : LIMITS.below.initial;
 
-function writeSizes(sizes: Sizes) {
+/** The report height goes to the storage only when the user set it: else the default of the container stays live. */
+function writeSizes(sizes: Sizes, belowSet: boolean) {
   try {
-    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(sizes));
+    window.localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(belowSet ? sizes : { code: sizes.code }));
   } catch {
     // The storage is full or blocked: the sizes last until the popup closes.
   }
@@ -183,6 +184,7 @@ export function PopupLayout({ code, stage, below, activeTab, onTabChange }: Popu
     shownRef.current = shown;
   });
   const latest = useRef(sizes);
+  const belowSetRef = useRef(belowSet);
   /** The largest size of a pane: the container keeps the minimum of the diagram and of the top row. */
   const maxFor = useCallback((pane: Pane) => {
     const el = containerRef.current;
@@ -197,10 +199,11 @@ export function PopupLayout({ code, stage, below, activeTab, onTabChange }: Popu
     shownRef.current = next;
     setSizes(next);
     if (pane === 'below') {
+      belowSetRef.current = true;
       setBelowSet(true);
     }
   }, []);
-  const commit = useCallback(() => writeSizes(latest.current), []);
+  const commit = useCallback(() => writeSizes(latest.current, belowSetRef.current), []);
 
   // The three panes stay mounted in both modes: the stage index and the code box keep their state. A hidden pane has
   // `display: none`. The slots keep their place, so a mode change does not remount a pane.

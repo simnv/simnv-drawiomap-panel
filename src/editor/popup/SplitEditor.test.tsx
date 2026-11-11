@@ -622,6 +622,31 @@ describe('SplitEditor', () => {
       expect(status().textContent).toBe('');
     });
 
+    it('does not say "Applied" again when a change is reverted to the applied text or diagram', async () => {
+      render(<SplitEditor {...writableProps()} onOptionsChange={vi.fn()} />);
+      await frame();
+      const applied = fake.text.replace('status: up', 'status: down');
+      type(applied);
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(status().textContent).not.toBe('');
+      type(applied.replace('status: down', 'status: up'));
+      type(applied);
+      settle();
+      expect(status().textContent).toBe('');
+    });
+
+    it('does not say "Applied" again when a diagram write is undone and redone', async () => {
+      render(<SplitEditor {...writableProps()} onOptionsChange={vi.fn()} />);
+      await frame();
+      writeKey('draft-key');
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(status().textContent).not.toBe('');
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+      settle();
+      expect(status().textContent).toBe('');
+    });
+
     it('says nothing when the host does not take the options', async () => {
       render(<SplitEditor {...editorProps()} />);
       await frame();
