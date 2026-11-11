@@ -236,3 +236,11 @@ attribute, shared helper functions in `listUses` in place of closures for each c
 about 6.17 MB against 6.15 to 6.18 MB for the baseline. `BindResultV4.resolved` stays as it is.
 A median of 20 runs stays sensitive to the pause period: a later change that adds garbage for each cell can show the
 same step.
+
+After the merge of `main` at `86692f6` (S6 and S7), 2026-11-11: no valid timing exists. The Mac went to sleep on
+battery at about 13:56 and woke for some seconds in each five minutes. Five interleaved attempts (8 processes for
+each checkout) ran in these wake windows. In each attempt the baseline also moved, with process medians from 3.22 to
+7.24 ms, so the attempts do not compare the engines. `caffeinate -i` did not keep the Mac awake.
+The evidence after the merge is: the merge changes only the error path of the bind (the `detail` of a matcher
+problem), and one bind allocates 6.16 to 6.19 MB against 6.18 to 6.20 MB for the baseline (three processes, 60 binds
+each). The verdict above stays until someone repeats the interleaved run on an awake Mac.
