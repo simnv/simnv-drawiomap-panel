@@ -15,13 +15,15 @@ const ROW_ID = /^pg-legend[A-Za-z]*~symbol:(.+)$/;
 /** The symbol of a legend cell id, or null. The export writes `%` and `~` inside a part as `%25` and `%7e`. */
 export function symbolOfLegendId(id: string): string | null {
   const m = ROW_ID.exec(id);
-  if (!m) {
-    return null;
-  }
+  return m ? decodeSymbol(m[1]) : null;
+}
+
+/** The attribute `pg-symbol` has the same escapes as the row id: decode both, then compare. */
+function decodeSymbol(text: string): string {
   try {
-    return decodeURIComponent(m[1]);
+    return decodeURIComponent(text);
   } catch {
-    return m[1];
+    return text;
   }
 }
 
@@ -29,7 +31,8 @@ export function symbolOfLegendId(id: string): string | null {
 export function symbolGroups(cells: CellIndex): Map<string, string[]> {
   const groups = new Map<string, string[]>();
   for (const [id, entry] of cells) {
-    const symbol = entry.meta.kind === 'node' ? entry.meta.attrs[SYMBOL_ATTR] : undefined;
+    const raw = entry.meta.kind === 'node' ? entry.meta.attrs[SYMBOL_ATTR] : undefined;
+    const symbol = raw ? decodeSymbol(raw) : undefined;
     if (symbol) {
       const ids = groups.get(symbol);
       if (ids) {

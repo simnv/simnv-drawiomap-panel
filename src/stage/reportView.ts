@@ -52,6 +52,7 @@ export function entryTarget(entry: ReportEntry): EntryTarget {
       return { path: classPath(entry.cls, entry.field), cells: entry.cellIds };
     case 'unknown-class':
     case 'bad-cap':
+    case 'cap-conflict':
     case 'no-edge-ends':
       return { cells: entry.cellIds };
     case 'query-unavailable':
@@ -102,7 +103,8 @@ export function reportUse(path: string, config?: ConfigV4 | null): string {
  * | many-series | unordered cell id/count pairs |
  * | unit-mismatch | unordered unit set |
  * | capacity-fallback, no-edge-ends | reason |
- * | bad-cap | value |
+ * | bad-cap | attribute name and value |
+ * | cap-conflict | cap and capacity attribute values |
  * | class-cycle, class-unknown-parent, class-invalid-parent | none |
  * | unknown-class | bind name |
  * | unknown-override | cell id |
@@ -115,7 +117,8 @@ export function reportUse(path: string, config?: ConfigV4 | null): string {
  * | duplicate-series | refId and labels |
  *
  * Missing attributes, unknown refs, matcher errors and no-series rows come first, in that order.
- * Other rows keep their source order. Uses keep their source paths and source order.
+ * Other rows, including bad-cap and cap-conflict, keep their source order.
+ * Uses keep their source paths and source order.
  */
 export function groupReport(entries: readonly ReportEntry[], config?: ConfigV4 | null): ReportGroup[] {
   const groups = new Map<string, ReportGroup>();
@@ -165,7 +168,9 @@ function causeOf(entry: ReportEntry): unknown {
     case 'no-edge-ends':
       return entry.reason;
     case 'bad-cap':
-      return entry.value;
+      return [entry.attr, entry.value];
+    case 'cap-conflict':
+      return [entry.cap, entry.capacity];
     case 'unknown-class':
       return entry.bind;
     case 'unknown-override':
@@ -247,7 +252,9 @@ export function reportLine(entry: ReportEntry): string {
     case 'capacity-fallback':
       return `Capacity: ${entry.reason}`;
     case 'bad-cap':
-      return `cap "${entry.value}" is not a capacity (${counted(entry.cellIds.length, 'cell')})`;
+      return `${entry.attr} "${entry.value}" is not a capacity (${counted(entry.cellIds.length, 'cell')})`;
+    case 'cap-conflict':
+      return `cap "${entry.cap}" and capacity "${entry.capacity}" differ, cap wins over the attribute capacity (${counted(entry.cellIds.length, 'cell')})`;
     case 'no-edge-ends':
       return `${counted(entry.cellIds.length, 'edge')} ${have(entry.cellIds.length)} no ends: ${entry.reason}`;
     case 'unused-field':

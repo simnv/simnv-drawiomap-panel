@@ -59,7 +59,8 @@ describe('groupReport', () => {
       cellIds: ['a'],
     },
     'capacity-fallback': { kind: 'capacity-fallback', cls: 'dev', reason: 'No value', cellIds: ['a'] },
-    'bad-cap': { kind: 'bad-cap', value: 'fast', cellIds: ['a'] },
+    'bad-cap': { kind: 'bad-cap', attr: 'cap', value: 'fast', cellIds: ['a'] },
+    'cap-conflict': { kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['a'] },
     'no-edge-ends': { kind: 'no-edge-ends', reason: 'No XML', cellIds: ['a'] },
     'unused-field': { kind: 'unused-field', cls: 'dev', field: 'up', cellIds: ['a'] },
     'class-no-cells': { kind: 'class-no-cells', cls: 'dev' },
@@ -99,6 +100,8 @@ describe('groupReport', () => {
       second.cellId = 'other';
     } else if (second.kind === 'bad-cap') {
       second.value = 'slow';
+    } else if (second.kind === 'cap-conflict') {
+      second.capacity = '3G';
     } else if (second.kind === 'no-edge-ends') {
       second.reason = 'Other reason';
     }
@@ -113,6 +116,8 @@ describe('groupReport', () => {
     'unit-mismatch',
     'capacity-fallback',
     'unused-field',
+    'bad-cap',
+    'cap-conflict',
   ] as const)('does not combine different cell sets for %s', (kind) => {
     const first = samples[kind];
     expect(groupReport([first, { ...first, cellIds: ['b'] } as ReportEntry])).toHaveLength(2);
@@ -137,6 +142,8 @@ describe('groupReport', () => {
 
   it('sorts blocking kinds first, then keeps the source order for the rest', () => {
     const groups = groupReport([
+      samples['cap-conflict'],
+      samples['bad-cap'],
       samples['unused-field'],
       samples['no-series'],
       samples['matcher-error'],
@@ -149,6 +156,8 @@ describe('groupReport', () => {
       'unknown-ref',
       'matcher-error',
       'no-series',
+      'cap-conflict',
+      'bad-cap',
       'unused-field',
       'many-series',
     ]);
@@ -183,6 +192,17 @@ describe('groupReport', () => {
         { kind: 'unit-mismatch', cls: 'dev', use: 'classes.dev.rows[0]', units: ['bps', 's'], cellIds: ['a'] },
       ])
     ).toHaveLength(1);
+  });
+
+  it('keeps distinct capacity attributes and conflict values in separate groups', () => {
+    const entries: ReportEntry[] = [
+      { kind: 'bad-cap', attr: 'cap', value: 'fast', cellIds: ['a'] },
+      { kind: 'bad-cap', attr: 'capacity', value: 'fast', cellIds: ['a'] },
+      { kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['a'] },
+      { kind: 'cap-conflict', cap: '3G', capacity: '2G', cellIds: ['a'] },
+      { kind: 'cap-conflict', cap: '1G', capacity: '3G', cellIds: ['a'] },
+    ];
+    expect(groupReport(entries)).toHaveLength(5);
   });
 
   it('reads row labels with quoted class names and keeps override paths explicit', () => {
@@ -227,7 +247,12 @@ describe('groupReport', () => {
         { kind: 'no-edge-ends', reason: 'No XML', cellIds },
         `${count} ${count === 1 ? 'edge has' : 'edges have'} no ends: No XML`,
       ],
-      [{ kind: 'bad-cap', value: 'fast', cellIds }, `cap "fast" is not a capacity (${cells})`],
+      [{ kind: 'bad-cap', attr: 'cap', value: 'fast', cellIds }, `cap "fast" is not a capacity (${cells})`],
+      [{ kind: 'bad-cap', attr: 'capacity', value: 'fast', cellIds }, `capacity "fast" is not a capacity (${cells})`],
+      [
+        { kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds },
+        `cap "1G" and capacity "2G" differ, cap wins over the attribute capacity (${cells})`,
+      ],
       [
         { kind: 'orphan-series', refId: 'up', labels: [], more: count },
         `up: ${count} series ${count === 1 ? 'selects' : 'select'} no cell`,

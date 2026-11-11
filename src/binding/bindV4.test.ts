@@ -380,9 +380,34 @@ describe('bindV4: the report kinds of spec 4', () => {
       [link({ cap: 'abc' })],
       [frame('tx', { name: 'sw-a' }, [5e8], { unit: 'bps' })]
     );
-    expect(entries(r.report, 'bad-cap')).toEqual([{ kind: 'bad-cap', value: 'abc', cellIds: ['l'] }]);
+    expect(entries(r.report, 'bad-cap')).toEqual([{ kind: 'bad-cap', attr: 'cap', value: 'abc', cellIds: ['l'] }]);
     expect(patch(r, 'l').link?.a2b).toMatchObject({ status: 'ok', value: 5e8 });
     expect(patch(r, 'l').link?.a2b?.percent).toBeUndefined();
+  });
+
+  it('the attribute capacity is the second name of cap (portograph contract)', () => {
+    const cfg = hostConfig({ lan: { match: { key: 'name' }, up: 'tx' } });
+    const frames = [frame('tx', { name: 'sw-a' }, [5e8], { unit: 'bps' })];
+    const of = (attrs: Record<string, string>) => {
+      const r = run(cfg, [link(attrs)], frames);
+      return {
+        half: patch(r, 'l').link?.a2b,
+        report: r.report.filter((e) => e.kind === 'bad-cap' || e.kind === 'cap-conflict'),
+      };
+    };
+    const only = of({ capacity: '1000000000' });
+    expect(only.half).toMatchObject({ capacity: 1e9, capacitySource: 'attr', percent: 50 });
+    expect(only.report).toEqual([]);
+    expect(of({ cap: '1G', capacity: '1000000000' }).report).toEqual([]);
+    const differ = of({ cap: '1G', capacity: '2G' });
+    expect(differ.half).toMatchObject({ capacity: 1e9 });
+    expect(differ.report).toEqual([{ kind: 'cap-conflict', cap: '1G', capacity: '2G', cellIds: ['l'] }]);
+    expect(of({ capacity: 'abc' }).report).toEqual([
+      { kind: 'bad-cap', attr: 'capacity', value: 'abc', cellIds: ['l'] },
+    ]);
+    const badCap = of({ cap: 'abc', capacity: '1G' });
+    expect(badCap.half?.capacity).toBeUndefined();
+    expect(badCap.report).toEqual([{ kind: 'bad-cap', attr: 'cap', value: 'abc', cellIds: ['l'] }]);
   });
 
   it('no-edge-ends: a compressed page gives no ends when a class reads ${from.…}', () => {
@@ -646,6 +671,42 @@ describe('bindV4: the engine', () => {
         ?.map((s) => s.labels)
     ).toEqual([{ name: 'sw-a' }]);
     expect(entries(r.report, 'missing-attr')).toEqual([]);
+  });
+
+  it('a portograph link with only bind reads its ends through the record key id', () => {
+    const r = run(
+      {
+        version: 4,
+        classes: {
+          lan: {
+            match: { id: ['job="${from.job}"', 'device="${from.device}"'] },
+            up: 'lan_tx',
+            down: 'lan_rx',
+          },
+        },
+      },
+      [
+        ['0', { 'pg-schema': '1' }],
+        ['n', { 'pg-kind': 'node', 'pg-id': 'sw-a', job: 'sw-a' }],
+        ['p', { 'pg-kind': 'port', 'pg-id': 'sw-a:eth1', 'pg-node': 'sw-a', device: 'eth1' }],
+        ['m', { 'pg-kind': 'node', 'pg-id': 'sw-b', job: 'sw-b' }],
+        ['l', { 'pg-kind': 'link', 'pg-id': 'l', 'pg-from': 'sw-a:eth1', 'pg-to': 'sw-b', bind: 'lan' }, true],
+      ],
+      [
+        frame('lan_tx', { job: 'sw-a', device: 'eth1' }, [5]),
+        frame('lan_rx', { job: 'sw-a', device: 'eth1' }, [7]),
+        frame('lan_tx', { job: 'sw-b', device: 'eth1' }, [9]),
+      ]
+    );
+    expect(entries(r.report, 'missing-attr')).toEqual([]);
+    expect(
+      r.series
+        .get('l')
+        ?.get('classes.lan.up')
+        ?.map((s) => s.labels)
+    ).toEqual([{ job: 'sw-a', device: 'eth1' }]);
+    expect(patch(r, 'l').link?.a2b).toMatchObject({ status: 'ok', value: 5 });
+    expect(patch(r, 'l').link?.b2a).toMatchObject({ status: 'ok', value: 7 });
   });
 
   describe('an end attribute named as an Object.prototype member (gate A1)', () => {

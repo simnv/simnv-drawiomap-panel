@@ -626,6 +626,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     const capacity = capacityV4({
       capacity: eff.capacity,
       cap: meta.attrs.cap,
+      capacityAttr: meta.attrs.capacity,
       series: speedSeries,
       cls,
       cellIds: [meta.id],
