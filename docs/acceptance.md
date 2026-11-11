@@ -174,3 +174,9 @@ centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The
     failure with CSP only. The test diagram now has the freshness `1h`.
 - An e2e run needs 15 minutes of data with no gap. When the Mac sleeps, the demo metrics have a gap, and the chart
   tests read "No data" or a value of 0 until the gap leaves the time range.
+
+## Inferred identity: bench
+
+The baseline for the bench of the inferred identity plan (spec `docs/superpowers/specs/2026-11-11-inferred-identity-design.md`, steps S0 and S9) is the commit `a915fcd449b1d352715b259050ee59dc91419f37` of `main`.
+The golden record (`src/binding/identity.golden.test.ts`) was made on that commit.
+Step S9 measures the case of today on that commit and on the branch after S5, and writes the numbers here.

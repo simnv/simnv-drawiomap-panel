@@ -1,0 +1,5516 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden record: compatibility cases (AC4) > case 1: netL2Pilot with the cells of a generator 1`] = `
+{
+  "cells": {
+    "pg-link~l1": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "19.0 Mb/s · 2% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  17106663.6,
+                  18057033.8,
+                  19007404,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "33.0 Mb/s · 3% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  29704442.4,
+                  31354689.2,
+                  33004936,
+                ],
+              },
+            ],
+            "domain": [
+              -36305429.6,
+              36305429.6,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 19.0 Mb/s · 2% of 1 Gb/s  ↓ 33.0 Mb/s · 3% of 1 Gb/s",
+            "title": "Traffic",
+          },
+          {
+            "key": "row-1",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "uplink",
+            "title": "Path",
+          },
+        ],
+        "title": "pg-link~l1",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "19.0 Mb/s · 2% of 1 Gb/s",
+          "percent": 1.9007404,
+          "percentDisplay": "2%",
+          "status": "ok",
+          "value": 19007404,
+        },
+        "b2a": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "33.0 Mb/s · 3% of 1 Gb/s",
+          "percent": 3.3004936,
+          "percentDisplay": "3%",
+          "status": "ok",
+          "value": 33004936,
+        },
+        "labelMode": "percent",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.lan.rows[0]",
+        },
+        {
+          "kind": "metadata",
+          "label": "Path",
+          "path": "classes.lan.rows[1]",
+          "text": "uplink",
+        },
+      ],
+      "series": {
+        "classes.lan.capacity": [
+          "{name="sw-a1", port_num="3"}",
+        ],
+        "classes.lan.down": [
+          "{name="sw-a1", port_num="3"}",
+        ],
+        "classes.lan.rows[0].a2b": [
+          "{name="sw-a1", port_num="3"}",
+        ],
+        "classes.lan.rows[0].b2a": [
+          "{name="sw-a1", port_num="3"}",
+        ],
+        "classes.lan.status": [
+          "{name="sw-a1", port_num="3"}",
+        ],
+        "classes.lan.up": [
+          "{name="sw-a1", port_num="3"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "12006170",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.lan.status",
+          "refId": "lan_state",
+        },
+        {
+          "path": "classes.lan.rows[0].a2b",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.rows[0].b2a",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.down",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.capacity",
+          "refId": "unifi_port_speed",
+        },
+      ],
+    },
+    "pg-link~l2": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "28.0 Mb/s · 3% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  25206663.6,
+                  26607033.8,
+                  28007404,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "10.0 Mb/s · 1% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  9004442.4,
+                  9504689.2,
+                  10004936,
+                ],
+              },
+            ],
+            "domain": [
+              -30808144.4,
+              30808144.4,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 28.0 Mb/s · 3% of 1 Gb/s  ↓ 10.0 Mb/s · 1% of 1 Gb/s",
+            "title": "Traffic",
+          },
+          {
+            "key": "row-1",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "uplink",
+            "title": "Path",
+          },
+        ],
+        "title": "pg-link~l2",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "10.0 Mb/s · 1% of 1 Gb/s",
+          "percent": 1.0004936,
+          "percentDisplay": "1%",
+          "status": "ok",
+          "value": 10004936,
+        },
+        "b2a": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "28.0 Mb/s · 3% of 1 Gb/s",
+          "percent": 2.8007404,
+          "percentDisplay": "3%",
+          "status": "ok",
+          "value": 28007404,
+        },
+        "labelMode": "percent",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.lan.rows[0]",
+        },
+        {
+          "kind": "metadata",
+          "label": "Path",
+          "path": "classes.lan.rows[1]",
+          "text": "uplink",
+        },
+      ],
+      "series": {
+        "classes.lan.capacity": [
+          "{name="sw-a2", port_num="15"}",
+        ],
+        "classes.lan.down": [
+          "{name="sw-a2", port_num="15"}",
+        ],
+        "classes.lan.rows[0].a2b": [
+          "{name="sw-a2", port_num="15"}",
+        ],
+        "classes.lan.rows[0].b2a": [
+          "{name="sw-a2", port_num="15"}",
+        ],
+        "classes.lan.status": [
+          "{name="sw-a2", port_num="15"}",
+        ],
+        "classes.lan.up": [
+          "{name="sw-a2", port_num="15"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "41006170",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.lan.status",
+          "refId": "lan_state",
+        },
+        {
+          "path": "classes.lan.rows[0].a2b",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.rows[0].b2a",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.down",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.capacity",
+          "refId": "unifi_port_speed",
+        },
+      ],
+    },
+    "pg-link~l4": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "38.0 Mb/s · 4% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  34206663.6,
+                  36107033.8,
+                  38007404,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "6.00 Mb/s · 1% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  5404442.4,
+                  5704689.2,
+                  6004936,
+                ],
+              },
+            ],
+            "domain": [
+              -41808144.4,
+              41808144.4,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 38.0 Mb/s · 4% of 1 Gb/s  ↓ 6.00 Mb/s · 1% of 1 Gb/s",
+            "title": "Traffic",
+          },
+          {
+            "key": "row-1",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "access",
+            "title": "Path",
+          },
+        ],
+        "title": "pg-link~l4",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "38.0 Mb/s · 4% of 1 Gb/s",
+          "percent": 3.8007404,
+          "percentDisplay": "4%",
+          "status": "ok",
+          "value": 38007404,
+        },
+        "b2a": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "6.00 Mb/s · 1% of 1 Gb/s",
+          "percent": 0.6004936,
+          "percentDisplay": "1%",
+          "status": "ok",
+          "value": 6004936,
+        },
+        "labelMode": "percent",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.lan.rows[0]",
+        },
+        {
+          "kind": "metadata",
+          "label": "Path",
+          "path": "classes.lan.rows[1]",
+          "text": "access",
+        },
+      ],
+      "series": {
+        "classes.lan.capacity": [
+          "{name="sw-a1", port_num="5"}",
+        ],
+        "classes.lan.down": [
+          "{name="sw-a1", port_num="5"}",
+        ],
+        "classes.lan.rows[0].a2b": [
+          "{name="sw-a1", port_num="5"}",
+        ],
+        "classes.lan.rows[0].b2a": [
+          "{name="sw-a1", port_num="5"}",
+        ],
+        "classes.lan.status": [
+          "{name="sw-a1", port_num="5"}",
+        ],
+        "classes.lan.up": [
+          "{name="sw-a1", port_num="5"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "33006170",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.lan.status",
+          "refId": "lan_state",
+        },
+        {
+          "path": "classes.lan.rows[0].a2b",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.rows[0].b2a",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.down",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.capacity",
+          "refId": "unifi_port_speed",
+        },
+      ],
+    },
+    "pg-link~p-a1-15": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "30.0 Mb/s · 3% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  27006663.6,
+                  28507033.8,
+                  30007404,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "48.0 Mb/s · 5% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  43204442.4,
+                  45604689.2,
+                  48004936,
+                ],
+              },
+            ],
+            "domain": [
+              -52805429.6,
+              52805429.6,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 30.0 Mb/s · 3% of 1 Gb/s  ↓ 48.0 Mb/s · 5% of 1 Gb/s",
+            "title": "Traffic",
+          },
+          {
+            "key": "row-1",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "core",
+            "title": "Path",
+          },
+          {
+            "key": "row-2",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "second uplink",
+            "title": "Note",
+          },
+        ],
+        "title": "pg-link~p-a1-15",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "30.0 Mb/s · 3% of 1 Gb/s",
+          "percent": 3.0007404,
+          "percentDisplay": "3%",
+          "status": "ok",
+          "value": 30007404,
+        },
+        "b2a": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "48.0 Mb/s · 5% of 1 Gb/s",
+          "percent": 4.8004936,
+          "percentDisplay": "5%",
+          "status": "ok",
+          "value": 48004936,
+        },
+        "labelMode": "percent",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.lan.rows[0]",
+        },
+        {
+          "kind": "metadata",
+          "label": "Path",
+          "path": "classes.lan.rows[1]",
+          "text": "core",
+        },
+        {
+          "kind": "metadata",
+          "label": "Note",
+          "path": "overrides.pg-link~p-a1-15.rows[0]",
+          "text": "second uplink",
+        },
+      ],
+      "series": {
+        "classes.lan.capacity": [
+          "{name="sw-a2", port_num="16"}",
+        ],
+        "classes.lan.down": [
+          "{name="sw-a2", port_num="16"}",
+        ],
+        "classes.lan.rows[0].a2b": [
+          "{name="sw-a2", port_num="16"}",
+        ],
+        "classes.lan.rows[0].b2a": [
+          "{name="sw-a2", port_num="16"}",
+        ],
+        "classes.lan.status": [
+          "{name="sw-a2", port_num="16"}",
+        ],
+        "classes.lan.up": [
+          "{name="sw-a2", port_num="16"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "29006170",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.lan.status",
+          "refId": "lan_state",
+        },
+        {
+          "path": "classes.lan.rows[0].a2b",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.rows[0].b2a",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan.down",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan.capacity",
+          "refId": "unifi_port_speed",
+        },
+      ],
+    },
+    "pg-node~ap-a": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "key": "status",
+            "kind": "status",
+            "stale": false,
+            "state": "ready",
+            "status": "normal",
+            "text": "29009872",
+            "title": "normal",
+          },
+        ],
+        "title": "ap-a",
+      },
+      "rows": [],
+      "series": {
+        "classes.unifi-client.status": [
+          "{name="ap-a"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "29009872",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.unifi-client.status",
+          "refId": "unifi_client_health",
+        },
+      ],
+    },
+    "pg-node~cam-1": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "key": "status",
+            "kind": "status",
+            "stale": false,
+            "state": "ready",
+            "status": "normal",
+            "text": "15000000",
+            "title": "normal",
+          },
+        ],
+        "title": "cam-1",
+      },
+      "rows": [],
+      "series": {
+        "classes.camera.status": [
+          "{device="cam-1"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "15000000",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.camera.status",
+          "refId": "hik_up",
+        },
+      ],
+    },
+    "pg-node~rtr-a": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/host?var-job=rtr-a",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [
+          {
+            "key": "row-0",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "router",
+            "title": "Role",
+          },
+          {
+            "domain": [
+              0,
+              45001234,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  40501110.6,
+                  42751172.3,
+                  45001234,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "45001234",
+            "title": "host_cpu",
+          },
+          {
+            "domain": [
+              0,
+              10002468,
+            ],
+            "key": "row-2",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  9002221.2,
+                  9502344.6,
+                  10002468,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "10002468",
+            "title": "host_mem",
+          },
+          {
+            "key": "row-3",
+            "kind": "value",
+            "stale": false,
+            "state": "ready",
+            "text": "45003702",
+            "title": "host_uptime",
+          },
+        ],
+        "title": "rtr-a",
+      },
+      "rows": [
+        {
+          "kind": "metadata",
+          "label": "Role",
+          "path": "classes.device.rows[0]",
+          "text": "router",
+        },
+        {
+          "kind": "history",
+          "path": "classes.host.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.host.rows[1]",
+        },
+        {
+          "kind": "value",
+          "path": "classes.host.rows[2]",
+        },
+        {
+          "kind": "drilldown",
+          "label": "Open host",
+          "path": "classes.host.rows[3]",
+          "url": "/d/host?var-job=rtr-a",
+        },
+      ],
+      "series": {
+        "classes.host.rows[0]": [
+          "{job="rtr-a"}",
+        ],
+        "classes.host.rows[1]": [
+          "{job="rtr-a"}",
+        ],
+        "classes.host.rows[2]": [
+          "{job="rtr-a"}",
+        ],
+        "classes.host.status": [
+          "{job="rtr-a"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "46008638",
+      },
+      "urls": [
+        {
+          "url": "/d/host?var-job=rtr-a",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.host.status",
+          "refId": "scrape_up",
+        },
+        {
+          "path": "classes.host.rows[0]",
+          "refId": "host_cpu",
+        },
+        {
+          "path": "classes.host.rows[1]",
+          "refId": "host_mem",
+        },
+        {
+          "path": "classes.host.rows[2]",
+          "refId": "host_uptime",
+        },
+      ],
+    },
+    "pg-node~sw-a1": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "key": "row-0",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "switch",
+            "title": "Role",
+          },
+          {
+            "domain": [
+              0,
+              21011106,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "sw-a1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18909995.4,
+                  19960550.7,
+                  21011106,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "21011106",
+            "title": "unifi_dev_cpu",
+          },
+          {
+            "key": "row-2",
+            "kind": "value",
+            "stale": false,
+            "state": "ready",
+            "text": "19013574",
+            "title": "unifi_dev_poe_budget",
+          },
+        ],
+        "title": "sw-a1",
+      },
+      "rows": [
+        {
+          "kind": "metadata",
+          "label": "Role",
+          "path": "classes.device.rows[0]",
+          "text": "switch",
+        },
+        {
+          "kind": "history",
+          "path": "classes.unifi-switch.rows[0]",
+        },
+        {
+          "kind": "value",
+          "path": "classes.unifi-switch.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.unifi-switch.rows[0]": [
+          "{name="sw-a1"}",
+        ],
+        "classes.unifi-switch.rows[1]": [
+          "{name="sw-a1"}",
+        ],
+        "classes.unifi-switch.status": [
+          "{name="sw-a1"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "9012340",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.unifi-switch.status",
+          "refId": "unifi_dev_health",
+        },
+        {
+          "path": "classes.unifi-switch.rows[0]",
+          "refId": "unifi_dev_cpu",
+        },
+        {
+          "path": "classes.unifi-switch.rows[1]",
+          "refId": "unifi_dev_poe_budget",
+        },
+      ],
+    },
+    "pg-node~sw-a2": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "key": "row-0",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "switch",
+            "title": "Role",
+          },
+          {
+            "domain": [
+              0,
+              32011106,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "sw-a2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  28809995.4,
+                  30410550.7,
+                  32011106,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "32011106",
+            "title": "unifi_dev_cpu",
+          },
+          {
+            "key": "row-2",
+            "kind": "value",
+            "stale": false,
+            "state": "ready",
+            "text": "24013574",
+            "title": "unifi_dev_poe_budget",
+          },
+        ],
+        "title": "sw-a2",
+      },
+      "rows": [
+        {
+          "kind": "metadata",
+          "label": "Role",
+          "path": "classes.device.rows[0]",
+          "text": "switch",
+        },
+        {
+          "kind": "history",
+          "path": "classes.unifi-switch.rows[0]",
+        },
+        {
+          "kind": "value",
+          "path": "classes.unifi-switch.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.unifi-switch.rows[0]": [
+          "{name="sw-a2"}",
+        ],
+        "classes.unifi-switch.rows[1]": [
+          "{name="sw-a2"}",
+        ],
+        "classes.unifi-switch.status": [
+          "{name="sw-a2"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "12012340",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.unifi-switch.status",
+          "refId": "unifi_dev_health",
+        },
+        {
+          "path": "classes.unifi-switch.rows[0]",
+          "refId": "unifi_dev_cpu",
+        },
+        {
+          "path": "classes.unifi-switch.rows[1]",
+          "refId": "unifi_dev_poe_budget",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "camera": [
+      "pg-node~cam-1",
+    ],
+    "host": [
+      "pg-node~rtr-a",
+    ],
+    "lan": [
+      "pg-link~l1",
+      "pg-link~l2",
+      "pg-link~p-a1-15",
+      "pg-link~l4",
+    ],
+    "unifi-client": [
+      "pg-node~ap-a",
+    ],
+    "unifi-switch": [
+      "pg-node~sw-a1",
+      "pg-node~sw-a2",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: compatibility cases (AC4) > case 2: boilerPilot with a container that has another key 1`] = `
+{
+  "cells": {
+    "boiler1": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/home-assistant",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [
+          {
+            "key": "row-0",
+            "kind": "value",
+            "stale": false,
+            "state": "ready",
+            "text": "37000000",
+            "title": "Error code",
+          },
+        ],
+        "title": "boiler1",
+      },
+      "rows": [
+        {
+          "kind": "value",
+          "path": "classes.boiler.rows[0]",
+        },
+        {
+          "kind": "drilldown",
+          "label": "Open dashboard",
+          "path": "classes.boiler.rows[1]",
+          "url": "/d/home-assistant",
+        },
+      ],
+      "series": {
+        "classes.boiler.rows[0]": [
+          "{entity="sensor.wbe2_i_opentherm_b1_error_code"}",
+        ],
+        "classes.boiler.status": [
+          "{entity="sensor.wbe2_i_opentherm_b1_boiler_fault_indication"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "50001234",
+      },
+      "urls": [
+        {
+          "url": "/d/home-assistant",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.boiler.status",
+          "refId": "boiler_fault",
+        },
+        {
+          "path": "classes.boiler.rows[0]",
+          "refId": "boiler_err",
+        },
+      ],
+    },
+    "ctl": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/ctl-a",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              20007404,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "wb7",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18006663.6,
+                  19007033.8,
+                  20007404,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "20007404",
+            "title": "SoC",
+          },
+          {
+            "key": "row-1",
+            "kind": "value",
+            "stale": false,
+            "state": "ready",
+            "text": "48009872",
+            "title": "Uptime",
+          },
+        ],
+        "title": "ctl",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.controller.rows[0]",
+        },
+        {
+          "kind": "value",
+          "path": "classes.controller.rows[1]",
+        },
+        {
+          "kind": "drilldown",
+          "label": "Open dashboard",
+          "path": "classes.controller.rows[2]",
+          "url": "/d/ctl-a",
+        },
+      ],
+      "series": {
+        "classes.controller.rows[0]": [
+          "{job="wb7"}",
+        ],
+        "classes.controller.rows[1]": [
+          "{job="wb7"}",
+        ],
+        "classes.controller.status": [
+          "{job="wb7"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "9008638",
+      },
+      "urls": [
+        {
+          "url": "/d/ctl-a",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.controller.status",
+          "refId": "wb7_up",
+        },
+        {
+          "path": "classes.controller.rows[0]",
+          "refId": "wb7_temp",
+        },
+        {
+          "path": "classes.controller.rows[1]",
+          "refId": "wb7_uptime",
+        },
+      ],
+    },
+    "mod1": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/home-assistant",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [],
+        "title": "mod1",
+      },
+      "rows": [
+        {
+          "kind": "drilldown",
+          "label": "Open dashboard",
+          "path": "classes.relay-module.rows[0]",
+          "url": "/d/home-assistant",
+        },
+      ],
+      "series": {
+        "classes.relay-module.status": [
+          "{entity="switch.wb_mr6cu_m1_k1"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "16002468",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.relay-module.status",
+          "refId": "mr6cu_avail",
+        },
+      ],
+    },
+    "mod2": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/home-assistant",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [],
+        "title": "mod2",
+      },
+      "rows": [
+        {
+          "kind": "drilldown",
+          "label": "Open dashboard",
+          "path": "classes.relay-module.rows[0]",
+          "url": "/d/home-assistant",
+        },
+      ],
+      "series": {
+        "classes.relay-module.status": [
+          "{entity="switch.wb_mr6cu_m2_k1"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "41002468",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.relay-module.status",
+          "refId": "mr6cu_avail",
+        },
+      ],
+    },
+    "mon1": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/home-assistant",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              46006170,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "sensor.wb_mrwm2_mon1_urms_l1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  41405553,
+                  43705861.5,
+                  46006170,
+                ],
+              },
+              {
+                "label": "sensor.wb_mrwm2_mon1_urms_l2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  41405553,
+                  43705861.5,
+                  46006170,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "",
+            "title": "Voltage",
+          },
+        ],
+        "title": "mon1",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.mains-monitor.rows[0]",
+        },
+        {
+          "kind": "drilldown",
+          "label": "Open dashboard",
+          "path": "classes.mains-monitor.rows[1]",
+          "url": "/d/home-assistant",
+        },
+      ],
+      "series": {
+        "classes.mains-monitor.rows[0]": [
+          "{entity="sensor.wb_mrwm2_mon1_urms_l1"}",
+          "{entity="sensor.wb_mrwm2_mon1_urms_l2"}",
+        ],
+        "classes.mains-monitor.status": [
+          "{entity="binary_sensor.wb_mrwm2_mon1_urms_normal_k1"}",
+          "{entity="binary_sensor.wb_mrwm2_mon1_urms_normal_k2"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "31003702",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.mains-monitor.status",
+          "refId": "mrwm2_norm",
+        },
+        {
+          "path": "classes.mains-monitor.rows[0]",
+          "refId": "volt",
+        },
+      ],
+    },
+    "out1": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "domain": [
+              0,
+              50004936,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "switch.wb_mr6cu_m1_k1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  45004442.4,
+                  47504689.2,
+                  50004936,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "50004936",
+            "title": "State",
+          },
+        ],
+        "title": "out1",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.relay-output.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.relay-output.rows[0]": [
+          "{entity="switch.wb_mr6cu_m1_k1"}",
+        ],
+        "classes.relay-output.text": [
+          "{entity="switch.wb_mr6cu_m1_k1"}",
+        ],
+      },
+      "text": {
+        "status": "ok",
+        "text": "50004936",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.relay-output.text",
+          "refId": "relay",
+        },
+        {
+          "path": "classes.relay-output.rows[0]",
+          "refId": "relay",
+        },
+      ],
+    },
+    "out2": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "domain": [
+              0,
+              9004936,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "switch.wb_mr6cu_m2_k2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  8104442.4,
+                  8554689.2,
+                  9004936,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "9004936",
+            "title": "State",
+          },
+        ],
+        "title": "out2",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.relay-output.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.relay-output.rows[0]": [
+          "{entity="switch.wb_mr6cu_m2_k2"}",
+        ],
+        "classes.relay-output.text": [
+          "{entity="switch.wb_mr6cu_m2_k2"}",
+        ],
+      },
+      "text": {
+        "status": "ok",
+        "text": "9004936",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.relay-output.text",
+          "refId": "relay",
+        },
+        {
+          "path": "classes.relay-output.rows[0]",
+          "refId": "relay",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "boiler": [
+      "boiler1",
+    ],
+    "controller": [
+      "ctl",
+    ],
+    "mains-monitor": [
+      "mon1",
+    ],
+    "relay-module": [
+      "mod1",
+      "mod2",
+    ],
+    "relay-output": [
+      "out1",
+      "out2",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: compatibility cases (AC4) > case 3: demo L3 as it is today (the copy in src/fixtures/golden) 1`] = `
+{
+  "cells": {
+    "pg-link~isp-a:pppoe->rtr-a:wan1": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-isp-a&var-device=pppoe",
+            "title": "Traffic of node-isp-a:pppoe",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "41 Mb/s · 41% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  36900000,
+                  38950000,
+                  41000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "10 Mb/s · 10% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  9000000,
+                  9500000,
+                  10000000,
+                ],
+              },
+            ],
+            "domain": [
+              -45100000,
+              45100000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 41 Mb/s · 41% of 100 Mb/s  ↓ 10 Mb/s · 10% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "ISP A pppoe ↔ rtr-a wan1",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "41 Mb/s · 41% of 100 Mb/s",
+          "percent": 41,
+          "percentDisplay": "41%",
+          "status": "ok",
+          "value": 41000000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "10 Mb/s · 10% of 100 Mb/s",
+          "percent": 10,
+          "percentDisplay": "10%",
+          "status": "ok",
+          "value": 10000000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.wan.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.wan.down": [
+          "{device="pppoe", job="node-isp-a"}",
+        ],
+        "classes.wan.rows[0].a2b": [
+          "{device="pppoe", job="node-isp-a"}",
+        ],
+        "classes.wan.rows[0].b2a": [
+          "{device="pppoe", job="node-isp-a"}",
+        ],
+        "classes.wan.up": [
+          "{device="pppoe", job="node-isp-a"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-isp-a:pppoe",
+          "url": "/d/drawiomap-demo?var-job=node-isp-a&var-device=pppoe",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.wan.rows[0].a2b",
+          "refId": "wan_tx",
+        },
+        {
+          "path": "classes.wan.rows[0].b2a",
+          "refId": "wan_rx",
+        },
+        {
+          "path": "classes.wan.up",
+          "refId": "wan_tx",
+        },
+        {
+          "path": "classes.wan.down",
+          "refId": "wan_rx",
+        },
+      ],
+    },
+    "pg-link~isp-b:pppoe->rtr-b:pppoe": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-isp-b&var-device=pppoe",
+            "title": "Traffic of node-isp-b:pppoe",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "24 Mb/s · 24% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  21600000,
+                  22800000,
+                  24000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "4 Mb/s · 4% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  3600000,
+                  3800000,
+                  4000000,
+                ],
+              },
+            ],
+            "domain": [
+              -26400000,
+              26400000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 24 Mb/s · 24% of 100 Mb/s  ↓ 4 Mb/s · 4% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "ISP B pppoe ↔ rtr-b pppoe",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "24 Mb/s · 24% of 100 Mb/s",
+          "percent": 24,
+          "percentDisplay": "24%",
+          "status": "ok",
+          "value": 24000000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "4 Mb/s · 4% of 100 Mb/s",
+          "percent": 4,
+          "percentDisplay": "4%",
+          "status": "ok",
+          "value": 4000000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.wan.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.wan.down": [
+          "{device="pppoe", job="node-isp-b"}",
+        ],
+        "classes.wan.rows[0].a2b": [
+          "{device="pppoe", job="node-isp-b"}",
+        ],
+        "classes.wan.rows[0].b2a": [
+          "{device="pppoe", job="node-isp-b"}",
+        ],
+        "classes.wan.up": [
+          "{device="pppoe", job="node-isp-b"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-isp-b:pppoe",
+          "url": "/d/drawiomap-demo?var-job=node-isp-b&var-device=pppoe",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.wan.rows[0].a2b",
+          "refId": "wan_tx",
+        },
+        {
+          "path": "classes.wan.rows[0].b2a",
+          "refId": "wan_rx",
+        },
+        {
+          "path": "classes.wan.up",
+          "refId": "wan_tx",
+        },
+        {
+          "path": "classes.wan.down",
+          "refId": "wan_rx",
+        },
+      ],
+    },
+    "pg-link~net-a:lan->rtr-a:br-lan": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-a&var-device=br-lan",
+            "title": "Traffic of node-rtr-a:br-lan",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "480 Mb/s · 48% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  432000000,
+                  456000000,
+                  480000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "96 Mb/s · 10% of 1 Gb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  86400000,
+                  91200000,
+                  96000000,
+                ],
+              },
+            ],
+            "domain": [
+              -528000000,
+              528000000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 480 Mb/s · 48% of 1 Gb/s  ↓ 96 Mb/s · 10% of 1 Gb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "10.10.0.0/24 lan ↔ rtr-a br-lan",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "96 Mb/s · 10% of 1 Gb/s",
+          "percent": 9.6,
+          "percentDisplay": "10%",
+          "status": "ok",
+          "value": 96000000,
+        },
+        "b2a": {
+          "capacity": 1000000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "480 Mb/s · 48% of 1 Gb/s",
+          "percent": 48,
+          "percentDisplay": "48%",
+          "status": "ok",
+          "value": 480000000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.lan-speed.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.lan-speed.capacity": [
+          "{device="br-lan", job="node-rtr-a"}",
+        ],
+        "classes.lan-speed.down": [
+          "{device="br-lan", job="node-rtr-a"}",
+        ],
+        "classes.lan-speed.rows[0].a2b": [
+          "{device="br-lan", job="node-rtr-a"}",
+        ],
+        "classes.lan-speed.rows[0].b2a": [
+          "{device="br-lan", job="node-rtr-a"}",
+        ],
+        "classes.lan-speed.up": [
+          "{device="br-lan", job="node-rtr-a"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-rtr-a:br-lan",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-a&var-device=br-lan",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.lan-speed.rows[0].a2b",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan-speed.rows[0].b2a",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan-speed.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan-speed.down",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan-speed.capacity",
+          "refId": "speed",
+        },
+      ],
+    },
+    "pg-link~net-b:lan->rtr-b:br-lan": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-b&var-device=br-lan",
+            "title": "Traffic of node-rtr-b:br-lan",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "20 Mb/s · 20% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18000000,
+                  19000000,
+                  20000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "8 Mb/s · 8% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  7200000,
+                  7600000,
+                  8000000,
+                ],
+              },
+            ],
+            "domain": [
+              -22000000,
+              22000000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 20 Mb/s · 20% of 100 Mb/s  ↓ 8 Mb/s · 8% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "10.20.0.0/24 lan ↔ rtr-b br-lan",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "8 Mb/s · 8% of 100 Mb/s",
+          "percent": 8,
+          "percentDisplay": "8%",
+          "status": "ok",
+          "value": 8000000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "series",
+          "color": "#808080",
+          "label": "20 Mb/s · 20% of 100 Mb/s",
+          "percent": 20,
+          "percentDisplay": "20%",
+          "status": "ok",
+          "value": 20000000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.lan-speed.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.lan-speed.capacity": [
+          "{device="br-lan", job="node-rtr-b"}",
+        ],
+        "classes.lan-speed.down": [
+          "{device="br-lan", job="node-rtr-b"}",
+        ],
+        "classes.lan-speed.rows[0].a2b": [
+          "{device="br-lan", job="node-rtr-b"}",
+        ],
+        "classes.lan-speed.rows[0].b2a": [
+          "{device="br-lan", job="node-rtr-b"}",
+        ],
+        "classes.lan-speed.up": [
+          "{device="br-lan", job="node-rtr-b"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-rtr-b:br-lan",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-b&var-device=br-lan",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.lan-speed.rows[0].a2b",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan-speed.rows[0].b2a",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan-speed.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.lan-speed.down",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.lan-speed.capacity",
+          "refId": "speed",
+        },
+      ],
+    },
+    "pg-link~proxy-a:relay-out->proxy-b:relay-in": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-proxy-a&var-device=relay-out",
+            "title": "Traffic of node-proxy-a:relay-out",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "400 kb/s · <1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  360000,
+                  380000,
+                  400000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "160 kb/s · <1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  144000,
+                  152000,
+                  160000,
+                ],
+              },
+            ],
+            "domain": [
+              -440000,
+              440000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 400 kb/s · <1% of 100 Mb/s  ↓ 160 kb/s · <1% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "proxy-a relay-out ↔ proxy-b relay-in",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "400 kb/s · <1% of 100 Mb/s",
+          "percent": 0.4,
+          "percentDisplay": "<1%",
+          "status": "ok",
+          "value": 400000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "160 kb/s · <1% of 100 Mb/s",
+          "percent": 0.16,
+          "percentDisplay": "<1%",
+          "status": "ok",
+          "value": 160000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.links.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.links.down": [
+          "{device="relay-out", job="node-proxy-a"}",
+        ],
+        "classes.links.rows[0].a2b": [
+          "{device="relay-out", job="node-proxy-a"}",
+        ],
+        "classes.links.rows[0].b2a": [
+          "{device="relay-out", job="node-proxy-a"}",
+        ],
+        "classes.links.up": [
+          "{device="relay-out", job="node-proxy-a"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-proxy-a:relay-out",
+          "url": "/d/drawiomap-demo?var-job=node-proxy-a&var-device=relay-out",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.links.rows[0].a2b",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.rows[0].b2a",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.links.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.down",
+          "refId": "lan_rx",
+        },
+      ],
+    },
+    "pg-link~radio:dhcp->rtr-a:wan2": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-radio&var-device=dhcp",
+            "title": "Traffic of node-radio:dhcp",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "90 Mb/s · 90% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  81000000,
+                  85500000,
+                  90000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "16 Mb/s · 16% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  14400000,
+                  15200000,
+                  16000000,
+                ],
+              },
+            ],
+            "domain": [
+              -99000000,
+              99000000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 90 Mb/s · 90% of 100 Mb/s  ↓ 16 Mb/s · 16% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "Radio bridge dhcp ↔ rtr-a wan2",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "90 Mb/s · 90% of 100 Mb/s",
+          "percent": 90,
+          "percentDisplay": "90%",
+          "status": "ok",
+          "value": 90000000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "16 Mb/s · 16% of 100 Mb/s",
+          "percent": 16,
+          "percentDisplay": "16%",
+          "status": "ok",
+          "value": 16000000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.wan.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.wan.down": [
+          "{device="dhcp", job="node-radio"}",
+        ],
+        "classes.wan.rows[0].a2b": [
+          "{device="dhcp", job="node-radio"}",
+        ],
+        "classes.wan.rows[0].b2a": [
+          "{device="dhcp", job="node-radio"}",
+        ],
+        "classes.wan.up": [
+          "{device="dhcp", job="node-radio"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-radio:dhcp",
+          "url": "/d/drawiomap-demo?var-job=node-radio&var-device=dhcp",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.wan.rows[0].a2b",
+          "refId": "wan_tx",
+        },
+        {
+          "path": "classes.wan.rows[0].b2a",
+          "refId": "wan_rx",
+        },
+        {
+          "path": "classes.wan.up",
+          "refId": "wan_tx",
+        },
+        {
+          "path": "classes.wan.down",
+          "refId": "wan_rx",
+        },
+      ],
+    },
+    "pg-link~rtr-a:ts0->rtr-b:ts0": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-a&var-device=ts0",
+            "title": "Traffic of node-rtr-a:ts0",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "3.20 Mb/s · 3% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  2880000,
+                  3040000,
+                  3200000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "2.40 Mb/s · 2% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  2160000,
+                  2280000,
+                  2400000,
+                ],
+              },
+            ],
+            "domain": [
+              -3520000,
+              3520000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 3.20 Mb/s · 3% of 100 Mb/s  ↓ 2.40 Mb/s · 2% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "rtr-a ts0 ↔ rtr-b ts0",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "3.20 Mb/s · 3% of 100 Mb/s",
+          "percent": 3.2,
+          "percentDisplay": "3%",
+          "status": "ok",
+          "value": 3200000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "2.40 Mb/s · 2% of 100 Mb/s",
+          "percent": 2.4,
+          "percentDisplay": "2%",
+          "status": "ok",
+          "value": 2400000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.links.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.links.down": [
+          "{device="ts0", job="node-rtr-a"}",
+        ],
+        "classes.links.rows[0].a2b": [
+          "{device="ts0", job="node-rtr-a"}",
+        ],
+        "classes.links.rows[0].b2a": [
+          "{device="ts0", job="node-rtr-a"}",
+        ],
+        "classes.links.up": [
+          "{device="ts0", job="node-rtr-a"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-rtr-a:ts0",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-a&var-device=ts0",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.links.rows[0].a2b",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.rows[0].b2a",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.links.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.down",
+          "refId": "lan_rx",
+        },
+      ],
+    },
+    "pg-link~rtr-a:tun0->proxy-a:tun-in": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-a&var-device=tun0",
+            "title": "Traffic of node-rtr-a:tun0",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "1.60 Mb/s · 2% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1440000,
+                  1520000,
+                  1600000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "800 kb/s · 1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  720000,
+                  760000,
+                  800000,
+                ],
+              },
+            ],
+            "domain": [
+              -1760000,
+              1760000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 1.60 Mb/s · 2% of 100 Mb/s  ↓ 800 kb/s · 1% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "rtr-a tun0 ↔ proxy-a tun-in",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "1.60 Mb/s · 2% of 100 Mb/s",
+          "percent": 1.6,
+          "percentDisplay": "2%",
+          "status": "ok",
+          "value": 1600000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "800 kb/s · 1% of 100 Mb/s",
+          "percent": 0.8,
+          "percentDisplay": "1%",
+          "status": "ok",
+          "value": 800000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.links.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.links.down": [
+          "{device="tun0", job="node-rtr-a"}",
+        ],
+        "classes.links.rows[0].a2b": [
+          "{device="tun0", job="node-rtr-a"}",
+        ],
+        "classes.links.rows[0].b2a": [
+          "{device="tun0", job="node-rtr-a"}",
+        ],
+        "classes.links.up": [
+          "{device="tun0", job="node-rtr-a"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-rtr-a:tun0",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-a&var-device=tun0",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.links.rows[0].a2b",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.rows[0].b2a",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.links.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.down",
+          "refId": "lan_rx",
+        },
+      ],
+    },
+    "pg-link~rtr-b:tun0->proxy-b:tun-in": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-b&var-device=tun0",
+            "title": "Traffic of node-rtr-b:tun0",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "1.20 Mb/s · 1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1080000,
+                  1140000,
+                  1200000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "720 kb/s · 1% of 100 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  648000,
+                  684000,
+                  720000,
+                ],
+              },
+            ],
+            "domain": [
+              -1320000,
+              1320000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 1.20 Mb/s · 1% of 100 Mb/s  ↓ 720 kb/s · 1% of 100 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "rtr-b tun0 ↔ proxy-b tun-in",
+      },
+      "link": {
+        "a2b": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "1.20 Mb/s · 1% of 100 Mb/s",
+          "percent": 1.2,
+          "percentDisplay": "1%",
+          "status": "ok",
+          "value": 1200000,
+        },
+        "b2a": {
+          "capacity": 100000000,
+          "capacitySource": "attr",
+          "color": "#808080",
+          "label": "720 kb/s · 1% of 100 Mb/s",
+          "percent": 0.72,
+          "percentDisplay": "1%",
+          "status": "ok",
+          "value": 720000,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.links.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.links.down": [
+          "{device="tun0", job="node-rtr-b"}",
+        ],
+        "classes.links.rows[0].a2b": [
+          "{device="tun0", job="node-rtr-b"}",
+        ],
+        "classes.links.rows[0].b2a": [
+          "{device="tun0", job="node-rtr-b"}",
+        ],
+        "classes.links.up": [
+          "{device="tun0", job="node-rtr-b"}",
+        ],
+      },
+      "urls": [
+        {
+          "title": "Traffic of node-rtr-b:tun0",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-b&var-device=tun0",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.links.rows[0].a2b",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.rows[0].b2a",
+          "refId": "lan_rx",
+        },
+        {
+          "path": "classes.links.up",
+          "refId": "lan_tx",
+        },
+        {
+          "path": "classes.links.down",
+          "refId": "lan_rx",
+        },
+      ],
+    },
+    "pg-node~isp-a": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-isp-a",
+            "title": "Host node-isp-a",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-isp-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.4,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-isp-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.26,
+                  1.33,
+                  1.4,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.40",
+            "title": "load 1m",
+          },
+        ],
+        "title": "ISP A",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-isp-a"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-isp-a"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-isp-a"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-isp-a",
+          "url": "/d/drawiomap-demo?var-job=node-isp-a",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~isp-b": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-isp-b",
+            "title": "Host node-isp-b",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-isp-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.7,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-isp-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.53,
+                  1.615,
+                  1.7,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.70",
+            "title": "load 1m",
+          },
+        ],
+        "title": "ISP B",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-isp-b"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-isp-b"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-isp-b"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-isp-b",
+          "url": "/d/drawiomap-demo?var-job=node-isp-b",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~lte": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-lte",
+            "title": "Host node-lte",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-lte",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0,
+                  0,
+                  0,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "0",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.6,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-lte",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.44,
+                  1.52,
+                  1.6,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.60",
+            "title": "load 1m",
+          },
+        ],
+        "title": "LTE modem",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-lte"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-lte"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-lte"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "0",
+      },
+      "urls": [
+        {
+          "title": "Host node-lte",
+          "url": "/d/drawiomap-demo?var-job=node-lte",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~net-a": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-net-a",
+            "title": "Host node-net-a",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-net-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-net-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "load 1m",
+          },
+        ],
+        "title": "10.10.0.0/24",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-net-a"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-net-a"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-net-a"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-net-a",
+          "url": "/d/drawiomap-demo?var-job=node-net-a",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~net-b": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-net-b",
+            "title": "Host node-net-b",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-net-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.1,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-net-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.99,
+                  1.045,
+                  1.1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.10",
+            "title": "load 1m",
+          },
+        ],
+        "title": "10.20.0.0/24",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-net-b"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-net-b"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-net-b"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-net-b",
+          "url": "/d/drawiomap-demo?var-job=node-net-b",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~proxy-a": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-proxy-a",
+            "title": "Host node-proxy-a",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-proxy-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.8,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-proxy-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.62,
+                  1.71,
+                  1.8,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.80",
+            "title": "load 1m",
+          },
+        ],
+        "title": "proxy-a",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-proxy-a"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-proxy-a"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-proxy-a"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-proxy-a",
+          "url": "/d/drawiomap-demo?var-job=node-proxy-a",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~proxy-b": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-proxy-b",
+            "title": "Host node-proxy-b",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-proxy-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.9,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-proxy-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.71,
+                  1.805,
+                  1.9,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.90",
+            "title": "load 1m",
+          },
+        ],
+        "title": "proxy-b",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-proxy-b"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-proxy-b"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-proxy-b"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-proxy-b",
+          "url": "/d/drawiomap-demo?var-job=node-proxy-b",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~radio": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-radio",
+            "title": "Host node-radio",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-radio",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.5,
+            ],
+            "key": "row-1",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-radio",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.35,
+                  1.425,
+                  1.5,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.50",
+            "title": "load 1m",
+          },
+        ],
+        "title": "Radio bridge",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[0]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.node-up.rows[1]",
+        },
+      ],
+      "series": {
+        "classes.node-up.rows[0]": [
+          "{job="node-radio"}",
+        ],
+        "classes.node-up.rows[1]": [
+          "{job="node-radio"}",
+        ],
+        "classes.node-up.status": [
+          "{job="node-radio"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-radio",
+          "url": "/d/drawiomap-demo?var-job=node-radio",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.node-up.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[0]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.node-up.rows[1]",
+          "refId": "load",
+        },
+      ],
+    },
+    "pg-node~rtr-a": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-a",
+            "title": "Host node-rtr-a",
+          },
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-a&var-metric=cpu",
+            "title": "CPU details",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              100,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  37.8,
+                  39.9,
+                  42,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "42%",
+            "title": "CPU",
+          },
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-2",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.2,
+            ],
+            "key": "row-3",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-rtr-a",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.08,
+                  1.14,
+                  1.2,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.20",
+            "title": "load 1m",
+          },
+          {
+            "domain": [
+              0,
+              60,
+            ],
+            "key": "row-4",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18,
+                  19,
+                  20,
+                ],
+              },
+              {
+                "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  36,
+                  38,
+                  40,
+                ],
+              },
+              {
+                "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  54,
+                  57,
+                  60,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "",
+            "title": "Three lines",
+          },
+          {
+            "domain": [
+              0,
+              82,
+            ],
+            "key": "row-5",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  9,
+                  9.5,
+                  10,
+                ],
+              },
+              {
+                "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18.9,
+                  19.95,
+                  21,
+                ],
+              },
+              {
+                "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  28.8,
+                  30.4,
+                  32,
+                ],
+              },
+              {
+                "label": "line-3",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  38.7,
+                  40.85,
+                  43,
+                ],
+              },
+              {
+                "label": "line-4",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  48.6,
+                  51.3,
+                  54,
+                ],
+              },
+              {
+                "label": "line-5",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  54,
+                  57,
+                  60,
+                ],
+              },
+              {
+                "label": "line-6",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  63.9,
+                  67.45,
+                  71,
+                ],
+              },
+              {
+                "label": "line-7",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  73.8,
+                  77.9,
+                  82,
+                ],
+              },
+            ],
+            "more": 1,
+            "stale": false,
+            "state": "ready",
+            "text": "",
+            "title": "Nine lines",
+          },
+        ],
+        "title": "rtr-a",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[0]",
+        },
+        {
+          "kind": "drilldown",
+          "label": "CPU details",
+          "path": "classes.router-cpu.rows[1]",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-a&var-metric=cpu",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[2]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[3]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[4]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[5]",
+        },
+      ],
+      "series": {
+        "classes.router-cpu.rows[0]": [
+          "{job="node-rtr-a"}",
+        ],
+        "classes.router-cpu.rows[2]": [
+          "{job="node-rtr-a"}",
+        ],
+        "classes.router-cpu.rows[3]": [
+          "{job="node-rtr-a"}",
+        ],
+        "classes.router-cpu.rows[4]": [
+          "{job="node-rtr-a", line="line-0"}",
+          "{job="node-rtr-a", line="line-1"}",
+          "{job="node-rtr-a", line="line-2"}",
+        ],
+        "classes.router-cpu.rows[5]": [
+          "{job="node-rtr-a", line="line-0"}",
+          "{job="node-rtr-a", line="line-1"}",
+          "{job="node-rtr-a", line="line-2"}",
+          "{job="node-rtr-a", line="line-3"}",
+          "{job="node-rtr-a", line="line-4"}",
+          "{job="node-rtr-a", line="line-5"}",
+          "{job="node-rtr-a", line="line-6"}",
+          "{job="node-rtr-a", line="line-7"}",
+          "{job="node-rtr-a", line="line-8"}",
+        ],
+        "classes.router-cpu.status": [
+          "{job="node-rtr-a"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-rtr-a",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-a",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.router-cpu.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.router-cpu.rows[0]",
+          "refId": "cpu",
+        },
+        {
+          "path": "classes.router-cpu.rows[2]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.router-cpu.rows[3]",
+          "refId": "load",
+        },
+        {
+          "path": "classes.router-cpu.rows[4]",
+          "refId": "v4_samples",
+        },
+        {
+          "path": "classes.router-cpu.rows[5]",
+          "refId": "v4_nine",
+        },
+      ],
+    },
+    "pg-node~rtr-b": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-b",
+            "title": "Host node-rtr-b",
+          },
+          {
+            "href": "/d/drawiomap-demo?var-job=node-rtr-b&var-metric=cpu",
+            "title": "CPU details",
+          },
+        ],
+        "rows": [
+          {
+            "domain": [
+              0,
+              100,
+            ],
+            "key": "row-0",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-rtr-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  20.7,
+                  21.85,
+                  23,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "23%",
+            "title": "CPU",
+          },
+          {
+            "domain": [
+              0,
+              1,
+            ],
+            "key": "row-2",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-rtr-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  0.9,
+                  0.95,
+                  1,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1",
+            "title": "state",
+          },
+          {
+            "domain": [
+              0,
+              1.3,
+            ],
+            "key": "row-3",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "node-rtr-b",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1.17,
+                  1.235,
+                  1.3,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "1.30",
+            "title": "load 1m",
+          },
+          {
+            "domain": [
+              0,
+              60,
+            ],
+            "key": "row-4",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18,
+                  19,
+                  20,
+                ],
+              },
+              {
+                "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  36,
+                  38,
+                  40,
+                ],
+              },
+              {
+                "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  54,
+                  57,
+                  60,
+                ],
+              },
+            ],
+            "more": 0,
+            "stale": false,
+            "state": "ready",
+            "text": "",
+            "title": "Three lines",
+          },
+          {
+            "domain": [
+              0,
+              82,
+            ],
+            "key": "row-5",
+            "kind": "history",
+            "lines": [
+              {
+                "label": "line-0",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  9,
+                  9.5,
+                  10,
+                ],
+              },
+              {
+                "label": "line-1",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  18.9,
+                  19.95,
+                  21,
+                ],
+              },
+              {
+                "label": "line-2",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  28.8,
+                  30.4,
+                  32,
+                ],
+              },
+              {
+                "label": "line-3",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  38.7,
+                  40.85,
+                  43,
+                ],
+              },
+              {
+                "label": "line-4",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  48.6,
+                  51.3,
+                  54,
+                ],
+              },
+              {
+                "label": "line-5",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  54,
+                  57,
+                  60,
+                ],
+              },
+              {
+                "label": "line-6",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  63.9,
+                  67.45,
+                  71,
+                ],
+              },
+              {
+                "label": "line-7",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  73.8,
+                  77.9,
+                  82,
+                ],
+              },
+            ],
+            "more": 1,
+            "stale": false,
+            "state": "ready",
+            "text": "",
+            "title": "Nine lines",
+          },
+        ],
+        "title": "rtr-b",
+      },
+      "rows": [
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[0]",
+        },
+        {
+          "kind": "drilldown",
+          "label": "CPU details",
+          "path": "classes.router-cpu.rows[1]",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-b&var-metric=cpu",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[2]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[3]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[4]",
+        },
+        {
+          "kind": "history",
+          "path": "classes.router-cpu.rows[5]",
+        },
+      ],
+      "series": {
+        "classes.router-cpu.rows[0]": [
+          "{job="node-rtr-b"}",
+        ],
+        "classes.router-cpu.rows[2]": [
+          "{job="node-rtr-b"}",
+        ],
+        "classes.router-cpu.rows[3]": [
+          "{job="node-rtr-b"}",
+        ],
+        "classes.router-cpu.rows[4]": [
+          "{job="node-rtr-b", line="line-0"}",
+          "{job="node-rtr-b", line="line-1"}",
+          "{job="node-rtr-b", line="line-2"}",
+        ],
+        "classes.router-cpu.rows[5]": [
+          "{job="node-rtr-b", line="line-0"}",
+          "{job="node-rtr-b", line="line-1"}",
+          "{job="node-rtr-b", line="line-2"}",
+          "{job="node-rtr-b", line="line-3"}",
+          "{job="node-rtr-b", line="line-4"}",
+          "{job="node-rtr-b", line="line-5"}",
+          "{job="node-rtr-b", line="line-6"}",
+          "{job="node-rtr-b", line="line-7"}",
+          "{job="node-rtr-b", line="line-8"}",
+        ],
+        "classes.router-cpu.status": [
+          "{job="node-rtr-b"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "1",
+      },
+      "urls": [
+        {
+          "title": "Host node-rtr-b",
+          "url": "/d/drawiomap-demo?var-job=node-rtr-b",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.router-cpu.status",
+          "refId": "up",
+        },
+        {
+          "path": "classes.router-cpu.rows[0]",
+          "refId": "cpu",
+        },
+        {
+          "path": "classes.router-cpu.rows[2]",
+          "refId": "up",
+        },
+        {
+          "path": "classes.router-cpu.rows[3]",
+          "refId": "load",
+        },
+        {
+          "path": "classes.router-cpu.rows[4]",
+          "refId": "v4_samples",
+        },
+        {
+          "path": "classes.router-cpu.rows[5]",
+          "refId": "v4_nine",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "lan-speed": [
+      "pg-link~net-a:lan->rtr-a:br-lan",
+      "pg-link~net-b:lan->rtr-b:br-lan",
+    ],
+    "node-up": [
+      "pg-node~net-a",
+      "pg-node~net-b",
+      "pg-node~isp-a",
+      "pg-node~radio",
+      "pg-node~lte",
+      "pg-node~isp-b",
+      "pg-node~proxy-a",
+      "pg-node~proxy-b",
+    ],
+    "router-cpu": [
+      "pg-node~rtr-a",
+      "pg-node~rtr-b",
+    ],
+    "tunnels": [
+      "pg-link~rtr-a:ts0->rtr-b:ts0",
+      "pg-link~rtr-a:tun0->proxy-a:tun-in",
+      "pg-link~rtr-b:tun0->proxy-b:tun-in",
+      "pg-link~proxy-a:relay-out->proxy-b:relay-in",
+    ],
+    "wan": [
+      "pg-link~isp-a:pppoe->rtr-a:wan1",
+      "pg-link~radio:dhcp->rtr-a:wan2",
+      "pg-link~isp-b:pppoe->rtr-b:pppoe",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: compatibility cases (AC4) > case 4 (R1, AC21): row, text and chart on the cell id; no end gives key 1`] = `
+{
+  "cells": {
+    "link-1": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/demo?edge=link-1",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "34.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  30602221.2,
+                  32302344.6,
+                  34002468,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "2.00 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1801110.6,
+                  1901172.3,
+                  2001234,
+                ],
+              },
+            ],
+            "domain": [
+              -37402714.8,
+              37402714.8,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 34.0 Mb/s  ↓ 2.00 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "link-1",
+      },
+      "chart": {
+        "key": "chart",
+        "kind": "value",
+        "stale": false,
+        "state": "ready",
+        "text": "23000000",
+        "title": "gauge",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.r1.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.r1.chart": [
+          "{edge="link-1"}",
+        ],
+        "classes.r1.rows[0].a2b": [
+          "{edge="link-1"}",
+        ],
+        "classes.r1.rows[0].b2a": [
+          "{edge="link-1"}",
+        ],
+        "classes.r1.text": [
+          "{edge="link-1"}",
+        ],
+      },
+      "text": {
+        "status": "ok",
+        "text": "4003702",
+      },
+      "urls": [
+        {
+          "url": "/d/demo?edge=link-1",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.r1.text",
+          "refId": "txt",
+        },
+        {
+          "path": "classes.r1.rows[0].a2b",
+          "refId": "tx",
+        },
+        {
+          "path": "classes.r1.rows[0].b2a",
+          "refId": "rx",
+        },
+        {
+          "path": "classes.r1.chart",
+          "refId": "gauge",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "r1": [
+      "link-1",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: compatibility cases (AC4) > case 4 (R1, AC21): row, text and chart on the cell id; the target port has a node that gives key 1`] = `
+{
+  "cells": {
+    "link-1": {
+      "card": {
+        "links": [
+          {
+            "href": "/d/demo?edge=link-1",
+            "title": "Open dashboard",
+          },
+        ],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "34.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  30602221.2,
+                  32302344.6,
+                  34002468,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "2.00 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1801110.6,
+                  1901172.3,
+                  2001234,
+                ],
+              },
+            ],
+            "domain": [
+              -37402714.8,
+              37402714.8,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 34.0 Mb/s  ↓ 2.00 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "link-1",
+      },
+      "chart": {
+        "key": "chart",
+        "kind": "value",
+        "stale": false,
+        "state": "ready",
+        "text": "23000000",
+        "title": "gauge",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.r1.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.r1.chart": [
+          "{edge="link-1"}",
+        ],
+        "classes.r1.rows[0].a2b": [
+          "{edge="link-1"}",
+        ],
+        "classes.r1.rows[0].b2a": [
+          "{edge="link-1"}",
+        ],
+        "classes.r1.text": [
+          "{edge="link-1"}",
+        ],
+      },
+      "text": {
+        "status": "ok",
+        "text": "4003702",
+      },
+      "urls": [
+        {
+          "url": "/d/demo?edge=link-1",
+        },
+      ],
+      "uses": [
+        {
+          "path": "classes.r1.text",
+          "refId": "txt",
+        },
+        {
+          "path": "classes.r1.rows[0].a2b",
+          "refId": "tx",
+        },
+        {
+          "path": "classes.r1.rows[0].b2a",
+          "refId": "rx",
+        },
+        {
+          "path": "classes.r1.chart",
+          "refId": "gauge",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "r1": [
+      "link-1",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: compatibility cases (AC4) > case 5 (R2, AC22): updown row on the cell id, own cap 50M/10M, a target that gives key 1`] = `
+{
+  "cells": {
+    "link-2": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "7 Mb/s · 14% of 50 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "2 Mb/s · 20% of 10 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
+              },
+            ],
+            "domain": [
+              -7700000,
+              7700000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 7 Mb/s · 14% of 50 Mb/s  ↓ 2 Mb/s · 20% of 10 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "link-2",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.r2.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.r2.rows[0].a2b": [
+          "{edge="link-2"}",
+        ],
+        "classes.r2.rows[0].b2a": [
+          "{edge="link-2"}",
+        ],
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.r2.rows[0].a2b",
+          "refId": "tx",
+        },
+        {
+          "path": "classes.r2.rows[0].b2a",
+          "refId": "rx",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "r2": [
+      "link-2",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: compatibility cases (AC4) > case 6: extends, a replaced class match, an override row with its own match 1`] = `
+{
+  "cells": {
+    "link-a": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "22.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  19801110.6,
+                  20901172.3,
+                  22001234,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "44 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  39600000,
+                  41800000,
+                  44000000,
+                ],
+              },
+            ],
+            "domain": [
+              -48400000,
+              48400000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 22.0 Mb/s  ↓ 44 Mb/s",
+            "title": "Base",
+          },
+        ],
+        "title": "link-a",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.base.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.base.rows[0].a2b": [
+          "{edge="link-a"}",
+        ],
+        "classes.base.rows[0].b2a": [
+          "{edge="link-a"}",
+        ],
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.base.rows[0].a2b",
+          "refId": "btx",
+        },
+        {
+          "path": "classes.base.rows[0].b2a",
+          "refId": "brx",
+        },
+      ],
+    },
+    "link-b": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "29.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  26101110.6,
+                  27551172.3,
+                  29001234,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "15 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  13500000,
+                  14250000,
+                  15000000,
+                ],
+              },
+            ],
+            "domain": [
+              -31901357.4,
+              31901357.4,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 29.0 Mb/s  ↓ 15 Mb/s",
+            "title": "Base",
+          },
+        ],
+        "title": "link-b",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.base.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.base.rows[0].a2b": [
+          "{edge="link-b"}",
+        ],
+        "classes.base.rows[0].b2a": [
+          "{edge="link-b"}",
+        ],
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.base.rows[0].a2b",
+          "refId": "brx",
+        },
+        {
+          "path": "classes.base.rows[0].b2a",
+          "refId": "btx",
+        },
+      ],
+    },
+    "link-c": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "key": "row-0",
+            "kind": "value",
+            "stale": false,
+            "state": "ready",
+            "text": "5008638",
+            "title": "val",
+          },
+        ],
+        "title": "link-c",
+      },
+      "link": {
+        "a2b": {
+          "capacitySource": "none",
+          "color": "#808080",
+          "label": "24.0 Mb/s",
+          "status": "ok",
+          "value": 24003702,
+        },
+        "b2a": {
+          "capacitySource": "none",
+          "color": "#808080",
+          "label": "10.0 Mb/s",
+          "status": "ok",
+          "value": 10002468,
+        },
+        "labelMode": "none",
+      },
+      "rows": [
+        {
+          "kind": "value",
+          "path": "classes.ovr-match.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.ovr-match.down": [
+          "{edge="link-c"}",
+        ],
+        "classes.ovr-match.rows[0]": [
+          "{edge="link-c"}",
+        ],
+        "classes.ovr-match.status": [
+          "{edge="link-c"}",
+        ],
+        "classes.ovr-match.up": [
+          "{edge="link-c"}",
+        ],
+      },
+      "status": {
+        "state": "normal",
+        "text": "25007404",
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.ovr-match.status",
+          "refId": "st",
+        },
+        {
+          "path": "classes.ovr-match.rows[0]",
+          "refId": "val",
+        },
+        {
+          "path": "classes.ovr-match.up",
+          "refId": "ltx",
+        },
+        {
+          "path": "classes.ovr-match.down",
+          "refId": "lrx",
+        },
+      ],
+    },
+    "link-d": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "key": "row-0",
+            "kind": "metadata",
+            "stale": false,
+            "state": "ready",
+            "text": "plain",
+            "title": "Note",
+          },
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "48.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  43205553,
+                  45605861.5,
+                  48006170,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "12.0 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  10804442.4,
+                  11404689.2,
+                  12004936,
+                ],
+              },
+            ],
+            "domain": [
+              -52806787,
+              52806787,
+            ],
+            "key": "row-1",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 48.0 Mb/s  ↓ 12.0 Mb/s",
+            "title": "Own",
+          },
+        ],
+        "title": "link-d",
+      },
+      "rows": [
+        {
+          "kind": "metadata",
+          "label": "Note",
+          "path": "classes.ovr-row.rows[0]",
+          "text": "plain",
+        },
+        {
+          "kind": "updown",
+          "path": "overrides.link-d.rows[0]",
+        },
+      ],
+      "series": {
+        "overrides.link-d.rows[0].a2b": [
+          "{edge="link-d"}",
+        ],
+        "overrides.link-d.rows[0].b2a": [
+          "{edge="link-d"}",
+        ],
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "overrides.link-d.rows[0].a2b",
+          "refId": "otx",
+        },
+        {
+          "path": "overrides.link-d.rows[0].b2a",
+          "refId": "orx",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "child": [
+      "link-a",
+      "link-b",
+    ],
+    "ovr-match": [
+      "link-c",
+    ],
+    "ovr-row": [
+      "link-d",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: compatibility cases (AC4) > case 7 (N2): a port cell and a plain vertex with own key, at=target, an updown row and an updown chart 1`] = `
+{
+  "cells": {
+    "pg-port~n7~p1~1": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "7 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "2 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
+              },
+            ],
+            "domain": [
+              -7700000,
+              7700000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 7 Mb/s  ↓ 2 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "n7:p1",
+      },
+      "chart": {
+        "directions": [
+          {
+            "direction": "up",
+            "history": "ready",
+            "label": "↑",
+            "mirrored": false,
+            "text": "7 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              6300000,
+              6650000,
+              7000000,
+            ],
+          },
+          {
+            "direction": "down",
+            "history": "ready",
+            "label": "↓",
+            "mirrored": true,
+            "text": "2 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              1800000,
+              1900000,
+              2000000,
+            ],
+          },
+        ],
+        "domain": [
+          -7700000,
+          7700000,
+        ],
+        "key": "chart",
+        "kind": "updown",
+        "stale": false,
+        "state": "ready",
+        "text": "↑ 7 Mb/s  ↓ 2 Mb/s",
+        "title": "tx / rx",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.vtx.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.vtx.chart.a2b": [
+          "{job="port-key"}",
+        ],
+        "classes.vtx.chart.b2a": [
+          "{job="port-key"}",
+        ],
+        "classes.vtx.rows[0].a2b": [
+          "{job="port-key"}",
+        ],
+        "classes.vtx.rows[0].b2a": [
+          "{job="port-key"}",
+        ],
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.vtx.rows[0].a2b",
+          "refId": "rx",
+        },
+        {
+          "path": "classes.vtx.rows[0].b2a",
+          "refId": "tx",
+        },
+        {
+          "path": "classes.vtx.chart.a2b",
+          "refId": "rx",
+        },
+        {
+          "path": "classes.vtx.chart.b2a",
+          "refId": "tx",
+        },
+      ],
+    },
+    "vertex-1": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "7 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "2 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
+              },
+            ],
+            "domain": [
+              -7700000,
+              7700000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 7 Mb/s  ↓ 2 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "vertex-1",
+      },
+      "chart": {
+        "directions": [
+          {
+            "direction": "up",
+            "history": "ready",
+            "label": "↑",
+            "mirrored": false,
+            "text": "7 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              6300000,
+              6650000,
+              7000000,
+            ],
+          },
+          {
+            "direction": "down",
+            "history": "ready",
+            "label": "↓",
+            "mirrored": true,
+            "text": "2 Mb/s",
+            "times": [
+              0,
+              60000,
+              120000,
+            ],
+            "values": [
+              1800000,
+              1900000,
+              2000000,
+            ],
+          },
+        ],
+        "domain": [
+          -7700000,
+          7700000,
+        ],
+        "key": "chart",
+        "kind": "updown",
+        "stale": false,
+        "state": "ready",
+        "text": "↑ 7 Mb/s  ↓ 2 Mb/s",
+        "title": "tx / rx",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.vtx.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.vtx.chart.a2b": [
+          "{job="vertex-key"}",
+        ],
+        "classes.vtx.chart.b2a": [
+          "{job="vertex-key"}",
+        ],
+        "classes.vtx.rows[0].a2b": [
+          "{job="vertex-key"}",
+        ],
+        "classes.vtx.rows[0].b2a": [
+          "{job="vertex-key"}",
+        ],
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.vtx.rows[0].a2b",
+          "refId": "rx",
+        },
+        {
+          "path": "classes.vtx.rows[0].b2a",
+          "refId": "tx",
+        },
+        {
+          "path": "classes.vtx.chart.a2b",
+          "refId": "rx",
+        },
+        {
+          "path": "classes.vtx.chart.b2a",
+          "refId": "tx",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "vtx": [
+      "pg-port~n7~p1~1",
+      "vertex-1",
+    ],
+  },
+  "report": [],
+}
+`;
+
+exports[`golden record: the case that changes in S4b > case 8 (C6, AC26): the capacity use lacks key on main; the row shows 14% of the own cap 1`] = `
+{
+  "cells": {
+    "link-8": {
+      "card": {
+        "links": [],
+        "rows": [
+          {
+            "directions": [
+              {
+                "direction": "up",
+                "history": "ready",
+                "label": "↑",
+                "mirrored": false,
+                "text": "7 Mb/s · 14% of 50 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  6300000,
+                  6650000,
+                  7000000,
+                ],
+              },
+              {
+                "direction": "down",
+                "history": "ready",
+                "label": "↓",
+                "mirrored": true,
+                "text": "2 Mb/s · 20% of 10 Mb/s",
+                "times": [
+                  0,
+                  60000,
+                  120000,
+                ],
+                "values": [
+                  1800000,
+                  1900000,
+                  2000000,
+                ],
+              },
+            ],
+            "domain": [
+              -7700000,
+              7700000,
+            ],
+            "key": "row-0",
+            "kind": "updown",
+            "stale": false,
+            "state": "ready",
+            "text": "↑ 7 Mb/s · 14% of 50 Mb/s  ↓ 2 Mb/s · 20% of 10 Mb/s",
+            "title": "Traffic",
+          },
+        ],
+        "title": "link-8",
+      },
+      "rows": [
+        {
+          "kind": "updown",
+          "path": "classes.link.rows[0]",
+        },
+      ],
+      "series": {
+        "classes.link.capacity": [],
+        "classes.link.rows[0].a2b": [
+          "{edge="link-8"}",
+        ],
+        "classes.link.rows[0].b2a": [
+          "{edge="link-8"}",
+        ],
+      },
+      "urls": [],
+      "uses": [
+        {
+          "path": "classes.link.rows[0].a2b",
+          "refId": "tx",
+        },
+        {
+          "path": "classes.link.rows[0].b2a",
+          "refId": "rx",
+        },
+        {
+          "path": "classes.link.capacity",
+          "refId": "speed",
+        },
+      ],
+    },
+  },
+  "classes": {
+    "link": [
+      "link-8",
+    ],
+  },
+  "report": [
+    {
+      "attr": "key",
+      "cellIds": [
+        "link-8",
+      ],
+      "cls": "link",
+      "kind": "missing-attr",
+      "path": "classes.link.capacity",
+    },
+    {
+      "kind": "orphan-series",
+      "labels": [
+        {
+          "job": "tgt",
+        },
+      ],
+      "more": 0,
+      "refId": "speed",
+    },
+  ],
+}
+`;
