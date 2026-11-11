@@ -6,7 +6,7 @@ import type { BindResultV4 } from '../../binding/bindV4';
 import { effectiveClass } from '../../binding/classes';
 import type { EndContext } from '../../binding/edgeEnds';
 import { linkFeeds } from '../../binding/linkFeeds';
-import { inheritableNames, type MeasuredEnd } from '../../binding/identity';
+import { inheritableNames, measuredEnd as inferEnd, ownerAttr, type MeasuredEnd } from '../../binding/identity';
 import { parseMatchBlock } from '../../binding/matcher';
 import { shownField, type Show } from '../../binding/rowData';
 import { listUses, type Use } from '../../binding/uses';
@@ -80,7 +80,9 @@ function resolvedText(bound: BindResultV4, cellId: string, use: Use): string {
     return '';
   }
   return 'problem' in resolved
-    ? resolved.problem
+    ? resolved.detail
+      ? `${resolved.problem}: ${resolved.detail}`
+      : resolved.problem
     : resolved.matchers.map((m) => `${m.label}${m.op}${JSON.stringify(m.value)}`).join(', ');
 }
 
@@ -98,9 +100,9 @@ const names = (list: readonly string[]) => list.join(', ');
 
 /**
  * The line "Measured end" (I23). The names are the identity names of the link. A link with a part of an identity
- * (reason `own`, rule 5) can read a missing name from its source end: `inherited` tells which.
+ * (reason `own`, rule 5) can read a missing name from its source end: the end lookup tells which, not the order of a match.
  */
-export function measuredText(meta: CellMeta, measured: MeasuredEnd, bound: BindResultV4, uses: readonly Use[]): string {
+export function measuredText(meta: CellMeta, measured: MeasuredEnd, ends: EndContext, uses: readonly Use[]): string {
   const { needs } = measured;
   switch (measured.reason) {
     case 'at':
@@ -118,7 +120,10 @@ export function measuredText(meta: CellMeta, measured: MeasuredEnd, bound: BindR
         return `${measured.end}: no use of the link needs an identity from an end`;
       }
       const own = read.filter((name) => Object.hasOwn(meta.attrs, name));
-      const fromEnd = read.filter((name) => !own.includes(name) && bound.inherited.get(meta.id)?.has(name));
+      const endCell = ends.ends.get(meta.id)?.[measured.end === 'target' ? 'target' : 'source'];
+      const fromEnd = read.filter(
+        (name) => !own.includes(name) && endCell !== undefined && ownerAttr(endCell, name, ends) !== undefined
+      );
       const missing = read.filter((name) => !own.includes(name) && !fromEnd.includes(name));
       return [
         own.length
@@ -400,13 +405,17 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
       ? listUses(meta, eff).filter((use) => !uses.some((kept) => kept.path === use.path))
       : [];
   // The button writes the other end. With an inferred end it writes the end that the bind does not measure.
-  const otherEnd = hasAt
+  const wanted = hasAt
     ? meta.attrs.at === 'target'
-      ? null
+      ? 'source'
       : 'target'
     : measuredEnd === 'target'
       ? 'source'
       : 'target';
+  // Remove `at` only when the link then measures the wanted end itself; else write the wanted end.
+  const { at: _at, ...withoutAt } = meta.attrs;
+  const inferred = measured ? inferEnd({ ...meta, attrs: withoutAt }, measured.needs, () => ends).end : 'source';
+  const otherEnd = inferred === wanted ? null : wanted;
   return (
     <>
       <h4 className={styles.subtitle}>Link</h4>
@@ -424,7 +433,7 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
         {measured ? (
           <>
             <dt>Measured end</dt>
-            <dd data-testid="dmap-inspector-measured">{measuredText(meta, measured, bound, uses)}</dd>
+            <dd data-testid="dmap-inspector-measured">{measuredText(meta, measured, ends, uses)}</dd>
           </>
         ) : null}
       </dl>
@@ -453,7 +462,7 @@ function EdgeEnds(props: InspectorV4Props & { meta: CellMeta }) {
           data-testid="dmap-inspector-at"
           onClick={() => onWrite([{ id: meta.id, attrs: { at: otherEnd } }])}
         >
-          {otherEnd === null ? 'Use the source end' : `Use the ${otherEnd} end`}
+          {`Use the ${wanted} end`}
         </Button>
         {hasAt ? (
           <Button

@@ -408,6 +408,10 @@ function inferred() {
     { id: 'e_part', label: '', attrs: { bind: 'link5', port: 'eth9' }, edge: ['p1', 'p4'] },
     { id: 'e_none', label: '', attrs: { bind: 'link' }, edge: ['p4', 'n4'] },
     { id: 'e_ov', label: '', attrs: { bind: 'link' }, edge: ['p1', 'p2'] },
+    { id: 'e_att', label: '', attrs: { bind: 'link', at: 'target' }, edge: ['p1', 'p2'] },
+    { id: 'e_order', label: '', attrs: { bind: 'link5o', port: 'eth9' }, edge: ['p1', 'p4'] },
+    { id: 'b1', label: 'B1', attrs: { bind: 'bad', key: 'n1' } },
+    { id: 'b2', label: 'B2', attrs: { bind: 'badu', key: 'n1' } },
     { id: 'm1', label: 'M', attrs: { bind: 'multi', key: 'n1' } },
   ];
   const attr = (a: Record<string, string> = {}) => Object.entries(a).map(([k, v]) => `${k}="${v}"`);
@@ -442,6 +446,9 @@ function inferred() {
         up: 'tx',
         rows: [{ kind: 'value', query: 'tx', match: { key: 'job', site: 'site' } }],
       },
+      link5o: { match: { site: 'site', key: 'job', port: 'device' }, up: 'tx' },
+      bad: { match: { key: 'job=~"${key}(?=x)"' }, status: 'up' },
+      badu: { match: { key: 'job=~"${key}(?=x)"' }, status: 'nosuch' },
       portc: { match: { key: 'job', port: 'device' }, status: 'up' },
       multi: {
         match: { key: 'job' },
@@ -584,6 +591,45 @@ describe('InspectorV4 with an inferred identity', () => {
     for (const el of uses) {
       expect(within(el).getByTestId('dmap-inspector-resolved').textContent).toBe('job="n1"');
     }
+  });
+
+  it('says which end the names come from whatever the order of the match', async () => {
+    await open('e_order');
+    expect(field('measured').textContent).toBe(
+      'source: the link has port itself; the source end gives key; site is missing'
+    );
+  });
+
+  it.each([
+    ['b1', 'known query'],
+    ['b2', 'unknown query'],
+  ])('keeps the reason of a matcher error (%s, %s)', async (id) => {
+    await open(id);
+    const [first] = within(inspector()).getAllByTestId('dmap-inspector-use');
+    expect(within(first).getByTestId('dmap-inspector-resolved').textContent).toBe(
+      'Matcher error: not in the PromQL regex dialect: (?=x'
+    );
+  });
+
+  it('writes the end that the button names, also when removing at would infer the other end', async () => {
+    // explicit at=target, only the target gives the identity: "source" must write at=source, not clear at
+    await open('e_att');
+    expect(field('at').textContent).toBe('Use the source end');
+    fireEvent.click(field('at'));
+    await frame();
+    expect(cell('e_att').getAttribute('data-meta-at')).toBe('source');
+    expect(field('measured').textContent).toBe('source: at=source on the link');
+    // explicit source: "target" equals the inferred end, so it clears at
+    expect(field('at').textContent).toBe('Use the target end');
+    fireEvent.click(field('at'));
+    await frame();
+    expect(cell('e_att').hasAttribute('data-meta-at')).toBe(false);
+    expect(field('measured').textContent).toBe('target: only this end gives key, port');
+    // inferred target again: "source" writes at=source
+    expect(field('at').textContent).toBe('Use the source end');
+    fireEvent.click(field('at'));
+    await frame();
+    expect(cell('e_att').getAttribute('data-meta-at')).toBe('source');
   });
 
   it('writes the other end for an inferred end, and removes at with "Infer the end"', async () => {
