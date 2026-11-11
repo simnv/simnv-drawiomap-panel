@@ -54,7 +54,7 @@ function addProblem(name: string, meta: CellMeta): string | undefined {
 export function AttributeList(props: AttributeListProps) {
   const styles = useStyles2(getStyles);
   const { meta, inherited, endCells, generated, onWrite, onSelectCell } = props;
-  const [editing, setEditing] = useState<{ name: string; value: string }>();
+  const [editing, setEditing] = useState<{ name: string; value: string; base: string }>();
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [problem, setProblem] = useState<string>();
@@ -73,12 +73,15 @@ export function AttributeList(props: AttributeListProps) {
     setName('');
     setValue('');
   };
-  const addKeys = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
+  const addKeys = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
       event.preventDefault();
       submitAdd();
-    } else if (event.key === 'Escape' && (name || value || problem)) {
-      // Cancel the add and keep the dialog open.
+    }
+  };
+  /** Escape in the add group, on any control: cancel the add and keep the dialog open. */
+  const addGroupKeys = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape' && (name || value || problem)) {
       event.preventDefault();
       event.stopPropagation();
       setName('');
@@ -92,21 +95,30 @@ export function AttributeList(props: AttributeListProps) {
       setEditing(undefined);
     }
   };
-  const editKeys = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
+  const editKeys = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
       event.preventDefault();
       saveEdit();
-    } else if (event.key === 'Escape') {
+    }
+  };
+  /** Escape in the edit group, on any control: cancel the edit and keep the dialog open. */
+  const editGroupKeys = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape' && editing) {
       event.preventDefault();
       event.stopPropagation();
       setEditing(undefined);
     }
   };
+  // Undo, Redo or another write can change the attribute under an open edit: the edit is then stale, so drop it.
+  if (editing && meta.attrs[editing.name] !== editing.base) {
+    // React reruns the render with the new state at once, so the stale edit never reaches the screen.
+    setEditing(undefined);
+  }
 
   return (
     <>
       <h4 className={styles.subtitle}>Attributes</h4>
-      <dl className={styles.list} data-testid="dmap-inspector-attrs">
+      <dl className={styles.list} data-testid="dmap-inspector-attrs" onKeyDown={editGroupKeys}>
         {Object.entries(others).map(([attr, current]) => (
           <React.Fragment key={attr}>
             <dt>{attr}</dt>
@@ -117,7 +129,7 @@ export function AttributeList(props: AttributeListProps) {
                     autoFocus
                     aria-label={`Value of ${attr}`}
                     value={editing.value}
-                    onChange={(e) => setEditing({ name: attr, value: e.currentTarget.value })}
+                    onChange={(e) => setEditing({ name: attr, value: e.currentTarget.value, base: editing.base })}
                     onKeyDown={editKeys}
                   />
                 </dd>
@@ -145,7 +157,7 @@ export function AttributeList(props: AttributeListProps) {
                         name="pen"
                         size="sm"
                         aria-label={`Edit ${attr}`}
-                        onClick={() => setEditing({ name: attr, value: current })}
+                        onClick={() => setEditing({ name: attr, value: current, base: current })}
                       />
                       <IconButton
                         name="trash-alt"
@@ -181,7 +193,7 @@ export function AttributeList(props: AttributeListProps) {
           </React.Fragment>
         ))}
       </dl>
-      <div className={styles.form} role="group" aria-label="Add an attribute">
+      <div className={styles.form} role="group" aria-label="Add an attribute" onKeyDown={addGroupKeys}>
         <label className={styles.field}>
           <span>Attribute name</span>
           <Input

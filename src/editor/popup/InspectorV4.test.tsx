@@ -900,4 +900,74 @@ describe('InspectorV4 attribute row', () => {
     fireEvent.click(cell('p2'), { shiftKey: true });
     expect(within(inspector()).queryByRole('textbox', { name: 'Attribute name' })).toBeNull();
   });
+
+  const saveEdit = async (attr: string, to: string) => {
+    fireEvent.click(within(attrs()).getByRole('button', { name: `Edit ${attr}` }));
+    const input = within(attrs()).getByRole('textbox', { name: `Value of ${attr}` });
+    fireEvent.change(input, { target: { value: to } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await frame();
+  };
+  const editBox = (attr: string) => within(attrs()).queryByRole('textbox', { name: `Value of ${attr}` });
+
+  it('drops an open edit when Undo changes its attribute, and again for Redo', async () => {
+    await open('p2');
+    await saveEdit('port', 'eth7');
+    fireEvent.click(within(attrs()).getByRole('button', { name: 'Edit port' }));
+    fireEvent.change(editBox('port')!, { target: { value: 'typed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await frame();
+    expect(editBox('port')).toBeNull();
+    expect(cell('p2').getAttribute('data-meta-port')).toBe('eth0');
+    fireEvent.click(within(attrs()).getByRole('button', { name: 'Edit port' }));
+    expect((editBox('port') as HTMLInputElement).value).toBe('eth0');
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    await frame();
+    expect(editBox('port')).toBeNull();
+    expect(cell('p2').getAttribute('data-meta-port')).toBe('eth7');
+  });
+
+  it('drops an open edit when Undo removes its attribute', async () => {
+    await open('p1');
+    add('site', 'a');
+    await frame();
+    fireEvent.click(within(attrs()).getByRole('button', { name: 'Edit site' }));
+    expect(editBox('site')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await frame();
+    expect(editBox('site')).toBeNull();
+    expect(within(attrs()).queryByText('site')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    await frame();
+    expect(editBox('site')).toBeNull();
+  });
+
+  it.each(['Save port', 'Cancel the edit of port'])(
+    'Escape on the button "%s" cancels the edit and stays out of the dialog keys',
+    async (label) => {
+      await open('p2');
+      fireEvent.click(within(attrs()).getByRole('button', { name: 'Edit port' }));
+      fireEvent.change(editBox('port')!, { target: { value: 'eth7' } });
+      const button = within(attrs()).getByRole('button', { name: label });
+      const bubbled = vi.fn();
+      document.addEventListener('keydown', bubbled);
+      fireEvent.keyDown(button, { key: 'Escape' });
+      document.removeEventListener('keydown', bubbled);
+      expect(editBox('port')).toBeNull();
+      expect(bubbled).not.toHaveBeenCalled();
+      expect(cell('p2').getAttribute('data-meta-port')).toBe('eth0');
+    }
+  );
+
+  it('Escape on the Add attribute button clears the add row and stays out of the dialog keys', async () => {
+    await open('p1');
+    fireEvent.change(nameInput(), { target: { value: 'site' } });
+    const button = within(inspector()).getByRole('button', { name: 'Add attribute' });
+    const bubbled = vi.fn();
+    document.addEventListener('keydown', bubbled);
+    fireEvent.keyDown(button, { key: 'Escape' });
+    document.removeEventListener('keydown', bubbled);
+    expect((nameInput() as HTMLInputElement).value).toBe('');
+    expect(bubbled).not.toHaveBeenCalled();
+  });
 });
