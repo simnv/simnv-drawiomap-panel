@@ -94,7 +94,7 @@ describe('SplitEditor', () => {
         writeYaml({
           version: 4,
           freshness: '3x',
-          classes: { node: { match: { key: 'job' }, status: 'up' }, link: { match: { key: 'job' } } },
+          classes: { node: { match: { key: 'job' }, status: 'up' }, link: { match: { key: 'job', port: 'device' } } },
         })
       );
       act(() => vi.advanceTimersByTime(SETTLE_MS));

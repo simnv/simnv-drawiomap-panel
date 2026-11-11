@@ -55,7 +55,7 @@ export function buildStarter({ portograph, edges, refIds }: StarterInput): Recor
   if (portograph || edges) {
     const pair = linkPair(refIds);
     classes.link = {
-      match: portograph ? { key: 'job', port: 'device' } : { key: 'job' },
+      match: { key: 'job', port: 'device' },
       ...(pair ?? {}),
     };
   }

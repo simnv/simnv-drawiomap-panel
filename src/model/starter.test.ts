@@ -36,7 +36,7 @@ const cases: Case[] = [
   [
     'plain, edges',
     { portograph: false, edges: true, refIds: ['status', 'tx', 'rx'] },
-    { node: node('status'), link: { match: { key: 'job' }, up: 'tx', down: 'rx' } },
+    { node: node('status'), link: { match: { key: 'job', port: 'device' }, up: 'tx', down: 'rx' } },
   ],
   [
     'the status looks like state, not the first',
