@@ -47,9 +47,9 @@ nodes:
     label: rtr-a
     description: "multi-WAN + PBR"
     ports:
-      - br-lan
-      - ts0
-      - tun0
+      - { name: br-lan, meta: { port: br-lan } }
+      - { name: ts0, meta: { port: ts0, cap: 100M } }
+      - { name: tun0, meta: { port: tun0, cap: 100M } }
       - wan1
       - wan2
       - wan3
@@ -61,10 +61,10 @@ nodes:
     label: rtr-b
     description: "PBR"
     ports:
-      - br-lan
+      - { name: br-lan, meta: { port: br-lan } }
       - ts0
       - pppoe
-      - tun0
+      - { name: tun0, meta: { port: tun0, cap: 100M } }
     size: { width: 300, height: 70 }
 
   isp-a:
@@ -73,7 +73,7 @@ nodes:
     class: provider
     label: "ISP A"
     description: "203.0.113.10"
-    ports: [{ name: pppoe, class: "uplink up" }]
+    ports: [{ name: pppoe, class: "uplink up", meta: { port: pppoe, cap: 100M } }]
   radio:
     meta: { bind: node-up, key: node-radio }
     group: wan
@@ -81,7 +81,7 @@ nodes:
     icon: cloud
     label: "Radio bridge"
     description: "10.10.40.1"
-    ports: [{ name: dhcp, class: "uplink up" }]
+    ports: [{ name: dhcp, class: "uplink up", meta: { port: dhcp, cap: 100M } }]
   lte:
     meta: { bind: node-up, key: node-lte }
     group: wan
@@ -96,7 +96,7 @@ nodes:
     class: provider
     label: "ISP B"
     description: "198.51.100.20"
-    ports: [{ name: pppoe, class: "uplink up" }]
+    ports: [{ name: pppoe, class: "uplink up", meta: { port: pppoe, cap: 100M } }]
 
   proxy-a:
     meta: { bind: node-up, key: node-proxy-a }
@@ -107,7 +107,7 @@ nodes:
     description: "→ exit-a.example.net"
     ports:
       - tun-in
-      - relay-out
+      - { name: relay-out, meta: { port: relay-out, cap: 100M } }
   proxy-b:
     meta: { bind: node-up, key: node-proxy-b }
     group: proxies
@@ -120,17 +120,17 @@ nodes:
       - relay-in
 
 links:
-  - [net-a.lan, rtr-a.br-lan, { label: "10.10.0.1", meta: { at: target, bind: lan-speed, key: node-rtr-a, port: br-lan } }]
-  - [net-b.lan, rtr-b.br-lan, { label: "10.20.0.1", meta: { at: target, bind: lan-speed, key: node-rtr-b, port: br-lan } }]
+  - [net-a.lan, rtr-a.br-lan, { label: "10.10.0.1", meta: { bind: lan-speed } }]
+  - [net-b.lan, rtr-b.br-lan, { label: "10.20.0.1", meta: { bind: lan-speed } }]
 
-  - [isp-a.pppoe, rtr-a.wan1, { label: "metric 10", meta: { at: source, bind: wan, cap: 100M, key: node-isp-a, port: pppoe } }]
-  - [radio.dhcp, rtr-a.wan2, { label: "metric 20", meta: { at: source, bind: wan, cap: 100M, key: node-radio, port: dhcp } }]
+  - [isp-a.pppoe, rtr-a.wan1, { label: "metric 10", meta: { bind: wan } }]
+  - [radio.dhcp, rtr-a.wan2, { label: "metric 20", meta: { bind: wan } }]
   - [lte.static, rtr-a.wan3, { label: "metric 30 · offline", class: idle }]
-  - [isp-b.pppoe, rtr-b.pppoe, { label: "default route", meta: { at: source, bind: wan, cap: 100M, key: node-isp-b, port: pppoe } }]
+  - [isp-b.pppoe, rtr-b.pppoe, { label: "default route", meta: { bind: wan } }]
 
-  - [rtr-a.ts0, rtr-b.ts0, { label: "tunnel · 10.255.0.1 ↔ .2", meta: { at: source, bind: tunnels, cap: 100M, key: node-rtr-a, port: ts0 } }]
+  - [rtr-a.ts0, rtr-b.ts0, { label: "tunnel · 10.255.0.1 ↔ .2", meta: { bind: tunnels } }]
 
-  - [rtr-a.tun0, proxy-a.tun-in, { label: "tun0 → proxy", meta: { at: source, bind: tunnels, cap: 100M, key: node-rtr-a, port: tun0 } }]
-  - [rtr-b.tun0, proxy-b.tun-in, { label: "tun0 → proxy", meta: { at: source, bind: tunnels, cap: 100M, key: node-rtr-b, port: tun0 } }]
+  - [rtr-a.tun0, proxy-a.tun-in, { label: "tun0 → proxy", meta: { bind: tunnels } }]
+  - [rtr-b.tun0, proxy-b.tun-in, { label: "tun0 → proxy", meta: { bind: tunnels } }]
 
-  - [proxy-a.relay-out, proxy-b.relay-in, { label: "chain over the tunnel", class: idle, meta: { at: source, bind: tunnels, cap: 100M, key: node-proxy-a, port: relay-out } }]
+  - [proxy-a.relay-out, proxy-b.relay-in, { label: "chain over the tunnel", class: idle, meta: { bind: tunnels } }]
