@@ -222,7 +222,7 @@ function GroupBody({
             {group.uses.map(([use, of]) => (
               <CountRow
                 key={use}
-                label={reportUse(use, config)}
+                label={reportUse(use, group.cls, config)}
                 counts={of}
                 onClick={() => onPick({ kind: 'path', path: use })}
               />

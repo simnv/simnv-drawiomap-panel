@@ -212,9 +212,38 @@ describe('groupReport', () => {
       overrides: {},
       classes: { 'dev.1': { rows: [{ kind: 'value' as const, query: 'load', label: 'load 1m' }] } },
     };
-    expect(reportUse('classes["dev.1"].rows[0]', config)).toBe('rows[0] (load 1m)');
-    expect(reportUse('classes["dev.1"].status', config)).toBe('status');
-    expect(reportUse('overrides["dev.1"].status', config)).toBe('overrides["dev.1"].status');
+    expect(reportUse('classes["dev.1"].rows[0]', 'dev.1', config)).toBe('rows[0] (load 1m)');
+    expect(reportUse('classes["dev.1"].status', 'dev.1', config)).toBe('status');
+    expect(reportUse('overrides["dev.1"].status', 'dev.1', config)).toBe('overrides["dev.1"].status');
+    expect(reportUse('classes["dev.1"].rows[0]', 'child', config)).toBe('["dev.1"].rows[0] (load 1m)');
+  });
+
+  it.each([undefined, 'load'])('keeps inherited uses distinct when both row labels are %s', (label) => {
+    const config = {
+      version: 4 as const,
+      freshness: '1h',
+      overrides: {},
+      classes: {
+        base: { match: { key: 'job' }, rows: [{ kind: 'value' as const, query: 'load', label }] },
+        child: { extends: 'base', rows: [{ kind: 'value' as const, query: 'load', label }] },
+      },
+    };
+    const entries: ReportEntry[] = ['base', 'child'].map((source) => ({
+      kind: 'no-series',
+      cls: 'child',
+      use: `classes.${source}.rows[0]`,
+      cellIds: ['a'],
+    }));
+    const [row] = groupReport(entries, config);
+    expect(row.uses.map((use) => use.label)).toEqual(
+      label ? ['base.rows[0] (load)', 'rows[0] (load)'] : ['base.rows[0]', 'rows[0]']
+    );
+    expect(row.uses.map((use) => use.target.path)).toEqual(['classes.base.rows[0]', 'classes.child.rows[0]']);
+    expect(reportGroupLine(row, true)).toBe(
+      label
+        ? 'child: 1 cell has no series (used by base.rows[0] (load), rows[0] (load))'
+        : 'child: 1 cell has no series (used by base.rows[0], rows[0])'
+    );
   });
 
   it.each([0, 1, 2])('uses correct grammar for %s cells and series', (count) => {

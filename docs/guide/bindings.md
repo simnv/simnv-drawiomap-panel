@@ -369,7 +369,8 @@ For example, one missing `key` on three cells gives one row, **3 cells have no a
 The secondary line lists the uses, such as `status`, `rows[0] (load 1m)`, `url` and `urlTitle`.
 Select a use to move the cursor to its full YAML path and highlight its cells.
 Select the cause text to select the first use and the same cells.
-Class tabs omit the `classes.<name>.` prefix. A row shows its configured label when it has one.
+Class tabs omit the `classes.<name>.` prefix for their own uses. Inherited uses keep the source class, such as `base.rows[0]`.
+A row shows its configured label when it has one. The source class keeps inherited rows distinct when their labels are equal or absent.
 Override paths stay explicit because they name a different cell.
 
 Within each tab, `missing-attr`, `unknown-ref`, `matcher-error` and `no-series` come first, in that order.

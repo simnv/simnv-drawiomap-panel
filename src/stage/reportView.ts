@@ -79,14 +79,14 @@ export interface ReportGroup {
   uses: Array<{ label: string; target: EntryTarget }>;
 }
 
-/** A use within its class tab. The YAML target keeps the full path. */
-export function reportUse(path: string, config?: ConfigV4 | null): string {
+/** Omit the displayed class on its own uses. Keep the source class on inherited uses and the full YAML target. */
+export function reportUse(path: string, displayedClass: string | undefined, config?: ConfigV4 | null): string {
   const parts = parsePath(path);
   const [root, name, field, index] = parts;
   if (root !== 'classes' || typeof name !== 'string') {
     return path;
   }
-  const short = yamlPath(parts.slice(2)) || name;
+  const short = yamlPath(parts.slice(name === displayedClass ? 2 : 1)) || name;
   const label = field === 'rows' && typeof index === 'number' ? config?.classes[name]?.rows?.[index]?.label : undefined;
   return label ? `${short} (${label})` : short;
 }
@@ -133,7 +133,7 @@ export function groupReport(entries: readonly ReportEntry[], config?: ConfigV4 |
     }
     group.entries.push(entry);
     if (target.path && !group.uses.some((use) => use.target.path === target.path)) {
-      group.uses.push({ label: reportUse(target.path, config), target });
+      group.uses.push({ label: reportUse(target.path, cls, config), target });
     }
   }
   const priority = (group: ReportGroup) => {

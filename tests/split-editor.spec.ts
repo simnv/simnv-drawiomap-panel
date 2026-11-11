@@ -170,9 +170,7 @@ test('the cursor lights the cells of its path and zooms; a report entry lights i
   await popupCell(dialog, 'device-1').click();
   await expect.poll(() => flagged(dialog, 'highlight')).toEqual([]);
   await expect(popupCell(dialog, 'device-1')).not.toHaveClass(/dmap-legend-member/);
-  await matchReport(dialog)
-    .getByRole('button', { name: /^classes\.routers\.rows\[2\]: 2 cells have no series/ })
-    .click();
+  await matchReport(dialog).getByRole('button', { name: '2 cells have no series' }).click();
   await expect.poll(() => flagged(dialog, 'highlight')).toEqual(['device-1', 'device-2']);
   // The code box keeps its own Escape (Monaco handles it); a focus on the diagram gives it to the editor.
   await popupCell(dialog, 'device-1').focus();

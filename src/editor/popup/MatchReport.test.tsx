@@ -247,6 +247,31 @@ describe('MatchReport', () => {
     }
   });
 
+  it.each([undefined, 'load'])('names the source class on inherited row links when both labels are %s', (label) => {
+    const onPick = vi.fn();
+    const config = {
+      version: 4 as const,
+      freshness: '1h',
+      overrides: {},
+      classes: {
+        base: { match: { key: 'job' }, rows: [{ kind: 'value' as const, query: 'load', label }] },
+        child: { extends: 'base', rows: [{ kind: 'value' as const, query: 'load', label }] },
+      },
+    };
+    const entries: ReportEntry[] = ['base', 'child'].map((source) => ({
+      kind: 'no-series',
+      cls: 'child',
+      use: `classes.${source}.rows[0]`,
+      cellIds: ['a'],
+    }));
+    render(<MatchReport entries={entries} counts={empty} config={config} onPick={onPick} />);
+    const row = within(group('Class child')).getByRole('listitem');
+    fireEvent.click(within(row).getByRole('button', { name: label ? 'base.rows[0] (load)' : 'base.rows[0]' }));
+    expect(onPick).toHaveBeenLastCalledWith({ kind: 'entry', path: 'classes.base.rows[0]', cells: ['a'] });
+    fireEvent.click(within(row).getByRole('button', { name: label ? 'rows[0] (load)' : 'rows[0]' }));
+    expect(onPick).toHaveBeenLastCalledWith({ kind: 'entry', path: 'classes.child.rows[0]', cells: ['a'] });
+  });
+
   it('puts only the active tab before the report controls in the tab order', () => {
     const perClass = new Map([
       ['dev', { cells: 2, zero: 1, one: 1, many: 0 }],

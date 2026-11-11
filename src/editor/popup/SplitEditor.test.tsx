@@ -542,7 +542,7 @@ describe('SplitEditor', () => {
   });
 
   describe('the highlight and the selection', () => {
-    const entry = () => screen.getAllByRole('button', { name: /^classes\.dev\.status/ })[0];
+    const entry = () => screen.getByRole('button', { name: '1 cell has no series' });
     const dimmed = () =>
       screen.getByTestId('dmap-popup-stage').querySelector('svg')!.classList.contains('dmap-legend-active');
 
