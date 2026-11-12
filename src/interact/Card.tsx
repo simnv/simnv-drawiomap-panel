@@ -264,7 +264,12 @@ const Row = memo(function Row({
                 </React.Fragment>
               ))
             : row.text}
-          {stale ? <small role="status"> Stale data</small> : null}
+          {stale ? (
+            <small role="status" style={{ color: theme.colors.text.secondary }}>
+              {' '}
+              Stale data
+            </small>
+          ) : null}
         </span>
       </div>
       {!chartsReady && (chart || (directions && row.domain)) ? (

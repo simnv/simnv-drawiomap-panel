@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange, ThemeContext } from '@grafana/data';
 import { SparklineView, type ChartLine } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
-import { LINE_HEIGHT } from './StaleHint';
+import { LINE_HEIGHT, MIN_PLOT_HEIGHT, plotHeightOf } from './StaleHint';
 
 const { sparkline, bar } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
@@ -171,6 +171,87 @@ describe('SparklineView', () => {
     expect(screen.getByText('Stale data')).toBeTruthy();
     expect(screen.getByText('30%')).toBeTruthy();
     expect(sparkline).not.toHaveBeenCalled();
+  });
+});
+
+describe('the text lines and the compact rule of a chart box', () => {
+  const view = (height: number, over: Partial<React.ComponentProps<typeof SparklineView>> = {}) =>
+    render(
+      <SparklineView
+        chart={{ lines: [line([1, 2, 3])], domain: [0, 100] }}
+        value="3%"
+        width={60}
+        height={height}
+        timeRange={getDefaultTimeRange()}
+        label="A very long title of a chart that does not fit its narrow region"
+        {...over}
+      />
+    );
+  it('keeps a long title on one line of the fixed height, with the full text in its title attribute', () => {
+    sparkline.mockClear();
+    const { container } = view(70, { stale: true });
+    const title = container.querySelector<HTMLElement>('[title^="A very long title"]')!;
+    expect(title.style.whiteSpace).toBe('nowrap');
+    expect(title.style.textOverflow).toBe('ellipsis');
+    expect(title.style.overflow).toBe('hidden');
+    expect(parseFloat(title.style.height)).toBe(LINE_HEIGHT);
+    expect(title.title).toContain('3%');
+    const hint = screen.getByText('Stale data');
+    expect(lastProps().height + parseFloat(title.style.height) + parseFloat(hint.style.height)).toBeLessThanOrEqual(70);
+  });
+  it.each([
+    // value line and stale hint: two lines
+    [44 + MIN_PLOT_HEIGHT, true, MIN_PLOT_HEIGHT],
+    [44 + MIN_PLOT_HEIGHT - 1, false, null],
+    [44 + MIN_PLOT_HEIGHT + 1, true, MIN_PLOT_HEIGHT + 1],
+    [44, false, null],
+    [30, false, null],
+    [1, false, null],
+  ])('with the value line and the hint: height %i draws a plot: %s', (height, drawn, plot) => {
+    sparkline.mockClear();
+    view(height, { stale: true });
+    expect(screen.getByText('Stale data')).toBeTruthy();
+    expect(sparkline.mock.calls.length > 0).toBe(drawn);
+    if (drawn) {
+      expect(lastProps().height).toBe(plot);
+    }
+  });
+  it.each([
+    [LINE_HEIGHT + MIN_PLOT_HEIGHT, true],
+    [LINE_HEIGHT + MIN_PLOT_HEIGHT - 1, false],
+  ])('with the value line only: height %i draws a plot: %s', (height, drawn) => {
+    sparkline.mockClear();
+    view(height);
+    expect(sparkline.mock.calls.length > 0).toBe(drawn);
+    expect(screen.getByText('3%')).toBeTruthy();
+  });
+  it('never gives a plot more than the room left in the box', () => {
+    expect(plotHeightOf(70, 2)).toBe(26);
+    expect(plotHeightOf(70, 0)).toBe(70);
+    expect(plotHeightOf(10, 0)).toBeNull();
+    expect(plotHeightOf(44, 2)).toBeNull();
+  });
+  it('shows the stale hint and the value of a bar gauge too small for a bar, and no bar', () => {
+    bar.mockClear();
+    const value = { text: '42', numeric: 42 } as any;
+    render(<BarGaugeView value={value} field={{ min: 0, max: 100 }} width={180} height={LINE_HEIGHT + 5} stale />);
+    expect(bar).not.toHaveBeenCalled();
+    expect(screen.getByText('Stale data')).toBeTruthy();
+    expect(screen.getByText('42')).toBeTruthy();
+  });
+  it('gives a bar gauge at the threshold its room after the hint', () => {
+    bar.mockClear();
+    const value = { text: '42', numeric: 42 } as any;
+    render(
+      <BarGaugeView
+        value={value}
+        field={{ min: 0, max: 100 }}
+        width={180}
+        height={LINE_HEIGHT + MIN_PLOT_HEIGHT}
+        stale
+      />
+    );
+    expect((bar.mock.calls.at(-1)![0] as any).height).toBe(MIN_PLOT_HEIGHT);
   });
 });
 

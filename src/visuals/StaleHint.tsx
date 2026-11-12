@@ -5,24 +5,54 @@ import { useTheme2 } from '@grafana/ui';
 export const LINE_HEIGHT = 22;
 
 /**
- * The hint of a stale chart. It has a fixed block height, so a caller can take that height from the plot
- * and the sum of the lines and the plot always fits the box.
+ * The smallest plot in px. A box that leaves less room for the plot, after its text lines, shows the text only:
+ * a plot is never placed outside its box.
  */
-export function StaleHint() {
-  const theme = useTheme2();
+export const MIN_PLOT_HEIGHT = 12;
+
+/** The plot height of a box of `height` px with `lines` text lines above the plot; `null` when the plot is too small. */
+export function plotHeightOf(height: number, lines: number): number | null {
+  const room = height - lines * LINE_HEIGHT;
+  return room >= MIN_PLOT_HEIGHT ? room : null;
+}
+
+/** One text line of exactly `LINE_HEIGHT`: it never wraps, a long text ends with an ellipsis, `title` has the full text. */
+export function TextLine({
+  children,
+  title,
+  color,
+  ...rest
+}: {
+  children: React.ReactNode;
+  title?: string;
+  color?: string;
+  role?: string;
+  'data-testid'?: string;
+}) {
   return (
-    <span
-      role="status"
+    <div
+      {...rest}
+      title={title}
       style={{
-        display: 'block',
         height: LINE_HEIGHT,
         lineHeight: `${LINE_HEIGHT}px`,
         overflow: 'hidden',
         whiteSpace: 'nowrap',
-        color: theme.colors.text.secondary,
+        textOverflow: 'ellipsis',
+        color,
       }}
     >
+      {children}
+    </div>
+  );
+}
+
+/** The hint of a stale chart: one `TextLine` in the secondary colour, so the caller can take its height from the plot. */
+export function StaleHint() {
+  const theme = useTheme2();
+  return (
+    <TextLine role="status" color={theme.colors.text.secondary}>
       Stale data
-    </span>
+    </TextLine>
   );
 }

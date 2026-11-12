@@ -13,7 +13,7 @@ import { ChartHover } from './ChartHover';
 import { lineHistory, SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
 import { MirrorSparkline } from './MirrorSparkline';
-import { LINE_HEIGHT, StaleHint } from './StaleHint';
+import { LINE_HEIGHT, plotHeightOf, StaleHint, TextLine } from './StaleHint';
 import { useClock } from './useSampleStale';
 
 /** The diagram that the regions sit on: each region fills the box of its cell. */
@@ -397,6 +397,7 @@ function ChartBody({
     [row]
   );
   const hint = stale ? <StaleHint /> : null;
+  const mirrorHeight = plotHeightOf(height, stale ? 2 : 1);
   if (row.kind === 'history' && history) {
     const more = row.more ? `+${row.more} more` : '';
     return (
@@ -425,12 +426,12 @@ function ChartBody({
   if (row.kind === 'value' && row.display) {
     return (
       <>
-        <div>{row.title}</div>
+        <TextLine title={row.title}>{row.title}</TextLine>
         <BarGaugeView
           value={row.display}
           field={row.config ?? {}}
           width={width}
-          height={Math.max(1, height - LINE_HEIGHT)}
+          height={Math.max(0, height - LINE_HEIGHT)}
           stale={stale}
         />
       </>
@@ -439,27 +440,29 @@ function ChartBody({
   if (row.kind === 'updown' && row.state === 'ready' && row.directions && row.domain && directions) {
     return (
       <>
-        <div>
+        <TextLine title={`${row.title} ${row.text}`}>
           {row.title} <span data-testid="dmap-chart-value">{row.text}</span>
-        </div>
+        </TextLine>
         {hint}
-        <ChartHover
-          enabled
-          series={directions}
-          timeRange={timeRange}
-          timeZone={timeZone}
-          width={width}
-          label={row.title}
-        >
-          <MirrorSparkline
-            directions={row.directions}
-            domain={row.domain}
-            width={width}
-            height={Math.max(1, height - LINE_HEIGHT - (stale ? LINE_HEIGHT : 0))}
+        {mirrorHeight === null ? null : (
+          <ChartHover
+            enabled
+            series={directions}
             timeRange={timeRange}
+            timeZone={timeZone}
+            width={width}
             label={row.title}
-          />
-        </ChartHover>
+          >
+            <MirrorSparkline
+              directions={row.directions}
+              domain={row.domain}
+              width={width}
+              height={mirrorHeight}
+              timeRange={timeRange}
+              label={row.title}
+            />
+          </ChartHover>
+        )}
       </>
     );
   }

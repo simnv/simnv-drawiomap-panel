@@ -3,7 +3,7 @@ import { FieldColorModeId, FieldType, type Field, type FieldConfig, type TimeRan
 import { Sparkline, useTheme2 } from '@grafana/ui';
 import type { HistoryModel } from '../query/frames';
 import { NO_DATA_ROW } from './hoverSample';
-import { LINE_HEIGHT, StaleHint } from './StaleHint';
+import { plotHeightOf, StaleHint, TextLine } from './StaleHint';
 
 /** One line of a history chart (spec 3.7 "N lines"). A line with no finite value keeps its slot and draws nothing. */
 export interface ChartLine {
@@ -61,19 +61,18 @@ export const SparklineView = React.memo(function SparklineView(props: SparklineL
   const drawn = chart.lines.filter((line) => finiteCount(line.values) >= 2);
   const anyValue = chart.lines.some((line) => !line.noData);
   const showHint = Boolean(stale) && hint;
-  // the value line and the hint line take their height from the plot: the three always fit the box
-  const plotHeight = Math.max(1, height - (showValue ? LINE_HEIGHT : 0) - (showHint ? LINE_HEIGHT : 0));
+  // the value line and the hint line are one fixed line each and take their height from the plot. A box with too
+  // little room left shows the text only (`plotHeight` is null).
+  const plotHeight = plotHeightOf(height, (showValue ? 1 : 0) + (showHint ? 1 : 0));
   return (
     <div aria-label={label} data-state={stale ? 'stale' : 'ready'} style={{ width, height, overflow: 'hidden' }}>
-      <div>
-        {showValue ? (
-          <>
-            {label} <span style={!anyValue ? { color: theme.colors.text.secondary } : undefined}>{value}</span>
-          </>
-        ) : null}
-      </div>
+      {showValue ? (
+        <TextLine title={[label, value].filter(Boolean).join(' ')}>
+          {label} <span style={!anyValue ? { color: theme.colors.text.secondary } : undefined}>{value}</span>
+        </TextLine>
+      ) : null}
       {showHint ? <StaleHint /> : null}
-      {drawn.length ? (
+      {plotHeight === null ? null : drawn.length ? (
         <div style={{ position: 'relative', width, height: plotHeight }}>
           {drawn.map((line, i) => (
             <div key={i} style={{ position: 'absolute', inset: 0 }}>

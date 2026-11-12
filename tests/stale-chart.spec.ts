@@ -1,48 +1,65 @@
 import type { Locator } from '@playwright/test';
-import { expect, test } from './authoring-fixtures';
+import { authoringFieldConfig, authoringTargets, expect, promTarget, test } from './authoring-fixtures';
 
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the screenshots there
 
-/** The box of a stale chart holds the "Stale data" hint and a plot that is inside the box and has drawn pixels. */
-async function expectPlotInside(box: Locator) {
-  await expect(box.getByText('Stale data')).toHaveCount(1);
+/** A constant 3 % on a percent scale: its line lies in the bottom 3 % of a plot with the fixed domain 0–100. */
+const LOW = (device: string) => `label_replace(vector(3), "device", "${device}", "", "")`;
+const targets = () =>
+  authoringTargets().map((t) =>
+    t.refId === 'trend'
+      ? promTarget('trend', LOW('trend'))
+      : t.refId === 'detail'
+        ? promTarget('detail', `${LOW('router-1')} or ${LOW('router-2')}`)
+        : t
+  );
+const fieldConfig = () => {
+  const config = authoringFieldConfig();
+  config.defaults = { ...config.defaults, unit: 'percent' };
+  return config;
+};
+
+/**
+ * The plot of a stale chart box is inside the box, and its stroke (opaque pixels, not the 15 % fill) is in the bottom
+ * band of the plot, inside the box: the line of a low value is not clipped.
+ */
+async function expectLowLineVisible(box: Locator) {
   const canvas = box.locator('canvas').first();
   await expect(canvas).toBeVisible();
-  const result = await box.evaluate((el) => {
+  const r = await box.evaluate((el) => {
     const outer = el.getBoundingClientRect();
     const canvas = el.querySelector('canvas')!;
     const plot = canvas.getBoundingClientRect();
-    const ctx = canvas.getContext('2d')!;
-    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let first = -1;
-    let last = -1;
+    const { data, width, height } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
+    const rows: number[] = [];
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        if (data[(y * width + x) * 4 + 3] > 0) {
-          first = first < 0 ? y : first;
-          last = y;
+        if (data[(y * width + x) * 4 + 3] >= 200) {
+          rows.push(y);
           break;
         }
       }
     }
-    // the drawn rows in CSS px, relative to the outer box
     const scale = plot.height / height;
     return {
       clipped: el.scrollHeight - el.clientHeight,
       plotBottom: plot.bottom - outer.bottom,
-      firstDrawn: first < 0 ? null : plot.top + first * scale - outer.top,
-      lastDrawn: last < 0 ? null : plot.top + (last + 1) * scale - outer.top,
-      boxHeight: outer.height,
+      plotHeight: plot.height,
+      // the CSS px of the first and the last stroke row, from the top of the plot
+      first: rows.length ? rows[0] * scale : null,
+      last: rows.length ? (rows[rows.length - 1] + 1) * scale : null,
     };
   });
-  expect(result.clipped).toBeLessThanOrEqual(0);
-  expect(result.plotBottom).toBeLessThanOrEqual(0.5);
-  expect(result.firstDrawn).not.toBeNull();
-  expect(result.lastDrawn!).toBeLessThanOrEqual(result.boxHeight + 0.5);
+  expect(r.clipped).toBeLessThanOrEqual(0);
+  expect(r.plotBottom).toBeLessThanOrEqual(0.5);
+  expect(r.first, 'stroke pixels').not.toBeNull();
+  // the stroke is in the bottom band (the lower quarter) of the plot and inside the plot box
+  expect(r.first!).toBeGreaterThan(r.plotHeight * 0.75);
+  expect(r.last!).toBeLessThanOrEqual(r.plotHeight + 0.5);
 }
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`a stale chart row of a card and of a chart region keeps its line inside its box (${theme})`, async ({
+  test(`a stale chart with a low value keeps its line inside its box, in the card and in a region (${theme})`, async ({
     page,
     config,
     createDiagram,
@@ -51,7 +68,7 @@ for (const theme of ['light', 'dark'] as const) {
     // a freshness of 1 ms: the last sample is always older, so the rows and the regions are stale
     config.classes.routers.freshness = '1ms';
     config.classes['trend-region'].freshness = '1ms';
-    const uid = await createDiagram(config);
+    const uid = await createDiagram(config, { targets: targets(), fieldConfig: fieldConfig() });
     await gotoDashboardPage({ uid, queryParams: new URLSearchParams({ theme }) });
     const panel = page.getByTestId('dmap-panel');
     await expect(panel).toHaveCSS('color-scheme', theme);
@@ -59,7 +76,8 @@ for (const theme of ['light', 'dark'] as const) {
     // the chart region (a chart in the diagram)
     const region = panel.locator('[data-dmap-chart="chart-1"] [data-state="stale"]');
     await expect(region).toBeVisible();
-    await expectPlotInside(region);
+    await expect(region.getByText('Stale data')).toHaveCount(1);
+    await expectLowLineVisible(region);
     if (SHOTS) {
       await region.screenshot({ path: `${SHOTS}/stale-region-${theme}.png` });
     }
@@ -75,28 +93,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(spark).toBeVisible();
     // the card shows the hint in the head of the row, not in the chart box
     await expect(spark.getByText('Stale data')).toHaveCount(0);
-    const result = await spark.evaluate((el) => {
-      const canvas = el.querySelector('canvas')!;
-      return {
-        clipped: el.scrollHeight - el.clientHeight,
-        box: el.getBoundingClientRect().height,
-        plot: canvas.getBoundingClientRect().height,
-      };
-    });
-    expect(result.clipped).toBeLessThanOrEqual(0);
-    expect(result.plot).toBeLessThanOrEqual(result.box);
-    const canvas = spark.locator('canvas').first();
-    const drawn = await canvas.evaluate((c: HTMLCanvasElement) => {
-      const { data } = c.getContext('2d')!.getImageData(0, 0, c.width, c.height);
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] > 0) {
-          return true;
-        }
-      }
-      return false;
-    });
-    expect(drawn).toBe(true);
-
+    await expectLowLineVisible(spark);
     if (SHOTS) {
       await card.screenshot({ path: `${SHOTS}/stale-card-${theme}.png` });
     }

@@ -307,6 +307,20 @@ describe('ChartLayer: v4 chart regions (spec 3.9)', () => {
     expect(plotH + LINE_HEIGHT + parseFloat(hints[0].style.height)).toBeLessThanOrEqual(parseFloat(box.style.height));
   });
 
+  it('keeps the title of a chart on one fixed line, so the reserved height is exact', () => {
+    const long = 'A very long title of a chart that does not fit the narrow region of its cell';
+    const s = setup({ freshness: '10s', chart: { kind: 'updown', up: 'tx', down: 'rx', label: long } }, [
+      frame('tx', { job: 'ap-1' }, [1, 1], {}, [0, 1000]),
+      frame('rx', { job: 'ap-1' }, [1, 1], {}, [0, 1000]),
+    ]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const title = document.querySelector<HTMLElement>(`[title^="${long}"]`)!;
+    expect(title.style.whiteSpace).toBe('nowrap');
+    expect(parseFloat(title.style.height)).toBe(LINE_HEIGHT);
+  });
+
   it('keeps the bar of a stale value chart inside its box', () => {
     const s = setup({ freshness: '10s', chart: { kind: 'value', query: 'cpu' } }, [
       frame('cpu', { job: 'ap-1' }, [1], { min: 0, max: 10 }, [0]),
