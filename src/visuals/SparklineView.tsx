@@ -3,6 +3,7 @@ import { FieldColorModeId, FieldType, type Field, type FieldConfig, type TimeRan
 import { Sparkline, useTheme2 } from '@grafana/ui';
 import type { HistoryModel } from '../query/frames';
 import { NO_DATA_ROW } from './hoverSample';
+import { plotHeightOf, StaleHint, TWO_LINES, ValueLine } from './StaleHint';
 
 /** One line of a history chart (spec 3.7 "N lines"). A line with no finite value keeps its slot and draws nothing. */
 export interface ChartLine {
@@ -24,6 +25,8 @@ interface ViewProps {
   /** Supplied by a configured cadence policy, never inferred from query resolution. */
   stale?: boolean;
   showValue?: boolean;
+  /** show the stale hint line in the box (default). A caller that shows the hint elsewhere turns it off. */
+  hint?: boolean;
 }
 
 /** N lines with one shared Y range (`yDomain` over the values of all lines, spec 3.7), or why there is no chart. */
@@ -45,7 +48,7 @@ const finiteCount = (values: ReadonlyArray<number | null>) =>
  */
 export const SparklineView = React.memo(function SparklineView(props: SparklineLinesProps) {
   const theme = useTheme2();
-  const { width, height, timeRange, label, stale, showValue = true, chart, value } = props;
+  const { width, height, timeRange, label, stale, showValue = true, hint = true, chart, value } = props;
   const config = props.config ?? {};
   if ('message' in chart) {
     return (
@@ -57,23 +60,30 @@ export const SparklineView = React.memo(function SparklineView(props: SparklineL
   const [min, max] = chart.domain;
   const drawn = chart.lines.filter((line) => finiteCount(line.values) >= 2);
   const anyValue = chart.lines.some((line) => !line.noData);
+  const showHint = Boolean(stale) && hint;
+  // the value line and the hint line are one fixed line each and take their height from the plot. A box with too
+  // little room left shows the text only (`plotHeight` is null).
+  const plotHeight = plotHeightOf(height, (showValue ? 1 : 0) + (showHint ? 1 : 0));
+  // no room for the value line and the hint line below it: the hint ends the value line
+  const merged = showValue && showHint && height < TWO_LINES;
   return (
     <div aria-label={label} data-state={stale ? 'stale' : 'ready'} style={{ width, height, overflow: 'hidden' }}>
-      <div>
-        {showValue ? (
-          <>
-            {label} <span style={!anyValue ? { color: theme.colors.text.secondary } : undefined}>{value}</span>
-          </>
-        ) : null}
-      </div>
-      {stale ? <span role="status">Stale data</span> : null}
-      {drawn.length ? (
-        <div style={{ position: 'relative', width, height: Math.max(1, height - (showValue ? 22 : 0)) }}>
+      {showValue ? (
+        <ValueLine
+          label={label}
+          value={value}
+          valueColor={!anyValue ? theme.colors.text.secondary : undefined}
+          inlineHint={merged}
+        />
+      ) : null}
+      {showHint && !merged ? <StaleHint /> : null}
+      {plotHeight === null ? null : drawn.length ? (
+        <div style={{ position: 'relative', width, height: plotHeight }}>
           {drawn.map((line, i) => (
             <div key={i} style={{ position: 'absolute', inset: 0 }}>
               <Sparkline
                 width={width}
-                height={Math.max(1, height - (showValue ? 22 : 0))}
+                height={plotHeight}
                 theme={theme}
                 config={{
                   ...config,

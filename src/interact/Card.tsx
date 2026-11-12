@@ -264,7 +264,12 @@ const Row = memo(function Row({
                 </React.Fragment>
               ))
             : row.text}
-          {stale && !chart ? <small role="status"> Stale data</small> : null}
+          {stale ? (
+            <small role="status" style={{ color: theme.colors.text.secondary }}>
+              {' '}
+              Stale data
+            </small>
+          ) : null}
         </span>
       </div>
       {!chartsReady && (chart || (directions && row.domain)) ? (
@@ -301,6 +306,7 @@ const Row = memo(function Row({
               timeRange={timeRange}
               label={row.title}
               showValue={false}
+              hint={false}
               stale={stale}
             />
           </ChartHover>

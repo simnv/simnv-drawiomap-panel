@@ -113,6 +113,17 @@ it('shows a history row that has no chart as its text, and keeps a failure local
   expect(screen.getByText('42 °C')).toBeTruthy();
   expect(screen.queryByTestId('grafana-sparkline')).toBeNull();
 });
+it('keeps the whole chart box for the plot of a stale history row, with one hint in the row head', () => {
+  sparkline.mockClear();
+  renderCard(cardOf(historyRow({ stale: true, lines: [line([1, 2, 3])] })));
+  const hint = screen.getByText('Stale data');
+  // the hint is in the head of the row, in the secondary colour, and not in the chart box (it would take room from the plot)
+  expect(screen.getByTestId('dmap-card-value').contains(hint)).toBe(true);
+  expect(screen.getByTestId('dmap-card-spark').contains(hint)).toBe(false);
+  expect(hint.style.color).toBe(createTheme().colors.text.secondary);
+  expect(screen.getByLabelText('Traffic').getAttribute('data-state')).toBe('stale');
+  expect((sparkline.mock.calls.at(-1)![0] as any).height).toBe(40);
+});
 it('shows a stale value row with the stale hint, and a fresh one without it', () => {
   const { unmount } = renderCard(cardOf(valueRow({ text: '42%', stale: true })));
   expect(screen.getByText('Stale data')).toBeTruthy();

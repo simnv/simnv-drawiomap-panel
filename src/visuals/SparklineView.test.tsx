@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange, ThemeContext } from '@grafana/data';
 import { SparklineView, type ChartLine } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
+import { LINE_HEIGHT, MIN_PLOT_HEIGHT, plotHeightOf, TWO_LINES } from './StaleHint';
 
 const { sparkline, bar } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
@@ -115,6 +116,44 @@ describe('SparklineView', () => {
     expect(sparkline).not.toHaveBeenCalled();
     expect(screen.queryByTestId('grafana-sparkline')).toBeNull();
   });
+  it.each([true, false])(
+    'keeps the plot, the value line and the stale hint inside the box (value shown: %s)',
+    (showValue) => {
+      sparkline.mockClear();
+      render(
+        <SparklineView
+          chart={{ lines: [line([1, 2, 3])], domain: [0, 100] }}
+          value="3%"
+          width={180}
+          height={70}
+          timeRange={getDefaultTimeRange()}
+          label="CPU"
+          showValue={showValue}
+          stale
+        />
+      );
+      const hint = screen.getByText('Stale data');
+      const hintH = parseFloat(hint.style.height);
+      expect(hintH).toBeGreaterThan(0);
+      const valueH = showValue ? LINE_HEIGHT : 0;
+      expect(lastProps().height + valueH + hintH).toBeLessThanOrEqual(70);
+      expect(hint.getAttribute('role')).toBe('status');
+    }
+  );
+  it('gives the whole box to the plot of a fresh row without the value line', () => {
+    sparkline.mockClear();
+    render(
+      <SparklineView
+        chart={{ lines: [line([1, 2, 3])], domain: [0, 100] }}
+        width={180}
+        height={70}
+        timeRange={getDefaultTimeRange()}
+        label="CPU"
+        showValue={false}
+      />
+    );
+    expect(lastProps().height).toBe(70);
+  });
   it('shows one sample and the stale state without a trend line', () => {
     sparkline.mockClear();
     render(
@@ -132,6 +171,117 @@ describe('SparklineView', () => {
     expect(screen.getByText('Stale data')).toBeTruthy();
     expect(screen.getByText('30%')).toBeTruthy();
     expect(sparkline).not.toHaveBeenCalled();
+  });
+});
+
+describe('the text lines and the compact rule of a chart box', () => {
+  const view = (height: number, over: Partial<React.ComponentProps<typeof SparklineView>> = {}) =>
+    render(
+      <SparklineView
+        chart={{ lines: [line([1, 2, 3])], domain: [0, 100] }}
+        value="3%"
+        width={60}
+        height={height}
+        timeRange={getDefaultTimeRange()}
+        label="A very long title of a chart that does not fit its narrow region"
+        {...over}
+      />
+    );
+  it('keeps a long title on one line of the fixed height, with the full text in its title attribute', () => {
+    sparkline.mockClear();
+    const { container } = view(70, { stale: true });
+    const title = container.querySelector<HTMLElement>('[title^="A very long title"]')!;
+    expect(title.style.whiteSpace).toBe('nowrap');
+    expect(title.style.overflow).toBe('hidden');
+    // the label shrinks with an ellipsis; the value keeps its width and is never cut by the ellipsis
+    const labelEl = screen.getByText(/^A very long title/);
+    const valueEl = screen.getByText('3%');
+    expect(labelEl.style.textOverflow).toBe('ellipsis');
+    expect(labelEl.style.minWidth).toBe('0px');
+    expect(valueEl.style.flexShrink).toBe('0');
+    expect(valueEl.style.textOverflow).toBe('');
+    // the full text is real text of the box, and the box has the label for assistive technology
+    expect(container.firstElementChild!.getAttribute('aria-label')).toContain('A very long title');
+    expect(parseFloat(title.style.height)).toBe(LINE_HEIGHT);
+    expect(title.title).toContain('3%');
+    const hint = screen.getByText('Stale data');
+    expect(lastProps().height + parseFloat(title.style.height) + parseFloat(hint.style.height)).toBeLessThanOrEqual(70);
+  });
+  it.each([
+    // value line and stale hint: two lines
+    [44 + MIN_PLOT_HEIGHT, true, MIN_PLOT_HEIGHT],
+    [44 + MIN_PLOT_HEIGHT - 1, false, null],
+    [44 + MIN_PLOT_HEIGHT + 1, true, MIN_PLOT_HEIGHT + 1],
+    [44, false, null],
+    [30, false, null],
+    [1, false, null],
+  ])('with the value line and the hint: height %i draws a plot: %s', (height, drawn, plot) => {
+    sparkline.mockClear();
+    view(height, { stale: true });
+    expect(screen.getByText('Stale data')).toBeTruthy();
+    expect(sparkline.mock.calls.length > 0).toBe(drawn);
+    if (drawn) {
+      expect(lastProps().height).toBe(plot);
+    }
+  });
+  it.each([
+    [1, true],
+    [LINE_HEIGHT, true],
+    [TWO_LINES - 1, true],
+    [TWO_LINES, false],
+    [TWO_LINES + MIN_PLOT_HEIGHT, false],
+  ])('height %i: the stale hint is in the value line when the two lines do not fit: %s', (height, merged) => {
+    sparkline.mockClear();
+    const { container } = view(height, { stale: true, label: 'CPU' });
+    const hint = screen.getByText('Stale data');
+    expect(screen.getByText('3%')).toBeTruthy();
+    const line = container.querySelector<HTMLElement>('[title="CPU 3%"]')!;
+    // one hint, in the value line or on a line of its own: never a hint below the box
+    expect(line.contains(hint)).toBe(merged);
+    const rows = [...(container.firstElementChild!.children as unknown as HTMLElement[])].filter(
+      (el) => el.style.height === `${LINE_HEIGHT}px`
+    );
+    expect(rows.length).toBe(merged ? 1 : 2);
+    if (height >= LINE_HEIGHT) {
+      expect(rows.length * LINE_HEIGHT).toBeLessThanOrEqual(Math.max(height, LINE_HEIGHT));
+    }
+  });
+  it.each([
+    [LINE_HEIGHT + MIN_PLOT_HEIGHT, true],
+    [LINE_HEIGHT + MIN_PLOT_HEIGHT - 1, false],
+  ])('with the value line only: height %i draws a plot: %s', (height, drawn) => {
+    sparkline.mockClear();
+    view(height);
+    expect(sparkline.mock.calls.length > 0).toBe(drawn);
+    expect(screen.getByText('3%')).toBeTruthy();
+  });
+  it('never gives a plot more than the room left in the box', () => {
+    expect(plotHeightOf(70, 2)).toBe(26);
+    expect(plotHeightOf(70, 0)).toBe(70);
+    expect(plotHeightOf(10, 0)).toBeNull();
+    expect(plotHeightOf(44, 2)).toBeNull();
+  });
+  it('shows the stale hint and the value of a bar gauge too small for a bar, and no bar', () => {
+    bar.mockClear();
+    const value = { text: '42', numeric: 42 } as any;
+    render(<BarGaugeView value={value} field={{ min: 0, max: 100 }} width={180} height={LINE_HEIGHT + 5} stale />);
+    expect(bar).not.toHaveBeenCalled();
+    expect(screen.getByText('Stale data')).toBeTruthy();
+    expect(screen.getByText('42')).toBeTruthy();
+  });
+  it('gives a bar gauge at the threshold its room after the hint', () => {
+    bar.mockClear();
+    const value = { text: '42', numeric: 42 } as any;
+    render(
+      <BarGaugeView
+        value={value}
+        field={{ min: 0, max: 100 }}
+        width={180}
+        height={LINE_HEIGHT + MIN_PLOT_HEIGHT}
+        stale
+      />
+    );
+    expect((bar.mock.calls.at(-1)![0] as any).height).toBe(MIN_PLOT_HEIGHT);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   type TimeRange,
 } from '@grafana/data';
 import { ChartLayer, chartUsesV4 } from './ChartLayer';
+import { LINE_HEIGHT } from './StaleHint';
 import { tooltipRows } from './hoverSample';
 import { buildCellIndex, mountSvg } from '../render/svgStage';
 import { bindContextFor } from '../binding/context';
@@ -22,7 +23,10 @@ import { bindV4 } from '../binding/bindV4';
 import { validateConfig } from '../model/validate';
 import { chartRowV4, type CardContextV4, type HistoryRowV4 } from '../interact/cardModel';
 
-const { sparkline } = vi.hoisted(() => ({ sparkline: vi.fn((_props: any) => <canvas data-testid="sparkline" />) }));
+const { sparkline, barBox } = vi.hoisted(() => ({
+  sparkline: vi.fn((_props: any) => <canvas data-testid="sparkline" />),
+  barBox: vi.fn((_props: any) => null),
+}));
 vi.mock('@grafana/ui', () => ({
   useTheme2: () => createTheme(),
   useStyles2: (fn: any) => fn(createTheme()),
@@ -37,11 +41,18 @@ vi.mock('@grafana/ui', () => ({
     </div>
   ),
   Sparkline: sparkline,
-  BarGauge: (props: { field: { min?: number; max?: number }; value: { numeric: number; text: string } }) => (
-    <div data-testid="bar-props">
-      {props.field.min}..{props.field.max}: {props.value.text}
-    </div>
-  ),
+  BarGauge: (props: {
+    field: { min?: number; max?: number };
+    value: { numeric: number; text: string };
+    height: number;
+  }) => {
+    barBox(props);
+    return (
+      <div data-testid="bar-props">
+        {props.field.min}..{props.field.max}: {props.value.text}
+      </div>
+    );
+  },
 }));
 
 const theme = createTheme();
@@ -279,6 +290,64 @@ describe('ChartLayer: v4 chart regions (spec 3.9)', () => {
       <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
     );
     expect(screen.getByText('Stale data')).toBeTruthy();
+  });
+
+  it('keeps the plot of a stale history chart inside its box, with one hint', () => {
+    sparkline.mockClear();
+    const s = setup({ freshness: '10s', chart: { kind: 'history', query: 'cpu' } }, [
+      frame('cpu', { job: 'ap-1' }, [1, 2, 3], { min: 0, max: 100 }, [0, 1000, 2000]),
+    ]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const hints = screen.getAllByText('Stale data');
+    expect(hints).toHaveLength(1);
+    const box = hints[0].parentElement as HTMLElement;
+    const plotH = (sparkline.mock.calls.at(-1)![0] as any).height;
+    expect(plotH + LINE_HEIGHT + parseFloat(hints[0].style.height)).toBeLessThanOrEqual(parseFloat(box.style.height));
+  });
+
+  it('keeps the title of a chart on one fixed line, so the reserved height is exact', () => {
+    const long = 'A very long title of a chart that does not fit the narrow region of its cell';
+    const s = setup({ freshness: '10s', chart: { kind: 'updown', up: 'tx', down: 'rx', label: long } }, [
+      frame('tx', { job: 'ap-1' }, [1, 1], {}, [0, 1000]),
+      frame('rx', { job: 'ap-1' }, [1, 1], {}, [0, 1000]),
+    ]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const title = document.querySelector<HTMLElement>(`[title^="${long}"]`)!;
+    expect(title.style.whiteSpace).toBe('nowrap');
+    expect(parseFloat(title.style.height)).toBe(LINE_HEIGHT);
+  });
+
+  it('keeps the bar of a stale value chart inside its box', () => {
+    const s = setup({ freshness: '10s', chart: { kind: 'value', query: 'cpu' } }, [
+      frame('cpu', { job: 'ap-1' }, [1], { min: 0, max: 10 }, [0]),
+    ]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const hints = screen.getAllByText('Stale data');
+    expect(hints).toHaveLength(1);
+    const barH = barBox.mock.calls.at(-1)![0].height;
+    expect(barH + LINE_HEIGHT + parseFloat(hints[0].style.height)).toBeLessThanOrEqual(70);
+  });
+
+  it('keeps the plot of a stale updown chart inside its box', () => {
+    const s = setup({ freshness: '10s', chart: { kind: 'updown', up: 'tx', down: 'rx' } }, [
+      frame('tx', { job: 'ap-1' }, [1, 1], {}, [0, 1000]),
+      frame('rx', { job: 'ap-1' }, [1, 1], {}, [0, 1000]),
+    ]);
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const hints = screen.getAllByText('Stale data');
+    expect(hints).toHaveLength(1);
+    const svg = screen.getByTestId('dmap-mirror-spark');
+    expect(
+      parseFloat(svg.getAttribute('height')!) + LINE_HEIGHT + parseFloat(hints[0].style.height)
+    ).toBeLessThanOrEqual(70);
   });
 });
 

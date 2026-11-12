@@ -13,6 +13,7 @@ import { ChartHover } from './ChartHover';
 import { lineHistory, SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
 import { MirrorSparkline } from './MirrorSparkline';
+import { LINE_HEIGHT, plotHeightOf, StaleHint, TWO_LINES, ValueLine } from './StaleHint';
 import { useClock } from './useSampleStale';
 
 /** The diagram that the regions sit on: each region fills the box of its cell. */
@@ -59,8 +60,6 @@ export function chartUsesV4(bound: BindResultV4): ChartUse[] {
 }
 
 const NO_DEADLINES: readonly number[] = [];
-/** Height in px of the title line above a bar gauge or an updown chart, and of the value line of a sparkline. */
-const TITLE_HEIGHT = 22;
 
 /* ---------- the stage watch: one set of observers and one pass for every region ---------- */
 
@@ -397,7 +396,10 @@ function ChartBody({
         : undefined,
     [row]
   );
-  const hint = stale ? <span role="status">Stale data</span> : null;
+  // no room for the title line and the hint line below it: the hint ends the title line
+  const merged = stale === true && height < TWO_LINES;
+  const hint = stale && !merged ? <StaleHint /> : null;
+  const mirrorHeight = plotHeightOf(height, stale && !merged ? 2 : 1);
   if (row.kind === 'history' && history) {
     const more = row.more ? `+${row.more} more` : '';
     return (
@@ -426,13 +428,13 @@ function ChartBody({
   if (row.kind === 'value' && row.display) {
     return (
       <>
-        <div>{row.title}</div>
+        <ValueLine label={row.title} inlineHint={merged} />
         <BarGaugeView
           value={row.display}
           field={row.config ?? {}}
           width={width}
-          height={Math.max(1, height - TITLE_HEIGHT)}
-          stale={stale}
+          height={Math.max(0, height - LINE_HEIGHT)}
+          stale={stale && !merged}
         />
       </>
     );
@@ -440,27 +442,27 @@ function ChartBody({
   if (row.kind === 'updown' && row.state === 'ready' && row.directions && row.domain && directions) {
     return (
       <>
-        <div>
-          {row.title} <span data-testid="dmap-chart-value">{row.text}</span>
-        </div>
+        <ValueLine label={row.title} value={row.text} valueTestId="dmap-chart-value" inlineHint={merged} />
         {hint}
-        <ChartHover
-          enabled
-          series={directions}
-          timeRange={timeRange}
-          timeZone={timeZone}
-          width={width}
-          label={row.title}
-        >
-          <MirrorSparkline
-            directions={row.directions}
-            domain={row.domain}
-            width={width}
-            height={Math.max(1, height - TITLE_HEIGHT)}
+        {mirrorHeight === null ? null : (
+          <ChartHover
+            enabled
+            series={directions}
             timeRange={timeRange}
+            timeZone={timeZone}
+            width={width}
             label={row.title}
-          />
-        </ChartHover>
+          >
+            <MirrorSparkline
+              directions={row.directions}
+              domain={row.domain}
+              width={width}
+              height={mirrorHeight}
+              timeRange={timeRange}
+              label={row.title}
+            />
+          </ChartHover>
+        )}
       </>
     );
   }
