@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed a stale chart that showed no line: the "Stale data" hint took one text line from the box, and the plot was pushed down and clipped, so a line near the bottom (for example 3 % on a 0–100 scale) was not visible. The plot now keeps room for the hint. This holds for chart regions (history, bar and up/down charts) and for the hover card, where the hint is in the row head and the plot has the whole chart box.
 - The panel reads the cell attribute `capacity` (the link limit in bit/s, as in the portograph contract) as a second name of `cap`. The order for a link is: the class `capacity` query, then `cap`, then `capacity`. `cap` wins when both are set; if their values differ, the report has the new entry `cap-conflict`. A `capacity` that does not parse gives `bad-cap` when `cap` is absent.
 
 ## 1.5.3
