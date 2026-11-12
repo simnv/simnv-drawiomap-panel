@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange, ThemeContext } from '@grafana/data';
 import { SparklineView, type ChartLine } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
+import { LINE_HEIGHT } from './StaleHint';
 
 const { sparkline, bar } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
@@ -114,6 +115,44 @@ describe('SparklineView', () => {
     expect(screen.getByRole('status').textContent).toContain('Select a numeric field');
     expect(sparkline).not.toHaveBeenCalled();
     expect(screen.queryByTestId('grafana-sparkline')).toBeNull();
+  });
+  it.each([true, false])(
+    'keeps the plot, the value line and the stale hint inside the box (value shown: %s)',
+    (showValue) => {
+      sparkline.mockClear();
+      render(
+        <SparklineView
+          chart={{ lines: [line([1, 2, 3])], domain: [0, 100] }}
+          value="3%"
+          width={180}
+          height={70}
+          timeRange={getDefaultTimeRange()}
+          label="CPU"
+          showValue={showValue}
+          stale
+        />
+      );
+      const hint = screen.getByText('Stale data');
+      const hintH = parseFloat(hint.style.height);
+      expect(hintH).toBeGreaterThan(0);
+      const valueH = showValue ? LINE_HEIGHT : 0;
+      expect(lastProps().height + valueH + hintH).toBeLessThanOrEqual(70);
+      expect(hint.getAttribute('role')).toBe('status');
+    }
+  );
+  it('gives the whole box to the plot of a fresh row without the value line', () => {
+    sparkline.mockClear();
+    render(
+      <SparklineView
+        chart={{ lines: [line([1, 2, 3])], domain: [0, 100] }}
+        width={180}
+        height={70}
+        timeRange={getDefaultTimeRange()}
+        label="CPU"
+        showValue={false}
+      />
+    );
+    expect(lastProps().height).toBe(70);
   });
   it('shows one sample and the stale state without a trend line', () => {
     sparkline.mockClear();

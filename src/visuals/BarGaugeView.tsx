@@ -2,6 +2,7 @@ import React from 'react';
 import { formattedValueToString, VizOrientation, type DisplayValue, type FieldConfig } from '@grafana/data';
 import { BarGaugeDisplayMode } from '@grafana/schema';
 import { BarGauge, useTheme2 } from '@grafana/ui';
+import { LINE_HEIGHT, StaleHint } from './StaleHint';
 
 export function BarGaugeView({
   value,
@@ -18,7 +19,7 @@ export function BarGaugeView({
   stale?: boolean;
 }) {
   const theme = useTheme2();
-  const hint = stale ? <span role="status">Stale data</span> : null;
+  const hint = stale ? <StaleHint /> : null;
   const bounded = Number.isFinite(field.min) && Number.isFinite(field.max) && field.max! > field.min!;
   if (!bounded) {
     return (
@@ -36,7 +37,7 @@ export function BarGaugeView({
         value={value}
         field={field}
         width={width}
-        height={height}
+        height={Math.max(1, height - (stale ? LINE_HEIGHT : 0))}
         theme={theme}
         orientation={VizOrientation.Horizontal}
         displayMode={BarGaugeDisplayMode.Basic}

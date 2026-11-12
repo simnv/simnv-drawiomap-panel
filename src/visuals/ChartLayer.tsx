@@ -13,6 +13,7 @@ import { ChartHover } from './ChartHover';
 import { lineHistory, SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
 import { MirrorSparkline } from './MirrorSparkline';
+import { LINE_HEIGHT, StaleHint } from './StaleHint';
 import { useClock } from './useSampleStale';
 
 /** The diagram that the regions sit on: each region fills the box of its cell. */
@@ -59,8 +60,6 @@ export function chartUsesV4(bound: BindResultV4): ChartUse[] {
 }
 
 const NO_DEADLINES: readonly number[] = [];
-/** Height in px of the title line above a bar gauge or an updown chart, and of the value line of a sparkline. */
-const TITLE_HEIGHT = 22;
 
 /* ---------- the stage watch: one set of observers and one pass for every region ---------- */
 
@@ -397,7 +396,7 @@ function ChartBody({
         : undefined,
     [row]
   );
-  const hint = stale ? <span role="status">Stale data</span> : null;
+  const hint = stale ? <StaleHint /> : null;
   if (row.kind === 'history' && history) {
     const more = row.more ? `+${row.more} more` : '';
     return (
@@ -431,7 +430,7 @@ function ChartBody({
           value={row.display}
           field={row.config ?? {}}
           width={width}
-          height={Math.max(1, height - TITLE_HEIGHT)}
+          height={Math.max(1, height - LINE_HEIGHT)}
           stale={stale}
         />
       </>
@@ -456,7 +455,7 @@ function ChartBody({
             directions={row.directions}
             domain={row.domain}
             width={width}
-            height={Math.max(1, height - TITLE_HEIGHT)}
+            height={Math.max(1, height - LINE_HEIGHT - (stale ? LINE_HEIGHT : 0))}
             timeRange={timeRange}
             label={row.title}
           />

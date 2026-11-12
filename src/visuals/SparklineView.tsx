@@ -3,6 +3,7 @@ import { FieldColorModeId, FieldType, type Field, type FieldConfig, type TimeRan
 import { Sparkline, useTheme2 } from '@grafana/ui';
 import type { HistoryModel } from '../query/frames';
 import { NO_DATA_ROW } from './hoverSample';
+import { LINE_HEIGHT, StaleHint } from './StaleHint';
 
 /** One line of a history chart (spec 3.7 "N lines"). A line with no finite value keeps its slot and draws nothing. */
 export interface ChartLine {
@@ -24,6 +25,8 @@ interface ViewProps {
   /** Supplied by a configured cadence policy, never inferred from query resolution. */
   stale?: boolean;
   showValue?: boolean;
+  /** show the stale hint line in the box (default). A caller that shows the hint elsewhere turns it off. */
+  hint?: boolean;
 }
 
 /** N lines with one shared Y range (`yDomain` over the values of all lines, spec 3.7), or why there is no chart. */
@@ -45,7 +48,7 @@ const finiteCount = (values: ReadonlyArray<number | null>) =>
  */
 export const SparklineView = React.memo(function SparklineView(props: SparklineLinesProps) {
   const theme = useTheme2();
-  const { width, height, timeRange, label, stale, showValue = true, chart, value } = props;
+  const { width, height, timeRange, label, stale, showValue = true, hint = true, chart, value } = props;
   const config = props.config ?? {};
   if ('message' in chart) {
     return (
@@ -57,6 +60,9 @@ export const SparklineView = React.memo(function SparklineView(props: SparklineL
   const [min, max] = chart.domain;
   const drawn = chart.lines.filter((line) => finiteCount(line.values) >= 2);
   const anyValue = chart.lines.some((line) => !line.noData);
+  const showHint = Boolean(stale) && hint;
+  // the value line and the hint line take their height from the plot: the three always fit the box
+  const plotHeight = Math.max(1, height - (showValue ? LINE_HEIGHT : 0) - (showHint ? LINE_HEIGHT : 0));
   return (
     <div aria-label={label} data-state={stale ? 'stale' : 'ready'} style={{ width, height, overflow: 'hidden' }}>
       <div>
@@ -66,14 +72,14 @@ export const SparklineView = React.memo(function SparklineView(props: SparklineL
           </>
         ) : null}
       </div>
-      {stale ? <span role="status">Stale data</span> : null}
+      {showHint ? <StaleHint /> : null}
       {drawn.length ? (
-        <div style={{ position: 'relative', width, height: Math.max(1, height - (showValue ? 22 : 0)) }}>
+        <div style={{ position: 'relative', width, height: plotHeight }}>
           {drawn.map((line, i) => (
             <div key={i} style={{ position: 'absolute', inset: 0 }}>
               <Sparkline
                 width={width}
-                height={Math.max(1, height - (showValue ? 22 : 0))}
+                height={plotHeight}
                 theme={theme}
                 config={{
                   ...config,
