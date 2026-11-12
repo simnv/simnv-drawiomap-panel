@@ -47,6 +47,57 @@ export function TextLine({
   );
 }
 
+/**
+ * A box shorter than this has no room for a text line and the hint line below it: the hint then goes into the value
+ * line (`inlineHint`), so it stays visible.
+ */
+export const TWO_LINES = 2 * LINE_HEIGHT;
+
+/**
+ * The title line of a chart: the label shrinks with an ellipsis, the value keeps its width and stays visible. With
+ * `inlineHint` the stale hint ends the same line. The full text is in the DOM (and in `title`), the ellipsis is only
+ * visual.
+ */
+export function ValueLine({
+  label,
+  value,
+  valueColor,
+  valueTestId,
+  inlineHint,
+}: {
+  label: string;
+  value?: string;
+  valueColor?: string;
+  valueTestId?: string;
+  inlineHint?: boolean;
+}) {
+  const theme = useTheme2();
+  return (
+    <div
+      title={[label, value].filter(Boolean).join(' ')}
+      style={{
+        display: 'flex',
+        height: LINE_HEIGHT,
+        lineHeight: `${LINE_HEIGHT}px`,
+        overflow: 'hidden',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+      {value ? (
+        <span data-testid={valueTestId} style={{ flex: 'none', marginLeft: '0.3em', color: valueColor }}>
+          {value}
+        </span>
+      ) : null}
+      {inlineHint ? (
+        <span role="status" style={{ flex: 'none', marginLeft: '0.6em', color: theme.colors.text.secondary }}>
+          Stale data
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /** The hint of a stale chart: one `TextLine` in the secondary colour, so the caller can take its height from the plot. */
 export function StaleHint() {
   const theme = useTheme2();

@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { createTheme, getDefaultTimeRange, ThemeContext } from '@grafana/data';
 import { SparklineView, type ChartLine } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
-import { LINE_HEIGHT, MIN_PLOT_HEIGHT, plotHeightOf } from './StaleHint';
+import { LINE_HEIGHT, MIN_PLOT_HEIGHT, plotHeightOf, TWO_LINES } from './StaleHint';
 
 const { sparkline, bar } = vi.hoisted(() => ({
   sparkline: vi.fn((_props: any) => <canvas data-testid="grafana-sparkline" />),
@@ -192,8 +192,16 @@ describe('the text lines and the compact rule of a chart box', () => {
     const { container } = view(70, { stale: true });
     const title = container.querySelector<HTMLElement>('[title^="A very long title"]')!;
     expect(title.style.whiteSpace).toBe('nowrap');
-    expect(title.style.textOverflow).toBe('ellipsis');
     expect(title.style.overflow).toBe('hidden');
+    // the label shrinks with an ellipsis; the value keeps its width and is never cut by the ellipsis
+    const labelEl = screen.getByText(/^A very long title/);
+    const valueEl = screen.getByText('3%');
+    expect(labelEl.style.textOverflow).toBe('ellipsis');
+    expect(labelEl.style.minWidth).toBe('0px');
+    expect(valueEl.style.flexShrink).toBe('0');
+    expect(valueEl.style.textOverflow).toBe('');
+    // the full text is real text of the box, and the box has the label for assistive technology
+    expect(container.firstElementChild!.getAttribute('aria-label')).toContain('A very long title');
     expect(parseFloat(title.style.height)).toBe(LINE_HEIGHT);
     expect(title.title).toContain('3%');
     const hint = screen.getByText('Stale data');
@@ -214,6 +222,28 @@ describe('the text lines and the compact rule of a chart box', () => {
     expect(sparkline.mock.calls.length > 0).toBe(drawn);
     if (drawn) {
       expect(lastProps().height).toBe(plot);
+    }
+  });
+  it.each([
+    [1, true],
+    [LINE_HEIGHT, true],
+    [TWO_LINES - 1, true],
+    [TWO_LINES, false],
+    [TWO_LINES + MIN_PLOT_HEIGHT, false],
+  ])('height %i: the stale hint is in the value line when the two lines do not fit: %s', (height, merged) => {
+    sparkline.mockClear();
+    const { container } = view(height, { stale: true, label: 'CPU' });
+    const hint = screen.getByText('Stale data');
+    expect(screen.getByText('3%')).toBeTruthy();
+    const line = container.querySelector<HTMLElement>('[title="CPU 3%"]')!;
+    // one hint, in the value line or on a line of its own: never a hint below the box
+    expect(line.contains(hint)).toBe(merged);
+    const rows = [...(container.firstElementChild!.children as unknown as HTMLElement[])].filter(
+      (el) => el.style.height === `${LINE_HEIGHT}px`
+    );
+    expect(rows.length).toBe(merged ? 1 : 2);
+    if (height >= LINE_HEIGHT) {
+      expect(rows.length * LINE_HEIGHT).toBeLessThanOrEqual(Math.max(height, LINE_HEIGHT));
     }
   });
   it.each([

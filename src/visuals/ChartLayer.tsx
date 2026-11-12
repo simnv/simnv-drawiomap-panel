@@ -13,7 +13,7 @@ import { ChartHover } from './ChartHover';
 import { lineHistory, SparklineView } from './SparklineView';
 import { BarGaugeView } from './BarGaugeView';
 import { MirrorSparkline } from './MirrorSparkline';
-import { LINE_HEIGHT, plotHeightOf, StaleHint, TextLine } from './StaleHint';
+import { LINE_HEIGHT, plotHeightOf, StaleHint, TWO_LINES, ValueLine } from './StaleHint';
 import { useClock } from './useSampleStale';
 
 /** The diagram that the regions sit on: each region fills the box of its cell. */
@@ -396,8 +396,10 @@ function ChartBody({
         : undefined,
     [row]
   );
-  const hint = stale ? <StaleHint /> : null;
-  const mirrorHeight = plotHeightOf(height, stale ? 2 : 1);
+  // no room for the title line and the hint line below it: the hint ends the title line
+  const merged = stale === true && height < TWO_LINES;
+  const hint = stale && !merged ? <StaleHint /> : null;
+  const mirrorHeight = plotHeightOf(height, stale && !merged ? 2 : 1);
   if (row.kind === 'history' && history) {
     const more = row.more ? `+${row.more} more` : '';
     return (
@@ -426,13 +428,13 @@ function ChartBody({
   if (row.kind === 'value' && row.display) {
     return (
       <>
-        <TextLine title={row.title}>{row.title}</TextLine>
+        <ValueLine label={row.title} inlineHint={merged} />
         <BarGaugeView
           value={row.display}
           field={row.config ?? {}}
           width={width}
           height={Math.max(0, height - LINE_HEIGHT)}
-          stale={stale}
+          stale={stale && !merged}
         />
       </>
     );
@@ -440,9 +442,7 @@ function ChartBody({
   if (row.kind === 'updown' && row.state === 'ready' && row.directions && row.domain && directions) {
     return (
       <>
-        <TextLine title={`${row.title} ${row.text}`}>
-          {row.title} <span data-testid="dmap-chart-value">{row.text}</span>
-        </TextLine>
+        <ValueLine label={row.title} value={row.text} valueTestId="dmap-chart-value" inlineHint={merged} />
         {hint}
         {mirrorHeight === null ? null : (
           <ChartHover

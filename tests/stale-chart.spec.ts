@@ -99,3 +99,51 @@ for (const theme of ['light', 'dark'] as const) {
     }
   });
 }
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`a narrow stale region keeps its value and its hint visible, the label shrinks (${theme})`, async ({
+    page,
+    config,
+    createDiagram,
+    gotoDashboardPage,
+  }) => {
+    config.classes['trend-region'].freshness = '1ms';
+    (config.classes['trend-region'].chart as { label?: string }).label =
+      'A very long title of a standalone trend chart in a narrow region';
+    const uid = await createDiagram(config, { targets: targets(), fieldConfig: fieldConfig(), width: 6 });
+    await gotoDashboardPage({ uid, queryParams: new URLSearchParams({ theme }) });
+    const panel = page.getByTestId('dmap-panel');
+    const region = panel.locator('[data-dmap-chart="chart-1"] [data-state="stale"]');
+    await expect(region).toBeVisible();
+    const hint = region.getByText('Stale data');
+    await expect(hint).toBeVisible();
+    const value = region.getByText('3%');
+    await expect(value).toBeVisible();
+    const r = await region.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const inBox = (e: Element) => {
+        const b = e.getBoundingClientRect();
+        return (
+          b.left >= box.left - 0.5 &&
+          b.right <= box.right + 0.5 &&
+          b.top >= box.top - 0.5 &&
+          b.bottom <= box.bottom + 0.5
+        );
+      };
+      const spans = [...el.querySelectorAll('span')];
+      const label = spans.find((s) => s.textContent?.startsWith('A very long'))!;
+      return {
+        label: label.scrollWidth > label.clientWidth,
+        value: inBox(spans.find((s) => s.textContent === '3%')!),
+        hint: inBox(spans.find((s) => s.textContent === 'Stale data') ?? el.querySelector('[role="status"]')!),
+      };
+    });
+    // the label ends with an ellipsis; the value and the hint are inside the box
+    expect(r.label).toBe(true);
+    expect(r.value).toBe(true);
+    expect(r.hint).toBe(true);
+    if (SHOTS) {
+      await region.screenshot({ path: `${SHOTS}/stale-narrow-${theme}.png` });
+    }
+  });
+}

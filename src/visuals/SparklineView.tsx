@@ -3,7 +3,7 @@ import { FieldColorModeId, FieldType, type Field, type FieldConfig, type TimeRan
 import { Sparkline, useTheme2 } from '@grafana/ui';
 import type { HistoryModel } from '../query/frames';
 import { NO_DATA_ROW } from './hoverSample';
-import { plotHeightOf, StaleHint, TextLine } from './StaleHint';
+import { plotHeightOf, StaleHint, TWO_LINES, ValueLine } from './StaleHint';
 
 /** One line of a history chart (spec 3.7 "N lines"). A line with no finite value keeps its slot and draws nothing. */
 export interface ChartLine {
@@ -64,14 +64,19 @@ export const SparklineView = React.memo(function SparklineView(props: SparklineL
   // the value line and the hint line are one fixed line each and take their height from the plot. A box with too
   // little room left shows the text only (`plotHeight` is null).
   const plotHeight = plotHeightOf(height, (showValue ? 1 : 0) + (showHint ? 1 : 0));
+  // no room for the value line and the hint line below it: the hint ends the value line
+  const merged = showValue && showHint && height < TWO_LINES;
   return (
     <div aria-label={label} data-state={stale ? 'stale' : 'ready'} style={{ width, height, overflow: 'hidden' }}>
       {showValue ? (
-        <TextLine title={[label, value].filter(Boolean).join(' ')}>
-          {label} <span style={!anyValue ? { color: theme.colors.text.secondary } : undefined}>{value}</span>
-        </TextLine>
+        <ValueLine
+          label={label}
+          value={value}
+          valueColor={!anyValue ? theme.colors.text.secondary : undefined}
+          inlineHint={merged}
+        />
       ) : null}
-      {showHint ? <StaleHint /> : null}
+      {showHint && !merged ? <StaleHint /> : null}
       {plotHeight === null ? null : drawn.length ? (
         <div style={{ position: 'relative', width, height: plotHeight }}>
           {drawn.map((line, i) => (
