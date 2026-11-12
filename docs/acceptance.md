@@ -173,7 +173,8 @@ centred horizontally`: `expect(g.bottom).toBeGreaterThan(50)`, received `0`. The
     deadline of about 15 s. The slower sandbox run passed that deadline. A 20 s pause after the draft gives the same
     failure with CSP only. The test diagram now has the freshness `1h`.
 - An e2e run needs 15 minutes of data with no gap. When the Mac sleeps, the demo metrics have a gap, and the chart
-  tests read "No data" or a value of 0 until the gap leaves the time range.
+  tests read "No data" or a value of 0 until the gap leaves the time range. `tests/sparkline-range.spec.ts` checks this
+  first (`tests/demo-series.ts`): its failure message gives the time of the gap and the time of a valid rerun.
 
 ## Inferred identity: bench
 

@@ -1,5 +1,6 @@
 import { hoverHalf, pointOnHalf } from './authoring-controls';
 import { expect, test } from './authoring-fixtures';
+import { demoSeriesStall } from './demo-series';
 
 const RADIO = 'pg-link~radio:dhcp->rtr-a:wan2';
 const SHOTS = process.env.DMAP_SCREENSHOTS; // a directory: write the card screenshots there
@@ -7,7 +8,10 @@ const ys = (points: string) => points.split(' ').map((p) => Number(p.split(',')[
 
 test('a flat series starts at the zero line: the line stays in a narrow band near the top of its half', async ({
   gotoDashboardPage,
+  request,
 }) => {
+  // the premise of this test: the series is flat. A stall of metrics-gen puts a rate of 0 into the time range.
+  expect(await demoSeriesStall(request, 'node_network_transmit_bytes_total{job="node-radio",device="dhcp"}')).toBe('');
   const dashboardPage = await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = await dashboardPage.getPanelByTitle('demo-lab L3');
   const half = panel.locator.locator(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${RADIO}"]`);
@@ -27,7 +31,10 @@ test('a flat series starts at the zero line: the line stays in a narrow band nea
 
 test('a combined up/down row shows both values, a zero line and the down series mirrored below it', async ({
   gotoDashboardPage,
+  request,
 }) => {
+  // the premise of this test: the up line stays above the zero line. A stall of metrics-gen puts a rate of 0 on it.
+  expect(await demoSeriesStall(request, 'node_network_transmit_bytes_total{job="node-rtr-a",device="wan1"}')).toBe('');
   // Grafana loads panels below the fold only when they scroll into view. viewPanel shows this panel alone.
   const dashboardPage = await gotoDashboardPage({
     uid: 'drawiomap-demo',
