@@ -207,6 +207,8 @@ function DrawioMapPanelView(props: ViewProps) {
   const { options, data, width, height, fieldConfig, replaceVariables, timeZone, timeRange, editing } = props;
   const theme = useTheme2();
   const opts = withDefaults(options);
+  // The **Stale colour** option: a Grafana colour name (it follows the theme) or a CSS colour.
+  const staleColor = theme.visualization.getColorByName(opts.stale.color);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
   const attachStage = useCallback((element: HTMLDivElement | null) => {
@@ -332,8 +334,9 @@ function DrawioMapPanelView(props: ViewProps) {
     return buildLegendV4(result.patches, statusFields(bound), {
       theme,
       fieldThresholds: fieldConfig.defaults.thresholds,
+      staleColor,
     });
-  }, [legendOptions.show, result.patches, bound, theme, fieldConfig.defaults.thresholds]);
+  }, [legendOptions.show, result.patches, bound, theme, fieldConfig.defaults.thresholds, staleColor]);
   // The chart regions: one for each cell whose effective class has a `chart` (spec 3.9).
   const charts = useMemo(() => chartUsesV4(bound), [bound]);
   const legendMembers = useMemo(() => [...new Set(legendBlocks.flatMap((b) => b.cellIds))], [legendBlocks]);
@@ -360,7 +363,13 @@ function DrawioMapPanelView(props: ViewProps) {
   const open = !!model && (model.rows.length > 0 || model.links.length > 0);
 
   // Apply patches, redraw the overlay and the value labels once per frame.
-  useStagePaint(stage, result.patches, { theme, linkWidth: opts.linkWidth, interactive, xml: opts.diagram?.xml });
+  useStagePaint(stage, result.patches, {
+    theme,
+    linkWidth: opts.linkWidth,
+    interactive,
+    xml: opts.diagram?.xml,
+    staleColor,
+  });
   // The cells that open a card get the interactive mark. The applier, the overlay and the labels do not read or write
   // it, so its place in the frame does not matter.
   useEffect(() => {
@@ -519,6 +528,7 @@ function DrawioMapPanelView(props: ViewProps) {
         layout={band}
         expanded={bandExpanded}
         onToggle={() => setBandExpanded((v) => !v)}
+        staleColor={staleColor}
       />
       <div
         ref={attachStage}

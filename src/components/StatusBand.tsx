@@ -149,11 +149,13 @@ interface Props {
   layout: BandLayout;
   expanded: boolean;
   onToggle: () => void;
+  /** The resolved **Stale colour** of the panel; the palette orange when absent. */
+  staleColor?: string;
 }
 
 /** One row per band row of `bandRowsV4`: the marker in the theme colour of its severity and the row text. */
 export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBand(
-  { rowsV4, layout, expanded, onToggle },
+  { rowsV4, layout, expanded, onToggle, staleColor },
   ref
 ) {
   const styles = useStyles2(getStyles);
@@ -179,7 +181,7 @@ export const StatusBand = React.forwardRef<HTMLElement, Props>(function StatusBa
             data-dmap-state={r.severity}
             data-dmap-count={r.count}
           >
-            <span className={styles.state} style={{ color: statusColor({ state: r.severity }, theme) }}>
+            <span className={styles.state} style={{ color: statusColor({ state: r.severity }, theme, staleColor) }}>
               {marker(r.severity)}
             </span>
             <span className={styles.reason}>{r.text}</span>

@@ -1,6 +1,6 @@
 import { createTheme } from '@grafana/data';
 import { describe, expect, it } from 'vitest';
-import { linkStatusPaint, noDataColor, statusColor, statusPaint, statusPaintV4 } from './color';
+import { linkStatusPaint, noDataColor, statusColor, statusPaint, statusPaintV4, statusPalette } from './color';
 import type { StatusV4 } from './statusV4';
 
 const themes = [
@@ -29,6 +29,16 @@ describe.each(themes)('statusPaintV4, %s theme', (_, theme) => {
     expect(statusPaintV4(status({ state: 'stale', color: '#73bf69' }), theme)).toBe(
       theme.visualization.getColorByName('orange')
     );
+  });
+  it('paints stale with the Stale colour of the panel, and only stale', () => {
+    expect(statusPaintV4(status({ state: 'stale', color: '#73bf69' }), theme, '#123456')).toBe('#123456');
+    expect(statusColor({ state: 'stale' }, theme, '#123456')).toBe('#123456');
+    expect(statusColor({ state: 'warning' }, theme, '#123456')).toBe(theme.visualization.getColorByName('orange'));
+    expect(statusPaintV4(status({ state: 'missing', severity: 'missing', text: '–' }), theme, '#123456')).toBe(
+      noDataColor(theme)
+    );
+    // a new Stale colour is a new palette: the applier paints every cell again
+    expect(statusPalette(theme, '#123456')).not.toBe(statusPalette(theme));
   });
   it('a down with no value colour (missing: down) takes the theme red; a normal with no colour paints nothing', () => {
     expect(statusPaintV4(status({ state: 'down', severity: 'down', text: '–' }), theme)).toBe(

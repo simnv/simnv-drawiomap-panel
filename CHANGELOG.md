@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added the panel option **Stale colour** (View group, default orange). It paints a cell or a link whose last sample is older than its freshness, its status band marker and its legend entry. Before, the stale colour was always the palette orange. See [Status paint](docs/guide/colours.md#status-paint).
+
 ## 1.7.0
 
 - Added the near-link catch: a thin link is easy to hover and tap. When no cell that opens a card is under the pointer, the panel takes the nearest link within 8 screen px for a mouse or a pen, and 16 px for a finger. The radius is the same at every zoom. Of two parallel links, the closer one wins. A node, a link label or any other cell under the pointer still wins. Only a link of the **Hover kinds** is caught. A link caught by distance shows a soft wider underlay and the hand cursor. The check runs at most once per frame and nothing runs while the pointer is still. See [Hover card](docs/guide/hover-card.md#thin-links).

@@ -69,6 +69,8 @@ export interface LegendBlock {
 
 export interface LegendContext {
   theme: GrafanaTheme2;
+  /** The resolved **Stale colour** of the panel; the palette orange when absent. */
+  staleColor?: string;
   /** The panel default thresholds. They apply when a field has none (as in colorFor). */
   fieldThresholds?: ThresholdsConfig;
 }
@@ -422,7 +424,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
       continue;
     }
     if (view.state === 'stale' || view.state === 'missing') {
-      if (view.state === 'stale' || linkStatusPaint(patch, ctx.theme) !== undefined) {
+      if (view.state === 'stale' || linkStatusPaint(patch, ctx.theme, ctx.staleColor) !== undefined) {
         push(states[view.state], patch.cellId);
       }
       continue;
@@ -477,7 +479,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
   const entries = STATE_ENTRIES_V4.filter(({ key }) => states[key].length).map(({ key, label }) => ({
     key,
     label,
-    color: statusColor({ state: key }, ctx.theme),
+    color: statusColor({ state: key }, ctx.theme, ctx.staleColor),
     cellIds: states[key],
   }));
   if (entries.length) {

@@ -150,8 +150,11 @@ describe('status colours', () => {
       expect(statusTextColor(view('normal'), t)).toBe(t.colors.text.secondary);
     }
   });
-  it('the palette is the colours of the three levels', () => {
-    expect(statusPalette(theme)).toBe([named('red'), named('orange'), noDataColor(theme)].join('|'));
+  it('the palette is the colours of the three levels and of stale', () => {
+    expect(statusPalette(theme)).toBe([named('red'), named('orange'), noDataColor(theme), named('orange')].join('|'));
+    expect(statusPalette(theme, '#123456')).toBe(
+      [named('red'), named('orange'), noDataColor(theme), '#123456'].join('|')
+    );
   });
   it('statusPaint is a colour for a state that is not normal, else undefined', () => {
     expect(statusPaint(view('down'), theme)).toBe(named('red'));

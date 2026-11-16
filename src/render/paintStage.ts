@@ -17,6 +17,8 @@ export interface PaintOptions {
   bounds?: ViewBox;
   /** Only these cells become buttons. Without it every patched cell is one (the popup stage). */
   interactive?: Set<string>;
+  /** The resolved **Stale colour** of the panel; the palette orange when absent. */
+  staleColor?: string;
 }
 
 /**
@@ -31,9 +33,9 @@ export function paintStage(
   previous: Applied | undefined,
   opts: PaintOptions
 ): Applied {
-  const { theme, osDark, linkWidth, bounds, interactive, xml } = opts;
-  const applied = applyPatches(index, patches, previous, interactive, { theme, osDark, xml });
-  renderOverlay(root, index, patches, { theme, maxWidth: linkWidth.max, minWidth: linkWidth.min });
+  const { theme, osDark, linkWidth, bounds, interactive, xml, staleColor } = opts;
+  const applied = applyPatches(index, patches, previous, interactive, { theme, osDark, xml, staleColor });
+  renderOverlay(root, index, patches, { theme, maxWidth: linkWidth.max, minWidth: linkWidth.min, staleColor });
   renderLinkLabels(root, index, patches, { theme, linkWidth, bounds });
   return applied;
 }
