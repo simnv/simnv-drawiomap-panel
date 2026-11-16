@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css } from '@emotion/css';
-import type { Field, GrafanaTheme2, PanelProps } from '@grafana/data';
+import type { Field, PanelProps } from '@grafana/data';
 import { getDataSourceSrv, locationService } from '@grafana/runtime';
 import type { DataSourceRef } from '@grafana/schema';
 import { useTheme2 } from '@grafana/ui';
@@ -12,7 +12,6 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
-import { NEAR_CLASS, NEAR_MARK_CLASS } from '../render/overlay';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
@@ -64,9 +63,6 @@ function usePanelEditing(id: number) {
   return editPanel === String(id) ? `${pathname}\n${editPanel}` : '';
 }
 
-/** The mark colour of the link under or near the pointer: white on the dark theme, the primary blue on the light one. */
-const glowColor = (theme: GrafanaTheme2) => (theme.isDark ? theme.colors.text.maxContrast : theme.colors.primary.main);
-
 const styles = {
   // The status band and the stage stack: the band never covers the diagram.
   wrapper: css`
@@ -94,14 +90,6 @@ const styles = {
     & [${INTERACTIVE_ATTR}],
     &[${NEAR_ATTR}] {
       cursor: pointer;
-    }
-    /* The link under or near the pointer shows its mark: one class on its overlay layer. */
-    & .${NEAR_MARK_CLASS} {
-      display: none;
-      color: var(--dmap-glow);
-    }
-    & .${NEAR_CLASS} > .${NEAR_MARK_CLASS} {
-      display: inline;
     }
     /* A legend entry under the pointer: the other cells of the legend dim. */
     & .${LEGEND_MEMBER} {
@@ -538,7 +526,7 @@ function DrawioMapPanelView(props: ViewProps) {
       <div
         ref={attachStage}
         className={styles.stage}
-        style={{ touchAction, height: stageHeight, ['--dmap-glow' as string]: glowColor(theme) }}
+        style={{ touchAction, height: stageHeight }}
         data-testid="dmap-stage"
       />
       {charts.length ? (

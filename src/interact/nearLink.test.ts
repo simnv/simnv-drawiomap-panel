@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { clearFakeLayout, clientRect, fakeLayout } from '../render/layoutTestKit';
 import { createTheme } from '@grafana/data';
-import { markNearLink, NEAR_CLASS, NEAR_MARK_CLASS, renderOverlay } from '../render/overlay';
+import { markNearLink, NEAR_CLASS, renderOverlay } from '../render/overlay';
 import { catchRadius, nearestLink, NearLinkFinder, segmentDistance2, segmentsOf } from './nearLink';
 import { nearStage } from './nearLink.testKit';
 
@@ -129,29 +129,34 @@ describe('NearLinkFinder', () => {
 });
 
 describe('markNearLink', () => {
-  it('puts one class on the layer of the link and an underlay under its halves; another link takes it', () => {
+  it('puts the near class and the bloom filter on the layer of the link; another link takes them', () => {
     const { root, index, patches } = nearStage({ l1: 'M 0 100 L 400 100', l2: 'M 0 200 L 400 200' });
     const layer = (id: string) => root.querySelector(`[data-cell-id="${id}"] g.dmap-overlay`)!;
     markNearLink(root, 'l1');
     expect(layer('l1').classList.contains(NEAR_CLASS)).toBe(true);
-    const marks = layer('l1').querySelectorAll(`.${NEAR_MARK_CLASS}`);
-    expect(marks).toHaveLength(2);
-    // the underlay comes first, below the halves: one stroke, 1.5 units wider on each side
-    expect(layer('l1').firstElementChild).toBe(marks[0]);
-    expect(marks[0].getAttribute('pointer-events')).toBe('none');
-    const strokes = [...marks[0].querySelectorAll('polyline')];
-    expect(strokes.map((p) => [p.getAttribute('stroke-width'), p.getAttribute('stroke-opacity')])).toEqual([
-      ['4', '0.45'],
+    // one filter in the root: a blur twice under the sharp link, in user space (a straight line has a flat box)
+    const filters = root.querySelectorAll('defs > filter');
+    expect(filters).toHaveLength(1);
+    const filter = filters[0];
+    expect(layer('l1').getAttribute('filter')).toBe(`url(#${filter.id})`);
+    expect(filter.getAttribute('filterUnits')).toBe('userSpaceOnUse');
+    expect(filter.querySelector('feGaussianBlur')?.getAttribute('stdDeviation')).toBe('3');
+    expect([...filter.querySelectorAll('feMergeNode')].map((n) => n.getAttribute('in'))).toEqual([
+      'bloom',
+      'bloom',
+      'SourceGraphic',
     ]);
-    expect(strokes.every((p) => p.getAttribute('stroke') === 'currentColor')).toBe(true);
     markNearLink(root, 'l2');
     expect(layer('l1').classList.contains(NEAR_CLASS)).toBe(false);
-    // a new width range draws the layers again: the mark stays on its link
+    expect(layer('l1').hasAttribute('filter')).toBe(false);
+    expect(layer('l2').getAttribute('filter')).toBe(`url(#${filter.id})`);
+    // a new width range draws the layers again: the mark stays on its link, with the same filter
     renderOverlay(root, index, patches, { theme: createTheme(), maxWidth: 12 });
     expect(layer('l2').classList.contains(NEAR_CLASS)).toBe(true);
-    expect(layer('l2').querySelectorAll(`.${NEAR_MARK_CLASS}`)).toHaveLength(2);
-    expect(layer('l2').classList.contains(NEAR_CLASS)).toBe(true);
+    expect(layer('l2').getAttribute('filter')).toBe(`url(#${filter.id})`);
+    expect(root.querySelectorAll('defs > filter')).toHaveLength(1);
     markNearLink(root, undefined);
     expect(root.querySelectorAll(`.${NEAR_CLASS}`)).toHaveLength(0);
+    expect(root.querySelectorAll('[filter]')).toHaveLength(0);
   });
 });

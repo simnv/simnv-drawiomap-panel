@@ -168,8 +168,6 @@ interface HalfDrawn {
   width: number;
   place: HalfPlace;
   points: Map<number, HalfPointsAttr>;
-  /** The hover mark of the half (`NEAR_GLOW`): made at the first mark, then kept. */
-  mark?: SVGGElement;
 }
 /** The overlay of one link: its layer, the set of halves it was built for, and the elements of each half. */
 interface LinkDrawn {
@@ -192,6 +190,8 @@ interface OverlayState {
   borders: Map<string, BorderDrawn>;
   /** The link that has the near-link mark. */
   near?: string;
+  /** The bloom filter of the mark, in a `<defs>` of the root: made at the first mark, then kept. */
+  bloom?: SVGFilterElement;
 }
 
 export const STATUS_BORDER_CLASS = 'dmap-status-border';
@@ -437,9 +437,6 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   drawn.line.setAttribute('stroke', state.color);
   drawn.line.setAttribute('stroke-width', String(width));
   drawn.arrow?.setAttribute('fill', state.color);
-  if (drawn.mark) {
-    setGlowWidths(drawn.mark, width);
-  }
   if (drawn.width !== width) {
     drawn.width = width;
     const pts = pointsFor(drawn.points, drawn.place, width);
@@ -513,49 +510,68 @@ export function overlayHalves(root: SVGSVGElement, cellId: string): SVGPolylineE
   return drawn ? [drawn.a2b?.line, drawn.b2a?.line].filter((line): line is SVGPolylineElement => !!line) : [];
 }
 
-/** The class of a link layer whose link the pointer is on or near: the panel CSS shows its marks. */
+/** The class of a link layer whose link the pointer is on or near; the layer also gets the bloom filter. */
 export const NEAR_CLASS = 'dmap-near';
-export const NEAR_MARK_CLASS = 'dmap-near-mark';
+/** The blur of the bloom in screen px: the same at every zoom (a zoom takes the mark away, the next move sets it). */
+const BLOOM_PX = 3;
+let bloomSeq = 0;
+
 /**
- * The hover mark: one soft stroke, 1.5 units wider on each side of its half. The panel CSS gives it its colour.
- * A list, so a later mark can stack more strokes.
+ * The bloom filter of a root: the link glows in its own colours (the halves and the heads), twice the blur under the
+ * sharp link. An SVG filter, not a CSS `drop-shadow`: WebKit applies no CSS filter function to an SVG element. The
+ * region is in user space (`userSpaceOnUse`): a box relative to the element is empty for a straight horizontal line.
  */
-const NEAR_GLOW = [{ extra: 3, opacity: 0.45 }] as const;
-
-function setGlowWidths(mark: SVGGElement, width: number): void {
-  NEAR_GLOW.forEach((g, i) => mark.children[i]?.setAttribute('stroke-width', fmt(width + g.extra)));
-}
-
-/** Makes the marks of the halves (once) and puts the near class on the layer. */
-function showNearMark(drawn: LinkDrawn): void {
-  for (const half of [drawn.a2b, drawn.b2a]) {
-    if (half && !half.mark) {
-      const { geo, from, to } = half.place;
-      const points = pointsAttr(geo.polyline(from, to));
-      const mark = el('g', { class: NEAR_MARK_CLASS, 'pointer-events': 'none' });
-      for (const g of NEAR_GLOW) {
-        mark.appendChild(
-          el('polyline', {
-            points,
-            fill: 'none',
-            stroke: 'currentColor',
-            'stroke-opacity': g.opacity,
-            'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
-          })
-        );
-      }
-      setGlowWidths(mark, half.width);
-      // an underlay: the first child of the layer, below both halves and their heads
-      half.mark = drawn.layer.insertBefore(mark, drawn.layer.firstChild);
-    }
+function bloomFilter(root: SVGSVGElement, state: OverlayState): SVGFilterElement {
+  if (state.bloom?.isConnected) {
+    return state.bloom;
   }
-  drawn.layer.classList.add(NEAR_CLASS);
+  const filter = el('filter', {
+    id: `dmap-bloom-${++bloomSeq}`,
+    filterUnits: 'userSpaceOnUse',
+    'color-interpolation-filters': 'sRGB',
+  });
+  const merge = el('feMerge', {});
+  for (const input of ['bloom', 'bloom', 'SourceGraphic']) {
+    merge.appendChild(el('feMergeNode', { in: input }));
+  }
+  filter.append(el('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: String(BLOOM_PX), result: 'bloom' }), merge);
+  root.appendChild(el('defs', {})).appendChild(filter);
+  state.bloom = filter;
+  return filter;
 }
 
 /**
- * Gives the link `cellId` the near-link mark and takes it from the link that had it. Undefined takes the mark away.
- * Only the class of one layer changes; the marks stay in the layer, hidden by the panel CSS.
+ * Puts the near class and the bloom on the layer. The blur and the filter region follow the scale of the layer on
+ * the screen and its box: two layout reads, only when the mark goes to another link.
+ */
+function showNearMark(root: SVGSVGElement, state: OverlayState, drawn: LinkDrawn): void {
+  const filter = bloomFilter(root, state);
+  const { layer } = drawn;
+  const m = layer.getScreenCTM?.();
+  const scale = m ? Math.hypot(m.a, m.b) || 1 : 1;
+  const blur = BLOOM_PX / scale;
+  filter.firstElementChild?.setAttribute('stdDeviation', fmt(blur));
+  const box = typeof layer.getBBox === 'function' ? layer.getBBox() : undefined;
+  if (box) {
+    // the box has no stroke: the widest stroke and three blurs on each side
+    const pad = state.maxWidth + 3 * blur;
+    filter.setAttribute('x', fmt(box.x - pad));
+    filter.setAttribute('y', fmt(box.y - pad));
+    filter.setAttribute('width', fmt(box.width + 2 * pad));
+    filter.setAttribute('height', fmt(box.height + 2 * pad));
+  }
+  layer.setAttribute('filter', `url(#${filter.id})`);
+  layer.classList.add(NEAR_CLASS);
+}
+
+function hideNearMark(drawn: LinkDrawn | undefined): void {
+  drawn?.layer.classList.remove(NEAR_CLASS);
+  drawn?.layer.removeAttribute('filter');
+}
+
+/**
+ * Gives the link `cellId` the near-link mark (the near class and the bloom) and takes it from the link that had it.
+ * Undefined takes the mark away. Only the attributes of one or two layers change.
  */
 export function markNearLink(root: SVGSVGElement, cellId: string | undefined): void {
   const state = states.get(root);
@@ -563,12 +579,12 @@ export function markNearLink(root: SVGSVGElement, cellId: string | undefined): v
     return;
   }
   if (state.near) {
-    state.links.get(state.near)?.layer.classList.remove(NEAR_CLASS);
+    hideNearMark(state.links.get(state.near));
   }
   state.near = cellId;
   const drawn = cellId ? state.links.get(cellId) : undefined;
   if (drawn) {
-    showNearMark(drawn);
+    showNearMark(root, state, drawn);
   }
 }
 
@@ -590,7 +606,8 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
     root.querySelectorAll(`g.${OVERLAY_CLASS}, .${STATUS_BORDER_CLASS}`).forEach((g) => g.remove());
     // a new width range draws the layers again: the link near the pointer keeps its mark
     const near = state?.index === index ? state.near : undefined;
-    state = { index, maxWidth, minWidth, links: new Map(), borders: new Map(), near };
+    // the bloom filter stays in the root: the next mark reuses it
+    state = { index, maxWidth, minWidth, links: new Map(), borders: new Map(), near, bloom: state?.bloom };
     states.set(root, state);
   }
   const liveLinks = new Set<string>();
@@ -627,7 +644,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
   // a layer made again keeps the near-link mark of its link
   const near = state.near ? state.links.get(state.near) : undefined;
   if (near) {
-    showNearMark(near);
+    showNearMark(root, state, near);
   }
   // the status border of a bitmap device (the applier paints every other shape itself)
   const liveBorders = new Set<string>();
