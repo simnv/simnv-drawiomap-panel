@@ -4,7 +4,7 @@ import type { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
 import { STATUS_SEVERITY, type StatusView } from '../binding/status';
 import { NO_DATA_TEXT, QUERY_FAILED } from '../binding/statusV4';
-import { statusColor } from '../binding/color';
+import { STALE_MARKER, statusColor } from '../binding/color';
 import type { PatchMap } from '../types';
 
 /** Height of one band row in px. The panel computes the band height from it before it renders. */
@@ -46,7 +46,7 @@ export function bandLayout(count: number, maxRows: number, expanded: boolean, pa
 }
 
 const cells = (n: number) => `${n} cell${n === 1 ? '' : 's'}`;
-const marker = (state: StatusView['state']) => (state === 'missing' || state === 'stale' ? '?' : '!');
+const marker = (state: StatusView['state']) => (state === 'stale' ? STALE_MARKER : state === 'missing' ? '?' : '!');
 
 /** One row of the v4 band (spec 3.4). `text` is the full row text. */
 export interface BandRowV4 {

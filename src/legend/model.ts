@@ -11,7 +11,7 @@ import {
   ThresholdsMode,
   type ValueMapping,
 } from '@grafana/data';
-import { linkStatusPaint, statusColor } from '../binding/color';
+import { linkStatusPaint, STALE_MARKER, statusColor } from '../binding/color';
 import type { HalfState, PatchMap, ShapeState } from '../types';
 
 /** One colour of a scale: a swatch and its threshold or mapping text. */
@@ -21,6 +21,8 @@ export interface LegendEntry {
   color: string;
   /** the cells that show this colour now */
   cellIds: string[];
+  /** A text marker in the entry colour in place of the square swatch (stale: a clock, see `STALE_MARKER`). */
+  marker?: string;
 }
 
 /** A continuous colour scheme: the colours from low to high and the texts at the two ends. */
@@ -481,6 +483,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     label,
     color: statusColor({ state: key }, ctx.theme, ctx.staleColor),
     cellIds: states[key],
+    ...(key === 'stale' ? { marker: STALE_MARKER } : {}),
   }));
   if (entries.length) {
     const cellIds: string[] = [];
@@ -490,9 +493,15 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
   return mergeSame([...out, ...scaleBlocks(links, ctx)]);
 }
 
-/** What a block shows: the text and colour of each entry in order, the gradient with its end texts, and the bar. */
+/**
+ * What a block shows: the text, colour and marker of each entry in order, the gradient with its end texts, and the bar.
+ */
 const contentOf = (block: LegendBlock) =>
-  JSON.stringify([block.entries.map((e) => [e.label, e.color]), block.gradient ?? null, block.bar ?? null]);
+  JSON.stringify([
+    block.entries.map((e) => [e.label, e.color, e.marker ?? null]),
+    block.gradient ?? null,
+    block.bar ?? null,
+  ]);
 
 /**
  * Blocks with the same content (`contentOf`) become one block at the place of the first. Its title is the titles of
