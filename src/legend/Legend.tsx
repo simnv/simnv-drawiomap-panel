@@ -5,7 +5,7 @@ import { Icon, useStyles2 } from '@grafana/ui';
 import type { LegendCorner } from '../types';
 import { BarRow } from './BarRow';
 import { chipSwatch, type LegendBlock, type LegendEntry, plural } from './model';
-import { followBottom, followShift, followTop } from '../util/followViewport';
+import { followBottom, followMaxHeight, followShift, followTop } from '../util/followViewport';
 import { clampPoint, isDrag, keyMove, type Box, type Point } from './position';
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -372,7 +372,14 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
               translate: typeof style?.bottom === 'number' ? followBottom : followTop,
               ...(cornerFit === null
                 ? {}
-                : { maxHeight: cornerFit.maxHeight, ...(cornerFit.top === null ? {} : { top: cornerFit.top }) }),
+                : {
+                    // while the legend follows the view, it is no higher than the visible part of the panel
+                    maxHeight: followMaxHeight(
+                      cornerFit.maxHeight,
+                      typeof style?.bottom === 'number' ? 8 : (cornerFit.top ?? 4) + 4
+                    ),
+                    ...(cornerFit.top === null ? {} : { top: cornerFit.top }),
+                  }),
             }
       }
       aria-label="Colour legend"

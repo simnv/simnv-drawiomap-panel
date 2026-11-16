@@ -3,6 +3,10 @@ import { createTheme } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { Legend } from './Legend';
+
+/** The height limit of a legend at its corner, without the cap of the visible part (`followMaxHeight`). */
+const cornerCap = (legend: HTMLElement) =>
+  /^min\(([\d.]+px)/.exec(legend.style.maxHeight)?.[1] ?? legend.style.maxHeight;
 import type { LegendBlock } from './model';
 
 vi.mock('@grafana/ui', () => ({
@@ -369,24 +373,24 @@ describe('Legend', () => {
       PANEL.h = 100;
       const { legend } = view({ collapsed: true, corner: 'top-left', style: { left: 4, top: 60 } });
       // 100 - 60 offset - 4 gap, and never more than half of the panel
-      expect(legend.style.maxHeight).toBe('36px');
+      expect(cornerCap(legend)).toBe('36px');
       const handle = within(legend).getByRole('button', { name: 'Legend' });
       drag(handle, [300, 260], [250, 200]);
-      expect(legend.style.maxHeight).toBe('');
+      expect(cornerCap(legend)).toBe('');
       fireEvent.doubleClick(handle);
-      expect(legend.style.maxHeight).toBe('36px');
+      expect(cornerCap(legend)).toBe('36px');
       fireEvent.keyDown(handle, { key: 'ArrowLeft' });
       fireEvent.keyDown(handle, { key: 'Home' });
-      expect(legend.style.maxHeight).toBe('36px');
+      expect(cornerCap(legend)).toBe('36px');
     });
 
     it('keeps an 80 px panel: the corner top is clamped so the legend bottom stays inside', () => {
       PANEL.h = 80;
       // a 24 px status band and a 32 px reset button: top 64. The legend gets at least 24 px and moves up to 56.
       const { legend } = view({ collapsed: true, corner: 'top-left', style: { left: 4, top: 64 } });
-      expect(legend.style.maxHeight).toBe('24px');
+      expect(cornerCap(legend)).toBe('24px');
       expect(legend.style.top).toBe('56px');
-      expect(parseFloat(legend.style.top) + parseFloat(legend.style.maxHeight)).toBeLessThanOrEqual(PANEL.h);
+      expect(parseFloat(legend.style.top) + parseFloat(cornerCap(legend))).toBeLessThanOrEqual(PANEL.h);
       const handle = within(legend).getByRole('button', { name: 'Legend' });
       drag(handle, [300, 260], [250, 200]);
       fireEvent.doubleClick(handle);
@@ -395,7 +399,7 @@ describe('Legend', () => {
     it('caps the legend below its usual minimum in a panel shorter than 24 px', () => {
       PANEL.h = 20;
       const { legend } = view({ collapsed: false, corner: 'bottom-right', style: { right: 4, bottom: 4 } });
-      expect(parseFloat(legend.style.maxHeight)).toBeLessThanOrEqual(PANEL.h - 8);
+      expect(parseFloat(cornerCap(legend))).toBeLessThanOrEqual(PANEL.h - 8);
     });
 
     it('keeps the entries highlight working in an open legend that moved', () => {
