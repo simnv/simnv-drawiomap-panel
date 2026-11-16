@@ -545,6 +545,28 @@ describe('DrawioMapPanel hover card', () => {
     expect(card()).toBeNull();
   });
 
+  it('a click and an Esc in the pinned warning list leave a pinned card alone', async () => {
+    const p = props();
+    const config = p.options.config as ConfigV4;
+    // an override of a cell that the diagram does not have: one warning
+    const withWarning = { ...p.options, config: { ...config, overrides: { ...config.overrides, 'pg-node~gone': {} } } };
+    const { half } = await setup(props({ options: withWarning }));
+    fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });
+    expect((await screen.findByRole('dialog')).getAttribute('aria-label')).toBe('ISP A pppoe ↔ rtr-a wan1');
+    fireEvent.click(screen.getByTestId('dmap-warning-badge'));
+    const list = screen.getByTestId('dmap-warning-list');
+    // a press on the list box and a click in it: the card stays, the list stays
+    fireEvent.pointerDown(list);
+    fireEvent.click(list.querySelector('[role="dialog"]')!);
+    fireEvent.scroll(list);
+    expect(card()).not.toBeNull();
+    expect(screen.queryByTestId('dmap-warning-list')).not.toBeNull();
+    // the first Esc closes the list only
+    fireEvent.keyDown(list.querySelector('[role="dialog"]')!, { key: 'Escape' });
+    expect(screen.queryByTestId('dmap-warning-list')).toBeNull();
+    expect(card()).not.toBeNull();
+  });
+
   it('a pinned card ignores hover, Esc closes it', async () => {
     const { half } = await setup();
     fireEvent.click(half(linkId), { clientX: 50, clientY: 40 });
@@ -1326,8 +1348,11 @@ describe('DrawioMapPanel status band', () => {
     expect(badge.textContent).toBe('1 warning');
     fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
     expect(screen.getByTestId('dmap-warning-tooltip').textContent).toBe(
-      `VictoriaMetrics is not reachable (host not found): 1 query fails\n• q: up{site="lab"}\nError: ${down}`
+      'VictoriaMetrics is not reachable (host not found): 1 query failsClick or press Enter for details'
     );
+    fireEvent.click(badge);
+    fireEvent.click(screen.getByTestId('dmap-warning-list').querySelector('button[aria-expanded="false"]')!);
+    expect(screen.getByTestId('dmap-warning-details').textContent).toBe(`• q: up{site="lab"}\nError: ${down}`);
   });
 
   it('shows the most severe causes first, caps the band at 3 rows with "+k more", and expands on a click', async () => {

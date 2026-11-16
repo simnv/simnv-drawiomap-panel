@@ -5,6 +5,7 @@ import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
 import { cardReducer, type CardAction, type CardState } from './cardState';
+import { inPortalControl, PORTAL_CONTROL_ATTR } from '../visuals/ChartHover';
 import { patchAt } from './hit';
 import { NearLinkFinder } from './nearLink';
 
@@ -180,6 +181,11 @@ export function useCardInput(args: InputArgs) {
         if ((e.target as Element | null)?.closest?.('[data-tooltip-open="true"]')) {
           return;
         }
+        // an open warning list closes first (also when a press on its edge left the focus on the page); the next Esc
+        // closes the card
+        if (inPortalControl(e.target) || document.querySelector(`[${PORTAL_CONTROL_ATTR}]`)) {
+          return;
+        }
         e.stopPropagation();
         finish({ type: 'escape' });
       }
@@ -187,7 +193,7 @@ export function useCardInput(args: InputArgs) {
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       // the sheet is in a portal outside the panel
-      if (pinned && !wrapperRef.current?.contains(t) && !cardRef.current?.contains(t)) {
+      if (pinned && !wrapperRef.current?.contains(t) && !cardRef.current?.contains(t) && !inPortalControl(t)) {
         opener.current = null;
         dispatch({ type: 'outside' });
       }
