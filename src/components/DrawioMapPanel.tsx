@@ -2,8 +2,10 @@ import { createPortal } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css } from '@emotion/css';
 import type { Field, PanelProps } from '@grafana/data';
-import { locationService } from '@grafana/runtime';
+import { getDataSourceSrv, locationService } from '@grafana/runtime';
+import type { DataSourceRef } from '@grafana/schema';
 import { useTheme2 } from '@grafana/ui';
+import { CAPACITY_QUERY_FAILED } from '../binding/capacity';
 import { bindContextFor } from '../binding/context';
 import type { BindResultV4 } from '../binding/bindV4';
 import { buildCardV4, opensCard } from '../interact/cardModel';
@@ -22,6 +24,13 @@ import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
 import { useBoundDiagram } from '../stage/useBoundDiagram';
 import { groupReport, reportGroupLine } from '../stage/reportView';
+import {
+  describeQueries,
+  failureLabel,
+  failureText,
+  groupQueryFailures,
+  type FailedQuery,
+} from '../stage/queryFailures';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { legendCorners } from './legendCorners';
@@ -107,6 +116,16 @@ const styles = {
 /** The sheet goes to document.body: position: fixed does not work below a CSS transform (the Grafana grid item). */
 const portalSheet = (card: React.ReactElement, sheet: boolean) =>
   sheet && typeof document !== 'undefined' ? createPortal(card, document.body) : card;
+
+/** The name of a datasource from the datasource service of Grafana; undefined when the service does not know it. */
+function datasourceName(ref: DataSourceRef | string): string | undefined {
+  try {
+    return getDataSourceSrv().getInstanceSettings(ref)?.name;
+  } catch {
+    // no datasource service (a test host)
+    return undefined;
+  }
+}
 
 /** The warning of the saved rules of version 1: the panel does not read them. */
 function legacyRulesWarning(count: number): string {
@@ -250,16 +269,37 @@ function DrawioMapPanelView(props: ViewProps) {
   const shown = useMemo((): BindResultV4 => ({ ...bound, patches }), [bound, patches]);
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
+  const request = data.request;
   const result = useMemo(() => {
-    const warnings = groupReport(
-      bound.report.filter((entry) => entry.kind !== 'unmeasured-link'),
-      validated.parsed.config
-    ).map((row) => reportGroupLine(row, true));
+    // A failed query gives one warning for each datasource and cause, with the failed queries and their expressions,
+    // not one line of the same error for each refId.
+    const failed: FailedQuery[] = [];
+    const others = bound.report.filter((entry) => {
+      if (entry.kind === 'query-unavailable' && entry.state === 'error') {
+        failed.push({ refId: entry.refId, message: entry.message });
+        return false;
+      }
+      return entry.kind !== 'unmeasured-link';
+    });
+    // the capacity of a failed speed query says the same again
+    const rest = failed.length
+      ? others.filter((entry) => !(entry.kind === 'capacity-fallback' && entry.reason === CAPACITY_QUERY_FAILED))
+      : others;
+    const info = describeQueries(request, datasourceName, replaceVariables);
+    const failures = groupQueryFailures(failed, info);
+    const warnings = [
+      ...failures.map(failureText),
+      ...groupReport(rest, validated.parsed.config).map((row) => reportGroupLine(row, true)),
+    ];
     if (legacyRules) {
       warnings.unshift(legacyRulesWarning(legacyRules));
     }
-    return { patches: patches as Map<string, CellPatch>, warnings, bandRows: bandRowsV4(patches) };
-  }, [bound, patches, legacyRules, validated.parsed.config]);
+    const failedLabel = (refId: string) => {
+      const f = failures.find((group) => group.queries.some((q) => q.refId === refId));
+      return f && failureLabel(f);
+    };
+    return { patches: patches as Map<string, CellPatch>, warnings, bandRows: bandRowsV4(patches, failedLabel) };
+  }, [bound, patches, legacyRules, validated.parsed.config, request, replaceVariables]);
 
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);

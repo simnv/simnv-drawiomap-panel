@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { locationService } from '@grafana/runtime';
+import { locationService, setDataSourceSrv } from '@grafana/runtime';
 import {
   createTheme,
   FieldConfig,
@@ -1294,6 +1294,40 @@ describe('DrawioMapPanel status band', () => {
     // the warning badge and the reset button do not cover the band
     expect(parseFloat(screen.getByTestId('dmap-corner').style.top)).toBe(parseFloat(band()!.style.height) + 4);
     expect(screen.getByTestId('dmap-panel').querySelector('svg .dmap-status-summary')).toBeNull();
+  });
+
+  it('names the datasource of a failed query in the band row and gives one warning for it, with each query', async () => {
+    setDataSourceSrv({
+      getInstanceSettings: (ref: { uid?: string }) => (ref.uid === 'vm' ? { name: 'VictoriaMetrics' } : undefined),
+    } as never);
+    onTestFinished(() => setDataSourceSrv(undefined as never));
+    const p = statusPanel(3);
+    const down = 'Post "http://vm:8428/api/v1/query_range": dial tcp: lookup vm: no such host';
+    render(
+      <DrawioMapPanel
+        {...p}
+        data={
+          {
+            ...p.data,
+            series: [],
+            state: LoadingState.Error,
+            errors: [{ refId: 'q', message: down }],
+            request: {
+              targets: [{ refId: 'q', datasource: { uid: 'vm', type: 'prometheus' }, expr: 'up{site="$site"}' }],
+            },
+          } as never
+        }
+        replaceVariables={(t: string) => t.replace('$site', 'lab')}
+      />
+    );
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0].textContent).toBe('?VictoriaMetrics is not reachable · q: 3 cells');
+    const badge = screen.getByTestId('dmap-warning-badge');
+    expect(badge.textContent).toBe('1 warning');
+    fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
+    expect(screen.getByTestId('dmap-warning-tooltip').textContent).toBe(
+      `VictoriaMetrics is not reachable (host not found): 1 query fails\n• q: up{site="lab"}\nError: ${down}`
+    );
   });
 
   it('shows the most severe causes first, caps the band at 3 rows with "+k more", and expands on a click', async () => {

@@ -35,7 +35,7 @@ The overlay attribute `data-dmap-step` is the index of the active threshold step
 
 ### Status band
 
-A band above the diagram has one row for each status cause: the text of the status, the query and the number of cells, for example `Offline · up: 3 cells`. A cell with no value (text `–`) gives its reason in place of the text, for example `No data · up: 26 cells`. Cells with the same severity, text and query share one row. The most severe cause is first (down, critical, warning, stale, missing), then the cause with the most cells. Normal cells do not show in the band.
+A band above the diagram has one row for each status cause: the text of the status, the query and the number of cells, for example `Offline · up: 3 cells`. A cell with no value (text `–`) gives its reason in place of the text, for example `No data · up: 26 cells`. Cells with the same severity, text and query share one row. The most severe cause is first (down, critical, warning, stale, missing), then the cause with the most cells. Normal cells do not show in the band. When a query failed, the row names its datasource and the cause, for example `VictoriaMetrics is not reachable · up: 10 cells`, in place of `Query failed`.
 
 The band has at most **Status summary rows** rows (default 3), and at most half of the panel height. When there are more causes, the last row is `+N more (M elements)` (with one row: `N causes (M elements)`). Click it to show all causes; **Show less** collapses the band again. The band takes its own height above the diagram, so it never covers the diagram. The diagram fits into the remaining height. Set **Status summary rows** to 0 to hide the band. The paint of the cells stays.
 

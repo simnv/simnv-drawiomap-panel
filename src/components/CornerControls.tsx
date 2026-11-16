@@ -67,6 +67,13 @@ const styles = {
   // one warning on each line; a long warning wraps inside the tooltip
   warningLine: css`
     overflow-wrap: anywhere;
+    /* a warning of a failed datasource has one line for each query */
+    white-space: pre-line;
+    & + & {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(127, 127, 127, 0.35);
+    }
   `,
 };
 

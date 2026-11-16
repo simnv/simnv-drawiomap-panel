@@ -3,7 +3,7 @@ import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
 import { STATUS_SEVERITY, type StatusView } from '../binding/status';
-import { NO_DATA_TEXT } from '../binding/statusV4';
+import { NO_DATA_TEXT, QUERY_FAILED } from '../binding/statusV4';
 import { statusColor } from '../binding/color';
 import type { PatchMap } from '../types';
 
@@ -63,9 +63,10 @@ const STALE_TEXT = 'Stale';
  * The rows of the v4 band (spec 3.4): one row for each severity, text and refId of the cells that are not normal.
  * The row text is `<text> · <refId>: <n> cells`. A status with no value text ("–") gives its reason as the text.
  * A stale status gives "Stale", not its last value text, so all stale cells of a refId share one row (A10).
- * The order is worst first, then the most cells first.
+ * The order is worst first, then the most cells first. `failedLabel` names the datasource of a failed query in place
+ * of "Query failed".
  */
-export function bandRowsV4(patches: PatchMap): BandRowV4[] {
+export function bandRowsV4(patches: PatchMap, failedLabel?: (refId: string) => string | undefined): BandRowV4[] {
   const groups = new Map<
     string,
     { label: string; refId: string; severity: StatusView['state']; cellIds: Set<string> }
@@ -75,8 +76,9 @@ export function bandRowsV4(patches: PatchMap): BandRowV4[] {
       continue;
     }
     const { severity } = status;
+    const reason = (status.reason === QUERY_FAILED && failedLabel?.(status.refId)) || status.reason;
     const label =
-      severity === 'stale' ? STALE_TEXT : status.text && status.text !== NO_DATA_TEXT ? status.text : status.reason;
+      severity === 'stale' ? STALE_TEXT : status.text && status.text !== NO_DATA_TEXT ? status.text : reason;
     const { refId } = status;
     const key = JSON.stringify([severity, label, refId]);
     const group = groups.get(key) ?? { label, refId, severity, cellIds: new Set<string>() };

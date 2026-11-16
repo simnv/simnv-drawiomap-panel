@@ -68,6 +68,9 @@ function parseCap(cap: string): { a2b: number; b2a: number } | undefined {
   return { a2b: bits[0]!, b2a: bits[bits.length - 1]! };
 }
 
+/** The capacity-fallback reason of a speed query that failed: the warning of the failed query covers it. */
+export const CAPACITY_QUERY_FAILED = 'query failed';
+
 /**
  * The capacity of a speed refId in bit/s, or the reason why it falls through. The panel uses the speed only when the
  * snapshot is ready and exactly one series gives a finite value above 0 in a data-rate unit (no unit is bit/s). A
@@ -76,7 +79,7 @@ function parseCap(cap: string): { a2b: number; b2a: number } | undefined {
 function speedOf(result: { snapshot: QuerySnapshot; series: Series[] }): { bits: number } | { reason?: string } {
   const { snapshot, series } = result;
   if (snapshot.state === 'error' || snapshot.state === 'unsupported') {
-    return { reason: 'query failed' };
+    return { reason: CAPACITY_QUERY_FAILED };
   }
   if (snapshot.state === 'idle' || snapshot.state === 'loading') {
     return {};
