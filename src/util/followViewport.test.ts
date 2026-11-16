@@ -52,6 +52,7 @@ describe('followShift', () => {
 
 describe('followMaxHeight', () => {
   it('keeps the legend in the visible part while it follows, and is the plain limit else', () => {
-    expect(followMaxHeight(300, 8)).toBe('min(300px, calc(var(--dmap-follow-visible, 308px) - 8px))');
+    expect(followMaxHeight(300, 8)).toBe('min(300px, max(24px, calc(var(--dmap-follow-visible, 308px) - 8px)))');
+    expect(followMaxHeight(12, 8)).toBe('min(12px, max(12px, calc(var(--dmap-follow-visible, 20px) - 8px)))');
   });
 });

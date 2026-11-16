@@ -21,10 +21,10 @@ const MAX_BAR = 0.4;
 
 /**
  * The CSS `max-height` of a legend at its corner: at most `px`, and at most the visible part of the panel less
- * `inset` px while the items follow the view.
+ * `inset` px while the items follow the view, but not less than 24 px (the chip of the legend stays).
  */
 export const followMaxHeight = (px: number, inset: number) =>
-  `min(${px}px, calc(var(${FOLLOW_VISIBLE}, ${px + inset}px) - ${inset}px))`;
+  `min(${px}px, max(${Math.min(px, 24)}px, calc(var(${FOLLOW_VISIBLE}, ${px + inset}px) - ${inset}px)))`;
 
 /**
  * The px that an item in `panel` is moved by now (down > 0): the CSS variable that `useFollowViewport` wrote. The
@@ -205,8 +205,16 @@ export function useFollowViewport(panel: HTMLElement | null, bandHeight: number)
     window.visualViewport?.addEventListener('scroll', schedule);
     // the pointer comes back to the panel: a change that no event reported shows now at the latest
     panel.addEventListener('pointerenter', schedule);
+    // The size of the panel, and of the content of each scrolling ancestor: a row above the panel that opens or
+    // closes moves a tall panel that fills the view, and the observer above sees no change of the visible fraction.
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : undefined;
     ro?.observe(panel);
+    for (const clip of [...clips, document.body]) {
+      const content = clip === document.body ? clip : clip.firstElementChild;
+      if (content) {
+        ro?.observe(content);
+      }
+    }
     return () => {
       if (frame !== undefined) {
         cancelAnimationFrame(frame);
