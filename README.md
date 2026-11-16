@@ -8,7 +8,7 @@ A Grafana panel that shows a draw.io diagram as a network weathermap. Queries co
 
 - Colours each link by traffic, for each direction, with an arrow on each half.
 - Colours and labels a cell from a status query, with the colours and value mappings of the Grafana field config.
-- Opens a hover card with values and sparklines when you point at a cell, or tap it.
+- Opens a hover card with values and sparklines when you point at a cell, or tap it. A pointer near a thin link catches it.
 - Draws charts and bar gauges inside diagram shapes.
 - Opens the real draw.io editor in a modal. View mode loads no draw.io code.
 

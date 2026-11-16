@@ -1,7 +1,7 @@
 import React, { Profiler } from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { locationService } from '@grafana/runtime';
 import {
@@ -17,6 +17,8 @@ import {
   toDataFrame,
 } from '@grafana/data';
 import { DrawioMapPanel } from './DrawioMapPanel';
+import { NEAR_ATTR } from '../interact/useCardState';
+import { clearFakeLayout, fakeLayout } from '../render/layoutTestKit';
 import { currentAddress, requestOpen } from '../editor/popup/popupBus';
 import { writeYaml } from '../options/yamlConfig';
 import { fnv1a } from '../util/hash';
@@ -301,7 +303,8 @@ describe('DrawioMapPanel', () => {
     await waitFor(() => expect(wrapper.getAttribute('data-dmap-warnings')).toBe('1'));
     expect(wrapper.getAttribute('data-dmap-patched')).toBe('0');
     expect(container.querySelector('polyline.dmap-half')).toBeNull();
-    expect(screen.getByTestId('dmap-warning-badge').getAttribute('title')).toMatch(/version 3/);
+    fireEvent.pointerEnter(screen.getByTestId('dmap-warning-badge'), { pointerType: 'mouse' });
+    expect(screen.getByTestId('dmap-warning-tooltip').textContent).toMatch(/version 3/);
   });
 
   it('uses one grouped cause and readable uses in the warning tooltip', async () => {
@@ -313,7 +316,8 @@ describe('DrawioMapPanel', () => {
     });
     render(<DrawioMapPanel {...props({ options: { ...options, config } })} />);
     const badge = await screen.findByTestId('dmap-warning-badge');
-    const lines = badge.getAttribute('title')!.split('\n');
+    fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
+    const lines = Array.from(screen.getByTestId('dmap-warning-tooltip').children).map((line) => line.textContent);
     const causes = lines.filter((line) => line.startsWith('node-up:') && line.includes('no attribute `absent`'));
     expect(causes).toHaveLength(1);
     expect(causes[0]).toMatch(/used by status, rows\[0\] \(state\), url/);
@@ -378,7 +382,8 @@ describe('DrawioMapPanel', () => {
     // the config still binds the links
     expect(container.querySelector('polyline.dmap-half')).not.toBeNull();
     const badge = screen.getByTestId('dmap-warning-badge');
-    expect(badge.getAttribute('title')!.split('\n')[0]).toBe(
+    fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
+    expect(screen.getByTestId('dmap-warning-tooltip').firstElementChild?.textContent).toBe(
       'The panel ignores 2 rules of version 1. Write the bindings again as a version 4 config.'
     );
   });
@@ -1332,7 +1337,7 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       <g data-cell-id="pg-groupTitle~core"${bind('pg-groupTitle~core')}><text id="grp-title">CORE</text></g>
       <g data-cell-id="pg-node~a" data-meta-pg-kind="node" data-meta-pg-id="a" data-meta-role="router"${bind('pg-node~a')}><rect id="na" x="10" y="10" width="40" height="30"/><text>A</text></g>
       <g data-cell-id="pg-node~b" data-meta-pg-kind="node" data-meta-pg-id="b"${bind('pg-node~b')}><rect id="nb" x="100" y="10" width="40" height="30"/><text>B</text></g>
-      <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"${bind('pg-link~a-b')}><path id="lab" d="M50 25 L100 25" fill="none" stroke="#888"/></g>
+      <g data-cell-id="pg-link~a-b" data-meta-pg-kind="link" data-meta-pg-id="a-b" data-meta-pg-from="a" data-meta-pg-to="b"${bind('pg-link~a-b')}><path id="lab" d="M50 25 L100 25" fill="none" stroke="#888" pointer-events="stroke"/></g>
       <g data-cell-id="pg-legend"${bind('pg-legend')}><rect id="leg" x="10" y="150" width="60" height="30"/></g>
       <g data-cell-id="chart-1" data-meta-pg-kind="other"${bind('chart-1')}><rect id="chart" x="220" y="150" width="60" height="30"/></g>
       <g data-cell-id="pg-icon~a" data-meta-pg-kind="node-icon" data-meta-pg-of="a"><ellipse id="icon-a" cx="20" cy="20" rx="5" ry="5"/></g>
@@ -1404,6 +1409,52 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       fireEvent.click(await at(id));
       expect(screen.queryByRole('dialog')).toBeNull();
     }
+  });
+
+  describe('a thin link near the pointer', () => {
+    // the link runs from (50, 25) to (100, 25); root units are client px
+    beforeEach(() => {
+      fakeLayout(() => undefined);
+    });
+    afterEach(() => clearFakeLayout());
+    const near = async (id: string, clientX: number, clientY: number) =>
+      fireEvent.pointerMove(await at(id), { pointerType: 'mouse', clientX, clientY });
+    const tooltip = async () => (await screen.findByRole('tooltip')).getAttribute('aria-label');
+
+    it('a hover 6 px off the link opens its card and shows the hand cursor', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(true);
+      // 9 px off is outside the 8 px of a mouse: the card closes and the cursor is the plain one again
+      await near('bg', 75, 34);
+      await waitFor(() => expect(screen.queryByTestId('dmap-card')).toBeNull());
+      expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(false);
+    });
+
+    it('a node under the pointer wins over a link inside the radius', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      // (48, 28) is inside node A and 2 px from the link
+      await near('na', 48, 28);
+      expect(await tooltip()).toBe('A');
+      expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(false);
+    });
+
+    it('a tap 14 px off the link pins its card; a mouse click as far off does not', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 39 });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      fireEvent.pointerDown(await at('bg'), { pointerType: 'touch', clientX: 75, clientY: 39 });
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 39 });
+      expect((await screen.findByRole('dialog')).getAttribute('aria-label')).toBe('A ↔ B');
+    });
+
+    it('a link outside the hover kinds is not caught', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL.filter((id) => id !== 'pg-link~a-b'))} />);
+      await near('bg', 75, 28);
+      expect(screen.queryByTestId('dmap-card')).toBeNull();
+      expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(false);
+    });
   });
 
   it('the icon and the link label open the card of their node and link, not a card of their own', async () => {

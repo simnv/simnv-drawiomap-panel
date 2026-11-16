@@ -214,3 +214,49 @@ test('in panel edit the edit-bindings button joins the reset button and the badg
     await request.delete(`/api/dashboards/uid/${uid}`);
   }
 });
+
+test('the warning badge shows every warning at once on a pointer enter, with no native title', async ({
+  page,
+  request,
+  gotoDashboardPage,
+}, testInfo) => {
+  const uid = await cornerDashboard(request, `rcw-${testInfo.workerIndex}-${Date.now()}`, '', ['bottom-right']);
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoDashboardPage({ uid });
+    const badge = page.getByTestId('dmap-panel').first().getByTestId('dmap-warning-badge');
+    await expect(badge).toBeVisible();
+    await expect(badge).not.toHaveAttribute('title', /.*/);
+    const count = Number((await badge.innerText()).match(/^(\d+) warning/)![1]);
+    const b = await box(badge);
+    await page.mouse.move(b.x - 20, b.y - 20);
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    // The first frame after the pointer entered: the tooltip is there and holds every warning on its own line. The
+    // box places and shows itself from its ResizeObserver, which runs after the frame callbacks and before the paint:
+    // a task queued in the frame callback reads what that frame painted.
+    const shown = await page.evaluate(
+      () =>
+        new Promise<{ visible: boolean; lines: string[] }>((resolve) =>
+          requestAnimationFrame(() =>
+            setTimeout(() => {
+              const tip = document.querySelector<HTMLElement>('[data-testid="dmap-warning-tooltip"]');
+              const r = tip?.getBoundingClientRect();
+              resolve({
+                visible: !!tip && !!r && r.width > 0 && r.height > 0 && getComputedStyle(tip).visibility !== 'hidden',
+                lines: tip ? Array.from(tip.children).map((line) => line.textContent ?? '') : [],
+              });
+            })
+          )
+        )
+    );
+    expect(shown.visible, 'tooltip visible in the first frame').toBe(true);
+    expect(shown.lines).toHaveLength(count);
+    for (const line of shown.lines) {
+      expect(line.trim()).not.toBe('');
+    }
+    await page.mouse.move(b.x - 20, b.y - 20);
+    await expect(page.getByTestId('dmap-warning-tooltip')).toHaveCount(0);
+  } finally {
+    await request.delete(`/api/dashboards/uid/${uid}`);
+  }
+});

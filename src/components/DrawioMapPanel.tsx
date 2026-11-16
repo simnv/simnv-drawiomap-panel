@@ -10,7 +10,8 @@ import { buildCardV4, opensCard } from '../interact/cardModel';
 import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
-import { useCardInput, useCardState } from '../interact/useCardState';
+import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
+import { NEAR_CLASS, NEAR_MARK_CLASS } from '../render/overlay';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
@@ -75,8 +76,16 @@ const styles = {
     & [data-cell-id][role='button']:not([${INTERACTIVE_ATTR}]) {
       cursor: inherit;
     }
-    & [${INTERACTIVE_ATTR}] {
+    & [${INTERACTIVE_ATTR}],
+    &[${NEAR_ATTR}] {
       cursor: pointer;
+    }
+    /* A link caught near the pointer (not under it) shows its mark: one class on its overlay layer. */
+    & .${NEAR_MARK_CLASS} {
+      display: none;
+    }
+    & .${NEAR_CLASS} > .${NEAR_MARK_CLASS} {
+      display: inline;
     }
     /* A legend entry under the pointer: the other cells of the legend dim. */
     & .${LEGEND_MEMBER} {
@@ -419,6 +428,7 @@ function DrawioMapPanelView(props: ViewProps) {
     wrapperRef,
     wrapperEl,
     stageRef: containerRef,
+    root: stage.root,
     patches: result.patches,
     index: stage.index,
     cardable,
