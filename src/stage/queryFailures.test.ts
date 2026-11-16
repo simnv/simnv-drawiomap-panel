@@ -90,6 +90,10 @@ describe('failureCause', () => {
     ['pq: column "id" does not exist: SELECT * FROM t WHERE id = 401 LIMIT 500', 'cannot run the query'],
     ['request failed, status code: 502', 'has a server error (502)'],
     ['Invalid API key', 'refuses the access (401, check the credentials)'],
+    [
+      'error when executing query="vector(" on the time range: singleExpr: unexpected token ""; unparsed data: ""',
+      'rejects the query (check the query text)',
+    ],
     ['SyntaxError: JSON parse error: Unexpected token < in JSON at position 0', 'cannot run the query'],
     ['something else', 'cannot run the query'],
   ])('%s', (message, cause) => {

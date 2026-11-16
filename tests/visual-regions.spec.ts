@@ -444,7 +444,8 @@ for (const theme of ['light', 'dark'] as const) {
                 : state === 'missing'
                   ? 'No data'
                   : state === 'error'
-                    ? 'Query failed'
+                    ? // a failed query names its datasource and the cause (the query text does not parse)
+                      'VictoriaMetrics rejects the query'
                     : state === 'stale'
                       ? 'Stale'
                       : 'Healthy';

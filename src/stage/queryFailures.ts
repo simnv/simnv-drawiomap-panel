@@ -84,7 +84,8 @@ function httpStatus(m: string): number | undefined {
 export function failureCause(message: string): string {
   const m = message.toLowerCase().trim();
   // the datasource answered: the query text or its cost is the cause
-  if (/parse error|syntax error|bad_data/.test(m) && !/json/.test(m)) {
+  // a JSON parse error is a page that is not the datasource (a proxy error page), not a query text error
+  if (/parse error|syntax error|bad_data|unexpected token|unparsed data|cannot parse/.test(m) && !/json/.test(m)) {
     return 'rejects the query (check the query text)';
   }
   if (/query timed out|query processing would load too many|too many samples|query is too expensive/.test(m)) {
