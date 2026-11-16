@@ -40,12 +40,15 @@ test('stale cells get a Stale band row and the Stale legend entry, never their l
   await expect(rows).toHaveCount(1);
   await expect(rows).toHaveAttribute('title', `Stale · health: ${COUNT} cells`);
   await expect(rows).toHaveAttribute('data-dmap-state', 'stale');
+  // a clock marks stale; no data has ?
+  await expect(rows).toHaveText(`◷Stale · health: ${COUNT} cells`);
   const legend = panel.getByTestId('dmap-legend');
   const handle = legend.getByRole('button', { name: 'Legend' });
   await handle.click();
   await expect(handle).toHaveAttribute('aria-expanded', 'true');
   const state = legend.getByRole('group', { name: 'State', exact: true });
-  await expect(state.getByTestId('dmap-legend-entry')).toHaveText(['Stale']);
+  await expect(state.getByTestId('dmap-legend-entry')).toHaveText(['◷Stale']);
+  await expect(state.locator('[data-dmap-marker]')).toHaveCount(1);
   // no value block counts a stale cell
   await expect(legend.getByRole('group')).toHaveCount(1);
   const screenshot = testInfo.outputPath('band-stale.png');

@@ -453,3 +453,39 @@ test('a link too short for a spot beside its stroke keeps both labels beside the
     await panel.screenshot({ path: `${SHOTS}/link-labels-short-link.png` });
   }
 });
+
+test('a pointer on a value label keeps the glow of its link', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+  page,
+}) => {
+  const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
+  const text = label(panel, ISP_A, 'a2b');
+  const box = (await text.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
+  await expect(panel.getByRole('tooltip')).toBeVisible();
+  const glow = panel.locator(`[data-cell-id="${ISP_A}"] g.dmap-overlay.dmap-near`);
+  await expect(glow).toHaveCount(1);
+  await expect(glow.locator('.dmap-near-mark').first()).toHaveCSS('display', 'inline');
+  await expect(panel.locator('g.dmap-overlay.dmap-near')).toHaveCount(1);
+  if (SHOTS) {
+    await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });
+    await page.screenshot({
+      path: `${SHOTS}/link-glow-label.png`,
+      clip: { x: Math.max(0, box.x - 160), y: Math.max(0, box.y - 100), width: 320, height: 200 },
+    });
+    // the light theme: the glow is the primary blue
+    await page.goto(`${page.url()}${page.url().includes('?') ? '&' : '?'}theme=light`);
+    const lightText = label(panel, ISP_A, 'a2b');
+    await expect(lightText).toHaveAttribute('data-dmap-placed-at', /\d+/);
+    const light = (await lightText.boundingBox())!;
+    await page.mouse.move(light.x + light.width / 2, light.y + light.height / 2, { steps: 3 });
+    await expect(glow).toHaveCount(1);
+    await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });
+    await page.screenshot({
+      path: `${SHOTS}/link-glow-label-light.png`,
+      clip: { x: Math.max(0, box.x - 160), y: Math.max(0, box.y - 100), width: 320, height: 200 },
+    });
+  }
+});
