@@ -14,6 +14,17 @@ The canvas shows only colours. The values show in a card:
 
 ![Pinned card](images/card-pinned.png)
 
+## Thin links
+
+A thin link is 1 or 2 px wide on the screen, so the pointer does not have to be exactly on it. When no cell that opens a card is under the pointer, the panel takes the nearest link in a radius around the pointer:
+
+- Mouse or pen: 8 px. Finger (tap): 16 px. The radius is in screen px, so it is the same at every zoom.
+- Two parallel links: the closer link wins. The line half way between them is the border.
+- A node, a link label or any other cell that opens a card under the pointer wins over a near link.
+- Only a link of the **Hover kinds** is caught (see [Which cells open a card](#which-cells-open-a-card)).
+
+A link caught by distance shows a soft underlay, about 1.5 px wider on each side of its stroke, and the hand cursor. The underlay goes away when the pointer moves away or onto a cell.
+
 **Chart tooltip.** In a pinned card, move the pointer over a chart. The standard Grafana tooltip opens.
 
 - Crosshair: it follows the pointer. The tooltip shows the time of the nearest sample.

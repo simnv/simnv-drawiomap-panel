@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.0
+
+- Added the near-link catch: a thin link is easy to hover and tap. When no cell that opens a card is under the pointer, the panel takes the nearest link within 8 screen px for a mouse or a pen, and 16 px for a finger. The radius is the same at every zoom. Of two parallel links, the closer one wins. A node, a link label or any other cell under the pointer still wins. Only a link of the **Hover kinds** is caught. A link caught by distance shows a soft wider underlay and the hand cursor. The check runs at most once per frame and nothing runs while the pointer is still. See [Hover card](docs/guide/hover-card.md#thin-links).
+- The warnings badge shows its tooltip at once on a pointer enter, a focus or a tap (one warning on each line), not after the delay of the browser title. Esc closes it.
+
 ## 1.6.0
 
 Config version 4 does not change. A diagram that binds today binds the same series, the same halves and the same URLs after this update. The new inference only gives a value for a name that has no value today.

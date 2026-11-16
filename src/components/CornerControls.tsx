@@ -1,6 +1,9 @@
 import React, { forwardRef, useLayoutEffect, useRef } from 'react';
 import { css } from '@emotion/css';
-import { Button, IconButton, useTheme2 } from '@grafana/ui';
+import { Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
+import { SandboxPortal } from '../util/sandboxHost';
+import { TooltipBox } from '../visuals/ChartHover';
+import { getTipStyles, useAnchoredTip } from './anchoredTip';
 
 /** Heights in px of the items in the top-left row. */
 const RESET_SIZE = 32;
@@ -55,6 +58,15 @@ const styles = {
     padding: 1px 6px;
     border-radius: 3px;
     z-index: 1;
+    cursor: default;
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 1px;
+    }
+  `,
+  // one warning on each line; a long warning wraps inside the tooltip
+  warningLine: css`
+    overflow-wrap: anywhere;
   `,
 };
 
@@ -79,6 +91,9 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
   ref
 ) {
   const theme = useTheme2();
+  const tipStyles = useStyles2(getTipStyles);
+  const badgeRef = useRef<HTMLDivElement>(null);
+  const { id: tipId, tip, props: tipProps } = useAnchoredTip(badgeRef);
   const showRow = !!(zoomed || warnings.length || editing);
   const rowRef = useRef<HTMLDivElement>(null);
   // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
@@ -124,10 +139,11 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
           ) : null}
           {warnings.length ? (
             <div
+              ref={badgeRef}
               className={styles.badge}
               style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
-              title={warnings.join('\n')}
               data-testid="dmap-warning-badge"
+              {...tipProps}
             >
               {warnings.length} warning{warnings.length > 1 ? 's' : ''}
             </div>
@@ -148,6 +164,25 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             </Button>
           ) : null}
         </div>
+      ) : null}
+      {tip && warnings.length ? (
+        <SandboxPortal>
+          <TooltipBox
+            x={tip.x}
+            y={tip.y}
+            anchorHeight={tip.height}
+            live={false}
+            className={tipStyles.tip}
+            id={tipId}
+            testId="dmap-warning-tooltip"
+          >
+            {warnings.map((warning, i) => (
+              <div key={i} className={styles.warningLine}>
+                {warning}
+              </div>
+            ))}
+          </TooltipBox>
+        </SandboxPortal>
       ) : null}
     </div>
   );

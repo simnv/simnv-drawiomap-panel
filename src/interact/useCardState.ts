@@ -1,9 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { LEGEND_ROW_ATTR } from '../legend/symbolRows';
+import { markNearLink } from '../render/overlay';
 import { paintedClientBox } from '../render/paintedBox';
+import { LAYOUT_EVENT } from '../stage/useStageLayout';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
 import { cardReducer, type CardAction, type CardState } from './cardState';
 import { patchAt } from './hit';
+import { NearLinkFinder } from './nearLink';
+
+/** The attribute of the stage while the pointer is near a link (not on it): the panel CSS shows the hand cursor. */
+export const NEAR_ATTR = 'data-dmap-near';
 
 /** Touch screens and other devices without hover: only a tap opens (and pins) the card. */
 const canHover = () => !(typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
@@ -28,6 +34,8 @@ interface InputArgs extends ReturnType<typeof useCardState> {
   /** The same element as wrapperRef, as state: the pointerleave listener follows it. */
   wrapperEl: HTMLDivElement | null;
   stageRef: RefObject<HTMLDivElement | null>;
+  /** The svg root of the stage: the near-link finder reads its links. */
+  root: SVGSVGElement | undefined;
   patches: PatchMap;
   index: CellIndex;
   /** The patch opens a card. */
@@ -39,8 +47,71 @@ interface InputArgs extends ReturnType<typeof useCardState> {
 
 /** The events of the card: hover, click, tap and Enter open it; Esc, a click outside and leaving the panel close it. */
 export function useCardInput(args: InputArgs) {
-  const { card, dispatch, cardRef, inCard, open, wrapperRef, wrapperEl, stageRef, patches, index, cardable } = args;
+  const { card, dispatch, cardRef, inCard, open, wrapperRef, wrapperEl, stageRef, root, patches, index, cardable } =
+    args;
   const pinned = !!card?.pinned && open;
+
+  // A thin link is hard to hit: a pointer near it (in screen px) catches it when nothing that opens a card is under
+  // the pointer. The finder caches the segments and the screen transform; the events below make it read them again.
+  const [finder] = useState(() => new NearLinkFinder());
+  const near = useRef<string | undefined>(undefined);
+  const setNear = useCallback(
+    (id: string | undefined) => {
+      if (near.current === id) {
+        return;
+      }
+      near.current = id;
+      if (root) {
+        markNearLink(root, id);
+      }
+      stageRef.current?.toggleAttribute(NEAR_ATTR, !!id);
+    },
+    [root, stageRef]
+  );
+  const frame = useRef<number | undefined>(undefined);
+  const stopFrame = useCallback(() => {
+    if (frame.current !== undefined) {
+      cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+    }
+  }, []);
+  useEffect(() => {
+    if (!root) {
+      return;
+    }
+    const invalidate = () => finder.invalidate();
+    // the stage layout (a zoom, a pan, a new size) and any scroll (the stage or the page) move the screen transform
+    root.addEventListener(LAYOUT_EVENT, invalidate);
+    document.addEventListener('scroll', invalidate, true);
+    window.addEventListener('resize', invalidate);
+    return () => {
+      root.removeEventListener(LAYOUT_EVENT, invalidate);
+      document.removeEventListener('scroll', invalidate, true);
+      window.removeEventListener('resize', invalidate);
+      finder.invalidate();
+    };
+  }, [root, finder]);
+  useEffect(() => () => stopFrame(), [stopFrame]);
+  // A pinned card takes the mark away: the pointer does not hover while it stays.
+  useEffect(() => {
+    if (pinned) {
+      stopFrame();
+      setNear(undefined);
+    }
+  }, [pinned, stopFrame, setNear]);
+  /** The patch of the link near the client point that opens a card. */
+  const nearPatch = (x: number, y: number, pointerType: string) => {
+    if (!root) {
+      return undefined;
+    }
+    const id = finder.find(root, index, x, y, pointerType, (cellId) => {
+      const p = patches.get(cellId);
+      return !!p && cardable(p);
+    });
+    return id === undefined ? undefined : patches.get(id);
+  };
+  // the pointer type of the last pointer down: a click event of an older engine has none
+  const downType = useRef('mouse');
 
   // A card opened from the keyboard gives the focus back to its cell when it closes.
   const opener = useRef<Element | null>(null);
@@ -64,10 +135,25 @@ export function useCardInput(args: InputArgs) {
     if (!wrapperEl) {
       return;
     }
-    const onLeave = () => dispatch({ type: 'leave' });
+    const onLeave = () => {
+      stopFrame();
+      setNear(undefined);
+      dispatch({ type: 'leave' });
+    };
+    // the dashboard can move the panel while the pointer is outside it
+    const onEnter = () => finder.invalidate();
+    const onDown = (e: PointerEvent) => {
+      downType.current = e.pointerType || 'mouse';
+    };
     wrapperEl.addEventListener('pointerleave', onLeave);
-    return () => wrapperEl.removeEventListener('pointerleave', onLeave);
-  }, [wrapperEl, dispatch]);
+    wrapperEl.addEventListener('pointerenter', onEnter);
+    wrapperEl.addEventListener('pointerdown', onDown, true);
+    return () => {
+      wrapperEl.removeEventListener('pointerleave', onLeave);
+      wrapperEl.removeEventListener('pointerenter', onEnter);
+      wrapperEl.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [wrapperEl, dispatch, finder, stopFrame, setNear]);
 
   // Esc closes the card. A pointer down outside the panel closes a pinned card.
   useEffect(() => {
@@ -101,7 +187,7 @@ export function useCardInput(args: InputArgs) {
     };
   }, [open, pinned, finish, dispatch, wrapperRef, cardRef]);
 
-  const local = (e: React.MouseEvent) => {
+  const local = (e: { clientX: number; clientY: number }) => {
     const r = wrapperRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
@@ -120,8 +206,13 @@ export function useCardInput(args: InputArgs) {
     ) {
       return;
     }
-    const patch = patchAt(e.target, stageEl, patches, index, cardable);
+    const pointerType = (e.nativeEvent as Partial<PointerEvent>).pointerType || downType.current;
+    const patch =
+      patchAt(e.target, stageEl, patches, index, cardable) ??
+      (stageEl.contains(e.target as Node) ? nearPatch(e.clientX, e.clientY, pointerType) : undefined);
     opener.current = null;
+    stopFrame();
+    setNear(undefined);
     dispatch({ type: 'pin', at: patch ? { cellId: patch.cellId, ...local(e) } : null });
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -143,14 +234,7 @@ export function useCardInput(args: InputArgs) {
   };
   const moveRef = useRef<(() => void) | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
-  const onPointerMove = (e: React.PointerEvent) => {
-    // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
-    const stageEl = stageRef.current;
-    if (e.pointerType === 'touch' || !canHover() || pinned || args.panZoom.busy() || !stageEl) {
-      return;
-    }
-    pointerRef.current = { x: e.clientX, y: e.clientY };
-    const patch = patchAt(e.target, stageEl, patches, index, cardable);
+  const hover = (patch: CellPatch | undefined, at: { clientX: number; clientY: number }) => {
     if (patch && card?.cellId === patch.cellId) {
       // the same cell: only the card moves, with no render
       moveRef.current?.();
@@ -159,7 +243,54 @@ export function useCardInput(args: InputArgs) {
     if (!patch && !card) {
       return;
     }
-    dispatch({ type: 'hover', at: patch ? { cellId: patch.cellId, ...local(e) } : null });
+    dispatch({ type: 'hover', at: patch ? { cellId: patch.cellId, ...local(at) } : null });
+  };
+  // The near-link check runs at most once per frame. The first move runs it at once; the moves after it in the same
+  // frame keep only their last position, and the next frame checks that one. A frame with no move ends the chain, so
+  // nothing runs while the pointer is still. The frame reads the handler of the last render (the card of now).
+  const pending = useRef<{ clientX: number; clientY: number; pointerType: string } | null>(null);
+  const runNear = () => {
+    const at = pending.current;
+    pending.current = null;
+    if (!at || pinned || args.panZoom.busy()) {
+      return;
+    }
+    const patch = nearPatch(at.clientX, at.clientY, at.pointerType);
+    setNear(patch?.cellId);
+    hover(patch, at);
+  };
+  const nearFrame = useRef(runNear);
+  useLayoutEffect(() => {
+    nearFrame.current = runNear;
+  });
+  const tick = () => {
+    frame.current = undefined;
+    if (pending.current) {
+      nearFrame.current();
+      frame.current = requestAnimationFrame(tick);
+    }
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
+    const stageEl = stageRef.current;
+    if (e.pointerType === 'touch' || !canHover() || pinned || args.panZoom.busy() || !stageEl) {
+      return;
+    }
+    pointerRef.current = { x: e.clientX, y: e.clientY };
+    const patch = patchAt(e.target, stageEl, patches, index, cardable);
+    // A direct hit wins. Off the stage (the card, a chart, the corner, the legend) no link is near.
+    if (patch || !stageEl.contains(e.target as Node)) {
+      stopFrame();
+      pending.current = null;
+      setNear(undefined);
+      hover(patch, e);
+      return;
+    }
+    pending.current = { clientX: e.clientX, clientY: e.clientY, pointerType: e.pointerType };
+    if (frame.current === undefined) {
+      runNear();
+      frame.current = requestAnimationFrame(tick);
+    }
   };
 
   return { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef };

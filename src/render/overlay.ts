@@ -166,6 +166,8 @@ interface HalfDrawn {
   width: number;
   place: HalfPlace;
   points: Map<number, HalfPointsAttr>;
+  /** The near-link mark of the half: made at the first mark (`markNearLink`), then kept. */
+  mark?: SVGPolylineElement;
 }
 /** The overlay of one link: its layer, the set of halves it was built for, and the elements of each half. */
 interface LinkDrawn {
@@ -186,6 +188,8 @@ interface OverlayState {
   minWidth: number;
   links: Map<string, LinkDrawn>;
   borders: Map<string, BorderDrawn>;
+  /** The link that has the near-link mark. */
+  near?: string;
 }
 
 export const STATUS_BORDER_CLASS = 'dmap-status-border';
@@ -431,6 +435,10 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   drawn.line.setAttribute('stroke', state.color);
   drawn.line.setAttribute('stroke-width', String(width));
   drawn.arrow?.setAttribute('fill', state.color);
+  if (drawn.mark) {
+    drawn.mark.setAttribute('stroke', state.color);
+    drawn.mark.setAttribute('stroke-width', fmt(width + NEAR_MARK_EXTRA));
+  }
   if (drawn.width !== width) {
     drawn.width = width;
     const pts = pointsFor(drawn.points, drawn.place, width);
@@ -504,6 +512,56 @@ export function overlayHalves(root: SVGSVGElement, cellId: string): SVGPolylineE
   return drawn ? [drawn.a2b?.line, drawn.b2a?.line].filter((line): line is SVGPolylineElement => !!line) : [];
 }
 
+/** The class of a link layer whose link the pointer is near (not on): the panel CSS shows its marks. */
+export const NEAR_CLASS = 'dmap-near';
+export const NEAR_MARK_CLASS = 'dmap-near-mark';
+/** The mark is this much wider than its half: about 1.5 units on each side. */
+const NEAR_MARK_EXTRA = 3;
+
+/** Makes the marks of the halves (once) and puts the near class on the layer. */
+function showNearMark(drawn: LinkDrawn): void {
+  for (const half of [drawn.a2b, drawn.b2a]) {
+    if (half && !half.mark) {
+      const { geo, from, to } = half.place;
+      // an underlay: the first child of the layer, below both halves and their heads
+      half.mark = drawn.layer.insertBefore(
+        el('polyline', {
+          class: NEAR_MARK_CLASS,
+          points: pointsAttr(geo.polyline(from, to)),
+          fill: 'none',
+          stroke: half.line.getAttribute('stroke') ?? 'currentColor',
+          'stroke-width': fmt(half.width + NEAR_MARK_EXTRA),
+          'stroke-opacity': 0.45,
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          'pointer-events': 'none',
+        }),
+        drawn.layer.firstChild
+      );
+    }
+  }
+  drawn.layer.classList.add(NEAR_CLASS);
+}
+
+/**
+ * Gives the link `cellId` the near-link mark and takes it from the link that had it. Undefined takes the mark away.
+ * Only the class of one layer changes; the marks stay in the layer, hidden by the panel CSS.
+ */
+export function markNearLink(root: SVGSVGElement, cellId: string | undefined): void {
+  const state = states.get(root);
+  if (!state || state.near === cellId) {
+    return;
+  }
+  if (state.near) {
+    state.links.get(state.near)?.layer.classList.remove(NEAR_CLASS);
+  }
+  state.near = cellId;
+  const drawn = cellId ? state.links.get(cellId) : undefined;
+  if (drawn) {
+    showNearMark(drawn);
+  }
+}
+
 /** The half presence and arrow style that both overlay and label geometry depend on. */
 export const linkGeometryKey = (link: CellPatch['link']) =>
   `${link?.a2b ? 'a' : ''}${link?.b2a ? 'b' : ''}:${link?.arrow ?? 'point'}`;
@@ -553,6 +611,11 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
       drawn.layer.remove();
       state.links.delete(id);
     }
+  }
+  // a layer made again keeps the near-link mark of its link
+  const near = state.near ? state.links.get(state.near) : undefined;
+  if (near) {
+    showNearMark(near);
   }
   // the status border of a bitmap device (the applier paints every other shape itself)
   const liveBorders = new Set<string>();

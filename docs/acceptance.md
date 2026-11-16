@@ -257,3 +257,11 @@ The merge changes only the error path of the bind (the `detail` of a matcher pro
 6.19 MB against 6.18 to 6.20 MB for the baseline (three processes, 60 binds each).
 Five earlier attempts after the merge are not valid and are not in the table: the Mac was in sleep on battery and ran
 the processes only in short wake windows.
+
+## Near-link catch: bench
+
+2026-11-16, Apple M5 Pro, Node 26.13.0, Vitest 5.1.0. `src/interact/nearLink.bench.test.ts` runs in the normal test suite and in CI, with the same budget scale as the other benches (6 times in CI).
+
+1,000 pointer moves on a diagram of the size of the largest live L2 sheet (13 links, 44 segments) at a 0.7 zoom. Budget: 0.05 ms for each move. Result: 0.91 µs for each move. The screen transform is read once, before the first move, and not again during the 1,000 moves (the test asserts it).
+
+Command: `npx vitest run src/interact/nearLink.bench.test.ts --maxWorkers=1 --silent=false`.
