@@ -8,6 +8,7 @@ import { SandboxPortal } from '../util/sandboxHost';
 import { TooltipBox } from '../visuals/ChartHover';
 import { lastDataText, lastDataTooltip, zoneName } from './lastData';
 import { getTipStyles, useAnchoredTip } from './anchoredTip';
+import { followBottom } from '../util/followViewport';
 import { stampCorner } from './legendCorners';
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -111,7 +112,8 @@ export const LastDataStamp = forwardRef<HTMLElement, Props>(function LastDataSta
       <time
         ref={setRef}
         className={styles.stamp}
-        style={style}
+        // the timestamp stays in the visible part of a panel whose bottom is out of view
+        style={{ ...style, translate: followBottom }}
         dateTime={new Date(time).toISOString()}
         aria-label={`Last data timestamp: ${text} (${zoneName(timeZone)})`}
         data-testid="dmap-last-data"

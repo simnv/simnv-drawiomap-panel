@@ -90,7 +90,7 @@ You can move the legend, closed or open, to any place in the panel:
 
 The legend never leaves the panel, also when you make the panel smaller. The **Corner** option sets the place where it starts. The four buttons of the option show the four corners. The place and the open or closed state are not saved: a reload shows the legend again as the options say.
 
-The legend stays in its place when you zoom, pan or scroll the diagram. In the top-left corner, it starts below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it starts below the area of the Grafana panel menu button. It catches the pointer only inside its own box. It is above the diagram and below the hover cards.
+The legend stays in its place when you zoom, pan or scroll the diagram. When the page shows only a part of the panel (a panel taller than the browser window, or a panel scrolled partly out of view), a legend at a bottom corner and the last data timestamp move up to the bottom of the visible part. A legend at a top corner, the warning badge and the **Reset zoom** button move down to the top of the visible part, below the Grafana header and the dashboard controls. A legend that you dragged stays where you put it. In the top-left corner, it starts below the **Reset zoom** button and the warning badge, and below the status band. In the top-right corner, it starts below the area of the Grafana panel menu button. It catches the pointer only inside its own box. It is above the diagram and below the hover cards.
 
 The options are in the **Legend** group:
 

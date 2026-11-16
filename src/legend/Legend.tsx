@@ -5,6 +5,7 @@ import { Icon, useStyles2 } from '@grafana/ui';
 import type { LegendCorner } from '../types';
 import { BarRow } from './BarRow';
 import { chipSwatch, type LegendBlock, type LegendEntry, plural } from './model';
+import { followBottom, followShift, followTop } from '../util/followViewport';
 import { clampPoint, isDrag, keyMove, type Box, type Point } from './position';
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -199,7 +200,10 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
       const height = Math.min(Math.max(m.box.height, rootRef.current?.scrollHeight ?? 0), maxHeight);
       const fitTop = top === null ? null : Math.max(0, Math.min(top, m.area.height - height));
       setCornerFit((c) => (c?.maxHeight === maxHeight && c.top === fitTop ? c : { maxHeight, top: fitTop }));
-      onCornerBox?.({ ...m.origin, ...m.box });
+      // the layout place, without the translate that follows the scroll: the timestamp moves by the same translate
+      const parent = rootRef.current?.parentElement;
+      const shift = parent ? followShift(parent, typeof style?.bottom === 'number') : 0;
+      onCornerBox?.({ ...m.origin, y: m.origin.y - shift, ...m.box });
       return;
     }
     setCornerFit(null);
@@ -207,7 +211,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
     if (c.x !== p.x || c.y !== p.y) {
       setPos(c);
     }
-  }, [measure, style?.top, onCornerBox]);
+  }, [measure, style?.top, style?.bottom, onCornerBox]);
   // A new corner moves the legend with no change of its size: measure again, so the corner box is new too.
   useLayoutEffect(() => {
     reclamp();
@@ -364,6 +368,8 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
           ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
           : {
               ...style,
+              // at its corner the legend stays in the visible part of the panel; a moved legend stays where it was put
+              translate: typeof style?.bottom === 'number' ? followBottom : followTop,
               ...(cornerFit === null
                 ? {}
                 : { maxHeight: cornerFit.maxHeight, ...(cornerFit.top === null ? {} : { top: cornerFit.top }) }),
