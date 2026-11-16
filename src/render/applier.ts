@@ -245,9 +245,11 @@ function tintedFill(shape: SVGElement, status: string): string | undefined {
  * value colour, normal included, or a status with no value colour that is not normal) and the shape takes a stroke. A
  * bitmap device (an `<image>`) takes no fill and no stroke: the overlay draws its border (`renderOverlay`).
  */
-function statusBorder(entry: CellEntry, patch: CellPatch, theme: GrafanaTheme2): string | undefined {
+function statusBorder(entry: CellEntry, patch: CellPatch, ctx: ApplyContext): string | undefined {
   const shape = entry.shape as SVGElement | undefined;
-  return !shape || entry.line || shape.localName === 'image' ? undefined : statusPaint(patch.statusView, theme);
+  return !shape || entry.line || shape.localName === 'image'
+    ? undefined
+    : statusPaint(patch.statusView, ctx.theme, ctx.staleColor);
 }
 
 /**
@@ -382,6 +384,8 @@ export interface ColourScheme {
 /** What an apply runs under: the theme (its colour scheme, and the status colours) and the OS preference. */
 export interface ApplyContext {
   theme: GrafanaTheme2;
+  /** The resolved **Stale colour** of the panel; the palette orange when absent. */
+  staleColor?: string;
   osDark: boolean;
   /** The current diagram XML for the accessible link title. */
   xml?: string;
@@ -436,7 +440,11 @@ export function applyPatches(
   interactive?: Set<string>,
   ctx: ApplyContext = defaultContext()
 ): Applied {
-  const scheme: ColourScheme = { isDark: ctx.theme.isDark, osDark: ctx.osDark, palette: statusPalette(ctx.theme) };
+  const scheme: ColourScheme = {
+    isDark: ctx.theme.isDark,
+    osDark: ctx.osDark,
+    palette: statusPalette(ctx.theme, ctx.staleColor),
+  };
   const same = previous?.index === index;
   const before = same ? previous.keys : new Map<string, string>();
   const all = same && !sameScheme(previous.scheme, scheme);
@@ -499,8 +507,8 @@ export function applyPatches(
     pending.push({ entry, patch, width, target, interactive: !interactive || interactive.has(id) });
   }
   const reads = pending.map(({ entry, patch }) => {
-    const status = linkStatusPaint(patch, ctx.theme);
-    const border = statusBorder(entry, patch, ctx.theme);
+    const status = linkStatusPaint(patch, ctx.theme, ctx.staleColor);
+    const border = statusBorder(entry, patch, ctx);
     return {
       status,
       border,

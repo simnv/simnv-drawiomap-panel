@@ -128,6 +128,8 @@ export interface Options {
   linkWidth: { min: number; max: number };
   /** The status band above the diagram: one row per cause. maxRows 0 hides the band. Default: 3. */
   summary?: { maxRows: number };
+  /** The colour of a stale cell or link (a Grafana colour name or a CSS colour). Default: `gray` (`DEFAULT_STALE_COLOR`). */
+  stale?: { color: string };
   /** The cells that open a hover or pinned card. Default: node, link, port, other. */
   hover?: { kinds: HoverKind[] };
   /** The colour legend in a corner of the panel and the last data timestamp. Default: shown, collapsed, bottom-right. */
@@ -148,6 +150,7 @@ export interface LegendOptions {
 /** The options after the defaults: the panel reads these. Internal, never saved. */
 export interface ResolvedOptions extends Options {
   summary: { maxRows: number };
+  stale: { color: string };
   hover: { kinds: HoverKind[] };
   legend: LegendOptions;
 }
@@ -156,6 +159,7 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
+  stale: { color: 'gray' },
   hover: { kinds: ['node', 'link', 'port', 'other'] },
   legend: { show: true, corner: 'bottom-right', collapsed: true, timestamp: true },
 };
@@ -171,6 +175,7 @@ export function withDefaults(options: Options): ResolvedOptions {
     zoom: { ...DEFAULT_OPTIONS.zoom, ...options.zoom },
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
     summary: { ...DEFAULT_OPTIONS.summary, ...options.summary },
+    stale: { ...DEFAULT_OPTIONS.stale, ...options.stale },
     hover: { ...DEFAULT_OPTIONS.hover, ...options.hover },
     legend: { ...DEFAULT_OPTIONS.legend, ...options.legend },
   };

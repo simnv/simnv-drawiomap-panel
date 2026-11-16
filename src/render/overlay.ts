@@ -14,6 +14,8 @@ const NS = 'http://www.w3.org/2000/svg';
 
 export interface OverlayOptions {
   theme: GrafanaTheme2;
+  /** The resolved **Stale colour** of the panel; the palette orange when absent. */
+  staleColor?: string;
   /** `linkWidth.max`: the widest drawn half. The split and the reserved heads are fixed for it. */
   maxWidth: number;
   /** `linkWidth.min`: the thinnest drawn half (0 when absent). The drawn widths stay between the two. */
@@ -244,9 +246,9 @@ const rangeOf = (place: HalfPlace): WidthRange => ({ min: place.minWidth, max: p
  * paints (`linkStatusPaint`: a status that is not normal wins over the binding colour). `status` and `stepIndex`
  * stay the binding's: the data attributes and the legend highlight read them.
  */
-function drawnHalves(patch: CellPatch, theme: GrafanaTheme2): NonNullable<CellPatch['link']> {
+function drawnHalves(patch: CellPatch, theme: GrafanaTheme2, staleColor?: string): NonNullable<CellPatch['link']> {
   const link = patch.link ?? {};
-  const color = linkStatusPaint(patch, theme);
+  const color = linkStatusPaint(patch, theme, staleColor);
   if (!color) {
     return link;
   }
@@ -589,7 +591,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
     if (!entry?.line || !(patch.link?.a2b || patch.link?.b2a)) {
       continue;
     }
-    const link = drawnHalves(patch, opts.theme);
+    const link = drawnHalves(patch, opts.theme, opts.staleColor);
     liveLinks.add(id);
     const drawn = state.links.get(id);
     if (drawn && drawn.combo === linkGeometryKey(link) && drawn.layer.parentNode) {
@@ -623,7 +625,7 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
   const liveBorders = new Set<string>();
   for (const [id, patch] of patches) {
     const image = index.get(id)?.shape;
-    const paint = image?.localName === 'image' ? statusPaint(patch.statusView, opts.theme) : undefined;
+    const paint = image?.localName === 'image' ? statusPaint(patch.statusView, opts.theme, opts.staleColor) : undefined;
     if (!image || !paint) {
       continue;
     }

@@ -454,7 +454,7 @@ describe('the status row', () => {
     ['down', theme.colors.error.text],
     ['critical', theme.colors.error.text],
     ['warning', theme.colors.warning.text],
-    ['stale', theme.colors.warning.text],
+    ['stale', theme.colors.text.secondary],
     ['missing', theme.colors.text.secondary],
   ] as const)('shows the state word %s in the text-safe colour and the reason in the plain colour', (status, want) => {
     renderCard(cardOf(statusRow(status)));

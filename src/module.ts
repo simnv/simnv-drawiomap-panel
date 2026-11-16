@@ -144,6 +144,14 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         defaultValue: DEFAULT_OPTIONS.summary.maxRows,
         settings: { min: 0, integer: true },
       })
+      .addColorPicker({
+        path: 'stale.color',
+        name: 'Stale colour',
+        description:
+          'The colour of a cell or a link whose last sample is older than its freshness. The status band and the legend use it too.',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.stale.color,
+      })
       .addBooleanSwitch({
         path: 'legend.show',
         name: 'Show legend',

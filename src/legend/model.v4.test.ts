@@ -102,6 +102,11 @@ describe('buildLegendV4', () => {
       ['missing', noDataColor(theme), ['n3']],
     ]);
     const onlyStale = buildLegendV4(new Map([cell('n2', status('scrape_up', 'stale'))]), fields, ctx);
+    const custom = buildLegendV4(new Map([cell('n2', status('scrape_up', 'stale'))]), fields, {
+      ...ctx,
+      staleColor: '#123456',
+    });
+    expect(custom.at(-1)?.entries[0].color).toBe('#123456');
     expect(onlyStale.at(-1)?.entries.map((e) => e.key)).toEqual(['stale']);
   });
 

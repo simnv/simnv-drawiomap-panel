@@ -2035,6 +2035,21 @@ describe('DrawioMapPanel refresh and freshness', () => {
     expect(work.binds - binds).toBe(1);
   });
 
+  it('a stale cell and its band marker take the Stale colour of the panel', async () => {
+    const base = props({ id: 64 });
+    const saved = { ...options, config: freshnessConfig, diagram, stale: { color: '#123456' } };
+    const view = render(
+      <DrawioMapPanel {...base} options={saved} data={{ ...base.data, series: [sampleAt(Date.now() - 1e6)] }} />
+    );
+    const cell = () => view.container.querySelector('[data-cell-id="a"]');
+    await waitFor(() => expect(cell()?.getAttribute('data-dmap-status')).toBe('stale'));
+    await nextFrame();
+    // the status paint of the shape: its border
+    expect(cell()!.querySelector('rect')!.style.stroke).toBe('rgb(18, 52, 86)');
+    const marker = screen.getByTestId('dmap-status-band').querySelector('.dmap-status-summary span') as HTMLElement;
+    expect(marker.style.color).toBe('rgb(18, 52, 86)');
+  });
+
   it('a status sample that is already stale on arrival shows stale in the first applier call', async () => {
     // Only Date is under test control: the panel reads the clock at mount and the test moves it by 450 ms at once.
     vi.useFakeTimers({ toFake: ['Date'] });

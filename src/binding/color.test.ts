@@ -18,6 +18,7 @@ import {
   statusPaint,
   statusPalette,
   statusTextColor,
+  DEFAULT_STALE_COLOR,
   tintFill,
   widthFor,
 } from './color';
@@ -123,14 +124,14 @@ describe('status colours', () => {
     conditionKey: 'k',
     coverage: { available: 1, expected: 1 },
   });
-  it('takes the palette red and orange of the theme, and the no-data grey for missing', () => {
+  it('takes the palette red and orange of the theme, the no-data grey for missing, and the default grey for stale', () => {
     for (const t of [createTheme({ colors: { mode: 'light' } }), createTheme({ colors: { mode: 'dark' } })]) {
       const red = t.visualization.getColorByName('red');
       const orange = t.visualization.getColorByName('orange');
       expect(statusColor(view('down'), t)).toBe(red);
       expect(statusColor(view('critical'), t)).toBe(red);
       expect(statusColor(view('warning'), t)).toBe(orange);
-      expect(statusColor(view('stale'), t)).toBe(orange);
+      expect(statusColor(view('stale'), t)).toBe(DEFAULT_STALE_COLOR);
       expect(statusColor(view('missing'), t)).toBe(noDataColor(t));
     }
     expect(statusColor(view('down'), createTheme({ colors: { mode: 'light' } }))).not.toBe(
@@ -140,18 +141,23 @@ describe('status colours', () => {
   it('a normal state takes the no-data grey when asked for its colour', () => {
     expect(statusColor(view('normal'), theme)).toBe(noDataColor(theme));
   });
-  it('the text colour is the semantic text colour of the level: error, warning, else secondary', () => {
+  it('the text colour is the semantic text colour of the level: error, warning, else secondary (stale too)', () => {
     for (const t of [createTheme({ colors: { mode: 'light' } }), createTheme({ colors: { mode: 'dark' } })]) {
       expect(statusTextColor(view('down'), t)).toBe(t.colors.error.text);
       expect(statusTextColor(view('critical'), t)).toBe(t.colors.error.text);
       expect(statusTextColor(view('warning'), t)).toBe(t.colors.warning.text);
-      expect(statusTextColor(view('stale'), t)).toBe(t.colors.warning.text);
+      expect(statusTextColor(view('stale'), t)).toBe(t.colors.text.secondary);
       expect(statusTextColor(view('missing'), t)).toBe(t.colors.text.secondary);
       expect(statusTextColor(view('normal'), t)).toBe(t.colors.text.secondary);
     }
   });
-  it('the palette is the colours of the three levels', () => {
-    expect(statusPalette(theme)).toBe([named('red'), named('orange'), noDataColor(theme)].join('|'));
+  it('the palette is the colours of the three levels and of stale', () => {
+    expect(statusPalette(theme)).toBe(
+      [named('red'), named('orange'), noDataColor(theme), DEFAULT_STALE_COLOR].join('|')
+    );
+    expect(statusPalette(theme, '#123456')).toBe(
+      [named('red'), named('orange'), noDataColor(theme), '#123456'].join('|')
+    );
   });
   it('statusPaint is a colour for a state that is not normal, else undefined', () => {
     expect(statusPaint(view('down'), theme)).toBe(named('red'));
