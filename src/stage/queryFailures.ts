@@ -39,7 +39,7 @@ const MAX_EXPRESSION = 160;
 /** A tooltip lists at most this many queries of one datasource; the rest is a count. */
 const MAX_QUERIES = 8;
 /** The name of a group of queries that failed with one request-wide error, on more than one datasource. */
-export const PANEL_REQUEST = 'The panel request';
+export const PANEL_REQUEST = 'A datasource of the panel';
 
 const isRef = (v: unknown): v is DataSourceRef => !!v && typeof v === 'object';
 
@@ -84,7 +84,7 @@ function httpStatus(m: string): number | undefined {
 export function failureCause(message: string): string {
   const m = message.toLowerCase().trim();
   // the datasource answered: the query text or its cost is the cause
-  if (/parse error|syntax error|bad_data|unexpected token/.test(m)) {
+  if (/parse error|syntax error|bad_data/.test(m) && !/json/.test(m)) {
     return 'rejects the query (check the query text)';
   }
   if (/query timed out|query processing would load too many|too many samples|query is too expensive/.test(m)) {

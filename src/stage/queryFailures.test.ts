@@ -90,6 +90,7 @@ describe('failureCause', () => {
     ['pq: column "id" does not exist: SELECT * FROM t WHERE id = 401 LIMIT 500', 'cannot run the query'],
     ['request failed, status code: 502', 'has a server error (502)'],
     ['Invalid API key', 'refuses the access (401, check the credentials)'],
+    ['SyntaxError: JSON parse error: Unexpected token < in JSON at position 0', 'cannot run the query'],
     ['something else', 'cannot run the query'],
   ])('%s', (message, cause) => {
     expect(failureCause(message)).toBe(cause);
@@ -213,7 +214,7 @@ describe('a request-wide error', () => {
     );
     expect(groups).toHaveLength(1);
     expect(groups[0].datasource).toBe(PANEL_REQUEST);
-    expect(failedLabels(groups)('inv')).toBe('The panel request is not reachable');
+    expect(failedLabels(groups)('inv')).toBe('A datasource of the panel is not reachable');
   });
 
   it('names the datasource when all its queries use one', () => {
