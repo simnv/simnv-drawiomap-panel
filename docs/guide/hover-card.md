@@ -23,7 +23,7 @@ A thin link is 1 or 2 px wide on the screen, so the pointer does not have to be 
 - A node, a link label or any other cell that opens a card under the pointer wins over a near link.
 - Only a link of the **Hover kinds** is caught (see [Which cells open a card](#which-cells-open-a-card)).
 
-A link caught by distance shows a soft underlay, about 1.5 px wider on each side of its stroke, and the hand cursor. The underlay goes away when the pointer moves away or onto a cell.
+A link caught by distance shows a soft underlay, about 1.5 px wider on each side of its stroke, and the hand cursor. The underlay goes away when the pointer moves away or onto a cell, and when the view zooms or pans. Only a link with traffic halves (the colour overlay) gets the underlay; another link that opens a card is caught too, with the hand cursor only.
 
 **Chart tooltip.** In a pinned card, move the pointer over a chart. The standard Grafana tooltip opens.
 

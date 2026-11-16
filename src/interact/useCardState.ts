@@ -55,6 +55,11 @@ export function useCardInput(args: InputArgs) {
   // the pointer. The finder caches the segments and the screen transform; the events below make it read them again.
   const [finder] = useState(() => new NearLinkFinder());
   const near = useRef<string | undefined>(undefined);
+  // a new stage has no mark yet; the stage element outlives its root and keeps the cursor attribute
+  useEffect(() => {
+    near.current = undefined;
+    stageRef.current?.removeAttribute(NEAR_ATTR);
+  }, [root, stageRef]);
   const setNear = useCallback(
     (id: string | undefined) => {
       if (near.current === id) {
@@ -80,17 +85,23 @@ export function useCardInput(args: InputArgs) {
       return;
     }
     const invalidate = () => finder.invalidate();
-    // the stage layout (a zoom, a pan, a new size) and any scroll (the stage or the page) move the screen transform
-    root.addEventListener(LAYOUT_EVENT, invalidate);
-    document.addEventListener('scroll', invalidate, true);
+    // A new view (a zoom, a pan, a new size) moves the links under a pointer that stays: the mark goes, and the next
+    // move checks again.
+    const onLayout = () => {
+      finder.invalidate();
+      setNear(undefined);
+    };
+    // the stage layout and any scroll (the stage or the page) move the screen transform
+    root.addEventListener(LAYOUT_EVENT, onLayout);
+    window.addEventListener('scroll', invalidate, true);
     window.addEventListener('resize', invalidate);
     return () => {
-      root.removeEventListener(LAYOUT_EVENT, invalidate);
-      document.removeEventListener('scroll', invalidate, true);
+      root.removeEventListener(LAYOUT_EVENT, onLayout);
+      window.removeEventListener('scroll', invalidate, true);
       window.removeEventListener('resize', invalidate);
       finder.invalidate();
     };
-  }, [root, finder]);
+  }, [root, finder, setNear]);
   useEffect(() => () => stopFrame(), [stopFrame]);
   // A pinned card takes the mark away: the pointer does not hover while it stays.
   useEffect(() => {
@@ -144,6 +155,8 @@ export function useCardInput(args: InputArgs) {
     const onEnter = () => finder.invalidate();
     const onDown = (e: PointerEvent) => {
       downType.current = e.pointerType || 'mouse';
+      // the page can move the panel with no event here (a row that opens above it): a click reads the transform again
+      finder.invalidate();
     };
     wrapperEl.addEventListener('pointerleave', onLeave);
     wrapperEl.addEventListener('pointerenter', onEnter);
@@ -252,7 +265,11 @@ export function useCardInput(args: InputArgs) {
   const runNear = () => {
     const at = pending.current;
     pending.current = null;
-    if (!at || pinned || args.panZoom.busy()) {
+    if (!at || pinned) {
+      return;
+    }
+    if (args.panZoom.busy()) {
+      setNear(undefined);
       return;
     }
     const patch = nearPatch(at.clientX, at.clientY, at.pointerType);
@@ -273,7 +290,12 @@ export function useCardInput(args: InputArgs) {
   const onPointerMove = (e: React.PointerEvent) => {
     // Hover is for a mouse or a pen. A pinned card stays until the user closes it or pins another cell.
     const stageEl = stageRef.current;
-    if (e.pointerType === 'touch' || !canHover() || pinned || args.panZoom.busy() || !stageEl) {
+    if (args.panZoom.busy()) {
+      // a drag that pans the view shows no mark
+      setNear(undefined);
+      return;
+    }
+    if (e.pointerType === 'touch' || !canHover() || pinned || !stageEl) {
       return;
     }
     pointerRef.current = { x: e.clientX, y: e.clientY };

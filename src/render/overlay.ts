@@ -578,7 +578,9 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
   let state = states.get(root);
   if (!state || state.index !== index || state.maxWidth !== maxWidth || state.minWidth !== minWidth) {
     root.querySelectorAll(`g.${OVERLAY_CLASS}, .${STATUS_BORDER_CLASS}`).forEach((g) => g.remove());
-    state = { index, maxWidth, minWidth, links: new Map(), borders: new Map() };
+    // a new width range draws the layers again: the link near the pointer keeps its mark
+    const near = state?.index === index ? state.near : undefined;
+    state = { index, maxWidth, minWidth, links: new Map(), borders: new Map(), near };
     states.set(root, state);
   }
   const liveLinks = new Set<string>();

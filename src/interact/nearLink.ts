@@ -26,23 +26,8 @@ export function segmentDistance2(px: number, py: number, s: Segment): number {
   return ex * ex + ey * ey;
 }
 
-/** The distance from `p` to the polyline `points` (Infinity for an empty polyline). */
-export function polylineDistance(p: Point, points: readonly Point[]): number {
-  if (points.length === 1) {
-    return Math.hypot(points[0].x - p.x, points[0].y - p.y);
-  }
-  let best = Infinity;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1];
-    const b = points[i];
-    best = Math.min(best, segmentDistance2(p.x, p.y, { cellId: '', ax: a.x, ay: a.y, bx: b.x, by: b.y }));
-  }
-  return Math.sqrt(best);
-}
-
-/** The segments of a polyline, mapped through `m`. */
-export function segmentsOf(cellId: string, points: readonly Point[], m?: Matrix): Segment[] {
-  const pts = m ? points.map((p) => applyMatrix(m, p)) : points;
+/** The segments of a polyline. */
+export function segmentsOf(cellId: string, pts: readonly Point[]): Segment[] {
   const out: Segment[] = [];
   for (let i = 1; i < pts.length; i++) {
     out.push({ cellId, ax: pts[i - 1].x, ay: pts[i - 1].y, bx: pts[i].x, by: pts[i].y });

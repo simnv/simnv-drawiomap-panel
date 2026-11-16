@@ -13,20 +13,22 @@ vi.mock('@grafana/ui', () => ({
 
 const WARNINGS = ['Override for cell "x" matches no cell', 'Unit "foo" is unknown'];
 
+const corner = (warnings: string[]) => (
+  <CornerControls
+    bandHeight={0}
+    zoomed={false}
+    editing={false}
+    width={600}
+    warnings={warnings}
+    onReset={() => {}}
+    onEditBindings={() => {}}
+    onRowHeight={() => {}}
+  />
+);
+
 function setup(warnings = WARNINGS) {
-  render(
-    <CornerControls
-      bandHeight={0}
-      zoomed={false}
-      editing={false}
-      width={600}
-      warnings={warnings}
-      onReset={() => {}}
-      onEditBindings={() => {}}
-      onRowHeight={() => {}}
-    />
-  );
-  return screen.getByTestId('dmap-warning-badge');
+  const view = render(corner(warnings));
+  return Object.assign(screen.getByTestId('dmap-warning-badge'), { rerender: view.rerender });
 }
 const tip = () => screen.queryByTestId('dmap-warning-tooltip');
 
@@ -83,6 +85,17 @@ describe('the warning badge tooltip', () => {
     fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
     expect(tip()).not.toBeNull();
     fireEvent.keyDown(badge, { key: 'Escape' });
+    expect(tip()).toBeNull();
+  });
+
+  it('does not come back with the next warnings after the badge went away under the pointer', () => {
+    const badge = setup();
+    fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
+    expect(tip()).not.toBeNull();
+    // a refresh with no warnings removes the badge: React sends no pointerleave
+    badge.rerender(corner([]));
+    expect(tip()).toBeNull();
+    badge.rerender(corner(WARNINGS));
     expect(tip()).toBeNull();
   });
 });

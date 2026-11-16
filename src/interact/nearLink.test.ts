@@ -1,24 +1,31 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { clearFakeLayout, clientRect, fakeLayout } from '../render/layoutTestKit';
-import { markNearLink, NEAR_CLASS, NEAR_MARK_CLASS } from '../render/overlay';
-import { catchRadius, nearestLink, NearLinkFinder, polylineDistance, segmentsOf } from './nearLink';
+import { createTheme } from '@grafana/data';
+import { markNearLink, NEAR_CLASS, NEAR_MARK_CLASS, renderOverlay } from '../render/overlay';
+import { catchRadius, nearestLink, NearLinkFinder, segmentDistance2, segmentsOf } from './nearLink';
 import { nearStage } from './nearLink.testKit';
 
 const all = () => true;
 
-describe('polylineDistance', () => {
-  it('is the distance to the nearest segment, to an end beyond the ends, and to a single point', () => {
-    const pts = [
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-      { x: 100, y: 50 },
-    ];
-    expect(polylineDistance({ x: 50, y: 6 }, pts)).toBeCloseTo(6);
-    expect(polylineDistance({ x: 106, y: 25 }, pts)).toBeCloseTo(6);
-    expect(polylineDistance({ x: -3, y: -4 }, pts)).toBeCloseTo(5);
-    expect(polylineDistance({ x: 103, y: 54 }, pts)).toBeCloseTo(5);
-    expect(polylineDistance({ x: 3, y: 4 }, [{ x: 0, y: 0 }])).toBeCloseTo(5);
-    expect(polylineDistance({ x: 3, y: 4 }, [])).toBe(Infinity);
+describe('the distance to a polyline', () => {
+  const corner = segmentsOf('l', [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 50 },
+  ]);
+  const distance = (x: number, y: number) => Math.sqrt(Math.min(...corner.map((s) => segmentDistance2(x, y, s))));
+
+  it('is the distance to the nearest segment, and to an end beyond the ends', () => {
+    expect(distance(50, 6)).toBeCloseTo(6);
+    expect(distance(106, 25)).toBeCloseTo(6);
+    expect(distance(-3, -4)).toBeCloseTo(5);
+    expect(distance(103, 54)).toBeCloseTo(5);
+    // at the bend: the corner point
+    expect(distance(103, -4)).toBeCloseTo(5);
+  });
+
+  it('is the distance to the point for a segment of zero length', () => {
+    expect(segmentDistance2(3, 4, { cellId: 'p', ax: 0, ay: 0, bx: 0, by: 0 })).toBeCloseTo(25);
   });
 });
 
@@ -50,18 +57,6 @@ describe('nearestLink', () => {
   it('skips a link that opens no card: the next one in the radius wins', () => {
     expect(nearestLink(segments, { x: 50, y: 3 }, 16, (id) => id !== 'top')).toBe('bottom');
     expect(nearestLink(segments, { x: 50, y: 3 }, 8, (id) => id !== 'top')).toBeUndefined();
-  });
-
-  it('maps the segments through a matrix', () => {
-    const scaled = segmentsOf(
-      'l',
-      [
-        { x: 0, y: 0 },
-        { x: 10, y: 0 },
-      ],
-      { a: 2, b: 0, c: 0, d: 2, e: 5, f: 5 }
-    );
-    expect(scaled).toEqual([{ cellId: 'l', ax: 5, ay: 5, bx: 25, by: 5 }]);
   });
 });
 
@@ -135,7 +130,7 @@ describe('NearLinkFinder', () => {
 
 describe('markNearLink', () => {
   it('puts one class on the layer of the link and an underlay under its halves; another link takes it', () => {
-    const { root } = nearStage({ l1: 'M 0 100 L 400 100', l2: 'M 0 200 L 400 200' });
+    const { root, index, patches } = nearStage({ l1: 'M 0 100 L 400 100', l2: 'M 0 200 L 400 200' });
     const layer = (id: string) => root.querySelector(`[data-cell-id="${id}"] g.dmap-overlay`)!;
     markNearLink(root, 'l1');
     expect(layer('l1').classList.contains(NEAR_CLASS)).toBe(true);
@@ -147,6 +142,10 @@ describe('markNearLink', () => {
     expect(marks[0].getAttribute('pointer-events')).toBe('none');
     markNearLink(root, 'l2');
     expect(layer('l1').classList.contains(NEAR_CLASS)).toBe(false);
+    // a new width range draws the layers again: the mark stays on its link
+    renderOverlay(root, index, patches, { theme: createTheme(), maxWidth: 12 });
+    expect(layer('l2').classList.contains(NEAR_CLASS)).toBe(true);
+    expect(layer('l2').querySelectorAll(`.${NEAR_MARK_CLASS}`)).toHaveLength(2);
     expect(layer('l2').classList.contains(NEAR_CLASS)).toBe(true);
     markNearLink(root, undefined);
     expect(root.querySelectorAll(`.${NEAR_CLASS}`)).toHaveLength(0);

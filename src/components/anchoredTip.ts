@@ -1,4 +1,13 @@
-import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 
@@ -33,7 +42,8 @@ export interface TipAnchor {
 /**
  * The open state of a tooltip on a small anchor. The tooltip opens with no delay: a mouse pointer or the keyboard
  * focus shows it, a tap toggles it (a phone has no hover), Esc closes it, a scroll closes it. Spread `props` on the
- * anchor. Render the tooltip when `tip` is not null, with `id` as its id.
+ * anchor. Render the tooltip when `tip` is not null, with `id` as its id. Call `hide` when the anchor goes away: React
+ * sends no leave or blur for an element that it removes.
  */
 export function useAnchoredTip(anchor: { current: HTMLElement | null }) {
   const id = useId();
@@ -44,7 +54,7 @@ export function useAnchoredTip(anchor: { current: HTMLElement | null }) {
     const r = anchor.current?.getBoundingClientRect();
     setTip(r ? { x: r.right, y: r.top, height: r.height } : { x: 0, y: 0, height: 0 });
   };
-  const hide = () => setTip(null);
+  const hide = useCallback(() => setTip(null), []);
   // The tooltip has a fixed place: a scroll of the page or of a parent would leave it behind, so it closes.
   const open = tip !== null;
   useEffect(() => {
@@ -86,5 +96,5 @@ export function useAnchoredTip(anchor: { current: HTMLElement | null }) {
       }
     },
   };
-  return { id, tip, props };
+  return { id, tip, props, hide };
 }

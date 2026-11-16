@@ -1,4 +1,4 @@
-import React, { forwardRef, useLayoutEffect, useRef } from 'react';
+import React, { forwardRef, useEffect, useLayoutEffect, useRef } from 'react';
 import { css } from '@emotion/css';
 import { Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { SandboxPortal } from '../util/sandboxHost';
@@ -93,7 +93,14 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
   const theme = useTheme2();
   const tipStyles = useStyles2(getTipStyles);
   const badgeRef = useRef<HTMLDivElement>(null);
-  const { id: tipId, tip, props: tipProps } = useAnchoredTip(badgeRef);
+  const { id: tipId, tip, props: tipProps, hide: hideTip } = useAnchoredTip(badgeRef);
+  // a refresh with no warnings removes the badge: its tooltip must not come back with the next warning
+  const hasWarnings = warnings.length > 0;
+  useEffect(() => {
+    if (!hasWarnings) {
+      hideTip();
+    }
+  }, [hasWarnings, hideTip]);
   const showRow = !!(zoomed || warnings.length || editing);
   const rowRef = useRef<HTMLDivElement>(null);
   // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
