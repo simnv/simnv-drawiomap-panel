@@ -199,6 +199,46 @@ describe('failedQueries', () => {
   });
 });
 
+describe('a failed query that no cell uses', () => {
+  const used: ReportEntry = { kind: 'query-unavailable', refId: 'up', state: 'error', message: 'Panel query failed.' };
+  const targets = [
+    { refId: 'up', expr: 'up' },
+    { refId: 'broken', expr: 'rate(up[5m]' },
+    { refId: 'fine', expr: 'up' },
+    { refId: 'off', expr: 'x', hide: true },
+  ];
+
+  it('comes from the errors of the request, marked unused; a query with no error and a hidden query do not', () => {
+    expect(
+      failedQueries([used], {
+        errors: [
+          { refId: 'up', message: 'own' },
+          { refId: 'broken', message: 'bad_data: parse error' },
+          { refId: 'off', message: 'x' },
+        ],
+        request: { targets },
+      })
+    ).toEqual([
+      { refId: 'up', message: 'own' },
+      { refId: 'broken', message: 'bad_data: parse error', unused: true },
+    ]);
+  });
+
+  it('takes a request-wide error for each query of the request', () => {
+    expect(
+      failedQueries([], { error: { message: 'connection refused' }, request: { targets } }).map((f) => f.refId)
+    ).toEqual(['up', 'broken', 'fine']);
+  });
+
+  it('is marked in its query line', () => {
+    const groups = groupQueryFailures([{ refId: 'broken', message: 'bad_data: parse error', unused: true }], () => ({
+      datasource: 'VM',
+      expression: 'rate(up[5m]',
+    }));
+    expect(failureText(groups[0]).split('\n')[1]).toBe('• broken (not used): rate(up[5m]');
+  });
+});
+
 describe('a request-wide error', () => {
   const info = describeQueries(
     request([

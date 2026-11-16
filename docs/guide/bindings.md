@@ -447,7 +447,9 @@ A port cell can bind a class itself. A port with `bind` and its own `port` reads
 
 On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the number of grouped causes. Its tooltip uses the same cause text and short use names as the editor.
 
-When queries fail, the tooltip has one warning for each datasource and cause, not one line for each query. The warning gives the datasource name and the cause in plain words (host not found, connection refused, time-out, access refused, server error, query text rejected). Then it lists each failed query with its refId and its expression, with the dashboard variables applied, so you see which filters failed. The error text of Grafana comes last, once. For example:
+Move the pointer on the badge (or focus it with Tab) to show one short line for each warning. Click or tap the badge (or press Enter) to pin the list of the warnings. In the list, a warning that has details is a button with ▸: click it to show the details below it. ✕, Esc or a click outside the list closes it.
+
+When queries fail, the list has one warning for each datasource and cause, not one line for each query. A query that no cell uses counts too: it shows with `(not used)`. The warning gives the datasource name and the cause in plain words (host not found, connection refused, time-out, access refused, server error, query text rejected). Then it lists each failed query with its refId and its expression, with the dashboard variables applied, so you see which filters failed. The error text of Grafana comes last, once. For example:
 
 ```text
 VictoriaMetrics is not reachable (host not found): 2 queries fail

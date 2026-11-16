@@ -1,10 +1,11 @@
-import React, { forwardRef, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { SandboxPortal } from '../util/sandboxHost';
 import { TooltipBox } from '../visuals/ChartHover';
 import { getTipStyles, useAnchoredTip } from './anchoredTip';
+import { splitWarning, WarningList } from './WarningList';
 import { followTop } from '../util/followViewport';
 
 /** Heights in px of the items in the top-left row. */
@@ -29,6 +30,20 @@ const getWarningStyles = (theme: GrafanaTheme2) => ({
       padding-top: ${theme.spacing(0.75)};
       border-top: 1px solid ${theme.colors.border.medium};
     }
+  `,
+});
+
+// The pinned list: the look of the tooltip, but it takes the pointer, and a long list scrolls.
+const getPinnedStyles = (theme: GrafanaTheme2) => ({
+  box: css`
+    pointer-events: auto;
+    max-width: 420px;
+    max-height: 60vh;
+    overflow-y: auto;
+  `,
+  hint: css`
+    margin-top: ${theme.spacing(0.75)};
+    color: ${theme.colors.text.secondary};
   `,
 });
 
@@ -106,14 +121,94 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
   const tipStyles = useStyles2(getTipStyles);
   const warningStyles = useStyles2(getWarningStyles);
   const badgeRef = useRef<HTMLDivElement>(null);
+  const pinnedStyles = useStyles2(getPinnedStyles);
   const { id: tipId, tip, props: tipProps, hide: hideTip } = useAnchoredTip(badgeRef);
-  // a refresh with no warnings removes the badge: its tooltip must not come back with the next warning
+  // A click, a tap or Enter on the badge pins the list of the warnings, with their details on demand.
+  const [pinned, setPinned] = useState<{ x: number; y: number; height: number } | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const closeList = useCallback((focusBadge: boolean) => {
+    setPinned(null);
+    if (focusBadge) {
+      badgeRef.current?.focus({ preventScroll: true });
+    }
+  }, []);
+  const openList = () => {
+    hideTip();
+    const r = badgeRef.current?.getBoundingClientRect();
+    setPinned(r ? { x: r.right, y: r.top, height: r.height } : { x: 0, y: 0, height: 0 });
+  };
+  // a refresh with no warnings removes the badge: its tooltip and its list must not come back with the next warning
   const hasWarnings = warnings.length > 0;
   useEffect(() => {
     if (!hasWarnings) {
       hideTip();
+      setPinned(null);
     }
   }, [hasWarnings, hideTip]);
+  // Esc, a pointer down outside the list and the badge, or a scroll of the page (the list has a fixed place) close it.
+  const isPinned = pinned !== null;
+  useEffect(() => {
+    if (!isPinned) {
+      return;
+    }
+    listRef.current?.focus({ preventScroll: true });
+    const inside = (t: EventTarget | null) =>
+      t instanceof Node && (!!listRef.current?.contains(t) || !!badgeRef.current?.contains(t));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeList(true);
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      if (!inside(e.target)) {
+        closeList(false);
+      }
+    };
+    const onScroll = (e: Event) => {
+      if (!(e.target instanceof Node && listRef.current?.contains(e.target))) {
+        closeList(false);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [isPinned, closeList]);
+  const hasDetails = warnings.some((w) => splitWarning(w).details.length > 0);
+  const badgeProps = {
+    ...tipProps,
+    role: 'button',
+    'aria-haspopup': 'dialog' as const,
+    'aria-expanded': isPinned,
+    onPointerEnter: (e: React.PointerEvent) => {
+      if (!isPinned) {
+        tipProps.onPointerEnter(e);
+      }
+    },
+    onFocus: (e: React.FocusEvent) => {
+      if (!isPinned) {
+        tipProps.onFocus(e);
+      }
+    },
+    onClick: () => (isPinned ? closeList(false) : openList()),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (isPinned) {
+          closeList(true);
+        } else {
+          openList();
+        }
+        return;
+      }
+      tipProps.onKeyDown(e);
+    },
+  };
   const showRow = !!(zoomed || warnings.length || editing);
   const rowRef = useRef<HTMLDivElement>(null);
   // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
@@ -164,7 +259,7 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
               className={styles.badge}
               style={{ background: theme.colors.warning.main, color: theme.colors.warning.contrastText }}
               data-testid="dmap-warning-badge"
-              {...tipProps}
+              {...badgeProps}
             >
               {warnings.length} warning{warnings.length > 1 ? 's' : ''}
             </div>
@@ -186,7 +281,23 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
           ) : null}
         </div>
       ) : null}
-      {tip && warnings.length ? (
+      {pinned && warnings.length ? (
+        <SandboxPortal>
+          <TooltipBox
+            x={pinned.x}
+            y={pinned.y}
+            anchorHeight={pinned.height}
+            live={false}
+            className={`${tipStyles.tip} ${pinnedStyles.box}`}
+            testId="dmap-warning-list"
+          >
+            <div ref={listRef} role="dialog" aria-label="Warnings" tabIndex={-1}>
+              <WarningList warnings={warnings} onClose={() => closeList(true)} />
+            </div>
+          </TooltipBox>
+        </SandboxPortal>
+      ) : null}
+      {tip && !pinned && warnings.length ? (
         <SandboxPortal>
           <TooltipBox
             x={tip.x}
@@ -199,9 +310,14 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
           >
             {warnings.map((warning, i) => (
               <div key={i} className={warningStyles.line}>
-                {warning}
+                {splitWarning(warning).summary}
               </div>
             ))}
+            {hasDetails ? (
+              <div className={pinnedStyles.hint} data-dmap-hint="">
+                Click for details
+              </div>
+            ) : null}
           </TooltipBox>
         </SandboxPortal>
       ) : null}

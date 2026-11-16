@@ -1326,8 +1326,11 @@ describe('DrawioMapPanel status band', () => {
     expect(badge.textContent).toBe('1 warning');
     fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
     expect(screen.getByTestId('dmap-warning-tooltip').textContent).toBe(
-      `VictoriaMetrics is not reachable (host not found): 1 query fails\n• q: up{site="lab"}\nError: ${down}`
+      'VictoriaMetrics is not reachable (host not found): 1 query failsClick for details'
     );
+    fireEvent.click(badge);
+    fireEvent.click(screen.getByTestId('dmap-warning-list').querySelector('button[aria-expanded="false"]')!);
+    expect(screen.getByTestId('dmap-warning-details').textContent).toBe(`• q: up{site="lab"}\nError: ${down}`);
   });
 
   it('shows the most severe causes first, caps the band at 3 rows with "+k more", and expands on a click', async () => {

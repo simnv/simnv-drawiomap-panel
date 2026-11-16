@@ -20,6 +20,8 @@ export interface FailedQuery {
   message: string;
   /** The error has no refId: the whole panel request failed, not this query alone. */
   requestWide?: boolean;
+  /** No cell uses the query: its failure changes no cell. */
+  unused?: boolean;
 }
 
 /** The failed queries of one datasource with one cause. */
@@ -29,7 +31,7 @@ export interface QueryFailure {
   cause: string;
   /** The error text of the first failed query: the queries of a group usually share it. */
   details: string;
-  queries: Array<{ refId: string; expression?: string }>;
+  queries: Array<{ refId: string; expression?: string; unused?: boolean }>;
 }
 
 /** The text fields that the common datasources use for the query (Prometheus, Loki, SQL, Graphite, Elasticsearch). */
@@ -122,11 +124,12 @@ export function failureCause(message: string): string {
 /**
  * The failed queries of a bind report, with the error of each from the panel data. A refId with an error of its own
  * gets that error. A refId that failed with an error that has no refId (or with no error text) gets the request-wide
- * error. Grafana 12.3 and 12.4 set only the deprecated `error` for a request that threw.
+ * error. Grafana 12.3 and 12.4 set only the deprecated `error` for a request that threw. A query of the request that
+ * no cell uses is not in the report: its failure comes from the errors, marked `unused`.
  */
 export function failedQueries(
   report: readonly ReportEntry[],
-  data: { errors?: DataQueryError[]; error?: DataQueryError }
+  data: { errors?: DataQueryError[]; error?: DataQueryError; request?: { targets?: DataQuery[] } }
 ): FailedQuery[] {
   const errors = [...(data.errors ?? []), ...(data.error ? [data.error] : [])];
   const out: FailedQuery[] = [];
@@ -142,6 +145,19 @@ export function failedQueries(
         : { refId: entry.refId, message: wide?.message ?? entry.message, requestWide: true }
     );
   }
+  const reported = new Set(report.flatMap((entry) => (entry.kind === 'query-unavailable' ? [entry.refId] : [])));
+  const wide = errors.find((e) => !e.refId);
+  for (const target of data.request?.targets ?? []) {
+    if (target.hide || reported.has(target.refId)) {
+      continue;
+    }
+    const own = errors.find((e) => e.refId === target.refId);
+    if (own) {
+      out.push({ refId: target.refId, message: own.message ?? 'Query failed', unused: true });
+    } else if (wide) {
+      out.push({ refId: target.refId, message: wide.message ?? 'Query failed', requestWide: true, unused: true });
+    }
+  }
   return out;
 }
 
@@ -153,7 +169,7 @@ export function failedQueries(
 export function groupQueryFailures(failed: readonly FailedQuery[], info: (refId: string) => QueryInfo): QueryFailure[] {
   const wideSources = new Set(failed.filter((f) => f.requestWide).map((f) => info(f.refId).datasource));
   const groups = new Map<string, QueryFailure>();
-  for (const { refId, message, requestWide } of failed) {
+  for (const { refId, message, requestWide, unused } of failed) {
     const described = info(refId);
     const datasource = requestWide && wideSources.size > 1 ? PANEL_REQUEST : described.datasource;
     const cause = failureCause(message);
@@ -164,7 +180,7 @@ export function groupQueryFailures(failed: readonly FailedQuery[], info: (refId:
       groups.set(key, group);
     }
     if (!group.queries.some((q) => q.refId === refId)) {
-      group.queries.push({ refId, expression: described.expression });
+      group.queries.push({ refId, expression: described.expression, ...(unused ? { unused } : {}) });
     }
   }
   return [...groups.values()];
@@ -204,7 +220,7 @@ export function failureText(f: QueryFailure): string {
   const n = f.queries.length;
   const lines = [`${f.datasource} ${f.cause}: ${n} ${n === 1 ? 'query fails' : 'queries fail'}`];
   for (const q of f.queries.slice(0, MAX_QUERIES)) {
-    lines.push(`• ${q.refId}${q.expression ? `: ${q.expression}` : ''}`);
+    lines.push(`• ${q.refId}${q.unused ? ' (not used)' : ''}${q.expression ? `: ${q.expression}` : ''}`);
   }
   if (n > MAX_QUERIES) {
     lines.push(`• and ${n - MAX_QUERIES} more`);
