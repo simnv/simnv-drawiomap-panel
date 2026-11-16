@@ -90,10 +90,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   marker: css`
     flex: none;
+    display: inline-flex;
+    justify-content: center;
     width: 10px;
-    font-size: 12px;
+    font-size: 15px;
     line-height: 10px;
-    text-align: center;
   `,
   gradient: css`
     flex: none;
@@ -363,7 +364,7 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
       {...activate(`${blockKey}\n${e.key}`)}
     >
       {e.marker ? (
-        <span className={styles.marker} style={{ color: e.color }} data-dmap-swatch="" aria-hidden="true">
+        <span className={styles.marker} style={{ color: e.color }} data-dmap-marker="" aria-hidden="true">
           {e.marker}
         </span>
       ) : (

@@ -58,11 +58,12 @@ describe('Legend', () => {
       ],
     };
     const { legend } = view({ blocks: [state] });
-    const [stale, missing] = within(legend)
-      .getAllByTestId('dmap-legend-entry')
-      .map((e) => e.querySelector('[data-dmap-swatch]') as HTMLElement);
-    expect([stale.textContent, stale.style.color, stale.style.background]).toEqual(['◷', 'rgb(128, 128, 128)', '']);
-    expect([missing.textContent, missing.style.background]).toEqual(['', 'rgb(1, 2, 3)']);
+    const [stale, missing] = within(legend).getAllByTestId('dmap-legend-entry');
+    const clock = stale.querySelector('[data-dmap-marker]') as HTMLElement;
+    expect([clock.textContent, clock.style.color]).toEqual(['◷', 'rgb(128, 128, 128)']);
+    expect(stale.querySelector('[data-dmap-swatch]')).toBeNull();
+    expect(missing.querySelector('[data-dmap-marker]')).toBeNull();
+    expect((missing.querySelector('[data-dmap-swatch]') as HTMLElement).style.background).toBe('rgb(1, 2, 3)');
   });
   it('shows each block with its title, swatches and threshold texts in order', () => {
     const { legend } = view();

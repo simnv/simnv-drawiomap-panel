@@ -493,9 +493,15 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
   return mergeSame([...out, ...scaleBlocks(links, ctx)]);
 }
 
-/** What a block shows: the text and colour of each entry in order, the gradient with its end texts, and the bar. */
+/**
+ * What a block shows: the text, colour and marker of each entry in order, the gradient with its end texts, and the bar.
+ */
 const contentOf = (block: LegendBlock) =>
-  JSON.stringify([block.entries.map((e) => [e.label, e.color]), block.gradient ?? null, block.bar ?? null]);
+  JSON.stringify([
+    block.entries.map((e) => [e.label, e.color, e.marker ?? null]),
+    block.gradient ?? null,
+    block.bar ?? null,
+  ]);
 
 /**
  * Blocks with the same content (`contentOf`) become one block at the place of the first. Its title is the titles of
