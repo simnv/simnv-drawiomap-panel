@@ -8,7 +8,7 @@ import {
   MappingType,
   ThresholdsMode,
 } from '@grafana/data';
-import { noDataColor, statusColor } from '../binding/color';
+import { noDataColor, STALE_MARKER, statusColor } from '../binding/color';
 import type { StatusView } from '../binding/status';
 import type { CellPatch, HalfState, PatchMap, SeriesInfo, StatusV4Fields } from '../types';
 import { buildLegendV4, type LegendContext } from './model';
@@ -108,6 +108,8 @@ describe('buildLegendV4', () => {
     });
     expect(custom.at(-1)?.entries[0].color).toBe('#123456');
     expect(onlyStale.at(-1)?.entries.map((e) => e.key)).toEqual(['stale']);
+    // the stale entry shows a clock in place of the square swatch: stale and missing are both grey
+    expect(blocks[1].entries.map((e) => e.marker)).toEqual([STALE_MARKER, undefined]);
   });
 
   it('puts the link load scale last, and a link half with no data into the missing entry', () => {

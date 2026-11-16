@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { StatusView } from '../binding/status';
 import type { PatchMap, StatusV4Fields } from '../types';
+import { STALE_MARKER } from '../binding/color';
 import { BAND_ROW, bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 
 vi.mock('@grafana/ui', () => ({
@@ -134,6 +135,27 @@ describe('StatusBand', () => {
     expect(row.textContent).toContain('Offline · scrape_up: 2 cells');
     expect(row.getAttribute('data-dmap-state')).toBe('down');
     expect(row.getAttribute('data-dmap-count')).toBe('2');
+  });
+  it('marks a stale row with a clock and a no-data row with ?, so the two grey rows differ', () => {
+    const rows = bandRowsV4(
+      patchesOf([
+        ['n1', v4('health', 'stale', 'Healthy', 'Sample is stale')],
+        ['n2', v4('health', 'missing', '–', 'No data')],
+      ])
+    );
+    render(
+      <StatusBand rowsV4={rows} layout={bandLayout(rows.length, 3, false, 600)} expanded={false} onToggle={() => {}} />
+    );
+    const marks = [...screen.getByTestId('dmap-status-band').querySelectorAll('.dmap-status-summary')].map((r) => [
+      r.getAttribute('data-dmap-state'),
+      r.firstElementChild?.textContent,
+    ]);
+    expect(marks).toEqual(
+      expect.arrayContaining([
+        ['stale', STALE_MARKER],
+        ['missing', '?'],
+      ])
+    );
   });
   it('counts the cells of the hidden rows in the toggle text', () => {
     const rows = bandRowsV4(

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added the panel option **Stale colour** (View group, default grey). It paints a cell or a link whose last sample is older than its freshness, its status band marker and its legend entry. Before, stale was always the palette orange; now the default is grey. The word `stale` on the hover card is grey too. See [Status paint](docs/guide/colours.md#status-paint).
+- Added the panel option **Stale colour** (View group, default grey). It paints a cell or a link whose last sample is older than its freshness, its status band marker and its legend entry. Before, stale was always the palette orange; now the default is grey. The word `stale` on the hover card is grey too. A stale row of the status band and the `Stale` entry of the legend show a clock `◷`, so stale is easy to tell from no data (`?`, also grey). See [Status paint](docs/guide/colours.md#status-paint).
 
 ## 1.7.0
 

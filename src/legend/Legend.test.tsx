@@ -47,6 +47,23 @@ const view = (over: Partial<React.ComponentProps<typeof Legend>> = {}) => {
 };
 
 describe('Legend', () => {
+  it('shows the marker of an entry in its colour in place of the square swatch', () => {
+    const state: LegendBlock = {
+      key: 'state',
+      title: 'State',
+      cellIds: ['a', 'b'],
+      entries: [
+        { key: 'stale', label: 'Stale', color: 'rgb(128, 128, 128)', cellIds: ['a'], marker: '◷' },
+        { key: 'missing', label: 'No data', color: 'rgb(1, 2, 3)', cellIds: ['b'] },
+      ],
+    };
+    const { legend } = view({ blocks: [state] });
+    const [stale, missing] = within(legend)
+      .getAllByTestId('dmap-legend-entry')
+      .map((e) => e.querySelector('[data-dmap-swatch]') as HTMLElement);
+    expect([stale.textContent, stale.style.color, stale.style.background]).toEqual(['◷', 'rgb(128, 128, 128)', '']);
+    expect([missing.textContent, missing.style.background]).toEqual(['', 'rgb(1, 2, 3)']);
+  });
   it('shows each block with its title, swatches and threshold texts in order', () => {
     const { legend } = view();
     expect(

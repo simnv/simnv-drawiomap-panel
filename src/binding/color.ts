@@ -23,6 +23,12 @@ export function noDataColor(theme: GrafanaTheme2): string {
   return theme.colors.text.disabled;
 }
 
+/**
+ * The marker of the stale state in the status band and the legend: a clock. Stale and missing are both grey by default,
+ * so the marker tells them apart (missing has `?`).
+ */
+export const STALE_MARKER = '◷';
+
 /** The default **Stale colour**: a mid grey, darker than the no-data grey of `missing` in the dark theme. */
 export const DEFAULT_STALE_COLOR = 'gray';
 
