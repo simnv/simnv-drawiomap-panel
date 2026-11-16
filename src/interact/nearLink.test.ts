@@ -136,14 +136,12 @@ describe('markNearLink', () => {
     expect(layer('l1').classList.contains(NEAR_CLASS)).toBe(true);
     const marks = layer('l1').querySelectorAll(`.${NEAR_MARK_CLASS}`);
     expect(marks).toHaveLength(2);
-    // the underlay comes first, below the halves: a glow of three strokes, wide and faint to narrow and strong
+    // the underlay comes first, below the halves: one stroke, 1.5 units wider on each side
     expect(layer('l1').firstElementChild).toBe(marks[0]);
     expect(marks[0].getAttribute('pointer-events')).toBe('none');
     const strokes = [...marks[0].querySelectorAll('polyline')];
     expect(strokes.map((p) => [p.getAttribute('stroke-width'), p.getAttribute('stroke-opacity')])).toEqual([
-      ['15', '0.25'],
-      ['9', '0.4'],
-      ['5', '0.75'],
+      ['4', '0.45'],
     ]);
     expect(strokes.every((p) => p.getAttribute('stroke') === 'currentColor')).toBe(true);
     markNearLink(root, 'l2');
