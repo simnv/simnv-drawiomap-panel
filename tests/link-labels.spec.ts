@@ -467,7 +467,7 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
   await expect(panel.getByRole('tooltip')).toBeVisible();
   const mark = panel.locator(`[data-cell-id="${ISP_A}"] g.dmap-overlay.dmap-near`);
   await expect(mark).toHaveCount(1);
-  await expect(mark.locator('.dmap-near-mark').first()).toHaveCSS('display', 'inline');
+  await expect(mark).toHaveAttribute('filter', /^url\(#dmap-bloom-\d+\)$/);
   await expect(panel.locator('g.dmap-overlay.dmap-near')).toHaveCount(1);
   if (SHOTS) {
     await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });

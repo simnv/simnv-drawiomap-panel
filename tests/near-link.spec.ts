@@ -72,11 +72,11 @@ test.describe('a thin link near the pointer', () => {
     const card = panel.locator.getByRole('tooltip');
     await expect(card).toBeVisible();
     expect(spot!.label.startsWith((await card.getAttribute('aria-label')) ?? '-')).toBe(true);
-    // the mark: one class on the overlay layer of that link, and its underlay is drawn
+    // the mark: the near class and the bloom filter on the overlay layer of that link
     const marked = panel.locator.locator('g.dmap-overlay.dmap-near');
     await expect(marked).toHaveCount(1);
     await expect(panel.locator.locator(`[data-cell-id="${spot!.cell}"] g.dmap-overlay.dmap-near`)).toHaveCount(1);
-    await expect(marked.locator('.dmap-near-mark').first()).toHaveCSS('display', 'inline');
+    await expect(marked).toHaveAttribute('filter', /^url\(#dmap-bloom-\d+\)$/);
     await expect(panel.locator.getByTestId('dmap-stage')).toHaveCSS('cursor', 'pointer');
     // away from every link: the card closes and the mark goes
     await page.mouse.move(1, 1);
