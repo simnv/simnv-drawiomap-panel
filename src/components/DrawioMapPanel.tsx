@@ -38,6 +38,7 @@ import { useFollowViewport } from '../util/followViewport';
 import { legendCorners } from './legendCorners';
 import { LastDataStamp } from './LastDataStamp';
 import { lastSampleTime } from '../query/frames';
+import { panelStaleColor } from '../binding/color';
 import type { Box } from '../legend/position';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
@@ -208,7 +209,7 @@ function DrawioMapPanelView(props: ViewProps) {
   const theme = useTheme2();
   const opts = withDefaults(options);
   // The **Stale colour** option: a Grafana colour name (it follows the theme) or a CSS colour.
-  const staleColor = theme.visualization.getColorByName(opts.stale.color);
+  const staleColor = panelStaleColor(theme, opts.stale?.color);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
   const attachStage = useCallback((element: HTMLDivElement | null) => {

@@ -34,6 +34,7 @@ import { PluginDialog } from './PluginDialog';
 import { PopupLayout } from './PopupLayout';
 import { useOverlay } from './overlayStack';
 import { usePopupKeys } from './usePopupKeys';
+import { panelStaleColor } from '../../binding/color';
 
 export interface SplitEditorProps {
   /** The saved options of the panel. The code box starts with `options.config`; later changes do not reset it. */
@@ -548,6 +549,7 @@ export function SplitEditor({
           hash={diagram?.hash}
           xml={diagram?.xml}
           linkWidth={opts.linkWidth}
+          staleColor={panelStaleColor(theme, opts.stale?.color)}
           badges={entryCells ? undefined : lit.badges}
           view={view}
           setView={setView}

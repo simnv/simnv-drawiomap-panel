@@ -47,6 +47,8 @@ export interface DiagramStageProps {
   xml?: string;
   /** The link width range of the panel: the value labels keep `linkWidth.max / 2` clear of the strokes. */
   linkWidth?: { min: number; max: number };
+  /** The resolved **Stale colour** of the panel: the preview paints stale as the panel does. */
+  staleColor?: string;
   /** The count of series per cell for the path under the cursor (spec 5.3). Red for 0. */
   badges?: ReadonlyMap<string, Badge>;
   /** The live view, when the parent controls it (the split editor zooms to the highlighted cells). */
@@ -78,6 +80,7 @@ export function DiagramStage({
   hash,
   xml,
   linkWidth,
+  staleColor,
   badges,
   ...controlled
 }: DiagramStageProps) {
@@ -131,7 +134,7 @@ export function DiagramStage({
   }, []);
 
   // The draft patches, the overlay and the value labels: the preview shows the label mode while the user edits it.
-  useStagePaint(stage, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth, xml });
+  useStagePaint(stage, patches, { theme, linkWidth: linkWidth ?? DEFAULT_OPTIONS.linkWidth, xml, staleColor });
 
   // Fit the diagram into the pane. A pane with no size yet keeps the layout.
   useStageLayout(stage, FIT, size.width && size.height ? size : undefined, view, stageRef);

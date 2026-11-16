@@ -24,6 +24,20 @@ export function noDataColor(theme: GrafanaTheme2): string {
 }
 
 /**
+ * The resolved colour of the panel option **Stale colour**. An empty, transparent or unknown value gives the palette
+ * orange: a stale element must stay visible.
+ */
+export function panelStaleColor(theme: GrafanaTheme2, name: unknown): string {
+  const orange = theme.visualization.getColorByName('orange');
+  if (typeof name !== 'string' || name.trim() === '') {
+    return orange;
+  }
+  const color = theme.visualization.getColorByName(name);
+  const known = typeof CSS === 'undefined' || typeof CSS.supports !== 'function' || CSS.supports('color', color);
+  return known && alphaOf(color) > 0 ? color : orange;
+}
+
+/**
  * The colour of a status state, from the theme: the palette red for down and critical, the palette orange for
  * warning, the no-data grey for missing. Stale has the colour of the panel option **Stale colour** (`staleColor`,
  * resolved), else the palette orange. The elements, the status band and the legend share it.

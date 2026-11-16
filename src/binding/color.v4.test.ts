@@ -1,6 +1,14 @@
 import { createTheme } from '@grafana/data';
 import { describe, expect, it } from 'vitest';
-import { linkStatusPaint, noDataColor, statusColor, statusPaint, statusPaintV4, statusPalette } from './color';
+import {
+  linkStatusPaint,
+  noDataColor,
+  panelStaleColor,
+  statusColor,
+  statusPaint,
+  statusPaintV4,
+  statusPalette,
+} from './color';
 import type { StatusV4 } from './statusV4';
 
 const themes = [
@@ -84,5 +92,19 @@ describe('statusPaint and linkStatusPaint read a v4 status', () => {
     ).toBeUndefined();
     const offline = status({ state: 'critical', severity: 'critical', color: '#0000ff', text: 'Offline' });
     expect(linkStatusPaint({ link: { b2a: half }, statusView: offline }, theme)).toBe('#0000ff');
+  });
+});
+
+describe('panelStaleColor', () => {
+  const theme = createTheme();
+  const orange = theme.visualization.getColorByName('orange');
+  it('resolves a colour name of the theme and keeps a plain colour', () => {
+    expect(panelStaleColor(theme, 'blue')).toBe(theme.visualization.getColorByName('blue'));
+    expect(panelStaleColor(theme, '#123456')).toBe('#123456');
+  });
+  it('gives the palette orange for an empty, absent or transparent value: a stale element stays visible', () => {
+    for (const v of ['', '  ', undefined, null, 'transparent', 'rgba(0, 0, 0, 0)']) {
+      expect(panelStaleColor(theme, v)).toBe(orange);
+    }
   });
 });
