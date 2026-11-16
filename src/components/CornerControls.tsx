@@ -1,5 +1,6 @@
 import React, { forwardRef, useEffect, useLayoutEffect, useRef } from 'react';
 import { css } from '@emotion/css';
+import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { SandboxPortal } from '../util/sandboxHost';
 import { TooltipBox } from '../visuals/ChartHover';
@@ -15,6 +16,20 @@ export const EDIT_TEXT_MIN_WIDTH = 160;
 /** The height of the top-left row: the buttons set it when they show, else the badge. 0: the row is empty. */
 export const cornerRowHeight = (buttons: boolean, warnings: number) =>
   buttons ? RESET_SIZE : warnings ? BADGE_HEIGHT : 0;
+
+// One warning on each line; a long warning wraps inside the tooltip. A warning of a failed datasource has one line for
+// each query, and a rule parts it from the next warning.
+const getWarningStyles = (theme: GrafanaTheme2) => ({
+  line: css`
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+    & + & {
+      margin-top: ${theme.spacing(0.75)};
+      padding-top: ${theme.spacing(0.75)};
+      border-top: 1px solid ${theme.colors.border.medium};
+    }
+  `,
+});
 
 const styles = {
   // The top-left stack: the reset button and the warning badge in one row.
@@ -64,17 +79,6 @@ const styles = {
       outline-offset: 1px;
     }
   `,
-  // one warning on each line; a long warning wraps inside the tooltip
-  warningLine: css`
-    overflow-wrap: anywhere;
-    /* a warning of a failed datasource has one line for each query */
-    white-space: pre-line;
-    & + & {
-      margin-top: 6px;
-      padding-top: 6px;
-      border-top: 1px solid rgba(127, 127, 127, 0.35);
-    }
-  `,
 };
 
 interface Props {
@@ -99,6 +103,7 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
 ) {
   const theme = useTheme2();
   const tipStyles = useStyles2(getTipStyles);
+  const warningStyles = useStyles2(getWarningStyles);
   const badgeRef = useRef<HTMLDivElement>(null);
   const { id: tipId, tip, props: tipProps, hide: hideTip } = useAnchoredTip(badgeRef);
   // a refresh with no warnings removes the badge: its tooltip must not come back with the next warning
@@ -191,7 +196,7 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             testId="dmap-warning-tooltip"
           >
             {warnings.map((warning, i) => (
-              <div key={i} className={styles.warningLine}>
+              <div key={i} className={warningStyles.line}>
                 {warning}
               </div>
             ))}

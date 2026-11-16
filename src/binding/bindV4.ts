@@ -301,7 +301,9 @@ export function bindV4(input: BindInputV4): BindResultV4 {
     const snapshot = snapshotV4(data, refId);
     found = { snapshot, series: [], selected: new Set() };
     if (snapshot.state === 'error' || snapshot.state === 'unsupported') {
-      const errors = data.errors ?? [];
+      // Grafana 12.3 and 12.4 set only the deprecated `error` for a request that threw (see panelSnapshot)
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
+      const errors = [...(data.errors ?? []), ...(data.error ? [data.error] : [])];
       const error = errors.find((e) => e.refId === refId) ?? errors.find((e) => !e.refId);
       const message = error?.message ?? snapshot.message;
       report.once({ kind: 'query-unavailable', refId, state: 'error', message });

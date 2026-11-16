@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { DataQueryRequest } from '@grafana/data';
-import { describeQueries, failureCause, failureLabel, failureText, groupQueryFailures } from './queryFailures';
+import type { ReportEntry } from '../binding/report';
+import {
+  describeQueries,
+  failedLabels,
+  failedQueries,
+  failureCause,
+  failureLabel,
+  failureText,
+  groupQueryFailures,
+  otherEntries,
+  PANEL_REQUEST,
+} from './queryFailures';
 
 const request = (targets: Array<Record<string, unknown>>) => ({ targets }) as unknown as DataQueryRequest;
 const NAMES: Record<string, string> = { vm: 'VictoriaMetrics', pg: 'Inventory DB' };
@@ -36,6 +47,23 @@ describe('describeQueries', () => {
     });
   });
 
+  it('names a datasource given as a variable by the datasource it selects, with the scoped variables', () => {
+    const seen: unknown[] = [];
+    const info = describeQueries(
+      {
+        ...request([{ refId: 'a', datasource: { uid: '${ds}' }, expr: 'rate(x[$__interval])' }]),
+        scopedVars: { __interval: { value: '1m' } },
+      } as never,
+      name,
+      (t, scoped) => {
+        seen.push(scoped);
+        return t.replace('${ds}', 'vm').replace('$__interval', String(scoped?.__interval?.value));
+      }
+    );
+    expect(info('a')).toEqual({ datasource: 'VictoriaMetrics', expression: 'rate(x[1m])' });
+    expect(seen[0]).toEqual({ __interval: { value: '1m' } });
+  });
+
   it('cuts a long expression', () => {
     const expr = `sum(${'x'.repeat(300)})`;
     const { expression } = describeQueries(request([{ refId: 'a', expr }]), name)('a');
@@ -57,6 +85,11 @@ describe('failureCause', () => {
     ['datasource not found', 'is not found (check the datasource of the query)'],
     ['502 Bad Gateway', 'has a server error (502)'],
     ['bad_data: 1:5: parse error: unexpected "}"', 'rejects the query (check the query text)'],
+    ['parse error at line 1, col 500: unexpected "}"', 'rejects the query (check the query text)'],
+    ['query timed out in expression evaluation', 'stops the query (the query takes too long)'],
+    ['pq: column "id" does not exist: SELECT * FROM t WHERE id = 401 LIMIT 500', 'cannot run the query'],
+    ['request failed, status code: 502', 'has a server error (502)'],
+    ['Invalid API key', 'refuses the access (401, check the credentials)'],
     ['something else', 'cannot run the query'],
   ])('%s', (message, cause) => {
     expect(failureCause(message)).toBe(cause);
@@ -128,5 +161,74 @@ describe('groupQueryFailures', () => {
     expect(lines.slice(1, -1)).toHaveLength(9);
     expect(lines[9]).toBe('• and 3 more');
     expect(lines[1]).toBe('• q0');
+  });
+});
+
+describe('failedQueries', () => {
+  const unavailable = (refId: string): ReportEntry => ({
+    kind: 'query-unavailable',
+    refId,
+    state: 'error',
+    message: 'Panel query failed.',
+  });
+  const report = [
+    unavailable('a'),
+    unavailable('b'),
+    { kind: 'query-unavailable', refId: 'c', state: 'loading', message: 'Loading data' } as ReportEntry,
+  ];
+
+  it('gives each refId its own error, else the request-wide one, and skips a query that loads', () => {
+    expect(failedQueries(report, { errors: [{ refId: 'a', message: 'own' }, { message: 'wide' }] })).toEqual([
+      { refId: 'a', message: 'own' },
+      { refId: 'b', message: 'wide', requestWide: true },
+    ]);
+  });
+
+  it('reads the deprecated error of Grafana 12.3 and 12.4, and keeps the report text with no error', () => {
+    expect(failedQueries([unavailable('a')], { error: { message: 'dial tcp: no such host' } })).toEqual([
+      { refId: 'a', message: 'dial tcp: no such host', requestWide: true },
+    ]);
+    expect(failedQueries([unavailable('a')], {})).toEqual([
+      { refId: 'a', message: 'Panel query failed.', requestWide: true },
+    ]);
+  });
+});
+
+describe('a request-wide error', () => {
+  const info = describeQueries(
+    request([
+      { refId: 'up', datasource: { uid: 'vm' }, expr: 'up' },
+      { refId: 'inv', datasource: { uid: 'pg' }, rawSql: 'SELECT 1' },
+    ]),
+    name
+  );
+
+  it('names no datasource when its queries use more than one', () => {
+    const groups = groupQueryFailures(
+      [
+        { refId: 'up', message: 'connection refused', requestWide: true },
+        { refId: 'inv', message: 'connection refused', requestWide: true },
+      ],
+      info
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].datasource).toBe(PANEL_REQUEST);
+    expect(failedLabels(groups)('inv')).toBe('The panel request is not reachable');
+  });
+
+  it('names the datasource when all its queries use one', () => {
+    const [group] = groupQueryFailures([{ refId: 'up', message: 'connection refused', requestWide: true }], info);
+    expect(group.datasource).toBe('VictoriaMetrics');
+  });
+});
+
+describe('otherEntries', () => {
+  const capacity: ReportEntry = { kind: 'capacity-fallback', cls: 'link', reason: 'query failed', cellIds: ['l1'] };
+  const noSeries: ReportEntry = { kind: 'capacity-fallback', cls: 'link', reason: 'no series', cellIds: ['l1'] };
+  const failedEntry: ReportEntry = { kind: 'query-unavailable', refId: 'a', state: 'error', message: 'x' };
+
+  it('drops the failed queries, and a capacity "query failed" only when a failed query shows', () => {
+    expect(otherEntries([failedEntry, capacity, noSeries], [{ refId: 'a', message: 'x' }])).toEqual([noSeries]);
+    expect(otherEntries([capacity], [])).toEqual([capacity]);
   });
 });

@@ -5,7 +5,6 @@ import type { Field, PanelProps } from '@grafana/data';
 import { getDataSourceSrv, locationService } from '@grafana/runtime';
 import type { DataSourceRef } from '@grafana/schema';
 import { useTheme2 } from '@grafana/ui';
-import { CAPACITY_QUERY_FAILED } from '../binding/capacity';
 import { bindContextFor } from '../binding/context';
 import type { BindResultV4 } from '../binding/bindV4';
 import { buildCardV4, opensCard } from '../interact/cardModel';
@@ -26,10 +25,11 @@ import { useBoundDiagram } from '../stage/useBoundDiagram';
 import { groupReport, reportGroupLine } from '../stage/reportView';
 import {
   describeQueries,
-  failureLabel,
+  failedLabels,
+  failedQueries,
   failureText,
   groupQueryFailures,
-  type FailedQuery,
+  otherEntries,
 } from '../stage/queryFailures';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
@@ -269,24 +269,12 @@ function DrawioMapPanelView(props: ViewProps) {
   const shown = useMemo((): BindResultV4 => ({ ...bound, patches }), [bound, patches]);
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
-  const request = data.request;
   const result = useMemo(() => {
     // A failed query gives one warning for each datasource and cause, with the failed queries and their expressions,
     // not one line of the same error for each refId.
-    const failed: FailedQuery[] = [];
-    const others = bound.report.filter((entry) => {
-      if (entry.kind === 'query-unavailable' && entry.state === 'error') {
-        failed.push({ refId: entry.refId, message: entry.message });
-        return false;
-      }
-      return entry.kind !== 'unmeasured-link';
-    });
-    // the capacity of a failed speed query says the same again
-    const rest = failed.length
-      ? others.filter((entry) => !(entry.kind === 'capacity-fallback' && entry.reason === CAPACITY_QUERY_FAILED))
-      : others;
-    const info = describeQueries(request, datasourceName, replaceVariables);
-    const failures = groupQueryFailures(failed, info);
+    const failed = failedQueries(bound.report, data);
+    const failures = groupQueryFailures(failed, describeQueries(data.request, datasourceName, replaceVariables));
+    const rest = otherEntries(bound.report, failed).filter((entry) => entry.kind !== 'unmeasured-link');
     const warnings = [
       ...failures.map(failureText),
       ...groupReport(rest, validated.parsed.config).map((row) => reportGroupLine(row, true)),
@@ -294,12 +282,12 @@ function DrawioMapPanelView(props: ViewProps) {
     if (legacyRules) {
       warnings.unshift(legacyRulesWarning(legacyRules));
     }
-    const failedLabel = (refId: string) => {
-      const f = failures.find((group) => group.queries.some((q) => q.refId === refId));
-      return f && failureLabel(f);
+    return {
+      patches: patches as Map<string, CellPatch>,
+      warnings,
+      bandRows: bandRowsV4(patches, failedLabels(failures)),
     };
-    return { patches: patches as Map<string, CellPatch>, warnings, bandRows: bandRowsV4(patches, failedLabel) };
-  }, [bound, patches, legacyRules, validated.parsed.config, request, replaceVariables]);
+  }, [bound, patches, legacyRules, validated.parsed.config, data, replaceVariables]);
 
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);
