@@ -5,6 +5,7 @@ import { Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { SandboxPortal } from '../util/sandboxHost';
 import { TooltipBox } from '../visuals/ChartHover';
 import { getTipStyles, useAnchoredTip } from './anchoredTip';
+import { followTop } from '../util/followViewport';
 
 /** Heights in px of the items in the top-left row. */
 const RESET_SIZE = 32;
@@ -139,7 +140,8 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
     <div
       ref={ref}
       className={styles.corner}
-      style={{ left: 4, top: bandHeight + 4, maxHeight: `calc(100% - ${bandHeight + 8}px)` }}
+      // the row stays in the visible part of a panel that is scrolled partly out of view
+      style={{ left: 4, top: bandHeight + 4, maxHeight: `calc(100% - ${bandHeight + 8}px)`, translate: followTop }}
       data-testid="dmap-corner"
     >
       {showRow ? (

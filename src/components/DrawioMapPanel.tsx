@@ -33,6 +33,7 @@ import {
 } from '../stage/queryFailures';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
+import { useFollowViewport } from '../util/followViewport';
 import { legendCorners } from './legendCorners';
 import { LastDataStamp } from './LastDataStamp';
 import { lastSampleTime } from '../query/frames';
@@ -292,6 +293,8 @@ function DrawioMapPanelView(props: ViewProps) {
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);
   const band = bandLayout(result.bandRows.length, opts.summary.maxRows, bandExpanded, height);
+  // The corner row, the legend and the timestamp stay in the part of the panel that the page shows.
+  useFollowViewport(wrapperEl, band.height);
   const stageHeight = Math.max(1, height - band.height);
   const bandRef = useRef<HTMLElement>(null);
 

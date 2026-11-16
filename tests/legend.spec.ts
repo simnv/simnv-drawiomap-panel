@@ -28,6 +28,8 @@ const openLegend = async (legend: Locator) => {
 };
 
 test('the demo shows the colour legend in the bottom-right corner', async ({ page, gotoDashboardPage }) => {
+  // the whole panel in view: a panel whose bottom is out of view moves the legend up (follow-viewport.spec.ts)
+  await page.setViewportSize({ width: 1280, height: 1000 });
   await gotoDashboardPage({ uid: 'drawiomap-demo' });
   const panel = page.getByTestId('dmap-panel').first();
   const legend = panel.getByTestId('dmap-legend');
