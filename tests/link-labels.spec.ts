@@ -485,7 +485,7 @@ test('a pointer on a value label keeps the glow of its link', async ({
     await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });
     await page.screenshot({
       path: `${SHOTS}/link-glow-label-light.png`,
-      clip: { x: Math.max(0, box.x - 160), y: Math.max(0, box.y - 100), width: 320, height: 200 },
+      clip: { x: Math.max(0, light.x - 160), y: Math.max(0, light.y - 100), width: 320, height: 200 },
     });
   }
 });

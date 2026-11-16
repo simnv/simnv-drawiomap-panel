@@ -65,7 +65,7 @@ function usePanelEditing(id: number) {
 }
 
 /** The glow of the link under or near the pointer: white on the dark theme, the primary blue on the light one. */
-const glowColor = (theme: GrafanaTheme2) => (theme.isDark ? '#ffffff' : theme.colors.primary.main);
+const glowColor = (theme: GrafanaTheme2) => (theme.isDark ? theme.colors.text.maxContrast : theme.colors.primary.main);
 
 const styles = {
   // The status band and the stage stack: the band never covers the diagram.
@@ -98,7 +98,7 @@ const styles = {
     /* The link under or near the pointer glows: one class on its overlay layer. */
     & .${NEAR_MARK_CLASS} {
       display: none;
-      color: var(--dmap-glow, #3d71d9);
+      color: var(--dmap-glow);
     }
     & .${NEAR_CLASS} > .${NEAR_MARK_CLASS} {
       display: inline;
