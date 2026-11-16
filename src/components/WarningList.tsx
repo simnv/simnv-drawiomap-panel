@@ -61,21 +61,31 @@ const getStyles = (theme: GrafanaTheme2) => ({
  * The pinned list of the warning badge: one short line for each warning. A line with details is a disclosure button:
  * it opens the details below it (for a failed query: each query with its expression, and the error text).
  */
-export function WarningList({ warnings, onClose }: { warnings: readonly string[]; onClose: () => void }) {
+export function WarningList({
+  warnings,
+  headingId,
+  onClose,
+}: {
+  warnings: readonly string[];
+  /** The id of the heading: the dialog that holds the list takes its name from it. */
+  headingId?: string;
+  onClose: () => void;
+}) {
   const styles = useStyles2(getStyles);
-  const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
-  const toggle = (i: number) =>
+  // the open warnings by their short line: a refresh that adds or removes a warning keeps each one open or closed
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (summary: string) =>
     setOpen((s) => {
       const next = new Set(s);
-      if (!next.delete(i)) {
-        next.add(i);
+      if (!next.delete(summary)) {
+        next.add(summary);
       }
       return next;
     });
   return (
     <>
       <div className={styles.head}>
-        <span>
+        <span id={headingId}>
           {warnings.length} warning{warnings.length === 1 ? '' : 's'}
         </span>
         <IconButton name="times" size="sm" aria-label="Close" onClick={onClose} data-testid="dmap-warning-close" />
@@ -83,17 +93,18 @@ export function WarningList({ warnings, onClose }: { warnings: readonly string[]
       <ul className={styles.list}>
         {warnings.map((text, i) => {
           const { summary, details } = splitWarning(text);
+          const key = `${summary}\n${i}`;
           if (!details.length) {
             return (
-              <li key={i} className={styles.item} data-testid="dmap-warning-item">
+              <li key={key} className={styles.item} data-testid="dmap-warning-item">
                 {summary}
               </li>
             );
           }
-          const shown = open.has(i);
+          const shown = open.has(summary);
           return (
-            <li key={i} className={styles.item} data-testid="dmap-warning-item">
-              <button type="button" className={styles.toggle} aria-expanded={shown} onClick={() => toggle(i)}>
+            <li key={key} className={styles.item} data-testid="dmap-warning-item">
+              <button type="button" className={styles.toggle} aria-expanded={shown} onClick={() => toggle(summary)}>
                 <span className={styles.marker} aria-hidden="true">
                   {shown ? '▾' : '▸'}
                 </span>

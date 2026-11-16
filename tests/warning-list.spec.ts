@@ -37,13 +37,13 @@ test('a click on the badge pins the warnings; a failed query that no cell uses s
     await badge.hover();
     const tip = page.getByTestId('dmap-warning-tooltip');
     await expect(tip).toContainText(/VictoriaMetrics rejects the query \(check the query text\): 1 query fails/);
-    await expect(tip).toContainText('Click for details');
+    await expect(tip).toContainText('Click or press Enter for details');
     // the short line only: no query text in the tooltip
     await expect(tip).not.toContainText('rate(up[5m]');
 
     await badge.click();
     await expect(tip).toHaveCount(0);
-    const list = page.getByRole('dialog', { name: 'Warnings' });
+    const list = page.getByRole('dialog', { name: '1 warning' });
     await expect(list).toBeVisible();
     const toggle = list.getByRole('button', { name: /rejects the query/ });
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');

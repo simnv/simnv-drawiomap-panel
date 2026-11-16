@@ -110,7 +110,7 @@ describe('the warning badge tooltip', () => {
     const badge = setup([FAILED, 'up: 2 series select no cell']);
     fireEvent.pointerEnter(badge, { pointerType: 'mouse' });
     expect(tip()!.textContent).toBe(
-      'VM is not reachable (host not found): 2 queries failup: 2 series select no cellClick for details'
+      'VM is not reachable (host not found): 2 queries failup: 2 series select no cellClick or press Enter for details'
     );
   });
 
@@ -120,7 +120,7 @@ describe('the warning badge tooltip', () => {
     fireEvent.click(badge);
     // the pinned list takes the place of the tooltip, and it has the focus
     expect(tip()).toBeNull();
-    const dialog = list()!.querySelector('[role="dialog"][aria-label="Warnings"]');
+    const dialog = list()!.querySelector('[role="dialog"]');
     expect(document.activeElement).toBe(dialog);
     const items = screen.getAllByTestId('dmap-warning-item');
     expect(items).toHaveLength(2);

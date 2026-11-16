@@ -230,6 +230,28 @@ describe('a failed query that no cell uses', () => {
     ).toEqual(['up', 'broken', 'fine']);
   });
 
+  it('skips a Grafana expression and the queries it reads', () => {
+    expect(
+      failedQueries([], {
+        errors: [
+          { refId: 'A', message: 'bad' },
+          { refId: 'B', message: 'bad' },
+          { refId: 'C', message: 'bad' },
+          { refId: 'D', message: 'bad' },
+        ],
+        request: {
+          targets: [
+            { refId: 'A', expr: 'x' } as never,
+            { refId: 'B', datasource: { type: '__expr__', uid: '__expr__' }, expression: '$A * 8' } as never,
+            { refId: 'C', expr: 'y' } as never,
+            { refId: 'R', datasource: { uid: '__expr__' }, expression: 'C' } as never,
+            { refId: 'D', expr: 'z' } as never,
+          ],
+        },
+      }).map((f) => f.refId)
+    ).toEqual(['D']);
+  });
+
   it('is marked in its query line', () => {
     const groups = groupQueryFailures([{ refId: 'broken', message: 'bad_data: parse error', unused: true }], () => ({
       datasource: 'VM',

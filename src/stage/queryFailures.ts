@@ -147,8 +147,12 @@ export function failedQueries(
   }
   const reported = new Set(report.flatMap((entry) => (entry.kind === 'query-unavailable' ? [entry.refId] : [])));
   const wide = errors.find((e) => !e.refId);
-  for (const target of data.request?.targets ?? []) {
-    if (target.hide || reported.has(target.refId)) {
+  const targets = data.request?.targets ?? [];
+  // A Grafana expression and its inputs: a failed input fails the expression, and the expression warns if it is used.
+  const expressions = targets.filter(isExpression);
+  const inputs = new Set(expressions.flatMap(expressionInputs));
+  for (const target of targets) {
+    if (target.hide || reported.has(target.refId) || isExpression(target) || inputs.has(target.refId)) {
       continue;
     }
     const own = errors.find((e) => e.refId === target.refId);
@@ -159,6 +163,22 @@ export function failedQueries(
     }
   }
   return out;
+}
+
+/** A Grafana server-side expression (math, reduce, resample, classic condition). */
+const isExpression = (t: DataQuery) => {
+  const ds = t.datasource;
+  return typeof ds === 'string' ? ds === '__expr__' : ds?.uid === '__expr__' || ds?.type === '__expr__';
+};
+
+/** The refIds that an expression reads: `$A` and `${A}` in its text, or the plain refId of a reduce or a resample. */
+function expressionInputs(t: DataQuery): string[] {
+  const text = (t as unknown as { expression?: unknown }).expression;
+  if (typeof text !== 'string') {
+    return [];
+  }
+  const refs = [...text.matchAll(/\$\{?([A-Za-z0-9_-]+)\}?/g)].map((m) => m[1]);
+  return refs.length ? refs : [text.trim()];
 }
 
 /**

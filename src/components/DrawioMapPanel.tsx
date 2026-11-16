@@ -32,6 +32,7 @@ import {
   otherEntries,
 } from '../stage/queryFailures';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
+import { inPortalControl } from '../visuals/ChartHover';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { useFollowViewport } from '../util/followViewport';
 import { legendCorners } from './legendCorners';
@@ -425,7 +426,8 @@ function DrawioMapPanelView(props: ViewProps) {
   // The controls of the panel: a pointer on them does not pan the view and does not change the card.
   const onControl = (t: EventTarget | null) =>
     t instanceof Node &&
-    (!!corner.current?.contains(t) ||
+    (inPortalControl(t) ||
+      !!corner.current?.contains(t) ||
       !!bandRef.current?.contains(t) ||
       !!legendRef.current?.contains(t) ||
       !!stampRef.current?.contains(t));

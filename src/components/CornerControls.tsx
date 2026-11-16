@@ -1,9 +1,9 @@
 import React, { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { css } from '@emotion/css';
+import { css, cx } from '@emotion/css';
 import type { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { SandboxPortal } from '../util/sandboxHost';
-import { TooltipBox } from '../visuals/ChartHover';
+import { inPortalControl, TooltipBox } from '../visuals/ChartHover';
 import { getTipStyles, useAnchoredTip } from './anchoredTip';
 import { splitWarning, WarningList } from './WarningList';
 import { followTop } from '../util/followViewport';
@@ -89,7 +89,8 @@ const styles = {
     padding: 1px 6px;
     border-radius: 3px;
     z-index: 1;
-    cursor: default;
+    /* a click opens the list of the warnings */
+    cursor: pointer;
     &:focus-visible {
       outline: 2px solid currentColor;
       outline-offset: 1px;
@@ -152,8 +153,9 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
       return;
     }
     listRef.current?.focus({ preventScroll: true });
+    // the list box (its padding and its scrollbar too) is a portal control
     const inside = (t: EventTarget | null) =>
-      t instanceof Node && (!!listRef.current?.contains(t) || !!badgeRef.current?.contains(t));
+      inPortalControl(t) || (t instanceof Node && !!badgeRef.current?.contains(t));
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
@@ -166,17 +168,29 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
       }
     };
     const onScroll = (e: Event) => {
-      if (!(e.target instanceof Node && listRef.current?.contains(e.target))) {
+      if (!inPortalControl(e.target)) {
+        closeList(false);
+      }
+    };
+    // the list has the place of the badge at the click: a new size of the window moves the badge
+    const onResize = () => closeList(false);
+    // Tab out of the list (not to the badge) closes it
+    const onFocusIn = (e: FocusEvent) => {
+      if (!inside(e.target)) {
         closeList(false);
       }
     };
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('focusin', onFocusIn);
     window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
     return () => {
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('focusin', onFocusIn);
       window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
     };
   }, [isPinned, closeList]);
   const hasDetails = warnings.some((w) => splitWarning(w).details.length > 0);
@@ -288,11 +302,12 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             y={pinned.y}
             anchorHeight={pinned.height}
             live={false}
-            className={`${tipStyles.tip} ${pinnedStyles.box}`}
+            className={cx(tipStyles.tip, pinnedStyles.box)}
             testId="dmap-warning-list"
+            control
           >
-            <div ref={listRef} role="dialog" aria-label="Warnings" tabIndex={-1}>
-              <WarningList warnings={warnings} onClose={() => closeList(true)} />
+            <div ref={listRef} role="dialog" aria-labelledby={`${tipId}-list`} tabIndex={-1}>
+              <WarningList warnings={warnings} headingId={`${tipId}-list`} onClose={() => closeList(true)} />
             </div>
           </TooltipBox>
         </SandboxPortal>
@@ -315,7 +330,7 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             ))}
             {hasDetails ? (
               <div className={pinnedStyles.hint} data-dmap-hint="">
-                Click for details
+                Click or press Enter for details
               </div>
             ) : null}
           </TooltipBox>

@@ -97,6 +97,16 @@ const PLACE_RETRIES = 10;
  * size when the box is in the document and on each change of its content; without one, frames retry. A change
  * of the viewport places the box again.
  */
+/**
+ * The mark of a control of the panel that lives in a portal outside the panel (the pinned warning list): a pointer or a
+ * key in it does not close the card, does not pin a cell and does not pan the view.
+ */
+export const PORTAL_CONTROL_ATTR = 'data-dmap-control';
+export const inPortalControl = (t: EventTarget | null) =>
+  t instanceof Element
+    ? !!t.closest(`[${PORTAL_CONTROL_ATTR}]`)
+    : t instanceof Node && !!t.parentElement?.closest(`[${PORTAL_CONTROL_ATTR}]`);
+
 export function TooltipBox({
   x,
   y,
@@ -105,6 +115,7 @@ export function TooltipBox({
   className,
   id,
   testId = 'dmap-chart-tooltip',
+  control = false,
   children,
 }: {
   x: number;
@@ -116,6 +127,8 @@ export function TooltipBox({
   /** the id that the `aria-describedby` of the anchor points to */
   id?: string;
   testId?: string;
+  /** The box is a control of the panel in a portal (`PORTAL_CONTROL_ATTR`): the card and the stage leave it alone. */
+  control?: boolean;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -198,6 +211,7 @@ export function TooltipBox({
       id={id}
       role={id ? 'tooltip' : undefined}
       data-testid={testId}
+      {...(control ? { [PORTAL_CONTROL_ATTR]: '' } : {})}
       aria-live={live ? 'polite' : undefined}
       aria-atomic="true"
     >
