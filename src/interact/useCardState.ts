@@ -306,11 +306,12 @@ export function useCardInput(args: InputArgs) {
     }
     pointerRef.current = { x: e.clientX, y: e.clientY };
     const patch = patchAt(e.target, stageEl, patches, index, cardable);
-    // A direct hit wins. Off the stage (the card, a chart, the corner, the legend) no link is near.
+    // A direct hit wins. A link under the pointer (its stroke or its value label) keeps the hover mark. Off the stage
+    // (the card, a chart, the corner, the legend) no link is near.
     if (patch || !stageEl.contains(e.target as Node)) {
       stopFrame();
       pending.current = null;
-      setNear(undefined);
+      setNear(patch && index.get(patch.cellId)?.line ? patch.cellId : undefined);
       hover(patch, e);
       return;
     }

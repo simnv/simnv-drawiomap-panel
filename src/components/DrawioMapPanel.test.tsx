@@ -1491,6 +1491,23 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(false);
     });
 
+    it('the mark stays when the pointer moves from near the link onto it or its label', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      const stage = screen.getByTestId('dmap-stage');
+      expect(stage.hasAttribute(NEAR_ATTR)).toBe(true);
+      await near('lab', 75, 25);
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(stage.hasAttribute(NEAR_ATTR)).toBe(true);
+      await near('lbl-bg', 75, 25);
+      expect(stage.hasAttribute(NEAR_ATTR)).toBe(true);
+      // a node under the pointer takes the mark away
+      await near('na', 48, 28);
+      expect(await tooltip()).toBe('A');
+      expect(stage.hasAttribute(NEAR_ATTR)).toBe(false);
+    });
+
     it('a node under the pointer wins over a link inside the radius', async () => {
       render(<DrawioMapPanel {...structurePanel(ALL)} />);
       // (48, 28) is inside node A and 2 px from the link

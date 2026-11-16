@@ -168,8 +168,8 @@ interface HalfDrawn {
   width: number;
   place: HalfPlace;
   points: Map<number, HalfPointsAttr>;
-  /** The near-link mark of the half: made at the first mark (`markNearLink`), then kept. */
-  mark?: SVGPolylineElement;
+  /** The hover mark of the half (a glow of `NEAR_GLOW.length` strokes): made at the first mark, then kept. */
+  mark?: SVGGElement;
 }
 /** The overlay of one link: its layer, the set of halves it was built for, and the elements of each half. */
 interface LinkDrawn {
@@ -438,8 +438,7 @@ function updateHalf(drawn: HalfDrawn, state: HalfState): void {
   drawn.line.setAttribute('stroke-width', String(width));
   drawn.arrow?.setAttribute('fill', state.color);
   if (drawn.mark) {
-    drawn.mark.setAttribute('stroke', state.color);
-    drawn.mark.setAttribute('stroke-width', fmt(width + NEAR_MARK_EXTRA));
+    setGlowWidths(drawn.mark, width);
   }
   if (drawn.width !== width) {
     drawn.width = width;
@@ -514,32 +513,46 @@ export function overlayHalves(root: SVGSVGElement, cellId: string): SVGPolylineE
   return drawn ? [drawn.a2b?.line, drawn.b2a?.line].filter((line): line is SVGPolylineElement => !!line) : [];
 }
 
-/** The class of a link layer whose link the pointer is near (not on): the panel CSS shows its marks. */
+/** The class of a link layer whose link the pointer is on or near: the panel CSS shows its marks. */
 export const NEAR_CLASS = 'dmap-near';
 export const NEAR_MARK_CLASS = 'dmap-near-mark';
-/** The mark is this much wider than its half: about 1.5 units on each side. */
-const NEAR_MARK_EXTRA = 3;
+/**
+ * The glow of the hover mark: strokes from wide and faint to narrow and strong, each this much wider than its half.
+ * Stacked strokes, not an SVG blur: a filter on a straight horizontal line has a box of zero height and draws nothing.
+ * The panel CSS gives them their colour.
+ */
+const NEAR_GLOW = [
+  { extra: 14, opacity: 0.25 },
+  { extra: 8, opacity: 0.4 },
+  { extra: 4, opacity: 0.75 },
+] as const;
+
+function setGlowWidths(mark: SVGGElement, width: number): void {
+  NEAR_GLOW.forEach((g, i) => mark.children[i]?.setAttribute('stroke-width', fmt(width + g.extra)));
+}
 
 /** Makes the marks of the halves (once) and puts the near class on the layer. */
 function showNearMark(drawn: LinkDrawn): void {
   for (const half of [drawn.a2b, drawn.b2a]) {
     if (half && !half.mark) {
       const { geo, from, to } = half.place;
+      const points = pointsAttr(geo.polyline(from, to));
+      const mark = el('g', { class: NEAR_MARK_CLASS, 'pointer-events': 'none' });
+      for (const g of NEAR_GLOW) {
+        mark.appendChild(
+          el('polyline', {
+            points,
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-opacity': g.opacity,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+          })
+        );
+      }
+      setGlowWidths(mark, half.width);
       // an underlay: the first child of the layer, below both halves and their heads
-      half.mark = drawn.layer.insertBefore(
-        el('polyline', {
-          class: NEAR_MARK_CLASS,
-          points: pointsAttr(geo.polyline(from, to)),
-          fill: 'none',
-          stroke: half.line.getAttribute('stroke') ?? 'currentColor',
-          'stroke-width': fmt(half.width + NEAR_MARK_EXTRA),
-          'stroke-opacity': 0.45,
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          'pointer-events': 'none',
-        }),
-        drawn.layer.firstChild
-      );
+      half.mark = drawn.layer.insertBefore(mark, drawn.layer.firstChild);
     }
   }
   drawn.layer.classList.add(NEAR_CLASS);

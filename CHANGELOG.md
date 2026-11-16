@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Changed the hover mark of a link to a glow: a soft halo of three strokes, white on the dark theme and the primary blue on the light theme, in place of a wider copy of the link colour. The link glows when the pointer is on its stroke or its value label too, not only near it. Before, the mark went away when the pointer reached the value label (for example `41%`).
 - Added the panel option **Stale colour** (View group, default grey). It paints a cell or a link whose last sample is older than its freshness, its status band marker and its legend entry. Before, stale was always the palette orange; now the default is grey. The word `stale` on the hover card is grey too. A stale row of the status band and the `Stale` entry of the legend show a clock `◷`, so stale is easy to tell from no data (`?`, also grey). See [Status paint](docs/guide/colours.md#status-paint).
 
 ## 1.7.0

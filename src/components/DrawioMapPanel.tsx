@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css } from '@emotion/css';
-import type { Field, PanelProps } from '@grafana/data';
+import type { Field, GrafanaTheme2, PanelProps } from '@grafana/data';
 import { getDataSourceSrv, locationService } from '@grafana/runtime';
 import type { DataSourceRef } from '@grafana/schema';
 import { useTheme2 } from '@grafana/ui';
@@ -64,6 +64,9 @@ function usePanelEditing(id: number) {
   return editPanel === String(id) ? `${pathname}\n${editPanel}` : '';
 }
 
+/** The glow of the link under or near the pointer: white on the dark theme, the primary blue on the light one. */
+const glowColor = (theme: GrafanaTheme2) => (theme.isDark ? theme.colors.text.maxContrast : theme.colors.primary.main);
+
 const styles = {
   // The status band and the stage stack: the band never covers the diagram.
   wrapper: css`
@@ -92,9 +95,10 @@ const styles = {
     &[${NEAR_ATTR}] {
       cursor: pointer;
     }
-    /* A link caught near the pointer (not under it) shows its mark: one class on its overlay layer. */
+    /* The link under or near the pointer glows: one class on its overlay layer. */
     & .${NEAR_MARK_CLASS} {
       display: none;
+      color: var(--dmap-glow);
     }
     & .${NEAR_CLASS} > .${NEAR_MARK_CLASS} {
       display: inline;
@@ -534,7 +538,7 @@ function DrawioMapPanelView(props: ViewProps) {
       <div
         ref={attachStage}
         className={styles.stage}
-        style={{ touchAction, height: stageHeight }}
+        style={{ touchAction, height: stageHeight, ['--dmap-glow' as string]: glowColor(theme) }}
         data-testid="dmap-stage"
       />
       {charts.length ? (
