@@ -128,7 +128,7 @@ export interface Options {
   linkWidth: { min: number; max: number };
   /** The status band above the diagram: one row per cause. maxRows 0 hides the band. Default: 3. */
   summary?: { maxRows: number };
-  /** The colour of a stale cell or link (a Grafana colour name or a CSS colour). Default: the palette orange. */
+  /** The colour of a stale cell or link (a Grafana colour name or a CSS colour). Default: `gray` (`DEFAULT_STALE_COLOR`). */
   stale?: { color: string };
   /** The cells that open a hover or pinned card. Default: node, link, port, other. */
   hover?: { kinds: HoverKind[] };
@@ -159,7 +159,7 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
   linkWidth: { min: 2, max: 10 },
   summary: { maxRows: 3 },
-  stale: { color: 'orange' },
+  stale: { color: 'gray' },
   hover: { kinds: ['node', 'link', 'port', 'other'] },
   legend: { show: true, corner: 'bottom-right', collapsed: true, timestamp: true },
 };

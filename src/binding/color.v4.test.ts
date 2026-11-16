@@ -1,6 +1,7 @@
 import { createTheme } from '@grafana/data';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_STALE_COLOR,
   linkStatusPaint,
   noDataColor,
   panelStaleColor,
@@ -32,11 +33,9 @@ describe.each(themes)('statusPaintV4, %s theme', (_, theme) => {
       expect(statusPaintV4(status({ color, text: 'Up' }), theme)).toBeNull();
     }
   });
-  it('keeps the theme colours for missing (grey) and stale (orange)', () => {
+  it('keeps the no-data grey for missing and the default Stale colour (grey) for stale', () => {
     expect(statusPaintV4(status({ state: 'missing', severity: 'missing', text: '–' }), theme)).toBe(noDataColor(theme));
-    expect(statusPaintV4(status({ state: 'stale', color: '#73bf69' }), theme)).toBe(
-      theme.visualization.getColorByName('orange')
-    );
+    expect(statusPaintV4(status({ state: 'stale', color: '#73bf69' }), theme)).toBe(DEFAULT_STALE_COLOR);
   });
   it('paints stale with the Stale colour of the panel, and only stale', () => {
     expect(statusPaintV4(status({ state: 'stale', color: '#73bf69' }), theme, '#123456')).toBe('#123456');
@@ -97,14 +96,24 @@ describe('statusPaint and linkStatusPaint read a v4 status', () => {
 
 describe('panelStaleColor', () => {
   const theme = createTheme();
-  const orange = theme.visualization.getColorByName('orange');
+  const grey = DEFAULT_STALE_COLOR;
   it('resolves a colour name of the theme and keeps a plain colour', () => {
     expect(panelStaleColor(theme, 'blue')).toBe(theme.visualization.getColorByName('blue'));
     expect(panelStaleColor(theme, '#123456')).toBe('#123456');
   });
-  it('gives the palette orange for an empty, absent or transparent value: a stale element stays visible', () => {
+  it('gives the default grey for an empty, absent or transparent value: a stale element stays visible', () => {
     for (const v of ['', '  ', undefined, null, 'transparent', 'rgba(0, 0, 0, 0)']) {
-      expect(panelStaleColor(theme, v)).toBe(orange);
+      expect(panelStaleColor(theme, v)).toBe(grey);
+    }
+  });
+  it('gives the default grey for a value that the browser does not know as a colour', () => {
+    const supports = vi.fn((_p: string, v: string) => v !== 'notacolour');
+    vi.stubGlobal('CSS', { supports });
+    try {
+      expect(panelStaleColor(theme, 'notacolour')).toBe(grey);
+      expect(panelStaleColor(theme, '#123456')).toBe('#123456');
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });

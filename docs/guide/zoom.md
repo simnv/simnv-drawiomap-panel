@@ -2,20 +2,20 @@
 
 The options are in the **View** group of the panel options. **Zoom** and **Align** are rows of icon buttons, so that they fit in a narrow options pane. Move the pointer on an icon, or focus it, to see its name and meaning.
 
-| Option               | Meaning                                                                                                                                                                                 |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                               |
-| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                          |
-| Zoom: Original       | The diagram has its original size.                                                                                                                                                      |
-| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                                       |
-| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                          |
-| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally.         |
-| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                         |
-| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                            |
-| Link width min, max  | The range of the link width in pixels. The width grows with the load. The head size follows the width and the class field `arrow`. See [Arrow styles](links.md#arrow-styles).           |
-| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](hover-card.md#which-cells-open-a-card)). Default: node, link, port, other.                                               |
-| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](colours.md#status-band)). Default 3. 0 hides the band.                                            |
-| Stale colour         | The colour of a cell or a link whose last sample is older than its freshness. The status band and the legend use it too (see [Status paint](colours.md#status-paint)). Default: orange. |
+| Option               | Meaning                                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zoom: Fit            | The whole diagram fits in the panel. This is the default.                                                                                                                             |
+| Zoom: Fit width      | The diagram has the panel width. The panel scrolls vertically.                                                                                                                        |
+| Zoom: Original       | The diagram has its original size.                                                                                                                                                    |
+| Zoom: Custom, Zoom % | The diagram has the size that you set in percent.                                                                                                                                     |
+| Minimum scale        | Fit and Fit width only. Do not shrink below this scale in Fit modes; the panel scrolls instead. 1 = 100%. Default 0: off. See [Minimum scale](#minimum-scale).                        |
+| Align                | Fit only. **Top** (default): when the panel is taller than the diagram, the diagram is at the top. **Center**: it is in the middle. The diagram is always centred horizontally.       |
+| Wheel zoom           | The mouse wheel zooms the view. Off by default.                                                                                                                                       |
+| Drag pan             | A mouse drag moves the view. Off by default.                                                                                                                                          |
+| Link width min, max  | The range of the link width in pixels. The width grows with the load. The head size follows the width and the class field `arrow`. See [Arrow styles](links.md#arrow-styles).         |
+| Hover kinds          | The cell kinds that open a card (see [Which cells open a card](hover-card.md#which-cells-open-a-card)). Default: node, link, port, other.                                             |
+| Status summary rows  | The maximum number of rows in the status band above the diagram (see [Status summary](colours.md#status-band)). Default 3. 0 hides the band.                                          |
+| Stale colour         | The colour of a cell or a link whose last sample is older than its freshness. The status band and the legend use it too (see [Status paint](colours.md#status-paint)). Default: grey. |
 
 ## Live zoom
 

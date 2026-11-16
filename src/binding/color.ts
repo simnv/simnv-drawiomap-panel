@@ -23,28 +23,30 @@ export function noDataColor(theme: GrafanaTheme2): string {
   return theme.colors.text.disabled;
 }
 
+/** The default **Stale colour**: a mid grey, darker than the no-data grey of `missing` in the dark theme. */
+export const DEFAULT_STALE_COLOR = 'gray';
+
 /**
- * The resolved colour of the panel option **Stale colour**. An empty, transparent or unknown value gives the palette
- * orange: a stale element must stay visible.
+ * The resolved colour of the panel option **Stale colour**. An empty, transparent or unknown value gives the default
+ * grey: a stale element must stay visible.
  */
 export function panelStaleColor(theme: GrafanaTheme2, name: unknown): string {
-  const orange = theme.visualization.getColorByName('orange');
   if (typeof name !== 'string' || name.trim() === '') {
-    return orange;
+    return DEFAULT_STALE_COLOR;
   }
   const color = theme.visualization.getColorByName(name);
   const known = typeof CSS === 'undefined' || typeof CSS.supports !== 'function' || CSS.supports('color', color);
-  return known && alphaOf(color) > 0 ? color : orange;
+  return known && alphaOf(color) > 0 ? color : DEFAULT_STALE_COLOR;
 }
 
 /**
  * The colour of a status state, from the theme: the palette red for down and critical, the palette orange for
  * warning, the no-data grey for missing. Stale has the colour of the panel option **Stale colour** (`staleColor`,
- * resolved), else the palette orange. The elements, the status band and the legend share it.
+ * resolved), else the default grey. The elements, the status band and the legend share it.
  */
 export function statusColor(status: Pick<StatusView, 'state'>, theme: GrafanaTheme2, staleColor?: string): string {
-  if (status.state === 'stale' && staleColor) {
-    return staleColor;
+  if (status.state === 'stale') {
+    return staleColor || DEFAULT_STALE_COLOR;
   }
   const level = statusLevel(status.state);
   return level === 'critical'
@@ -57,9 +59,12 @@ export function statusColor(status: Pick<StatusView, 'state'>, theme: GrafanaThe
 /**
  * The colour of a status word as text: the semantic text colours of the theme, which keep their contrast in both
  * themes (the palette orange is too light for text on a white card). The paint, the band and the legend use
- * `statusColor`.
+ * `statusColor`. Stale is grey text, as its default paint.
  */
 export function statusTextColor(status: Pick<StatusView, 'state'>, theme: GrafanaTheme2): string {
+  if (status.state === 'stale') {
+    return theme.colors.text.secondary;
+  }
   const level = statusLevel(status.state);
   return level === 'critical'
     ? theme.colors.error.text
@@ -79,7 +84,7 @@ export function statusPaint(
 
 /**
  * The colour a v4 status paints its cell with (spec 3.4): the exact colour of the value for each value state, normal
- * included. The theme colours stay for stale (orange) and missing (grey), and give the red of a down with no value
+ * included. Stale has the **Stale colour** (default grey) and missing the no-data grey, and give the red of a down with no value
  * (`missing: down`). Null when the cell keeps its drawn colour: a transparent value colour, or a normal status with no
  * colour.
  */
