@@ -168,7 +168,7 @@ interface HalfDrawn {
   width: number;
   place: HalfPlace;
   points: Map<number, HalfPointsAttr>;
-  /** The hover mark of the half (a glow of `NEAR_GLOW.length` strokes): made at the first mark, then kept. */
+  /** The hover mark of the half (`NEAR_GLOW`): made at the first mark, then kept. */
   mark?: SVGGElement;
 }
 /** The overlay of one link: its layer, the set of halves it was built for, and the elements of each half. */
@@ -517,15 +517,10 @@ export function overlayHalves(root: SVGSVGElement, cellId: string): SVGPolylineE
 export const NEAR_CLASS = 'dmap-near';
 export const NEAR_MARK_CLASS = 'dmap-near-mark';
 /**
- * The glow of the hover mark: strokes from wide and faint to narrow and strong, each this much wider than its half.
- * Stacked strokes, not an SVG blur: a filter on a straight horizontal line has a box of zero height and draws nothing.
- * The panel CSS gives them their colour.
+ * The hover mark: one soft stroke, 1.5 units wider on each side of its half. The panel CSS gives it its colour.
+ * A list, so a later mark can stack more strokes.
  */
-const NEAR_GLOW = [
-  { extra: 14, opacity: 0.25 },
-  { extra: 8, opacity: 0.4 },
-  { extra: 4, opacity: 0.75 },
-] as const;
+const NEAR_GLOW = [{ extra: 3, opacity: 0.45 }] as const;
 
 function setGlowWidths(mark: SVGGElement, width: number): void {
   NEAR_GLOW.forEach((g, i) => mark.children[i]?.setAttribute('stroke-width', fmt(width + g.extra)));

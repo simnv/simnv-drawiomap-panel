@@ -64,7 +64,7 @@ function usePanelEditing(id: number) {
   return editPanel === String(id) ? `${pathname}\n${editPanel}` : '';
 }
 
-/** The glow of the link under or near the pointer: white on the dark theme, the primary blue on the light one. */
+/** The mark colour of the link under or near the pointer: white on the dark theme, the primary blue on the light one. */
 const glowColor = (theme: GrafanaTheme2) => (theme.isDark ? theme.colors.text.maxContrast : theme.colors.primary.main);
 
 const styles = {
@@ -95,7 +95,7 @@ const styles = {
     &[${NEAR_ATTR}] {
       cursor: pointer;
     }
-    /* The link under or near the pointer glows: one class on its overlay layer. */
+    /* The link under or near the pointer shows its mark: one class on its overlay layer. */
     & .${NEAR_MARK_CLASS} {
       display: none;
       color: var(--dmap-glow);
