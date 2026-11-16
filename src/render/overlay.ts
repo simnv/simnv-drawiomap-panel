@@ -522,11 +522,17 @@ let bloomSeq = 0;
  * region is in user space (`userSpaceOnUse`): a box relative to the element is empty for a straight horizontal line.
  */
 function bloomFilter(root: SVGSVGElement, state: OverlayState): SVGFilterElement {
-  if (state.bloom?.isConnected) {
+  // a root moved to another container keeps its filter; a detached root does not need a second one
+  if (state.bloom?.parentNode?.parentNode === root) {
     return state.bloom;
   }
+  // the sanitised diagram keeps its own ids: take an id that no element of the page has
+  let id: string;
+  do {
+    id = `dmap-bloom-${++bloomSeq}`;
+  } while (root.ownerDocument.getElementById(id) || root.querySelector(`[id="${id}"]`));
   const filter = el('filter', {
-    id: `dmap-bloom-${++bloomSeq}`,
+    id,
     filterUnits: 'userSpaceOnUse',
     'color-interpolation-filters': 'sRGB',
   });
@@ -540,9 +546,47 @@ function bloomFilter(root: SVGSVGElement, state: OverlayState): SVGFilterElement
   return filter;
 }
 
+interface Region {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * The region cut to the browser window and one window size around it, in the user space of `m`. A long link at a high
+ * zoom has a box many times the screen; the browser renders the whole filter region, and WebKit lowers the filter
+ * resolution of a large one. The margin keeps the glow on a link that a small page scroll brings into view.
+ */
+function clipToView(region: Region, m: DOMMatrix | null | undefined): Region {
+  if (!m || typeof DOMPoint !== 'function' || typeof window === 'undefined') {
+    return region;
+  }
+  const inv = m.inverse();
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const corners = [
+    [-w, -h],
+    [2 * w, -h],
+    [-w, 2 * h],
+    [2 * w, 2 * h],
+  ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(inv));
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  if (![...xs, ...ys].every(Number.isFinite)) {
+    return region;
+  }
+  return {
+    x0: Math.max(region.x0, Math.min(...xs)),
+    y0: Math.max(region.y0, Math.min(...ys)),
+    x1: Math.min(region.x1, Math.max(...xs)),
+    y1: Math.min(region.y1, Math.max(...ys)),
+  };
+}
+
 /**
  * Puts the near class and the bloom on the layer. The blur and the filter region follow the scale of the layer on
- * the screen and its box: two layout reads, only when the mark goes to another link.
+ * the screen and its box: two layout reads, when the mark goes to another link or its layer is made again.
  */
 function showNearMark(root: SVGSVGElement, state: OverlayState, drawn: LinkDrawn): void {
   const filter = bloomFilter(root, state);
@@ -555,10 +599,14 @@ function showNearMark(root: SVGSVGElement, state: OverlayState, drawn: LinkDrawn
   if (box) {
     // the box has no stroke: the widest stroke and three blurs on each side
     const pad = state.maxWidth + 3 * blur;
-    filter.setAttribute('x', fmt(box.x - pad));
-    filter.setAttribute('y', fmt(box.y - pad));
-    filter.setAttribute('width', fmt(box.width + 2 * pad));
-    filter.setAttribute('height', fmt(box.height + 2 * pad));
+    const region = clipToView(
+      { x0: box.x - pad, y0: box.y - pad, x1: box.x + box.width + pad, y1: box.y + box.height + pad },
+      m
+    );
+    filter.setAttribute('x', fmt(region.x0));
+    filter.setAttribute('y', fmt(region.y0));
+    filter.setAttribute('width', fmt(Math.max(0, region.x1 - region.x0)));
+    filter.setAttribute('height', fmt(Math.max(0, region.y1 - region.y0)));
   }
   layer.setAttribute('filter', `url(#${filter.id})`);
   layer.classList.add(NEAR_CLASS);
@@ -643,7 +691,8 @@ export function renderOverlay(root: SVGSVGElement, index: CellIndex, patches: Pa
   }
   // a layer made again keeps the near-link mark of its link
   const near = state.near ? state.links.get(state.near) : undefined;
-  if (near) {
+  // (only a new layer: a refresh that keeps the layer keeps its bloom, with no layout read)
+  if (near && !near.layer.hasAttribute('filter')) {
     showNearMark(root, state, near);
   }
   // the status border of a bitmap device (the applier paints every other shape itself)
