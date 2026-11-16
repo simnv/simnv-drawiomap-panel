@@ -171,14 +171,23 @@ const isExpression = (t: DataQuery) => {
   return typeof ds === 'string' ? ds === '__expr__' : ds?.uid === '__expr__' || ds?.type === '__expr__';
 };
 
-/** The refIds that an expression reads: `$A` and `${A}` in its text, or the plain refId of a reduce or a resample. */
+/**
+ * The refIds that an expression reads: `$A` and `${A}` in its text, the plain refId of a reduce or a resample, and the
+ * queries of a classic condition.
+ */
 function expressionInputs(t: DataQuery): string[] {
-  const text = (t as unknown as { expression?: unknown }).expression;
+  const { expression: text, conditions } = t as unknown as {
+    expression?: unknown;
+    conditions?: Array<{ query?: { params?: unknown[] } }>;
+  };
+  const classic = (conditions ?? []).flatMap((c) =>
+    (c.query?.params ?? []).filter((p): p is string => typeof p === 'string')
+  );
   if (typeof text !== 'string') {
-    return [];
+    return classic;
   }
   const refs = [...text.matchAll(/\$\{?([A-Za-z0-9_-]+)\}?/g)].map((m) => m[1]);
-  return refs.length ? refs : [text.trim()];
+  return [...classic, ...(refs.length ? refs : [text.trim()])];
 }
 
 /**

@@ -5,7 +5,7 @@ import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
 import { cardReducer, type CardAction, type CardState } from './cardState';
-import { inPortalControl } from '../visuals/ChartHover';
+import { inPortalControl, PORTAL_CONTROL_ATTR } from '../visuals/ChartHover';
 import { patchAt } from './hit';
 import { NearLinkFinder } from './nearLink';
 
@@ -181,8 +181,9 @@ export function useCardInput(args: InputArgs) {
         if ((e.target as Element | null)?.closest?.('[data-tooltip-open="true"]')) {
           return;
         }
-        // the pinned warning list closes first; the next Esc closes the card
-        if (inPortalControl(e.target)) {
+        // an open warning list closes first (also when a press on its edge left the focus on the page); the next Esc
+        // closes the card
+        if (inPortalControl(e.target) || document.querySelector(`[${PORTAL_CONTROL_ATTR}]`)) {
           return;
         }
         e.stopPropagation();

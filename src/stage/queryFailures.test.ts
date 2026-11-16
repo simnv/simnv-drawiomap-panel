@@ -238,6 +238,7 @@ describe('a failed query that no cell uses', () => {
           { refId: 'B', message: 'bad' },
           { refId: 'C', message: 'bad' },
           { refId: 'D', message: 'bad' },
+          { refId: 'E', message: 'bad' },
         ],
         request: {
           targets: [
@@ -246,6 +247,12 @@ describe('a failed query that no cell uses', () => {
             { refId: 'C', expr: 'y' } as never,
             { refId: 'R', datasource: { uid: '__expr__' }, expression: 'C' } as never,
             { refId: 'D', expr: 'z' } as never,
+            {
+              refId: 'K',
+              datasource: { uid: '__expr__' },
+              conditions: [{ query: { params: ['E'] } }],
+            } as never,
+            { refId: 'E', expr: 'w' } as never,
           ],
         },
       }).map((f) => f.refId)

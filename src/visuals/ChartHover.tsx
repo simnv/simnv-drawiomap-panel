@@ -87,6 +87,16 @@ const getStyles = (theme: GrafanaTheme2) => ({
 const PLACE_RETRIES = 10;
 
 /**
+ * The mark of a control of the panel that lives in a portal outside the panel (the pinned warning list): a pointer or a
+ * key in it does not close the card, does not pin a cell and does not pan the view.
+ */
+export const PORTAL_CONTROL_ATTR = 'data-dmap-control';
+export const inPortalControl = (t: EventTarget | null) =>
+  t instanceof Element
+    ? !!t.closest(`[${PORTAL_CONTROL_ATTR}]`)
+    : t instanceof Node && !!t.parentElement?.closest(`[${PORTAL_CONTROL_ATTR}]`);
+
+/**
  * The positioned box of the tooltip. The Grafana VizTooltipContainer places itself with a state write in a layout
  * effect and a ResizeObserver (two to four commits for each sample) and moves with a 100 ms transition, so the
  * box trails the pointer. This box writes its place to the DOM, no state, no transition: one commit for each
@@ -97,16 +107,6 @@ const PLACE_RETRIES = 10;
  * size when the box is in the document and on each change of its content; without one, frames retry. A change
  * of the viewport places the box again.
  */
-/**
- * The mark of a control of the panel that lives in a portal outside the panel (the pinned warning list): a pointer or a
- * key in it does not close the card, does not pin a cell and does not pan the view.
- */
-export const PORTAL_CONTROL_ATTR = 'data-dmap-control';
-export const inPortalControl = (t: EventTarget | null) =>
-  t instanceof Element
-    ? !!t.closest(`[${PORTAL_CONTROL_ATTR}]`)
-    : t instanceof Node && !!t.parentElement?.closest(`[${PORTAL_CONTROL_ATTR}]`);
-
 export function TooltipBox({
   x,
   y,

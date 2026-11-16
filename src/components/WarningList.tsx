@@ -93,7 +93,9 @@ export function WarningList({
       <ul className={styles.list}>
         {warnings.map((text, i) => {
           const { summary, details } = splitWarning(text);
-          const key = `${summary}\n${i}`;
+          // the short line as the key, so a warning that moves keeps its element (and its focus); the index for a repeat
+          const key =
+            warnings.findIndex((w) => splitWarning(w).summary === summary) === i ? summary : `${summary}\n${i}`;
           if (!details.length) {
             return (
               <li key={key} className={styles.item} data-testid="dmap-warning-item">
