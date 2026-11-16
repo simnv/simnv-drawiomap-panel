@@ -445,7 +445,18 @@ A port cell can bind a class itself. A port with `bind` and its own `port` reads
 
 ### The match report
 
-On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the number of grouped causes. Its tooltip uses the same cause text and short use names as the editor. In panel edit, use **Edit bindings** to open the split editor and its report. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
+On each bind the panel collects a **report**. In view mode the warning badge in the corner shows the number of grouped causes. Its tooltip uses the same cause text and short use names as the editor.
+
+When queries fail, the tooltip has one warning for each datasource and cause, not one line for each query. The warning gives the datasource name and the cause in plain words (host not found, connection refused, time-out, access refused, server error, query text rejected). Then it lists each failed query with its refId and its expression, with the dashboard variables applied, so you see which filters failed. The error text of Grafana comes last, once. For example:
+
+```text
+VictoriaMetrics is not reachable (host not found): 2 queries fail
+• wan_tx: rate(node_network_transmit_bytes_total{device=~"pppoe|wan1"}[1m]) * 8
+• wan_rx: rate(node_network_receive_bytes_total{device=~"pppoe|wan1"}[1m]) * 8
+Error: Post "http://victoriametrics:8428/api/v1/query_range": dial tcp: lookup victoriametrics: no such host
+```
+
+The macros of the datasource (for example `$__rate_interval`) stay as written. A datasource given as a variable (`${ds}`) shows the name of the datasource that the variable selects. When the whole request fails with one error that names no query, and the queries use more than one datasource, the warning says `A datasource of the panel` in place of a datasource name. The tooltip lists at most 8 queries of a datasource, then `and N more`. A `capacity-fallback` with the reason "query failed" does not show as a second warning when the failed query already shows. In panel edit, use **Edit bindings** to open the split editor and its report. The YAML option shows the entries of the parse as markers on their lines. Each entry names a YAML path, a set of cells, or both.
 
 The report of the split editor has one tab for each class, in the order of the config. A tab shows the cell counts of the class and its entries. The number after the class name is the number of grouped causes. The entries that have no class (for example a YAML error, `unknown-class`, `unknown-override` or `orphan-series`) are in the last tab, **Not in a class**. The report opens the first tab that has entries. When you move the cursor into a class, or select a cell, the report opens the tab of that class. The cursor in `overrides` opens **Not in a class**. To move between the tabs with the keyboard, focus a tab and use the arrow keys, Home and End.
 

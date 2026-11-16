@@ -2,7 +2,8 @@ import { createPortal } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css } from '@emotion/css';
 import type { Field, PanelProps } from '@grafana/data';
-import { locationService } from '@grafana/runtime';
+import { getDataSourceSrv, locationService } from '@grafana/runtime';
+import type { DataSourceRef } from '@grafana/schema';
 import { useTheme2 } from '@grafana/ui';
 import { bindContextFor } from '../binding/context';
 import type { BindResultV4 } from '../binding/bindV4';
@@ -22,6 +23,14 @@ import { useStageLayout } from '../stage/useStageLayout';
 import { useStagePaint } from '../stage/useStagePaint';
 import { useBoundDiagram } from '../stage/useBoundDiagram';
 import { groupReport, reportGroupLine } from '../stage/reportView';
+import {
+  describeQueries,
+  failedLabels,
+  failedQueries,
+  failureText,
+  groupQueryFailures,
+  otherEntries,
+} from '../stage/queryFailures';
 import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { legendCorners } from './legendCorners';
@@ -107,6 +116,16 @@ const styles = {
 /** The sheet goes to document.body: position: fixed does not work below a CSS transform (the Grafana grid item). */
 const portalSheet = (card: React.ReactElement, sheet: boolean) =>
   sheet && typeof document !== 'undefined' ? createPortal(card, document.body) : card;
+
+/** The name of a datasource from the datasource service of Grafana; undefined when the service does not know it. */
+function datasourceName(ref: DataSourceRef | string): string | undefined {
+  try {
+    return getDataSourceSrv().getInstanceSettings(ref)?.name;
+  } catch {
+    // no datasource service (a test host)
+    return undefined;
+  }
+}
 
 /** The warning of the saved rules of version 1: the panel does not read them. */
 function legacyRulesWarning(count: number): string {
@@ -251,15 +270,24 @@ function DrawioMapPanelView(props: ViewProps) {
   // The rules of version 1 are not read. A saved value gives a warning, so the author sees why nothing is bound.
   const legacyRules = Array.isArray(options.rules) ? options.rules.length : 0;
   const result = useMemo(() => {
-    const warnings = groupReport(
-      bound.report.filter((entry) => entry.kind !== 'unmeasured-link'),
-      validated.parsed.config
-    ).map((row) => reportGroupLine(row, true));
+    // A failed query gives one warning for each datasource and cause, with the failed queries and their expressions,
+    // not one line of the same error for each refId.
+    const failed = failedQueries(bound.report, data);
+    const failures = groupQueryFailures(failed, describeQueries(data.request, datasourceName, replaceVariables));
+    const rest = otherEntries(bound.report, failed).filter((entry) => entry.kind !== 'unmeasured-link');
+    const warnings = [
+      ...failures.map(failureText),
+      ...groupReport(rest, validated.parsed.config).map((row) => reportGroupLine(row, true)),
+    ];
     if (legacyRules) {
       warnings.unshift(legacyRulesWarning(legacyRules));
     }
-    return { patches: patches as Map<string, CellPatch>, warnings, bandRows: bandRowsV4(patches) };
-  }, [bound, patches, legacyRules, validated.parsed.config]);
+    return {
+      patches: patches as Map<string, CellPatch>,
+      warnings,
+      bandRows: bandRowsV4(patches, failedLabels(failures)),
+    };
+  }, [bound, patches, legacyRules, validated.parsed.config, data, replaceVariables]);
 
   // The status band takes its height from the panel; the stage gets the rest.
   const [bandExpanded, setBandExpanded] = useState(false);

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Changed the warnings of failed queries. The badge tooltip has one warning for each datasource and cause, not the same error once for each refId. The warning names the datasource, gives the cause in plain words (host not found, connection refused, time-out, access refused, server error, query text rejected), lists each failed query with its expression (the dashboard variables applied), and gives the error text of Grafana once. The status band row names the datasource, for example `VictoriaMetrics is not reachable · up: 10 cells`, in place of `Query failed`. See [The match report](docs/guide/bindings.md#the-match-report).
+
 ## 1.7.0
 
 - Added the near-link catch: a thin link is easy to hover and tap. When no cell that opens a card is under the pointer, the panel takes the nearest link within 8 screen px for a mouse or a pen, and 16 px for a finger. The radius is the same at every zoom. Of two parallel links, the closer one wins. A node, a link label or any other cell under the pointer still wins. Only a link of the **Hover kinds** is caught. A link caught by distance shows a soft wider underlay and the hand cursor. The check runs at most once per frame and nothing runs while the pointer is still. See [Hover card](docs/guide/hover-card.md#thin-links).

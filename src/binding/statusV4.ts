@@ -49,6 +49,9 @@ function valueStatus(series: Series, { refId, theme, timeZone }: StatusOptions):
  * The caller handles a refId that no target has ("Unknown query", `unknown-ref`) before this: the snapshot of such a
  * refId is `empty`, and `missing: down` must not apply to it.
  */
+/** The reason of a status whose query failed: the status band names the datasource in place of it. */
+export const QUERY_FAILED = 'Query failed';
+
 export function statusOfUse(snapshot: QuerySnapshot, series: Series[], opts: StatusOptions): StatusV4 {
   const noValue = (reason: string, state: 'missing' | 'down' = 'missing'): StatusV4 => ({
     state,
@@ -59,7 +62,7 @@ export function statusOfUse(snapshot: QuerySnapshot, series: Series[], opts: Sta
   });
   switch (snapshot.state) {
     case 'error':
-      return noValue('Query failed');
+      return noValue(QUERY_FAILED);
     case 'unsupported':
       return noValue('Unsupported data');
     case 'idle':
