@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { StandardEditorProps } from '@grafana/data';
 import { Field, Input } from '@grafana/ui';
-import { formatTiers, parseTiers } from '../binding/linkWidth';
+import { formatTiers, parseTiers, sameTiers } from '../binding/linkWidth';
 import type { WidthTier } from '../types';
 
 /**
@@ -27,7 +27,10 @@ export function WidthTiersEditor({ value, onChange }: StandardEditorProps<WidthT
       return;
     }
     setError(undefined);
-    onChange(parsed.tiers);
+    // an unchanged text saves nothing: the panel does not bind again and the dashboard keeps its state
+    if (!sameTiers(parsed.tiers, value)) {
+      onChange(parsed.tiers);
+    }
   };
   return (
     <Field invalid={!!error} error={error}>

@@ -1,4 +1,5 @@
 import type { LinkWidthOptions, WidthTier } from '../types';
+import { parseCapValue } from './capacity';
 
 /** The tiers in ascending order of `min`, with a positive width. A list that is not valid gives none. */
 export function validTiers(tiers: readonly WidthTier[] | undefined): WidthTier[] {
@@ -69,7 +70,7 @@ const SI: Array<[number, string]> = [
   [1e3, 'k'],
 ];
 
-/** A speed in bit/s as short text: 30M, 120M, 1G, 2.5G, 0. */
+/** A speed in bit/s as short text for the legend (3 digits): 30M, 120M, 1G, 2.5G, 0. */
 export function formatBits(bits: number): string {
   for (const [scale, suffix] of SI) {
     if (bits >= scale) {
@@ -80,19 +81,30 @@ export function formatBits(bits: number): string {
   return String(Number(bits.toPrecision(3)));
 }
 
-/** A speed as text, with an optional k, M, G or T suffix: "100M", "1G", "2.5G", "0". Undefined when not a speed. */
-export function parseBits(text: string): number | undefined {
-  const m = /^\s*(\d+(?:\.\d+)?)\s*([kMGT]?)\s*$/.exec(text);
-  if (!m) {
-    return undefined;
+/**
+ * A speed in bit/s as exact text for the editor: the largest suffix that keeps the value exact ("155.52M", "1G"),
+ * else the plain number. The text reads back to the same value.
+ */
+function exactBits(bits: number): string {
+  for (const [scale, suffix] of SI) {
+    const n = bits / scale;
+    if (n >= 1 && parseCapValue(`${n}${suffix}`) === bits) {
+      return `${n}${suffix}`;
+    }
   }
-  const scale = SI.find(([, s]) => s === m[2])?.[0] ?? 1;
-  return Number(m[1]) * scale;
+  return String(bits);
 }
 
-/** The tiers as text for the editor: "0: 1.5, 100M: 2.5, 1G: 4, 10G: 5.5". */
+/** The tiers as text for the editor: "0: 1.5, 100M: 2.5, 1G: 4, 10G: 5.5". The text reads back to the same tiers. */
 export function formatTiers(tiers: readonly WidthTier[]): string {
-  return tiers.map((t) => `${formatBits(t.min)}: ${t.width}`).join(', ');
+  return tiers.map((t) => `${exactBits(t.min)}: ${t.width}`).join(', ');
+}
+
+/** The same tiers, value by value. */
+export function sameTiers(a: readonly WidthTier[] | undefined, b: readonly WidthTier[] | undefined): boolean {
+  return (
+    (a ?? []).length === (b ?? []).length && (a ?? []).every((t, i) => t.min === b![i].min && t.width === b![i].width)
+  );
 }
 
 /** The tiers from the editor text, or the problem of the text. */
@@ -104,10 +116,12 @@ export function parseTiers(text: string): { tiers: WidthTier[] } | { error: stri
   const tiers: WidthTier[] = [];
   for (const [i, part] of parts.entries()) {
     const [speed, width, ...rest] = part.split(':');
-    const min = parseBits(speed ?? '');
+    const min = parseCapValue(speed ?? '');
     const w = Number((width ?? '').trim());
-    if (rest.length || min === undefined || width === undefined || width.trim() === '' || !Number.isFinite(w)) {
-      return { error: `Tier ${i + 1}: write a speed and a width, for example "100M: 2.5"` };
+    if (rest.length || min === undefined || width === undefined || !/^\s*\d+(\.\d+)?\s*$/.test(width)) {
+      return {
+        error: `Tier ${i + 1}: write a speed (a number with k, M, G or T) and a width, for example "100M: 2.5"`,
+      };
     }
     tiers.push({ min, width: w });
   }

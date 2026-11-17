@@ -51,6 +51,12 @@ export interface EndCapacity {
 const CAP_VALUE = /^(\d+(?:\.\d+)?)([kKMGT]?)$/;
 const CAP_PREFIX: Record<string, number> = { '': 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9, T: 1e12 };
 
+/** One speed in the grammar of `cap`: a number with an optional k, K, M, G or T (SI). Undefined when it does not parse. */
+export function parseCapValue(text: string): number | undefined {
+  const m = CAP_VALUE.exec(text.trim());
+  return m ? Number(m[1]) * CAP_PREFIX[m[2]] : undefined;
+}
+
 /** `cap=1G` or `cap=50M/10M` in bit/s, or undefined when a value does not parse or is not a finite number above 0. */
 function parseCap(cap: string): { a2b: number; b2a: number } | undefined {
   const parts = cap.split('/');

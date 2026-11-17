@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_OPTIONS, withDefaults, type LinkWidthOptions } from '../types';
-import { formatBits, formatTiers, halfWidth, linkWidthRange, parseTiers, tierOf } from './linkWidth';
+import { formatBits, formatTiers, halfWidth, linkWidthRange, parseTiers, sameTiers, tierOf } from './linkWidth';
 
 const tiers = DEFAULT_OPTIONS.linkWidth.tiers!;
 const speed: LinkWidthOptions = { ...DEFAULT_OPTIONS.linkWidth, mode: 'capacity' };
@@ -65,5 +65,27 @@ describe('link width', () => {
     expect(parseTiers('fast: 2')).toMatchObject({ error: expect.stringContaining('Tier 1') });
     expect(parseTiers('')).toMatchObject({ error: expect.stringContaining('at least one tier') });
     expect([30e6, 120e6, 1e9, 2.5e9, 0].map(formatBits)).toEqual(['30M', '120M', '1G', '2.5G', '0']);
+  });
+
+  it('writes the editor text exactly: it reads back to the same speeds (155.52M stays 155.52M)', () => {
+    const odd = [
+      { min: 0, width: 1 },
+      { min: 155.52e6, width: 3 },
+      { min: 2.048e6 * 1000, width: 4 },
+    ];
+    const text = formatTiers(odd);
+    expect(text).toBe('0: 1, 155.52M: 3, 2.048G: 4');
+    expect(parseTiers(text)).toEqual({ tiers: odd });
+    // the grammar of cap: k and K both mean 1000
+    expect(parseTiers('0: 1, 100k: 2, 200K: 3')).toEqual({
+      tiers: [
+        { min: 0, width: 1 },
+        { min: 1e5, width: 2 },
+        { min: 2e5, width: 3 },
+      ],
+    });
+    expect(parseTiers('0: 0x10')).toMatchObject({ error: expect.stringContaining('Tier 1') });
+    expect(sameTiers(odd, [...odd])).toBe(true);
+    expect(sameTiers(odd, odd.slice(1))).toBe(false);
   });
 });

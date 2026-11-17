@@ -20,7 +20,6 @@ import {
   statusTextColor,
   DEFAULT_STALE_COLOR,
   tintFill,
-  widthFor,
 } from './color';
 import type { StatusView } from './status';
 import type { CellPatch } from '../types';
@@ -102,15 +101,6 @@ describe('colorFor without a capacity', () => {
       color: noDataColor(theme),
       stepIndex: -1,
     });
-  });
-});
-
-describe('widthFor', () => {
-  it('interpolates and clamps', () => {
-    expect(widthFor(0, { min: 2, max: 10 })).toBe(2);
-    expect(widthFor(50, { min: 2, max: 10 })).toBe(6);
-    expect(widthFor(500, { min: 2, max: 10 })).toBe(10);
-    expect(widthFor(undefined, { min: 2, max: 10 })).toBe(2);
   });
 });
 

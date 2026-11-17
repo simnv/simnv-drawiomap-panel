@@ -103,7 +103,7 @@ function el<K extends keyof SVGElementTagNameMap>(
 
 /**
  * The drawn width of a half is `HalfState.width` on a grid of this many steps per unit: a quarter unit. The width
- * follows the load percent without steps (`widthFor`), so with live traffic every half would get new points on every
+ * follows the load percent without steps (`halfWidth`), so with live traffic every half would get new points on every
  * refresh, and the points of a point taper are the costly part of the overlay. A quarter unit is a quarter pixel at
  * the usual fit of a diagram (about one pixel per unit), below what a screen shows; a label beside the stroke moves
  * by the same amount at most (`drawnOf` in the label layer reads the same width).

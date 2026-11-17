@@ -262,11 +262,3 @@ export function colorFor(
   const color = display?.color ?? theme.visualization.getColorByName(active.color);
   return { color, stepIndex: Math.max(0, steps.indexOf(active)) };
 }
-
-export function widthFor(percent: number | undefined, w: { min: number; max: number }): number {
-  if (percent === undefined || !Number.isFinite(percent)) {
-    return w.min;
-  }
-  const t = Math.min(1, Math.max(0, percent / 100));
-  return w.min + (w.max - w.min) * t;
-}
