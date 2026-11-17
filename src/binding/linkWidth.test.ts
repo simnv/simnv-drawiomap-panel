@@ -9,6 +9,7 @@ import {
   parseTiers,
   sameTiers,
   scaleSpeedWidths,
+  speedOf,
   tierOf,
 } from './linkWidth';
 
@@ -109,6 +110,15 @@ describe('link width', () => {
   it('has no default tiers: the Link speed mode is automatic until tiers are written', () => {
     expect(DEFAULT_OPTIONS.linkWidth.tiers).toEqual([]);
     expect(linkWidthRange(auto)).toEqual({ min: 1.5, max: 5.5 });
+    // a min above max gives a sorted range
+    expect(linkWidthRange({ ...auto, min: 6, max: 2 })).toEqual({ min: 2, max: 6 });
+  });
+
+  it('counts speeds to 3 significant digits: cap=1G and 1 000 400 000 are one speed', () => {
+    expect(speedOf({ capacity: 1e9 })).toBe(speedOf({ capacity: 1.0004e9 }));
+    expect(speedOf({ capacity: 0 })).toBeUndefined();
+    expect(speedOf({})).toBeUndefined();
+    expect(speedOf(undefined)).toBeUndefined();
   });
 
   it('places the speeds of the panel on a log scale from min to max', () => {

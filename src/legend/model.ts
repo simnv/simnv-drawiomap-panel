@@ -11,7 +11,7 @@ import {
   ThresholdsMode,
   type ValueMapping,
 } from '@grafana/data';
-import { autoSpeed, formatBits, tierOf, validTiers } from '../binding/linkWidth';
+import { autoSpeed, formatBits, speedOf, tierOf, validTiers } from '../binding/linkWidth';
 import { linkStatusPaint, STALE_MARKER, statusColor } from '../binding/color';
 import type { HalfState, LinkWidthOptions, PatchMap, ShapeState } from '../types';
 
@@ -614,8 +614,8 @@ function autoSpeedBlock(patches: PatchMap, ctx: LegendContext): LegendBlock[] {
   const found = new Map<number, { width: number; cellIds: string[] }>();
   for (const patch of patches.values()) {
     for (const half of [patch.link?.a2b, patch.link?.b2a]) {
-      const c = half?.capacity;
-      if (half === undefined || c === undefined || !Number.isFinite(c) || c <= 0) {
+      const c = speedOf(half);
+      if (half === undefined || c === undefined) {
         continue;
       }
       const speed = found.get(c) ?? { width: half.width, cellIds: [] };

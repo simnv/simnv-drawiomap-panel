@@ -57,7 +57,8 @@ export function halfWidth(percent: number | undefined, capacity: number | undefi
  */
 export function linkWidthRange(w: LinkWidthOptions): { min: number; max: number } {
   if (w.mode !== 'capacity' || !validTiers(w.tiers).length) {
-    return { min: w.min, max: w.max };
+    // a min above max still gives the overlay and the labels the widest stroke as max
+    return { min: Math.min(w.min, w.max), max: Math.max(w.min, w.max) };
   }
   const widths = [w.min, ...validTiers(w.tiers).map((t) => t.width)];
   return { min: Math.min(...widths), max: Math.max(...widths) };
@@ -133,6 +134,15 @@ export function parseTiers(text: string): { tiers: WidthTier[] } | { error: stri
   return problem ? { error: problem } : { tiers };
 }
 
+/**
+ * The speed of a half for the automatic scale and the legend: its capacity to 3 significant digits, so that `cap=1G`
+ * and a capacity series of 1 000 400 000 are one speed. Undefined for a half with no capacity above 0.
+ */
+export function speedOf(half: { capacity?: number } | undefined): number | undefined {
+  const c = half?.capacity;
+  return c !== undefined && Number.isFinite(c) && c > 0 ? Number(c.toPrecision(3)) : undefined;
+}
+
 /** The capacity mode with no tiers: the widths follow a log scale of the capacities on the panel. */
 export const autoSpeed = (w: LinkWidthOptions) => w.mode === 'capacity' && !validTiers(w.tiers).length;
 
@@ -168,8 +178,9 @@ export function scaleSpeedWidths<P extends PatchLike>(patches: Map<string, P>, w
   const caps: number[] = [];
   for (const p of patches.values()) {
     for (const h of [p.link?.a2b, p.link?.b2a]) {
-      if (h?.capacity !== undefined && Number.isFinite(h.capacity) && h.capacity > 0) {
-        caps.push(h.capacity);
+      const speed = speedOf(h);
+      if (speed !== undefined) {
+        caps.push(speed);
       }
     }
   }
@@ -178,10 +189,10 @@ export function scaleSpeedWidths<P extends PatchLike>(patches: Map<string, P>, w
   }
   const lo = Math.min(...caps);
   const hi = Math.max(...caps);
-  const scaled = <H extends HalfLike>(h: H | undefined): H | undefined =>
-    h?.capacity !== undefined && Number.isFinite(h.capacity) && h.capacity > 0
-      ? { ...h, width: logWidth(h.capacity, lo, hi, w) }
-      : h;
+  const scaled = <H extends HalfLike>(h: H | undefined): H | undefined => {
+    const speed = speedOf(h);
+    return speed === undefined ? h : { ...h!, width: logWidth(speed, lo, hi, w) };
+  };
   for (const [id, p] of patches) {
     if (p.link && (p.link.a2b?.capacity !== undefined || p.link.b2a?.capacity !== undefined)) {
       patches.set(id, { ...p, link: { ...p.link, a2b: scaled(p.link.a2b), b2a: scaled(p.link.b2a) } });

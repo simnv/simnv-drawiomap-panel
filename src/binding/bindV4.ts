@@ -1,4 +1,3 @@
-import { scaleSpeedWidths } from './linkWidth';
 import { formattedValueToString, type Field, type PanelData } from '@grafana/data';
 import type { MatchV4, RowV4 } from '../model/v4';
 import type { validateConfig } from '../model/validate';
@@ -19,6 +18,7 @@ import {
   type AttrOrigin,
   type MeasuredEnd,
 } from './identity';
+import { scaleSpeedWidths } from './linkWidth';
 import { halfState } from './engine';
 import { cadenceOf, freshnessMs, staleCheck, type FreshnessPatch } from './freshness';
 import { linkFeeds } from './linkFeeds';

@@ -7,6 +7,7 @@ import {
 } from '@grafana/data';
 import { DrawioMapPanel } from './components/DrawioMapPanel';
 import { ConfigYamlEditor, DiagramEditor, IconRadioEditor, WidthTiersEditor } from './options/lazyEditors';
+import { autoSpeed } from './binding/linkWidth';
 import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
@@ -133,7 +134,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['View'],
         description: 'The thickest link. In Link speed mode with no tiers: the width of the fastest link of the panel.',
         defaultValue: DEFAULT_OPTIONS.linkWidth.max,
-        showIf: (o) => o.linkWidth?.mode !== 'capacity' || !o.linkWidth?.tiers?.length,
+        showIf: (o) => o.linkWidth?.mode !== 'capacity' || autoSpeed(o.linkWidth),
       })
       .addCustomEditor({
         id: 'linkWidth.tiers',
