@@ -12,7 +12,7 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
-import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM } from '../render/linkFocus';
+import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusMap } from '../render/linkFocus';
 import { endContextOf } from '../binding/edgeEnds';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
@@ -474,15 +474,12 @@ function DrawioMapPanelView(props: ViewProps) {
     }
   };
 
-  // the cells that a hovered link joins stay bright (the ends are kept for the diagram, not built on each hover)
+  // the cells that stay bright with a hovered link or node (built once for a diagram, not on each hover)
   const diagramXml = opts.diagram?.xml;
-  const linkEnds = useCallback(
-    (id: string) => {
-      const ends = endContextOf(diagramXml, stage.index).ends.get(id);
-      return [ends?.source, ends?.target].filter((e): e is string => e !== undefined);
-    },
-    [diagramXml, stage.index]
-  );
+  const focusOf = useMemo(() => {
+    const ctx = endContextOf(diagramXml, stage.index);
+    return focusMap(stage.index, ctx.ends, ctx.parents);
+  }, [diagramXml, stage.index]);
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
     ...cards,
     open,
@@ -495,7 +492,7 @@ function DrawioMapPanelView(props: ViewProps) {
     cardable,
     onControl,
     panZoom,
-    linkEnds,
+    focusOf,
   });
 
   if (!opts.diagram?.svg) {

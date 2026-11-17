@@ -505,3 +505,30 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
     });
   }
 });
+
+test('a pointer on a node dims the rest: the node, its links and their other ends stay bright', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+  page,
+}) => {
+  const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
+  const node = panel.locator('[data-cell-id="pg-node~isp-a"]');
+  const box = (await node.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4, { steps: 3 });
+  await expect(panel.getByRole('tooltip')).toBeVisible();
+  await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(1);
+  // a node has no near-link class; the value labels of its link are copied above the scrim
+  await expect(panel.locator('[data-cell-id] g.dmap-overlay.dmap-near')).toHaveCount(0);
+  const layer = panel.locator('g.dmap-link-focus-layer');
+  await expect(layer.locator('text', { hasText: '41%' })).toHaveCount(1);
+  if (SHOTS) {
+    await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });
+    await page.screenshot({
+      path: `${SHOTS}/node-focus.png`,
+      clip: { x: Math.max(0, box.x - 200), y: Math.max(0, box.y - 260), width: 520, height: 360 },
+    });
+  }
+  await page.mouse.move(1, 1);
+  await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(0);
+});

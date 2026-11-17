@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellEntry, CellIndex } from '../types';
-import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusLink, refreshFocus } from './linkFocus';
+import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusCells, focusMap, refreshFocus } from './linkFocus';
 
 /** A zone with node a (with its port and an icon outside it), node b, links L and M, the label cell of L, labels. */
 function stage() {
@@ -40,10 +40,10 @@ function stage() {
   return { root, index, copied };
 }
 
-describe('focusLink', () => {
+describe('focusCells', () => {
   it('puts one scrim last in the root and copies of the link, its label cell and its value labels above it', () => {
     const { root, index, copied } = stage();
-    focusLink(root, index, 'L');
+    focusCells(root, index, 'L');
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(true);
     const layer = root.lastElementChild!;
     expect(layer.classList.contains(FOCUS_LAYER)).toBe(true);
@@ -54,9 +54,9 @@ describe('focusLink', () => {
     expect(root.querySelector('[data-cell-id="M"]')!.getAttribute('class')).toBeNull();
   });
 
-  it('copies the ends, the node that holds a port end once, and the parts of the node, with no ids', () => {
+  it('copies the ends once (a port inside its node is drawn with it), the parts of the node, with no ids', () => {
     const { root, index, copied } = stage();
-    focusLink(root, index, 'M', ['a-port', 'b']);
+    focusCells(root, index, 'M', ['a-port', 'a', 'b']);
     // a holds a-port: a is drawn with its port; the icon of a lies outside a
     // a classic draw.io edge label (a child of the edge, no owner) is drawn with the edge
     expect(copied().sort()).toEqual(['7%', 'M', 'a', 'a-icon', 'b']);
@@ -73,14 +73,14 @@ describe('focusLink', () => {
 
   it('moves to another link with one layer, and clears with undefined or an unknown cell', () => {
     const { root, index, copied } = stage();
-    focusLink(root, index, 'L');
-    focusLink(root, index, 'M');
+    focusCells(root, index, 'L');
+    focusCells(root, index, 'M');
     expect(root.querySelectorAll(`g.${FOCUS_LAYER}`)).toHaveLength(1);
     expect(copied()).toEqual(['M', '7%']);
-    focusLink(root, index, undefined);
+    focusCells(root, index, undefined);
     expect(copied()).toEqual([]);
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
-    focusLink(root, index, 'nope');
+    focusCells(root, index, 'nope');
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
   });
 });
@@ -88,7 +88,7 @@ describe('focusLink', () => {
 describe('refreshFocus', () => {
   it('draws the copies again after a paint, and clears for a new index', () => {
     const { root, index, copied } = stage();
-    focusLink(root, index, 'L');
+    focusCells(root, index, 'L');
     root.querySelector('[data-dmap-cell="L"]')!.textContent = '55%';
     refreshFocus(root, index);
     expect(copied()).toEqual(['L', 'L-label', '55%']);
@@ -98,11 +98,52 @@ describe('refreshFocus', () => {
   });
 });
 
-describe('focusLink labels', () => {
+describe('focusCells labels', () => {
   it('copies no value label while the label layer is hidden at this zoom', () => {
     const { root, index, copied } = stage();
     root.querySelector('g.labels')!.setAttribute('visibility', 'hidden');
-    focusLink(root, index, 'L');
+    focusCells(root, index, 'L');
     expect(copied()).toEqual(['L', 'L-label']);
+  });
+});
+
+describe('focusMap', () => {
+  it('keeps the ends of a link, and for a node its links (also those on its ports) and their other ends', () => {
+    const { index } = stage();
+    // L joins the port of a and b; M joins b and a
+    const ends = new Map([
+      ['L', { source: 'a-port', target: 'b' }],
+      ['M', { source: 'b', target: 'a' }],
+    ]);
+    const focusOf = focusMap(index, ends);
+    // a port end brings the node that holds it
+    expect(focusOf('L')).toEqual(['a-port', 'a', 'b']);
+    expect(focusOf('a').sort()).toEqual(['L', 'M', 'a', 'a-port', 'b']);
+    // a port keeps only its own links, and its node
+    expect(focusOf('a-port').sort()).toEqual(['L', 'a', 'a-port', 'b']);
+    // a cell with no link keeps nothing
+    expect(focusOf('zone')).toEqual([]);
+  });
+
+  it('finds the node of a port by its parents when the port is not inside the node; a self-loop keeps its node once', () => {
+    const { index } = stage();
+    // the port b-port lies outside node b in the SVG; pg-node names b
+    const focusOf = focusMap(
+      index,
+      new Map([
+        ['L', { source: 'L-label', target: 'b' }],
+        ['M', { source: 'b', target: 'b' }],
+      ]),
+      new Map([['L-label', 'b']])
+    );
+    expect(focusOf('b').sort()).toEqual(['L', 'L-label', 'M', 'b']);
+    expect(focusOf('M')).toEqual(['b']);
+  });
+
+  it('a node focus copies the node, its links with their value labels and the other ends', () => {
+    const { root, index, copied } = stage();
+    const focusOf = focusMap(index, new Map([['L', { source: 'a-port', target: 'b' }]]));
+    focusCells(root, index, 'a', focusOf('a'));
+    expect(copied().sort()).toEqual(['41%', 'L', 'L-label', 'a', 'a-icon', 'b']);
   });
 });
