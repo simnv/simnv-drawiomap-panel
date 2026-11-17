@@ -543,34 +543,58 @@ test('a pointer on a node dims the rest: the node, its links and their other end
   await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(0);
 });
 
-test('Link speed width: a 100M link is 2.5 wide and a 1G link 4; the legend has a Link speed block', async ({
-  createDiagram,
-  gotoDashboardPage,
-  readProvisionedDataSource,
-}) => {
-  // ISP B gets a 1G port; ISP A keeps its 100M
-  const svg = demoSvg.replace(
-    /(data-cell-id="pg-port~isp-b~pppoe~1"[^>]*?)data-meta-cap="100M"/,
-    '$1data-meta-cap="1G"'
-  );
-  expect(svg).not.toBe(demoSvg);
-  const { panel } = await openLabelled(
-    'percent',
-    { createDiagram, gotoDashboardPage, readProvisionedDataSource },
-    { svg, options: { linkWidth: { min: 2, max: 10, mode: 'capacity' } } }
-  );
-  const half = (cell: string) => panel.locator(`[data-cell-id="${cell}"] polyline.dmap-half[data-dmap-half="a2b"]`);
-  await expect(half(ISP_A)).toHaveAttribute('stroke-width', '2.5');
-  const ispB = await panel.locator('[data-cell-id^="pg-link~isp-b:pppoe"]').first().getAttribute('data-cell-id');
-  await expect(half(ispB!)).toHaveAttribute('stroke-width', '4');
-  const legend = panel.getByTestId('dmap-legend');
-  await legend.getByRole('button', { name: 'Legend' }).click();
-  const speed = legend.getByRole('group', { name: 'Link speed', exact: true });
-  await expect(speed.getByTestId('dmap-legend-entry')).toHaveText(['100M', '1G']);
-  if (SHOTS) {
-    await panel.screenshot({ path: `${SHOTS}/link-speed.png` });
-  }
-});
+for (const [name, linkWidth, slow, fast] of [
+  [
+    'automatic: the log scale of the panel speeds, 100M at min and 1G at max',
+    { min: 1.5, max: 5.5, mode: 'capacity' },
+    '1.5',
+    '5.5',
+  ],
+  [
+    'manual tiers: 100M is 2.5 and 1G is 4',
+    {
+      min: 1.5,
+      max: 10,
+      mode: 'capacity',
+      tiers: [
+        { min: 0, width: 1.5 },
+        { min: 1e8, width: 2.5 },
+        { min: 1e9, width: 4 },
+      ],
+    },
+    '2.5',
+    '4',
+  ],
+] as const) {
+  test(`Link speed width, ${name}; the legend has a Link speed block`, async ({
+    createDiagram,
+    gotoDashboardPage,
+    readProvisionedDataSource,
+  }) => {
+    // ISP B gets a 1G port; ISP A keeps its 100M
+    const svg = demoSvg.replace(
+      /(data-cell-id="pg-port~isp-b~pppoe~1"[^>]*?)data-meta-cap="100M"/,
+      '$1data-meta-cap="1G"'
+    );
+    expect(svg).not.toBe(demoSvg);
+    const { panel } = await openLabelled(
+      'percent',
+      { createDiagram, gotoDashboardPage, readProvisionedDataSource },
+      { svg, options: { linkWidth } }
+    );
+    const half = (cell: string) => panel.locator(`[data-cell-id="${cell}"] polyline.dmap-half[data-dmap-half="a2b"]`);
+    await expect(half(ISP_A)).toHaveAttribute('stroke-width', slow);
+    const ispB = await panel.locator('[data-cell-id^="pg-link~isp-b:pppoe"]').first().getAttribute('data-cell-id');
+    await expect(half(ispB!)).toHaveAttribute('stroke-width', fast);
+    const legend = panel.getByTestId('dmap-legend');
+    await legend.getByRole('button', { name: 'Legend' }).click();
+    const speed = legend.getByRole('group', { name: 'Link speed', exact: true });
+    await expect(speed.getByTestId('dmap-legend-entry')).toHaveText(['100M', '1G']);
+    if (SHOTS) {
+      await panel.screenshot({ path: `${SHOTS}/link-speed-${slow}.png` });
+    }
+  });
+}
 
 test('Hover focus off: a hovered link opens its card and nothing dims', async ({
   createDiagram,

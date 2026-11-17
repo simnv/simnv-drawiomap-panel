@@ -18,6 +18,7 @@ import {
   type AttrOrigin,
   type MeasuredEnd,
 } from './identity';
+import { scaleSpeedWidths } from './linkWidth';
 import { halfState } from './engine';
 import { cadenceOf, freshnessMs, staleCheck, type FreshnessPatch } from './freshness';
 import { linkFeeds } from './linkFeeds';
@@ -841,5 +842,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   }
   out.report = report.entries;
   out.deadlines = [...deadlines].sort((a, b) => a - b);
+  // the automatic Link speed widths need all the capacities of the panel
+  scaleSpeedWidths(out.patches, ctx.linkWidth);
   return out;
 }

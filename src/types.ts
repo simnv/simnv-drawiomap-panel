@@ -147,7 +147,8 @@ export interface WidthTier {
 
 /**
  * The drawn width of a link half. `load` (the default): from `min` to `max` with the load in percent. `capacity`: from
- * the capacity of the half by `tiers` (the highest tier whose `min` is at most the capacity); a half with no capacity
+ * the capacity of the half. With no `tiers`, on a log scale from `min` (the slowest link of the panel) to `max` (the
+ * fastest); with `tiers`, the width of the highest tier whose `min` is at most the capacity. A half with no capacity
  * has `min`. The colour shows the load in both modes.
  */
 export interface LinkWidthOptions {
@@ -182,12 +183,8 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
     min: 2,
     max: 10,
     mode: 'load',
-    tiers: [
-      { min: 0, width: 1.5 },
-      { min: 1e8, width: 2.5 },
-      { min: 1e9, width: 4 },
-      { min: 1e10, width: 5.5 },
-    ],
+    // no tiers: the Link speed mode places the widths on a log scale of the capacities on the panel
+    tiers: [],
   },
   summary: { maxRows: 3 },
   stale: { color: 'gray' },

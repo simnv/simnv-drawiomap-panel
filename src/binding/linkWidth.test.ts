@@ -1,9 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_OPTIONS, withDefaults, type LinkWidthOptions } from '../types';
-import { formatBits, formatTiers, halfWidth, linkWidthRange, parseTiers, sameTiers, tierOf } from './linkWidth';
+import {
+  formatBits,
+  formatTiers,
+  halfWidth,
+  linkWidthRange,
+  logWidth,
+  parseTiers,
+  sameTiers,
+  scaleSpeedWidths,
+  speedOf,
+  tierOf,
+} from './linkWidth';
 
-const tiers = DEFAULT_OPTIONS.linkWidth.tiers!;
-const speed: LinkWidthOptions = { ...DEFAULT_OPTIONS.linkWidth, mode: 'capacity' };
+const tiers = [
+  { min: 0, width: 1.5 },
+  { min: 1e8, width: 2.5 },
+  { min: 1e9, width: 4 },
+  { min: 1e10, width: 5.5 },
+];
+const speed: LinkWidthOptions = { ...DEFAULT_OPTIONS.linkWidth, mode: 'capacity', tiers };
+const auto: LinkWidthOptions = { min: 1.5, max: 5.5, mode: 'capacity', tiers: [] };
 
 describe('link width', () => {
   it('defaults to the load mode, so a saved panel draws as before', () => {
@@ -63,7 +80,8 @@ describe('link width', () => {
     expect(parseTiers('1G: 4, 100M: 2.5')).toEqual({ error: 'Tier 2: the speeds must go up' });
     expect(parseTiers('0: 0')).toEqual({ error: 'Tier 1: the width must be more than 0' });
     expect(parseTiers('fast: 2')).toMatchObject({ error: expect.stringContaining('Tier 1') });
-    expect(parseTiers('')).toMatchObject({ error: expect.stringContaining('at least one tier') });
+    // an empty text is the automatic log scale
+    expect(parseTiers('')).toEqual({ tiers: [] });
     expect([30e6, 120e6, 1e9, 2.5e9, 0].map(formatBits)).toEqual(['30M', '120M', '1G', '2.5G', '0']);
   });
 
@@ -87,5 +105,56 @@ describe('link width', () => {
     expect(parseTiers('0: 0x10')).toMatchObject({ error: expect.stringContaining('Tier 1') });
     expect(sameTiers(odd, [...odd])).toBe(true);
     expect(sameTiers(odd, odd.slice(1))).toBe(false);
+  });
+
+  it('has no default tiers: the Link speed mode is automatic until tiers are written', () => {
+    expect(DEFAULT_OPTIONS.linkWidth.tiers).toEqual([]);
+    expect(linkWidthRange(auto)).toEqual({ min: 1.5, max: 5.5 });
+    // a min above max gives a sorted range
+    expect(linkWidthRange({ ...auto, min: 6, max: 2 })).toEqual({ min: 2, max: 6 });
+  });
+
+  it('counts speeds to 3 significant digits: cap=1G and 1 000 400 000 are one speed', () => {
+    expect(speedOf({ capacity: 1e9 })).toBe(speedOf({ capacity: 1.0004e9 }));
+    expect(speedOf({ capacity: 0 })).toBeUndefined();
+    expect(speedOf({})).toBeUndefined();
+    expect(speedOf(undefined)).toBeUndefined();
+  });
+
+  it('places the speeds of the panel on a log scale from min to max', () => {
+    // 10G, 25G, 100G: the slowest is min, the fastest max, 25G at its log place
+    expect(logWidth(10e9, 10e9, 100e9, auto)).toBe(1.5);
+    expect(logWidth(100e9, 10e9, 100e9, auto)).toBe(5.5);
+    expect(logWidth(25e9, 10e9, 100e9, auto)).toBeCloseTo(1.5 + 4 * Math.log10(2.5));
+    // 100M, 1G, 10G: even steps
+    expect(logWidth(1e9, 1e8, 1e10, auto)).toBeCloseTo(3.5);
+    // one speed only: the middle
+    expect(logWidth(1e9, 1e9, 1e9, auto)).toBe(3.5);
+  });
+
+  it('scales the halves of all the links after the bind; a half with no capacity keeps min', () => {
+    type Half = { capacity?: number; width: number };
+    type Patch = { link: { a2b?: Half; b2a?: Half } };
+    const half = (capacity: number | undefined): Half => ({ capacity, width: 1.5 });
+    const keep: Patch = { link: { a2b: half(undefined) } };
+    const patches = new Map<string, Patch>([
+      ['slow', { link: { a2b: half(10e9), b2a: half(10e9) } }],
+      ['mid', { link: { a2b: half(25e9) } }],
+      ['fast', { link: { a2b: half(100e9) } }],
+      ['none', keep],
+    ]);
+    const before = patches.get('fast');
+    scaleSpeedWidths(patches, auto);
+    expect(patches.get('slow')!.link.a2b!.width).toBe(1.5);
+    expect(patches.get('mid')!.link.a2b!.width).toBeCloseTo(3.09, 2);
+    expect(patches.get('fast')!.link.a2b!.width).toBe(5.5);
+    // a changed patch is a new object; the old one is not touched
+    expect(patches.get('fast')).not.toBe(before);
+    expect(before!.link.a2b!.width).toBe(1.5);
+    expect(patches.get('none')).toBe(keep);
+    // with tiers, or in load mode, nothing changes
+    const tiered = new Map<string, Patch>([['fast', { link: { a2b: half(100e9) } }]]);
+    scaleSpeedWidths(tiered, speed);
+    expect(tiered.get('fast')!.link.a2b!.width).toBe(1.5);
   });
 });

@@ -11,7 +11,7 @@ import {
   ThresholdsMode,
   type ValueMapping,
 } from '@grafana/data';
-import { formatBits, tierOf, validTiers } from '../binding/linkWidth';
+import { autoSpeed, formatBits, speedOf, tierOf, validTiers } from '../binding/linkWidth';
 import { linkStatusPaint, STALE_MARKER, statusColor } from '../binding/color';
 import type { HalfState, LinkWidthOptions, PatchMap, ShapeState } from '../types';
 
@@ -575,6 +575,9 @@ function speedBlock(patches: PatchMap, ctx: LegendContext): LegendBlock[] {
   if (ctx.linkWidth?.mode !== 'capacity') {
     return [];
   }
+  if (autoSpeed(ctx.linkWidth)) {
+    return autoSpeedBlock(patches, ctx);
+  }
   const tiers = validTiers(ctx.linkWidth.tiers);
   const found = new Map<number, { speeds: Set<number>; cellIds: string[] }>();
   for (const patch of patches.values()) {
@@ -603,5 +606,31 @@ function speedBlock(patches: PatchMap, ctx: LegendContext): LegendBlock[] {
       const hi = formatBits(sorted[sorted.length - 1]);
       return { key: `tier:${i}`, label: lo === hi ? lo : `${lo}–${hi}`, color, cellIds, line: tiers[i].width };
     });
+  return [{ key: 'speed', title: 'Link speed', entries, cellIds: [...new Set(entries.flatMap((e) => e.cellIds))] }];
+}
+
+/** The Link speed block of the automatic log scale: one line sample for each speed on the panel, at its width. */
+function autoSpeedBlock(patches: PatchMap, ctx: LegendContext): LegendBlock[] {
+  const found = new Map<number, { width: number; cellIds: string[] }>();
+  for (const patch of patches.values()) {
+    for (const half of [patch.link?.a2b, patch.link?.b2a]) {
+      const c = speedOf(half);
+      if (half === undefined || c === undefined) {
+        continue;
+      }
+      const speed = found.get(c) ?? { width: half.width, cellIds: [] };
+      if (!speed.cellIds.includes(patch.cellId)) {
+        speed.cellIds.push(patch.cellId);
+      }
+      found.set(c, speed);
+    }
+  }
+  if (!found.size) {
+    return [];
+  }
+  const color = ctx.theme.colors.text.secondary;
+  const entries: LegendEntry[] = [...found.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([c, { width, cellIds }]) => ({ key: `speed:${c}`, label: formatBits(c), color, cellIds, line: width }));
   return [{ key: 'speed', title: 'Link speed', entries, cellIds: [...new Set(entries.flatMap((e) => e.cellIds))] }];
 }

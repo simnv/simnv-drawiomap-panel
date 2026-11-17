@@ -52,12 +52,13 @@ export function halfWidth(percent: number | undefined, capacity: number | undefi
 }
 
 /**
- * The range of the drawn widths, for the overlay and the label layer: `min` to `max` in `load` mode; in `capacity`
- * mode from the smallest to the largest of `min` and the tier widths.
+ * The range of the drawn widths, for the overlay and the label layer: `min` to `max` in `load` mode and in the log
+ * scale of the `capacity` mode; with tiers, from the smallest to the largest of `min` and the tier widths.
  */
 export function linkWidthRange(w: LinkWidthOptions): { min: number; max: number } {
-  if (w.mode !== 'capacity') {
-    return { min: w.min, max: w.max };
+  if (w.mode !== 'capacity' || !validTiers(w.tiers).length) {
+    // a min above max still gives the overlay and the labels the widest stroke as max
+    return { min: Math.min(w.min, w.max), max: Math.max(w.min, w.max) };
   }
   const widths = [w.min, ...validTiers(w.tiers).map((t) => t.width)];
   return { min: Math.min(...widths), max: Math.max(...widths) };
@@ -125,9 +126,77 @@ export function parseTiers(text: string): { tiers: WidthTier[] } | { error: stri
     }
     tiers.push({ min, width: w });
   }
+  // no tiers: the automatic log scale
   if (!tiers.length) {
-    return { error: 'Write at least one tier, for example "0: 1.5, 100M: 2.5, 1G: 4"' };
+    return { tiers: [] };
   }
   const problem = parseTiersCheck(tiers);
   return problem ? { error: problem } : { tiers };
+}
+
+/**
+ * The speed of a half for the automatic scale and the legend: its capacity to 3 significant digits, so that `cap=1G`
+ * and a capacity series of 1 000 400 000 are one speed. Undefined for a half with no capacity above 0.
+ */
+export function speedOf(half: { capacity?: number } | undefined): number | undefined {
+  const c = half?.capacity;
+  return c !== undefined && Number.isFinite(c) && c > 0 ? Number(c.toPrecision(3)) : undefined;
+}
+
+/** The capacity mode with no tiers: the widths follow a log scale of the capacities on the panel. */
+export const autoSpeed = (w: LinkWidthOptions) => w.mode === 'capacity' && !validTiers(w.tiers).length;
+
+/**
+ * The width of a capacity on the log scale of the panel: `min` at the slowest capacity `lo`, `max` at the fastest
+ * `hi`. One speed only gives the middle width.
+ */
+export function logWidth(capacity: number, lo: number, hi: number, w: LinkWidthOptions): number {
+  if (!(hi > lo)) {
+    return (w.min + w.max) / 2;
+  }
+  const t = (Math.log(capacity) - Math.log(lo)) / (Math.log(hi) - Math.log(lo));
+  return w.min + (w.max - w.min) * Math.min(1, Math.max(0, t));
+}
+
+interface HalfLike {
+  capacity?: number;
+  width: number;
+}
+interface PatchLike {
+  link?: { a2b?: HalfLike; b2a?: HalfLike };
+}
+
+/**
+ * The automatic Link speed widths: each half with a capacity gets its place on the log scale of all the capacities of
+ * the panel. A half with no capacity keeps `min`. The patches with a changed half are new objects; the others are the
+ * same. Other modes return the patches as they are.
+ */
+export function scaleSpeedWidths<P extends PatchLike>(patches: Map<string, P>, w: LinkWidthOptions): Map<string, P> {
+  if (!autoSpeed(w)) {
+    return patches;
+  }
+  const caps: number[] = [];
+  for (const p of patches.values()) {
+    for (const h of [p.link?.a2b, p.link?.b2a]) {
+      const speed = speedOf(h);
+      if (speed !== undefined) {
+        caps.push(speed);
+      }
+    }
+  }
+  if (!caps.length) {
+    return patches;
+  }
+  const lo = Math.min(...caps);
+  const hi = Math.max(...caps);
+  const scaled = <H extends HalfLike>(h: H | undefined): H | undefined => {
+    const speed = speedOf(h);
+    return speed === undefined ? h : { ...h!, width: logWidth(speed, lo, hi, w) };
+  };
+  for (const [id, p] of patches) {
+    if (p.link && (p.link.a2b?.capacity !== undefined || p.link.b2a?.capacity !== undefined)) {
+      patches.set(id, { ...p, link: { ...p.link, a2b: scaled(p.link.a2b), b2a: scaled(p.link.b2a) } });
+    }
+  }
+  return patches;
 }
