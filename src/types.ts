@@ -125,15 +125,36 @@ export interface Options {
   /** Removed: the rules of version 1. A saved value loads, the panel ignores it and shows a warning. */
   rules?: unknown[];
   zoom: ZoomOptions;
-  linkWidth: { min: number; max: number };
+  linkWidth: LinkWidthOptions;
   /** The status band above the diagram: one row per cause. maxRows 0 hides the band. Default: 3. */
   summary?: { maxRows: number };
   /** The colour of a stale cell or link (a Grafana colour name or a CSS colour). Default: `gray` (`DEFAULT_STALE_COLOR`). */
   stale?: { color: string };
-  /** The cells that open a hover or pinned card. Default: node, link, port, other. */
-  hover?: { kinds: HoverKind[] };
+  /**
+   * The cells that open a hover or pinned card (default: node, link, port, other), and the hover focus: the rest of
+   * the diagram dims around a hovered link or node (default: on).
+   */
+  hover?: { kinds: HoverKind[]; focus?: boolean };
   /** The colour legend in a corner of the panel and the last data timestamp. Default: shown, collapsed, bottom-right. */
   legend?: LegendOptions;
+}
+
+/** One step of the link speed scale: a half whose capacity (bit/s) is at least `min` is drawn `width` units wide. */
+export interface WidthTier {
+  min: number;
+  width: number;
+}
+
+/**
+ * The drawn width of a link half. `load` (the default): from `min` to `max` with the load in percent. `capacity`: from
+ * the capacity of the half by `tiers` (the highest tier whose `min` is at most the capacity); a half with no capacity
+ * has `min`. The colour shows the load in both modes.
+ */
+export interface LinkWidthOptions {
+  min: number;
+  max: number;
+  mode?: 'load' | 'capacity';
+  tiers?: WidthTier[];
 }
 
 export type LegendCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
@@ -151,16 +172,26 @@ export interface LegendOptions {
 export interface ResolvedOptions extends Options {
   summary: { maxRows: number };
   stale: { color: string };
-  hover: { kinds: HoverKind[] };
+  hover: { kinds: HoverKind[]; focus: boolean };
   legend: LegendOptions;
 }
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
   zoom: { mode: 'fit', percent: 100, wheel: false, pan: false, align: 'top' },
-  linkWidth: { min: 2, max: 10 },
+  linkWidth: {
+    min: 2,
+    max: 10,
+    mode: 'load',
+    tiers: [
+      { min: 0, width: 1.5 },
+      { min: 1e8, width: 2.5 },
+      { min: 1e9, width: 4 },
+      { min: 1e10, width: 5.5 },
+    ],
+  },
   summary: { maxRows: 3 },
   stale: { color: 'gray' },
-  hover: { kinds: ['node', 'link', 'port', 'other'] },
+  hover: { kinds: ['node', 'link', 'port', 'other'], focus: true },
   legend: { show: true, corner: 'bottom-right', collapsed: true, timestamp: true },
 };
 
@@ -280,7 +311,7 @@ export interface BindContext {
   replaceVariables: (text: string, scopedVars?: ScopedVars) => string;
   /** formats a raw value with the field's display processor (unit, decimals, mappings) */
   display: (series: SeriesInfo, value: number) => DisplayValue;
-  linkWidth: { min: number; max: number };
+  linkWidth: LinkWidthOptions;
 }
 
 /** The inputs of the hover card: the part of the bind inputs that the card reads. */

@@ -16,7 +16,14 @@ import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusMap } from '../render/link
 import { endContextOf } from '../binding/edgeEnds';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
-import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
+import {
+  DEFAULT_OPTIONS,
+  Options,
+  withDefaults,
+  type CellPatch,
+  type LegendCorner,
+  type LinkWidthOptions,
+} from '../types';
 import { usePanZoom } from '../stage/usePanZoom';
 import { CellFocusRing, FOCUSABLE_CELL } from '../stage/CellFocusRing';
 import { DEFER_ABOVE, useStage } from '../stage/useStage';
@@ -40,6 +47,7 @@ import { legendCorners } from './legendCorners';
 import { LastDataStamp } from './LastDataStamp';
 import { lastSampleTime } from '../query/frames';
 import { panelStaleColor } from '../binding/color';
+import { linkWidthRange } from '../binding/linkWidth';
 import type { Box } from '../legend/position';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
@@ -259,6 +267,17 @@ function DrawioMapPanelView(props: ViewProps) {
     setView(null);
   }
 
+  // the width options by value: a new options object with the same widths binds nothing again (the tiers array
+  // keeps its identity until the option changes)
+  const linkWidth = useMemo<LinkWidthOptions>(
+    () => ({
+      min: opts.linkWidth.min,
+      max: opts.linkWidth.max,
+      mode: opts.linkWidth.mode,
+      tiers: opts.linkWidth.tiers,
+    }),
+    [opts.linkWidth.min, opts.linkWidth.max, opts.linkWidth.mode, opts.linkWidth.tiers]
+  );
   const bindingContext = useMemo(
     () =>
       bindContextFor({
@@ -266,9 +285,9 @@ function DrawioMapPanelView(props: ViewProps) {
         fieldThresholds: fieldConfig.defaults.thresholds,
         replaceVariables,
         timeZone,
-        linkWidth: { min: opts.linkWidth.min, max: opts.linkWidth.max },
+        linkWidth,
       }),
-    [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, opts.linkWidth.min, opts.linkWidth.max]
+    [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, linkWidth]
   );
   // The bind runs on new data, a new diagram or a new config; the clock runs only the stale pass (spec 3.5).
   // While the deferred build of a large diagram runs, the stage is empty: nothing of another diagram binds or shows.
@@ -345,8 +364,9 @@ function DrawioMapPanelView(props: ViewProps) {
       theme,
       fieldThresholds: fieldConfig.defaults.thresholds,
       staleColor,
+      linkWidth,
     });
-  }, [legendOptions.show, result.patches, bound, theme, fieldConfig.defaults.thresholds, staleColor]);
+  }, [legendOptions.show, result.patches, bound, theme, fieldConfig.defaults.thresholds, staleColor, linkWidth]);
   // The chart regions: one for each cell whose effective class has a `chart` (spec 3.9).
   const charts = useMemo(() => chartUsesV4(bound), [bound]);
   const legendMembers = useMemo(() => [...new Set(legendBlocks.flatMap((b) => b.cellIds))], [legendBlocks]);
@@ -375,7 +395,7 @@ function DrawioMapPanelView(props: ViewProps) {
   // Apply patches, redraw the overlay and the value labels once per frame.
   useStagePaint(stage, result.patches, {
     theme,
-    linkWidth: opts.linkWidth,
+    linkWidth: linkWidthRange(opts.linkWidth),
     interactive,
     xml: opts.diagram?.xml,
     staleColor,
@@ -492,7 +512,8 @@ function DrawioMapPanelView(props: ViewProps) {
     cardable,
     onControl,
     panZoom,
-    focusOf,
+    // the hover focus option: off, nothing dims
+    focusOf: opts.hover.focus ? focusOf : undefined,
   });
 
   if (!opts.diagram?.svg) {

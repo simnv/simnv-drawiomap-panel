@@ -42,3 +42,4 @@ function lazyEditor<K extends keyof Editors>(name: K): Editors[K] {
 export const DiagramEditor = lazyEditor('DiagramEditor');
 export const IconRadioEditor = lazyEditor('IconRadioEditor');
 export const ConfigYamlEditor = lazyEditor('LazyConfigYamlEditor');
+export const WidthTiersEditor = lazyEditor('WidthTiersEditor');

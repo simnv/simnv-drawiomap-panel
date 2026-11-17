@@ -47,6 +47,18 @@ const view = (over: Partial<React.ComponentProps<typeof Legend>> = {}) => {
 };
 
 describe('Legend', () => {
+  it('shows a line sample of the entry width in place of the square swatch', () => {
+    const speed: LegendBlock = {
+      key: 'speed',
+      title: 'Link speed',
+      cellIds: ['a'],
+      entries: [{ key: 'tier:2', label: '1G', color: 'rgb(9, 9, 9)', cellIds: ['a'], line: 4 }],
+    };
+    const { legend } = view({ blocks: [speed] });
+    const line = within(legend).getByTestId('dmap-legend-entry').querySelector('[data-dmap-line]') as HTMLElement;
+    expect([line.style.height, line.style.background]).toEqual(['4px', 'rgb(9, 9, 9)']);
+  });
+
   it('shows the marker of an entry in its colour in place of the square swatch', () => {
     const state: LegendBlock = {
       key: 'state',

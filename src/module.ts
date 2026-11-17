@@ -6,7 +6,7 @@ import {
   ThresholdsMode,
 } from '@grafana/data';
 import { DrawioMapPanel } from './components/DrawioMapPanel';
-import { ConfigYamlEditor, DiagramEditor, IconRadioEditor } from './options/lazyEditors';
+import { ConfigYamlEditor, DiagramEditor, IconRadioEditor, WidthTiersEditor } from './options/lazyEditors';
 import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
@@ -102,9 +102,23 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.zoom.pan,
       })
+      .addRadio({
+        path: 'linkWidth.mode',
+        name: 'Link width',
+        description: 'What the width of a link shows. The colour shows the load in both modes.',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.linkWidth.mode,
+        settings: {
+          options: [
+            { value: 'load', label: 'Load', description: 'From Link width min to max with the load in percent' },
+            { value: 'capacity', label: 'Link speed', description: 'From the capacity of the link, by speed tiers' },
+          ],
+        },
+      })
       .addNumberInput({
         path: 'linkWidth.min',
         name: 'Link width min',
+        description: 'The thinnest link. In Link speed mode: the width of a link with no capacity.',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.linkWidth.min,
       })
@@ -113,6 +127,26 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         name: 'Link width max',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.linkWidth.max,
+        showIf: (o) => o.linkWidth?.mode !== 'capacity',
+      })
+      .addCustomEditor({
+        id: 'linkWidth.tiers',
+        path: 'linkWidth.tiers',
+        name: 'Speed tiers',
+        description:
+          'Speed: width pairs, lowest speed first. A link takes the width of the highest tier at or below its capacity. Speeds in bit/s with k, M, G or T.',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.linkWidth.tiers,
+        editor: WidthTiersEditor,
+        showIf: (o) => o.linkWidth?.mode === 'capacity',
+      })
+      .addBooleanSwitch({
+        path: 'hover.focus',
+        name: 'Hover focus',
+        description:
+          'The rest of the diagram dims around the link or the node under the pointer: the link with its two ends, or the node with its links and their other ends, stay bright.',
+        category: ['View'],
+        defaultValue: DEFAULT_OPTIONS.hover.focus,
       })
       .addMultiSelect<HoverKind, SelectFieldConfigSettings<HoverKind>>({
         path: 'hover.kinds',

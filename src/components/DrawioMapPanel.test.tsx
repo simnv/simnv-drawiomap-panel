@@ -1491,6 +1491,24 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(false);
     });
 
+    it('dims the rest around a hovered link; with Hover focus off nothing dims and the card still opens', async () => {
+      const { unmount } = render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
+      unmount();
+      render(
+        <DrawioMapPanel
+          {...structurePanel(ALL, { hover: { kinds: ['node', 'link', 'port', 'other'], focus: false } })}
+        />
+      );
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(true);
+      expect(document.querySelector('svg.dmap-link-focus')).toBeNull();
+      expect(document.querySelector('g.dmap-link-focus-layer')).toBeNull();
+    });
+
     it('the mark stays when the pointer moves from near the link onto it or its label', async () => {
       render(<DrawioMapPanel {...structurePanel(ALL)} />);
       await near('bg', 75, 31);

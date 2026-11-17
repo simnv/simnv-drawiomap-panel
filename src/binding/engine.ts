@@ -1,6 +1,7 @@
 import { type DisplayValue, type Field, formattedValueToString } from '@grafana/data';
 import type { BindContext, CapacitySource, HalfState, SeriesInfo } from '../types';
-import { colorFor, noDataColor, widthFor } from './color';
+import { colorFor, noDataColor } from './color';
+import { halfWidth } from './linkWidth';
 import { bitsWithNote, inFieldUnit } from './capacity';
 import type { HistoryModel } from '../query/frames';
 
@@ -84,7 +85,8 @@ export function halfState(
       state: {
         status: 'nodata',
         color: noDataColor(ctx.theme),
-        width: ctx.linkWidth.min,
+        // the speed of a link is known without data: in capacity mode the half keeps its tier width
+        width: halfWidth(undefined, cap.amount, ctx.linkWidth),
         label: NO_DATA_LABEL,
         stepIndex: -1,
         capacity: cap.amount,
@@ -118,7 +120,7 @@ export function halfState(
     state: {
       status: 'ok',
       color,
-      width: widthFor(percent, ctx.linkWidth),
+      width: halfWidth(percent, capacity, ctx.linkWidth),
       label,
       stepIndex,
       value,

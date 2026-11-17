@@ -1,5 +1,5 @@
 import { getDisplayProcessor, type GrafanaTheme2, type ScopedVars, type ThresholdsConfig } from '@grafana/data';
-import type { BindContext, CardContext, SeriesInfo } from '../types';
+import type { BindContext, CardContext, LinkWidthOptions, SeriesInfo } from '../types';
 
 export interface ContextInputs {
   theme: GrafanaTheme2;
@@ -7,7 +7,7 @@ export interface ContextInputs {
   fieldThresholds?: ThresholdsConfig;
   replaceVariables: (text: string, scopedVars?: ScopedVars) => string;
   timeZone: string;
-  linkWidth: { min: number; max: number };
+  linkWidth: LinkWidthOptions;
 }
 
 /** Grafana attaches `field.display` (effective config with overrides) to panel data. Fall back for other data. */
@@ -22,7 +22,7 @@ export function bindContextFor(inputs: ContextInputs): BindContext {
     fieldThresholds: inputs.fieldThresholds,
     replaceVariables: inputs.replaceVariables,
     display: displayOf(inputs),
-    linkWidth: { min: inputs.linkWidth.min, max: inputs.linkWidth.max },
+    linkWidth: { ...inputs.linkWidth },
   };
 }
 

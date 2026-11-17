@@ -95,6 +95,7 @@ interface LabelFixtures {
       height: number;
       zoom: Record<string, unknown>;
       refresh?: string;
+      options?: Record<string, unknown>;
     }
   ) => Promise<string>;
   gotoDashboardPage: (args: { uid: string }) => Promise<DashboardPage>;
@@ -104,14 +105,22 @@ interface LabelFixtures {
 async function openLabelled(
   mode: LinkLabelMode,
   fixtures: LabelFixtures,
-  settings: { zoom?: Record<string, unknown>; height?: number; refresh?: string } = {}
+  settings: {
+    zoom?: Record<string, unknown>;
+    height?: number;
+    refresh?: string;
+    /** panel options besides the config, the diagram and the zoom */
+    options?: Record<string, unknown>;
+    /** the SVG of the L3 panel in place of the demo SVG */
+    svg?: string;
+  } = {}
 ) {
   const { createDiagram, gotoDashboardPage, readProvisionedDataSource } = fixtures;
   const prom = await readProvisionedDataSource({ fileName: 'victoriametrics.yaml' });
   const datasource = { uid: prom.uid, type: prom.type };
   const uid = await createDiagram(demoL3Config(mode), {
     panels: [
-      { config: demoL3Config(mode), svg: demoSvg, title: 'labels L3' },
+      { config: demoL3Config(mode), svg: settings.svg ?? demoSvg, title: 'labels L3' },
       { config: handDrawnConfig(mode), svg: handSvg, title: 'labels hand-drawn' },
     ],
     targets: demoTargets(datasource),
@@ -119,6 +128,7 @@ async function openLabelled(
     height: settings.height ?? 18,
     zoom: settings.zoom ?? { mode: 'fit', wheel: true, pan: true },
     refresh: settings.refresh,
+    options: settings.options,
   });
   const dashboardPage = await gotoDashboardPage({ uid });
   const panel = (await dashboardPage.getPanelByTitle('labels L3')).locator;
@@ -531,4 +541,51 @@ test('a pointer on a node dims the rest: the node, its links and their other end
   }
   await page.mouse.move(1, 1);
   await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(0);
+});
+
+test('Link speed width: a 100M link is 2.5 wide and a 1G link 4; the legend has a Link speed block', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+}) => {
+  // ISP B gets a 1G port; ISP A keeps its 100M
+  const svg = demoSvg.replace(
+    /(data-cell-id="pg-port~isp-b~pppoe~1"[^>]*?)data-meta-cap="100M"/,
+    '$1data-meta-cap="1G"'
+  );
+  expect(svg).not.toBe(demoSvg);
+  const { panel } = await openLabelled(
+    'percent',
+    { createDiagram, gotoDashboardPage, readProvisionedDataSource },
+    { svg, options: { linkWidth: { min: 2, max: 10, mode: 'capacity' } } }
+  );
+  const half = (cell: string) => panel.locator(`[data-cell-id="${cell}"] polyline.dmap-half[data-dmap-half="a2b"]`);
+  await expect(half(ISP_A)).toHaveAttribute('stroke-width', '2.5');
+  const ispB = await panel.locator('[data-cell-id^="pg-link~isp-b:pppoe"]').first().getAttribute('data-cell-id');
+  await expect(half(ispB!)).toHaveAttribute('stroke-width', '4');
+  const legend = panel.getByTestId('dmap-legend');
+  await legend.getByRole('button', { name: 'Legend' }).click();
+  const speed = legend.getByRole('group', { name: 'Link speed', exact: true });
+  await expect(speed.getByTestId('dmap-legend-entry')).toHaveText(['100M', '1G']);
+  if (SHOTS) {
+    await panel.screenshot({ path: `${SHOTS}/link-speed.png` });
+  }
+});
+
+test('Hover focus off: a hovered link opens its card and nothing dims', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+  page,
+}) => {
+  const { panel } = await openLabelled(
+    'percent',
+    { createDiagram, gotoDashboardPage, readProvisionedDataSource },
+    { options: { hover: { kinds: ['node', 'link', 'port', 'other'], focus: false } } }
+  );
+  const box = (await label(panel, ISP_A, 'a2b').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
+  await expect(panel.getByRole('tooltip')).toBeVisible();
+  await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(0);
+  await expect(panel.locator('g.dmap-link-focus-layer')).toHaveCount(0);
 });

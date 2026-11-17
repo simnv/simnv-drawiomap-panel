@@ -88,6 +88,18 @@ const getStyles = (theme: GrafanaTheme2) => ({
     height: 10px;
     border-radius: 2px;
   `,
+  lineBox: css`
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    width: 20px;
+    height: 10px;
+  `,
+  line: css`
+    width: 20px;
+    min-height: 1px;
+    border-radius: 1px;
+  `,
   marker: css`
     flex: none;
     display: inline-flex;
@@ -363,7 +375,11 @@ export const Legend = React.forwardRef<HTMLElement, Props>(function Legend(
       aria-label={`${e.label}: ${plural(e.cellIds.length)}`}
       {...activate(`${blockKey}\n${e.key}`)}
     >
-      {e.marker ? (
+      {e.line !== undefined ? (
+        <span className={styles.lineBox} aria-hidden="true">
+          <span className={styles.line} style={{ height: e.line, background: e.color }} data-dmap-line="" />
+        </span>
+      ) : e.marker ? (
         <span className={styles.marker} style={{ color: e.color }} data-dmap-marker="" aria-hidden="true">
           {e.marker}
         </span>
