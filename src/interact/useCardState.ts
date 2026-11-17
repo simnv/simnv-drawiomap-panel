@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { LEGEND_ROW_ATTR } from '../legend/symbolRows';
+import { focusLink } from '../render/linkFocus';
 import { markNearLink } from '../render/overlay';
 import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
@@ -44,12 +45,15 @@ interface InputArgs extends ReturnType<typeof useCardState> {
   /** The target is a control of the panel (the corner, the band, the legend): a click on it leaves the card alone. */
   onControl: (t: EventTarget | null) => boolean;
   panZoom: { takeClick: () => boolean; busy: () => boolean };
+  /** The cells that a link joins: they stay bright while the rest of the diagram dims around the link. */
+  linkEnds?: (cellId: string) => string[];
 }
 
 /** The events of the card: hover, click, tap and Enter open it; Esc, a click outside and leaving the panel close it. */
 export function useCardInput(args: InputArgs) {
   const { card, dispatch, cardRef, inCard, open, wrapperRef, wrapperEl, stageRef, root, patches, index, cardable } =
     args;
+  const { linkEnds } = args;
   const pinned = !!card?.pinned && open;
 
   // A thin link is hard to hit: a pointer near it (in screen px) catches it when nothing that opens a card is under
@@ -69,10 +73,12 @@ export function useCardInput(args: InputArgs) {
       near.current = id;
       if (root) {
         markNearLink(root, id);
+        // the rest of the diagram dims around the link
+        focusLink(root, index, id, id === undefined ? [] : (linkEnds?.(id) ?? []));
       }
       stageRef.current?.toggleAttribute(NEAR_ATTR, !!id);
     },
-    [root, stageRef]
+    [root, stageRef, index, linkEnds]
   );
   const frame = useRef<number | undefined>(undefined);
   const stopFrame = useCallback(() => {

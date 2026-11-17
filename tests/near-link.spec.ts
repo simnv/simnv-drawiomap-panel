@@ -72,16 +72,18 @@ test.describe('a thin link near the pointer', () => {
     const card = panel.locator.getByRole('tooltip');
     await expect(card).toBeVisible();
     expect(spot!.label.startsWith((await card.getAttribute('aria-label')) ?? '-')).toBe(true);
-    // the mark: the near class and the bloom filter on the overlay layer of that link
-    const marked = panel.locator.locator('g.dmap-overlay.dmap-near');
+    // the mark: the near class on the overlay layer of that link, and the focus layer over the diagram
+    const marked = panel.locator.locator('[data-cell-id] g.dmap-overlay.dmap-near');
     await expect(marked).toHaveCount(1);
     await expect(panel.locator.locator(`[data-cell-id="${spot!.cell}"] g.dmap-overlay.dmap-near`)).toHaveCount(1);
-    await expect(marked).toHaveAttribute('filter', /^url\(#dmap-bloom-\d+\)$/);
+    await expect(panel.locator.locator('g.dmap-link-focus-layer')).toHaveCSS('display', 'inline');
     await expect(panel.locator.getByTestId('dmap-stage')).toHaveCSS('cursor', 'pointer');
     // away from every link: the card closes and the mark goes
     await page.mouse.move(1, 1);
     await expect(panel.locator.getByTestId('dmap-card')).toHaveCount(0);
     await expect(marked).toHaveCount(0);
+    // and the rest of the diagram is bright again
+    await expect(panel.locator.locator('svg.dmap-link-focus')).toHaveCount(0);
   });
 });
 

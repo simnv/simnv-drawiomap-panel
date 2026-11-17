@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Changed the hover mark of a link to a glow: the link blooms in its own colours (an SVG blur of about 3 screen px under the sharp link, the same at every zoom), in place of a wider soft underlay in the link colour. It works in Chromium and in WebKit (Safari): a CSS `drop-shadow` does nothing on an SVG element in Safari. The link glows when the pointer is on its stroke or its value label too, not only near it. Before, the mark went away when the pointer reached the value label (for example `41%`).
+- Added the link focus: while a link is under or near the pointer, the rest of the diagram dims to about 25%. The link, its label, its value labels and the two cells that it joins (a port end with its node, and their icons) stay bright, on the light and the dark theme alike. One scrim covers the diagram and copies of the kept cells lie above it: a hover changes a few elements, also on a diagram with hundreds of links. The focus stays when the pointer is on the link stroke or its value label (before, the hover mark went away on the value label). It replaces the wider underlay of the near-link catch. See [Hover card](docs/guide/hover-card.md#thin-links).
 - Added the panel option **Stale colour** (View group, default grey). It paints a cell or a link whose last sample is older than its freshness, its status band marker and its legend entry. Before, stale was always the palette orange; now the default is grey. The word `stale` on the hover card is grey too. A stale row of the status band and the `Stale` entry of the legend show a clock `◷`, so stale is easy to tell from no data (`?`, also grey). See [Status paint](docs/guide/colours.md#status-paint).
 
 ## 1.7.0

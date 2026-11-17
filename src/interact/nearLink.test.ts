@@ -129,34 +129,17 @@ describe('NearLinkFinder', () => {
 });
 
 describe('markNearLink', () => {
-  it('puts the near class and the bloom filter on the layer of the link; another link takes them', () => {
+  it('puts the near class on the layer of the link; another link takes it; a rebuilt layer keeps it', () => {
     const { root, index, patches } = nearStage({ l1: 'M 0 100 L 400 100', l2: 'M 0 200 L 400 200' });
     const layer = (id: string) => root.querySelector(`[data-cell-id="${id}"] g.dmap-overlay`)!;
     markNearLink(root, 'l1');
     expect(layer('l1').classList.contains(NEAR_CLASS)).toBe(true);
-    // one filter in the root: a blur twice under the sharp link, in user space (a straight line has a flat box)
-    const filters = root.querySelectorAll('defs > filter');
-    expect(filters).toHaveLength(1);
-    const filter = filters[0];
-    expect(layer('l1').getAttribute('filter')).toBe(`url(#${filter.id})`);
-    expect(filter.getAttribute('filterUnits')).toBe('userSpaceOnUse');
-    expect(filter.querySelector('feGaussianBlur')?.getAttribute('stdDeviation')).toBe('3');
-    expect([...filter.querySelectorAll('feMergeNode')].map((n) => n.getAttribute('in'))).toEqual([
-      'bloom',
-      'bloom',
-      'SourceGraphic',
-    ]);
     markNearLink(root, 'l2');
     expect(layer('l1').classList.contains(NEAR_CLASS)).toBe(false);
-    expect(layer('l1').hasAttribute('filter')).toBe(false);
-    expect(layer('l2').getAttribute('filter')).toBe(`url(#${filter.id})`);
-    // a new width range draws the layers again: the mark stays on its link, with the same filter
+    // a new width range draws the layers again: the class stays on its link
     renderOverlay(root, index, patches, { theme: createTheme(), maxWidth: 12 });
     expect(layer('l2').classList.contains(NEAR_CLASS)).toBe(true);
-    expect(layer('l2').getAttribute('filter')).toBe(`url(#${filter.id})`);
-    expect(root.querySelectorAll('defs > filter')).toHaveLength(1);
     markNearLink(root, undefined);
     expect(root.querySelectorAll(`.${NEAR_CLASS}`)).toHaveLength(0);
-    expect(root.querySelectorAll('[filter]')).toHaveLength(0);
   });
 });

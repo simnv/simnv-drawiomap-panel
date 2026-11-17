@@ -467,8 +467,24 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
   await expect(panel.getByRole('tooltip')).toBeVisible();
   const mark = panel.locator(`[data-cell-id="${ISP_A}"] g.dmap-overlay.dmap-near`);
   await expect(mark).toHaveCount(1);
-  await expect(mark).toHaveAttribute('filter', /^url\(#dmap-bloom-\d+\)$/);
-  await expect(panel.locator('g.dmap-overlay.dmap-near')).toHaveCount(1);
+  await expect(panel.locator('[data-cell-id] g.dmap-overlay.dmap-near')).toHaveCount(1);
+  // the rest of the diagram dims under one scrim; the link and its value labels are copied above it
+  await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(1);
+  const layer = panel.locator('g.dmap-link-focus-layer');
+  await expect(layer).toHaveCSS('display', 'inline');
+  await expect(layer.locator('rect.dmap-link-focus-scrim')).toHaveCSS('fill-opacity', '0.75');
+  await expect(layer.locator('text', { hasText: '41%' })).toHaveCount(1);
+  // the copies take no pointer: the label under the pointer is the real one, and more moves on it keep the focus
+  const hit = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x, y)?.getAttribute('data-dmap-cell'),
+    [box.x + box.width / 2, box.y + box.height / 2]
+  );
+  expect(hit).toBe(ISP_A);
+  for (const dy of [-2, 2, 0]) {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + dy);
+  }
+  await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(1);
+  await expect(panel.getByRole('tooltip')).toBeVisible();
   if (SHOTS) {
     await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });
     await page.screenshot({

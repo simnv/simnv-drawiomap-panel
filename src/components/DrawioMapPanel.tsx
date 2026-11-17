@@ -12,6 +12,8 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
+import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM } from '../render/linkFocus';
+import { endContextOf } from '../binding/edgeEnds';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
@@ -90,6 +92,21 @@ const styles = {
     & [${INTERACTIVE_ATTR}],
     &[${NEAR_ATTR}] {
       cursor: pointer;
+    }
+    /* A link under or near the pointer: one scrim dims the diagram, copies of the link and its ends lie above it. */
+    & .${FOCUS_LAYER} {
+      display: none;
+    }
+    & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
+      display: inline;
+    }
+    /* the copies above the scrim take no pointer: the hover and the click hit the cells below */
+    & .${FOCUS_LAYER}, & .${FOCUS_LAYER} * {
+      pointer-events: none !important;
+    }
+    & .${FOCUS_SCRIM} {
+      fill: var(--dmap-scrim);
+      fill-opacity: 0.75;
     }
     /* A legend entry under the pointer: the other cells of the legend dim. */
     & .${LEGEND_MEMBER} {
@@ -457,6 +474,15 @@ function DrawioMapPanelView(props: ViewProps) {
     }
   };
 
+  // the cells that a hovered link joins stay bright (the ends are kept for the diagram, not built on each hover)
+  const diagramXml = opts.diagram?.xml;
+  const linkEnds = useCallback(
+    (id: string) => {
+      const ends = endContextOf(diagramXml, stage.index).ends.get(id);
+      return [ends?.source, ends?.target].filter((e): e is string => e !== undefined);
+    },
+    [diagramXml, stage.index]
+  );
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
     ...cards,
     open,
@@ -469,6 +495,7 @@ function DrawioMapPanelView(props: ViewProps) {
     cardable,
     onControl,
     panZoom,
+    linkEnds,
   });
 
   if (!opts.diagram?.svg) {
@@ -526,7 +553,7 @@ function DrawioMapPanelView(props: ViewProps) {
       <div
         ref={attachStage}
         className={styles.stage}
-        style={{ touchAction, height: stageHeight }}
+        style={{ touchAction, height: stageHeight, ['--dmap-scrim' as string]: theme.components.panel.background }}
         data-testid="dmap-stage"
       />
       {charts.length ? (
