@@ -2,3 +2,4 @@
 export { DiagramEditor } from './DiagramEditor';
 export { IconRadioEditor } from './IconRadioEditor';
 export { LazyConfigYamlEditor } from './LazyConfigYamlEditor';
+export { WidthTiersEditor } from './WidthTiersEditor';

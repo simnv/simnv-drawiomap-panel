@@ -31,6 +31,17 @@ A direction with no series is its own grey half, "no data"; the other half keeps
 
 The demo dashboard uses both sources: the LAN links take the port speed series `speed`, and the WAN and tunnel links carry `cap=100M`.
 
+## Link width
+
+**Link width** (View group) chooses what the width of a link shows. The colour shows the load in both modes.
+
+- **Load** (the default): the width grows from **Link width min** to **Link width max** with the load in percent. A half with no capacity has **Link width min**.
+- **Link speed**: the width shows the capacity of the half (see [Capacity](#capacity)), by **Speed tiers**. A half takes the width of the highest tier whose speed is at or below its capacity. The default tiers are `0: 1.5, 100M: 2.5, 1G: 4, 10G: 5.5`: a 30 Mbit/s link is 1.5 units wide, a 100 or 120 Mbit/s link 2.5, a 1 Gbit/s link 4. A half with no capacity, or with a capacity below the first tier, has **Link width min**. With the defaults that is 2, so such a half is wider than a 30 Mbit/s link: set **Link width min** to 1.5 or lower to draw it as the slowest link. **Link width max** is hidden and not used in this mode. The width does not change with the load, so a busy slow link and an idle fast link keep their widths. A half with no data keeps the width of its speed. The legend has a **Link speed** block: one line sample at the width of each tier that a link on the diagram has, named with the speeds of that tier (for example `30M`, `100M–120M`, `1G`).
+
+Write the tiers as `speed: width` pairs, lowest speed first, separated by commas. A speed has the grammar of `cap`: a number with an optional `k`, `K`, `M`, `G` or `T` (SI, bit/s), for example `155.52M`. The speeds must go up and each width must be above 0. A text that is not valid shows its problem and keeps the saved tiers.
+
+The widths are in diagram units, so they grow and shrink with the zoom. The overlay draws widths on a grid of quarter units: a tier width such as 2.6 draws as 2.5. The legend draws its samples in screen pixels, so they match the links at 100 % zoom. The arrow heads, the value labels and their gaps follow the drawn width in both modes.
+
 ## Arrow styles
 
 The `arrow` field selects the head of both link halves. The default is `point`, including saved configs that omit `arrow`.

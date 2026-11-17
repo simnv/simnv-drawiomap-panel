@@ -116,6 +116,37 @@ describe('halfState: the link halves', () => {
   });
 });
 
+describe('halfState: the Link speed width', () => {
+  const speed: HalfContext = {
+    ...ctx,
+    linkWidth: {
+      min: 2,
+      max: 10,
+      mode: 'capacity',
+      tiers: [
+        { min: 0, width: 1.5 },
+        { min: 1e8, width: 2.5 },
+        { min: 1e9, width: 4 },
+      ],
+    },
+  };
+  const model = historyOf([frame('T', labels, [90e6], { unit: 'bps' })]);
+  it('draws a half by its capacity, not its load; the colour still follows the load', () => {
+    const { state } = halfState(model, 'T', cap(1e8), speed);
+    expect(state.width).toBe(2.5);
+    expect(state.stepIndex).toBe(2);
+    expect(halfState(model, 'T', cap(1e9), speed).state.width).toBe(4);
+    expect(halfState(model, 'T', cap(), speed).state.width).toBe(2);
+  });
+  it('keeps the tier width of a half with no data: the speed of the link is known', () => {
+    const empty = { state: 'empty', fetchedAt: 0, fromCache: false } as const;
+    expect(halfState(empty, 'T', cap(1e9), speed).state).toMatchObject({ status: 'nodata', width: 4 });
+    expect(halfState(empty, 'T', cap(), speed).state.width).toBe(2);
+    // load mode: a half with no data has min, as before
+    expect(halfState(empty, 'T', cap(1e9), ctx).state.width).toBe(2);
+  });
+});
+
 describe('halfState: the capacity source', () => {
   it('series: keeps the source and the percent of the capacity in bit/s', () => {
     const { state } = halfState(historyOf([frame('T', labels, [4e7], { unit: 'bps' })]), 'T', cap(1e8, 'series'), real);

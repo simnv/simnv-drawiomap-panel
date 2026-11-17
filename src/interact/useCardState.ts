@@ -47,7 +47,7 @@ interface InputArgs extends ReturnType<typeof useCardState> {
   panZoom: { takeClick: () => boolean; busy: () => boolean };
   /**
    * The cells that stay bright with a hovered cell while the rest of the diagram dims: for a link its two ends, for a
-   * node its links and their other ends.
+   * node its links and their other ends. Undefined: no hover focus (the option is off), nothing dims.
    */
   focusOf?: (cellId: string) => string[];
 }
@@ -79,14 +79,22 @@ export function useCardInput(args: InputArgs) {
       const link = id !== undefined && !!index.get(id)?.line;
       if (root) {
         markNearLink(root, link ? id : undefined);
-        // a cell with no links (a chart, a free shape) dims nothing
-        const kept = id === undefined ? [] : (focusOf?.(id) ?? []);
-        focusCells(root, index, link || kept.length ? id : undefined, kept);
+        if (focusOf) {
+          // a cell with no links (a chart, a free shape) dims nothing
+          const kept = id === undefined ? [] : focusOf(id);
+          focusCells(root, index, link || kept.length ? id : undefined, kept);
+        }
       }
       stageRef.current?.toggleAttribute(NEAR_ATTR, link);
     },
     [root, stageRef, index, focusOf]
   );
+  // the hover focus switched off: a focus that is on goes
+  useEffect(() => {
+    if (!focusOf && root) {
+      focusCells(root, index, undefined);
+    }
+  }, [focusOf, root, index]);
   const frame = useRef<number | undefined>(undefined);
   const stopFrame = useCallback(() => {
     if (frame.current !== undefined) {

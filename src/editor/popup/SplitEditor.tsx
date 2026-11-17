@@ -17,7 +17,7 @@ import { indexSeries } from '../../query/seriesIndex';
 import { fitCells, type ViewBox } from '../../render/zoom';
 import { useBoundDiagram } from '../../stage/useBoundDiagram';
 import { useStage } from '../../stage/useStage';
-import { withDefaults, type Diagram, type Options, type PatchMap } from '../../types';
+import { withDefaults, type Diagram, type Options, type PatchMap, type LinkWidthOptions } from '../../types';
 import { chartUsesV4 } from '../../visuals/ChartLayer';
 import { setCellAttrs } from '../setCellAttrs';
 import { history, pushVersion, redo, undo } from '../history';
@@ -35,6 +35,7 @@ import { PopupLayout } from './PopupLayout';
 import { useOverlay } from './overlayStack';
 import { usePopupKeys } from './usePopupKeys';
 import { panelStaleColor } from '../../binding/color';
+import { linkWidthRange } from '../../binding/linkWidth';
 
 export interface SplitEditorProps {
   /** The saved options of the panel. The code box starts with `options.config`; later changes do not reset it. */
@@ -188,7 +189,17 @@ export function SplitEditor({
   const cursorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const stage = useStage(stageRef, diagram?.svg);
-  const { min, max } = opts.linkWidth;
+  // the width options by value: a new options object with the same widths binds nothing again (the tiers array
+  // keeps its identity until the option changes)
+  const linkWidth = useMemo<LinkWidthOptions>(
+    () => ({
+      min: opts.linkWidth.min,
+      max: opts.linkWidth.max,
+      mode: opts.linkWidth.mode,
+      tiers: opts.linkWidth.tiers,
+    }),
+    [opts.linkWidth.min, opts.linkWidth.max, opts.linkWidth.mode, opts.linkWidth.tiers]
+  );
   const bindContext = useMemo(
     () =>
       bindContextFor({
@@ -196,9 +207,9 @@ export function SplitEditor({
         fieldThresholds: fieldConfig.defaults.thresholds,
         replaceVariables,
         timeZone,
-        linkWidth: { min, max },
+        linkWidth,
       }),
-    [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, min, max]
+    [theme, fieldConfig.defaults.thresholds, replaceVariables, timeZone, linkWidth]
   );
   const { validated, bound, patches, cardContext } = useBoundDiagram({
     index: stage.index,
@@ -548,7 +559,7 @@ export function SplitEditor({
           chartLayer={chartLayer}
           hash={diagram?.hash}
           xml={diagram?.xml}
-          linkWidth={opts.linkWidth}
+          linkWidth={linkWidthRange(opts.linkWidth)}
           staleColor={panelStaleColor(theme, opts.stale?.color)}
           badges={entryCells ? undefined : lit.badges}
           view={view}

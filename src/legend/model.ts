@@ -11,8 +11,9 @@ import {
   ThresholdsMode,
   type ValueMapping,
 } from '@grafana/data';
+import { formatBits, tierOf, validTiers } from '../binding/linkWidth';
 import { linkStatusPaint, STALE_MARKER, statusColor } from '../binding/color';
-import type { HalfState, PatchMap, ShapeState } from '../types';
+import type { HalfState, LinkWidthOptions, PatchMap, ShapeState } from '../types';
 
 /** One colour of a scale: a swatch and its threshold or mapping text. */
 export interface LegendEntry {
@@ -23,6 +24,8 @@ export interface LegendEntry {
   cellIds: string[];
   /** A text marker in the entry colour in place of the square swatch (stale: a clock, see `STALE_MARKER`). */
   marker?: string;
+  /** A line sample of this width (px) in the entry colour in place of the square swatch (the link speed tiers). */
+  line?: number;
 }
 
 /** A continuous colour scheme: the colours from low to high and the texts at the two ends. */
@@ -75,6 +78,8 @@ export interface LegendContext {
   staleColor?: string;
   /** The panel default thresholds. They apply when a field has none (as in colorFor). */
   fieldThresholds?: ThresholdsConfig;
+  /** The link width options: in `capacity` mode the legend has a Link speed block. */
+  linkWidth?: LinkWidthOptions;
 }
 
 interface Item {
@@ -490,7 +495,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
     entries.forEach((e) => e.cellIds.forEach((id) => push(cellIds, id)));
     out.push({ key: 'state', title: 'State', entries, cellIds });
   }
-  return mergeSame([...out, ...scaleBlocks(links, ctx)]);
+  return mergeSame([...out, ...scaleBlocks(links, ctx), ...speedBlock(patches, ctx)]);
 }
 
 /**
@@ -498,7 +503,7 @@ export function buildLegendV4(patches: PatchMap, fields: Map<string, Field>, ctx
  */
 const contentOf = (block: LegendBlock) =>
   JSON.stringify([
-    block.entries.map((e) => [e.label, e.color, e.marker ?? null]),
+    block.entries.map((e) => [e.label, e.color, e.marker ?? null, e.line ?? null]),
     block.gradient ?? null,
     block.bar ?? null,
   ]);
@@ -560,4 +565,43 @@ export function chipSwatch(blocks: LegendBlock[]): string {
     return colors[0];
   }
   return `linear-gradient(to right, ${colors.join(', ')})`;
+}
+
+/**
+ * The Link speed block of the `capacity` width mode: one line sample for each tier that a drawn link half has, at the
+ * tier width, in a neutral colour. The text names the speeds of the tier on the diagram: "30M", "100M–120M", "1G".
+ */
+function speedBlock(patches: PatchMap, ctx: LegendContext): LegendBlock[] {
+  if (ctx.linkWidth?.mode !== 'capacity') {
+    return [];
+  }
+  const tiers = validTiers(ctx.linkWidth.tiers);
+  const found = new Map<number, { speeds: Set<number>; cellIds: string[] }>();
+  for (const patch of patches.values()) {
+    for (const half of [patch.link?.a2b, patch.link?.b2a]) {
+      const i = tierOf(half?.capacity, tiers);
+      if (i < 0 || half?.capacity === undefined) {
+        continue;
+      }
+      const tier = found.get(i) ?? { speeds: new Set<number>(), cellIds: [] };
+      tier.speeds.add(half.capacity);
+      if (!tier.cellIds.includes(patch.cellId)) {
+        tier.cellIds.push(patch.cellId);
+      }
+      found.set(i, tier);
+    }
+  }
+  if (!found.size) {
+    return [];
+  }
+  const color = ctx.theme.colors.text.secondary;
+  const entries: LegendEntry[] = [...found.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([i, { speeds, cellIds }]) => {
+      const sorted = [...speeds].sort((a, b) => a - b);
+      const lo = formatBits(sorted[0]);
+      const hi = formatBits(sorted[sorted.length - 1]);
+      return { key: `tier:${i}`, label: lo === hi ? lo : `${lo}–${hi}`, color, cellIds, line: tiers[i].width };
+    });
+  return [{ key: 'speed', title: 'Link speed', entries, cellIds: [...new Set(entries.flatMap((e) => e.cellIds))] }];
 }

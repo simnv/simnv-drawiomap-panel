@@ -17,7 +17,7 @@ describe('withDefaults', () => {
     expect(opts.legend).toEqual(DEFAULT_OPTIONS.legend);
     // the saved groups win; a key the old version did not save takes its default
     expect(opts.zoom).toEqual({ mode: 'original', percent: 100, wheel: true, pan: false, align: 'top' });
-    expect(opts.linkWidth).toEqual({ min: 1, max: 6 });
+    expect(opts.linkWidth).toEqual({ ...DEFAULT_OPTIONS.linkWidth, min: 1, max: 6, mode: 'load' });
     // other keys go through unchanged
     expect(opts.diagram).toBe(saved.diagram);
     expect(opts.rules).toBe(saved.rules);
@@ -35,6 +35,9 @@ describe('withDefaults', () => {
     expect(opts.legend).toEqual({ ...DEFAULT_OPTIONS.legend, corner: 'top-left' });
     expect(opts.summary.maxRows).toBe(0);
     expect(opts.hover.kinds).toEqual(['canvas']);
+    // the hover focus is on unless a saved panel turns it off
+    expect(opts.hover.focus).toBe(true);
+    expect(withDefaults({ hover: { kinds: ['link'], focus: false } } as Options).hover.focus).toBe(false);
   });
 
   it('loads saved options with no zoom and no link width', () => {

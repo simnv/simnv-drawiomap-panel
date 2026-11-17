@@ -10,7 +10,14 @@ import {
 } from '@grafana/data';
 import { noDataColor, STALE_MARKER, statusColor } from '../binding/color';
 import type { StatusView } from '../binding/status';
-import type { CellPatch, HalfState, PatchMap, SeriesInfo, StatusV4Fields } from '../types';
+import {
+  DEFAULT_OPTIONS,
+  type CellPatch,
+  type HalfState,
+  type PatchMap,
+  type SeriesInfo,
+  type StatusV4Fields,
+} from '../types';
 import { buildLegendV4, type LegendContext } from './model';
 
 const theme = createTheme();
@@ -145,6 +152,37 @@ describe('buildLegendV4', () => {
       ['< 80%', ['e1']],
       ['≥ 80%', ['e1']],
     ]);
+  });
+
+  it('adds a Link speed block in capacity width mode: one line for each tier on the diagram, at the tier width', () => {
+    const half = (capacity: number | undefined): HalfState => ({
+      status: 'ok',
+      color: named('green'),
+      width: 2,
+      label: '',
+      stepIndex: 0,
+      percent: 5,
+      capacity,
+    });
+    const patches: PatchMap = new Map([
+      cell('slow', undefined, { a2b: half(30e6), b2a: half(30e6) }),
+      cell('cam1', undefined, { a2b: half(100e6) }),
+      cell('cam2', undefined, { a2b: half(120e6) }),
+      cell('core', undefined, { a2b: half(1e9) }),
+      cell('none', undefined, { a2b: half(undefined) }),
+    ]);
+    const speed = { ...DEFAULT_OPTIONS.linkWidth, mode: 'capacity' as const };
+    const block = buildLegendV4(patches, fields, { ...ctx, linkWidth: speed }).find((b) => b.key === 'speed')!;
+    expect(block.title).toBe('Link speed');
+    // no entry for the 10G tier that no link has; a link with no capacity is in no tier
+    expect(block.entries.map((e) => [e.label, e.line, e.cellIds])).toEqual([
+      ['30M', 1.5, ['slow']],
+      ['100M–120M', 2.5, ['cam1', 'cam2']],
+      ['1G', 4, ['core']],
+    ]);
+    expect(block.entries.every((e) => e.color === theme.colors.text.secondary)).toBe(true);
+    // the load mode has no Link speed block
+    expect(buildLegendV4(patches, fields, ctx).some((b) => b.key === 'speed')).toBe(false);
   });
 
   it('does not count a missing status of a link with halves: each half shows its own state', () => {
