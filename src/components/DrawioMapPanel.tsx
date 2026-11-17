@@ -12,6 +12,8 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
+import { FOCUS_ACTIVE, FOCUS_DIM } from '../render/linkFocus';
+import { endContextOf } from '../binding/edgeEnds';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
 import { DEFAULT_OPTIONS, Options, withDefaults, type CellPatch, type LegendCorner } from '../types';
@@ -90,6 +92,10 @@ const styles = {
     & [${INTERACTIVE_ATTR}],
     &[${NEAR_ATTR}] {
       cursor: pointer;
+    }
+    /* A link under or near the pointer: the rest of the diagram dims. */
+    & svg.${FOCUS_ACTIVE} .${FOCUS_DIM} {
+      opacity: 0.25;
     }
     /* A legend entry under the pointer: the other cells of the legend dim. */
     & .${LEGEND_MEMBER} {
@@ -457,6 +463,15 @@ function DrawioMapPanelView(props: ViewProps) {
     }
   };
 
+  // the cells that a hovered link joins stay bright (the ends are kept for the diagram, not built on each hover)
+  const diagramXml = opts.diagram?.xml;
+  const linkEnds = useCallback(
+    (id: string) => {
+      const ends = endContextOf(diagramXml, stage.index).ends.get(id);
+      return [ends?.source, ends?.target].filter((e): e is string => e !== undefined);
+    },
+    [diagramXml, stage.index]
+  );
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
     ...cards,
     open,
@@ -469,6 +484,7 @@ function DrawioMapPanelView(props: ViewProps) {
     cardable,
     onControl,
     panZoom,
+    linkEnds,
   });
 
   if (!opts.diagram?.svg) {

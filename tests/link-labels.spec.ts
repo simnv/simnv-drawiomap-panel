@@ -469,6 +469,11 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
   await expect(mark).toHaveCount(1);
   await expect(mark).toHaveAttribute('filter', /^url\(#dmap-bloom-\d+\)$/);
   await expect(panel.locator('g.dmap-overlay.dmap-near')).toHaveCount(1);
+  // the rest of the diagram dims: the link and its label stay bright, another link and its label fade
+  await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(1);
+  await expect(panel.locator(`[data-cell-id="${ISP_A}"]`)).not.toHaveClass(/dmap-link-dim/);
+  await expect(text).not.toHaveClass(/dmap-link-dim/);
+  await expect(panel.locator('text.dmap-link-label.dmap-link-dim').first()).toHaveCSS('opacity', '0.25');
   if (SHOTS) {
     await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });
     await page.screenshot({

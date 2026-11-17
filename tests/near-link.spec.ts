@@ -82,6 +82,8 @@ test.describe('a thin link near the pointer', () => {
     await page.mouse.move(1, 1);
     await expect(panel.locator.getByTestId('dmap-card')).toHaveCount(0);
     await expect(marked).toHaveCount(0);
+    // and the rest of the diagram is bright again
+    await expect(panel.locator.locator('.dmap-link-dim')).toHaveCount(0);
   });
 });
 
