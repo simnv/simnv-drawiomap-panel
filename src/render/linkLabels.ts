@@ -1,3 +1,4 @@
+import { FOCUS_LAYER } from './linkFocus';
 import { formattedValueToString, type GrafanaTheme2 } from '@grafana/data';
 import type { ArrowStyle, LinkLabelMode } from '../model/v4';
 import { hoverKind } from '../adapter/portograph';
@@ -196,8 +197,11 @@ export function renderLinkLabels(
   } else {
     moved = refresh(layout, slots, opts.theme, root);
   }
-  if (root.lastElementChild !== layout.layer) {
-    root.appendChild(layout.layer);
+  // the labels go last, under the focus layer of a hovered link only (linkFocus)
+  const last = root.lastElementChild;
+  const focus = last?.classList.contains(FOCUS_LAYER) ? last : null;
+  if ((focus ? focus.previousElementSibling : last) !== layout.layer) {
+    root.insertBefore(layout.layer, focus);
   }
   let placed = 0;
   let dropped = 0;

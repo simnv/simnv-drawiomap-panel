@@ -23,7 +23,7 @@ A thin link is 1 or 2 px wide on the screen, so the pointer does not have to be 
 - A node, a link label or any other cell that opens a card under the pointer wins over a near link.
 - Only a link of the **Hover kinds** is caught (see [Which cells open a card](#which-cells-open-a-card)).
 
-A link under the pointer or caught by distance glows in its own colours: a soft bloom of about 3 screen px around its halves and heads, the same at every zoom. The rest of the diagram dims to 25%: only the link, its label, the two cells that it joins (with their icons and the containers that hold them) and its value labels stay bright. The pointer on the link stroke or on its value label keeps the glow. A link caught by distance also shows the hand cursor. The glow and the dim go away when the pointer moves away or onto another cell, and when the view zooms or pans. Only a link with traffic halves (the colour overlay) glows; another link that opens a card is caught too, with the hand cursor only.
+A link under the pointer or caught by distance gets the focus: the rest of the diagram dims to about 25%, and the link, its label, its value labels and the two cells that it joins (a port end with its node, and their icons) stay bright. One scrim in the panel colour covers the diagram and copies of the kept cells lie above it, so the cost does not grow with the size of the diagram. The pointer on the link stroke or on its value label keeps the focus. A link caught by distance also shows the hand cursor. The focus goes away when the pointer moves away or onto another cell, and when the view zooms or pans. A link without traffic halves gets the focus too.
 
 **Chart tooltip.** In a pinned card, move the pointer over a chart. The standard Grafana tooltip opens.
 
