@@ -41,10 +41,10 @@ function cellAbove(el: Element): Element | null {
   return p;
 }
 
-/** The cells that stay bright: the link, its ends, the node that holds a port end, and the parts of each. */
+/** The cells that stay bright: the given cells, the node that holds a kept port, and the parts of each. */
 function keptGroups(index: CellIndex, cellId: string, ends: readonly string[]): Element[] {
   const kept = new Set([cellId, ...ends]);
-  for (const end of ends) {
+  for (const end of kept) {
     const group = index.get(end)?.group;
     const owner = group && cellAbove(group)?.getAttribute('data-cell-id');
     // a port end: the node that holds it stays bright too
@@ -117,13 +117,14 @@ function copyOf(layer: SVGGElement, el: Element): Element {
 const focused = new WeakMap<SVGSVGElement, { index: CellIndex; cellId: string; ends: readonly string[] }>();
 
 /**
- * Dims the diagram around the link `cellId`. One scrim in the panel colour covers the whole diagram, and copies of
- * the link, the cells that it joins (`ends`), their parts and the value labels of the link are drawn above it. The
+ * Dims the diagram around the cell `cellId` (a link or a node) and the cells kept with it (`ends`: for a link its two
+ * ends, for a node its links and their other ends). One scrim in the panel colour covers the whole diagram, and
+ * copies of the kept cells, their parts and the value labels of the kept links are drawn above it. The
  * cost does not grow with the number of cells that dim: a few elements change, and no class goes on the other cells,
  * so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits the cells
  * below. Undefined, or a cell not in the index, clears.
  */
-export function focusLink(
+export function focusCells(
   root: SVGSVGElement,
   index: CellIndex,
   cellId: string | undefined,
@@ -141,8 +142,9 @@ export function focusLink(
   focused.set(root, { index, cellId, ends });
   const layer = focusLayer(root);
   // a label layer hidden at this zoom (too small to read) keeps the labels of the link hidden too
+  const ids = new Set([cellId, ...ends]);
   const labels = [...root.querySelectorAll('text[data-dmap-cell]')].filter(
-    (t) => t.getAttribute('data-dmap-cell') === cellId && t.parentElement?.getAttribute('visibility') !== 'hidden'
+    (t) => ids.has(t.getAttribute('data-dmap-cell') ?? '') && t.parentElement?.getAttribute('visibility') !== 'hidden'
   );
   for (const el of [...keptGroups(index, cellId, ends), ...labels]) {
     layer.appendChild(copyOf(layer, el));
@@ -151,12 +153,64 @@ export function focusLink(
 }
 
 /**
- * Draws the copies of the focused link again after a paint: the copies show the new colours, widths and value labels.
+ * Draws the copies of the focused cells again after a paint: the copies show the new colours, widths and value labels.
  * A new index (a new diagram) clears the focus.
  */
 export function refreshFocus(root: SVGSVGElement, index: CellIndex): void {
   const f = focused.get(root);
   if (f) {
-    focusLink(root, index, f.index === index ? f.cellId : undefined, f.ends);
+    focusCells(root, index, f.index === index ? f.cellId : undefined, f.ends);
   }
+}
+
+/** The nearest node that holds the cell, or the cell itself when it is a node. */
+function nodeOf(index: CellIndex, id: string): string | undefined {
+  for (let g: Element | null | undefined = index.get(id)?.group; g; g = cellAbove(g)) {
+    const cell = g.getAttribute('data-cell-id');
+    if (cell !== null && index.get(cell)?.meta.kind === 'node') {
+      return cell;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The cells that stay bright with a hovered cell, from the ends of the links (`ends`: link id to its source and
+ * target cell). A link keeps its two ends. A node, a port or another cell keeps the links that end on it (a node also
+ * those that end on its ports) and their other ends. Built once for a diagram; each call is a map lookup.
+ */
+export function focusMap(
+  index: CellIndex,
+  ends: ReadonlyMap<string, { source?: string; target?: string }>
+): (cellId: string) => string[] {
+  const links = new Map<string, string[]>();
+  const attach = (cell: string, link: string) => {
+    const list = links.get(cell);
+    if (list) {
+      list.push(link);
+    } else {
+      links.set(cell, [link]);
+    }
+  };
+  for (const [link, { source, target }] of ends) {
+    for (const end of new Set([source, target])) {
+      if (end === undefined) {
+        continue;
+      }
+      attach(end, link);
+      const node = nodeOf(index, end);
+      if (node !== undefined && node !== end) {
+        attach(node, link);
+      }
+    }
+  }
+  const endsOf = (link: string) =>
+    [ends.get(link)?.source, ends.get(link)?.target].filter((e): e is string => e !== undefined);
+  return (cellId) => {
+    if (ends.has(cellId)) {
+      return endsOf(cellId);
+    }
+    const attached = links.get(cellId) ?? [];
+    return [...new Set([...attached, ...attached.flatMap(endsOf)])];
+  };
 }
