@@ -171,7 +171,16 @@ describe('buildLegendV4', () => {
       cell('core', undefined, { a2b: half(1e9) }),
       cell('none', undefined, { a2b: half(undefined) }),
     ]);
-    const speed = { ...DEFAULT_OPTIONS.linkWidth, mode: 'capacity' as const };
+    const speed = {
+      ...DEFAULT_OPTIONS.linkWidth,
+      mode: 'capacity' as const,
+      tiers: [
+        { min: 0, width: 1.5 },
+        { min: 1e8, width: 2.5 },
+        { min: 1e9, width: 4 },
+        { min: 1e10, width: 5.5 },
+      ],
+    };
     const block = buildLegendV4(patches, fields, { ...ctx, linkWidth: speed }).find((b) => b.key === 'speed')!;
     expect(block.title).toBe('Link speed');
     // no entry for the 10G tier that no link has; a link with no capacity is in no tier
@@ -183,6 +192,30 @@ describe('buildLegendV4', () => {
     expect(block.entries.every((e) => e.color === theme.colors.text.secondary)).toBe(true);
     // the load mode has no Link speed block
     expect(buildLegendV4(patches, fields, ctx).some((b) => b.key === 'speed')).toBe(false);
+  });
+
+  it('adds one line for each speed on the panel at its width in the automatic Link speed mode', () => {
+    const half = (capacity: number | undefined, width: number): HalfState => ({
+      status: 'ok',
+      color: named('green'),
+      width,
+      label: '',
+      stepIndex: 0,
+      capacity,
+    });
+    const patches: PatchMap = new Map([
+      cell('a', undefined, { a2b: half(10e9, 1.5), b2a: half(10e9, 1.5) }),
+      cell('b', undefined, { a2b: half(100e9, 5.5) }),
+      cell('c', undefined, { a2b: half(25e9, 3) }),
+      cell('none', undefined, { a2b: half(undefined, 1.5) }),
+    ]);
+    const auto = { min: 1.5, max: 5.5, mode: 'capacity' as const, tiers: [] };
+    const block = buildLegendV4(patches, fields, { ...ctx, linkWidth: auto }).find((b) => b.key === 'speed')!;
+    expect(block.entries.map((e) => [e.label, e.line, e.cellIds])).toEqual([
+      ['10G', 1.5, ['a']],
+      ['25G', 3, ['c']],
+      ['100G', 5.5, ['b']],
+    ]);
   });
 
   it('does not count a missing status of a link with halves: each half shows its own state', () => {

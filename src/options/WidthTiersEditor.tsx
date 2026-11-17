@@ -37,7 +37,7 @@ export function WidthTiersEditor({ value, onChange }: StandardEditorProps<WidthT
       <Input
         value={text}
         aria-label="Link speed tiers"
-        placeholder="0: 1.5, 100M: 2.5, 1G: 4"
+        placeholder="Automatic (log scale). Or: 0: 1.5, 100M: 2.5, 1G: 4"
         onChange={(e) => setText(e.currentTarget.value)}
         onBlur={commit}
         onKeyDown={(e) => {

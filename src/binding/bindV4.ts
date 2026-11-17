@@ -1,3 +1,4 @@
+import { scaleSpeedWidths } from './linkWidth';
 import { formattedValueToString, type Field, type PanelData } from '@grafana/data';
 import type { MatchV4, RowV4 } from '../model/v4';
 import type { validateConfig } from '../model/validate';
@@ -841,5 +842,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   }
   out.report = report.entries;
   out.deadlines = [...deadlines].sort((a, b) => a - b);
+  // the automatic Link speed widths need all the capacities of the panel
+  scaleSpeedWidths(out.patches, ctx.linkWidth);
   return out;
 }

@@ -111,14 +111,19 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         settings: {
           options: [
             { value: 'load', label: 'Load', description: 'From Link width min to max with the load in percent' },
-            { value: 'capacity', label: 'Link speed', description: 'From the capacity of the link, by speed tiers' },
+            {
+              value: 'capacity',
+              label: 'Link speed',
+              description: 'From the capacity of the link (log scale, or speed tiers)',
+            },
           ],
         },
       })
       .addNumberInput({
         path: 'linkWidth.min',
         name: 'Link width min',
-        description: 'The thinnest link. In Link speed mode: the width of a link with no capacity.',
+        description:
+          'The thinnest link. In Link speed mode: the slowest link of the panel, and a link with no capacity.',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.linkWidth.min,
       })
@@ -126,15 +131,16 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         path: 'linkWidth.max',
         name: 'Link width max',
         category: ['View'],
+        description: 'The thickest link. In Link speed mode with no tiers: the width of the fastest link of the panel.',
         defaultValue: DEFAULT_OPTIONS.linkWidth.max,
-        showIf: (o) => o.linkWidth?.mode !== 'capacity',
+        showIf: (o) => o.linkWidth?.mode !== 'capacity' || !o.linkWidth?.tiers?.length,
       })
       .addCustomEditor({
         id: 'linkWidth.tiers',
         path: 'linkWidth.tiers',
         name: 'Speed tiers',
         description:
-          'Speed: width pairs, lowest speed first. A link takes the width of the highest tier at or below its capacity. Speeds in bit/s with k, M, G or T.',
+          'Empty: automatic, a log scale of the link speeds on the panel from Link width min to max. Or speed: width pairs, lowest speed first: a link takes the width of the highest tier at or below its capacity. Speeds in bit/s with k, M, G or T.',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.linkWidth.tiers,
         editor: WidthTiersEditor,
