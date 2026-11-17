@@ -9,7 +9,6 @@ export const FOCUS_SCRIM = 'dmap-link-focus-scrim';
 const NS = 'http://www.w3.org/2000/svg';
 /** The scrim covers any view: the view box of a diagram is far smaller. */
 const FAR = 1e6;
-let idSeq = 0;
 
 /** The focus layer of a root, made at the first focus: hidden by the panel CSS until the root has FOCUS_ACTIVE. */
 function focusLayer(root: SVGSVGElement): SVGGElement {
@@ -78,31 +77,46 @@ function keptGroups(index: CellIndex, cellId: string, ends: readonly string[]): 
   });
 }
 
-/** A copy of `el` in the focus layer, in the place of the original: the transforms of its ancestors apply. */
-function copyOf(layer: SVGGElement, el: Element): SVGUseElement {
-  if (!el.id) {
-    el.id = `dmap-focus-${++idSeq}`;
+/** The attributes that a copy must not carry: the hit test, the ids and the screen reader see only the original. */
+const COPY_DROPPED = ['id', 'data-cell-id', 'data-dmap-cell', 'role', 'tabindex', 'aria-label'];
+
+/**
+ * A clone of `el` in the focus layer, in the place of the original: the transforms of its ancestors apply. A clone,
+ * not a `<use>`: a `<use>` instance does not draw a `foreignObject` (an HTML label), and its elements keep their own
+ * `pointer-events`, so they would take the pointer from the cells below. The panel CSS gives each clone element
+ * `pointer-events: none`.
+ */
+function copyOf(layer: SVGGElement, el: Element): Element {
+  const copy = el.cloneNode(true) as Element;
+  for (const node of [copy, ...copy.querySelectorAll('*')]) {
+    for (const name of COPY_DROPPED) {
+      node.removeAttribute(name);
+    }
   }
-  const use = document.createElementNS(NS, 'use');
-  use.setAttribute('href', `#${el.id}`);
   const parent = el.parentElement as unknown as SVGGraphicsElement | null;
   const from = typeof parent?.getCTM === 'function' ? parent.getCTM() : null;
   const to = typeof layer.getCTM === 'function' ? layer.getCTM() : null;
   if (from && to) {
     const m = to.inverse().multiply(from);
     if (!m.isIdentity) {
-      use.setAttribute('transform', `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`);
+      const wrap = document.createElementNS(NS, 'g');
+      wrap.setAttribute('transform', `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`);
+      wrap.appendChild(copy);
+      return wrap;
     }
   }
-  return use;
+  return copy;
 }
 
+/** The focus of each root, so that a paint can draw the copies again with the new state of the cells. */
+const focused = new WeakMap<SVGSVGElement, { index: CellIndex; cellId: string; ends: readonly string[] }>();
+
 /**
- * Dims the diagram around the link `cellId`. One scrim in the panel colour covers the whole diagram, and copies
- * (`<use>`) of the link, the cells that it joins (`ends`), their parts and the value labels of the link are drawn
- * above it. The cost does not grow with the number of cells that dim: a few elements change, and no class goes on the
- * other cells, so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits
- * the cells below. Undefined, or a cell not in the index, clears.
+ * Dims the diagram around the link `cellId`. One scrim in the panel colour covers the whole diagram, and copies of
+ * the link, the cells that it joins (`ends`), their parts and the value labels of the link are drawn above it. The
+ * cost does not grow with the number of cells that dim: a few elements change, and no class goes on the other cells,
+ * so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits the cells
+ * below. Undefined, or a cell not in the index, clears.
  */
 export function focusLink(
   root: SVGSVGElement,
@@ -110,14 +124,16 @@ export function focusLink(
   cellId: string | undefined,
   ends: readonly string[] = []
 ): void {
-  root
-    .querySelector(`:scope > g.${FOCUS_LAYER}`)
-    ?.querySelectorAll('use')
-    .forEach((u) => u.remove());
+  const existing = root.querySelector(`:scope > g.${FOCUS_LAYER}`);
+  while (existing && existing.lastElementChild && !existing.lastElementChild.classList.contains(FOCUS_SCRIM)) {
+    existing.lastElementChild.remove();
+  }
   if (cellId === undefined || !index.has(cellId)) {
+    focused.delete(root);
     root.classList.remove(FOCUS_ACTIVE);
     return;
   }
+  focused.set(root, { index, cellId, ends });
   const layer = focusLayer(root);
   const labels = [...root.querySelectorAll('text[data-dmap-cell]')].filter(
     (t) => t.getAttribute('data-dmap-cell') === cellId
@@ -126,4 +142,15 @@ export function focusLink(
     layer.appendChild(copyOf(layer, el));
   }
   root.classList.add(FOCUS_ACTIVE);
+}
+
+/**
+ * Draws the copies of the focused link again after a paint: the copies show the new colours, widths and value labels.
+ * A new index (a new diagram) clears the focus.
+ */
+export function refreshFocus(root: SVGSVGElement, index: CellIndex): void {
+  const f = focused.get(root);
+  if (f) {
+    focusLink(root, index, f.index === index ? f.cellId : undefined, f.ends);
+  }
 }

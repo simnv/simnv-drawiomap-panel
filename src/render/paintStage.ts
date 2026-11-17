@@ -1,6 +1,7 @@
 import type { GrafanaTheme2 } from '@grafana/data';
 import type { CellIndex, PatchMap } from '../types';
 import { applyPatches, type Applied } from './applier';
+import { refreshFocus } from './linkFocus';
 import { renderLinkLabels } from './linkLabels';
 import { renderOverlay } from './overlay';
 import type { ViewBox } from './zoom';
@@ -37,5 +38,7 @@ export function paintStage(
   const applied = applyPatches(index, patches, previous, interactive, { theme, osDark, xml, staleColor });
   renderOverlay(root, index, patches, { theme, maxWidth: linkWidth.max, minWidth: linkWidth.min, staleColor });
   renderLinkLabels(root, index, patches, { theme, linkWidth, bounds });
+  // the copies of a focused link show its new state
+  refreshFocus(root, index);
   return applied;
 }

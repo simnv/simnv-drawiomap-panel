@@ -100,6 +100,10 @@ const styles = {
     & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
       display: inline;
     }
+    /* the copies above the scrim take no pointer: the hover and the click hit the cells below */
+    & .${FOCUS_LAYER}, & .${FOCUS_LAYER} * {
+      pointer-events: none !important;
+    }
     & .${FOCUS_SCRIM} {
       fill: var(--dmap-scrim);
       fill-opacity: 0.75;

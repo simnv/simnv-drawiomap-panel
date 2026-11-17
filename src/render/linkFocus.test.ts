@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellEntry, CellIndex } from '../types';
-import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusLink } from './linkFocus';
+import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusLink, refreshFocus } from './linkFocus';
 
 /** A zone with node a (with its port and an icon outside it), node b, links L and M, the label cell of L, labels. */
 function stage() {
   const host = document.createElement('div');
   host.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="layer">
-    <g data-cell-id="zone"><rect/>
-      <g data-cell-id="a"><rect/><g data-cell-id="a-port"><rect/></g></g>
-      <g data-cell-id="L"><path/></g>
+    <g data-cell-id="zone"><rect class="zone"/>
+      <g data-cell-id="a"><rect class="a"/><g data-cell-id="a-port" role="button" tabindex="0"><rect class="a-port"/></g></g>
+      <g data-cell-id="L"><path class="L"/></g>
     </g>
-    <g data-cell-id="b" id="own-id"><rect/></g>
-    <g data-cell-id="M"><path/><g data-cell-id="M-text"><text>classic</text></g></g>
-    <g data-cell-id="L-label"><text>uplink</text></g>
-    <g data-cell-id="a-icon"><rect/></g>
+    <g data-cell-id="b" id="own-id"><rect class="b"/></g>
+    <g data-cell-id="M"><path class="M"/><g data-cell-id="M-text"><foreignObject class="M-text"/></g></g>
+    <g data-cell-id="L-label"><text class="L-label">uplink</text></g>
+    <g data-cell-id="a-icon"><rect class="a-icon"/></g>
   </g>
   <g class="labels"><text data-dmap-cell="L">41%</text><text data-dmap-cell="M">7%</text></g>
   </svg>`;
@@ -32,12 +32,11 @@ function stage() {
       ...(owners[id] ? { ownerId: owners[id] } : {}),
     } as unknown as CellEntry);
   }
-  /** The cells and labels copied above the scrim, by cell id or text. */
+  /** The cells and labels copied above the scrim: the class of the first shape of each copy, or its text. */
   const copied = () =>
-    [...root.querySelectorAll(`g.${FOCUS_LAYER} use`)].map((u) => {
-      const el = root.querySelector(u.getAttribute('href')!)!;
-      return el.getAttribute('data-cell-id') ?? el.textContent;
-    });
+    [...root.querySelectorAll(`g.${FOCUS_LAYER} > :not(.${FOCUS_SCRIM})`)].map(
+      (c) => (c.localName === 'text' ? c.textContent : c.querySelector('[class]')?.getAttribute('class')) ?? '?'
+    );
   return { root, index, copied };
 }
 
@@ -55,14 +54,18 @@ describe('focusLink', () => {
     expect(root.querySelector('[data-cell-id="M"]')!.getAttribute('class')).toBeNull();
   });
 
-  it('copies the ends, the node that holds a port end once, and the parts of the node; a cell keeps its own id', () => {
+  it('copies the ends, the node that holds a port end once, and the parts of the node, with no ids', () => {
     const { root, index, copied } = stage();
     focusLink(root, index, 'M', ['a-port', 'b']);
     // a holds a-port: a is drawn with its port; the icon of a lies outside a
     // a classic draw.io edge label (a child of the edge, no owner) is drawn with the edge
     expect(copied().sort()).toEqual(['7%', 'M', 'a', 'a-icon', 'b']);
-    expect(root.querySelector('[data-cell-id="M-text"]')!.closest('[data-cell-id="M"]')).not.toBeNull();
-    expect([...root.querySelectorAll('use')].some((u) => u.getAttribute('href') === '#own-id')).toBe(true);
+    const layer = root.querySelector(`g.${FOCUS_LAYER}`)!;
+    // the HTML label of the edge is in its copy (a <use> would not draw it)
+    expect(layer.querySelector('foreignObject.M-text')).not.toBeNull();
+    // a copy has no id, cell id, role or tab stop: the hit test and the screen reader see only the original
+    expect(layer.querySelectorAll('[id], [data-cell-id], [data-dmap-cell], [role], [tabindex]')).toHaveLength(0);
+    expect(root.querySelectorAll('#own-id')).toHaveLength(1);
   });
 
   it('moves to another link with one layer, and clears with undefined or an unknown cell', () => {
@@ -75,6 +78,19 @@ describe('focusLink', () => {
     expect(copied()).toEqual([]);
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
     focusLink(root, index, 'nope');
+    expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
+  });
+});
+
+describe('refreshFocus', () => {
+  it('draws the copies again after a paint, and clears for a new index', () => {
+    const { root, index, copied } = stage();
+    focusLink(root, index, 'L');
+    root.querySelector('[data-dmap-cell="L"]')!.textContent = '55%';
+    refreshFocus(root, index);
+    expect(copied()).toEqual(['L', 'L-label', '55%']);
+    refreshFocus(root, new Map(index));
+    expect(copied()).toEqual([]);
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
   });
 });

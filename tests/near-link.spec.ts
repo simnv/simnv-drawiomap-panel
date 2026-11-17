@@ -73,7 +73,7 @@ test.describe('a thin link near the pointer', () => {
     await expect(card).toBeVisible();
     expect(spot!.label.startsWith((await card.getAttribute('aria-label')) ?? '-')).toBe(true);
     // the mark: the near class on the overlay layer of that link, and the focus layer over the diagram
-    const marked = panel.locator.locator('g.dmap-overlay.dmap-near');
+    const marked = panel.locator.locator('[data-cell-id] g.dmap-overlay.dmap-near');
     await expect(marked).toHaveCount(1);
     await expect(panel.locator.locator(`[data-cell-id="${spot!.cell}"] g.dmap-overlay.dmap-near`)).toHaveCount(1);
     await expect(panel.locator.locator('g.dmap-link-focus-layer')).toHaveCSS('display', 'inline');
