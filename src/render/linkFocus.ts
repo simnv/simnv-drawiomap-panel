@@ -41,17 +41,9 @@ function cellAbove(el: Element): Element | null {
   return p;
 }
 
-/** The cells that stay bright: the given cells, the node that holds a kept port, and the parts of each. */
+/** The cells that stay bright: the given cells (`focusMap` adds the node of a port) and the parts of each. */
 function keptGroups(index: CellIndex, cellId: string, ends: readonly string[]): Element[] {
   const kept = new Set([cellId, ...ends]);
-  for (const end of kept) {
-    const group = index.get(end)?.group;
-    const owner = group && cellAbove(group)?.getAttribute('data-cell-id');
-    // a port end: the node that holds it stays bright too
-    if (owner && index.get(owner)?.meta.kind === 'node') {
-      kept.add(owner);
-    }
-  }
   const out: Element[] = [];
   for (const id of kept) {
     const group = index.get(id)?.group;
@@ -86,7 +78,7 @@ const COPY_DROPPED = ['id', 'data-cell-id', 'data-dmap-cell', 'role', 'tabindex'
  * `pointer-events`, so they would take the pointer from the cells below. The panel CSS gives each clone element
  * `pointer-events: none`.
  */
-function copyOf(layer: SVGGElement, el: Element): Element {
+function copyOf(el: Element, m: DOMMatrix | null): Element {
   const copy = el.cloneNode(true) as Element;
   for (const node of [copy, ...copy.querySelectorAll('*')]) {
     for (const name of COPY_DROPPED) {
@@ -98,19 +90,20 @@ function copyOf(layer: SVGGElement, el: Element): Element {
       node.removeAttribute('xlink:href');
     }
   }
-  const parent = el.parentElement as unknown as SVGGraphicsElement | null;
-  const from = typeof parent?.getCTM === 'function' ? parent.getCTM() : null;
-  const to = typeof layer.getCTM === 'function' ? layer.getCTM() : null;
-  if (from && to) {
-    const m = to.inverse().multiply(from);
-    if (!m.isIdentity) {
-      const wrap = document.createElementNS(NS, 'g');
-      wrap.setAttribute('transform', `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`);
-      wrap.appendChild(copy);
-      return wrap;
-    }
+  if (m && !m.isIdentity) {
+    const wrap = document.createElementNS(NS, 'g');
+    wrap.setAttribute('transform', `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`);
+    wrap.appendChild(copy);
+    return wrap;
   }
   return copy;
+}
+
+/** The transform from the parent of `el` to the focus layer (`to`: the screen transform of the layer). */
+function placeOf(el: Element, to: DOMMatrix | null): DOMMatrix | null {
+  const parent = el.parentElement as unknown as SVGGraphicsElement | null;
+  const from = typeof parent?.getCTM === 'function' ? parent.getCTM() : null;
+  return from && to ? to.inverse().multiply(from) : null;
 }
 
 /** The focus of each root, so that a paint can draw the copies again with the new state of the cells. */
@@ -120,8 +113,8 @@ const focused = new WeakMap<SVGSVGElement, { index: CellIndex; cellId: string; e
  * Dims the diagram around the cell `cellId` (a link or a node) and the cells kept with it (`ends`: for a link its two
  * ends, for a node its links and their other ends). One scrim in the panel colour covers the whole diagram, and
  * copies of the kept cells, their parts and the value labels of the kept links are drawn above it. The
- * cost does not grow with the number of cells that dim: a few elements change, and no class goes on the other cells,
- * so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits the cells
+ * cost grows with the kept cells (a node with many links keeps them all), not with the cells that dim: no class goes
+ * on the other cells, so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits the cells
  * below. Undefined, or a cell not in the index, clears.
  */
 export function focusCells(
@@ -146,9 +139,14 @@ export function focusCells(
   const labels = [...root.querySelectorAll('text[data-dmap-cell]')].filter(
     (t) => ids.has(t.getAttribute('data-dmap-cell') ?? '') && t.parentElement?.getAttribute('visibility') !== 'hidden'
   );
-  for (const el of [...keptGroups(index, cellId, ends), ...labels]) {
-    layer.appendChild(copyOf(layer, el));
+  // all transforms first, then all writes: a node with many links forces one layout, not one for each copy
+  const to = typeof layer.getCTM === 'function' ? layer.getCTM() : null;
+  const kept = [...keptGroups(index, cellId, ends), ...labels].map((el) => ({ el, m: placeOf(el, to) }));
+  const batch = document.createDocumentFragment();
+  for (const { el, m } of kept) {
+    batch.appendChild(copyOf(el, m));
   }
+  layer.appendChild(batch);
   root.classList.add(FOCUS_ACTIVE);
 }
 
@@ -163,25 +161,32 @@ export function refreshFocus(root: SVGSVGElement, index: CellIndex): void {
   }
 }
 
-/** The nearest node that holds the cell, or the cell itself when it is a node. */
-function nodeOf(index: CellIndex, id: string): string | undefined {
-  for (let g: Element | null | undefined = index.get(id)?.group; g; g = cellAbove(g)) {
-    const cell = g.getAttribute('data-cell-id');
-    if (cell !== null && index.get(cell)?.meta.kind === 'node') {
+/**
+ * The node that holds the cell, or the cell itself when it is a node: the `parents` of the edge ends (the node of a
+ * port by `pg-node`, the container in the XML), else the nesting of the cell groups.
+ */
+function nodeOf(index: CellIndex, parents: ReadonlyMap<string, string>, id: string): string | undefined {
+  let cell: string | null | undefined = id;
+  for (let depth = 0; cell && depth < 32; depth++) {
+    if (index.get(cell)?.meta.kind === 'node') {
       return cell;
     }
+    const group: SVGGElement | undefined = index.get(cell)?.group;
+    cell = parents.get(cell) ?? (group ? cellAbove(group)?.getAttribute('data-cell-id') : undefined);
   }
   return undefined;
 }
 
 /**
  * The cells that stay bright with a hovered cell, from the ends of the links (`ends`: link id to its source and
- * target cell). A link keeps its two ends. A node, a port or another cell keeps the links that end on it (a node also
- * those that end on its ports) and their other ends. Built once for a diagram; each call is a map lookup.
+ * target cell; `parents`: the node of a port, the container of a cell). A link keeps its two ends. A node, a port or
+ * another cell keeps the links that end on it (a node also those that end on its ports) and their other ends. An end
+ * that is a port brings the node that holds it. Built once for a diagram; each call is a map lookup.
  */
 export function focusMap(
   index: CellIndex,
-  ends: ReadonlyMap<string, { source?: string; target?: string }>
+  ends: ReadonlyMap<string, { source?: string; target?: string }>,
+  parents: ReadonlyMap<string, string> = new Map()
 ): (cellId: string) => string[] {
   const links = new Map<string, string[]>();
   const attach = (cell: string, link: string) => {
@@ -192,25 +197,29 @@ export function focusMap(
       links.set(cell, [link]);
     }
   };
+  // each end with the node that holds it
+  const endCells = new Map<string, string[]>();
   for (const [link, { source, target }] of ends) {
+    const cells = new Set<string>();
     for (const end of new Set([source, target])) {
       if (end === undefined) {
         continue;
       }
+      cells.add(end);
       attach(end, link);
-      const node = nodeOf(index, end);
+      const node = nodeOf(index, parents, end);
       if (node !== undefined && node !== end) {
+        cells.add(node);
         attach(node, link);
       }
     }
+    endCells.set(link, [...cells]);
   }
-  const endsOf = (link: string) =>
-    [ends.get(link)?.source, ends.get(link)?.target].filter((e): e is string => e !== undefined);
   return (cellId) => {
     if (ends.has(cellId)) {
-      return endsOf(cellId);
+      return endCells.get(cellId) ?? [];
     }
     const attached = links.get(cellId) ?? [];
-    return [...new Set([...attached, ...attached.flatMap(endsOf)])];
+    return [...new Set([...attached, ...attached.flatMap((l) => endCells.get(l) ?? [])])];
   };
 }

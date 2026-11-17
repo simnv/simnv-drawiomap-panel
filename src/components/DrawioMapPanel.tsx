@@ -476,10 +476,10 @@ function DrawioMapPanelView(props: ViewProps) {
 
   // the cells that stay bright with a hovered link or node (built once for a diagram, not on each hover)
   const diagramXml = opts.diagram?.xml;
-  const focusOf = useMemo(
-    () => focusMap(stage.index, endContextOf(diagramXml, stage.index).ends),
-    [diagramXml, stage.index]
-  );
+  const focusOf = useMemo(() => {
+    const ctx = endContextOf(diagramXml, stage.index);
+    return focusMap(stage.index, ctx.ends, ctx.parents);
+  }, [diagramXml, stage.index]);
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
     ...cards,
     open,

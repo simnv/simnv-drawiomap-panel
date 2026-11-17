@@ -54,9 +54,9 @@ describe('focusCells', () => {
     expect(root.querySelector('[data-cell-id="M"]')!.getAttribute('class')).toBeNull();
   });
 
-  it('copies the ends, the node that holds a port end once, and the parts of the node, with no ids', () => {
+  it('copies the ends once (a port inside its node is drawn with it), the parts of the node, with no ids', () => {
     const { root, index, copied } = stage();
-    focusCells(root, index, 'M', ['a-port', 'b']);
+    focusCells(root, index, 'M', ['a-port', 'a', 'b']);
     // a holds a-port: a is drawn with its port; the icon of a lies outside a
     // a classic draw.io edge label (a child of the edge, no owner) is drawn with the edge
     expect(copied().sort()).toEqual(['7%', 'M', 'a', 'a-icon', 'b']);
@@ -116,12 +116,28 @@ describe('focusMap', () => {
       ['M', { source: 'b', target: 'a' }],
     ]);
     const focusOf = focusMap(index, ends);
-    expect(focusOf('L')).toEqual(['a-port', 'b']);
+    // a port end brings the node that holds it
+    expect(focusOf('L')).toEqual(['a-port', 'a', 'b']);
     expect(focusOf('a').sort()).toEqual(['L', 'M', 'a', 'a-port', 'b']);
-    // a port keeps only its own links
-    expect(focusOf('a-port').sort()).toEqual(['L', 'a-port', 'b']);
+    // a port keeps only its own links, and its node
+    expect(focusOf('a-port').sort()).toEqual(['L', 'a', 'a-port', 'b']);
     // a cell with no link keeps nothing
     expect(focusOf('zone')).toEqual([]);
+  });
+
+  it('finds the node of a port by its parents when the port is not inside the node; a self-loop keeps its node once', () => {
+    const { index } = stage();
+    // the port b-port lies outside node b in the SVG; pg-node names b
+    const focusOf = focusMap(
+      index,
+      new Map([
+        ['L', { source: 'L-label', target: 'b' }],
+        ['M', { source: 'b', target: 'b' }],
+      ]),
+      new Map([['L-label', 'b']])
+    );
+    expect(focusOf('b').sort()).toEqual(['L', 'L-label', 'M', 'b']);
+    expect(focusOf('M')).toEqual(['b']);
   });
 
   it('a node focus copies the node, its links with their value labels and the other ends', () => {
