@@ -14,7 +14,7 @@ function stage() {
     <g data-cell-id="b" id="own-id"><rect class="b"/></g>
     <g data-cell-id="M"><path class="M"/><g data-cell-id="M-text"><foreignObject class="M-text"/></g></g>
     <g data-cell-id="L-label"><text class="L-label">uplink</text></g>
-    <g data-cell-id="a-icon"><rect class="a-icon"/></g>
+    <g data-cell-id="a-icon"><image class="a-icon" href="data:image/png;base64,AA=="/><a href="https://example.com"><text>doc</text></a></g>
   </g>
   <g class="labels"><text data-dmap-cell="L">41%</text><text data-dmap-cell="M">7%</text></g>
   </svg>`;
@@ -66,6 +66,9 @@ describe('focusLink', () => {
     // a copy has no id, cell id, role or tab stop: the hit test and the screen reader see only the original
     expect(layer.querySelectorAll('[id], [data-cell-id], [data-dmap-cell], [role], [tabindex]')).toHaveLength(0);
     expect(root.querySelectorAll('#own-id')).toHaveLength(1);
+    // an icon keeps its picture; a link in a label is no tab stop
+    expect(layer.querySelector('image')?.getAttribute('href')).toMatch(/^data:/);
+    expect(layer.querySelector('a')?.hasAttribute('href')).toBe(false);
   });
 
   it('moves to another link with one layer, and clears with undefined or an unknown cell', () => {
@@ -92,5 +95,14 @@ describe('refreshFocus', () => {
     refreshFocus(root, new Map(index));
     expect(copied()).toEqual([]);
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
+  });
+});
+
+describe('focusLink labels', () => {
+  it('copies no value label while the label layer is hidden at this zoom', () => {
+    const { root, index, copied } = stage();
+    root.querySelector('g.labels')!.setAttribute('visibility', 'hidden');
+    focusLink(root, index, 'L');
+    expect(copied()).toEqual(['L', 'L-label']);
   });
 });

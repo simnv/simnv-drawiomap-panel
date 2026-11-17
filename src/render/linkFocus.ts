@@ -92,6 +92,11 @@ function copyOf(layer: SVGGElement, el: Element): Element {
     for (const name of COPY_DROPPED) {
       node.removeAttribute(name);
     }
+    // a link in a label is no second tab stop (an <image> keeps its href: it is the picture)
+    if (node.localName === 'a') {
+      node.removeAttribute('href');
+      node.removeAttribute('xlink:href');
+    }
   }
   const parent = el.parentElement as unknown as SVGGraphicsElement | null;
   const from = typeof parent?.getCTM === 'function' ? parent.getCTM() : null;
@@ -135,8 +140,9 @@ export function focusLink(
   }
   focused.set(root, { index, cellId, ends });
   const layer = focusLayer(root);
+  // a label layer hidden at this zoom (too small to read) keeps the labels of the link hidden too
   const labels = [...root.querySelectorAll('text[data-dmap-cell]')].filter(
-    (t) => t.getAttribute('data-dmap-cell') === cellId
+    (t) => t.getAttribute('data-dmap-cell') === cellId && t.parentElement?.getAttribute('visibility') !== 'hidden'
   );
   for (const el of [...keptGroups(index, cellId, ends), ...labels]) {
     layer.appendChild(copyOf(layer, el));
