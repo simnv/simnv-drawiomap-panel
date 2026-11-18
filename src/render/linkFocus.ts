@@ -1,14 +1,28 @@
+import { alphaOf } from '../binding/color';
 import type { CellIndex } from '../types';
 
 /** The root while a link has the focus: the panel CSS shows the focus layer. */
 export const FOCUS_ACTIVE = 'dmap-link-focus';
-/**
- * The last layer of the root: copies of the kept elements. While the root has FOCUS_ACTIVE, the panel CSS lowers the
- * opacity of all the other children of the root, so the diagram fades toward its own page colour.
- */
+/** The last layer of the root: a scrim over the whole diagram, and copies of the kept elements above it. */
 export const FOCUS_LAYER = 'dmap-link-focus-layer';
+export const FOCUS_SCRIM = 'dmap-link-focus-scrim';
 
 const NS = 'http://www.w3.org/2000/svg';
+/** The scrim covers any view: the view box of a diagram is far smaller. */
+const FAR = 1e6;
+
+/** An rgb colour as a computed style writes it: `rgb(r, g, b)`, `rgb(r g b)`, `rgba(r, g, b, a)` or `rgb(r g b / a)`. */
+const RGB = /^rgba?\(\s*[\d.]+(?:\s*,\s*|\s+)[\d.]+(?:\s*,\s*|\s+)[\d.]+(?:\s*[,/]\s*[\d.]+%?)?\s*\)$/i;
+
+/**
+ * The page colour of the diagram: the computed `background-color` of the root svg (draw.io writes the page background
+ * there; the browser has resolved `light-dark()`), when it is an opaque rgb colour. Undefined for none (transparent)
+ * or a value that cannot be read.
+ */
+export function pageColour(root: SVGSVGElement): string | undefined {
+  const value = typeof getComputedStyle === 'function' ? getComputedStyle(root).backgroundColor.trim() : '';
+  return RGB.test(value) && alphaOf(value) === 1 ? value : undefined;
+}
 
 /** The focus layer of a root, made at the first focus: hidden by the panel CSS until the root has FOCUS_ACTIVE. */
 function focusLayer(root: SVGSVGElement): SVGGElement {
@@ -18,6 +32,13 @@ function focusLayer(root: SVGSVGElement): SVGGElement {
     layer.setAttribute('class', FOCUS_LAYER);
     layer.setAttribute('pointer-events', 'none');
     layer.setAttribute('aria-hidden', 'true');
+    const scrim = document.createElementNS(NS, 'rect');
+    scrim.setAttribute('class', FOCUS_SCRIM);
+    scrim.setAttribute('x', String(-FAR));
+    scrim.setAttribute('y', String(-FAR));
+    scrim.setAttribute('width', String(2 * FAR));
+    scrim.setAttribute('height', String(2 * FAR));
+    layer.appendChild(scrim);
   }
   if (root.lastElementChild !== layer) {
     root.appendChild(layer);
@@ -104,11 +125,11 @@ const focused = new WeakMap<SVGSVGElement, { index: CellIndex; cellId: string; e
 
 /**
  * Dims the diagram around the cell `cellId` (a link or a node) and the cells kept with it (`ends`: for a link its two
- * ends, for a node its links and their other ends). The panel CSS lowers the opacity of the diagram (one class on the
- * root), and copies of the kept cells, their parts and the value labels of the kept links are drawn at full opacity
- * above it. No class goes on the
- * other cells, so the browser restyles no other cell; the DOM work grows with the kept cells (a node with many links
- * keeps them all). The browser still blends the whole diagram once at each change. The copies take no pointer: the hover still hits the cells
+ * ends, for a node its links and their other ends). One scrim covers the whole diagram, in the page colour of the
+ * diagram (else the panel CSS gives the panel colour), so the diagram fades toward its own background, and
+ * copies of the kept cells, their parts and the value labels of the kept links are drawn above it. The
+ * cost grows with the kept cells (a node with many links keeps them all), not with the cells that dim: no class goes
+ * on the other cells, so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits the cells
  * below. Undefined, or a cell not in the index, clears.
  */
 export function focusCells(
@@ -118,7 +139,9 @@ export function focusCells(
   ends: readonly string[] = []
 ): void {
   const existing = root.querySelector(`:scope > g.${FOCUS_LAYER}`);
-  existing?.replaceChildren();
+  while (existing && existing.lastElementChild && !existing.lastElementChild.classList.contains(FOCUS_SCRIM)) {
+    existing.lastElementChild.remove();
+  }
   if (cellId === undefined || !index.has(cellId)) {
     focused.delete(root);
     root.classList.remove(FOCUS_ACTIVE);
@@ -126,6 +149,9 @@ export function focusCells(
   }
   focused.set(root, { index, cellId, ends });
   const layer = focusLayer(root);
+  // a scrim in the page colour looks the same as the cells at 25% opacity, at the cost of one rect: opacity on the
+  // large groups of the diagram makes the browser draw them again at each repaint
+  (layer.firstElementChild as SVGElement | null)?.style.setProperty('fill', pageColour(root) ?? null);
   // a label layer hidden at this zoom (too small to read) keeps the labels of the link hidden too
   const ids = new Set([cellId, ...ends]);
   const labels = [...root.querySelectorAll('text[data-dmap-cell]')].filter(

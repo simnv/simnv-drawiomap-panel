@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellEntry, CellIndex } from '../types';
-import { FOCUS_ACTIVE, FOCUS_LAYER, focusCells, focusMap, refreshFocus } from './linkFocus';
+import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusCells, focusMap, refreshFocus } from './linkFocus';
 
 /** A zone with node a (with its port and an icon outside it), node b, links L and M, the label cell of L, labels. */
 function stage() {
@@ -32,21 +32,22 @@ function stage() {
       ...(owners[id] ? { ownerId: owners[id] } : {}),
     } as unknown as CellEntry);
   }
-  /** The cells and labels copied to the focus layer: the class of the first shape of each copy, or its text. */
+  /** The cells and labels copied above the scrim: the class of the first shape of each copy, or its text. */
   const copied = () =>
-    [...root.querySelectorAll(`g.${FOCUS_LAYER} > *`)].map(
+    [...root.querySelectorAll(`g.${FOCUS_LAYER} > :not(.${FOCUS_SCRIM})`)].map(
       (c) => (c.localName === 'text' ? c.textContent : c.querySelector('[class]')?.getAttribute('class')) ?? '?'
     );
   return { root, index, copied };
 }
 
 describe('focusCells', () => {
-  it('puts the focus layer last in the root, with copies of the link, its label cell and its value labels', () => {
+  it('puts one scrim last in the root and copies of the link, its label cell and its value labels above it', () => {
     const { root, index, copied } = stage();
     focusCells(root, index, 'L');
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(true);
     const layer = root.lastElementChild!;
     expect(layer.classList.contains(FOCUS_LAYER)).toBe(true);
+    expect(layer.firstElementChild?.classList.contains(FOCUS_SCRIM)).toBe(true);
     expect(layer.getAttribute('pointer-events')).toBe('none');
     expect(copied()).toEqual(['L', 'L-label', '41%']);
     // no class goes on the other cells
@@ -81,6 +82,22 @@ describe('focusCells', () => {
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
     focusCells(root, index, 'nope');
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
+  });
+});
+
+describe('focusCells scrim colour', () => {
+  it('fills the scrim with the page colour of the diagram, and leaves it to the panel CSS when there is none', () => {
+    const { root, index } = stage();
+    // the computed style needs the svg in the document
+    document.body.appendChild(root.parentElement!);
+    root.style.backgroundColor = 'rgb(250, 240, 220)';
+    focusCells(root, index, 'L');
+    const scrim = root.querySelector<SVGElement>(`.${FOCUS_SCRIM}`)!;
+    expect(scrim.style.fill).toBe('rgb(250, 240, 220)');
+    root.style.backgroundColor = 'transparent';
+    focusCells(root, index, 'M');
+    expect(scrim.style.fill).toBe('');
+    root.parentElement!.remove();
   });
 });
 

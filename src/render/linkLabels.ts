@@ -1,4 +1,4 @@
-import { FOCUS_LAYER } from './linkFocus';
+import { FOCUS_LAYER, pageColour } from './linkFocus';
 import { formattedValueToString, type GrafanaTheme2 } from '@grafana/data';
 import type { ArrowStyle, LinkLabelMode } from '../model/v4';
 import { hoverKind } from '../adapter/portograph';
@@ -39,7 +39,7 @@ import {
   type Placement,
   type Rect,
 } from './labelPlacement';
-import { alphaOf, maxBodyWidth, statusBorderWidth } from '../binding/color';
+import { maxBodyWidth, statusBorderWidth } from '../binding/color';
 import {
   drawnWidth,
   fmt,
@@ -645,16 +645,7 @@ function createProbe(layer: SVGGElement): SVGTextElement {
  * the root has none (transparent) or it cannot be read. One colour per pass: never a guess from the shapes below.
  */
 export function haloColour(root: SVGSVGElement, theme: GrafanaTheme2): string {
-  const value = typeof getComputedStyle === 'function' ? getComputedStyle(root).backgroundColor.trim() : '';
-  return opaqueColour(value) ?? theme.colors.background.canvas;
-}
-
-/** An rgb colour as a computed style writes it: `rgb(r, g, b)`, `rgb(r g b)`, `rgba(r, g, b, a)` or `rgb(r g b / a)`. */
-const RGB = /^rgba?\(\s*[\d.]+(?:\s*,\s*|\s+)[\d.]+(?:\s*,\s*|\s+)[\d.]+(?:\s*[,/]\s*[\d.]+%?)?\s*\)$/i;
-
-/** The colour when it is an rgb colour with alpha 1, else undefined: `transparent`, an empty value, a keyword. */
-function opaqueColour(value: string): string | undefined {
-  return RGB.test(value) && alphaOf(value) === 1 ? value : undefined;
+  return pageColour(root) ?? theme.colors.background.canvas;
 }
 
 function paint(rec: LabelRecord, theme: GrafanaTheme2, halo: string): void {

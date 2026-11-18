@@ -12,7 +12,7 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
-import { FOCUS_ACTIVE, FOCUS_LAYER, focusMap } from '../render/linkFocus';
+import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusMap } from '../render/linkFocus';
 import { endContextOf } from '../binding/edgeEnds';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
@@ -101,19 +101,20 @@ const styles = {
     &[${NEAR_ATTR}] {
       cursor: pointer;
     }
-    /* A cell under or near the pointer: the diagram fades to its page colour, copies of the kept cells lie above it. */
+    /* A link under or near the pointer: one scrim dims the diagram, copies of the link and its ends lie above it. */
     & .${FOCUS_LAYER} {
       display: none;
     }
     & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
       display: inline;
     }
-    & svg.${FOCUS_ACTIVE} > :not(.${FOCUS_LAYER}) {
-      opacity: 0.25;
-    }
-    /* the copies take no pointer: the hover and the click hit the cells below */
+    /* the copies above the scrim take no pointer: the hover and the click hit the cells below */
     & .${FOCUS_LAYER}, & .${FOCUS_LAYER} * {
       pointer-events: none !important;
+    }
+    & .${FOCUS_SCRIM} {
+      fill: var(--dmap-scrim);
+      fill-opacity: 0.75;
     }
     /* A legend entry under the pointer: the other cells of the legend dim. */
     & .${LEGEND_MEMBER} {
@@ -570,7 +571,7 @@ function DrawioMapPanelView(props: ViewProps) {
       <div
         ref={attachStage}
         className={styles.stage}
-        style={{ touchAction, height: stageHeight }}
+        style={{ touchAction, height: stageHeight, ['--dmap-scrim' as string]: theme.components.panel.background }}
         data-testid="dmap-stage"
       />
       {charts.length ? (
