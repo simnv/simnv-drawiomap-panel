@@ -2,13 +2,13 @@ import type { CellIndex } from '../types';
 
 /** The root while a link has the focus: the panel CSS shows the focus layer. */
 export const FOCUS_ACTIVE = 'dmap-link-focus';
-/** The last layer of the root: a scrim over the whole diagram, and copies of the kept elements above it. */
+/**
+ * The last layer of the root: copies of the kept elements. While the root has FOCUS_ACTIVE, the panel CSS lowers the
+ * opacity of all the other children of the root, so the diagram fades toward its own page colour.
+ */
 export const FOCUS_LAYER = 'dmap-link-focus-layer';
-export const FOCUS_SCRIM = 'dmap-link-focus-scrim';
 
 const NS = 'http://www.w3.org/2000/svg';
-/** The scrim covers any view: the view box of a diagram is far smaller. */
-const FAR = 1e6;
 
 /** The focus layer of a root, made at the first focus: hidden by the panel CSS until the root has FOCUS_ACTIVE. */
 function focusLayer(root: SVGSVGElement): SVGGElement {
@@ -18,13 +18,6 @@ function focusLayer(root: SVGSVGElement): SVGGElement {
     layer.setAttribute('class', FOCUS_LAYER);
     layer.setAttribute('pointer-events', 'none');
     layer.setAttribute('aria-hidden', 'true');
-    const scrim = document.createElementNS(NS, 'rect');
-    scrim.setAttribute('class', FOCUS_SCRIM);
-    scrim.setAttribute('x', String(-FAR));
-    scrim.setAttribute('y', String(-FAR));
-    scrim.setAttribute('width', String(2 * FAR));
-    scrim.setAttribute('height', String(2 * FAR));
-    layer.appendChild(scrim);
   }
   if (root.lastElementChild !== layer) {
     root.appendChild(layer);
@@ -111,8 +104,9 @@ const focused = new WeakMap<SVGSVGElement, { index: CellIndex; cellId: string; e
 
 /**
  * Dims the diagram around the cell `cellId` (a link or a node) and the cells kept with it (`ends`: for a link its two
- * ends, for a node its links and their other ends). One scrim in the panel colour covers the whole diagram, and
- * copies of the kept cells, their parts and the value labels of the kept links are drawn above it. The
+ * ends, for a node its links and their other ends). The panel CSS lowers the opacity of the diagram (one class on the
+ * root), and copies of the kept cells, their parts and the value labels of the kept links are drawn at full opacity
+ * above it. The
  * cost grows with the kept cells (a node with many links keeps them all), not with the cells that dim: no class goes
  * on the other cells, so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits the cells
  * below. Undefined, or a cell not in the index, clears.
@@ -124,9 +118,7 @@ export function focusCells(
   ends: readonly string[] = []
 ): void {
   const existing = root.querySelector(`:scope > g.${FOCUS_LAYER}`);
-  while (existing && existing.lastElementChild && !existing.lastElementChild.classList.contains(FOCUS_SCRIM)) {
-    existing.lastElementChild.remove();
-  }
+  existing?.replaceChildren();
   if (cellId === undefined || !index.has(cellId)) {
     focused.delete(root);
     root.classList.remove(FOCUS_ACTIVE);
