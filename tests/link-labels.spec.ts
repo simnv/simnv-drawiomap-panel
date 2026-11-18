@@ -478,14 +478,11 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
   const mark = panel.locator(`[data-cell-id="${ISP_A}"] g.dmap-overlay.dmap-near`);
   await expect(mark).toHaveCount(1);
   await expect(panel.locator('[data-cell-id] g.dmap-overlay.dmap-near')).toHaveCount(1);
-  // the rest of the diagram fades (opacity only); the link and its value labels are copied at full opacity above it
+  // the rest of the diagram dims under one scrim; the link and its value labels are copied above it
   await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(1);
   const layer = panel.locator('g.dmap-link-focus-layer');
   await expect(layer).toHaveCSS('display', 'inline');
-  await expect(layer).toHaveCSS('opacity', '1');
-  // the diagram group and the label layer fade
-  await expect(panel.locator('svg.dmap-link-focus > g:has([data-cell-id])').first()).toHaveCSS('opacity', '0.25');
-  await expect(panel.locator('svg.dmap-link-focus > g.dmap-link-labels')).toHaveCSS('opacity', '0.25');
+  await expect(layer.locator('rect.dmap-link-focus-scrim')).toHaveCSS('fill-opacity', '0.75');
   await expect(layer.locator('text', { hasText: '41%' })).toHaveCount(1);
   // the copies take no pointer: the label under the pointer is the real one, and more moves on it keep the focus
   const hit = await page.evaluate(
@@ -531,7 +528,7 @@ test('a pointer on a node dims the rest: the node, its links and their other end
   await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4, { steps: 3 });
   await expect(panel.getByRole('tooltip')).toBeVisible();
   await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(1);
-  // a node has no near-link class; the value labels of its link are copied to the focus layer
+  // a node has no near-link class; the value labels of its link are copied above the scrim
   await expect(panel.locator('[data-cell-id] g.dmap-overlay.dmap-near')).toHaveCount(0);
   const layer = panel.locator('g.dmap-link-focus-layer');
   await expect(layer.locator('text', { hasText: '41%' })).toHaveCount(1);
