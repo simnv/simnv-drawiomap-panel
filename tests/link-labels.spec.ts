@@ -483,10 +483,9 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
   const layer = panel.locator('g.dmap-link-focus-layer');
   await expect(layer).toHaveCSS('display', 'inline');
   await expect(layer).toHaveCSS('opacity', '1');
-  await expect(panel.locator('svg.dmap-link-focus > :not(.dmap-link-focus-layer)').first()).toHaveCSS(
-    'opacity',
-    '0.25'
-  );
+  // the diagram group and the label layer fade
+  await expect(panel.locator('svg.dmap-link-focus > g:has([data-cell-id])').first()).toHaveCSS('opacity', '0.25');
+  await expect(panel.locator('svg.dmap-link-focus > g.dmap-link-labels')).toHaveCSS('opacity', '0.25');
   await expect(layer.locator('text', { hasText: '41%' })).toHaveCount(1);
   // the copies take no pointer: the label under the pointer is the real one, and more moves on it keep the focus
   const hit = await page.evaluate(
