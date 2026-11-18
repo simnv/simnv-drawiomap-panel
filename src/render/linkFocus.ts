@@ -151,7 +151,7 @@ export function focusCells(
   const layer = focusLayer(root);
   // a scrim in the page colour looks the same as the cells at 25% opacity, at the cost of one rect: opacity on the
   // large groups of the diagram makes the browser draw them again at each repaint
-  (layer.firstElementChild as SVGElement | null)?.style.setProperty('fill', pageColour(root) ?? null);
+  layer.querySelector<SVGElement>(`:scope > .${FOCUS_SCRIM}`)?.style.setProperty('fill', pageColour(root) ?? null);
   // a label layer hidden at this zoom (too small to read) keeps the labels of the link hidden too
   const ids = new Set([cellId, ...ends]);
   const labels = [...root.querySelectorAll('text[data-dmap-cell]')].filter(

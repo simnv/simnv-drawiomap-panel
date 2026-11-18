@@ -571,7 +571,15 @@ function DrawioMapPanelView(props: ViewProps) {
       <div
         ref={attachStage}
         className={styles.stage}
-        style={{ touchAction, height: stageHeight, ['--dmap-scrim' as string]: theme.components.panel.background }}
+        style={{
+          touchAction,
+          height: stageHeight,
+          // the focus scrim of a diagram with no page colour: the colour behind the panel (the dashboard canvas on a
+          // transparent panel)
+          ['--dmap-scrim' as string]: props.transparent
+            ? theme.colors.background.canvas
+            : theme.components.panel.background,
+        }}
         data-testid="dmap-stage"
       />
       {charts.length ? (
