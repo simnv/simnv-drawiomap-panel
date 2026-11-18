@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import type { DashboardPage } from '@grafana/plugin-e2e';
-import { devices, type Locator } from '@playwright/test';
+import { devices, type Locator, type Page } from '@playwright/test';
 import type { ConfigV4, LinkLabelMode } from '../src/model/v4';
 import { demoConfigV4, handDrawnConfigV4 } from '../src/fixtures/demo-config';
 import { pointOnHalf, touch } from './authoring-controls';
@@ -39,8 +39,22 @@ const labelsOf = (panel: Locator) => panel.locator('text.dmap-link-label');
 const label = (panel: Locator, cell: string, half: 'a2b' | 'b2a') =>
   panel.locator(`text.dmap-link-label[data-dmap-cell="${cell}"][data-dmap-half="${half}"]`);
 const layerOf = (panel: Locator) => panel.locator('g.dmap-link-labels');
-
 type Box = { x: number; y: number; width: number; height: number };
+/**
+ * The box of an element on the page, by getBoundingClientRect. Playwright `boundingBox()` gives a wrong place in WebKit
+ * for a rotated SVG text (a value label along a vertical link), so a hover there would miss the label.
+ */
+const clientBox = (el: Locator): Promise<Box> =>
+  el.evaluate((e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+/** A click at the middle of the client box (see clientBox). */
+async function tap(page: Page, el: Locator) {
+  const box = await clientBox(el);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
 const intersects = (a: Box, b: Box, tolerance = 1) =>
   a.x + tolerance < b.x + b.width &&
   b.x + tolerance < a.x + a.width &&
@@ -222,10 +236,10 @@ test('a tap on a label opens the card of its link, not of the group under it', a
   createDiagram,
   gotoDashboardPage,
   readProvisionedDataSource,
+  page,
 }) => {
   const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
-  const target = label(panel, ISP_A, 'a2b');
-  await target.click({ force: true });
+  await tap(page, label(panel, ISP_A, 'a2b'));
   const dialog = panel.getByRole('dialog');
   await expect(dialog).toContainText('ISP A pppoe ↔ rtr-a wan1');
 });
@@ -234,9 +248,10 @@ test('the card that a label opens shows the percent of the link capacity', async
   createDiagram,
   gotoDashboardPage,
   readProvisionedDataSource,
+  page,
 }) => {
   const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
-  await label(panel, ISP_A, 'a2b').click({ force: true });
+  await tap(page, label(panel, ISP_A, 'a2b'));
   await expect(panel.getByRole('dialog')).toContainText(/41(\.\d)? Mb\/s · 41%/);
 });
 
@@ -283,6 +298,7 @@ test.describe('phone', () => {
   // Chromium with the Pixel 5 viewport, touch and no hover.
   const { defaultBrowserType: _chromium, ...pixel } = devices['Pixel 5'];
   test.use(pixel);
+  test.skip(({ browserName }) => browserName !== 'chromium', 'CDP touch events need Chromium');
 
   test('in Fit the layer is hidden on the first frame; a pinch to 5× shows it', async ({
     page,
@@ -472,7 +488,7 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
 }) => {
   const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
   const text = label(panel, ISP_A, 'a2b');
-  const box = (await text.boundingBox())!;
+  const box = await clientBox(text);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
   await expect(panel.getByRole('tooltip')).toBeVisible();
   const mark = panel.locator(`[data-cell-id="${ISP_A}"] g.dmap-overlay.dmap-near`);
@@ -505,7 +521,7 @@ test('a pointer on a value label keeps the hover mark of its link', async ({
     await page.goto(`${page.url()}${page.url().includes('?') ? '&' : '?'}theme=light`);
     const lightText = label(panel, ISP_A, 'a2b');
     await expect(lightText).toHaveAttribute('data-dmap-placed-at', /\d+/);
-    const light = (await lightText.boundingBox())!;
+    const light = await clientBox(lightText);
     await page.mouse.move(light.x + light.width / 2, light.y + light.height / 2, { steps: 3 });
     await expect(mark).toHaveCount(1);
     await page.addStyleTag({ content: '[data-testid="dmap-card"] { visibility: hidden !important; }' });
@@ -607,7 +623,7 @@ test('Hover focus off: a hovered link opens its card and nothing dims', async ({
     { createDiagram, gotoDashboardPage, readProvisionedDataSource },
     { options: { hover: { kinds: ['node', 'link', 'port', 'other'], focus: false } } }
   );
-  const box = (await label(panel, ISP_A, 'a2b').boundingBox())!;
+  const box = await clientBox(label(panel, ISP_A, 'a2b'));
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
   await expect(panel.getByRole('tooltip')).toBeVisible();
   await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(0);
