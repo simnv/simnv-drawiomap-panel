@@ -59,8 +59,9 @@ test('the hover card shows the percent of the cell capacity; the port speed seri
   await page.mouse.move(1, 1);
   await expect(card).toHaveCount(0);
   // the port speed series (125 MB/s = 1 Gb/s) gives the canvas colour (the test above); the row shows the value
+  // (the generator jitters about 480 Mb/s, so 479.x is fine)
   await hover(LAN);
-  await expect(card).toContainText(/↑ 480(\.\d)? Mb\/s/);
+  await expect(card).toContainText(/↑ (479\.\d|480(\.\d)?) Mb\/s · 48%/);
 });
 
 test('the hand-drawn panel reads the capacity from a cell attribute', async ({ gotoDashboardPage }) => {
