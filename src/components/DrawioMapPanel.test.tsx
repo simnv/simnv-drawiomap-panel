@@ -1516,6 +1516,12 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
       expect(await screen.findByRole('dialog')).toBeTruthy();
       expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
+      // the pointer leaves the panel, or clicks the pinned link again: the focus stays
+      fireEvent.pointerLeave(screen.getByTestId('dmap-panel'));
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
       fireEvent.keyDown(document, { key: 'Escape' });
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       expect(document.querySelector('svg.dmap-link-focus')).toBeNull();

@@ -74,9 +74,11 @@ export function useCardInput(args: InputArgs) {
     stageRef.current?.removeAttribute(NEAR_ATTR);
   }, [root, stageRef]);
   // The hovered cell (a link under or near the pointer, or a cell under it): the rest of the diagram dims around it.
-  // A link also gets the near class and the hand cursor.
+  // A link also gets the near class and the hand cursor. While a card is pinned, its cell keeps the mark and the
+  // focus: a leave of the pointer, a click or a pan does not take them away.
   const setNear = useCallback(
-    (id: string | undefined) => {
+    (asked: string | undefined) => {
+      const id = pinnedId ?? asked;
       if (near.current === id) {
         return;
       }
@@ -92,7 +94,7 @@ export function useCardInput(args: InputArgs) {
       }
       stageRef.current?.toggleAttribute(NEAR_ATTR, link);
     },
-    [root, stageRef, index, focusOf]
+    [root, stageRef, index, focusOf, pinnedId]
   );
   // the hover focus switched off: a focus that is on goes
   useEffect(() => {
@@ -100,6 +102,13 @@ export function useCardInput(args: InputArgs) {
       focusCells(root, index, undefined);
     }
   }, [focusOf, root, index]);
+  // the hover focus switched on again while a card is pinned: its cell gets the focus back
+  useEffect(() => {
+    if (focusOf && pinnedId !== undefined) {
+      near.current = undefined;
+      setNear(pinnedId);
+    }
+  }, [focusOf, pinnedId, setNear]);
   const frame = useRef<number | undefined>(undefined);
   const stopFrame = useCallback(() => {
     if (frame.current !== undefined) {
