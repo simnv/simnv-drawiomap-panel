@@ -1509,6 +1509,25 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(document.querySelector('g.dmap-link-focus-layer')).toBeNull();
     });
 
+    it('Shift hides the hover card and the focus while it is down; a pinned card stays', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      const wrapper = document.querySelector('[data-dmap-shift], [data-testid="dmap-panel"]')!;
+      fireEvent.keyDown(window, { key: 'Shift' });
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(true);
+      fireEvent.keyUp(window, { key: 'Shift' });
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(false);
+      // a pinned card does not hide
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+      fireEvent.keyDown(window, { key: 'Shift' });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      fireEvent.keyUp(window, { key: 'Shift' });
+    });
+
     it('the mark stays when the pointer moves from near the link onto it or its label', async () => {
       render(<DrawioMapPanel {...structurePanel(ALL)} />);
       await near('bg', 75, 31);

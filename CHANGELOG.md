@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added: hold Shift to hide the hover card and the focus while the key is down. A pinned card stays.
 - Added the chart fields `background: none` (no panel background under the chart) and `colors` (the colours of the lines of a `history` chart or row: a CSS colour, a Grafana colour name or `light-dark(light, dark)` for the light and the dark theme). See [Chart regions](docs/guide/bindings.md#chart-regions).
 - Fixed the chart regions in Safari: a sparkline or a gauge stood at the wrong place and size. The charts are now HTML over the diagram, placed from the matrix of their cell, in all browsers. A link or a label that crosses the box of a chart goes under it.
 - Added `urlNewTab: false` (class) and `newTab: false` (`drilldown` row): the link of the card opens in the current tab. The default stays a new tab. See [Hover card](docs/guide/hover-card.md).
