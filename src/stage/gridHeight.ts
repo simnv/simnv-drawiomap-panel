@@ -26,8 +26,8 @@ export function freeRows(zoom: ZoomOptions, base: ViewBox | undefined, box: { wi
 /*
  * Grafana gives a panel no API to change its own height: the dashboard grid sets it. The "Fit height" button uses
  * the scene objects of the dashboard (`window.__grafanaSceneContext`, Grafana 11 and later), which are not a public
- * API. Every read below checks the shape of what it finds; a shape that differs gives "not found", and the corner
- * then shows only the hint, never an error.
+ * API. Every read below checks the shape of what it finds; a shape that differs gives "not found", and the
+ * button does not show.
  */
 
 interface SceneNode {
