@@ -1509,6 +1509,18 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(document.querySelector('g.dmap-link-focus-layer')).toBeNull();
     });
 
+    it('a pinned card keeps the focus of its link until the card closes', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(document.querySelector('svg.dmap-link-focus')).toBeNull();
+    });
+
     it('the mark stays when the pointer moves from near the link onto it or its label', async () => {
       render(<DrawioMapPanel {...structurePanel(ALL)} />);
       await near('bg', 75, 31);
