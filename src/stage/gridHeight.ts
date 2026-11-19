@@ -1,26 +1,13 @@
 import { useSyncExternalStore } from 'react';
-import type { ViewBox } from '../render/zoom';
+import { configuredSize, type ViewBox } from '../render/zoom';
 import type { ZoomOptions } from '../types';
 
 /** One row of the dashboard grid in px: a cell of 30 px and the margin of 8 px below it. */
 export const GRID_ROW_PX = 38;
 /** The fit leaves the panel at least this many rows high. */
 const MIN_ROWS = 2;
-
-/** The height in px of the diagram in a stage of this size, for the zoom mode, before a pan or a zoom. */
-function drawnHeight(zoom: ZoomOptions, base: ViewBox, box: { width: number; height: number }): number {
-  const min = zoom.minScale ?? 0;
-  switch (zoom.mode) {
-    case 'fit':
-      return base.h * Math.max(min, Math.min(box.width / base.w, box.height / base.h));
-    case 'fit-width':
-      return base.h * Math.max(min, box.width / base.w);
-    case 'original':
-      return base.h;
-    case 'custom':
-      return (base.h * (zoom.percent || 100)) / 100;
-  }
-}
+/** The height of a classic horizontal scroll bar (Windows, Linux); an overlay scroll bar takes none. */
+const SCROLL_BAR_PX = 17;
 
 /**
  * The whole grid rows of free space below the diagram in the stage: the panel can be this many rows lower and still
@@ -30,7 +17,10 @@ export function freeRows(zoom: ZoomOptions, base: ViewBox | undefined, box: { wi
   if (!base || !(base.w > 0) || !(base.h > 0) || !(box.width > 0) || !(box.height > 0)) {
     return 0;
   }
-  return Math.max(0, Math.floor((box.height - drawnHeight(zoom, base, box)) / GRID_ROW_PX));
+  const drawn = configuredSize(zoom, base, box);
+  // a diagram wider than the stage scrolls: the horizontal scroll bar takes height
+  const bar = drawn.width > box.width + 0.5 ? SCROLL_BAR_PX : 0;
+  return Math.max(0, Math.floor((box.height - drawn.height - bar) / GRID_ROW_PX));
 }
 
 /*
@@ -68,8 +58,11 @@ function gridItemOf(panelId: number): SceneNode | undefined {
     }
     if (node.state.key === key) {
       const item = node.parent;
+      // a repeated panel: the item holds the height of all its repeats, and the dashboard saves another field
+      const repeated = !!item?.state.variableName || Array.isArray(item?.state.repeatedPanels);
       if (
         isNode(item) &&
+        !repeated &&
         item.state.body === node &&
         Number.isInteger(item.state.height) &&
         Number.isInteger(item.state.y) &&
@@ -91,20 +84,22 @@ function gridItemOf(panelId: number): SceneNode | undefined {
   return found;
 }
 
-/** True while the dashboard is in edit mode (from the scene); false when the scene is not found. */
+function subscribeEditing(notify: () => void): () => void {
+  try {
+    const sub = sceneRoot()?.subscribeToState?.(notify);
+    return () => sub?.unsubscribe();
+  } catch {
+    return () => {};
+  }
+}
+const readEditing = () => sceneRoot()?.state.isEditing === true;
+
+/**
+ * True while the dashboard is in edit mode (from the scene); false when the scene is not found. The scene of a
+ * dashboard exists before its panels mount; a new dashboard mounts the panel again.
+ */
 export function useDashboardEditing(): boolean {
-  return useSyncExternalStore(
-    (notify) => {
-      try {
-        const sub = sceneRoot()?.subscribeToState?.(notify);
-        return () => sub?.unsubscribe();
-      } catch {
-        return () => {};
-      }
-    },
-    () => sceneRoot()?.state.isEditing === true,
-    () => false
-  );
+  return useSyncExternalStore(subscribeEditing, readEditing, () => false);
 }
 
 /**
@@ -124,9 +119,11 @@ export function fitGridHeight(panelId: number, rows: number): boolean {
       return false;
     }
     item.setState!({ height: next });
-    const grid = item.parent;
-    if (isNode(grid) && Array.isArray(grid.state.children) && typeof grid.setState === 'function') {
-      grid.setState({ children: [...grid.state.children] });
+    // the grid draws again (a panel in a row: the row and the grid above it), so it moves the panels below up
+    for (let node = item.parent, depth = 0; isNode(node) && depth < 4; node = node.parent, depth++) {
+      if (Array.isArray(node.state.children) && typeof node.setState === 'function') {
+        node.setState({ children: [...node.state.children] });
+      }
     }
     return true;
   } catch {

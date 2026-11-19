@@ -27,10 +27,15 @@ describe('freeRows', () => {
     expect(freeRows(zoom('fit'), base, { width: 800, height: 230 })).toBe(0);
     expect(freeRows(zoom('fit'), undefined, { width: 800, height: 600 })).toBe(0);
   });
+  it('counts a horizontal scroll bar when the diagram is wider than the stage', () => {
+    // original in 300 × 140: 100 px high, 40 px free, but the scroll bar takes 17: no free row
+    expect(freeRows(zoom('original'), base, { width: 300, height: 140 })).toBe(0);
+    expect(freeRows(zoom('original'), base, { width: 400, height: 140 })).toBe(1);
+  });
 });
 
 /** A fake scene: root > grid > item > panel, as the dashboards of Grafana 12 and 13 build it. */
-function scene(height: number) {
+function scene(height: number, opts: { row?: boolean; repeat?: boolean } = {}) {
   const make = (state: Record<string, unknown>, parent?: any) => {
     const node: any = { state, parent, children: [] as any[] };
     node.setState = (s: Record<string, unknown>) => (node.state = { ...node.state, ...s });
@@ -40,12 +45,19 @@ function scene(height: number) {
   };
   const root = make({ isEditing: true });
   const grid = make({ children: [] }, root);
-  const item = make({ x: 0, y: 4, width: 24, height }, grid);
+  const row = opts.row ? make({ title: 'Row', children: [] }, grid) : undefined;
+  if (row) {
+    grid.state.children = [row];
+  }
+  const item = make(
+    { x: 0, y: 4, width: 24, height, ...(opts.repeat ? { variableName: 'host', itemHeight: height } : {}) },
+    row ?? grid
+  );
   const panel = make({ key: 'panel-7', pluginId: 'simnv-drawiomap-panel' }, item);
   item.state.body = panel;
-  grid.state.children = [item];
+  (row ?? grid).state.children = [item];
   (window as any).__grafanaSceneContext = root;
-  return { grid, item };
+  return { grid, row, item };
 }
 
 describe('fitGridHeight', () => {
@@ -70,6 +82,16 @@ describe('fitGridHeight', () => {
     delete (window as any).__grafanaSceneContext;
     expect(canFitGridHeight(7)).toBe(false);
     expect(fitGridHeight(7, 1)).toBe(false);
+  });
+  it('draws the row and the grid again for a panel in a row; finds no item for a repeated panel', () => {
+    const { grid, row, item } = scene(12, { row: true });
+    const [gridChildren, rowChildren] = [grid.state.children, row.state.children];
+    expect(fitGridHeight(7, 4)).toBe(true);
+    expect(item.state.height).toBe(8);
+    expect(row.state.children).not.toBe(rowChildren);
+    expect(grid.state.children).not.toBe(gridChildren);
+    scene(12, { repeat: true });
+    expect(canFitGridHeight(7)).toBe(false);
   });
   it('finds no grid item in a scene of another shape', () => {
     const { item } = scene(12);

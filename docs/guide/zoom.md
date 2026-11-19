@@ -56,12 +56,11 @@ A large sheet in a narrow panel can make the labels too small to read. For examp
 
 ## Fit the panel height
 
-Grafana sets the height of a panel in the dashboard grid; the panel cannot change it. When the diagram leaves one grid row (38 px) or more of free space below it, an edit mode shows the free rows in the top-left corner:
+Grafana sets the height of a panel in the dashboard grid; the panel cannot change it. In dashboard edit mode, when the diagram leaves one grid row (38 px) or more of free space in the panel, a **Fit height** button shows in the top-left corner:
 
-- In dashboard edit mode, the **Fit height** button makes the panel lower by the free rows, never lower than 2 rows. The panels below move up. Save the dashboard to keep the new height.
-- In panel edit, the corner shows the hint `N free rows below the diagram` only: drag the panel to its new height in dashboard edit mode, or use the button there.
-- In view mode the corner shows nothing.
+- The button makes the panel lower by the free rows, never lower than 2 rows. The panels below move up. Save the dashboard to keep the new height. The undo of the dashboard editor does not undo the fit: drag the panel back, or discard the changes.
+- The panel counts the free space at the configured zoom (Fit, Fit width, Original or Custom), without a live zoom. A diagram that fills the height in Fit (the free space is on the sides) gives no free rows. A horizontal scroll bar counts as used space. With **Align** set to center, the free space is half above and half below the diagram.
+- The legend, the last-data time and the corner row lie over the diagram area. When the legend is in a bottom corner of the free space, it can lie over the diagram after the fit.
+- There is no button in view mode, in panel edit, in View panel, and for a repeated panel: in these places the size of the panel is not the size of its grid item.
 
-The panel counts the free space at the configured zoom (Fit, Fit width, Original or Custom), without a live zoom. A diagram that fills the height in Fit (the free space is on the sides) gives no free rows.
-
-The button uses the scene objects of the Grafana dashboard. They are not a public API of Grafana. When a Grafana version has them in another form, the panel shows the hint in place of the button.
+The button uses the scene objects of the Grafana dashboard. They are not a public API of Grafana. When a Grafana version has them in another form, the button does not show.

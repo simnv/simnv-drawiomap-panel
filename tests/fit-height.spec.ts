@@ -5,9 +5,9 @@ test(
   'Fit height in dashboard edit makes the panel lower to the diagram and saves',
   { tag: '@matrix' },
   async ({ page, request, config, createDiagram, gotoDashboardPage, selectors }) => {
-    const uid = await createDiagram(config, { height: 24 });
+    const uid = await createDiagram(config, { height: 24, panels: [{ config }, { config }] });
     const dashboardPage = await gotoDashboardPage({ uid });
-    const panel = page.getByTestId('dmap-panel');
+    const panel = page.getByTestId('dmap-panel').first();
     await expect(panel.locator('[data-dmap-chart] canvas')).toBeVisible();
     // view mode: no control
     await expect(panel.getByTestId('dmap-fit-height')).toHaveCount(0);
@@ -35,8 +35,11 @@ test(
       .click();
     await saved;
     const json = await (await request.get(`/api/dashboards/uid/${uid}`)).json();
-    const h = json.dashboard.panels[0].gridPos.h;
-    expect(h).toBeLessThan(24);
-    expect(h).toBeGreaterThanOrEqual(2);
+    const [first, second] = json.dashboard.panels.map((p: { gridPos: { y: number; h: number } }) => p.gridPos);
+    expect(first.h).toBeLessThan(24);
+    expect(first.h).toBeGreaterThanOrEqual(2);
+    // the panel below moved up to the new bottom of the first
+    expect(second.y).toBe(first.y + first.h);
+    expect(second.h).toBe(24);
   }
 );

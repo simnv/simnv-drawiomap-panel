@@ -35,6 +35,31 @@ export function readViewBox(root: SVGSVGElement): ViewBox {
 }
 
 /**
+ * The size in px of the diagram at the configured view in a stage of size `box`, before a live zoom: the scale of
+ * the zoom mode, as `viewBoxFor` lays it out.
+ */
+export function configuredSize(
+  zoom: ZoomOptions,
+  base: ViewBox,
+  box: { width: number; height: number }
+): { width: number; height: number } {
+  const min = zoom.minScale ?? 0;
+  const scale = (() => {
+    switch (zoom.mode) {
+      case 'fit':
+        return Math.max(min, Math.min(box.width / base.w, box.height / base.h));
+      case 'fit-width':
+        return Math.max(min, box.width / base.w);
+      case 'original':
+        return 1;
+      case 'custom':
+        return (zoom.percent || 100) / 100;
+    }
+  })();
+  return { width: base.w * scale, height: base.h * scale };
+}
+
+/**
  * The svg box for the configured view `base` in a stage of size `box`. A live view (`view`) changes the viewBox
  * only: the svg box keeps its size, so that the gesture math stays in one coordinate system.
  */

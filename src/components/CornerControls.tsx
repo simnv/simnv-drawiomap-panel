@@ -111,9 +111,9 @@ interface Props {
   onEditBindings: () => void;
   /** The drawn height of the row in px, also when it wraps to more lines; 0 when there is no row or no layout. */
   onRowHeight: (height: number) => void;
-  /** Edit mode: the whole grid rows of free space below the diagram; 0 shows nothing. */
+  /** Dashboard edit: the whole grid rows of free space below the diagram that the fit can take; 0 shows nothing. */
   fitRows?: number;
-  /** Writes the lower height to the dashboard grid; without it the corner shows the hint only. */
+  /** Writes the lower height to the dashboard grid. */
   onFitHeight?: () => void;
 }
 
@@ -228,7 +228,7 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
     },
   };
   const showRow = !!(zoomed || warnings.length || editing || fitRows > 0);
-  const fitText = `${fitRows} free row${fitRows > 1 ? 's' : ''} below the diagram`;
+  const fitText = `${fitRows} free row${fitRows > 1 ? 's' : ''} in the panel`;
   const rowRef = useRef<HTMLDivElement>(null);
   // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
   useLayoutEffect(() => {
@@ -311,14 +311,6 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             >
               {width < EDIT_TEXT_MIN_WIDTH ? null : 'Fit height'}
             </Button>
-          ) : fitRows > 0 ? (
-            <span
-              className={styles.edit}
-              style={{ ...buttonStyle, padding: '2px 6px', fontSize: 12, borderRadius: 2 }}
-              data-testid="dmap-fit-hint"
-            >
-              {fitText}
-            </span>
           ) : null}
         </div>
       ) : null}

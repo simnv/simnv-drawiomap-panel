@@ -141,6 +141,11 @@ use it. The hostile inputs are in `src/render/sanitize.test.ts`.
 - Plugin CDN (not tested): scripts and images load cross-origin and need no CORS. The panel reads export images with
   `fetch`, which needs CORS on the CDN, and the Grafana CSP must allow the CDN in `connect-src`. Without that, images
   stay as URLs.
+- **Fit height** (`src/stage/gridHeight.ts`) reads `window.__grafanaSceneContext`, the scene of the dashboard, and
+  writes the height of the grid item of its own panel. It is not a public Grafana API. It runs only on a click of the
+  button in dashboard edit mode, it writes one integer (`height`) on the item whose body is the panel with this
+  panel id, and it checks the shape of every object it reads. A shape that differs, or a frontend sandbox that hides
+  the global, gives no button. The change goes through the dashboard save like a drag of the panel: the user saves it.
 
 ## Accepted audit findings
 
