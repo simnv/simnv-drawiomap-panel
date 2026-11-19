@@ -1538,11 +1538,18 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       fireEvent.keyUp(window, { key: 'Shift' });
       expect(await tooltip()).toBe('A ↔ B');
       expect(wrapper.hasAttribute('data-dmap-shift')).toBe(false);
-      // a pinned card does not hide
+      // a capital letter typed in a field does not hide the hover
+      const field = document.body.appendChild(document.createElement('input'));
+      fireEvent.keyDown(field, { key: 'Shift' });
+      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(false);
+      expect(screen.getByRole('tooltip')).toBeTruthy();
+      field.remove();
+      // a pinned card does not hide, and keeps its focus
       fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
       expect(await screen.findByRole('dialog')).toBeTruthy();
       fireEvent.keyDown(window, { key: 'Shift' });
       expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(false);
       fireEvent.keyUp(window, { key: 'Shift' });
     });
 
