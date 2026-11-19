@@ -45,6 +45,40 @@ export function panelStaleColor(theme: GrafanaTheme2, name: unknown): string {
   return known && alphaOf(color) > 0 ? color : DEFAULT_STALE_COLOR;
 }
 
+/** The two parts of `light-dark(a, b)` at its top-level comma (a part can be `rgb(1, 2, 3)`), else undefined. */
+function lightDarkParts(text: string): [string, string] | undefined {
+  const m = /^light-dark\((.*)\)$/i.exec(text);
+  if (!m) {
+    return undefined;
+  }
+  let depth = 0;
+  for (let i = 0; i < m[1].length; i++) {
+    const ch = m[1][i];
+    depth += ch === '(' ? 1 : ch === ')' ? -1 : 0;
+    if (ch === ',' && depth === 0) {
+      const light = m[1].slice(0, i).trim();
+      const dark = m[1].slice(i + 1).trim();
+      return light && dark ? [light, dark] : undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A colour of the config for the theme of the panel: a CSS colour, a Grafana colour name, or `light-dark(light,
+ * dark)`, whose part follows the theme (the scheme of the panel, as the `light-dark()` paint of the diagram). A
+ * canvas (a sparkline) cannot read `light-dark()`, so the panel picks the part. Undefined for a colour that the
+ * browser does not know.
+ */
+export function schemeColor(theme: GrafanaTheme2, text: string): string | undefined {
+  const parts = lightDarkParts(text.trim());
+  const name = parts ? parts[theme.isDark ? 1 : 0] : text.trim();
+  const color = theme.visualization.getColorByName(name);
+  // a colour that the browser does not know gives undefined: the caller keeps its own colour
+  const known = typeof CSS === 'undefined' || typeof CSS.supports !== 'function' || CSS.supports('color', color);
+  return known ? color : undefined;
+}
+
 /**
  * The colour of a status state, from the theme: the palette red for down and critical, the palette orange for
  * warning, the no-data grey for missing. Stale has the colour of the panel option **Stale colour** (`staleColor`,

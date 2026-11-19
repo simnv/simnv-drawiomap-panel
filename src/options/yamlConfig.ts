@@ -31,6 +31,8 @@ const ROW = [
   'decimals',
   'min',
   'max',
+  'colors',
+  'background',
   'text',
   'url',
   'newTab',

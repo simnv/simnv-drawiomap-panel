@@ -506,3 +506,30 @@ for (const theme of ['light', 'dark'] as const) {
     });
   });
 }
+
+test('a chart with background none draws on the diagram; its colours follow the theme', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}, testInfo) => {
+  const look: ConfigV4 = structuredClone(config);
+  look.classes['trend-region'].chart = {
+    kind: 'history',
+    label: 'Standalone trend',
+    query: 'trend',
+    background: 'none',
+    colors: ['light-dark(#c4162a, #ff7383)'],
+  };
+  const uid = await createDiagram(look);
+  for (const theme of ['dark', 'light']) {
+    await gotoDashboardPage({ uid, queryParams: new URLSearchParams({ theme }) });
+    const panel = page.getByTestId('dmap-panel');
+    const chart = panel.getByTestId('dmap-chart');
+    await expect(chart.locator('canvas')).toBeVisible();
+    await expect(chart).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    const shot = testInfo.outputPath(`chart-look-${theme}.png`);
+    await chart.screenshot({ path: shot });
+    await testInfo.attach(`chart-look-${theme}`, { path: shot, contentType: 'image/png' });
+  }
+});

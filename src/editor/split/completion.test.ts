@@ -123,7 +123,7 @@ describe('itemsAt: schema keys', () => {
   it('reads a list at the indent of its key (compact form)', () => {
     const text = 'classes:\n  device:\n    rows:\n    - kind: history\n      |\n';
     const items = complete(text, 'classes.device.rows[0].kind');
-    expect(labels(items)).toEqual(['kind', 'query', 'match', 'label', 'unit', 'decimals', 'min', 'max']);
+    expect(labels(items)).toEqual(['kind', 'query', 'match', 'label', 'unit', 'decimals', 'min', 'max', 'colors']);
   });
 
   it('gives the keys of text and of chart', () => {
@@ -136,7 +136,9 @@ describe('itemsAt: schema keys', () => {
       'decimals',
     ]);
     const chart = labels(complete('classes:\n  host:\n    chart:\n      |\n', 'classes.host.chart'));
-    expect(chart).toEqual(expect.arrayContaining(['kind', 'query', 'up', 'down', 'min', 'max', 'reduce']));
+    expect(chart).toEqual(
+      expect.arrayContaining(['kind', 'query', 'up', 'down', 'min', 'max', 'reduce', 'colors', 'background'])
+    );
   });
 
   it('gives the keys in a flow mapping', () => {

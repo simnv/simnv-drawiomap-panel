@@ -14,6 +14,7 @@ import {
   colorFor,
   linkStatusPaint,
   noDataColor,
+  schemeColor,
   statusColor,
   statusPaint,
   statusPalette,
@@ -225,5 +226,17 @@ describe('alphaOf', () => {
     ['light-dark(rgba(0, 0, 0, 0), white)', 1],
   ])('reads the alpha of %s as %s', (value, alpha) => {
     expect(alphaOf(value)).toBeCloseTo(alpha, 5);
+  });
+});
+
+describe('schemeColor', () => {
+  const dark = createTheme({ colors: { mode: 'dark' } });
+  const light = createTheme({ colors: { mode: 'light' } });
+  it('takes the part of light-dark() for the theme, also with rgb() parts; a name or a CSS colour as it is', () => {
+    expect(schemeColor(light, 'light-dark(#1f60c4, #8ab8ff)')).toBe('#1f60c4');
+    expect(schemeColor(dark, 'light-dark(#1f60c4, #8ab8ff)')).toBe('#8ab8ff');
+    expect(schemeColor(dark, 'light-dark(rgb(1, 2, 3), rgb(4, 5, 6))')).toBe('rgb(4, 5, 6)');
+    expect(schemeColor(dark, 'green')).toBe(dark.visualization.getColorByName('green'));
+    expect(schemeColor(dark, ' #123456 ')).toBe('#123456');
   });
 });

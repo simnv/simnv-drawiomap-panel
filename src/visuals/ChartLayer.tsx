@@ -425,8 +425,11 @@ function useRegion(
   return { portal, geometry };
 }
 
-/** The look of a region: the font of the theme over the background of the panel. */
-function regionStyle(theme: GrafanaTheme2, width: number, height: number): React.CSSProperties {
+/**
+ * The look of a region: the font of the theme over the background of the panel, or over the diagram with
+ * `background: none`.
+ */
+function regionStyle(theme: GrafanaTheme2, width: number, height: number, clear: boolean): React.CSSProperties {
   return {
     width,
     height,
@@ -435,7 +438,7 @@ function regionStyle(theme: GrafanaTheme2, width: number, height: number): React
     fontFamily: theme.typography.fontFamily,
     lineHeight: 'normal',
     color: theme.colors.text.primary,
-    background: theme.colors.background.primary,
+    background: clear ? 'transparent' : theme.colors.background.primary,
     position: 'relative',
   };
 }
@@ -592,7 +595,10 @@ function RegionV4({
     <div
       data-testid="dmap-chart"
       aria-label={row.title}
-      style={{ ...regionStyle(theme, width, height), pointerEvents: props.interactive === false ? 'none' : 'auto' }}
+      style={{
+        ...regionStyle(theme, width, height, use.chart.background === 'none'),
+        pointerEvents: props.interactive === false ? 'none' : 'auto',
+      }}
     >
       <ChartBody
         row={row}

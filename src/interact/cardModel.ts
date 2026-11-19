@@ -12,7 +12,7 @@ import { defaultUrlTitle } from './links';
 import { halfState, type HalfContext } from '../binding/engine';
 import type { StatusView } from '../binding/status';
 import { fieldDisplay, type HistoryModel } from '../query/frames';
-import { noDataColor } from '../binding/color';
+import { noDataColor, schemeColor } from '../binding/color';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 import type { BindInputV4, BindResultV4, PatchV4 } from '../binding/bindV4';
 import { effectiveClass } from '../binding/classes';
@@ -413,7 +413,7 @@ function historyRowV4(
   ctx: CardContext,
   stale: { stale: boolean; staleAfter?: number }
 ): HistoryRowV4 {
-  const row = (d.use.row ?? {}) as RowFields & { min?: LowerBound; max?: number };
+  const row = (d.use.row ?? {}) as RowFields & { min?: LowerBound; max?: number; colors?: string[] };
   const base = { key, kind: 'history' as const, title: rowTitle(d, row), ...stale, more: 0 };
   const missing = noSeries(d);
   if (missing) {
@@ -427,7 +427,9 @@ function historyRowV4(
     const values = f === 1 ? s.values : s.values.map((v) => (v === null ? null : v * f));
     return {
       label: lineLabel(d, s),
-      color: lineColor(ctx.theme, i),
+      // `colors` of the row or the chart, in order and again from the start; else the palette
+      color:
+        (row.colors?.length && schemeColor(ctx.theme, row.colors[i % row.colors.length])) || lineColor(ctx.theme, i),
       times: s.times,
       values,
       noData: !hasValue(values),

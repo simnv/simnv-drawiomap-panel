@@ -79,6 +79,35 @@ describe('parseConfig (S2.5)', () => {
     ]);
   });
 
+  it('takes colors on a history row or chart, background only on a chart, and newTab on a url and a drilldown', () => {
+    const ok = parseConfig({
+      version: 4,
+      classes: {
+        a: {
+          url: '/d/x',
+          urlNewTab: false,
+          chart: { kind: 'history', query: 'A', colors: ['light-dark(#111, #eee)', 'green'], background: 'none' },
+          rows: [
+            { kind: 'history', query: 'A', colors: ['red'] },
+            { kind: 'drilldown', url: '/d/y', newTab: false },
+          ],
+        },
+      },
+    });
+    expect(ok.report).toEqual([]);
+    const bad = parseConfig({
+      version: 4,
+      classes: {
+        row: { rows: [{ kind: 'history', query: 'A', background: 'none' }] },
+        list: { chart: { kind: 'history', query: 'A', colors: 'red' } },
+        empty: { chart: { kind: 'history', query: 'A', colors: [] } },
+        look: { chart: { kind: 'value', query: 'A', background: 'clear' } },
+        tab: { url: '/d/x', urlNewTab: 'no' },
+      },
+    });
+    expect([...bad.invalidClasses.keys()].sort()).toEqual(['empty', 'list', 'look', 'row', 'tab']);
+  });
+
   it('gives the YAML path of a field deep in a class', () => {
     const raw = netL2Pilot();
     (raw.classes.lan.rows[0] as Record<string, unknown>).up = 7;

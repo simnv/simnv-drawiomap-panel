@@ -335,13 +335,13 @@ A use can select more than one series.
 
 `rows` is a list. A row is one line of the hover card.
 
-| `kind`      | Fields                                                       | Meaning                                                               |
-| ----------- | ------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `history`   | `query`, `match`, `label`, `unit`, `decimals`, `min`, `max`  | A value and a sparkline. `min` is a number or `auto`; `max` a number. |
-| `value`     | `query`, `match`, `reduce`, `label`, `unit`, `decimals`      | A reduced value.                                                      |
-| `updown`    | `up`, `down`, `match`, `reduce`, `label`, `unit`, `decimals` | Two directions of one subject in one chart (see below).               |
-| `metadata`  | `label`, `text`                                              | A text from a template. It reads no dashboard variable.               |
-| `drilldown` | `label`, `url`, `newTab`                                     | A link in the footer of the card. `newTab: false`: the current tab.   |
+| `kind`      | Fields                                                                | Meaning                                                                                                               |
+| ----------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `history`   | `query`, `match`, `label`, `unit`, `decimals`, `min`, `max`, `colors` | A value and a sparkline. `min` is a number or `auto`; `max` a number. `colors`: the colours of the lines (see below). |
+| `value`     | `query`, `match`, `reduce`, `label`, `unit`, `decimals`               | A reduced value.                                                                                                      |
+| `updown`    | `up`, `down`, `match`, `reduce`, `label`, `unit`, `decimals`          | Two directions of one subject in one chart (see below).                                                               |
+| `metadata`  | `label`, `text`                                                       | A text from a template. It reads no dashboard variable.                                                               |
+| `drilldown` | `label`, `url`, `newTab`                                              | A link in the footer of the card. `newTab: false`: the current tab.                                                   |
 
 The label, unit and decimals come from the field config of the refId. A row can override them. Rows of different units can share one card.
 
@@ -382,6 +382,21 @@ classes:
       kind: history
       query: cpu
       unit: percent
+```
+
+A chart has two more fields:
+
+- `background`: `panel` (the default) draws the chart on the background of the panel; `none` draws it on the diagram, with no background.
+- `colors` (a `history` chart, also a `history` row): the colours of the lines, in order. When there are more lines than colours, the list starts again. Each colour is a CSS colour (`#1f60c4`, `rgb(31, 96, 196)`), a Grafana colour name (`green`, `semi-dark-blue`) or `light-dark(light, dark)`: the first colour on a light theme, the second on a dark theme. A colour that the browser does not know takes the colour of the palette. Without `colors`, the lines take the Grafana palette.
+
+```yaml
+classes:
+  cpu-chart:
+    chart:
+      kind: history
+      query: cpu
+      background: none
+      colors: ['light-dark(#1f60c4, #8ab8ff)', 'light-dark(#c4162a, #ff7383)']
 ```
 
 A chart draws over the diagram, in the box of its rectangle: a link or a label that crosses the box goes under the chart. While a cell has the hover focus, the charts fade with the rest of the diagram. In the split editor a click on a chart selects its cell.
