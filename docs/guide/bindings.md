@@ -173,7 +173,7 @@ A class is a map. Every field is optional.
 | `rows`       | The rows of the hover card (see [Rows](#rows)).                                                                                                                                                          |
 | `chart`      | A chart in the box of the cell (see [Chart regions](#chart-regions)).                                                                                                                                    |
 | `freshness`  | When a result is stale: `5m`, or `3x` for three times the cadence of the query. The top-level `freshness` is the default; the panel default is `3x`.                                                     |
-| `url`        | The main link of the card. A template. `urlTitle` is its title.                                                                                                                                          |
+| `url`        | The main link of the card. A template. `urlTitle` is its title. It opens in a new tab; `urlNewTab: false` opens it in the current tab.                                                                   |
 | `up`, `down` | A link only. The refIds of the transmit and the receive counter.                                                                                                                                         |
 | `capacity`   | A link only. A refId of the port speed, or `{ a2b, b2a }` for one refId for each direction.                                                                                                              |
 | `linkLabel`  | A link only. `none` (the default), `value` or `percent` (see [Link value labels](links.md#link-value-labels)).                                                                                           |
@@ -341,7 +341,7 @@ A use can select more than one series.
 | `value`     | `query`, `match`, `reduce`, `label`, `unit`, `decimals`      | A reduced value.                                                      |
 | `updown`    | `up`, `down`, `match`, `reduce`, `label`, `unit`, `decimals` | Two directions of one subject in one chart (see below).               |
 | `metadata`  | `label`, `text`                                              | A text from a template. It reads no dashboard variable.               |
-| `drilldown` | `label`, `url`                                               | A link in the footer of the card.                                     |
+| `drilldown` | `label`, `url`, `newTab`                                     | A link in the footer of the card. `newTab: false`: the current tab.   |
 
 The label, unit and decimals come from the field config of the refId. A row can override them. Rows of different units can share one card.
 

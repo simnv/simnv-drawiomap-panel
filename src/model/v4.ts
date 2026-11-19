@@ -1,5 +1,6 @@
 import type { ReportEntry } from '../binding/report';
 import {
+  boolean,
   array,
   discriminated,
   finite,
@@ -92,7 +93,13 @@ const updownShape = {
   ...show,
 };
 const metadataShape = { kind: literal('metadata'), label: string(), text: template };
-const drilldownShape = { kind: literal('drilldown'), label: optional(string()), url: template };
+const drilldownShape = {
+  kind: literal('drilldown'),
+  label: optional(string()),
+  url: template,
+  // false: the link opens in the current tab. Default: a new tab.
+  newTab: optional(boolean),
+};
 const history = object(historyShape);
 const value = object(valueShape);
 const updown = object(updownShape);
@@ -123,6 +130,7 @@ const fields = {
   freshness: optional(freshness), // D11, A10
   url: optional(template), // D6
   urlTitle: optional(string()),
+  urlNewTab: optional(boolean), // false: the url opens in the current tab. Default: a new tab.
   up: optional(refId), // D14, links only
   down: optional(refId),
   capacity: optional(capacity), // D15, A4

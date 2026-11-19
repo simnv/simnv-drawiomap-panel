@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added `urlNewTab: false` (class) and `newTab: false` (`drilldown` row): the link of the card opens in the current tab. The default stays a new tab. See [Hover card](docs/guide/hover-card.md).
+
 ## 1.7.0
 
 - Added the **Link width** mode **Link speed**: the width of a link half shows its capacity, not its load; the colour still shows the load. By default the widths are automatic: a log scale of the link speeds on the panel, from **Link width min** (the slowest) to **Link width max** (the fastest). **Speed tiers** (for example `0: 1.5, 100M: 2.5, 1G: 4`) set the widths by hand. A half with no capacity has **Link width min**. The legend has a **Link speed** block with one line sample for each speed. The default mode **Load** draws as before. See [Link width](docs/guide/links.md#link-width).

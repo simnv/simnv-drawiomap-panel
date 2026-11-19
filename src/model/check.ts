@@ -63,6 +63,9 @@ export const number =
       ? applyRules(data, rules, path, ctx)
       : wrongType(ctx, path, 'number', data);
 
+export const boolean: Check<boolean> = (data, path, ctx) =>
+  typeof data === 'boolean' ? data : wrongType(ctx, path, 'boolean', data);
+
 export const regex =
   (re: RegExp, message: string): Rule<string> =>
   (value) =>

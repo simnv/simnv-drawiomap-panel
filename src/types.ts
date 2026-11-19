@@ -265,6 +265,8 @@ export interface LinkTarget {
   /** the resolved urlTitle; without it the card gives a default title */
   title?: string;
   url: string;
+  /** false: the link opens in the current tab (`urlNewTab: false`); else a new tab */
+  newTab?: boolean;
 }
 
 /**
