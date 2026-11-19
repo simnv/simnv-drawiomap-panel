@@ -4,9 +4,13 @@ import { useEffect, useState } from 'react';
 export const SHIFT_ATTR = 'data-dmap-shift';
 
 /** A text field or an editable element: a key there types. */
+const NOT_TYPED = ['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file', 'image'];
 const editable = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement &&
-  (t.isContentEditable || t.localName === 'input' || t.localName === 'textarea' || t.localName === 'select');
+  (t.isContentEditable ||
+    t.localName === 'textarea' ||
+    t.localName === 'select' ||
+    (t instanceof HTMLInputElement && !NOT_TYPED.includes(t.type)));
 
 /**
  * True while the Shift key is down, out of a text field. A key up, a blur of the window or a hidden page ends it, so a Shift that the page
@@ -17,14 +21,16 @@ export function useShiftHeld(): boolean {
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       // a capital letter typed in a field (the options, a variable, a search) is no request to hide the hover
-      if (e.key === 'Shift' && !editable(e.target)) {
+      // the first node of the path: a field inside an open shadow root
+      if (e.key === 'Shift' && !editable(e.composedPath?.()[0] ?? e.target)) {
         setHeld(true);
       }
     };
     const onUp = (e: KeyboardEvent) => {
       // the other Shift key can still be down
       if (e.key === 'Shift') {
-        setHeld(e.shiftKey);
+        // only a key down turns the hide on
+        setHeld((held) => held && e.shiftKey);
       }
     };
     const off = () => setHeld(false);
