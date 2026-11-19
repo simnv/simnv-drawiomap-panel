@@ -39,7 +39,7 @@ import {
   groupQueryFailures,
   otherEntries,
 } from '../stage/queryFailures';
-import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
+import { CHART_LAYER_ATTR, ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { inPortalControl } from '../visuals/ChartHover';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { useFollowViewport } from '../util/followViewport';
@@ -85,6 +85,8 @@ const styles = {
   stage: css`
     flex: none;
     width: 100%;
+    /* the chart regions (ChartLayer) place themselves in the stage */
+    position: relative;
     & > svg {
       display: block;
     }
@@ -107,6 +109,10 @@ const styles = {
     }
     & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
       display: inline;
+    }
+    /* the chart regions are HTML over the svg: they fade with the scrim */
+    & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] {
+      opacity: 0.25;
     }
     /* the copies above the scrim take no pointer: the hover and the click hit the cells below */
     & .${FOCUS_LAYER}, & .${FOCUS_LAYER} * {

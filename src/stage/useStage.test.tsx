@@ -45,6 +45,18 @@ describe('useStage', () => {
     expect(container.querySelector('[data-testid="stage"] svg')).toBe(stage.root!);
   });
 
+  it('swaps only the svg: another child of the stage (the chart layer) stays after it', () => {
+    let stage!: Stage;
+    const { container, rerender } = render(<Harness svg={small('a')} onStage={(s) => (stage = s)} />);
+    const el = container.querySelector('[data-testid="stage"]')!;
+    const layer = document.createElement('div');
+    el.append(layer);
+    rerender(<Harness svg={small('b')} onStage={(s) => (stage = s)} />);
+    expect([...el.children]).toEqual([stage.root, layer]);
+    rerender(<Harness onStage={(s) => (stage = s)} />);
+    expect([...el.children]).toEqual([layer]);
+  });
+
   it('builds a large diagram during the render without a limit (the split editor)', () => {
     let stage!: Stage;
     render(<Harness svg={large('a')} deferAbove={Infinity} onStage={(s) => (stage = s)} />);

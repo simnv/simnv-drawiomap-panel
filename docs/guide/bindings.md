@@ -384,6 +384,8 @@ classes:
       unit: percent
 ```
 
+A chart draws over the diagram, in the box of its rectangle: a link or a label that crosses the box goes under the chart. While a cell has the hover focus, the charts fade with the rest of the diagram. In the split editor a click on a chart selects its cell.
+
 ### Links
 
 A class with `up`, `down` or `capacity` applies to a link (an edge cell).

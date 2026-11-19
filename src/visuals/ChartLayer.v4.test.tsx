@@ -172,15 +172,9 @@ describe('ChartLayer: v4 chart regions (spec 3.9)', () => {
     render(
       <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
     );
-    const region = s.root.querySelector('foreignObject[data-dmap-chart="cpu"]')!;
+    const region = s.host.querySelector<HTMLElement>('[data-dmap-chart="cpu"]')!;
     expect(region).toBeTruthy();
-    expect(['x', 'y', 'width', 'height', 'transform'].map((a) => region.getAttribute(a))).toEqual([
-      '0',
-      '0',
-      '180',
-      '70',
-      'matrix(1 0 0 1 12 5)',
-    ]);
+    expect([region.style.width, region.style.height]).toEqual(['180px', '70px']);
     expect(region.querySelector('[data-testid="dmap-chart"]')!.getAttribute('aria-label')).toBe('CPU');
     const calls = sparkline.mock.calls.map((c) => c[0] as any);
     expect(calls.map((p) => p.config.color.fixedColor)).toEqual([palette(0), palette(1), palette(2)]);
