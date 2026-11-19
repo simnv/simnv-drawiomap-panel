@@ -49,6 +49,7 @@ import { lastSampleTime } from '../query/frames';
 import { panelStaleColor } from '../binding/color';
 import { linkWidthRange } from '../binding/linkWidth';
 import type { Box } from '../legend/position';
+import { canFitGridHeight, fitGridHeight, freeRows, useDashboardEditing } from '../stage/gridHeight';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
 import { buildLegendV4 } from '../legend/model';
@@ -464,6 +465,11 @@ function DrawioMapPanelView(props: ViewProps) {
     [zoomMode, zoomPercent, align, minScale]
   );
   const { live } = useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
+  // Edit mode: the free rows below the diagram. The button writes the grid in dashboard edit; in panel edit the
+  // dashboard edits a copy of the panel, so the corner shows the hint only.
+  const dashboardEditing = useDashboardEditing();
+  const fitRows = dashboardEditing || editing ? freeRows(zoomLayout, stage.base, { width, height: stageHeight }) : 0;
+  const canFit = fitRows > 0 && dashboardEditing && !editing && canFitGridHeight(props.id);
 
   const corner = useRef<HTMLDivElement>(null);
   // the drawn height of the top-left row (CornerControls); 0 without layout
@@ -610,6 +616,8 @@ function DrawioMapPanelView(props: ViewProps) {
         warnings={warnings}
         onReset={resetView}
         onRowHeight={setCornerRow}
+        fitRows={fitRows}
+        onFitHeight={canFit ? () => fitGridHeight(props.id, fitRows) : undefined}
         onEditBindings={() => {
           dispatch({ type: 'close' });
           props.onEditBindings();

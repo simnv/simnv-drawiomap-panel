@@ -111,11 +111,15 @@ interface Props {
   onEditBindings: () => void;
   /** The drawn height of the row in px, also when it wraps to more lines; 0 when there is no row or no layout. */
   onRowHeight: (height: number) => void;
+  /** Edit mode: the whole grid rows of free space below the diagram; 0 shows nothing. */
+  fitRows?: number;
+  /** Writes the lower height to the dashboard grid; without it the corner shows the hint only. */
+  onFitHeight?: () => void;
 }
 
 /** The top-left row holds the reset button, the warning badge and, in panel edit, the "Edit bindings" button. */
 export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerControls(
-  { bandHeight, zoomed, editing, width, warnings, onReset, onEditBindings, onRowHeight },
+  { bandHeight, zoomed, editing, width, warnings, onReset, onEditBindings, onRowHeight, fitRows = 0, onFitHeight },
   ref
 ) {
   const theme = useTheme2();
@@ -223,7 +227,8 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
       tipProps.onKeyDown(e);
     },
   };
-  const showRow = !!(zoomed || warnings.length || editing);
+  const showRow = !!(zoomed || warnings.length || editing || fitRows > 0);
+  const fitText = `${fitRows} free row${fitRows > 1 ? 's' : ''} below the diagram`;
   const rowRef = useRef<HTMLDivElement>(null);
   // A wrapped row is higher than `cornerRowHeight`: the legend below the row reads the drawn height.
   useLayoutEffect(() => {
@@ -292,6 +297,28 @@ export const CornerControls = forwardRef<HTMLDivElement, Props>(function CornerC
             >
               {width < EDIT_TEXT_MIN_WIDTH ? null : 'Edit bindings'}
             </Button>
+          ) : null}
+          {fitRows > 0 && onFitHeight ? (
+            <Button
+              icon="arrows-v"
+              size="sm"
+              variant="secondary"
+              className={styles.edit}
+              style={buttonStyle}
+              tooltip={`${fitText}: make the panel ${fitRows} row${fitRows > 1 ? 's' : ''} lower`}
+              data-testid="dmap-fit-height"
+              onClick={onFitHeight}
+            >
+              {width < EDIT_TEXT_MIN_WIDTH ? null : 'Fit height'}
+            </Button>
+          ) : fitRows > 0 ? (
+            <span
+              className={styles.edit}
+              style={{ ...buttonStyle, padding: '2px 6px', fontSize: 12, borderRadius: 2 }}
+              data-testid="dmap-fit-hint"
+            >
+              {fitText}
+            </span>
           ) : null}
         </div>
       ) : null}
