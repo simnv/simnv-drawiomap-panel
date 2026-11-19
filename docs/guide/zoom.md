@@ -53,3 +53,14 @@ A large sheet in a narrow panel can make the labels too small to read. For examp
 - The status band stays above the area that scrolls. Cards open at the pointer also after a scroll.
 - At the configured zoom, the mouse wheel and one finger scroll the panel. At the end of the panel, the page scrolls. The live zoom works as before: the **Reset zoom** button goes back to the minimum scale view.
 - 0 (the default) turns the option off.
+
+## Fit the panel height
+
+Grafana sets the height of a panel in the dashboard grid; the panel cannot change it. In dashboard edit mode, when the diagram leaves one grid row (38 px) or more of free space in the panel, a **Fit height** button shows in the top-left corner:
+
+- The button makes the panel lower by the free rows, never lower than 2 rows. The panels below move up. Save the dashboard to keep the new height. The undo of the dashboard editor does not undo the fit: drag the panel back, or discard the changes.
+- The panel counts the free space at the configured zoom (Fit, Fit width, Original or Custom), without a live zoom. A diagram that fills the height in Fit (the free space is on the sides) gives no free rows. A horizontal scroll bar counts as used space. With **Align** set to center, the free space is half above and half below the diagram.
+- The legend, the last-data time and the corner row lie over the diagram area. When the legend is in a bottom corner of the free space, it can lie over the diagram after the fit.
+- There is no button in view mode, in panel edit, in View panel, and for a repeated panel: in these places the size of the panel is not the size of its grid item.
+
+The button uses the scene objects of the Grafana dashboard. They are not a public API of Grafana. When a Grafana version has them in another form, the button does not show.

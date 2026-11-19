@@ -49,6 +49,7 @@ import { lastSampleTime } from '../query/frames';
 import { panelStaleColor } from '../binding/color';
 import { linkWidthRange } from '../binding/linkWidth';
 import type { Box } from '../legend/position';
+import { canFitGridHeight, fitGridHeight, freeRows, useDashboardEditing } from '../stage/gridHeight';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
 import { buildLegendV4 } from '../legend/model';
@@ -57,6 +58,15 @@ import { bindSymbolLegend } from '../legend/symbolRows';
 import { createHighlightStore } from '../legend/highlightStore';
 import { currentAddress, subscribe } from '../editor/popup/popupBus';
 import { LazyBindingsPopup } from './LazyBindingsPopup';
+
+/** True while the dashboard shows one panel full size (View panel): the panel has the size of the screen. */
+function useViewPanel(): boolean {
+  const subscribe = useCallback((notify: () => void) => {
+    const sub = locationService?.getLocationObservable().subscribe(notify);
+    return () => sub?.unsubscribe();
+  }, []);
+  return useSyncExternalStore(subscribe, () => !!locationService?.getSearchObject().viewPanel);
+}
 
 /** The address of the open edit session of this panel, or an empty string when the panel is not in panel edit. */
 function usePanelEditing(id: number) {
@@ -464,6 +474,13 @@ function DrawioMapPanelView(props: ViewProps) {
     [zoomMode, zoomPercent, align, minScale]
   );
   const { live } = useStageLayout(stage, zoomLayout, { width, height: stageHeight }, view, containerRef);
+  // Dashboard edit: the free grid rows below the diagram. Not in panel edit or View panel: the panel then has the
+  // size of the editor or of the screen, not of its grid item.
+  const dashboardEditing = useDashboardEditing();
+  const viewPanel = useViewPanel();
+  const inGrid = dashboardEditing && !editing && !viewPanel;
+  const fitRows = inGrid ? freeRows(zoomLayout, stage.base, { width, height: stageHeight }) : 0;
+  const canFit = useMemo(() => fitRows > 0 && canFitGridHeight(props.id), [fitRows, props.id]);
 
   const corner = useRef<HTMLDivElement>(null);
   // the drawn height of the top-left row (CornerControls); 0 without layout
@@ -610,6 +627,8 @@ function DrawioMapPanelView(props: ViewProps) {
         warnings={warnings}
         onReset={resetView}
         onRowHeight={setCornerRow}
+        fitRows={canFit ? fitRows : 0}
+        onFitHeight={() => fitGridHeight(props.id, fitRows)}
         onEditBindings={() => {
           dispatch({ type: 'close' });
           props.onEditBindings();
