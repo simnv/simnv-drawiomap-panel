@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
+import { CHART_LAYER_ATTR } from '../render/linkFocus';
 import { readChartAnchor, toMatrix, toRoot, type ChartAnchor, type Matrix } from '../render/geometry';
 import type { CellEntry, CellIndex } from '../types';
 import type { BindResultV4 } from '../binding/bindV4';
@@ -271,9 +272,6 @@ function useStageWatch(props: ChartLayerProps, plane: HTMLDivElement | undefined
   }, [watch, charts, cells, plane]);
   return watch;
 }
-
-/** The layer of the regions in the stage: `data-dmap-chart-layer`. */
-export const CHART_LAYER_ATTR = 'data-dmap-chart-layer';
 
 const css = (m: Matrix) => `matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e}, ${m.f})`;
 

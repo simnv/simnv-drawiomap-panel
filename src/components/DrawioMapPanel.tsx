@@ -12,7 +12,7 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
-import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusMap } from '../render/linkFocus';
+import { CHART_LAYER_ATTR, FOCUS_ACTIVE, FOCUS_KEPT, FOCUS_LAYER, FOCUS_SCRIM, focusMap } from '../render/linkFocus';
 import { endContextOf } from '../binding/edgeEnds';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
@@ -39,7 +39,7 @@ import {
   groupQueryFailures,
   otherEntries,
 } from '../stage/queryFailures';
-import { CHART_LAYER_ATTR, ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
+import { ChartLayer, chartUsesV4 } from '../visuals/ChartLayer';
 import { inPortalControl } from '../visuals/ChartHover';
 import { bandLayout, bandRowsV4, StatusBand } from './StatusBand';
 import { useFollowViewport } from '../util/followViewport';
@@ -110,8 +110,8 @@ const styles = {
     & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
       display: inline;
     }
-    /* the chart regions are HTML over the svg: they fade with the scrim */
-    & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] {
+    /* the chart regions are HTML over the svg: they fade with the scrim, except the charts of the kept cells */
+    & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] [data-dmap-chart]:not(.${FOCUS_KEPT}) {
       opacity: 0.25;
     }
     /* the copies above the scrim take no pointer: the hover and the click hit the cells below */

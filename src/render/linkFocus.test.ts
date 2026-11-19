@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellEntry, CellIndex } from '../types';
-import { FOCUS_ACTIVE, FOCUS_LAYER, FOCUS_SCRIM, focusCells, focusMap, refreshFocus } from './linkFocus';
+import {
+  CHART_LAYER_ATTR,
+  FOCUS_ACTIVE,
+  FOCUS_KEPT,
+  FOCUS_LAYER,
+  FOCUS_SCRIM,
+  focusCells,
+  focusMap,
+  refreshFocus,
+} from './linkFocus';
 
 /** A zone with node a (with its port and an icon outside it), node b, links L and M, the label cell of L, labels. */
 function stage() {
@@ -98,6 +107,22 @@ describe('focusCells scrim colour', () => {
     focusCells(root, index, 'M');
     expect(scrim.style.fill).toBe('');
     root.parentElement!.remove();
+  });
+});
+
+describe('focusCells charts', () => {
+  it('marks the chart regions of the kept cells, so only the other charts fade; a clear unmarks them', () => {
+    const { root, index } = stage();
+    const layer = document.createElement('div');
+    layer.setAttribute(CHART_LAYER_ATTR, '');
+    layer.innerHTML =
+      '<div><div data-dmap-chart="a" data-dmap-cell="a"></div><div data-dmap-chart="zone" data-dmap-cell="zone"></div></div>';
+    root.parentElement!.append(layer);
+    const kept = () => [...layer.querySelectorAll(`.${FOCUS_KEPT}`)].map((r) => r.getAttribute('data-dmap-cell'));
+    focusCells(root, index, 'M', ['b', 'a']);
+    expect(kept()).toEqual(['a']);
+    focusCells(root, index, undefined);
+    expect(kept()).toEqual([]);
   });
 });
 

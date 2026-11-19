@@ -239,4 +239,12 @@ describe('schemeColor', () => {
     expect(schemeColor(dark, 'green')).toBe(dark.visualization.getColorByName('green'));
     expect(schemeColor(dark, ' #123456 ')).toBe('#123456');
   });
+  it('gives undefined for a colour that a canvas cannot paint, and for light-dark() with not two parts', () => {
+    expect(schemeColor(dark, 'var(--line)')).toBeUndefined();
+    expect(schemeColor(dark, 'color-mix(in srgb, red, white)')).toBeUndefined();
+    expect(schemeColor(dark, 'light-dark(red, blue, green)')).toBeUndefined();
+    expect(schemeColor(light, 'light-dark(red, blue, green)')).toBeUndefined();
+    expect(schemeColor(dark, 'light-dark(red)')).toBeUndefined();
+    expect(schemeColor(dark, 'light-dark(light-dark(a, b), c)')).toBeUndefined();
+  });
 });

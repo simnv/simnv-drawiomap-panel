@@ -45,6 +45,21 @@ export function panelStaleColor(theme: GrafanaTheme2, name: unknown): string {
   return known && alphaOf(color) > 0 ? color : DEFAULT_STALE_COLOR;
 }
 
+/** True when the text has a comma outside parentheses. */
+function topComma(text: string): boolean {
+  let depth = 0;
+  for (const ch of text) {
+    depth += ch === '(' ? 1 : ch === ')' ? -1 : 0;
+    if (ch === ',' && depth === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** A canvas (a sparkline) paints none of these: they need the CSS of an element. */
+const NOT_FOR_CANVAS = /var\(|color-mix\(|light-dark\(|currentcolor|^(inherit|initial|unset|revert)$/i;
+
 /** The two parts of `light-dark(a, b)` at its top-level comma (a part can be `rgb(1, 2, 3)`), else undefined. */
 function lightDarkParts(text: string): [string, string] | undefined {
   const m = /^light-dark\((.*)\)$/i.exec(text);
@@ -58,7 +73,8 @@ function lightDarkParts(text: string): [string, string] | undefined {
     if (ch === ',' && depth === 0) {
       const light = m[1].slice(0, i).trim();
       const dark = m[1].slice(i + 1).trim();
-      return light && dark ? [light, dark] : undefined;
+      // exactly two parts: a third part makes the text not valid
+      return light && dark && !topComma(dark) ? [light, dark] : undefined;
     }
   }
   return undefined;
@@ -73,10 +89,13 @@ function lightDarkParts(text: string): [string, string] | undefined {
 export function schemeColor(theme: GrafanaTheme2, text: string): string | undefined {
   const parts = lightDarkParts(text.trim());
   const name = parts ? parts[theme.isDark ? 1 : 0] : text.trim();
+  if (/^light-dark\(/i.test(text.trim()) && !parts) {
+    return undefined;
+  }
   const color = theme.visualization.getColorByName(name);
-  // a colour that the browser does not know gives undefined: the caller keeps its own colour
+  // a colour that the browser or a canvas does not know gives undefined: the caller keeps its own colour
   const known = typeof CSS === 'undefined' || typeof CSS.supports !== 'function' || CSS.supports('color', color);
-  return known ? color : undefined;
+  return known && !NOT_FOR_CANVAS.test(color) ? color : undefined;
 }
 
 /**

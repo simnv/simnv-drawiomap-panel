@@ -6,6 +6,18 @@ export const FOCUS_ACTIVE = 'dmap-link-focus';
 /** The last layer of the root: a scrim over the whole diagram, and copies of the kept elements above it. */
 export const FOCUS_LAYER = 'dmap-link-focus-layer';
 export const FOCUS_SCRIM = 'dmap-link-focus-scrim';
+/** The HTML layer of the chart regions in the stage (ChartLayer): a sibling of the root svg. */
+export const CHART_LAYER_ATTR = 'data-dmap-chart-layer';
+/** A chart region of a kept cell: it does not fade with the focus. */
+export const FOCUS_KEPT = 'dmap-focus-kept';
+
+/** Marks the chart regions of the kept cells (`data-dmap-cell` in `ids`), and clears the others. */
+function markKeptCharts(root: SVGSVGElement, ids: ReadonlySet<string>): void {
+  const regions = root.parentElement?.querySelectorAll(`:scope > [${CHART_LAYER_ATTR}] [data-dmap-chart]`) ?? [];
+  for (const region of regions) {
+    region.classList.toggle(FOCUS_KEPT, ids.has(region.getAttribute('data-dmap-cell') ?? ''));
+  }
+}
 
 const NS = 'http://www.w3.org/2000/svg';
 /** The scrim covers any view: the view box of a diagram is far smaller. */
@@ -145,6 +157,7 @@ export function focusCells(
   if (cellId === undefined || !index.has(cellId)) {
     focused.delete(root);
     root.classList.remove(FOCUS_ACTIVE);
+    markKeptCharts(root, new Set());
     return;
   }
   focused.set(root, { index, cellId, ends });
@@ -165,6 +178,7 @@ export function focusCells(
     batch.appendChild(copyOf(el, m));
   }
   layer.appendChild(batch);
+  markKeptCharts(root, ids);
   root.classList.add(FOCUS_ACTIVE);
 }
 
