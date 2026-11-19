@@ -61,6 +61,8 @@ export function useCardInput(args: InputArgs) {
     args;
   const { focusOf } = args;
   const pinned = !!card?.pinned && open;
+  // the cell of a pinned card keeps the hover focus (the tint) until the card closes
+  const pinnedId = pinned ? card?.cellId : undefined;
 
   // A thin link is hard to hit: a pointer near it (in screen px) catches it when nothing that opens a card is under
   // the pointer. The finder caches the segments and the screen transform; the events below make it read them again.
@@ -72,9 +74,11 @@ export function useCardInput(args: InputArgs) {
     stageRef.current?.removeAttribute(NEAR_ATTR);
   }, [root, stageRef]);
   // The hovered cell (a link under or near the pointer, or a cell under it): the rest of the diagram dims around it.
-  // A link also gets the near class and the hand cursor.
+  // A link also gets the near class and the hand cursor. While a card is pinned, its cell keeps the mark and the
+  // focus: a leave of the pointer, a click or a pan does not take them away.
   const setNear = useCallback(
-    (id: string | undefined) => {
+    (asked: string | undefined) => {
+      const id = pinnedId ?? asked;
       if (near.current === id) {
         return;
       }
@@ -90,7 +94,7 @@ export function useCardInput(args: InputArgs) {
       }
       stageRef.current?.toggleAttribute(NEAR_ATTR, link);
     },
-    [root, stageRef, index, focusOf]
+    [root, stageRef, index, focusOf, pinnedId]
   );
   // the hover focus switched off: a focus that is on goes
   useEffect(() => {
@@ -98,6 +102,13 @@ export function useCardInput(args: InputArgs) {
       focusCells(root, index, undefined);
     }
   }, [focusOf, root, index]);
+  // the hover focus switched on again while a card is pinned: its cell gets the focus back
+  useEffect(() => {
+    if (focusOf && pinnedId !== undefined) {
+      near.current = undefined;
+      setNear(pinnedId);
+    }
+  }, [focusOf, pinnedId, setNear]);
   const frame = useRef<number | undefined>(undefined);
   const stopFrame = useCallback(() => {
     if (frame.current !== undefined) {
@@ -114,7 +125,12 @@ export function useCardInput(args: InputArgs) {
     // move checks again.
     const onLayout = () => {
       finder.invalidate();
-      setNear(undefined);
+      const keep = pinnedId;
+      if (keep !== undefined) {
+        // a pinned cell keeps its focus: draw it again at the new view
+        near.current = undefined;
+      }
+      setNear(keep);
     };
     // the stage layout and any scroll (the stage or the page) move the screen transform
     root.addEventListener(LAYOUT_EVENT, onLayout);
@@ -126,15 +142,14 @@ export function useCardInput(args: InputArgs) {
       window.removeEventListener('resize', invalidate);
       finder.invalidate();
     };
-  }, [root, finder, setNear]);
+  }, [root, finder, setNear, pinnedId]);
   useEffect(() => () => stopFrame(), [stopFrame]);
-  // A pinned card takes the mark away: the pointer does not hover while it stays.
+  // A pinned card holds the mark and the focus of its cell: the pointer does not hover while it stays. Its close
+  // clears them; the next move of the pointer hovers again.
   useEffect(() => {
-    if (pinned) {
-      stopFrame();
-      setNear(undefined);
-    }
-  }, [pinned, stopFrame, setNear]);
+    stopFrame();
+    setNear(pinnedId);
+  }, [pinnedId, stopFrame, setNear]);
   /** The patch of the link near the client point that opens a card. */
   const nearPatch = (x: number, y: number, pointerType: string) => {
     if (!root) {
