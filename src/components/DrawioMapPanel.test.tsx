@@ -349,8 +349,8 @@ describe('DrawioMapPanel', () => {
         />
       );
       await waitFor(() => expect(screen.getByTestId('dmap-chart').textContent).toContain('Query failed'));
-      expect(container.querySelectorAll('foreignObject[data-dmap-chart]')).toHaveLength(1);
-      expect(container.querySelector('[data-cell-id="ordinary"] foreignObject')).toBeNull();
+      expect(container.querySelectorAll('[data-dmap-chart]')).toHaveLength(1);
+      expect(container.querySelector('[data-dmap-chart="ordinary"]')).toBeNull();
       expect(container.querySelector('[data-cell-id="ordinary"] text')?.textContent).toBe('Ordinary device');
       expect(container.textContent).not.toContain('private datasource failure');
       unmount();

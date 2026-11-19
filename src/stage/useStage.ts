@@ -93,10 +93,17 @@ export function useStage(
     if (!el) {
       return;
     }
+    // only the svg changes: the chart layer of the stage (ChartLayer) stays, and a child effect may have put it
+    // there before this effect of the panel runs
+    const old = el.querySelector(':scope > svg');
     if (!stage.root) {
-      el.replaceChildren();
+      old?.remove();
     } else if (stage.root.parentNode !== el) {
-      el.replaceChildren(stage.root);
+      if (old) {
+        old.replaceWith(stage.root);
+      } else {
+        el.prepend(stage.root);
+      }
     }
   });
   return stage;

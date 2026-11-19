@@ -29,7 +29,27 @@ test.describe('live zoom on the desktop', () => {
     const read = () =>
       panel.evaluate((el) => {
         const shape = el.querySelector<SVGGraphicsElement>('[data-cell-id="chart-1"] rect')!;
-        const portal = el.querySelector<SVGForeignObjectElement>('[data-dmap-chart="chart-1"]')!;
+        const portal = el.querySelector<HTMLElement>('[data-dmap-chart="chart-1"]')!;
+        /** The client points of a region (HTML on the chart plane): the box of its clip, the plane, the region. */
+        const regionPoint = (region: HTMLElement, x: number, y: number) => {
+          const plane = region.parentElement!;
+          const clip = plane.parentElement!.getBoundingClientRect();
+          const matrix = (node: Element) => {
+            const t = getComputedStyle(node).transform;
+            return t === 'none' ? new DOMMatrix() : new DOMMatrix(t);
+          };
+          const p = matrix(plane).multiply(matrix(region)).transformPoint(new DOMPoint(x, y));
+          return [p.x + clip.left, p.y + clip.top];
+        };
+        const regionQuad = (region: HTMLElement) => {
+          const [w, h] = [region.offsetWidth, region.offsetHeight];
+          return [
+            [0, 0],
+            [w, 0],
+            [0, h],
+            [w, h],
+          ].map(([x, y]) => regionPoint(region, x, y));
+        };
         const corners = (node: SVGGraphicsElement) => {
           const b = node.getBBox(),
             m = node.getScreenCTM()!;
@@ -44,17 +64,17 @@ test.describe('live zoom on the desktop', () => {
           });
         };
         const expected = corners(shape),
-          actual = corners(portal);
+          actual = regionQuad(portal);
         const canvas = portal.querySelector('canvas');
         const pixels = canvas?.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
         return {
           error: Math.max(...actual.flatMap((p, i) => p.map((v, k) => Math.abs(v - expected[i][k])))),
           painted: pixels?.some((v, i) => i % 4 === 3 && v > 0),
-          width: portal.width.baseVal.value,
-          height: portal.height.baseVal.value,
+          width: portal.offsetWidth,
+          height: portal.offsetHeight,
           viewBox: el.querySelector('svg')!.getAttribute('viewBox'),
           screenWidth: shape.getBoundingClientRect().width,
-          paintOrder: shape.nextElementSibling === portal,
+          paintOrder: !!portal.closest('[data-dmap-chart-layer]'),
           pointerEvents: getComputedStyle(portal).pointerEvents,
         };
       });

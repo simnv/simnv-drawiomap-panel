@@ -172,15 +172,9 @@ describe('ChartLayer: v4 chart regions (spec 3.9)', () => {
     render(
       <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
     );
-    const region = s.root.querySelector('foreignObject[data-dmap-chart="cpu"]')!;
+    const region = s.host.querySelector<HTMLElement>('[data-dmap-chart="cpu"]')!;
     expect(region).toBeTruthy();
-    expect(['x', 'y', 'width', 'height', 'transform'].map((a) => region.getAttribute(a))).toEqual([
-      '0',
-      '0',
-      '180',
-      '70',
-      'matrix(1 0 0 1 12 5)',
-    ]);
+    expect([region.style.width, region.style.height]).toEqual(['180px', '70px']);
     expect(region.querySelector('[data-testid="dmap-chart"]')!.getAttribute('aria-label')).toBe('CPU');
     const calls = sparkline.mock.calls.map((c) => c[0] as any);
     expect(calls.map((p) => p.config.color.fixedColor)).toEqual([palette(0), palette(1), palette(2)]);
@@ -190,6 +184,29 @@ describe('ChartLayer: v4 chart regions (spec 3.9)', () => {
       [0, 4],
       [0, 4],
     ]);
+  });
+
+  it('chart colors: the lines take the colours in order, a light-dark() part by the theme; background none is clear', () => {
+    sparkline.mockClear();
+    const s = setup(
+      {
+        chart: {
+          kind: 'history',
+          query: 'cpu',
+          background: 'none',
+          colors: ['light-dark(#1f60c4, #8ab8ff)', 'rgb(1, 2, 3)'],
+        },
+      },
+      cpuFrames(3)
+    );
+    render(
+      <ChartLayer root={s.root} cells={s.cells} viewport={s.host} charts={s.charts} bound={s.bound} ctx={s.ctx} />
+    );
+    const calls = sparkline.mock.calls.map((c) => c[0] as any);
+    // the theme of the test is dark: the dark part; the list starts again for the third line
+    expect(calls.map((p) => p.config.color.fixedColor)).toEqual(['#8ab8ff', 'rgb(1, 2, 3)', '#8ab8ff']);
+    const body = s.host.querySelector<HTMLElement>('[data-testid="dmap-chart"]')!;
+    expect(body.style.backgroundColor).toBe('transparent');
   });
 
   it('chart {kind: history} with 9 series draws 8 lines and tells "+1 more"', () => {

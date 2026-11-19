@@ -40,7 +40,7 @@ export interface DiagramStageProps {
   /** A click on the empty stage (no cell, no drag, no shift). */
   onBackground?: () => void;
   /** The chart uses of the bind (spec 3.9). Without it the stage shows no charts. */
-  chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision'>;
+  chartLayer?: Omit<ChartLayerProps, 'root' | 'cells' | 'viewport' | 'revision' | 'interactive'>;
   /** The hash of the shown diagram. The stage writes it as `data-dmap-hash`, as the panel does. */
   hash?: string;
   /** The current draft XML for accessible link titles. */
@@ -230,7 +230,15 @@ export function DiagramStage({
     >
       <div ref={attachStage} className={styles.stage} data-testid="dmap-popup-stage" data-dmap-hash={hash} />
       {chartLayer ? (
-        <ChartLayer {...chartLayer} root={stage.root} cells={stage.index} viewport={viewport} revision={layout} />
+        <ChartLayer
+          {...chartLayer}
+          root={stage.root}
+          cells={stage.index}
+          viewport={viewport}
+          revision={layout}
+          // a click on a chart selects its cell: the regions are HTML over the svg
+          interactive={false}
+        />
       ) : null}
       {stage.error ? <div className={styles.empty}>{stage.error}</div> : null}
       {places.map(({ id, left, top, width, height }) =>
@@ -301,6 +309,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
   stage: css({
     width: '100%',
     height: '100%',
+    // the chart regions (ChartLayer) place themselves in the stage
+    position: 'relative',
     '& > svg': { display: 'block' },
     // Every cell can be selected: the pointer says so.
     // The outline of the group would take its box (the whole viewport with an HTML label): the outlines are drawn in

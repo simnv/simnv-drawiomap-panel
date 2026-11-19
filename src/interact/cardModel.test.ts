@@ -131,6 +131,24 @@ describe('card links', () => {
     expect(model.links.filter((l) => l.href === '/d/vpn')).toHaveLength(1);
     expect(model.links[0].target).toBe('_blank');
   });
+  it('opens a link in the current tab with urlNewTab: false or a drilldown newTab: false; else a new tab', () => {
+    const model = card(
+      {
+        url: '/d/vpn',
+        urlNewTab: false,
+        rows: [
+          { kind: 'drilldown', label: 'Here', url: '/d/here', newTab: false },
+          { kind: 'drilldown', label: 'Away', url: 'https://example.com/x' },
+        ],
+      },
+      [frame('cpu', job, [1])]
+    );
+    expect(model.links.map((l) => [l.href, l.target])).toEqual([
+      ['/d/vpn', undefined],
+      ['/d/here', undefined],
+      ['https://example.com/x', '_blank'],
+    ]);
+  });
   it('drops a drilldown whose url is not allowed after substitution', () => {
     const model = card({ rows: [{ kind: 'drilldown', label: 'Go', url: 'javascript:alert(1)' }] }, [
       frame('cpu', job, [1]),

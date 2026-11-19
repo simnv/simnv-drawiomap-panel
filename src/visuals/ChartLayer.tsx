@@ -2,7 +2,8 @@ import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
-import { readChartAnchor, type ChartAnchor } from '../render/geometry';
+import { CHART_LAYER_ATTR } from '../render/linkFocus';
+import { readChartAnchor, toMatrix, toRoot, type ChartAnchor, type Matrix } from '../render/geometry';
 import type { CellEntry, CellIndex } from '../types';
 import type { BindResultV4 } from '../binding/bindV4';
 import type { UsePath } from '../binding/report';
@@ -22,6 +23,11 @@ interface StageProps {
   cells: CellIndex;
   viewport: HTMLElement | null;
   revision?: unknown;
+  /**
+   * false: the charts take no pointer, so a click hits the cell below (the split editor selects cells). Default: the
+   * chart takes the pointer (its hover readout) and gives the card of its cell.
+   */
+  interactive?: boolean;
 }
 
 /** One chart region of a v4 cell (spec 3.9): the `chart` of its effective class and the YAML path of the chart. */
@@ -135,7 +141,7 @@ interface Watcher {
 
 /**
  * The observers of a stage, shared by all its regions: one `MutationObserver` on the root (the attributes that move
- * or hide a cell; not the viewBox: a pan or a zoom moves the regions with the svg, and the `revision` of the layer
+ * or hide a cell; not the viewBox: a pan or a zoom moves the plane of the regions, and the `revision` of the layer
  * reads their visibility again when the view settles) and on the ancestors of the viewport, one `ResizeObserver`,
  * one `IntersectionObserver` for every shape, and the document and window listeners. A mutation runs only the
  * regions under its target, so a hover class on another cell runs none.
@@ -252,7 +258,7 @@ function createStageWatch(root: SVGSVGElement, viewport: HTMLElement): StageWatc
  * on the mount and on a new `revision` (the view settled, a new box), and reads the new regions of a new set of
  * charts (a refresh binds again, the regions that stay need no read).
  */
-function useStageWatch(props: ChartLayerProps): StageWatch | undefined {
+function useStageWatch(props: ChartLayerProps, plane: HTMLDivElement | undefined): StageWatch | undefined {
   const { root, viewport, revision, charts, cells } = props;
   // the object only holds the lists: the observers start in the effect below
   const watch = useMemo(() => (root && viewport ? createStageWatch(root, viewport) : undefined), [root, viewport]);
@@ -260,10 +266,76 @@ function useStageWatch(props: ChartLayerProps): StageWatch | undefined {
   useLayoutEffect(() => {
     watch?.run();
   }, [watch, revision]);
+  // the regions register once the plane exists
   useLayoutEffect(() => {
     watch?.runFresh();
-  }, [watch, charts, cells]);
+  }, [watch, charts, cells, plane]);
   return watch;
+}
+
+const css = (m: Matrix) => `matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e}, ${m.f})`;
+
+/**
+ * The HTML plane of the regions: a box on the box of the svg in the stage (it clips the regions as the svg clips
+ * its shapes) and, in it, a plane in root user units (its CSS transform is the screen CTM of the root). The regions
+ * are HTML over the diagram, not a `foreignObject` in it: WebKit draws positioned HTML in a `foreignObject` (the
+ * canvas of a sparkline) without the transforms of the svg, so it would stand at the wrong place and size. A pan or a
+ * zoom writes only the transform of the plane; a region keeps its matrix in root user units.
+ */
+function useRegionPlane(root: SVGSVGElement | undefined, viewport: HTMLElement | null): HTMLDivElement | undefined {
+  const [plane, setPlane] = useState<HTMLDivElement>();
+  useLayoutEffect(() => {
+    if (!root || !viewport) {
+      return;
+    }
+    const clip = document.createElement('div');
+    clip.setAttribute(CHART_LAYER_ATTR, '');
+    Object.assign(clip.style, { position: 'absolute', overflow: 'hidden', pointerEvents: 'none', left: '0', top: '0' });
+    const inner = document.createElement('div');
+    Object.assign(inner.style, { position: 'absolute', left: '0', top: '0', width: '0', height: '0' });
+    inner.style.transformOrigin = '0 0';
+    clip.append(inner);
+    // the stage is `position: relative` (its CSS): the clip box places itself in it
+    viewport.append(clip);
+    const place = () => {
+      const stage = viewport.getBoundingClientRect();
+      const box = root.getBoundingClientRect();
+      const left = box.left - stage.left - viewport.clientLeft + viewport.scrollLeft;
+      const top = box.top - stage.top - viewport.clientTop + viewport.scrollTop;
+      Object.assign(clip.style, {
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+      });
+      const screen = toMatrix(typeof root.getScreenCTM === 'function' ? root.getScreenCTM() : null);
+      // root user units to the box of the clip; the identity where the engine has no screen CTM (jsdom)
+      const m = screen ? { ...screen, e: screen.e - box.left, f: screen.f - box.top } : undefined;
+      inner.style.transform = m ? css(m) : '';
+    };
+    place();
+    // a pan or a zoom writes the viewBox; a resize of the panel or a new view writes the size of the svg
+    const attrs = new MutationObserver(place);
+    attrs.observe(root, {
+      attributes: true,
+      attributeFilter: ['viewBox', 'width', 'height', 'style', 'preserveAspectRatio'],
+    });
+    const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(place);
+    resize?.observe(viewport);
+    resize?.observe(root);
+    window.addEventListener('resize', place);
+    // the plane is DOM of the stage, made only here
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPlane(inner);
+    return () => {
+      attrs.disconnect();
+      resize?.disconnect();
+      window.removeEventListener('resize', place);
+      clip.remove();
+      setPlane(undefined);
+    };
+  }, [root, viewport]);
+  return plane;
 }
 
 interface RegionGeometry {
@@ -281,50 +353,61 @@ const sameGeometry = (a: RegionGeometry | undefined, b: RegionGeometry): boolean
   (['a', 'b', 'c', 'd', 'e', 'f'] as const).every((k) => a.anchor.matrix[k] === b.anchor.matrix[k]);
 
 /**
- * The region of a cell: a `foreignObject` after the shape of the cell with the box and the transform of the shape,
- * and whether the shape shows on the screen. `mark` and `id` name the region in the DOM (`data-dmap-chart`).
+ * The region of a cell: a `div` on the plane of the regions with the box of the shape and its matrix in root user
+ * units, and whether the shape shows on the screen. `mark` and `id` name the region in the DOM (`data-dmap-chart`);
+ * `data-dmap-cell` gives a pointer on the region the card of its cell.
  */
 function useRegion(
   { root, viewport }: StageProps,
+  plane: HTMLDivElement | undefined,
   watch: StageWatch | undefined,
   cell: CellEntry | undefined,
   mark: string,
   id: string
-): { portal?: SVGForeignObjectElement; geometry?: RegionGeometry } {
-  const [portal, setPortal] = useState<SVGForeignObjectElement>();
+): { portal?: HTMLDivElement; geometry?: RegionGeometry } {
+  const [portal, setPortal] = useState<HTMLDivElement>();
   const [geometry, setGeometry] = useState<RegionGeometry>();
 
   useLayoutEffect(() => {
     const shape = cell?.shape;
     const parent = shape?.parentElement as unknown as SVGGraphicsElement;
-    if (!root || !cell || !shape || !parent || !viewport || !watch) {
+    if (!root || !cell || !shape || !parent || !viewport || !watch || !plane) {
       return;
     }
-    const region = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+    const region = document.createElement('div');
     region.setAttribute(mark, id);
-    region.style.overflow = 'hidden';
-    region.style.pointerEvents = 'none';
-    shape.after(region);
-    // The portal target belongs to the external SVG DOM and exists only after attachment.
+    region.setAttribute('data-dmap-cell', cell.meta.id);
+    Object.assign(region.style, {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      overflow: 'hidden',
+      pointerEvents: 'none',
+    });
+    region.style.transformOrigin = '0 0';
+    plane.append(region);
+    const written: Record<string, string> = {};
+    // The portal target is DOM of the stage and exists only after attachment.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPortal(region);
     const update = (pass: RegionPass) => {
-      const anchor = readChartAnchor(cell, parent);
-      if (!anchor) {
+      const box = readChartAnchor(cell, parent);
+      const matrix = box && toRoot(shape, root);
+      if (!box || !matrix) {
         setGeometry(undefined);
         return;
       }
-      const { matrix: m } = anchor;
-      const attrs = {
-        x: anchor.x,
-        y: anchor.y,
-        width: anchor.width,
-        height: anchor.height,
-        transform: `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`,
+      const anchor = { ...box, matrix };
+      const style = {
+        width: `${anchor.width}px`,
+        height: `${anchor.height}px`,
+        transform: `${css(matrix)} translate(${anchor.x}px, ${anchor.y}px)`,
       };
-      for (const [name, value] of Object.entries(attrs)) {
-        if (region.getAttribute(name) !== String(value)) {
-          region.setAttribute(name, String(value));
+      // the engine writes a style in its own form (translate(0px)): compare with what this region wrote last
+      for (const [name, value] of Object.entries(style)) {
+        if (written[name] !== value) {
+          written[name] = value;
+          region.style.setProperty(name, value);
         }
       }
       const next = { anchor, visible: watch.intersecting(shape) && pass.displayed(shape) };
@@ -336,12 +419,15 @@ function useRegion(
       release();
       region.remove();
     };
-  }, [root, cell, viewport, watch, mark, id]);
+  }, [root, cell, viewport, watch, plane, mark, id]);
   return { portal, geometry };
 }
 
-/** The look of a region: the font of the theme over the background of the panel. */
-function regionStyle(theme: GrafanaTheme2, width: number, height: number): React.CSSProperties {
+/**
+ * The look of a region: the font of the theme over the background of the panel, or over the diagram with
+ * `background: none`.
+ */
+function regionStyle(theme: GrafanaTheme2, width: number, height: number, clear: boolean): React.CSSProperties {
   return {
     width,
     height,
@@ -350,7 +436,7 @@ function regionStyle(theme: GrafanaTheme2, width: number, height: number): React
     fontFamily: theme.typography.fontFamily,
     lineHeight: 'normal',
     color: theme.colors.text.primary,
-    background: theme.colors.background.primary,
+    background: clear ? 'transparent' : theme.colors.background.primary,
     position: 'relative',
   };
 }
@@ -475,10 +561,15 @@ function ChartBody({
 }
 
 /** A v4 chart region: the `chart` of the class of the cell, in the box of the cell (spec 3.9). */
-function RegionV4({ use, watch, ...props }: ChartLayerProps & { use: ChartUse; watch: StageWatch | undefined }) {
+function RegionV4({
+  use,
+  watch,
+  plane,
+  ...props
+}: ChartLayerProps & { use: ChartUse; watch: StageWatch | undefined; plane: HTMLDivElement | undefined }) {
   const { cells, bound, ctx } = props;
   const theme = useTheme2();
-  const { portal, geometry } = useRegion(props, watch, cells.get(use.cellId), 'data-dmap-chart', use.cellId);
+  const { portal, geometry } = useRegion(props, plane, watch, cells.get(use.cellId), 'data-dmap-chart', use.cellId);
   // the chart builds on each bind (spec 3.2 step 11)
   const row = useMemo(() => chartRowV4(use, bound, ctx), [use, bound, ctx]);
   const deadline = row ? staleDeadline(row) : undefined;
@@ -502,7 +593,10 @@ function RegionV4({ use, watch, ...props }: ChartLayerProps & { use: ChartUse; w
     <div
       data-testid="dmap-chart"
       aria-label={row.title}
-      style={{ ...regionStyle(theme, width, height), pointerEvents: 'auto' }}
+      style={{
+        ...regionStyle(theme, width, height, use.chart.background === 'none'),
+        pointerEvents: props.interactive === false ? 'none' : 'auto',
+      }}
     >
       <ChartBody
         row={row}
@@ -522,11 +616,12 @@ function RegionV4({ use, watch, ...props }: ChartLayerProps & { use: ChartUse; w
  * that changes none of its props (a hover card, a legend highlight) draws no region again.
  */
 export const ChartLayer = React.memo(function ChartLayer(props: ChartLayerProps) {
-  const watch = useStageWatch(props);
+  const plane = useRegionPlane(props.root, props.viewport);
+  const watch = useStageWatch(props, plane);
   return (
     <>
       {props.charts.map((use) => (
-        <RegionV4 key={use.cellId} {...props} use={use} watch={watch} />
+        <RegionV4 key={use.cellId} {...props} use={use} watch={watch} plane={plane} />
       ))}
     </>
   );

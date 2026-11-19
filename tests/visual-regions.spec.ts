@@ -73,7 +73,27 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
   const read = () =>
     panel.evaluate((el) => {
       const anchor = el.querySelector<SVGRectElement>('[data-cell-id="chart-1"] rect')!;
-      const region = el.querySelector<SVGForeignObjectElement>('foreignObject[data-dmap-chart="chart-1"]')!;
+      const region = el.querySelector<HTMLElement>('[data-dmap-chart="chart-1"]')!;
+      /** The client points of a region (HTML on the chart plane): the box of its clip, the plane, the region. */
+      const regionPoint = (region: HTMLElement, x: number, y: number) => {
+        const plane = region.parentElement!;
+        const clip = plane.parentElement!.getBoundingClientRect();
+        const matrix = (node: Element) => {
+          const t = getComputedStyle(node).transform;
+          return t === 'none' ? new DOMMatrix() : new DOMMatrix(t);
+        };
+        const p = matrix(plane).multiply(matrix(region)).transformPoint(new DOMPoint(x, y));
+        return [p.x + clip.left, p.y + clip.top];
+      };
+      const regionQuad = (region: HTMLElement) => {
+        const [w, h] = [region.offsetWidth, region.offsetHeight];
+        return [
+          [0, 0],
+          [w, 0],
+          [0, h],
+          [w, h],
+        ].map(([x, y]) => regionPoint(region, x, y));
+      };
       const quad = (node: SVGGraphicsElement) => {
         const b = node.getBBox();
         const m = node.getScreenCTM()!;
@@ -88,14 +108,14 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
         });
       };
       const expected = quad(anchor);
-      const actual = quad(region);
+      const actual = regionQuad(region);
       // A region whose cell is off the screen has no chart. After a resize Grafana moves the panel one frame late,
       // so for that frame the cell can be outside the window.
       const chart = el.querySelector<HTMLElement>('[data-testid="dmap-chart"]');
       // a point of the region in its own coordinates: is the chart the top element there?
       const hit = (x: number) => {
-        const p = new DOMPoint(x, 30).matrixTransform(region.getScreenCTM()!);
-        return document.elementFromPoint(p.x, p.y)?.closest('[data-testid="dmap-chart"]') != null;
+        const [px, py] = regionPoint(region, x, 30);
+        return document.elementFromPoint(px, py)?.closest('[data-testid="dmap-chart"]') != null;
       };
       const pixels = [...(chart?.querySelectorAll('canvas') ?? [])].some((canvas) => {
         const data = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -104,13 +124,14 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
       const ctm = anchor.getScreenCTM()!;
       return {
         error: Math.max(...actual.flatMap((p, i) => p.map((v, k) => Math.abs(v - expected[i][k])))),
-        localWidth: region.width.baseVal.value,
-        localHeight: region.height.baseVal.value,
-        paintOrder: anchor.nextElementSibling === region,
+        localWidth: region.offsetWidth,
+        localHeight: region.offsetHeight,
+        // the region is HTML over the svg (WebKit draws positioned HTML in a foreignObject at the wrong place)
+        paintOrder:
+          !!region.closest('[data-dmap-chart-layer]') && !el.querySelector('svg foreignObject[data-dmap-chart]'),
         pixels,
         inside: hit(177),
         outside: hit(200),
-        parentOffset: region.transform.baseVal.consolidate()!.matrix.e,
         color: chart && getComputedStyle(chart).color,
         fontSize: chart && getComputedStyle(chart).fontSize,
         svgOverflow: getComputedStyle(el.querySelector('svg')!).overflow,
@@ -133,8 +154,6 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
   // the anchor is rotated and skewed
   expect(Math.abs(fitted.matrix[1])).toBeGreaterThan(0.01);
   expect(Math.abs(fitted.matrix[2])).toBeGreaterThan(0.01);
-  // the transform of the rect (translate(2 0)) is part of the region transform
-  expect(fitted.parentOffset).toBeCloseTo(2);
   // the region uses the theme font and colour, not the font and colour of the cell
   expect(fitted.fontSize).toBe('12px');
   expect(fitted.color).not.toBe('rgb(1, 2, 3)');
@@ -487,3 +506,30 @@ for (const theme of ['light', 'dark'] as const) {
     });
   });
 }
+
+test('a chart with background none draws on the diagram; its colours follow the theme', async ({
+  page,
+  config,
+  createDiagram,
+  gotoDashboardPage,
+}, testInfo) => {
+  const look: ConfigV4 = structuredClone(config);
+  look.classes['trend-region'].chart = {
+    kind: 'history',
+    label: 'Standalone trend',
+    query: 'trend',
+    background: 'none',
+    colors: ['light-dark(#c4162a, #ff7383)'],
+  };
+  const uid = await createDiagram(look);
+  for (const theme of ['dark', 'light']) {
+    await gotoDashboardPage({ uid, queryParams: new URLSearchParams({ theme }) });
+    const panel = page.getByTestId('dmap-panel');
+    const chart = panel.getByTestId('dmap-chart');
+    await expect(chart.locator('canvas')).toBeVisible();
+    await expect(chart).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    const shot = testInfo.outputPath(`chart-look-${theme}.png`);
+    await chart.screenshot({ path: shot });
+    await testInfo.attach(`chart-look-${theme}`, { path: shot, contentType: 'image/png' });
+  }
+});

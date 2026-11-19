@@ -43,6 +43,8 @@ export interface RowSlotV4 {
   label?: string;
   text?: string;
   url?: string;
+  /** a `drilldown` row with `newTab: false` opens in the current tab */
+  newTab?: boolean;
 }
 
 /**
@@ -807,7 +809,11 @@ export function bindV4(input: BindInputV4): BindResultV4 {
       const href = url(eff.url, fieldPath(eff, 'url'));
       const label = title(eff.urlTitle, fieldPath(eff, 'urlTitle'));
       if (href !== null) {
-        patch.urls.push(typeof label === 'string' ? { url: href, title: label } : { url: href });
+        patch.urls.push({
+          url: href,
+          ...(typeof label === 'string' ? { title: label } : {}),
+          ...(eff.urlNewTab === false ? { newTab: false } : {}),
+        });
       }
     }
     patch.rowsV4 = eff.rows.flatMap((row): RowSlotV4[] => {
@@ -823,7 +829,15 @@ export function bindV4(input: BindInputV4): BindResultV4 {
         if (href === null || label === null) {
           return [];
         }
-        return [label === undefined ? { path, kind: row.kind, url: href } : { path, kind: row.kind, label, url: href }];
+        return [
+          {
+            path,
+            kind: row.kind,
+            url: href,
+            ...(label === undefined ? {} : { label }),
+            ...(row.newTab === false ? { newTab: false } : {}),
+          },
+        ];
       }
       return uses.some((use) => use.path === path || use.path === `${path}.a2b`) ? [{ path, kind: row.kind }] : [];
     });

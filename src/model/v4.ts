@@ -1,5 +1,6 @@
 import type { ReportEntry } from '../binding/report';
 import {
+  boolean,
   array,
   discriminated,
   finite,
@@ -81,6 +82,8 @@ const historyShape = {
   ...show,
   min: optional(lowerBound),
   max: optional(number(finite)),
+  /** the colours of the lines in order: a CSS colour, a Grafana colour name or `light-dark(light, dark)` */
+  colors: optional(array(string(notEmpty), true)),
 };
 const valueShape = { kind: literal('value'), query: refId, match: optional(match), reduce: optional(reduce), ...show };
 const updownShape = {
@@ -92,12 +95,24 @@ const updownShape = {
   ...show,
 };
 const metadataShape = { kind: literal('metadata'), label: string(), text: template };
-const drilldownShape = { kind: literal('drilldown'), label: optional(string()), url: template };
+const drilldownShape = {
+  kind: literal('drilldown'),
+  label: optional(string()),
+  url: template,
+  // false: the link opens in the current tab. Default: a new tab.
+  newTab: optional(boolean),
+};
 const history = object(historyShape);
 const value = object(valueShape);
 const updown = object(updownShape);
-export type ChartV4 = Out<typeof history> | Out<typeof value> | Out<typeof updown>;
-export type RowV4 = ChartV4 | Infer<typeof metadataShape> | Infer<typeof drilldownShape>;
+type QueryRowV4 = Out<typeof history> | Out<typeof value> | Out<typeof updown>;
+/** The look of a chart region: `background: none` draws no panel background under the chart. */
+const look = { background: optional(oneOf(['panel', 'none'])) };
+const chartHistory = object({ ...historyShape, ...look });
+const chartValue = object({ ...valueShape, ...look });
+const chartUpdown = object({ ...updownShape, ...look });
+export type ChartV4 = Out<typeof chartHistory> | Out<typeof chartValue> | Out<typeof chartUpdown>;
+export type RowV4 = QueryRowV4 | Infer<typeof metadataShape> | Infer<typeof drilldownShape>;
 const row = discriminated<RowV4>({
   history,
   value,
@@ -106,7 +121,7 @@ const row = discriminated<RowV4>({
   drilldown: object(drilldownShape),
 });
 /** A9: a chart region fills the box of the cell. `value` draws a bar gauge. Same rules as the rows. */
-const chart = discriminated<ChartV4>({ history, value, updown });
+const chart = discriminated<ChartV4>({ history: chartHistory, value: chartValue, updown: chartUpdown });
 /** A4: one refId for both directions, or one refId for each geometric direction. */
 const capacity = union<string | { a2b: string; b2a: string }>(refId, object({ a2b: refId, b2a: refId }));
 /** The head style of each link half. */
@@ -123,6 +138,7 @@ const fields = {
   freshness: optional(freshness), // D11, A10
   url: optional(template), // D6
   urlTitle: optional(string()),
+  urlNewTab: optional(boolean), // false: the url opens in the current tab. Default: a new tab.
   up: optional(refId), // D14, links only
   down: optional(refId),
   capacity: optional(capacity), // D15, A4
@@ -149,7 +165,11 @@ export const schemaKeys = {
     drilldown: drilldownShape,
   }),
   /** The keys of each chart kind. */
-  chart: keysOf({ history: historyShape, value: valueShape, updown: updownShape }),
+  chart: keysOf({
+    history: { ...historyShape, ...look },
+    value: { ...valueShape, ...look },
+    updown: { ...updownShape, ...look },
+  }),
 };
 
 /** The envelope. Each class and each override is parsed on its own (section 2.5). */

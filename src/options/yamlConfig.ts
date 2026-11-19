@@ -12,6 +12,7 @@ const FIELDS = [
   'freshness',
   'url',
   'urlTitle',
+  'urlNewTab',
   'up',
   'down',
   'capacity',
@@ -30,8 +31,11 @@ const ROW = [
   'decimals',
   'min',
   'max',
+  'colors',
+  'background',
   'text',
   'url',
+  'newTab',
 ];
 const ORDER: Partial<Record<Context, string[]>> = {
   root: ['version', 'freshness', 'classes', 'overrides'],

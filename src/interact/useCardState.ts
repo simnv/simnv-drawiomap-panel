@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { LEGEND_ROW_ATTR } from '../legend/symbolRows';
-import { focusCells } from '../render/linkFocus';
+import { CHART_LAYER_ATTR, focusCells } from '../render/linkFocus';
 import { markNearLink } from '../render/overlay';
 import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
@@ -21,6 +21,9 @@ const canHover = () => !(typeof window.matchMedia === 'function' && window.match
  * the events after it. The dispatch is useState with an updater, not useReducer: useReducer gets no eager bail-out,
  * so an action that keeps the state (a pointer that leaves the panel with no card) would render the view.
  */
+/** A pointer on a chart region: a chart covers the links below it, so no link is near. */
+const onChart = (t: EventTarget | null): boolean => t instanceof Element && !!t.closest(`[${CHART_LAYER_ATTR}]`);
+
 export function useCardState() {
   const [card, setCard] = useState<CardState | null>(null);
   const dispatch = useCallback((action: CardAction) => setCard((c) => cardReducer(c, action)), []);
@@ -249,7 +252,9 @@ export function useCardInput(args: InputArgs) {
     const pointerType = (e.nativeEvent as Partial<PointerEvent>).pointerType || downType.current;
     const patch =
       patchAt(e.target, stageEl, patches, index, cardable) ??
-      (stageEl.contains(e.target as Node) ? nearPatch(e.clientX, e.clientY, pointerType) : undefined);
+      (stageEl.contains(e.target as Node) && !onChart(e.target)
+        ? nearPatch(e.clientX, e.clientY, pointerType)
+        : undefined);
     opener.current = null;
     stopFrame();
     setNear(undefined);
@@ -329,7 +334,7 @@ export function useCardInput(args: InputArgs) {
     const patch = patchAt(e.target, stageEl, patches, index, cardable);
     // A direct hit wins. A link under the pointer (its stroke or its value label) keeps the hover mark. Off the stage
     // (the card, a chart, the corner, the legend) no link is near.
-    if (patch || !stageEl.contains(e.target as Node)) {
+    if (patch || !stageEl.contains(e.target as Node) || onChart(e.target)) {
       stopFrame();
       pending.current = null;
       setNear(patch?.cellId);

@@ -127,7 +127,9 @@ const layer = (s: Setup, extra: { revision?: unknown } = {}) => (
 );
 const historyClass = { chart: { kind: 'history', query: 'cpu', label: 'CPU' } };
 const cpu = () => [frame('cpu', { job: 'node-rtr-a' }, [1, 2, 3])];
-const drawn = (s: Setup) => s.root.querySelector('[data-testid="dmap-chart"]');
+const drawn = (s: Setup) => s.host.querySelector('[data-testid="dmap-chart"]');
+/** The regions: HTML on the plane of the chart layer in the stage, not in the svg. */
+const regions = (s: { host: HTMLElement }) => [...s.host.querySelectorAll<HTMLElement>('[data-dmap-chart]')];
 
 describe('ChartLayer', () => {
   it('keeps the dimensions of the region in the units of the rectangle when the viewport zooms', async () => {
@@ -139,18 +141,18 @@ describe('ChartLayer', () => {
     await act(async () => {
       s.root.setAttribute('viewBox', '0 0 200 100');
     });
-    expect(s.root.querySelector('foreignObject')?.getAttribute('width')).toBe('180');
-    expect(s.root.querySelector('foreignObject')?.getAttribute('height')).toBe('70');
+    expect(regions(s)[0].style.width).toBe('180px');
+    expect(regions(s)[0].style.height).toBe('70px');
     unmount();
     s.host.remove();
   });
   it('preserves the portal and the chart through a viewport revision', () => {
     const s = setup(historyClass, cpu());
     const { rerender, unmount } = render(layer(s));
-    const portal = s.root.querySelector('foreignObject');
+    const portal = regions(s)[0];
     expect(drawn(s)).toBeTruthy();
     rerender(layer(s, { revision: 2 }));
-    expect(s.root.querySelector('foreignObject') === portal).toBe(true);
+    expect(regions(s)[0] === portal).toBe(true);
     expect(drawn(s)).toBeTruthy();
     unmount();
     s.host.remove();
@@ -164,7 +166,7 @@ describe('ChartLayer', () => {
     const next = s.rebind([frame('cpu', { job: 'node-rtr-a' }, [10, 77], { min: 0, max: 100 })]);
     rerender(layer({ ...s, ...next }));
     expect(screen.getByTestId('bar-props').textContent).toBe('0..100: 77');
-    expect(s.root.querySelectorAll('foreignObject')).toHaveLength(1);
+    expect(regions(s)).toHaveLength(1);
     unmount();
     s.host.remove();
   });
@@ -199,7 +201,7 @@ describe('ChartLayer', () => {
     const click = vi.fn();
     s.host.addEventListener('click', click);
     const { unmount } = render(layer(s));
-    const region = s.root.querySelector('foreignObject') as SVGForeignObjectElement;
+    const region = regions(s)[0];
     expect(region.style.pointerEvents).toBe('none');
     expect((drawn(s) as HTMLElement).style.pointerEvents).toBe('auto');
     expect(region.style.overflow).toBe('hidden');
@@ -306,8 +308,9 @@ describe('ChartLayer', () => {
       const { unmount } = render(
         <ChartLayer root={root} cells={cells} viewport={host} charts={chartUsesV4(bound)} bound={bound} ctx={ctx} />
       );
-      expect(root.querySelectorAll('[data-testid="dmap-chart"]')).toHaveLength(2);
-      expect(observers).toBe(1);
+      expect(host.querySelectorAll('[data-testid="dmap-chart"]')).toHaveLength(2);
+      // one for the regions, one on the root attributes that move the plane (a pan, a zoom)
+      expect(observers).toBe(2);
       // the pass of the mount: each node on the paths from the shapes to the document, once
       const nodes = new Set<Element>();
       for (const shape of shapes) {
@@ -350,12 +353,17 @@ describe('ChartLayer', () => {
   it('creates only explicit regions after the primitive, follows its relative matrix and releases a clipped chart', async () => {
     const s = setup(historyClass, cpu());
     const { rerender, unmount } = render(layer(s));
-    expect(s.root.querySelectorAll('foreignObject')).toHaveLength(1);
-    const region = s.root.querySelector('foreignObject')!;
-    expect(s.rect.nextElementSibling).toBe(region);
-    expect(region.getAttribute('transform')).toBe('matrix(1 0 0 1 12 5)');
-    expect(region.getAttribute('width')).toBe('180');
+    expect(regions(s)).toHaveLength(1);
+    const region = regions(s)[0];
+    // no region in the svg: WebKit draws positioned HTML in a foreignObject at the wrong place
+    expect(s.root.querySelector('foreignObject')).toBeNull();
+    expect(region.closest('[data-dmap-chart-layer]')?.parentElement).toBe(s.host);
+    // the matrix of the rect in root user units (jsdom: its transform attributes), then the box of the rect
+    expect(region.style.transform).toMatch(/^matrix\(1, 0, 0, 1, 0, 0\) translate\(0px/);
+    expect(region.style.width).toBe('180px');
     expect(region.style.pointerEvents).toBe('none');
+    // a pointer on the region reads the card of its cell
+    expect(region.getAttribute('data-dmap-cell')).toBe('cpu');
     expect(drawn(s)).toBeTruthy();
     // a pan or a zoom writes the viewBox and settles with a new revision of the layer: the clipped chart releases
     s.move(500);
@@ -366,7 +374,8 @@ describe('ChartLayer', () => {
     rerender(layer(s, { revision: 3 }));
     expect(drawn(s)).toBeTruthy();
     unmount();
-    expect(s.root.querySelector('foreignObject')).toBeNull();
+    expect(regions(s)).toHaveLength(0);
+    expect(s.host.querySelector('[data-dmap-chart-layer]')).toBeNull();
     s.host.remove();
   });
 });
