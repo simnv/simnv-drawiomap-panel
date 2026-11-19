@@ -582,7 +582,7 @@ function DrawioMapPanelView(props: ViewProps) {
       className={styles.wrapper}
       ref={attachWrapper}
       // Shift held: the hover card and the focus hide, so the diagram under them shows; a pinned card stays
-      {...{ [SHIFT_ATTR]: hoverHidden ? '' : undefined }}
+      {...{ [SHIFT_ATTR]: hoverHidden && !pinned ? '' : undefined }}
       data-testid="dmap-panel"
       data-dmap-cells={stage.index.size}
       data-dmap-patched={result.patches.size}
