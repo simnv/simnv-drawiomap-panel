@@ -629,3 +629,23 @@ test('Hover focus off: a hovered link opens its card and nothing dims', async ({
   await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(0);
   await expect(panel.locator('g.dmap-link-focus-layer')).toHaveCount(0);
 });
+
+test('Shift hides the hover card and the focus while it is down', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+  page,
+}) => {
+  const { panel } = await openLabelled('percent', { createDiagram, gotoDashboardPage, readProvisionedDataSource });
+  const box = await clientBox(label(panel, ISP_A, 'a2b'));
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
+  await expect(panel.getByRole('tooltip')).toBeVisible();
+  const layer = panel.locator('g.dmap-link-focus-layer');
+  await expect(layer).toHaveCSS('display', 'inline');
+  await page.keyboard.down('Shift');
+  await expect(panel.getByRole('tooltip')).toHaveCount(0);
+  await expect(layer).toHaveCSS('display', 'none');
+  await page.keyboard.up('Shift');
+  await expect(panel.getByRole('tooltip')).toBeVisible();
+  await expect(layer).toHaveCSS('display', 'inline');
+});

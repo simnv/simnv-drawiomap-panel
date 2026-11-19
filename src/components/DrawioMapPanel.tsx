@@ -49,6 +49,7 @@ import { lastSampleTime } from '../query/frames';
 import { panelStaleColor } from '../binding/color';
 import { linkWidthRange } from '../binding/linkWidth';
 import type { Box } from '../legend/position';
+import { SHIFT_ATTR, useShiftHeld } from '../interact/useShiftHeld';
 import { canFitGridHeight, fitGridHeight, freeRows, useDashboardEditing } from '../stage/gridHeight';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
@@ -120,9 +121,16 @@ const styles = {
     & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
       display: inline;
     }
+    /* Shift held (an attribute of the panel wrapper): the focus hides, the diagram shows as it is */
+    [${SHIFT_ATTR}] & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
+      display: none;
+    }
     /* the chart regions are HTML over the svg: they fade with the scrim, except the charts of the kept cells */
     & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] [data-dmap-chart]:not(.${FOCUS_KEPT}) {
       opacity: 0.25;
+    }
+    [${SHIFT_ATTR}] & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] [data-dmap-chart] {
+      opacity: 1;
     }
     /* the copies above the scrim take no pointer: the hover and the click hit the cells below */
     & .${FOCUS_LAYER}, & .${FOCUS_LAYER} * {
@@ -523,6 +531,8 @@ function DrawioMapPanelView(props: ViewProps) {
     const ctx = endContextOf(diagramXml, stage.index);
     return focusMap(stage.index, ctx.ends, ctx.parents);
   }, [diagramXml, stage.index]);
+  // Shift held hides the hover (the card and the focus) while it stays down
+  const hoverHidden = useShiftHeld();
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
     ...cards,
     open,
@@ -571,6 +581,8 @@ function DrawioMapPanelView(props: ViewProps) {
     <div
       className={styles.wrapper}
       ref={attachWrapper}
+      // Shift held: the hover card and the focus hide, so the diagram under them shows; a pinned card stays
+      {...{ [SHIFT_ATTR]: hoverHidden ? '' : undefined }}
       data-testid="dmap-panel"
       data-dmap-cells={stage.index.size}
       data-dmap-patched={result.patches.size}
@@ -645,7 +657,7 @@ function DrawioMapPanelView(props: ViewProps) {
         />
       )}
       {legend}
-      {open && model && card
+      {open && model && card && !(hoverHidden && !pinned)
         ? portalSheet(
             <div ref={cardRef}>
               <Card
