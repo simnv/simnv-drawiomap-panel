@@ -2,7 +2,9 @@ import React from 'react';
 import { formattedValueToString, VizOrientation, type DisplayValue, type FieldConfig } from '@grafana/data';
 import { BarGaugeDisplayMode } from '@grafana/schema';
 import { BarGauge, useTheme2 } from '@grafana/ui';
-import { plotHeightOf, StaleHint } from './StaleHint';
+import { plotHeightOf, StaleHint, TextLine } from './StaleHint';
+
+const NO_BOUNDS_HINT = 'Set a meaningful minimum and maximum to show a bar.';
 
 export function BarGaugeView({
   value,
@@ -26,12 +28,11 @@ export function BarGaugeView({
     return (
       <div>
         {hint}
-        <span>{formattedValueToString(value)}</span>
-        {/* a line of its own below the value, in the secondary text colour */}
+        <TextLine>{formattedValueToString(value)}</TextLine>
         {bounded ? null : (
-          <small role="status" style={{ display: 'block', color: theme.colors.text.secondary }}>
-            Set a meaningful minimum and maximum to show a bar.
-          </small>
+          <TextLine role="status" title={NO_BOUNDS_HINT} color={theme.colors.text.secondary}>
+            {NO_BOUNDS_HINT}
+          </TextLine>
         )}
       </div>
     );

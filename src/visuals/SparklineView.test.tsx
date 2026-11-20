@@ -290,8 +290,12 @@ describe('BarGaugeView', () => {
     const value = { text: '30', numeric: 30, suffix: ' Mb/s' };
     const { rerender } = render(<BarGaugeView value={value} field={{}} width={180} height={70} />);
     expect(screen.getByText('30 Mb/s')).toBeTruthy();
-    // the hint is on a line of its own, not run on after the value
-    expect(screen.getByText(/Set a meaningful/).style.display).toBe('block');
+    // the hint is a text line of its own below the value, with the full text in its title for a narrow box
+    const hint = screen.getByRole('status');
+    expect(hint.textContent).toBe(hint.title);
+    expect(hint.textContent).toMatch(/^Set a meaningful/);
+    expect(hint.style.whiteSpace).toBe('nowrap');
+    expect(hint.style.color).not.toBe('');
     expect(screen.queryByTestId('grafana-bar')).toBeNull();
     rerender(<BarGaugeView value={value} field={{ min: 0, max: 100 }} width={180} height={70} />);
     expect(screen.getByTestId('grafana-bar')).toBeTruthy();
