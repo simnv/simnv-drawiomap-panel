@@ -173,11 +173,86 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
   await page.mouse.wheel(0, -100);
   await expect.poll(async () => (await read()).viewBox).not.toBe(resized.viewBox);
   const zoomed = await verify();
+  /**
+   * Mid-gesture: a pan or zoom frame moves the plane of the regions from its last read and the new viewBox, with no
+   * read of the screen CTM of the root after the first frame of the gesture. `track` counts those reads and logs the
+   * count at each live viewBox write (a batch of the viewBox only; a commit also writes the size), after the observer
+   * of the chart plane ran (it was made first, so it is notified first).
+   */
+  const track = () =>
+    panel.evaluate((el) => {
+      const root = el.querySelector('svg')!;
+      const w = window as unknown as { dmapReads: number; dmapLive: number[]; dmapWatch?: MutationObserver };
+      w.dmapReads = 0;
+      w.dmapLive = [];
+      root.getScreenCTM = () => {
+        w.dmapReads++;
+        return SVGSVGElement.prototype.getScreenCTM.call(root);
+      };
+      w.dmapWatch?.disconnect();
+      w.dmapWatch = new MutationObserver((records) => {
+        if (records.every((r) => r.attributeName === 'viewBox')) {
+          w.dmapLive.push(w.dmapReads);
+        }
+      });
+      w.dmapWatch.observe(root, {
+        attributes: true,
+        attributeFilter: ['viewBox', 'width', 'height', 'style', 'preserveAspectRatio'],
+      });
+    });
+  /** The live log, and the client boxes of the cell rect and of its region (left, top, right, bottom). */
+  const sample = () =>
+    panel.evaluate((el) => {
+      const anchor = el.querySelector<SVGRectElement>('[data-cell-id="chart-1"] rect')!.getBoundingClientRect();
+      const region = el.querySelector<HTMLElement>('[data-dmap-chart="chart-1"]')!.getBoundingClientRect();
+      const side = (r: DOMRect) => [r.left, r.top, r.right, r.bottom];
+      return {
+        live: (window as unknown as { dmapLive: number[] }).dmapLive.slice(),
+        cell: side(anchor),
+        region: side(region),
+      };
+    });
+  /** The region is on its cell, and the live frames after the first read no screen CTM of the root. */
+  const midGesture = async (s: Awaited<ReturnType<typeof sample>>) => {
+    expect(s.live.length).toBeGreaterThanOrEqual(2);
+    expect(s.live[s.live.length - 1]).toBe(s.live[0]);
+    s.cell.forEach((v, k) => expect(Math.abs(v - s.region[k])).toBeLessThan(0.5));
+    expect((await read()).error).toBeLessThan(0.5);
+  };
+  // a drag: one burst of moves with the button down, checked before the button goes up
+  await track();
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + 35, box.y + 110, { steps: 5 });
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + 115, { steps: 6 });
+  await midGesture(await sample());
   await page.mouse.up();
   await expect.poll(async () => (await read()).viewBox).not.toBe(zoomed.viewBox);
   await verify();
+  // a wheel stream: four events one frame apart (under the 120 ms settle of the stream), checked in the same task as
+  // the last one, before the stream commits
+  await track();
+  const wheel = await panel.evaluate(async (el) => {
+    const root = el.querySelector('svg')!;
+    const r = root.getBoundingClientRect();
+    const at = { clientX: r.left + r.width / 2, clientY: r.top + 100 };
+    for (let i = 0; i < 4; i++) {
+      if (i) {
+        await new Promise((done) => setTimeout(done, 16));
+      }
+      root.dispatchEvent(new WheelEvent('wheel', { ...at, deltaY: -40, bubbles: true, cancelable: true }));
+    }
+    // the observers of the last write run in this microtask checkpoint
+    await Promise.resolve();
+    const anchor = el.querySelector<SVGRectElement>('[data-cell-id="chart-1"] rect')!.getBoundingClientRect();
+    const region = el.querySelector<HTMLElement>('[data-dmap-chart="chart-1"]')!.getBoundingClientRect();
+    const side = (b: DOMRect) => [b.left, b.top, b.right, b.bottom];
+    return {
+      live: (window as unknown as { dmapLive: number[] }).dmapLive.slice(),
+      cell: side(anchor),
+      region: side(region),
+    };
+  });
+  expect(wheel.live).toHaveLength(4);
+  await midGesture(wheel);
   await panel.getByRole('button', { name: 'Reset zoom' }).click();
   await expect.poll(async () => (await read()).viewBox).toBe(resized.viewBox);
   await verify();

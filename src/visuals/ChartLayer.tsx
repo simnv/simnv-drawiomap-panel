@@ -2,8 +2,19 @@ import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { GrafanaTheme2, TimeRange } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
-import { CHART_LAYER_ATTR } from '../render/linkFocus';
-import { readChartAnchor, toMatrix, toRoot, type ChartAnchor, type Matrix } from '../render/geometry';
+import { CHART_LAYER_ATTR, FOCUS_ACTIVE } from '../render/linkFocus';
+import { LEGEND_ACTIVE, LEGEND_HIT, LEGEND_MEMBER } from '../legend/highlight';
+import {
+  invert,
+  multiply,
+  readChartAnchor,
+  toMatrix,
+  toRoot,
+  usable,
+  type ChartAnchor,
+  type Matrix,
+} from '../render/geometry';
+import { parseViewBox, type ViewBox } from '../render/zoom';
 import type { CellEntry, CellIndex } from '../types';
 import type { BindResultV4 } from '../binding/bindV4';
 import type { UsePath } from '../binding/report';
@@ -140,11 +151,50 @@ interface Watcher {
 }
 
 /**
- * The observers of a stage, shared by all its regions: one `MutationObserver` on the root (the attributes that move
- * or hide a cell; not the viewBox: a pan or a zoom moves the plane of the regions, and the `revision` of the layer
- * reads their visibility again when the view settles) and on the ancestors of the viewport, one `ResizeObserver`,
- * one `IntersectionObserver` for every shape, and the document and window listeners. A mutation runs only the
- * regions under its target, so a hover class on another cell runs none.
+ * The classes that the panel writes on the root and on the cell groups for a hover focus and a legend highlight. They
+ * dim a cell (opacity 0.2, never 0) and move nothing, so a region does not read again for them.
+ */
+const MARKS = new Set([FOCUS_ACTIVE, LEGEND_ACTIVE, LEGEND_MEMBER, LEGEND_HIT]);
+
+/** The attributes on a shape and its ancestors that move, resize or hide the shape. */
+const SHAPE_ATTRS: MutationObserverInit = {
+  attributes: true,
+  attributeOldValue: true,
+  attributeFilter: ['transform', 'style', 'class', 'x', 'y', 'width', 'height', 'display', 'visibility'],
+};
+
+const classesOf = (value: string | null) => new Set((value ?? '').split(/\s+/).filter(Boolean));
+
+/**
+ * The records that can change a region: all but the class records of a node whose classes, from the first old value
+ * of the batch to now, differ only by `MARKS` (a root that gets FOCUS_ACTIVE again differs by none).
+ */
+function relevant(records: MutationRecord[]): MutationRecord[] {
+  const before = new Map<Node, string | null>();
+  for (const r of records) {
+    if (r.attributeName === 'class' && !before.has(r.target)) {
+      before.set(r.target, r.oldValue);
+    }
+  }
+  const marksOnly = new Set<Node>();
+  for (const [node, old] of before) {
+    const was = classesOf(old);
+    const now = classesOf((node as Element).getAttribute('class'));
+    const changed = [...was].filter((c) => !now.has(c)).concat([...now].filter((c) => !was.has(c)));
+    if (changed.every((c) => MARKS.has(c))) {
+      marksOnly.add(node);
+    }
+  }
+  return records.filter((r) => r.attributeName !== 'class' || !marksOnly.has(r.target));
+}
+
+/**
+ * The observers of a stage, shared by all its regions: one `MutationObserver` on each shape and its ancestors up to
+ * the root (the attributes that move or hide a cell; not the viewBox: a pan or a zoom moves the plane of the regions,
+ * and the `revision` of the layer reads their visibility again when the view settles) and on the ancestors of the
+ * viewport, one `ResizeObserver`, one `IntersectionObserver` for every shape, and the document and window listeners.
+ * A mutation runs only the regions under its target, so a hover class on another cell runs none, and the marks of the
+ * panel (`MARKS`) run none. Not the subtree of the root: a paint, a label layer or a focus layer writes there.
  */
 interface StageWatch {
   add(watcher: Watcher): () => void;
@@ -171,7 +221,21 @@ function createStageWatch(root: SVGSVGElement, viewport: HTMLElement): StageWatc
     }
   };
   const runAll = () => run();
-  const onMutation = (records: MutationRecord[]) => {
+  let observer: MutationObserver | undefined;
+  // a shape and each node above it; a node that a removed region left keeps its observation: its records hit no region
+  const observeShape = (shape: Element) => {
+    if (!root.contains(shape)) {
+      return;
+    }
+    for (let node: Element | null = shape; node; node = node === root ? null : node.parentElement) {
+      observer?.observe(node, SHAPE_ATTRS);
+    }
+  };
+  const onMutation = (all: MutationRecord[]) => {
+    const records = relevant(all);
+    if (!records.length) {
+      return;
+    }
     const hit = new Set<Watcher>();
     for (const w of watchers) {
       if (records.some((r) => r.target === w.shape || r.target.contains(w.shape))) {
@@ -190,6 +254,7 @@ function createStageWatch(root: SVGSVGElement, viewport: HTMLElement): StageWatc
         seen.set(watcher.shape, !hasIntersection);
       }
       intersection?.observe(watcher.shape);
+      observeShape(watcher.shape);
       return () => {
         watchers.delete(watcher);
         fresh.delete(watcher);
@@ -205,15 +270,19 @@ function createStageWatch(root: SVGSVGElement, viewport: HTMLElement): StageWatc
     },
     intersecting: (shape) => seen.get(shape) ?? !hasIntersection,
     start() {
-      const observer = new MutationObserver(onMutation);
-      observer.observe(root, {
-        attributes: true,
-        subtree: true,
-        attributeFilter: ['transform', 'style', 'class', 'x', 'y', 'width', 'height', 'display', 'visibility'],
-      });
+      const mutations = new MutationObserver(onMutation);
+      observer = mutations;
+      observer.observe(root, SHAPE_ATTRS);
+      for (const w of watchers) {
+        observeShape(w.shape);
+      }
       // Ancestor visibility and panel clipping can change without an SVG mutation.
       for (let node: Element | null = viewport; node; node = node.parentElement) {
-        observer.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+        observer.observe(node, {
+          attributes: true,
+          attributeOldValue: true,
+          attributeFilter: ['style', 'class', 'hidden'],
+        });
       }
       const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(runAll);
       resize?.observe(viewport);
@@ -240,7 +309,8 @@ function createStageWatch(root: SVGSVGElement, viewport: HTMLElement): StageWatc
       window.addEventListener('resize', runAll);
       window.addEventListener('scroll', runAll, true);
       return () => {
-        observer.disconnect();
+        mutations.disconnect();
+        observer = undefined;
         resize?.disconnect();
         intersection?.disconnect();
         intersection = undefined;
@@ -276,11 +346,95 @@ function useStageWatch(props: ChartLayerProps, plane: HTMLDivElement | undefined
 const css = (m: Matrix) => `matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e}, ${m.f})`;
 
 /**
+ * The last read of the plane: the size of the svg box and the part of the plane transform that does not depend on the
+ * viewBox (`outer`, the plane transform times the inverse of the viewBox transform: the identity up to the rounding of
+ * the engine, which it keeps, so a pan frame gives what a read of the screen CTM gives).
+ */
+interface Frame {
+  width: number;
+  height: number;
+  align: string;
+  outer: Matrix;
+}
+
+const ALIGN = /^\s*(none|x(Min|Mid|Max)Y(Min|Mid|Max))(?:\s+(meet|slice))?\s*$/;
+
+/**
+ * The viewBox transform of SVG 2 (the viewBox into a viewport of width × height, by `preserveAspectRatio`);
+ * undefined for a value that it does not parse.
+ */
+function viewBoxTransform(vb: ViewBox, align: string, width: number, height: number): Matrix | undefined {
+  const parsed = ALIGN.exec(align || 'xMidYMid meet');
+  if (!parsed) {
+    return undefined;
+  }
+  const [, mode, ax, ay, fit] = parsed;
+  let sx = width / vb.w;
+  let sy = height / vb.h;
+  if (mode !== 'none') {
+    sx = sy = fit === 'slice' ? Math.max(sx, sy) : Math.min(sx, sy);
+  }
+  const shift = (pos: string | undefined, room: number) => (pos === 'Mid' ? room / 2 : pos === 'Max' ? room : 0);
+  return {
+    a: sx,
+    b: 0,
+    c: 0,
+    d: sy,
+    e: shift(ax, width - vb.w * sx) - vb.x * sx,
+    f: shift(ay, height - vb.h * sy) - vb.y * sy,
+  };
+}
+
+/** viewBox writes closer than this belong to one gesture (a drag, a wheel stream); the first of a gesture reads. */
+const GESTURE_GAP_MS = 150;
+
+const alignOf = (root: SVGSVGElement) => root.getAttribute('preserveAspectRatio') ?? '';
+/** The viewBox that the browser applies; undefined for none (`readViewBox` would fall back to the svg size). */
+const viewOf = (root: SVGSVGElement) => parseViewBox(root.getAttribute('viewBox'));
+
+/**
+ * The frame of a plane transform `m` read with the current viewBox in the svg box `box`. Undefined when `m` is not
+ * the viewBox transform in the box (a padding or a border on the svg, a rotation or a scale on one axis): each pan
+ * frame then reads the screen CTM, as a resize does.
+ */
+function frameOf(root: SVGSVGElement, m: Matrix, box: { width: number; height: number }): Frame | undefined {
+  const vb = viewOf(root);
+  const align = alignOf(root);
+  const t = vb && viewBoxTransform(vb, align, box.width, box.height);
+  if (!t || !usable(t)) {
+    return undefined;
+  }
+  const outer = multiply(m, invert(t));
+  const near = (v: number, to: number, tolerance: number) => Math.abs(v - to) <= tolerance;
+  // a linear part off by 1e-4 or an offset off by a twentieth of a pixel: the model does not hold
+  const plain =
+    near(outer.a, 1, 1e-4) &&
+    near(outer.b, 0, 1e-4) &&
+    near(outer.c, 0, 1e-4) &&
+    near(outer.d, 1, 1e-4) &&
+    near(outer.e, 0, 0.05) &&
+    near(outer.f, 0, 0.05);
+  return plain ? { width: box.width, height: box.height, align, outer } : undefined;
+}
+
+/** The plane transform for the current viewBox from the last read; undefined when it needs a new read. */
+function planeFor(root: SVGSVGElement, frame: Frame): Matrix | undefined {
+  const vb = viewOf(root);
+  const align = alignOf(root);
+  const t = vb && align === frame.align ? viewBoxTransform(vb, align, frame.width, frame.height) : undefined;
+  return t && usable(t) ? multiply(frame.outer, t) : undefined;
+}
+
+/**
  * The HTML plane of the regions: a box on the box of the svg in the stage (it clips the regions as the svg clips
  * its shapes) and, in it, a plane in root user units (its CSS transform is the screen CTM of the root). The regions
  * are HTML over the diagram, not a `foreignObject` in it: WebKit draws positioned HTML in a `foreignObject` (the
  * canvas of a sparkline) without the transforms of the svg, so it would stand at the wrong place and size. A pan or a
  * zoom writes only the transform of the plane; a region keeps its matrix in root user units.
+ *
+ * A pan or a zoom writes only the viewBox: the plane then follows from the last read (`Frame`) and the new viewBox,
+ * with no layout read in the frame. Any other change (a size, an alignment, a resize, the first place) reads the boxes
+ * and the screen CTM again.
  */
 function useRegionPlane(root: SVGSVGElement | undefined, viewport: HTMLElement | null): HTMLDivElement | undefined {
   const [plane, setPlane] = useState<HTMLDivElement>();
@@ -297,25 +451,50 @@ function useRegionPlane(root: SVGSVGElement | undefined, viewport: HTMLElement |
     clip.append(inner);
     // the stage is `position: relative` (its CSS): the clip box places itself in it
     viewport.append(clip);
+    let frame: Frame | undefined;
+    const written: Record<string, string> = {};
+    const write = (el: HTMLElement, name: string, value: string) => {
+      const key = `${el === clip ? 'clip' : 'plane'}.${name}`;
+      if (written[key] !== value) {
+        written[key] = value;
+        el.style.setProperty(name, value);
+      }
+    };
     const place = () => {
+      // every read before the first write: one layout
       const stage = viewport.getBoundingClientRect();
       const box = root.getBoundingClientRect();
+      const screen = toMatrix(typeof root.getScreenCTM === 'function' ? root.getScreenCTM() : null);
       const left = box.left - stage.left - viewport.clientLeft + viewport.scrollLeft;
       const top = box.top - stage.top - viewport.clientTop + viewport.scrollTop;
-      Object.assign(clip.style, {
-        left: `${left}px`,
-        top: `${top}px`,
-        width: `${box.width}px`,
-        height: `${box.height}px`,
-      });
-      const screen = toMatrix(typeof root.getScreenCTM === 'function' ? root.getScreenCTM() : null);
+      write(clip, 'left', `${left}px`);
+      write(clip, 'top', `${top}px`);
+      write(clip, 'width', `${box.width}px`);
+      write(clip, 'height', `${box.height}px`);
       // root user units to the box of the clip; the identity where the engine has no screen CTM (jsdom)
       const m = screen ? { ...screen, e: screen.e - box.left, f: screen.f - box.top } : undefined;
-      inner.style.transform = m ? css(m) : '';
+      write(inner, 'transform', m ? css(m) : '');
+      frame = m ? frameOf(root, m, box) : undefined;
+    };
+    let lastPan = -Infinity;
+    const pan = () => {
+      // the first frame of a gesture reads again: a change that no observer reports (a move of an ancestor) is
+      // repaired before the frames that follow it use the frame
+      const now = performance.now();
+      const first = now - lastPan > GESTURE_GAP_MS;
+      lastPan = now;
+      const m = !first && frame && planeFor(root, frame);
+      if (m) {
+        write(inner, 'transform', css(m));
+      } else {
+        place();
+      }
     };
     place();
     // a pan or a zoom writes the viewBox; a resize of the panel or a new view writes the size of the svg
-    const attrs = new MutationObserver(place);
+    const attrs = new MutationObserver((records) =>
+      records.every((r) => r.attributeName === 'viewBox') ? pan() : place()
+    );
     attrs.observe(root, {
       attributes: true,
       attributeFilter: ['viewBox', 'width', 'height', 'style', 'preserveAspectRatio'],
