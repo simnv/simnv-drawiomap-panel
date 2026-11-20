@@ -1,4 +1,3 @@
-import { createPortal } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { css } from '@emotion/css';
 import type { Field, PanelProps } from '@grafana/data';
@@ -8,7 +7,8 @@ import { useTheme2 } from '@grafana/ui';
 import { bindContextFor } from '../binding/context';
 import type { BindResultV4 } from '../binding/bindV4';
 import { buildCardV4, opensCard } from '../interact/cardModel';
-import { Card, SHEET_BELOW } from '../interact/Card';
+import { CardHost, hasContent } from '../interact/CardHost';
+import { pinnedCellOf } from '../interact/cardState';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
@@ -167,10 +167,6 @@ const styles = {
   `,
 };
 
-/** The sheet goes to document.body: position: fixed does not work below a CSS transform (the Grafana grid item). */
-const portalSheet = (card: React.ReactElement, sheet: boolean) =>
-  sheet && typeof document !== 'undefined' ? createPortal(card, document.body) : card;
-
 /** The name of a datasource from the datasource service of Grafana; undefined when the service does not know it. */
 function datasourceName(ref: DataSourceRef | string): string | undefined {
   try {
@@ -270,7 +266,7 @@ function DrawioMapPanelView(props: ViewProps) {
   const stage = useStage(containerRef, opts.diagram?.svg, DEFER_ABOVE);
   const interactiveRef = useRef<Marked>();
   const cards = useCardState();
-  const { card, dispatch, cardRef } = cards;
+  const { store: cardStore, dispatch } = cards;
   const [view, setView] = useState<ViewBox | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [wrapperEl, setWrapperEl] = useState<HTMLDivElement | null>(null);
@@ -291,7 +287,8 @@ function DrawioMapPanelView(props: ViewProps) {
   if (viewHash !== hash) {
     setViewHash(hash);
     setView(null);
-    dispatch({ type: 'diagram-changed' });
+    // the card host renders in this pass too and reads the dropped state
+    cardStore.adjust({ type: 'diagram-changed' });
   }
   // A new panel size or a new zoom option resets the live view to the configured view.
   const viewKey = `${width}x${height}|${zoomMode}|${zoomPercent}|${align}|${minScale}`;
@@ -364,16 +361,19 @@ function DrawioMapPanelView(props: ViewProps) {
   const stageHeight = Math.max(1, height - band.height);
   const bandRef = useRef<HTMLElement>(null);
 
-  // The card resolves its rows only for the open cell. A data refresh updates it in place.
-  const cardPatch = card ? result.patches.get(card.cellId) : undefined;
-  if (card && !cardPatch) {
-    // the bindings or the diagram changed and the cell has no patch now
-    dispatch({ type: 'stale-cell' });
+  // The open card: the bindings or the diagram changed and its cell has no patch now. The card host renders in this
+  // pass too (its bind result is new) and reads the dropped state.
+  const openCard = cardStore.get();
+  if (openCard && !result.patches.has(openCard.cellId)) {
+    cardStore.adjust({ type: 'stale-cell' });
   }
-  const cardCell = cardPatch ? card?.cellId : undefined;
-  const model = useMemo(
-    () => (cardCell === undefined ? undefined : buildCardV4(cardCell, shown, cardContext)),
-    [cardCell, shown, cardContext]
+  // The view reads only the cell of a pinned card: a hover from cell to cell renders the card host, not the view.
+  const pinnedCell = useSyncExternalStore(cardStore.subscribe, () => pinnedCellOf(cardStore.get()));
+  // The pinned card resolves its rows here: the pin, the focus and Shift depend on its content. A data refresh
+  // updates it in place.
+  const pinnedModel = useMemo(
+    () => (pinnedCell === undefined ? undefined : buildCardV4(pinnedCell, shown, cardContext)),
+    [pinnedCell, shown, cardContext]
   );
   // Only the cell kinds of the Hover kinds option open a card (the canvas, groups and the legend do not by default),
   // and only when the card has rows or links. Computed once per data update: these cells get the hand cursor.
@@ -423,8 +423,8 @@ function DrawioMapPanelView(props: ViewProps) {
     () => (legendOptions.timestamp === false ? undefined : lastSampleTime(data.series)),
     [legendOptions.timestamp, data.series]
   );
-  // A card without rows and links has nothing to show: the cell opens no card.
-  const open = !!model && (model.rows.length > 0 || model.links.length > 0);
+  // A pinned card without rows and links has nothing to show: it is not open, and the pointer hovers again.
+  const openPinned = hasContent(pinnedModel) ? pinnedCell : undefined;
 
   // Apply patches, redraw the overlay and the value labels once per frame.
   useStagePaint(stage, result.patches, {
@@ -544,9 +544,9 @@ function DrawioMapPanelView(props: ViewProps) {
   // Hover focus: `on`, `shift` (the focus only while Shift is held) or `off` (no focus, Shift does nothing)
   const focusMode = opts.hover.focus;
   const shiftHeld = useShiftHeld();
-  const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
+  const input = useCardInput({
     ...cards,
-    open,
+    pinnedCell: openPinned,
     wrapperRef,
     wrapperEl,
     stageRef: containerRef,
@@ -562,13 +562,14 @@ function DrawioMapPanelView(props: ViewProps) {
   // `on`: what Shift does depends on the moment it goes down. A hover card open: Shift hides the hover cards and
   // keeps the focus. No hover card: Shift turns the focus off for the whole map. A pinned card keeps its card and its
   // focus. `shift`: the focus shows only while Shift is held, also for a pinned card.
-  const hoverCardOpen = open && !!model && !!card && !pinned;
+  const pinned = openPinned !== undefined;
   const [shiftKind, setShiftKind] = useState<'card' | 'focus' | undefined>(undefined);
   const [shiftSeen, setShiftSeen] = useState(false);
   if (shiftSeen !== shiftHeld) {
     // state from the change of the key (adjust state during render): the kind holds until the key goes up
     setShiftSeen(shiftHeld);
-    setShiftKind(shiftHeld && focusMode === 'on' ? (hoverCardOpen ? 'card' : 'focus') : undefined);
+    // the card host writes whether a hover card is open: the view does not render for a hover
+    setShiftKind(shiftHeld && focusMode === 'on' ? (cardStore.hoverOpen() ? 'card' : 'focus') : undefined);
   }
   // the kind applies only in the mode `on`: another mode while the key is down masks it
   const cardHidden = focusMode === 'on' && shiftKind === 'card' && !pinned;
@@ -614,9 +615,9 @@ function DrawioMapPanelView(props: ViewProps) {
       data-dmap-hash={opts.diagram.hash}
       data-dmap-pending={stage.pending ? 'true' : undefined}
       style={{ colorScheme: theme.isDark ? 'dark' : 'light', touchAction }}
-      onClick={onClick}
-      onKeyDown={onKeyDown}
-      onPointerMove={onPointerMove}
+      onClick={input.onClick}
+      onKeyDown={input.onKeyDown}
+      onPointerMove={input.onPointerMove}
     >
       {/* Chrome does not carry pan restrictions into a scroll container: the stage needs its own touch-action. */}
       <StatusBand
@@ -681,29 +682,26 @@ function DrawioMapPanelView(props: ViewProps) {
         />
       )}
       {legend}
-      {open && model && card && !cardHidden
-        ? portalSheet(
-            <div ref={cardRef}>
-              <Card
-                key={`${card.cellId}:${pinned}`}
-                model={model}
-                cellId={card.cellId}
-                pinned={pinned}
-                x={card.x}
-                y={card.y}
-                width={width}
-                height={height}
-                anchor={wrapperEl}
-                timeRange={timeRange}
-                timeZone={timeZone}
-                onClose={close}
-                pointerRef={pointerRef}
-                moveRef={moveRef}
-              />
-            </div>,
-            width < SHEET_BELOW
-          )
-        : null}
+      <CardHost
+        store={cardStore}
+        cardRef={cards.cardRef}
+        pinnedCell={pinnedCell}
+        pinnedModel={pinnedModel}
+        bound={shown}
+        ctx={cardContext}
+        hidden={cardHidden}
+        width={width}
+        height={height}
+        anchor={wrapperEl}
+        wrapperRef={wrapperRef}
+        timeRange={timeRange}
+        timeZone={timeZone}
+        onClose={input.close}
+        finish={input.finish}
+        outside={input.outside}
+        pointerRef={input.pointerRef}
+        moveRef={input.moveRef}
+      />
     </div>
   );
 }

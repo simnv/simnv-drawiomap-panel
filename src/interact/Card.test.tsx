@@ -311,7 +311,8 @@ const follow = (props: FollowProps = {}) => {
   };
   return { pointer, rerender: (p: FollowProps) => view.rerender(ui(p)) };
 };
-const left = () => screen.getByTestId('dmap-card').style.left;
+/** The x of the floating card: a transform places it, its left stays 0. */
+const left = () => /^translate\(([-\d.]+px), [-\d.]+px\)$/.exec(screen.getByTestId('dmap-card').style.transform)?.[1];
 it('drops a queued pointer move when the card is pinned before the frame runs', () => {
   const flush = frames();
   const { pointer, rerender } = follow();
@@ -362,12 +363,56 @@ it('a pin after a move back to the entry point keeps the pin place, not the hove
 it('a queued pointer move leaves the viewport place of a sheet alone', () => {
   const flush = frames();
   const { pointer } = follow({ width: 400 });
-  const before = [left(), screen.getByTestId('dmap-card').style.top];
+  const place = () => {
+    const { left, top, transform } = screen.getByTestId('dmap-card').style;
+    return [left, top, transform];
+  };
+  const before = place();
   pointer(300, 200);
   flush();
   expect(screen.getByTestId('dmap-card').getAttribute('data-sheet')).toBe('true');
-  expect([left(), screen.getByTestId('dmap-card').style.top]).toEqual(before);
+  expect(place()).toEqual(before);
+  expect(before[2]).toBe('');
   vi.unstubAllGlobals();
+});
+it('places the floating card with a transform and clamps it to the panel', () => {
+  const flush = frames();
+  const { pointer } = follow();
+  const card = screen.getByTestId('dmap-card');
+  expect(card.style.left).toBe('0px');
+  expect(card.style.top).toBe('0px');
+  expect(card.style.transform).toBe('translate(34px, 34px)');
+  // a pointer at the right edge: the card flips to the left of the pointer and stays in the panel
+  pointer(790, 20);
+  flush();
+  const x = parseFloat(left()!);
+  expect(x).toBeGreaterThanOrEqual(0);
+  expect(x + 280).toBeLessThanOrEqual(800);
+  expect(card.style.left).toBe('0px');
+  vi.unstubAllGlobals();
+});
+it('keeps a hover card mounted from cell to cell and defers the charts of the new cell again', () => {
+  transitions.queue = [];
+  try {
+    const model = cardOf(historyRow({ key: 'h', title: 'CPU', text: '2 %' }));
+    const view = render(<Card model={model} cellId="a" pinned={false} x={20} y={20} width={800} height={600} />);
+    act(() => {
+      transitions.queue?.splice(0).forEach((cb) => cb());
+    });
+    const shown = screen.getByTestId('dmap-card');
+    expect(screen.getByTestId('dmap-card-spark').childElementCount).toBeGreaterThan(0);
+    view.rerender(<Card model={{ ...model }} cellId="b" pinned={false} x={40} y={40} width={800} height={600} />);
+    expect(screen.getByTestId('dmap-card')).toBe(shown);
+    expect(shown.getAttribute('data-dmap-cell')).toBe('b');
+    // the first commit of the new cell has the empty chart box; the chart comes in the transition
+    expect(screen.getByTestId('dmap-card-spark').childElementCount).toBe(0);
+    act(() => {
+      transitions.queue?.splice(0).forEach((cb) => cb());
+    });
+    expect(screen.getByTestId('dmap-card-spark').childElementCount).toBeGreaterThan(0);
+  } finally {
+    transitions.queue = null;
+  }
 });
 it.each([
   ['floating', 800, 'floating'],
