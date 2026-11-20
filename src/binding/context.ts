@@ -1,4 +1,11 @@
-import { getDisplayProcessor, type GrafanaTheme2, type ScopedVars, type ThresholdsConfig } from '@grafana/data';
+import {
+  type DisplayProcessor,
+  type Field,
+  getDisplayProcessor,
+  type GrafanaTheme2,
+  type ScopedVars,
+  type ThresholdsConfig,
+} from '@grafana/data';
 import type { BindContext, CardContext, LinkWidthOptions, SeriesInfo } from '../types';
 
 export interface ContextInputs {
@@ -10,9 +17,24 @@ export interface ContextInputs {
   linkWidth: LinkWidthOptions;
 }
 
-/** Grafana attaches `field.display` (effective config with overrides) to panel data. Fall back for other data. */
+/**
+ * Grafana attaches `field.display` (effective config with overrides) to panel data. Fall back for other data. The
+ * fallback processor is built once for each field object: the theme and the time zone belong to this context, so the
+ * cache dies with it and a theme change (a new context) builds new processors.
+ */
 function displayOf({ theme, timeZone }: Pick<ContextInputs, 'theme' | 'timeZone'>) {
-  return (s: SeriesInfo, v: number) => (s.field.display ?? getDisplayProcessor({ field: s.field, theme, timeZone }))(v);
+  const built = new WeakMap<Field, DisplayProcessor>();
+  return (s: SeriesInfo, v: number) => {
+    if (s.field.display) {
+      return s.field.display(v);
+    }
+    let processor = built.get(s.field);
+    if (!processor) {
+      processor = getDisplayProcessor({ field: s.field, theme, timeZone });
+      built.set(s.field, processor);
+    }
+    return processor(v);
+  };
 }
 
 /** The inputs of `bindPlan` for the panel and for the bindings popup. */
