@@ -1561,9 +1561,46 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
       await near('bg', 75, 31);
       expect(await tooltip()).toBe('A ↔ B');
+      // the focus is drawn; the attribute hides it
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      // a pinned card keeps its focus while the key is still down
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
       fireEvent.keyUp(window, { key: 'Shift' });
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+    });
+
+    it('Shift over a hover card keeps the cards hidden while the pointer moves to another cell', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      fireEvent.keyDown(window, { key: 'Shift' });
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+      await hover('na');
+      await act(async () => {});
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      expect(screen.getByTestId('dmap-panel').hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      fireEvent.keyUp(window, { key: 'Shift' });
+      expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
+    });
+
+    it('a change of Hover focus while Shift is down ends what Shift hides', async () => {
+      const { rerender } = render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      fireEvent.keyDown(window, { key: 'Shift' });
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+      rerender(
+        <DrawioMapPanel
+          {...structurePanel(ALL, { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'off' } })}
+        />
+      );
+      // the new options draw the diagram again: hover again
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      fireEvent.keyUp(window, { key: 'Shift' });
     });
 
     it('Hover focus With Shift: the focus shows only while Shift is down, and the card stays', async () => {

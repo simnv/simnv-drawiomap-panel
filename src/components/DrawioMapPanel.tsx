@@ -539,8 +539,7 @@ function DrawioMapPanelView(props: ViewProps) {
     const ctx = endContextOf(diagramXml, stage.index);
     return focusMap(stage.index, ctx.ends, ctx.parents);
   }, [diagramXml, stage.index]);
-  // Hover focus `on`: Shift held hides the focus and the hover card. `shift`: the focus shows only while Shift is
-  // held; the card stays. `off`: no focus, Shift does nothing.
+  // Hover focus: `on`, `shift` (the focus only while Shift is held) or `off` (no focus, Shift does nothing)
   const focusMode = opts.hover.focus;
   const shiftHeld = useShiftHeld();
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
@@ -559,7 +558,7 @@ function DrawioMapPanelView(props: ViewProps) {
     focusOf: focusMode === 'off' ? undefined : focusOf,
   });
   // `on`: what Shift does depends on the moment it goes down. A hover card open: Shift hides the hover cards and
-  // keeps the focus. No hover: Shift turns the focus off for the whole map. A pinned card keeps its card and its
+  // keeps the focus. No hover card: Shift turns the focus off for the whole map. A pinned card keeps its card and its
   // focus. `shift`: the focus shows only while Shift is held, also for a pinned card.
   const hoverCardOpen = open && !!model && !!card && !pinned;
   const [shiftKind, setShiftKind] = useState<'card' | 'focus' | undefined>(undefined);
@@ -569,8 +568,9 @@ function DrawioMapPanelView(props: ViewProps) {
     setShiftSeen(shiftHeld);
     setShiftKind(shiftHeld && focusMode === 'on' ? (hoverCardOpen ? 'card' : 'focus') : undefined);
   }
-  const cardHidden = shiftKind === 'card' && !pinned;
-  const focusHidden = focusMode === 'shift' ? !shiftHeld : shiftKind === 'focus' && !pinned;
+  // a mode change while the key is down ends the kind
+  const cardHidden = focusMode === 'on' && shiftKind === 'card' && !pinned;
+  const focusHidden = focusMode === 'shift' ? !shiftHeld : focusMode === 'on' && shiftKind === 'focus' && !pinned;
 
   if (!opts.diagram?.svg) {
     return (
