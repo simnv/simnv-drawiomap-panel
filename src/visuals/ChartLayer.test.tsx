@@ -319,13 +319,13 @@ describe('ChartLayer', () => {
         }
       }
       expect(styles).toBe(nodes.size);
-      // a hover class on the plain cell reaches no region: nothing is read
+      // a hover class on the plain cell reaches no region: the observer does not watch it, nothing is read
       styles = 0;
       callbacks = 0;
       await act(async () => {
         cells.get('other')!.group.setAttribute('class', 'dmap-hover');
       });
-      expect(callbacks).toBe(1);
+      expect(callbacks).toBe(0);
       expect(styles).toBe(0);
       // a class on the cell of one chart runs that region only: its own nodes, once
       await act(async () => {
