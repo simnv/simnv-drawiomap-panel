@@ -568,7 +568,7 @@ function DrawioMapPanelView(props: ViewProps) {
     setShiftSeen(shiftHeld);
     setShiftKind(shiftHeld && focusMode === 'on' ? (hoverCardOpen ? 'card' : 'focus') : undefined);
   }
-  // a mode change while the key is down ends the kind
+  // the kind applies only in the mode `on`: another mode while the key is down masks it
   const cardHidden = focusMode === 'on' && shiftKind === 'card' && !pinned;
   const focusHidden = focusMode === 'shift' ? !shiftHeld : focusMode === 'on' && shiftKind === 'focus' && !pinned;
 
