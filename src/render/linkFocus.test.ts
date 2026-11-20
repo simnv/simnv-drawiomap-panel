@@ -22,7 +22,7 @@ function stage() {
       <g data-cell-id="L"><path class="L"/></g>
     </g>
     <g data-cell-id="b" id="own-id"><rect class="b"/></g>
-    <g data-cell-id="M"><path class="M" pointer-events="stroke"/><g data-cell-id="M-text"><foreignObject class="M-text" pointer-events="none"><div xmlns="http://www.w3.org/1999/xhtml" style="color: red; pointer-events: all;">M</div></foreignObject></g></g>
+    <g data-cell-id="M"><path class="M" pointer-events="stroke"/><g data-cell-id="M-text"><foreignObject class="M-text" pointer-events="none"><div xmlns="http://www.w3.org/1999/xhtml" style="color: red; pointer-events: all;">M<span style="POINTER-EVENTS: ALL">x</span></div></foreignObject></g></g>
     <g data-cell-id="L-label"><text class="L-label">uplink</text></g>
     <g data-cell-id="a-icon"><image class="a-icon" href="data:image/png;base64,AA=="/><a href="https://example.com"><text>doc</text></a></g>
   </g>
@@ -81,7 +81,10 @@ describe('focusCells', () => {
     const html = layer.querySelector<HTMLElement>('foreignObject.M-text div')!;
     expect(html.style.pointerEvents).toBe('');
     expect(html.style.color).toBe('red');
+    // a property name in upper case is the same property
+    expect(layer.querySelector<HTMLElement>('foreignObject.M-text span')!.style.pointerEvents).toBe('');
     expect(root.querySelector<HTMLElement>('[data-cell-id="M-text"] div')!.style.pointerEvents).toBe('all');
+    expect(root.querySelector<HTMLElement>('[data-cell-id="M-text"] span')!.style.pointerEvents).toBe('all');
     expect(layer.getAttribute('pointer-events')).toBe('none');
     // an icon keeps its picture; a link in a label is no tab stop
     expect(layer.querySelector('image')?.getAttribute('href')).toMatch(/^data:/);

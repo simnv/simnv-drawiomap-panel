@@ -132,7 +132,8 @@ export function useCardInput(args: InputArgs) {
         return;
       }
       if (keep !== undefined) {
-        // a pinned cell with no focus drawn yet: draw it at the new view
+        // a pinned cell that does not hold the mark yet, or that has no focus of its own (a cell with no links): mark it
+        // again at the new view; for a cell with no links the focus stays clear
         near.current = undefined;
       }
       setNear(keep);

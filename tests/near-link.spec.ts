@@ -78,6 +78,22 @@ test.describe('a thin link near the pointer', () => {
     await expect(panel.locator.locator(`[data-cell-id="${spot!.cell}"] g.dmap-overlay.dmap-near`)).toHaveCount(1);
     await expect(panel.locator.locator('g.dmap-link-focus-layer')).toHaveCSS('display', 'inline');
     await expect(panel.locator.getByTestId('dmap-stage')).toHaveCSS('cursor', 'pointer');
+    // the copies above the scrim take no pointer: beside the link and on its stroke, the hit is a cell below
+    const inLayer = await page.evaluate(
+      ([x, y]) => !!document.elementFromPoint(x, y)?.closest('.dmap-link-focus-layer'),
+      [spot!.x, spot!.y]
+    );
+    expect(inLayer, 'the point beside the link hits no copy').toBe(false);
+    const onStroke = await panel.locator.evaluate((host, cell) => {
+      const half = host.querySelector<SVGPolylineElement>(`[data-cell-id="${CSS.escape(cell)}"] polyline.dmap-half`)!;
+      const p = half.getPointAtLength(half.getTotalLength() / 2).matrixTransform(half.getScreenCTM()!);
+      const under = document.elementFromPoint(p.x, p.y);
+      return { hit: !!under, inLayer: !!under?.closest('.dmap-link-focus-layer') };
+    }, spot!.cell);
+    expect(onStroke, 'the stroke of the focused link hits the original, not its copy').toEqual({
+      hit: true,
+      inLayer: false,
+    });
     // away from every link: the card closes and the mark goes
     await page.mouse.move(1, 1);
     await expect(panel.locator.getByTestId('dmap-card')).toHaveCount(0);

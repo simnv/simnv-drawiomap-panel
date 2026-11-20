@@ -147,7 +147,7 @@ function copyOf(el: Element, m: DOMMatrix | null): Element {
       }
     }
     // draw.io writes `pointer-events: all` in the style of an HTML label
-    if (node.getAttribute('style')?.includes('pointer-events')) {
+    if (/pointer-events/i.test(node.getAttribute('style') ?? '')) {
       (node as HTMLElement | SVGElement).style.removeProperty('pointer-events');
     }
     // a link in a label is no second tab stop (an <image> keeps its href: it is the picture)
@@ -234,7 +234,9 @@ const focused = new WeakMap<
  * below. Undefined, or a cell not in the index, clears.
  *
  * All reads come before all writes (the page colour, the kept elements and their transforms; then the copies, the
- * scrim colour and the classes): a hover switch forces at most one layout, not one for each read.
+ * scrim colour and the classes), so a call forces at most one style and layout pass, not one for each read: none
+ * when the layout is clean at the call, one at the first read when a write before it left the layout dirty (the near
+ * mark of the hover, which the copies must show, or a new focus layer).
  */
 export function focusCells(
   root: SVGSVGElement,
@@ -301,6 +303,17 @@ export function refreshFocus(root: SVGSVGElement, index: CellIndex): void {
   const f = focused.get(root);
   if (f) {
     focusCells(root, index, f.index === index ? f.cellId : undefined, f.ends);
+  }
+}
+
+/**
+ * Draws the copies of the focused cells again after a change in the cells with no paint (the cuts in the strokes
+ * after a late web font): the copies keep the old state until then, also while a pinned card keeps the focus.
+ */
+export function redrawFocus(root: SVGSVGElement): void {
+  const f = focused.get(root);
+  if (f) {
+    focusCells(root, f.index, f.cellId, f.ends);
   }
 }
 
