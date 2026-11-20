@@ -323,8 +323,11 @@ const Row = memo(function Row({
   );
 });
 
-/** The CSS transform that puts the floating card at (x, y) in the panel: its left and top stay 0. */
-export const translate = (x: number, y: number) => `translate(${x}px, ${y}px)`;
+/**
+ * The CSS transform that puts the floating card at (x, y) in the panel: its left and top stay 0. Whole pixels: a
+ * transform to a fraction of a pixel blurs the text.
+ */
+export const translate = (x: number, y: number) => `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
 
 /**
  * Writes the place of the floating card for a pointer at (x, y) in the panel. The height is read before the write. A
