@@ -56,6 +56,10 @@ export interface ConfiguredCardRow {
   config?: FieldConfig;
   /** the reduced value of a `value` row, for the bar gauge of a chart region */
   display?: DisplayValue;
+  /** the link of the row (its `url`): a click on the row in a pinned card opens it */
+  href?: string;
+  /** `_blank` for a new tab; undefined for the current tab */
+  target?: '_blank';
 }
 
 /** Height in px of the chart of a single-direction history row. */
@@ -184,8 +188,9 @@ interface UseData {
  * The card of a v4 cell (spec 3.7, 3.5 step 6, 3.6): a status row when the status is not normal, then the rows of the
  * effective class in their order. A `history` row draws up to MAX_LINES lines in one `yDomain` range, a `value` row
  * reduces across its series, an `updown` row reduces each direction at each timestamp. The URL of the cell, the data
- * links of its series and the `drilldown` rows are the links, in this order. A row is stale when one of its series is
- * stale; on a relative range the row gives the deadline (`staleAfter`) and the card reads the clock.
+ * links of its series and the `drilldown` rows are the footer links, in this order; the `url` of another row is the
+ * link of that row (`href`). A row is stale when one of its series is stale; on a relative range the row gives the
+ * deadline (`staleAfter`) and the card reads the clock.
  */
 export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContextV4): CardModelV4 {
   const meta = ctx.index.get(cellId)?.meta;
@@ -221,6 +226,8 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
   }
   slots.forEach((slot, i) => {
     const key = `row-${i}`;
+    // the link of the row, in the tab rules of the footer links
+    const link = slot.url ? { href: slot.url, target: tabOf(slot.newTab, slot.url) } : {};
     if (slot.kind === 'metadata') {
       card.rows.push({
         key,
@@ -229,6 +236,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
         text: slot.text ?? '',
         state: 'ready',
         stale: false,
+        ...link,
       });
       return;
     }
@@ -247,7 +255,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
     }
     const row = queryRowV4(key, slot.kind, slot.path, reader, ctx);
     if (row) {
-      card.rows.push(row);
+      card.rows.push({ ...row, ...link });
     }
   });
   return card;

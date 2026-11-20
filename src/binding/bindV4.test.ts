@@ -1057,6 +1057,40 @@ describe('bindV4: the engine', () => {
     ]);
   });
 
+  it('the url of a row resolves per cell; a url that does not resolve or is not allowed drops the link, not the row', () => {
+    const r = run(
+      hostConfig({
+        host: {
+          ...HOST,
+          rows: [
+            { kind: 'metadata', label: 'Role', text: '${key}', url: '/d/role?var-job=${key}&r=${role}' },
+            { kind: 'history', query: 'up', url: 'https://example.com/${key}', newTab: false },
+            { kind: 'value', query: 'up', url: 'javascript:alert(${key})' },
+          ],
+        },
+      }),
+      [
+        ['a', { bind: 'host', key: 'a', role: 'edge' }],
+        ['b', { bind: 'host', key: 'b' }],
+      ],
+      [frame('up', { job: 'a' }), frame('up', { job: 'b' })]
+    );
+    expect(patch(r, 'a').rowsV4).toEqual([
+      { path: 'classes.host.rows[0]', kind: 'metadata', label: 'Role', text: 'a', url: '/d/role?var-job=a&r=edge' },
+      { path: 'classes.host.rows[1]', kind: 'history', url: 'https://example.com/a', newTab: false },
+      { path: 'classes.host.rows[2]', kind: 'value' },
+    ]);
+    // b has no role: the metadata row stays, with no link
+    expect(patch(r, 'b').rowsV4).toEqual([
+      { path: 'classes.host.rows[0]', kind: 'metadata', label: 'Role', text: 'b' },
+      { path: 'classes.host.rows[1]', kind: 'history', url: 'https://example.com/b', newTab: false },
+      { path: 'classes.host.rows[2]', kind: 'value' },
+    ]);
+    expect(entries(r.report, 'missing-attr')).toEqual([
+      { kind: 'missing-attr', cls: 'host', path: 'classes.host.rows[0].url', attr: 'role', cellIds: ['b'] },
+    ]);
+  });
+
   it('the uses of each bound cell are in the result', () => {
     const r = run(netL2Pilot(), [['h', { bind: 'host', key: 'node-a' }]], [], {
       refs: ['scrape_up', 'host_cpu', 'host_mem', 'host_uptime'],

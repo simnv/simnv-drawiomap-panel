@@ -36,6 +36,11 @@ export interface ChartHoverProps {
   label?: string;
   /** the series after the drawn lines: the tooltip ends with "+N more" (spec 3.7) */
   more?: number;
+  /**
+   * The chart is in a row with a link: a click or a tap opens the link. The tooltip shows on a mouse or pen hover
+   * only: a press and a touch do not scrub, and the chart is not a stop of the Tab order (the row link is).
+   */
+  linked?: boolean;
   children: React.ReactNode;
 }
 
@@ -247,11 +252,22 @@ interface Hover {
 /**
  * Crosshair and the standard Grafana tooltip (time header, colour, name and value of each series) over a
  * card chart. It reads the prepared history only and never changes the chart or its Y range. It adds no
- * click handler, so the chart keeps its link action. Off when the card is not pinned.
+ * click handler, so a click on the chart of a row with a link opens the link (`linked`). Off when the card is not
+ * pinned.
  * Keyboard: the chart is focusable, Left and Right move the sample, Escape hides the tooltip, Enter follows
  * the row link.
  */
-export function ChartHover({ enabled, series, timeRange, timeZone, width, label, more, children }: ChartHoverProps) {
+export function ChartHover({
+  enabled,
+  series,
+  timeRange,
+  timeZone,
+  width,
+  label,
+  more,
+  linked = false,
+  children,
+}: ChartHoverProps) {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
   const ref = useRef<HTMLDivElement>(null);
@@ -350,6 +366,10 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
     setHover(next);
   };
   const move = (ev: React.PointerEvent) => {
+    // in a linked row a press or a finger is for the link: no sample
+    if (linked && (ev.pointerType === 'touch' || ev.type === 'pointerdown')) {
+      return;
+    }
     pending.current = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? 'touch' : 'mouse' };
     if (frame.current !== undefined) {
       return;
@@ -406,9 +426,11 @@ export function ChartHover({ enabled, series, timeRange, timeZone, width, label,
       style={width === undefined ? undefined : { width }}
       data-testid="dmap-chart-hover"
       data-tooltip-open={rows ? 'true' : undefined}
-      tabIndex={0}
-      role="group"
-      aria-label={`${label ?? series[0]?.name ?? 'Chart'}: use the left and right arrow keys to read values`}
+      tabIndex={linked ? undefined : 0}
+      role={linked ? undefined : 'group'}
+      aria-label={
+        linked ? undefined : `${label ?? series[0]?.name ?? 'Chart'}: use the left and right arrow keys to read values`
+      }
       onPointerDown={move}
       onPointerMove={move}
       onPointerLeave={(ev) => {

@@ -39,6 +39,9 @@ function itemParts(item: ClassV4 | OverrideV4): {
     } else {
       block(`${at}.match`, row.match);
     }
+    if (row.kind !== 'drilldown') {
+      template(`${at}.url`, row.url, 'url');
+    }
   });
   return { blocks, templates };
 }

@@ -121,7 +121,7 @@ use it. The hostile inputs are in `src/render/sanitize.test.ts`.
 
 ## Card links
 
-The `url` of a class and the `drilldown` rows are templates. The panel fills the cell values (percent-encoded and
+The `url` of a class, the `drilldown` rows and the `url` of another card row are templates. All three take the same steps and the same check. The panel fills the cell values (percent-encoded and
 shielded), runs `replaceVariables`, then checks the final text (`src/binding/url.ts`). It shows a relative URL, an
 `http` or `https` URL, and an `ssh://` URL. Every other scheme is not shown.
 

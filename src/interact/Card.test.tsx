@@ -264,6 +264,96 @@ it('shows the hint "Click for links" and no close button in a hover card with li
   expect(screen.queryByRole('link', { name: 'Docs' })).toBeNull();
 });
 
+describe('row links', () => {
+  /** The link that a click on `el` follows: the default action of the closest <a>, if no handler prevents it. */
+  const followed = (el: Element) => {
+    let href: string | null = null;
+    const listen = (ev: MouseEvent) => {
+      href = ev.defaultPrevented ? null : ((ev.target as Element).closest('a')?.getAttribute('href') ?? null);
+      ev.preventDefault(); // jsdom does not navigate
+    };
+    document.addEventListener('click', listen);
+    fireEvent.click(el);
+    document.removeEventListener('click', listen);
+    return href;
+  };
+  const linkedHistory = historyRow({ href: '/d/traffic?var-job=a', target: '_blank' });
+  it('makes a pinned row with a url one link: a click on its label, value and chart opens it', () => {
+    renderCard(cardOf(linkedHistory, { ...valueRow(), key: 'v2' }));
+    const [row, plain] = screen.getAllByTestId('dmap-card-row');
+    expect(row.tagName).toBe('A');
+    expect(row.getAttribute('href')).toBe('/d/traffic?var-job=a');
+    expect(row.getAttribute('target')).toBe('_blank');
+    expect(row.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.getByRole('link', { name: 'Open Traffic: 2' })).toBe(row);
+    const [title] = screen.getAllByTestId('dmap-card-title');
+    const [value] = screen.getAllByTestId('dmap-card-value');
+    expect(followed(title)).toBe('/d/traffic?var-job=a');
+    expect(followed(value)).toBe('/d/traffic?var-job=a');
+    expect(followed(screen.getByTestId('grafana-sparkline'))).toBe('/d/traffic?var-job=a');
+    // a row with no url is not a link
+    expect(plain.tagName).toBe('DIV');
+    expect(followed(plain)).toBeNull();
+  });
+  it('reaches the row link with the keyboard; the chart in it takes no focus', () => {
+    renderCard(cardOf(linkedHistory));
+    const row = screen.getByTestId('dmap-card-row') as HTMLAnchorElement;
+    row.focus();
+    expect(document.activeElement).toBe(row);
+    // a native link: the browser follows it on Enter
+    expect(row.href).toContain('/d/traffic?var-job=a');
+    const chart = screen.getByTestId('dmap-chart-hover');
+    expect(chart.hasAttribute('tabindex')).toBe(false);
+    expect(chart.getAttribute('role')).toBeNull();
+  });
+  it('opens the current tab with no rel for a row without a new tab', () => {
+    renderCard(cardOf({ ...valueRow(), href: 'ssh://admin@node-a' }));
+    const row = screen.getByTestId('dmap-card-row');
+    expect(row.getAttribute('href')).toBe('ssh://admin@node-a');
+    expect(row.hasAttribute('target')).toBe(false);
+    expect(row.hasAttribute('rel')).toBe(false);
+  });
+  it('shows the chart tooltip of a linked row on a mouse hover, not on a press or a touch', () => {
+    renderCard(cardOf(linkedHistory));
+    const el = screen.getByTestId('dmap-chart-hover');
+    el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 40, right: 100, bottom: 40 }) as DOMRect;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    try {
+      fireEvent.pointerDown(el, { clientX: 100, clientY: 5, pointerType: 'touch' });
+      fireEvent.pointerMove(el, { clientX: 100, clientY: 5, pointerType: 'touch' });
+      fireEvent.pointerDown(el, { clientX: 100, clientY: 5, pointerType: 'mouse' });
+      expect(screen.queryByTestId('series-table')).toBeNull();
+      fireEvent.pointerMove(el, { clientX: 100, clientY: 5, pointerType: 'mouse' });
+      expect(screen.getByTestId('series-table').textContent).toBe('Traffic=2');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('makes the rows of an inline card links too', () => {
+    render(
+      <Card
+        model={cardOf({ ...valueRow(), href: '/d/x' })}
+        pinned={false}
+        variant="inline"
+        width={300}
+        timeRange={getDefaultTimeRange()}
+      />
+    );
+    expect(screen.getByTestId('dmap-card-row').tagName).toBe('A');
+  });
+  it('keeps the rows of a hover card plain, and the hover card hints at the links', () => {
+    render(
+      <Card model={cardOf({ ...valueRow(), href: '/d/x' })} pinned={false} x={0} y={0} width={800} height={600} />
+    );
+    expect(screen.getByTestId('dmap-card-row').tagName).toBe('DIV');
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByText('Click for links')).toBeTruthy();
+  });
+});
+
 /** A manual frame queue for the card that follows the pointer. */
 const frames = () => {
   const queue = new Map<number, FrameRequestCallback>();

@@ -141,6 +141,18 @@ const getStyles = (theme: GrafanaTheme2) => ({
       text-decoration: none;
     }
   `,
+  // a row with a link: the whole row is the link; the focus ring comes from the theme
+  rowLink: css`
+    cursor: pointer;
+    &:focus-visible {
+      outline: 2px solid ${theme.colors.primary.border};
+      outline-offset: -2px;
+    }
+    &:hover [data-testid='dmap-card-title'],
+    &:focus-visible [data-testid='dmap-card-title'] {
+      color: ${theme.colors.text.link};
+    }
+  `,
   rowHead: css`
     display: flex;
     align-items: baseline;
@@ -205,6 +217,7 @@ const Row = memo(function Row({
   timeRange,
   timeZone,
   pinned,
+  linked,
   styles,
   width,
   chartsReady,
@@ -213,6 +226,8 @@ const Row = memo(function Row({
   timeRange: TimeRange;
   timeZone?: string;
   pinned: boolean;
+  /** the row is a link (`row.href`): a pinned or an inline card; the hover card ignores the pointer */
+  linked: boolean;
   styles: ReturnType<typeof getStyles>;
   width: number;
   /** false in the first commit of a hover card: the chart rows show an empty box of their final height */
@@ -244,9 +259,11 @@ const Row = memo(function Row({
     }));
   }, [directions, lines, format]);
   const chartH = chartHeight(row);
+  // the name of the link: the row label, else its text (a metadata row may have an empty label)
+  const linkName = `Open ${row.title || row.text}`;
   const body = (
     <>
-      <div className={styles.rowHead}>
+      <div className={styles.rowHead} title={linked ? linkName : undefined}>
         <span
           className={styles.rowTitle}
           data-testid="dmap-card-title"
@@ -284,7 +301,14 @@ const Row = memo(function Row({
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark" />
       ) : directions && row.domain ? (
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
-          <ChartHover enabled={pinned} series={hoverSeries} timeRange={timeRange} timeZone={timeZone} label={row.title}>
+          <ChartHover
+            enabled={pinned}
+            linked={linked}
+            series={hoverSeries}
+            timeRange={timeRange}
+            timeZone={timeZone}
+            label={row.title}
+          >
             <MirrorSparkline
               directions={directions}
               domain={row.domain}
@@ -299,6 +323,7 @@ const Row = memo(function Row({
         <div className={styles.spark} style={{ height: chartH }} data-testid="dmap-card-spark">
           <ChartHover
             enabled={pinned}
+            linked={linked}
             series={hoverSeries}
             timeRange={timeRange}
             timeZone={timeZone}
@@ -323,7 +348,21 @@ const Row = memo(function Row({
       {row.more ? <div className={styles.more}>+{row.more} more</div> : null}
     </>
   );
-  return (
+  // A real link: Enter, the middle click and the Grafana link handling work as for any link. The chart in it takes no
+  // focus and no click (ChartHover `linked`), so a click anywhere on the row opens the link.
+  return linked && row.href ? (
+    <a
+      className={cx(styles.row, styles.rowLink)}
+      href={row.href}
+      target={row.target}
+      rel={row.target === '_blank' ? 'noopener noreferrer' : undefined}
+      aria-label={row.text ? `${linkName}: ${row.text}` : linkName}
+      data-testid="dmap-card-row"
+      data-link="true"
+    >
+      {body}
+    </a>
+  ) : (
     <div className={styles.row} data-testid="dmap-card-row">
       {body}
     </div>
@@ -500,6 +539,7 @@ export function Card({
           timeRange={rowTimeRange}
           timeZone={timeZone}
           pinned={pinned}
+          linked={(pinned || inline) && !!r.href}
           styles={styles}
           width={Math.max(1, inline ? width - INLINE_CHROME : Math.min(W, width) - 16)}
           chartsReady={chartsReady}
@@ -524,7 +564,9 @@ export function Card({
           ))}
         </div>
       ) : null}
-      {!pinned && !inline && model.links.length ? <div className={styles.hint}>Click for links</div> : null}
+      {!pinned && !inline && (model.links.length || model.rows.some((r) => r.href)) ? (
+        <div className={styles.hint}>Click for links</div>
+      ) : null}
     </div>
   );
 }

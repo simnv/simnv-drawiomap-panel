@@ -2,15 +2,16 @@
 
 The canvas shows only colours. The values show in a card:
 
-| Action                             | Result                                                                                                                 |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Move the mouse on a link or a node | The card shows near the pointer. It goes away when the pointer leaves the cell.                                        |
-| Click a cell                       | The card stays (it is pinned). It has a close button (✕), clickable rows and the footer links.                         |
-| Click another cell                 | The pinned card moves to that cell.                                                                                    |
-| Esc, ✕, or a click outside         | The pinned card closes.                                                                                                |
-| Tap a cell (phone, tablet)         | The card opens pinned. Devices without hover (`(hover: none)`) do not open a card on a pointer move.                   |
-| Tab to a cell, then Enter or Space | A ring shows around the cell. The card opens pinned below the cell. Esc closes it and the focus goes back to the cell. |
-| Move over a chart in a pinned card | A crosshair and the Grafana tooltip show the time and the value of each series (see below).                            |
+| Action                             | Result                                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Move the mouse on a link or a node | The card shows near the pointer. It goes away when the pointer leaves the cell.                                                                 |
+| Click a cell                       | The card stays (it is pinned). It has a close button (✕), clickable rows and the footer links.                                                  |
+| Click another cell                 | The pinned card moves to that cell.                                                                                                             |
+| Esc, ✕, or a click outside         | The pinned card closes.                                                                                                                         |
+| Tap a cell (phone, tablet)         | The card opens pinned. Devices without hover (`(hover: none)`) do not open a card on a pointer move.                                            |
+| Tab to a cell, then Enter or Space | A ring shows around the cell. The card opens pinned below the cell. Esc closes it and the focus goes back to the cell.                          |
+| Move over a chart in a pinned card | A crosshair and the Grafana tooltip show the time and the value of each series (see below).                                                     |
+| Click a row with a link            | In a pinned card, a click on the label, the value or the chart of a row with a `url` opens its link. Tab to the row, then Enter, does the same. |
 
 ![Pinned card](images/card-pinned.png)
 
@@ -39,6 +40,7 @@ A node under the pointer gets the focus in the same way: the node, the links tha
 - N lines: a row with N lines lists the lines (at most 8), then "+N more". A line with no value shows "No data".
 - Phone: tap or drag on a chart in the sheet. The tooltip stays until you tap outside the chart.
 - Keyboard: Tab to the chart in a pinned card, then use the left and right arrow keys to move the sample. Esc hides the tooltip. A second Esc closes the card.
+- A row with a link (`url`, see [Row links](bindings.md#rows)): the tooltip shows on a mouse hover only. A click or a tap on the chart opens the link and does not move the sample. The chart is not a Tab stop; the row is.
 
 The tooltip does not change the Y range. The hover card that is not pinned shows no tooltip.
 
@@ -99,5 +101,7 @@ A missing label falls back to the node id and the port name (`pg-node`, `pg-port
 A card row has a head line and a sparkline below it. The head line has a colour dot, the title and the current value with its unit (for example `isp-a → rtr-a   41 Mb/s · 41%`). The title of a row is its `label`, else the display name of the field, else the refId. The sparkline has the full width of the card. Its Y range starts at 0 for a series without negative values (see [Sparkline Y range](bindings.md#sparkline-y-range)). Its time axis is the part of the dashboard time range that has data, so the line goes from edge to edge also when the series starts late. Below the sparkline, muted text shows the min and the max of the series.
 
 The first row of a cell whose status is not `normal` is the state and its reason, for example `warning   probe delay ≥ 400 ms`. The state word has a text-safe colour of its status (red for down and critical, orange for warning, grey for stale and missing). The word does not follow the **Stale colour** option: the text colour must stay readable on the card. A `normal` status adds no row to a card that has other rows. Then come the rows of the class in their order. The footer has the `url` of the class (title: `urlTitle`), then the data links of the field config of the series of the cell (title: the data link title), then the `drilldown` rows. A data link takes the last value in the frame of its series as its context (`${__value.text}`). A link with the same `href` as an earlier link shows once. The `url` of the class and the `drilldown` rows open in a new tab, unless the class has `urlNewTab: false` or the row has `newTab: false`: then the link opens in the current tab, for example a link to another dashboard. An `ssh://[user@]host[:port]` link (for example `ssh://admin@${key}`) opens the SSH client of the system; a user or host that is not a plain name or address is not shown; it always uses the current tab, because a new tab would stay blank. A data link follows its own **Open in new tab** switch. A link that opens in a new tab has an external-link icon.
+
+**Row links.** A row with a `url` (see [Rows](bindings.md#rows)) is one link in the pinned card and in the sheet: a click or a tap anywhere on the row opens it. On hover, the row gets the hover background and its label the link colour; with the keyboard, the row gets a focus ring and Enter opens it. The link name is `Open <row label>` and the value. The tab rules are those of the footer links: a new tab by default, the current tab with `newTab: false` and for `ssh://`. A row without a `url` is not a link. The hover card that is not pinned shows "Click for links" when a row has a link. A Grafana data link of the field config stays in the footer; it does not make a row a link.
 
 The pinned card is a dialog (`role="dialog"`) and gets the focus. The ✕ button is a normal button. Each bound cell is a button for the keyboard (`tabindex="0"`). The panel builds the card only when it opens, and only for one cell.

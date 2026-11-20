@@ -108,7 +108,7 @@ describe('itemsAt: schema keys', () => {
   it('gives the keys of the row kind in a row', () => {
     const text = 'classes:\n  device:\n    rows:\n      - kind: value\n        query: cpu\n        |\n';
     const items = complete(text, 'classes.device.rows[0].query');
-    expect(labels(items)).toEqual(['kind', 'query', 'match', 'reduce', 'label', 'unit', 'decimals']);
+    expect(labels(items)).toEqual(['kind', 'query', 'match', 'reduce', 'label', 'unit', 'decimals', 'url', 'newTab']);
   });
 
   it('gives the keys of all row kinds on a new list item', () => {
@@ -123,7 +123,19 @@ describe('itemsAt: schema keys', () => {
   it('reads a list at the indent of its key (compact form)', () => {
     const text = 'classes:\n  device:\n    rows:\n    - kind: history\n      |\n';
     const items = complete(text, 'classes.device.rows[0].kind');
-    expect(labels(items)).toEqual(['kind', 'query', 'match', 'label', 'unit', 'decimals', 'min', 'max', 'colors']);
+    expect(labels(items)).toEqual([
+      'kind',
+      'query',
+      'match',
+      'label',
+      'unit',
+      'decimals',
+      'min',
+      'max',
+      'colors',
+      'url',
+      'newTab',
+    ]);
   });
 
   it('gives the keys of text and of chart', () => {

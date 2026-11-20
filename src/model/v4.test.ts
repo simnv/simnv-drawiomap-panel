@@ -108,6 +108,34 @@ describe('parseConfig (S2.5)', () => {
     expect([...bad.invalidClasses.keys()].sort()).toEqual(['empty', 'list', 'look', 'row', 'tab']);
   });
 
+  it('takes url and newTab on a history, value, updown and metadata row, not on a chart', () => {
+    const ok = parseConfig({
+      version: 4,
+      classes: {
+        a: {
+          rows: [
+            { kind: 'history', query: 'A', url: '/d/x?var-job=${key}' },
+            { kind: 'value', query: 'A', url: 'https://example.com/', newTab: false },
+            { kind: 'updown', up: 'A', down: 'B', url: 'ssh://admin@${key}', newTab: true },
+            { kind: 'metadata', label: 'Role', text: '${role}', url: '/d/role' },
+          ],
+        },
+      },
+    });
+    expect(ok.report).toEqual([]);
+    const bad = parseConfig({
+      version: 4,
+      classes: {
+        url: { rows: [{ kind: 'value', query: 'A', url: 7 }] },
+        tab: { rows: [{ kind: 'history', query: 'A', url: '/d/x', newTab: 'no' }] },
+        meta: { rows: [{ kind: 'metadata', label: 'Role', text: 'x', newTab: 0 }] },
+        chart: { chart: { kind: 'history', query: 'A', url: '/d/x' } },
+      },
+    });
+    expect([...bad.invalidClasses.keys()].sort()).toEqual(['chart', 'meta', 'tab', 'url']);
+    expect(schemaEntries(bad.invalidClasses.get('tab')).map((e) => e.path)).toEqual(['classes.tab.rows[0].newTab']);
+  });
+
   it('gives the YAML path of a field deep in a class', () => {
     const raw = netL2Pilot();
     (raw.classes.lan.rows[0] as Record<string, unknown>).up = 7;

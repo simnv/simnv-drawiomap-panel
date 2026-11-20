@@ -245,7 +245,7 @@ When the result of a query has no label that names the cell, change the query so
 
 ### Templates
 
-A template is the text of `url`, `urlTitle`, a `metadata` row and a `drilldown` row, and the string of a matcher. The scope:
+A template is the text of `url`, `urlTitle`, a `metadata` row, a `drilldown` row and the `url` of a row, and the string of a matcher. The scope:
 
 | Placeholder                  | Value                                                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -344,6 +344,17 @@ A use can select more than one series.
 | `drilldown` | `label`, `url`, `newTab`                                              | A link in the footer of the card. `newTab: false`: the current tab.                                                   |
 
 The label, unit and decimals come from the field config of the refId. A row can override them. Rows of different units can share one card.
+
+**Row links.** A `history`, `value`, `updown` or `metadata` row can also have `url` and `newTab`. `url` is a template, with the same scope, the same [URL encoding](#templates) and the same check as the `url` of the class. In a pinned card the whole row is the link: a click on its label, its value or its chart opens it. It opens in a new tab; `newTab: false` opens it in the current tab; an `ssh://` link always uses the current tab. A `url` that does not resolve on a cell (`missing-attr`, `template-unresolved`) or that the check refuses removes only the link: the row stays. A chart region has no `url`.
+
+```yaml
+rows:
+  - kind: history
+    query: cpu
+    label: CPU
+    url: /d/host-cpu?var-job=${key}&$__url_time_range
+    newTab: false
+```
 
 An `updown` row draws the two directions in one chart: up above a zero line, down mirrored below it, in one symmetric range. The colour and the text of each direction follow the rules of a link half (see [Links](#links)).
 
