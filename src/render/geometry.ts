@@ -70,7 +70,7 @@ const ARGS: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, Z: 0, C: 6, S: 4,
  * (draw.io orthogonal edges with rounded=0 are pure M/L). Pure, so jsdom tests work without getPointAtLength.
  */
 export function parsePathPoints(d: string): Point[] {
-  const tokens = d.match(/[MLHVZCSQTAmlhvzcsqta]|-?\d*\.?\d+(?:e[-+]?\d+)?/g);
+  const tokens = d.match(/[MLHVZCSQTAmlhvzcsqta]|-?\d*\.?\d+(?:[eE][-+]?\d+)?/g);
   if (!tokens) {
     return [];
   }
@@ -94,7 +94,7 @@ export function parsePathPoints(d: string): Point[] {
     const upper = cmd.toUpperCase();
     const rel = cmd !== upper;
     const n = ARGS[upper];
-    if (n === undefined || i + n > tokens.length) {
+    if (n === undefined || n === 0 || i + n > tokens.length) {
       break;
     }
     const a: number[] = [];
@@ -376,13 +376,16 @@ function localGeom(line: SVGPathElement): LocalGeom {
       samples: (from, to) => slicePolyline(parsed, from, to),
     };
   } else {
-    const length = api.getTotalLength();
-    // Bends come from the vertices of the d attribute. Curves count by their end points, so scale to the real length.
-    const scale = parsedLength > 0 && length > 0 ? length / parsedLength : 1;
+    const apiLength = api.getTotalLength();
     // The parsed vertices stand for the path only when the browser measures the same length (a safety net for
-    // a path the parser reads differently from the browser).
+    // a path the parser reads differently from the browser). Then the whole path is in parsed units: the length,
+    // the bends and the slices agree to the last bit, so a bend stop never lands beside its vertex.
     const straight =
-      isStraightPath(line.getAttribute('d') ?? '') && Math.abs(length - parsedLength) <= 1e-3 * Math.max(1, length);
+      isStraightPath(line.getAttribute('d') ?? '') &&
+      Math.abs(apiLength - parsedLength) <= 1e-3 * Math.max(1, apiLength);
+    const length = straight ? parsedLength : apiLength;
+    // Bends come from the vertices of the d attribute. Curves count by their end points, so scale to the real length.
+    const scale = !straight && parsedLength > 0 && length > 0 ? length / parsedLength : 1;
     const points = new Map<number, Point>();
     const runs = new Map<string, Point[]>();
     const at = (d: number): Point => {

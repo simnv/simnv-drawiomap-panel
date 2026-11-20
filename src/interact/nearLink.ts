@@ -81,13 +81,13 @@ export class SegmentGrid {
   constructor(private readonly segments: readonly Segment[]) {
     this.seen = new Uint32Array(segments.length);
     segments.forEach((s, i) => {
+      if (Number.isNaN(s.ax + s.ay + s.bx + s.by)) {
+        return; // a segment with no position is never near
+      }
       const x0 = cellOf(Math.min(s.ax, s.bx));
       const x1 = cellOf(Math.max(s.ax, s.bx));
       const y0 = cellOf(Math.min(s.ay, s.by));
       const y1 = cellOf(Math.max(s.ay, s.by));
-      if (Number.isNaN(s.ax + s.ay + s.bx + s.by)) {
-        return; // a segment with no position is never near
-      }
       if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_CELLS_PER_SEGMENT) {
         this.wide.push(i);
         return;
@@ -111,7 +111,7 @@ export class SegmentGrid {
     const x1 = cellOf(p.x + radius);
     const y0 = cellOf(p.y - radius);
     const y1 = cellOf(p.y + radius);
-    if (!(x1 - x0 + 1 <= 64 && y1 - y0 + 1 <= 64)) {
+    if (!(x1 - x0 + 1 <= 8 && y1 - y0 + 1 <= 8)) {
       return nearestLink(this.segments, p, radius, accept); // a huge radius (or NaN): the plain scan
     }
     this.stamp = (this.stamp + 1) >>> 0;

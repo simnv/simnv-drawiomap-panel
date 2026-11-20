@@ -546,6 +546,39 @@ describe('pathGeometry on straight paths with the browser API', () => {
     expect(getPointAtLength).toHaveBeenCalled();
     expect(poly.length).toBeGreaterThan(10);
   });
+  it('is in parsed units when the engine length differs by rounding: the bends sit on the vertices, no duplicate end', () => {
+    const d = 'M 10 10 L 200.7 60.2 L 215.3 30.1';
+    const vertices: Array<[number, number]> = [
+      [10, 10],
+      [200.7, 60.2],
+      [215.3, 30.1],
+    ];
+    const exact = polylineLength(parsePathPoints(d));
+    for (const total of [Math.fround(exact), exact * (1 + 1e-8), exact * (1 - 1e-8)]) {
+      const { p, g } = stubbed(d, vertices, total);
+      const geo = pathGeometry(p, g);
+      expect(geo.length).toBe(exact);
+      expect(geo.bends).toEqual(bendLengths(parsePathPoints(d)));
+      const first = Math.hypot(190.7, 50.2);
+      const run = geo.polyline(first, geo.length);
+      expect(run).toHaveLength(2); // the vertex is the start, the end is not doubled
+      expect(run[0].x).toBeCloseTo(200.7, 9);
+      const whole = geo.polyline(0, geo.length);
+      expect(whole).toHaveLength(3);
+      expect(whole[2]).toEqual({ x: 215.3, y: 30.1 });
+    }
+  });
+  it('reads an upper-case exponent in the parser and the check alike', () => {
+    expect(parsePathPoints('M 0 0 L 1E2 0')[1]).toEqual({ x: 100, y: 0 });
+    expect(isStraightPath('M 0 0 L 1E2 0')).toBe(true);
+  });
+  it('ends on a number after Z (no endless loop)', { timeout: 2000 }, () => {
+    expect(parsePathPoints('M0 0 Z 5')).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+    ]);
+    expect(parsePathPoints('M0 0 L 10 0 Z 5 5 L 1 1')).toHaveLength(3);
+  });
   it('tells a straight path from the rest', () => {
     expect(isStraightPath('M 0 0 L 10 0 H 5 V 3 Z')).toBe(true);
     expect(isStraightPath('m0,0l1e2,0')).toBe(true);
