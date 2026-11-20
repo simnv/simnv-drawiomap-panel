@@ -197,7 +197,7 @@ test('the YAML option saves an empty class map as empty', async ({
 });
 
 test(
-  'a panel saved with the earlier Hover focus switch shows its mode in the radio, also at the same plugin version',
+  'a panel saved with the earlier Hover focus switch (false) shows Off in the radio',
   { tag: '@matrix' },
   async ({ config, createDiagram, gotoPanelEditPage }) => {
     const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;

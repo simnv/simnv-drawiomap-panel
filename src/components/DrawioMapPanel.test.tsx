@@ -1591,6 +1591,7 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(document.querySelector('svg.dmap-link-focus')).toBeNull();
       fireEvent.keyDown(window, { key: 'Shift' });
       expect(await tooltip()).toBe('A ↔ B');
+      expect(screen.getByTestId('dmap-panel').hasAttribute('data-dmap-focus-hidden')).toBe(false);
       fireEvent.keyUp(window, { key: 'Shift' });
     });
 
