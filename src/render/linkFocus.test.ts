@@ -103,6 +103,23 @@ describe('focusCells', () => {
     focusCells(root, index, 'nope');
     expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
   });
+
+  it('writes the root class only when the focus starts or ends: the observers of the svg do not run at each switch', () => {
+    const { root, index } = stage();
+    const writes = new MutationObserver(() => {});
+    writes.observe(root, { attributes: true, attributeFilter: ['class'] });
+    const rootWrites = () => writes.takeRecords().filter((r) => r.target === root).length;
+    focusCells(root, index, 'L');
+    expect(rootWrites()).toBe(1);
+    focusCells(root, index, 'M');
+    focusCells(root, index, 'L', ['a']);
+    expect(rootWrites()).toBe(0);
+    focusCells(root, index, undefined);
+    expect(rootWrites()).toBe(1);
+    focusCells(root, index, undefined);
+    expect(rootWrites()).toBe(0);
+    writes.disconnect();
+  });
 });
 
 describe('focusCells scrim colour', () => {

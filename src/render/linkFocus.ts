@@ -208,6 +208,16 @@ function hiddenLayers(root: SVGSVGElement, layer: Element | null): number {
   return hidden;
 }
 
+/**
+ * Gives the root FOCUS_ACTIVE or takes it away, only when that changes: `classList.add` of a class that is there still
+ * writes the attribute, and the observers of the svg (the chart layer) run for each such write.
+ */
+function setActive(root: SVGSVGElement, on: boolean): void {
+  if (root.classList.contains(FOCUS_ACTIVE) !== on) {
+    root.classList.toggle(FOCUS_ACTIVE, on);
+  }
+}
+
 /** Removes the copies from the focus layer; the scrim stays. */
 function clearCopies(layer: SVGGElement | null): void {
   while (layer?.lastElementChild && !layer.lastElementChild.classList.contains(FOCUS_SCRIM)) {
@@ -235,8 +245,9 @@ const focused = new WeakMap<
  *
  * All reads come before all writes (the page colour, the kept elements and their transforms; then the copies, the
  * scrim colour and the classes), so a call forces at most one style and layout pass, not one for each read: none
- * when the layout is clean at the call, one at the first read when a write before it left the layout dirty (the near
- * mark of the hover, which the copies must show, or a new focus layer).
+ * when the layout is clean at the call, one at the first read when a write before it left the layout dirty (a new
+ * focus layer; the hover writes its near mark after this call). A class or a colour that does not change is not
+ * written again.
  */
 export function focusCells(
   root: SVGSVGElement,
@@ -248,7 +259,7 @@ export function focusCells(
   if (cellId === undefined || !index.has(cellId)) {
     clearCopies(existing);
     focused.delete(root);
-    root.classList.remove(FOCUS_ACTIVE);
+    setActive(root, false);
     markKeptCharts(root, new Set());
     return;
   }
@@ -274,7 +285,7 @@ export function focusCells(
   }
   layer.appendChild(batch);
   markKeptCharts(root, ids);
-  root.classList.add(FOCUS_ACTIVE);
+  setActive(root, true);
   focused.set(root, { index, cellId, ends, hidden });
 }
 
