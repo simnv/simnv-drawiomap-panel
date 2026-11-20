@@ -160,11 +160,22 @@ export function runHeading(dx: number, dy: number): { degrees: number; first: Po
   return { degrees, first: { x: Math.sin(r), y: -Math.cos(r) } };
 }
 
+/** The last turn that `turn` computed: the boxes of one run share their angle. */
+let lastTurn = { degrees: 0, cos: 1, sin: 0 };
+
+/** The cosine and the sine of an angle in degrees. */
+function turn(degrees: number): { cos: number; sin: number } {
+  // Object.is: the sine of −0 is −0
+  if (!Object.is(degrees, lastTurn.degrees)) {
+    const r = (degrees * Math.PI) / 180;
+    lastTurn = { degrees, cos: Math.cos(r), sin: Math.sin(r) };
+  }
+  return lastTurn;
+}
+
 /** The four corners of an oriented box, in root units. */
 export function cornersOf(box: OrientedBox): Point[] {
-  const r = (box.degrees * Math.PI) / 180;
-  const ux = Math.cos(r);
-  const uy = Math.sin(r);
+  const { cos: ux, sin: uy } = turn(box.degrees);
   const hw = box.width / 2;
   const hh = box.height / 2;
   const { x, y } = box.centre;
@@ -219,60 +230,107 @@ export function obstacleBounds(o: Obstacle): Rect {
   return grow({ x, y, width: Math.abs(o.a.x - o.b.x), height: Math.abs(o.a.y - o.b.y) }, o.clearance);
 }
 
+/** An obstacle in the grid with its bounds (`obstacleBounds`) and the number of the last query that met it. */
+interface Entry {
+  o: Obstacle;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  seen: number;
+}
+
+/** The key of a grid cell. Two cells far apart may share a key: their lists merge, the queries only grow. */
+const cellKey = (cx: number, cy: number) => cx * 0x4000000 + cy;
+
+/**
+ * A uniform grid over the obstacles: an obstacle is filed in every cell its grown bounding box touches, and a
+ * query returns the obstacles of the cells the box touches, each once. `cell` is the cell size in root units.
+ */
+class ObstacleGrid implements ObstacleIndex {
+  private readonly cells = new Map<number, Entry[]>();
+  private query = 0;
+
+  constructor(private readonly cell: number) {}
+
+  add(o: Obstacle): void {
+    const r = obstacleBounds(o);
+    const entry: Entry = { o, x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height, seen: 0 };
+    const { cell } = this;
+    const cx1 = Math.floor(entry.x1 / cell);
+    const cy1 = Math.floor(entry.y1 / cell);
+    for (let cx = Math.floor(entry.x0 / cell); cx <= cx1; cx++) {
+      for (let cy = Math.floor(entry.y0 / cell); cy <= cy1; cy++) {
+        const key = cellKey(cx, cy);
+        const list = this.cells.get(key);
+        if (list) {
+          list.push(entry);
+        } else {
+          this.cells.set(key, [entry]);
+        }
+      }
+    }
+  }
+
+  remove(o: Obstacle): void {
+    const r = obstacleBounds(o);
+    const { cell } = this;
+    const cx1 = Math.floor((r.x + r.width) / cell);
+    const cy1 = Math.floor((r.y + r.height) / cell);
+    for (let cx = Math.floor(r.x / cell); cx <= cx1; cx++) {
+      for (let cy = Math.floor(r.y / cell); cy <= cy1; cy++) {
+        const list = this.cells.get(cellKey(cx, cy));
+        const at = list ? list.findIndex((e) => e.o === o) : -1;
+        if (list && at >= 0) {
+          list.splice(at, 1);
+        }
+      }
+    }
+  }
+
+  near(box: Rect): Set<Obstacle> {
+    const found = new Set<Obstacle>();
+    this.some(box.x, box.y, box.x + box.width, box.y + box.height, (e) => (found.add(e.o), false));
+    return found;
+  }
+
+  /**
+   * True when `test` holds for an entry of a cell that the box x0..x1 × y0..y1 touches. It meets each entry once, in
+   * the order of `near`, and stops at the first that holds.
+   */
+  some(x0: number, y0: number, x1: number, y1: number, test: (e: Entry) => boolean): boolean {
+    const { cell } = this;
+    const query = ++this.query;
+    const cx1 = Math.floor(x1 / cell);
+    const cy1 = Math.floor(y1 / cell);
+    for (let cx = Math.floor(x0 / cell); cx <= cx1; cx++) {
+      for (let cy = Math.floor(y0 / cell); cy <= cy1; cy++) {
+        const list = this.cells.get(cellKey(cx, cy));
+        if (!list) {
+          continue;
+        }
+        for (const e of list) {
+          if (e.seen !== query) {
+            e.seen = query;
+            if (test(e)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+}
+
 /**
  * A uniform grid over the obstacles: an obstacle is filed in every cell its grown bounding box touches, and a
  * query returns the obstacles of the cells the box touches, each once. `cell` is the cell size in root units.
  */
 export function obstacleIndex(items: readonly Obstacle[], cell = 64): ObstacleIndex {
-  const cells = new Map<string, Obstacle[]>();
-  const span = (r: Rect) => ({
-    x0: Math.floor(r.x / cell),
-    x1: Math.floor((r.x + r.width) / cell),
-    y0: Math.floor(r.y / cell),
-    y1: Math.floor((r.y + r.height) / cell),
-  });
-  const add = (o: Obstacle) => {
-    const { x0, x1, y0, y1 } = span(obstacleBounds(o));
-    for (let cx = x0; cx <= x1; cx++) {
-      for (let cy = y0; cy <= y1; cy++) {
-        const key = `${cx},${cy}`;
-        const list = cells.get(key);
-        if (list) {
-          list.push(o);
-        } else {
-          cells.set(key, [o]);
-        }
-      }
-    }
-  };
-  items.forEach(add);
-  return {
-    add,
-    remove(o) {
-      const { x0, x1, y0, y1 } = span(obstacleBounds(o));
-      for (let cx = x0; cx <= x1; cx++) {
-        for (let cy = y0; cy <= y1; cy++) {
-          const list = cells.get(`${cx},${cy}`);
-          const at = list?.indexOf(o) ?? -1;
-          if (list && at >= 0) {
-            list.splice(at, 1);
-          }
-        }
-      }
-    },
-    near(box) {
-      const { x0, x1, y0, y1 } = span(box);
-      const found = new Set<Obstacle>();
-      for (let cx = x0; cx <= x1; cx++) {
-        for (let cy = y0; cy <= y1; cy++) {
-          for (const o of cells.get(`${cx},${cy}`) ?? []) {
-            found.add(o);
-          }
-        }
-      }
-      return found;
-    },
-  };
+  const grid = new ObstacleGrid(cell);
+  items.forEach((o) => grid.add(o));
+  return grid;
 }
 
 /* ---------- collision tests ---------- */
@@ -293,10 +351,10 @@ const project = (pts: Point[], ax: Point) => {
  * the polygon. Touching is free.
  */
 function overlapsConvex(corners: Point[], box: OrientedBox, polygon: Point[]): boolean {
-  const r = (box.degrees * Math.PI) / 180;
+  const { cos, sin } = turn(box.degrees);
   const axes: Point[] = [
-    { x: Math.cos(r), y: Math.sin(r) },
-    { x: -Math.sin(r), y: Math.cos(r) },
+    { x: cos, y: sin },
+    { x: -sin, y: cos },
   ];
   polygon.forEach((p, i) => {
     const q = polygon[(i + 1) % polygon.length];
@@ -319,60 +377,32 @@ function overlapsConvex(corners: Point[], box: OrientedBox, polygon: Point[]): b
   return true;
 }
 
-/**
- * The oriented box against an axis-aligned rect: a separating-axis test on the four axes. Touching is free. A rect of
- * no width or height (a line) is still tested on x and y, so it blocks a box that it crosses.
- */
-function overlapsRect(corners: Point[], box: OrientedBox, rect: Rect): boolean {
-  const rc = [
-    { x: rect.x, y: rect.y },
-    { x: rect.x + rect.width, y: rect.y },
-    { x: rect.x + rect.width, y: rect.y + rect.height },
-    { x: rect.x, y: rect.y + rect.height },
-  ];
-  const r = (box.degrees * Math.PI) / 180;
-  const axes: Point[] = [
-    { x: 1, y: 0 },
-    { x: 0, y: 1 },
-    { x: Math.cos(r), y: Math.sin(r) },
-    { x: -Math.sin(r), y: Math.cos(r) },
-  ];
-  for (const ax of axes) {
-    const a = project(corners, ax);
-    const b = project(rc, ax);
-    if (a.max <= b.min + EPS || b.max <= a.min + EPS) {
-      return false;
-    }
-  }
-  return true;
+/** The distance from a point to the rect [−hw, hw] × [−hh, hh]; 0 inside. */
+const pointToRect = (x: number, y: number, hw: number, hh: number) =>
+  Math.hypot(Math.max(-hw - x, 0, x - hw), Math.max(-hh - y, 0, y - hh));
+
+/** The distance from (px, py) to the segment (ax, ay)→(bx, by), without a point object. */
+function segmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
 }
 
-/** The distance from a point to the rect [−hw, hw] × [−hh, hh]; 0 inside. */
-const pointToRect = (p: Point, hw: number, hh: number) =>
-  Math.hypot(Math.max(-hw - p.x, 0, p.x - hw), Math.max(-hh - p.y, 0, p.y - hh));
-
 /** The distance from a point to the segment a→b. */
-export const pointToSegment = (p: Point, a: Point, b: Point) => {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
-  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
-};
+export const pointToSegment = (p: Point, a: Point, b: Point) => segmentDistance(p.x, p.y, a.x, a.y, b.x, b.y);
 
-/** Liang–Barsky: does the segment a→b meet the rect [−hw, hw] × [−hh, hh]. */
-function segmentMeetsRect(a: Point, b: Point, hw: number, hh: number): boolean {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
+/** Liang–Barsky: does the segment (ax, ay)→(bx, by) meet the rect [−hw, hw] × [−hh, hh]. */
+function segmentMeetsRect(ax: number, ay: number, bx: number, by: number, hw: number, hh: number): boolean {
+  const dx = bx - ax;
+  const dy = by - ay;
   let t0 = 0;
   let t1 = 1;
-  const edges: Array<[number, number]> = [
-    [-dx, a.x + hw],
-    [dx, hw - a.x],
-    [-dy, a.y + hh],
-    [dy, hh - a.y],
-  ];
-  for (const [p, q] of edges) {
+  // the four edges in the order left, right, top, bottom: p is the direction across the edge, q the room inside it
+  for (let edge = 0; edge < 4; edge++) {
+    const p = edge === 0 ? -dx : edge === 1 ? dx : edge === 2 ? -dy : dy;
+    const q = edge === 0 ? ax + hw : edge === 1 ? hw - ax : edge === 2 ? ay + hh : hh - ay;
     if (p === 0) {
       if (q < 0) {
         return false;
@@ -389,35 +419,155 @@ function segmentMeetsRect(a: Point, b: Point, hw: number, hh: number): boolean {
   return t0 <= t1;
 }
 
-/** The segment against the box: it crosses the box, or it comes nearer than `clearance`. */
-function segmentHits(box: OrientedBox, a: Point, b: Point, clearance: number): boolean {
-  const r = (box.degrees * Math.PI) / 180;
-  const cos = Math.cos(r);
-  const sin = Math.sin(r);
-  const local = (p: Point): Point => {
-    const x = p.x - box.centre.x;
-    const y = p.y - box.centre.y;
-    return { x: x * cos + y * sin, y: -x * sin + y * cos };
-  };
-  const la = local(a);
-  const lb = local(b);
-  const hw = box.width / 2;
-  const hh = box.height / 2;
-  if (segmentMeetsRect(la, lb, hw, hh)) {
-    return true;
+/**
+ * A segment whose bounding box stands farther than its clearance plus this from the bounding box of a label box
+ * cannot hit the box: the exact test (`BoxProbe.hits`) would find a distance of at least the clearance. The slack is
+ * far above the rounding of the exact test at any diagram size, so the quick test never decides a border case.
+ */
+const REJECT_SLACK = 1e-3;
+
+/**
+ * A label box made ready for many obstacle tests: its corners, its bounding box and its rotation, computed once.
+ * An upright box (0°) has the x and y axes as its own axes: the bounding box test is then the whole separating-axis
+ * test against a rect, and decides a polygon on those axes.
+ */
+class BoxProbe {
+  readonly corners: Point[];
+  /** the bounding box as `boundsOf` gives it: the cells of the grid to search */
+  readonly bounds: Rect;
+  /** the extent of the corners on x and y, exact (`bounds.x + bounds.width` may round) */
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+  readonly cos: number;
+  readonly sin: number;
+  readonly upright: boolean;
+
+  constructor(readonly box: OrientedBox) {
+    this.corners = cornersOf(box);
+    const [a, b, c, d] = this.corners;
+    this.x0 = Math.min(a.x, b.x, c.x, d.x);
+    this.y0 = Math.min(a.y, b.y, c.y, d.y);
+    this.x1 = Math.max(a.x, b.x, c.x, d.x);
+    this.y1 = Math.max(a.y, b.y, c.y, d.y);
+    // `aabbOf(corners)`
+    this.bounds = { x: this.x0, y: this.y0, width: this.x1 - this.x0, height: this.y1 - this.y0 };
+    ({ cos: this.cos, sin: this.sin } = turn(box.degrees));
+    this.upright = box.degrees === 0;
   }
-  const corners: Point[] = [
-    { x: -hw, y: -hh },
-    { x: hw, y: -hh },
-    { x: hw, y: hh },
-    { x: -hw, y: hh },
-  ];
-  const distance = Math.min(
-    pointToRect(la, hw, hh),
-    pointToRect(lb, hw, hh),
-    ...corners.map((c) => pointToSegment(c, la, lb))
-  );
-  return distance < clearance - EPS;
+
+  /** The bounding box apart from x0..x1 × y0..y1 on the x or the y axis; touching (within `EPS`) is apart. */
+  private apart(x0: number, y0: number, x1: number, y1: number): boolean {
+    return this.x1 <= x0 + EPS || x1 <= this.x0 + EPS || this.y1 <= y0 + EPS || y1 <= this.y0 + EPS;
+  }
+
+  /**
+   * False when the bounding boxes alone show that the obstacle misses the box; `hits` decides the rest. `x0`..`y1`
+   * are the bounds of the obstacle (`obstacleBounds`).
+   */
+  reaches(o: Obstacle, x0: number, y0: number, x1: number, y1: number): boolean {
+    if (o.kind === 'rect') {
+      // the x and y axes of the separating-axis test of `hits`. A negative clearance can turn a rect inside out:
+      // its extent runs from the lower edge to the higher one.
+      return !this.apart(Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1));
+    }
+    if (o.kind === 'polygon') {
+      return true;
+    }
+    const reach = (o.clearance > 0 ? o.clearance : 0) + REJECT_SLACK;
+    return !(
+      Math.min(o.a.x, o.b.x) - this.x1 > reach ||
+      this.x0 - Math.max(o.a.x, o.b.x) > reach ||
+      Math.min(o.a.y, o.b.y) - this.y1 > reach ||
+      this.y0 - Math.max(o.a.y, o.b.y) > reach
+    );
+  }
+
+  /**
+   * The obstacle against the box, for an obstacle that `reaches` it (the same bounds). A rect (grown by its
+   * clearance; a rect of no width or height is a line that still blocks a box it crosses) and a convex polygon:
+   * a separating-axis test, touching is free. A segment: it crosses the box, or it comes nearer than its clearance.
+   */
+  hits(o: Obstacle, x0: number, y0: number, x1: number, y1: number): boolean {
+    if (o.kind === 'rect') {
+      // `reaches` tested the x and y axes: they are the axes of an upright box
+      return (
+        this.upright ||
+        (!this.apartOn(this.cos, this.sin, x0, y0, x1, y1) && !this.apartOn(-this.sin, this.cos, x0, y0, x1, y1))
+      );
+    }
+    if (o.kind === 'polygon') {
+      return this.hitsPolygon(o.points);
+    }
+    return this.hitsSegment(o.a, o.b, o.clearance);
+  }
+
+  /** The box and the rect x0..x1 × y0..y1 apart on the axis (ax, ay) of the box. */
+  private apartOn(ax: number, ay: number, x0: number, y0: number, x1: number, y1: number): boolean {
+    let aMin = Infinity;
+    let aMax = -Infinity;
+    for (const p of this.corners) {
+      const v = p.x * ax + p.y * ay;
+      aMin = Math.min(aMin, v);
+      aMax = Math.max(aMax, v);
+    }
+    // the corners of the rect in the order (x0, y0), (x1, y0), (x1, y1), (x0, y1)
+    const v0 = x0 * ax + y0 * ay;
+    const v1 = x1 * ax + y0 * ay;
+    const v2 = x1 * ax + y1 * ay;
+    const v3 = x0 * ax + y1 * ay;
+    const bMin = Math.min(v0, v1, v2, v3);
+    const bMax = Math.max(v0, v1, v2, v3);
+    return aMax <= bMin + EPS || bMax <= aMin + EPS;
+  }
+
+  private hitsPolygon(points: Point[]): boolean {
+    if (this.upright) {
+      // the x and y axes are the axes of the box: their test is the test of the bounding boxes
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const p of points) {
+        x0 = Math.min(x0, p.x);
+        y0 = Math.min(y0, p.y);
+        x1 = Math.max(x1, p.x);
+        y1 = Math.max(y1, p.y);
+      }
+      if (this.apart(x0, y0, x1, y1)) {
+        return false;
+      }
+    }
+    return overlapsConvex(this.corners, this.box, points);
+  }
+
+  private hitsSegment(a: Point, b: Point, clearance: number): boolean {
+    const { box, cos, sin } = this;
+    // the ends in the frame of the box: its centre at 0, its width along x
+    const ax = a.x - box.centre.x;
+    const ay = a.y - box.centre.y;
+    const bx = b.x - box.centre.x;
+    const by = b.y - box.centre.y;
+    const lax = ax * cos + ay * sin;
+    const lay = -ax * sin + ay * cos;
+    const lbx = bx * cos + by * sin;
+    const lby = -bx * sin + by * cos;
+    const hw = box.width / 2;
+    const hh = box.height / 2;
+    if (segmentMeetsRect(lax, lay, lbx, lby, hw, hh)) {
+      return true;
+    }
+    const distance = Math.min(
+      pointToRect(lax, lay, hw, hh),
+      pointToRect(lbx, lby, hw, hh),
+      segmentDistance(-hw, -hh, lax, lay, lbx, lby),
+      segmentDistance(hw, -hh, lax, lay, lbx, lby),
+      segmentDistance(hw, hh, lax, lay, lbx, lby),
+      segmentDistance(-hw, hh, lax, lay, lbx, lby)
+    );
+    return distance < clearance - EPS;
+  }
 }
 
 /**
@@ -461,7 +611,12 @@ export function placeHalfLabel(
   sides: readonly LabelSide[] = LABEL_SIDES,
   bendSpot = false
 ): Placement {
-  const strict = placeOnRuns(leg, own, index, sides, false);
+  return placeHalf(new LegSpots(leg, own), index, sides, bendSpot);
+}
+
+/** `placeHalfLabel` over the spots of a leg that the calls for one link share. */
+function placeHalf(spots: LegSpots, index: ObstacleIndex, sides: readonly LabelSide[], bendSpot: boolean): Placement {
+  const strict = placeOnRuns(spots, index, sides, false);
   if (!bendSpot || 'centre' in strict) {
     return strict;
   }
@@ -477,12 +632,159 @@ export function placeHalfLabel(
     [beyond, false],
     [beyond, true],
   ] as const) {
-    const found = ladder.length ? placeOnRuns(leg, own, index, ladder, atBends) : strict;
+    const found = ladder.length ? placeOnRuns(spots, index, ladder, atBends) : strict;
     if ('centre' in found) {
       return found;
     }
   }
   return strict;
+}
+
+/** A straight run of a leg, from arc length `from` to `to`, with what its candidates share. */
+interface Run {
+  from: number;
+  to: number;
+  heading: { degrees: number; first: Point };
+  /** a piece of the own edge on this run (by its index in this leg): no obstacle */
+  ownPiece: (o: Obstacle) => boolean;
+  /** `ownPiece`, or the head of the own half on the line of this run: no obstacle beside the drawn heads (±3) */
+  ownPieceOrHead: (o: Obstacle) => boolean;
+}
+
+/** A candidate anchor: the arc length `d` on `run`, and its point. */
+interface Spot {
+  d: number;
+  anchor: Point;
+  run: Run;
+}
+
+/** The items of an iterator, made when they are first asked for and kept for the next pass. */
+class Lazy<T> {
+  private readonly items: T[] = [];
+
+  constructor(private readonly source: Iterator<T>) {}
+
+  at(i: number): T | undefined {
+    while (this.items.length <= i) {
+      const next = this.source.next();
+      if (next.done) {
+        return undefined;
+      }
+      this.items.push(next.value);
+    }
+    return this.items[i];
+  }
+}
+
+/**
+ * The runs and the candidate anchors of a leg for the label of `own`, in ladder order. Every pass of the ladder over
+ * one leg (the near pairs, the strict ladder, the bend spots) reads the same lists: a list grows only as far as a
+ * pass reads it.
+ */
+class LegSpots {
+  /** the box size with the halo */
+  readonly w: number;
+  readonly h: number;
+  readonly runs: Run[];
+  private strict?: Lazy<Spot>;
+  private bends?: Lazy<Spot>;
+
+  constructor(
+    readonly leg: LegInput,
+    readonly own: string
+  ) {
+    const { halo } = LINK_LABEL_GEOMETRY;
+    this.w = leg.size.width + 2 * halo;
+    this.h = leg.size.height + 2 * halo;
+    const stops = [0, ...leg.bends, leg.length];
+    const arcs = arcLengths(leg.points);
+    this.runs = stops.slice(1).map((to, i) => {
+      const from = stops[i];
+      const a = pointAt(leg.points, from);
+      const b = pointAt(leg.points, to);
+      const ownPiece = (o: Obstacle) =>
+        o.kind === 'segment' &&
+        o.owner === own &&
+        o.piece !== undefined &&
+        o.piece.leg === leg.id &&
+        arcs[o.piece.index] >= from - EPS &&
+        arcs[o.piece.index + 1] <= to + EPS;
+      // the head of the own half, only when its centreline lies on the line of this run: then every drawn head stays
+      // within half its base of that line, and the sides ±3 keep the wide gap beyond that half base at every width.
+      // A head on another run (it points another way) stays an obstacle at its widest.
+      const ownHead = (o: Obstacle) =>
+        o.kind === 'polygon' &&
+        o.owner === own &&
+        o.leg !== undefined &&
+        o.leg === leg.id &&
+        headOnLine(o.points, a, b);
+      return {
+        from,
+        to,
+        heading: runHeading(b.x - a.x, b.y - a.y),
+        ownPiece,
+        ownPieceOrHead: (o: Obstacle) => ownPiece(o) || ownHead(o),
+      };
+    });
+  }
+
+  /** The candidate anchors: at a bend (`atBends`) or each with its whole box on its run; `only`: one distance. */
+  spots(atBends: boolean, only?: number): Lazy<Spot> {
+    if (only !== undefined) {
+      return new Lazy(this.spotsAt(atBends, only));
+    }
+    if (atBends) {
+      this.bends ??= new Lazy(this.spotsAt(true));
+      return this.bends;
+    }
+    this.strict ??= new Lazy(this.spotsAt(false));
+    return this.strict;
+  }
+
+  private *spotsAt(atBends: boolean, only?: number): Generator<Spot> {
+    const { alongStep } = LINK_LABEL_GEOMETRY;
+    const { length } = this.leg;
+    const d0 = length / 2;
+    // the distances from the middle, the lower one first at each step; the same list serves both sides (`only`: one
+    // distance, the spot a label holds)
+    yield* this.spotsOn(only ?? d0, atBends);
+    for (let k = 1; only === undefined; k++) {
+      const lo = d0 - k * alongStep;
+      const hi = d0 + k * alongStep;
+      if (lo < 0 && hi > length) {
+        break;
+      }
+      if (lo >= 0) {
+        yield* this.spotsOn(lo, atBends);
+      }
+      if (hi <= length) {
+        yield* this.spotsOn(hi, atBends);
+      }
+    }
+  }
+
+  private *spotsOn(d: number, atBends: boolean): Generator<Spot> {
+    const { endMargin } = LINK_LABEL_GEOMETRY;
+    const { w } = this;
+    let anchor: Point | undefined;
+    // at a bend (`atBends`) the centre may lie on any run that holds `d`: a vertex belongs to both of its runs. The
+    // strict ladder takes the first run that holds `d` and needs the whole box on it.
+    for (const run of this.runs) {
+      if (!(d <= run.to + EPS && d >= run.from - EPS)) {
+        continue;
+      }
+      if (atBends || !(d < run.from + endMargin + w / 2 - EPS || d > run.to - endMargin - w / 2 + EPS)) {
+        if (!anchor) {
+          const at = pointAt(this.leg.points, d);
+          anchor = { x: at.x, y: at.y };
+        }
+        yield { d, anchor, run };
+      }
+      if (!atBends) {
+        return;
+      }
+    }
+  }
 }
 
 /**
@@ -491,18 +793,14 @@ export function placeHalfLabel(
  * when the label reads as its own half's (`ownsSpot`). The normal obstacle test decides the rest.
  */
 function placeOnRuns(
-  leg: LegInput,
-  own: string,
+  spots: LegSpots,
   index: ObstacleIndex,
   sides: readonly LabelSide[],
   atBends: boolean,
   only?: number
 ): Placement {
-  const { halo, normalGap, wideGap, alongStep, endMargin } = LINK_LABEL_GEOMETRY;
-  const w = leg.size.width + 2 * halo;
-  const h = leg.size.height + 2 * halo;
-  const stops = [0, ...leg.bends, leg.length];
-  const runs = stops.slice(1).map((to, i) => ({ from: stops[i], to }));
+  const { leg, own, w, h, runs } = spots;
+  const { normalGap, wideGap, endMargin } = LINK_LABEL_GEOMETRY;
   if (!atBends && Math.max(...runs.map((r) => r.to - r.from)) < w + 2 * endMargin - EPS) {
     return { dropped: 'short-leg' };
   }
@@ -530,56 +828,7 @@ function placeOnRuns(
         : Math.abs(side) === 3
           ? h + (gapBase(leg, side) - headMin) / 2
           : h;
-  const d0 = leg.length / 2;
-  // the distances from the middle, the lower one first at each step; the same list serves both sides (`only`: one
-  // distance, the spot a label holds)
-  const distances: number[] = [only ?? d0];
-  for (let k = 1; only === undefined; k++) {
-    const lo = d0 - k * alongStep;
-    const hi = d0 + k * alongStep;
-    if (lo < 0 && hi > leg.length) {
-      break;
-    }
-    if (lo >= 0) {
-      distances.push(lo);
-    }
-    if (hi <= leg.length) {
-      distances.push(hi);
-    }
-  }
-  // the pieces of the own edge that lie on the candidate's run (by their index in this leg) are no obstacle
-  const arcs = arcLengths(leg.points);
-  const candidates = distances.flatMap((d) => {
-    // at a bend (`atBends`) the centre may lie on any run that holds `d`: a vertex belongs to both of its runs
-    const holding = runs.filter((r) => d <= r.to + EPS && d >= r.from - EPS);
-    return (atBends ? holding : holding.slice(0, 1)).flatMap((run) => {
-      if (!atBends && (d < run.from + endMargin + w / 2 - EPS || d > run.to - endMargin - w / 2 + EPS)) {
-        return [];
-      }
-      const a = pointAt(leg.points, run.from);
-      const b = pointAt(leg.points, run.to);
-      const anchor = pointAt(leg.points, d);
-      const ownPiece = (o: Obstacle) =>
-        o.kind === 'segment' &&
-        o.owner === own &&
-        o.piece !== undefined &&
-        o.piece.leg === leg.id &&
-        arcs[o.piece.index] >= run.from - EPS &&
-        arcs[o.piece.index + 1] <= run.to + EPS;
-      // the head of the own half, only when its centreline lies on the line of this run: then every drawn head stays
-      // within half its base of that line, and the sides ±3 keep the wide gap beyond that half base at every width.
-      // A head on another run (it points another way) stays an obstacle at its widest.
-      const ownHead = (o: Obstacle) =>
-        o.kind === 'polygon' &&
-        o.owner === own &&
-        o.leg !== undefined &&
-        o.leg === leg.id &&
-        headOnLine(o.points, a, b);
-      return [
-        { d, anchor: { x: anchor.x, y: anchor.y }, heading: runHeading(b.x - a.x, b.y - a.y), ownPiece, ownHead },
-      ];
-    });
-  });
+  const candidates = spots.spots(atBends, only);
   for (const side of sides) {
     // on the stroke there is nothing to try at a bend; beside the heads only for a leg that knows a head wider than
     // its stroke
@@ -589,12 +838,15 @@ function placeOnRuns(
     // beside the drawn heads the text moves with the head of its own half, so that head is no obstacle when it lies
     // on the candidate's run; every other head stays one at its widest
     const besideHead = Math.abs(side) === 3;
-    for (const { d, anchor, heading, ownPiece, ownHead } of candidates) {
-      const shift = offsetOf(side);
+    const shift = offsetOf(side);
+    const height = sweptHeight(side);
+    for (let i = 0, spot = candidates.at(0); spot; spot = candidates.at(++i)) {
+      const { d, anchor, run } = spot;
+      const { heading } = run;
       const centre = { x: anchor.x + heading.first.x * shift, y: anchor.y + heading.first.y * shift };
-      const box: OrientedBox = { centre, width: w, height: sweptHeight(side), degrees: heading.degrees };
+      const box: OrientedBox = { centre, width: w, height, degrees: heading.degrees };
       if (
-        !collides(box, (o) => ownPiece(o) || (besideHead && ownHead(o)), index) &&
+        !collides(box, besideHead ? run.ownPieceOrHead : run.ownPiece, index) &&
         (!atBends || bendSpotFits(leg, own, index, box, side, anchor, heading.first))
       ) {
         return {
@@ -622,7 +874,7 @@ function placeOnRuns(
  * again, or a nearer one that was blocked before: the label keeps its place.
  */
 export function placeAgain(leg: LegInput, own: string, index: ObstacleIndex, placed: Placed): Placed | undefined {
-  const again = placeOnRuns(leg, own, index, [placed.side], false, placed.along);
+  const again = placeOnRuns(new LegSpots(leg, own), index, [placed.side], false, placed.along);
   return 'centre' in again ? again : undefined;
 }
 
@@ -725,10 +977,13 @@ export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: Ob
     return o;
   };
   const drop = (o: Obstacle | undefined) => o && index.remove(o);
+  // the spots of each leg, made once for every pass below
+  const spotsA = new LegSpots(a, own);
+  const spotsB = new LegSpots(b, own);
   const pair = (sides: readonly LabelSide[]): [Placement, Placement] => {
-    const first = placeHalfLabel(a, own, index, sides);
+    const first = placeHalf(spotsA, index, sides, false);
     const held = hold(first);
-    const second = placeHalfLabel(b, own, index, sides);
+    const second = placeHalf(spotsB, index, sides, false);
     drop(held);
     return [first, second];
   };
@@ -741,35 +996,36 @@ export function placeLinkLabels(a: LegInput, b: LegInput, own: string, index: Ob
   // the last pass: the strict ladder for each half, then the bend spots for a half that found nothing. The strict
   // result of the other half does not change, so a pair that fits keeps its places.
   const [first, second] = pair(LABEL_SIDES);
-  const rescue = (leg: LegInput, result: Placement, other: Placement): Placement => {
+  const rescue = (spots: LegSpots, result: Placement, other: Placement): Placement => {
     if ('centre' in result) {
       return result;
     }
     const held = hold(other);
-    const found = placeHalfLabel(leg, own, index, LABEL_SIDES, true);
+    const found = placeHalf(spots, index, LABEL_SIDES, true);
     drop(held);
     return 'centre' in found ? found : result;
   };
-  const rescued = rescue(a, first, second);
-  return [rescued, rescue(b, second, rescued)];
+  const rescued = rescue(spotsA, first, second);
+  return [rescued, rescue(spotsB, second, rescued)];
 }
 
 /** The box against the obstacles near it; the pieces of the own run and the own head (`exempt`) do not count. */
 function collides(box: OrientedBox, exempt: (o: Obstacle) => boolean, index: ObstacleIndex): boolean {
-  const corners = cornersOf(box);
-  for (const o of index.near(boundsOf(box))) {
-    if (exempt(o)) {
-      continue;
-    }
-    if (o.kind === 'rect') {
-      if (overlapsRect(corners, box, grow(o.rect, o.clearance))) {
-        return true;
-      }
-    } else if (o.kind === 'polygon') {
-      if (overlapsConvex(corners, box, o.points)) {
-        return true;
-      }
-    } else if (segmentHits(box, o.a, o.b, o.clearance)) {
+  const probe = new BoxProbe(box);
+  if (index instanceof ObstacleGrid) {
+    const r = probe.bounds;
+    return index.some(
+      r.x,
+      r.y,
+      r.x + r.width,
+      r.y + r.height,
+      (e) => probe.reaches(e.o, e.x0, e.y0, e.x1, e.y1) && !exempt(e.o) && probe.hits(e.o, e.x0, e.y0, e.x1, e.y1)
+    );
+  }
+  for (const o of index.near(probe.bounds)) {
+    const r = obstacleBounds(o);
+    const [x0, y0, x1, y1] = [r.x, r.y, r.x + r.width, r.y + r.height];
+    if (probe.reaches(o, x0, y0, x1, y1) && !exempt(o) && probe.hits(o, x0, y0, x1, y1)) {
       return true;
     }
   }
