@@ -649,3 +649,26 @@ test('Shift hides the hover card and the focus while it is down', async ({
   await expect(panel.getByRole('tooltip')).toBeVisible();
   await expect(layer).toHaveCSS('display', 'inline');
 });
+
+test('Hover focus With Shift: the focus shows only while Shift is down; the card stays', async ({
+  createDiagram,
+  gotoDashboardPage,
+  readProvisionedDataSource,
+  page,
+}) => {
+  const { panel } = await openLabelled(
+    'percent',
+    { createDiagram, gotoDashboardPage, readProvisionedDataSource },
+    { options: { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'shift' } } }
+  );
+  const box = await clientBox(label(panel, ISP_A, 'a2b'));
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
+  await expect(panel.getByRole('tooltip')).toBeVisible();
+  const layer = panel.locator('g.dmap-link-focus-layer');
+  await expect(layer).toHaveCSS('display', 'none');
+  await page.keyboard.down('Shift');
+  await expect(layer).toHaveCSS('display', 'inline');
+  await expect(panel.getByRole('tooltip')).toBeVisible();
+  await page.keyboard.up('Shift');
+  await expect(layer).toHaveCSS('display', 'none');
+});

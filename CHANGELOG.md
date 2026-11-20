@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added: hold Shift to hide the hover card and the focus while the key is down. A pinned card stays.
+- Added Shift to the **Hover focus** option, which now has three values. **On** (the default): hold Shift to hide the hover card and the focus while the key is down; a pinned card stays. **With Shift**: the focus shows only while Shift is held. **Off**: no focus. A panel saved with the earlier switch keeps its value.
 - Changed the hover focus: a pinned card keeps the focus of its cell (the rest of the diagram stays dimmed) until the card closes. Before, the click that pinned the card cleared the focus.
 - Added the **Fit height** button: in dashboard edit mode, when the diagram leaves one grid row or more of free space in the panel, the button makes the panel lower to the diagram. See [Fit the panel height](docs/guide/zoom.md#fit-the-panel-height).
 - Added the chart fields `background: none` (no panel background under the chart) and `colors` (the colours of the lines of a `history` chart or row: a CSS colour, a Grafana colour name or `light-dark(light, dark)` for the light and the dark theme). See [Chart regions](docs/guide/bindings.md#chart-regions).

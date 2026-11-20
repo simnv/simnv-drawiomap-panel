@@ -109,6 +109,8 @@ export const test = base.extend<{
        * dashboard list `timepicker.refresh_intervals` and not below `min_refresh_interval` (the stack sets 1 s).
        */
       refresh?: string;
+      /** the `pluginVersion` of the saved panels; default: none, so Grafana runs the migration of the plugin */
+      pluginVersion?: string;
     }
   ) => Promise<string>;
   sandboxSettings: void;
@@ -188,6 +190,7 @@ export const test = base.extend<{
                 id: i + 1,
                 title: panel.title ?? `Sanitized topology ${i + 1}`,
                 type: 'simnv-drawiomap-panel',
+                ...(settings.pluginVersion ? { pluginVersion: settings.pluginVersion } : {}),
                 gridPos: { ...grid, h: settings.height ?? 20 },
                 datasource: MIXED,
                 targets: panel.targets ?? settings.targets ?? authoringTargets(),

@@ -132,9 +132,10 @@ export interface Options {
   stale?: { color: string };
   /**
    * The cells that open a hover or pinned card (default: node, link, port, other), and the hover focus: the rest of
-   * the diagram dims around a hovered link or node (default: on).
+   * the diagram dims around a hovered link or node (default: on). A panel saved before the Shift modes has a boolean
+   * focus: true is `on`, false is `off`.
    */
-  hover?: { kinds: HoverKind[]; focus?: boolean };
+  hover?: { kinds: HoverKind[]; focus?: FocusMode | boolean };
   /** The colour legend in a corner of the panel and the last data timestamp. Default: shown, collapsed, bottom-right. */
   legend?: LegendOptions;
 }
@@ -173,8 +174,28 @@ export interface LegendOptions {
 export interface ResolvedOptions extends Options {
   summary: { maxRows: number };
   stale: { color: string };
-  hover: { kinds: HoverKind[]; focus: boolean };
+  hover: { kinds: HoverKind[]; focus: FocusMode };
   legend: LegendOptions;
+}
+
+/**
+ * The hover focus: `on` dims on hover and Shift held hides the dim and the hover card; `shift` dims only while Shift
+ * is held; `off` never dims.
+ */
+export type FocusMode = 'on' | 'shift' | 'off';
+
+/** The saved options with a boolean Hover focus written as its mode; other options as they are. */
+export function migrateOptions(saved: Options | undefined): Options {
+  const options = saved ?? ({} as Options);
+  const focus = options.hover?.focus;
+  return typeof focus === 'boolean' && options.hover
+    ? { ...options, hover: { ...options.hover, focus: focusModeOf(focus) } }
+    : options;
+}
+
+/** The focus mode of a saved value: a boolean of a panel saved before the Shift modes, or a mode. */
+export function focusModeOf(value: unknown): FocusMode {
+  return value === false || value === 'off' ? 'off' : value === 'shift' ? 'shift' : 'on';
 }
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
@@ -188,7 +209,7 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   },
   summary: { maxRows: 3 },
   stale: { color: 'gray' },
-  hover: { kinds: ['node', 'link', 'port', 'other'], focus: true },
+  hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'on' },
   legend: { show: true, corner: 'bottom-right', collapsed: true, timestamp: true },
 };
 
@@ -204,7 +225,11 @@ export function withDefaults(options: Options): ResolvedOptions {
     linkWidth: { ...DEFAULT_OPTIONS.linkWidth, ...options.linkWidth },
     summary: { ...DEFAULT_OPTIONS.summary, ...options.summary },
     stale: { ...DEFAULT_OPTIONS.stale, ...options.stale },
-    hover: { ...DEFAULT_OPTIONS.hover, ...options.hover },
+    hover: {
+      ...DEFAULT_OPTIONS.hover,
+      ...options.hover,
+      focus: focusModeOf(options.hover?.focus ?? DEFAULT_OPTIONS.hover.focus),
+    },
     legend: { ...DEFAULT_OPTIONS.legend, ...options.legend },
   };
 }

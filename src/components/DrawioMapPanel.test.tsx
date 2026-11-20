@@ -1531,17 +1531,17 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       render(<DrawioMapPanel {...structurePanel(ALL)} />);
       await near('bg', 75, 31);
       expect(await tooltip()).toBe('A ↔ B');
-      const wrapper = document.querySelector('[data-dmap-shift], [data-testid="dmap-panel"]')!;
+      const wrapper = document.querySelector('[data-dmap-focus-hidden], [data-testid="dmap-panel"]')!;
       fireEvent.keyDown(window, { key: 'Shift' });
       await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
-      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(true);
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
       fireEvent.keyUp(window, { key: 'Shift' });
       expect(await tooltip()).toBe('A ↔ B');
-      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(false);
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
       // a capital letter typed in a field does not hide the hover
       const field = document.body.appendChild(document.createElement('input'));
       fireEvent.keyDown(field, { key: 'Shift' });
-      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(false);
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
       expect(screen.getByRole('tooltip')).toBeTruthy();
       field.remove();
       // a pinned card does not hide, and keeps its focus
@@ -1549,7 +1549,49 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(await screen.findByRole('dialog')).toBeTruthy();
       fireEvent.keyDown(window, { key: 'Shift' });
       expect(screen.getByRole('dialog')).toBeTruthy();
-      expect(wrapper.hasAttribute('data-dmap-shift')).toBe(false);
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      fireEvent.keyUp(window, { key: 'Shift' });
+    });
+
+    it('Hover focus With Shift: the focus shows only while Shift is down, and the card stays', async () => {
+      render(
+        <DrawioMapPanel
+          {...structurePanel(ALL, { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'shift' } })}
+        />
+      );
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      const wrapper = screen.getByTestId('dmap-panel');
+      // the focus is drawn, the wrapper hides it until Shift goes down
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      fireEvent.keyDown(window, { key: 'Shift' });
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      expect(await tooltip()).toBe('A ↔ B');
+      fireEvent.keyUp(window, { key: 'Shift' });
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      // a card pinned with Shift held: the card stays, its focus hides when Shift goes up
+      fireEvent.keyDown(window, { key: 'Shift' });
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      fireEvent.keyUp(window, { key: 'Shift' });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+    });
+
+    it('Hover focus Off: nothing dims, and Shift keeps the card', async () => {
+      render(
+        <DrawioMapPanel
+          {...structurePanel(ALL, { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'off' } })}
+        />
+      );
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(document.querySelector('svg.dmap-link-focus')).toBeNull();
+      fireEvent.keyDown(window, { key: 'Shift' });
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(screen.getByTestId('dmap-panel').hasAttribute('data-dmap-focus-hidden')).toBe(false);
       fireEvent.keyUp(window, { key: 'Shift' });
     });
 

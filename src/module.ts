@@ -8,9 +8,15 @@ import {
 import { DrawioMapPanel } from './components/DrawioMapPanel';
 import { ConfigYamlEditor, DiagramEditor, IconRadioEditor, WidthTiersEditor } from './options/lazyEditors';
 import { autoSpeed } from './binding/linkWidth';
-import { DEFAULT_OPTIONS, type HoverKind, Options } from './types';
+import { DEFAULT_OPTIONS, type HoverKind, migrateOptions, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
+  // a panel saved before the Shift modes has a boolean Hover focus: the radio shows its mode
+  .setMigrationHandler(
+    (panel) => migrateOptions(panel.options as Options),
+    // also at the same plugin version: a boolean pasted or provisioned with the current version
+    (panel) => typeof (panel.options as Options | undefined)?.hover?.focus === 'boolean'
+  )
   .setNoPadding()
   .useFieldConfig({
     standardOptions: {
@@ -147,13 +153,20 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         editor: WidthTiersEditor,
         showIf: (o) => o.linkWidth?.mode === 'capacity',
       })
-      .addBooleanSwitch({
+      .addRadio({
         path: 'hover.focus',
         name: 'Hover focus',
         description:
-          'The rest of the diagram dims around the link or the node under the pointer: the link with its two ends, or the node with its links and their other ends, stay bright.',
+          'The rest of the diagram dims around the link or the node under the pointer: the link with its two ends, or the node with its links and their other ends, stay bright. On: Shift held hides the dim and the hover card. With Shift: the dim shows only while Shift is held.',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.hover.focus,
+        settings: {
+          options: [
+            { value: 'on', label: 'On' },
+            { value: 'shift', label: 'With Shift' },
+            { value: 'off', label: 'Off' },
+          ],
+        },
       })
       .addMultiSelect<HoverKind, SelectFieldConfigSettings<HoverKind>>({
         path: 'hover.kinds',
