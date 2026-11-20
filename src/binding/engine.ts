@@ -1,4 +1,4 @@
-import { type DisplayValue, type Field, formattedValueToString } from '@grafana/data';
+import { type DisplayValue, type Field, FieldType, formattedValueToString } from '@grafana/data';
 import type { BindContext, CapacitySource, HalfState, SeriesInfo } from '../types';
 import { colorFor, noDataColor } from './color';
 import { halfWidth } from './linkWidth';
@@ -23,39 +23,87 @@ function historySeries(model: Extract<HistoryModel, { state: 'ready' }>, refId: 
   if (seen) {
     return seen;
   }
-  const values: number[] = [];
-  const times: number[] = [];
-  for (let i = 0; i < model.values.length; i++) {
-    const value = model.values[i];
-    if (value !== null) {
-      values.push(value);
-      times.push(model.timestamps[i]);
+  // the arrays of the series (without gaps) cost a copy of the whole history; only the card and the charts read
+  // them, so they are built on the first read. The bind reads the field and the latest value only.
+  let gapless: { values: number[]; times: number[] } | undefined;
+  const copy = () => {
+    if (!gapless) {
+      const values: number[] = [];
+      const times: number[] = [];
+      for (let i = 0; i < model.values.length; i++) {
+        const value = model.values[i];
+        if (value !== null) {
+          values.push(value);
+          times.push(model.timestamps[i]);
+        }
+      }
+      gapless = { values, times };
     }
-  }
+    return gapless;
+  };
   const series: SeriesInfo = {
     refId,
     name: model.field.name,
     labels: model.field.labels ?? {},
     field: model.field,
-    values,
-    times,
+    get values() {
+      return copy().values;
+    },
+    get times() {
+      return copy().times;
+    },
     frame: { length: model.values.length, fields: [model.timeField, model.field] },
   };
   cache.set(refId, series);
   return series;
 }
 
+/** A shared empty array for a series without history; frozen, so no reader can change it. */
+const NO_VALUES = Object.freeze([]) as unknown as number[];
+
+/** The identity of a series without its history: the display of a value reads the field only. */
+const withoutHistory = (series: SeriesInfo, field: Field = series.field): SeriesInfo => ({
+  refId: series.refId,
+  name: series.name,
+  labels: series.labels,
+  field,
+  values: NO_VALUES,
+  times: NO_VALUES,
+  frame: series.frame,
+});
+
 const NO_DATA_LABEL = 'no data';
 
 /** "4.10" reads "4.1", "100.00" reads "100": a capacity is a round figure, its text carries no filler zeros. */
 const withoutTrailingZeros = (shown: DisplayValue): DisplayValue =>
   /^-?\d+\.\d*0$/.test(shown.text) ? { ...shown, text: shown.text.replace(/\.?0+$/, '') } : shown;
-/** The field a capacity is formatted with: the unit of the values, automatic decimals, no cached processor. */
-const capacityField = (field: Field): Field => ({
-  ...field,
-  display: undefined,
-  config: { ...field.config, decimals: undefined },
-});
+const capacityFields = new Map<string, Field>();
+/**
+ * The field a capacity is formatted with: the unit of the values, automatic decimals, no cached processor. The text
+ * of a capacity depends on the type, the unit, the mappings and the bounds only. A field without mappings and bounds
+ * shares one capacity field per type and unit, so the display of the bind builds one processor for all link halves.
+ */
+function capacityField(field: Field): Field {
+  const { unit, mappings, noValue, min, max } = field.config ?? {};
+  const plain =
+    field.type === FieldType.number &&
+    !field.config?.type &&
+    !mappings?.length &&
+    noValue === undefined &&
+    min === undefined &&
+    max === undefined;
+  const key = `${field.type}|${unit ?? ''}`;
+  const seen = plain ? capacityFields.get(key) : undefined;
+  if (seen) {
+    return seen;
+  }
+  if (plain) {
+    const shared: Field = { name: 'capacity', type: field.type, config: { unit }, values: [] };
+    capacityFields.set(key, shared);
+    return shared;
+  }
+  return { ...field, display: undefined, config: { ...field.config, decimals: undefined } };
+}
 
 /** A value in the unit of its field, in bit/s. */
 function bitsOf(value: number, s: SeriesInfo, notes: string[]): number {
@@ -101,13 +149,13 @@ export function halfState(
   const capacity = cap.amount;
   // the capacity is in the canonical unit; the field unit tells how to read the value
   const percent = capacity === undefined ? undefined : (bitsOf(value, series, notes) / capacity) * 100;
-  const display = model.latestDisplayValue ?? ctx.display(series, value);
+  const display = model.latestDisplayValue ?? ctx.display(withoutHistory(series), value);
   // the capacity, once, in the unit of the field with automatic decimals: the card and the labels show this text
   const capacityDisplay =
     capacity === undefined
       ? undefined
       : withoutTrailingZeros(
-          ctx.display({ ...series, field: capacityField(series.field) }, inFieldUnit(capacity, series.field))
+          ctx.display(withoutHistory(series, capacityField(series.field)), inFieldUnit(capacity, series.field))
         );
   const { color, stepIndex } = colorFor(value, percent, series.field, display, ctx.fieldThresholds, ctx.theme);
   const text = formattedValueToString(display);

@@ -4,9 +4,11 @@ import {
   bendLengths,
   drawnStrokeWidth,
   originalStrokeWidth,
+  isStraightPath,
   parsePathPoints,
   pathGeometry,
   pointAt,
+  type Point,
   polylineLength,
   relativeMatrix,
   slicePolyline,
@@ -194,7 +196,8 @@ describe('pathGeometry', () => {
     expect(m.y).toBeCloseTo(2.5);
     expect(m.angle).toBeCloseTo(0);
     const poly = geo.polyline(0, 150);
-    expect(poly.length).toBeGreaterThan(10);
+    // a straight path gives its vertices, not 4-unit samples
+    expect(poly).toHaveLength(3);
     expect(poly[0]).toEqual({ x: 5, y: 2.5 });
     expect(poly[poly.length - 1]).toEqual({ x: 55, y: 27.5 });
   });
@@ -386,5 +389,205 @@ describe('toRoot', () => {
     const svg = document.createElementNS(NS, 'svg');
     svg.innerHTML = '<g transform="translate(3, 4)"><path/></g>';
     expect(toRoot(svg.querySelector('path')!, svg)).toEqual({ ...ident, e: 3, f: 4 });
+  });
+});
+
+describe('pathGeometry on straight paths with the browser API', () => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const IDENT = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  /** A path with a stub engine that walks the given vertices (the way a browser measures a straight path). */
+  function stubbed(d: string, vertices: Array<[number, number]>, total?: number) {
+    const svg = document.createElementNS(NS, 'svg');
+    const g = document.createElementNS(NS, 'g') as SVGGElement;
+    const p = document.createElementNS(NS, 'path') as SVGPathElement;
+    p.setAttribute('d', d);
+    svg.append(p, g);
+    const lens = vertices.slice(1).map((v, i) => Math.hypot(v[0] - vertices[i][0], v[1] - vertices[i][1]));
+    const sum = lens.reduce((a, b) => a + b, 0);
+    const getPointAtLength = vi.fn((dist: number) => {
+      let acc = 0;
+      for (let i = 0; i < lens.length; i++) {
+        if (dist <= acc + lens[i] || i === lens.length - 1) {
+          const t = lens[i] === 0 ? 0 : Math.min(1, Math.max(0, (dist - acc) / lens[i]));
+          const [ax, ay] = vertices[i];
+          const [bx, by] = vertices[i + 1];
+          return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t };
+        }
+        acc += lens[i];
+      }
+      return { x: vertices[0][0], y: vertices[0][1] };
+    });
+    Object.assign(p, { getTotalLength: () => total ?? sum, getPointAtLength, getCTM: () => IDENT });
+    Object.assign(g, { getCTM: () => IDENT });
+    return { p, g, getPointAtLength, sum };
+  }
+  const distToPolyline = (pt: Point, poly: Point[]): number => {
+    let best = Infinity;
+    for (let i = 1; i < poly.length; i++) {
+      const a = poly[i - 1];
+      const b = poly[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / l2)) : 0;
+      best = Math.min(best, Math.hypot(a.x + t * dx - pt.x, a.y + t * dy - pt.y));
+    }
+    return best;
+  };
+  const CASES: Array<[string, string, Array<[number, number]>]> = [
+    [
+      'absolute M/L',
+      'M 10 20 L 110 20 L 110 90 L 30 90',
+      [
+        [10, 20],
+        [110, 20],
+        [110, 90],
+        [30, 90],
+      ],
+    ],
+    [
+      'H and V',
+      'M 10 20 H 110 V 90 H 30',
+      [
+        [10, 20],
+        [110, 20],
+        [110, 90],
+        [30, 90],
+      ],
+    ],
+    [
+      'relative',
+      'm 10 20 l 100 0 v 70 h -80',
+      [
+        [10, 20],
+        [110, 20],
+        [110, 90],
+        [30, 90],
+      ],
+    ],
+    [
+      'compact numbers',
+      'M10,20L110,20L110,90',
+      [
+        [10, 20],
+        [110, 20],
+        [110, 90],
+      ],
+    ],
+    [
+      'implicit lineto',
+      'M 10 20 110 20 110 90',
+      [
+        [10, 20],
+        [110, 20],
+        [110, 90],
+      ],
+    ],
+    [
+      'closed',
+      'M 0 0 L 40 0 L 40 30 Z',
+      [
+        [0, 0],
+        [40, 0],
+        [40, 30],
+        [0, 0],
+      ],
+    ],
+  ];
+  it.each(CASES)('gives the same line as the 4-unit sampling for %s', (_name, d, vertices) => {
+    const { p, g, getPointAtLength, sum } = stubbed(d, vertices);
+    const geo = pathGeometry(p, g);
+    expect(geo.length).toBeCloseTo(sum, 9);
+    const poly = geo.polyline(0, geo.length);
+    expect(getPointAtLength).not.toHaveBeenCalled();
+    expect(poly[0]).toEqual({ x: vertices[0][0], y: vertices[0][1] });
+    expect(poly[poly.length - 1].x).toBeCloseTo(vertices[vertices.length - 1][0], 9);
+    expect(poly[poly.length - 1].y).toBeCloseTo(vertices[vertices.length - 1][1], 9);
+    // every old 4-unit sample lies on the new polyline
+    const n = Math.max(2, Math.ceil(sum / 4));
+    const reference = stubbed(d, vertices);
+    for (let i = 0; i <= n; i++) {
+      const old = reference.getPointAtLength((sum * i) / n);
+      expect(distToPolyline(old, poly)).toBeLessThan(1e-9);
+    }
+    // and every vertex of the path is on it (corners kept)
+    for (const [x, y] of vertices) {
+      expect(distToPolyline({ x, y }, poly)).toBeLessThan(1e-9);
+    }
+    // a sub-range matches the sampled range at its ends
+    const sub = geo.polyline(sum * 0.25, sum * 0.75);
+    const a = reference.getPointAtLength(sum * 0.25);
+    const b = reference.getPointAtLength(sum * 0.75);
+    expect(sub[0].x).toBeCloseTo(a.x, 9);
+    expect(sub[0].y).toBeCloseTo(a.y, 9);
+    expect(sub[sub.length - 1].x).toBeCloseTo(b.x, 9);
+    expect(sub[sub.length - 1].y).toBeCloseTo(b.y, 9);
+  });
+  it('keeps the sampling for a curve', () => {
+    const { p, g, getPointAtLength } = stubbed('M 0 0 C 0 50 50 50 50 0', [
+      [0, 0],
+      [25, 40],
+      [50, 0],
+    ]);
+    const poly = pathGeometry(p, g).polyline(0, 100);
+    expect(getPointAtLength).toHaveBeenCalled();
+    expect(poly.length).toBeGreaterThan(10);
+  });
+  it('keeps the sampling when the engine measures another length than the parsed vertices', () => {
+    const { p, g, getPointAtLength } = stubbed(
+      'M 0 0 L 100 0',
+      [
+        [0, 0],
+        [100, 0],
+      ],
+      130
+    );
+    const poly = pathGeometry(p, g).polyline(0, 130);
+    expect(getPointAtLength).toHaveBeenCalled();
+    expect(poly.length).toBeGreaterThan(10);
+  });
+  it('is in parsed units when the engine length differs by rounding: the bends sit on the vertices, no duplicate end', () => {
+    const d = 'M 10 10 L 200.7 60.2 L 215.3 30.1';
+    const vertices: Array<[number, number]> = [
+      [10, 10],
+      [200.7, 60.2],
+      [215.3, 30.1],
+    ];
+    const exact = polylineLength(parsePathPoints(d));
+    for (const total of [Math.fround(exact), exact * (1 + 1e-8), exact * (1 - 1e-8)]) {
+      const { p, g } = stubbed(d, vertices, total);
+      const geo = pathGeometry(p, g);
+      expect(geo.length).toBe(exact);
+      expect(geo.bends).toEqual(bendLengths(parsePathPoints(d)));
+      const first = Math.hypot(190.7, 50.2);
+      const run = geo.polyline(first, geo.length);
+      expect(run).toHaveLength(2); // the vertex is the start, the end is not doubled
+      expect(run[0].x).toBeCloseTo(200.7, 9);
+      const whole = geo.polyline(0, geo.length);
+      expect(whole).toHaveLength(3);
+      expect(whole[2]).toEqual({ x: 215.3, y: 30.1 });
+    }
+  });
+  it('reads an upper-case exponent in the parser and the check alike', () => {
+    expect(parsePathPoints('M 0 0 L 1E2 0')[1]).toEqual({ x: 100, y: 0 });
+    expect(isStraightPath('M 0 0 L 1E2 0')).toBe(true);
+  });
+  it('ends on a number after Z (no endless loop)', { timeout: 2000 }, () => {
+    expect(parsePathPoints('M0 0 Z 5')).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+    ]);
+    expect(parsePathPoints('M0 0 L 10 0 Z 5 5 L 1 1')).toHaveLength(3);
+  });
+  it('tells a straight path from the rest', () => {
+    expect(isStraightPath('M 0 0 L 10 0 H 5 V 3 Z')).toBe(true);
+    expect(isStraightPath('m0,0l1e2,0')).toBe(true);
+    expect(isStraightPath('M 0 0 Q 5 5 10 0')).toBe(false);
+    expect(isStraightPath('M 0 0 A 5 5 0 0 1 10 0')).toBe(false);
+    expect(isStraightPath('M 0 0 S 5 5 10 0')).toBe(false);
+    expect(isStraightPath('M 0 0 L 10 0 M 20 0 L 30 0')).toBe(false);
+    expect(isStraightPath('M 0 0 L 10 0 Z 5 5')).toBe(false);
+    expect(isStraightPath('L 0 0 10 10')).toBe(false);
+    expect(isStraightPath('')).toBe(false);
   });
 });

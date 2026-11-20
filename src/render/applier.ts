@@ -412,7 +412,9 @@ const sameScheme = (a: ColourScheme, b: ColourScheme) =>
  * the same state and text paints the cell again (spec 3.4).
  */
 export function applyKey(patch: CellPatch, interactive: boolean, title?: string): string {
-  const half = (h: HalfState | undefined) => (h ? [h.status, h.color, h.width, h.stepIndex] : null);
+  // not the width: the overlay draws the halves with their widths; the applier writes only colours. A width that
+  // changes with the load on each refresh would otherwise reset and write every link again.
+  const half = (h: HalfState | undefined) => (h ? [h.status, h.color, h.stepIndex] : null);
   const s = patch.shape;
   const u = patch.unavailable;
   const l = patch.link;

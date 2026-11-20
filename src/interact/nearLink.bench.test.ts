@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { parsePathPoints, pointAt, polylineLength, type Point } from '../render/geometry';
 import { clearFakeLayout, fakeLayout } from '../render/layoutTestKit';
-import { linkSegments, NearLinkFinder } from './nearLink';
+import { linkSegments, nearestLink, NearLinkFinder } from './nearLink';
 import { nearStage } from './nearLink.testKit';
 
 /**
@@ -66,5 +67,92 @@ describe('near-link bench', () => {
     expect(hits).toBeGreaterThan(0);
     expect(ctmReads).toBe(readsAfterFirst);
     expect(perMove).toBeLessThan(BUDGET_MS_PER_MOVE);
+  });
+
+  it('keeps the first build and each move cheap on a map of 565 orthogonal links, with no sampling of straight paths', () => {
+    // jsdom has no getPointAtLength: stub it on the prototypes, as a browser measures a straight path, and count the calls
+    const parsed = new WeakMap<Element, Point[]>();
+    const vertices = (el: Element): Point[] => {
+      let pts = parsed.get(el);
+      if (!pts) {
+        pts = parsePathPoints(el.getAttribute('d') ?? '');
+        parsed.set(el, pts);
+      }
+      return pts;
+    };
+    let sampled = 0;
+    Object.assign(SVGElement.prototype, {
+      getCTM: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+    });
+    Object.assign(SVGElement.prototype, {
+      getTotalLength(this: SVGPathElement) {
+        return polylineLength(vertices(this));
+      },
+      getPointAtLength(this: SVGPathElement, d: number) {
+        sampled++;
+        return pointAt(vertices(this), d);
+      },
+    });
+    try {
+      let x = 12345;
+      const rand = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+      const links: Record<string, string> = {};
+      for (let i = 0; i < 565; i++) {
+        const x0 = Math.round(rand() * 5000);
+        const y0 = Math.round(rand() * 5000);
+        const dx = Math.round(100 + rand() * 400) * (rand() < 0.5 ? -1 : 1);
+        const dy = Math.round(100 + rand() * 400) * (rand() < 0.5 ? -1 : 1);
+        links[`l${i}`] = `M ${x0} ${y0} H ${x0 + dx} V ${y0 + dy} H ${x0 + 2 * dx} V ${y0 + 2 * dy}`;
+      }
+      fakeLayout(
+        () => undefined,
+        undefined,
+        () => ({ a: 0.5, b: 0, c: 0, d: 0.5, e: 0, f: 0 })
+      );
+      const t0 = performance.now();
+      const { root, index } = nearStage(links);
+      const overlayMs = performance.now() - t0;
+      const sampledByOverlay = sampled;
+      const finder = new NearLinkFinder();
+      const accept = () => true;
+      const t1 = performance.now();
+      finder.find(root, index, 1, 1, 'mouse', accept); // builds the segments and the grid
+      const buildMs = performance.now() - t1;
+      const segments = linkSegments(root, index);
+      const sampledByFinder = sampled - sampledByOverlay;
+      const pointers = Array.from({ length: MOVES }, () => ({ x: rand() * 2600, y: rand() * 2600 }));
+      const radius = 8 / 0.5;
+      let hits = 0;
+      const t2 = performance.now();
+      for (const p of pointers) {
+        if (finder.find(root, index, p.x * 0.5, p.y * 0.5, 'mouse', accept)) {
+          hits++;
+        }
+      }
+      const gridUs = ((performance.now() - t2) / MOVES) * 1000;
+      const t3 = performance.now();
+      let plainHits = 0;
+      for (const p of pointers) {
+        if (nearestLink(segments, p, radius, accept)) {
+          plainHits++;
+        }
+      }
+      const plainUs = ((performance.now() - t3) / MOVES) * 1000;
+      console.log(
+        `near-link bench, 565 links (${segments.length} segments): overlay ${overlayMs.toFixed(1)} ms ` +
+          `(${sampledByOverlay} getPointAtLength calls), finder build ${buildMs.toFixed(1)} ms ` +
+          `(${sampledByFinder} calls), ${gridUs.toFixed(2)} us per move with the grid vs ${plainUs.toFixed(2)} us by the plain scan`
+      );
+      // a straight path needs no sampling for the finder: the tangent reads of the overlay are a few points per link
+      expect(sampledByFinder).toBe(0);
+      expect(sampledByOverlay).toBeLessThan(565 * 40);
+      expect(segments).toHaveLength(565 * 4);
+      expect(hits).toBe(plainHits);
+      expect(gridUs).toBeLessThan(BUDGET_MS_PER_MOVE * 1000);
+    } finally {
+      Reflect.deleteProperty(SVGElement.prototype, 'getCTM');
+      Reflect.deleteProperty(SVGElement.prototype, 'getTotalLength');
+      Reflect.deleteProperty(SVGElement.prototype, 'getPointAtLength');
+    }
   });
 });

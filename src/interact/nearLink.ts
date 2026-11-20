@@ -57,6 +57,96 @@ export function nearestLink(
   return best;
 }
 
+/** The side of a grid cell, in root user units. */
+const GRID_CELL = 64;
+/** A segment that covers more cells than this stays in the list that every query scans. */
+const MAX_CELLS_PER_SEGMENT = 64;
+/** The cell index is clamped to this range, for the same clamp at insert and at query. */
+const GRID_LIMIT = 1 << 19;
+
+const cellOf = (v: number): number => Math.max(-GRID_LIMIT, Math.min(GRID_LIMIT, Math.floor(v / GRID_CELL)));
+const cellKey = (cx: number, cy: number): number => (cx + GRID_LIMIT) * (2 * GRID_LIMIT + 1) + (cy + GRID_LIMIT);
+
+/**
+ * A uniform grid of the segment boxes. `nearest` has the result of `nearestLink` over the same segments, but it
+ * reads only the segments in the cells around the point: the candidates are taken in the original order, so the
+ * tie rule (the later of two equal distances wins) and the order of the `accept` calls stay the same.
+ */
+export class SegmentGrid {
+  private readonly cells = new Map<number, number[]>();
+  private readonly wide: number[] = [];
+  private readonly seen: Uint32Array;
+  private stamp = 0;
+
+  constructor(private readonly segments: readonly Segment[]) {
+    this.seen = new Uint32Array(segments.length);
+    segments.forEach((s, i) => {
+      if (Number.isNaN(s.ax + s.ay + s.bx + s.by)) {
+        return; // a segment with no position is never near
+      }
+      const x0 = cellOf(Math.min(s.ax, s.bx));
+      const x1 = cellOf(Math.max(s.ax, s.bx));
+      const y0 = cellOf(Math.min(s.ay, s.by));
+      const y1 = cellOf(Math.max(s.ay, s.by));
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_CELLS_PER_SEGMENT) {
+        this.wide.push(i);
+        return;
+      }
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let cy = y0; cy <= y1; cy++) {
+          const key = cellKey(cx, cy);
+          const list = this.cells.get(key);
+          if (list) {
+            list.push(i);
+          } else {
+            this.cells.set(key, [i]);
+          }
+        }
+      }
+    });
+  }
+
+  nearest(p: Point, radius: number, accept: (cellId: string) => boolean): string | undefined {
+    const x0 = cellOf(p.x - radius);
+    const x1 = cellOf(p.x + radius);
+    const y0 = cellOf(p.y - radius);
+    const y1 = cellOf(p.y + radius);
+    if (!(x1 - x0 + 1 <= 8 && y1 - y0 + 1 <= 8)) {
+      return nearestLink(this.segments, p, radius, accept); // a huge radius (or NaN): the plain scan
+    }
+    this.stamp = (this.stamp + 1) >>> 0;
+    if (this.stamp === 0) {
+      this.seen.fill(0);
+      this.stamp = 1;
+    }
+    const found: number[] = [];
+    const take = (i: number) => {
+      if (this.seen[i] !== this.stamp) {
+        this.seen[i] = this.stamp;
+        found.push(i);
+      }
+    };
+    this.wide.forEach(take);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        this.cells.get(cellKey(cx, cy))?.forEach(take);
+      }
+    }
+    found.sort((a, b) => a - b);
+    let best: string | undefined;
+    let bestD = radius * radius;
+    for (const i of found) {
+      const s = this.segments[i];
+      const d = segmentDistance2(p.x, p.y, s);
+      if (d <= bestD && (s.cellId === best || accept(s.cellId))) {
+        best = s.cellId;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+}
+
 /**
  * Finds the link near a pointer on one stage. It keeps two caches: the segments of the link paths of the index in
  * root user units (made again for a new index: a new diagram or stage, not a data refresh) and the screen-to-root
@@ -67,6 +157,7 @@ export class NearLinkFinder {
   private root?: SVGSVGElement;
   private index?: CellIndex;
   private segments: Segment[] = [];
+  private grid?: SegmentGrid;
   private screenToRoot?: { inverse: Matrix; scale: number };
 
   /** The view moved or the stage changed size: the next find reads the transform again. */
@@ -87,6 +178,7 @@ export class NearLinkFinder {
       this.root = root;
       this.index = index;
       this.segments = linkSegments(root, index);
+      this.grid = new SegmentGrid(this.segments);
       this.screenToRoot = undefined;
     }
     if (!this.segments.length) {
@@ -100,7 +192,7 @@ export class NearLinkFinder {
       this.screenToRoot = { inverse: invert(ctm), scale: scaleOf(ctm) };
     }
     const { inverse, scale } = this.screenToRoot;
-    return nearestLink(this.segments, applyMatrix(inverse, { x, y }), catchRadius(pointerType) / scale, accept);
+    return this.grid!.nearest(applyMatrix(inverse, { x, y }), catchRadius(pointerType) / scale, accept);
   }
 }
 

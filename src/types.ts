@@ -268,7 +268,8 @@ export interface HalfState {
   /** the capacity in the canonical unit of the field (bit/s for a data rate), when the half has one */
   capacity?: number;
   capacitySource?: CapacitySource;
-  /** the capacity in the unit of the field, formatted once; the card and the labels show it */
+  /** the capacity in the unit of the field, formatted once; the card and the labels show it.
+   * Only its text is valid: its colour and percent do not follow the thresholds of the field. */
   capacityDisplay?: DisplayValue;
   display?: DisplayValue;
   series?: SeriesInfo;
