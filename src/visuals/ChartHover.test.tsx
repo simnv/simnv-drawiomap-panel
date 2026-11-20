@@ -253,14 +253,34 @@ describe('ChartHover cost while scrubbing', () => {
   const move = (el: HTMLElement, x: number) =>
     fireEvent.pointerMove(el, { clientX: x, clientY: 5, pointerType: 'mouse' });
 
-  it('a move renders its sample in the same event, with no frame between (Safari: values did not trail the pointer)', () => {
+  it('the first move of a frame renders its sample in the same event (Safari: values trailed the pointer)', () => {
     const el = mount();
     move(el, 10);
-    expect(frames.size).toBe(0);
     expect(screen.getByTestId('series').textContent).toBe('up=1');
+    flushFrame();
     move(el, 49);
-    expect(frames.size).toBe(0);
     expect(screen.getByTestId('series').textContent).toBe('up=2'); // x=49: nearest sample is 50
+  });
+
+  it('50 moves in one frame render the first at once and the last at the frame, nothing between', () => {
+    const el = mount();
+    for (let x = 0; x < 50; x++) {
+      move(el, x);
+    }
+    expect(counts.table).toBe(1);
+    expect(screen.getByTestId('series').textContent).toBe('up=1');
+    flushFrame();
+    expect(counts.table).toBe(2);
+    expect(screen.getByTestId('series').textContent).toBe('up=2');
+  });
+
+  it('a move back over the same sample right after a leave shows the tooltip again', () => {
+    const el = mount();
+    move(el, 10);
+    flushFrame();
+    fireEvent.pointerLeave(el, { pointerType: 'mouse' });
+    move(el, 10);
+    expect(screen.getByTestId('series').textContent).toBe('up=1');
   });
 
   it('moves inside the same sample do not render again', () => {
@@ -302,9 +322,10 @@ describe('ChartHover cost while scrubbing', () => {
     expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
   });
 
-  it('does not show a tooltip when a frame lands after the pointer left', () => {
+  it('a move noted in a frame does not show after the pointer left', () => {
     const el = mount();
     move(el, 10);
+    move(el, 90);
     fireEvent.pointerLeave(el, { pointerType: 'mouse' });
     flushFrame();
     expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
@@ -368,7 +389,7 @@ describe('ChartHover cost while scrubbing', () => {
   });
 });
 
-describe('ChartHover frame races', () => {
+describe('ChartHover refresh, place and Escape', () => {
   const box = (el: HTMLElement, left = 0) => {
     el.getBoundingClientRect = () =>
       ({ left, width: 100, top: 0, height: 20, right: left + 100, bottom: 20 }) as DOMRect;

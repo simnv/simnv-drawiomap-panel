@@ -298,11 +298,29 @@ export function ChartHover({
       ),
     [series]
   );
-  // the pointer handler reads the data, range and hover of the latest commit
+  // the pointer handler reads the data, range and hover of the latest commit; a handler that writes the hover also
+  // writes it here at once, so the next event compares with it before React renders
   const latest = useRef({ ready, from, to, hover });
   useLayoutEffect(() => {
     latest.current = { ready, from, to, hover };
   });
+  // After a render for a move, later moves of the same frame (a mouse of high rate in Safari) only note their place;
+  // the frame then shows the last one.
+  const frame = useRef<number>();
+  const pending = useRef<{ clientX: number; kind: 'mouse' | 'touch' }>();
+  const cancelFrame = useCallback(() => {
+    if (frame.current !== undefined) {
+      cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+    }
+    pending.current = undefined;
+  }, []);
+  useEffect(() => cancelFrame, [cancelFrame]);
+  /** Writes the hover at once (a flushed render), and notes it for the next event. */
+  const show = useCallback((next: Hover | undefined) => {
+    latest.current.hover = next;
+    flushSync(() => setHover(next));
+  }, []);
   const rows = useMemo(() => {
     if (!enabled || !hover) {
       return undefined;
@@ -327,19 +345,19 @@ export function ChartHover({
   if (!enabled) {
     return <>{children}</>;
   }
-  // A pointer event turns into a sample at once, and the new sample renders in the same event (flushSync). The
-  // browsers already send at most one pointer move per frame; a wait for a frame here, and a render that React
-  // schedules for a later task, put the crosshair and the values one or more frames behind the pointer (Safari).
-  // The state changes only when the sample changes, so a fast scrub renders at most once per sample.
-  const place = (clientX: number, kind: 'mouse' | 'touch') => {
+  // A pointer event turns into a sample at once, and the new sample renders in the same event (flushSync). A wait
+  // for a frame first, and a render that React schedules for a later task, put the crosshair and the values one or
+  // more frames behind the pointer (Safari). The state changes only when the sample changes, and at most one move
+  // renders in a frame: later moves of that frame render at the frame (see `frame`). True when the hover changed.
+  const place = (clientX: number, kind: 'mouse' | 'touch'): boolean => {
     const r = ref.current?.getBoundingClientRect();
     if (!r || r.width <= 0) {
-      return;
+      return false;
     }
     const { ready: rd, from: f, to: t, hover: cur } = latest.current;
     const picked = alignedSamples(rd, timeAt((clientX - r.left) / r.width, f, t));
     if (!picked) {
-      return;
+      return false;
     }
     const fraction = t > f ? Math.min(1, Math.max(0, (picked.time - f) / (t - f))) : 0;
     const next: Hover = {
@@ -352,27 +370,46 @@ export function ChartHover({
     // The same sample at the same place: no state write at all. A write of an equal value would still run the
     // component once before React drops the result.
     if (cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y) {
-      return;
+      return false;
     }
-    flushSync(() => setHover(next));
+    show(next);
+    return true;
   };
   const move = (ev: React.PointerEvent) => {
     // in a linked row a press, a pressed drag or a finger is for the link: no sample
     if (linked && (ev.pointerType === 'touch' || ev.type === 'pointerdown' || ev.buttons !== 0)) {
       return;
     }
-    place(ev.clientX, ev.pointerType === 'touch' ? 'touch' : 'mouse');
+    const at = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? ('touch' as const) : ('mouse' as const) };
+    if (frame.current !== undefined) {
+      // this frame rendered a move already: show the last place at the frame
+      pending.current = at;
+      return;
+    }
+    if (place(at.clientX, at.kind)) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = undefined;
+        const p = pending.current;
+        pending.current = undefined;
+        if (p) {
+          place(p.clientX, p.kind);
+        }
+      });
+    }
   };
   const clear = () => {
-    setHover(undefined);
+    cancelFrame();
+    show(undefined);
   };
   const key = (ev: React.KeyboardEvent) => {
     if (ev.key === 'Escape') {
-      // a queued frame must not open the tooltip after Escape; the event goes on to close the card when nothing was open
+      // a noted move must not open the tooltip again after Escape; the event goes on to close the card when nothing
+      // was open
+      cancelFrame();
       if (hover) {
         ev.stopPropagation();
         ev.preventDefault();
-        setHover(undefined);
+        show(undefined);
       }
       return;
     }
@@ -407,7 +444,10 @@ export function ChartHover({
       onPointerMove={move}
       onPointerLeave={(ev) => {
         if (ev.pointerType !== 'touch') {
-          setHover((h) => (h?.kind === 'key' ? h : undefined));
+          cancelFrame();
+          if (latest.current.hover?.kind !== 'key') {
+            show(undefined);
+          }
         }
       }}
       onPointerCancel={clear}
