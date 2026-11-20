@@ -5,7 +5,7 @@ import { markNearLink } from '../render/overlay';
 import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
-import { cardReducer, type CardAction, type CardState } from './cardState';
+import { createCardStore, type CardAction } from './cardState';
 import { inPortalControl, PORTAL_CONTROL_ATTR } from '../visuals/ChartHover';
 import { patchAt } from './hit';
 import { NearLinkFinder } from './nearLink';
@@ -13,28 +13,39 @@ import { NearLinkFinder } from './nearLink';
 /** The attribute of the stage while the pointer is near a link (not on it): the panel CSS shows the hand cursor. */
 export const NEAR_ATTR = 'data-dmap-near';
 
-/** Touch screens and other devices without hover: only a tap opens (and pins) the card. */
-const canHover = () => !(typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
-
 /**
- * The card state of the panel. The bind reads the open cell, so this part comes before the bind; useCardInput adds
- * the events after it. The dispatch is useState with an updater, not useReducer: useReducer gets no eager bail-out,
- * so an action that keeps the state (a pointer that leaves the panel with no card) would render the view.
+ * Touch screens and other devices without hover: only a tap opens (and pins) the card. The query list is made once
+ * for each matchMedia function (a test can replace it) and its `matches` is live, so a pointer move makes no query.
  */
+let hoverQuery: { of: typeof window.matchMedia; list: MediaQueryList } | undefined;
+const canHover = () => {
+  if (typeof window.matchMedia !== 'function') {
+    return true;
+  }
+  if (hoverQuery?.of !== window.matchMedia) {
+    hoverQuery = { of: window.matchMedia, list: window.matchMedia('(hover: none)') };
+  }
+  return !hoverQuery.list.matches;
+};
+
 /** A pointer on a chart region: a chart covers the links below it, so no link is near. */
 const onChart = (t: EventTarget | null): boolean => t instanceof Element && !!t.closest(`[${CHART_LAYER_ATTR}]`);
 
+/**
+ * The card state of the panel: a store outside React (`createCardStore`). The panel view reads only the pinned cell;
+ * the card host (CardHost) reads the whole state, so a hover from cell to cell renders only the card. useCardInput
+ * adds the events.
+ */
 export function useCardState() {
-  const [card, setCard] = useState<CardState | null>(null);
-  const dispatch = useCallback((action: CardAction) => setCard((c) => cardReducer(c, action)), []);
+  const [store] = useState(createCardStore);
   const cardRef = useRef<HTMLDivElement>(null);
   const inCard = useCallback((t: EventTarget | null) => t instanceof Node && !!cardRef.current?.contains(t), []);
-  return { card, dispatch, cardRef, inCard };
+  return { store, dispatch: store.dispatch, cardRef, inCard };
 }
 
 interface InputArgs extends ReturnType<typeof useCardState> {
-  /** The card of the open cell has rows or links. */
-  open: boolean;
+  /** The cell of a pinned card with rows or links: the pointer does not hover while it stays. */
+  pinnedCell: string | undefined;
   wrapperRef: RefObject<HTMLDivElement | null>;
   /** The same element as wrapperRef, as state: the pointerleave listener follows it. */
   wrapperEl: HTMLDivElement | null;
@@ -57,12 +68,11 @@ interface InputArgs extends ReturnType<typeof useCardState> {
 
 /** The events of the card: hover, click, tap and Enter open it; Esc, a click outside and leaving the panel close it. */
 export function useCardInput(args: InputArgs) {
-  const { card, dispatch, cardRef, inCard, open, wrapperRef, wrapperEl, stageRef, root, patches, index, cardable } =
-    args;
+  const { store, dispatch, inCard, wrapperRef, wrapperEl, stageRef, root, patches, index, cardable } = args;
   const { focusOf } = args;
-  const pinned = !!card?.pinned && open;
   // the cell of a pinned card keeps the hover focus (the tint) until the card closes
-  const pinnedId = pinned ? card?.cellId : undefined;
+  const pinnedId = args.pinnedCell;
+  const pinned = pinnedId !== undefined;
 
   // A thin link is hard to hit: a pointer near it (in screen px) catches it when nothing that opens a card is under
   // the pointer. The finder caches the segments and the screen transform; the events below make it read them again.
@@ -184,6 +194,11 @@ export function useCardInput(args: InputArgs) {
     [dispatch]
   );
   const close = useCallback(() => finish({ type: 'close' }), [finish]);
+  // a pointer down outside the panel and the card: the focus stays where the pointer put it
+  const outside = useCallback(() => {
+    opener.current = null;
+    dispatch({ type: 'outside' });
+  }, [dispatch]);
 
   // The pointer leaves the panel: the hover card closes, a pinned card stays. A native listener: React makes
   // onPointerLeave from pointerout, and the browser sends no pointerout when the overlay redraw removed the
@@ -213,43 +228,6 @@ export function useCardInput(args: InputArgs) {
       wrapperEl.removeEventListener('pointerdown', onDown, true);
     };
   }, [wrapperEl, dispatch, finder, stopFrame, setNear]);
-
-  // Esc closes the card. A pointer down outside the panel closes a pinned card.
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    // Capture phase: Esc closes the card only, Grafana does not also leave the panel view.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // a chart with a tooltip hides the tooltip first (ChartHover); the next Esc closes the card
-        if ((e.target as Element | null)?.closest?.('[data-tooltip-open="true"]')) {
-          return;
-        }
-        // an open warning list closes first (also when a press on its edge left the focus on the page); the next Esc
-        // closes the card
-        if (inPortalControl(e.target) || document.querySelector(`[${PORTAL_CONTROL_ATTR}]`)) {
-          return;
-        }
-        e.stopPropagation();
-        finish({ type: 'escape' });
-      }
-    };
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      // the sheet is in a portal outside the panel
-      if (pinned && !wrapperRef.current?.contains(t) && !cardRef.current?.contains(t) && !inPortalControl(t)) {
-        opener.current = null;
-        dispatch({ type: 'outside' });
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    document.addEventListener('pointerdown', onDown, true);
-    return () => {
-      document.removeEventListener('keydown', onKey, true);
-      document.removeEventListener('pointerdown', onDown, true);
-    };
-  }, [open, pinned, finish, dispatch, wrapperRef, cardRef]);
 
   const local = (e: { clientX: number; clientY: number }) => {
     const r = wrapperRef.current!.getBoundingClientRect();
@@ -302,6 +280,7 @@ export function useCardInput(args: InputArgs) {
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   /** The pointer hovers `patch` (or no cell): the mark and the focus, then the card. */
   const hover = (patch: CellPatch | undefined, at: { clientX: number; clientY: number }) => {
+    const card = store.get();
     const same = !!patch && card?.cellId === patch.cellId;
     // the place in the panel is read before the focus writes to the svg: a read after the writes forces a second layout
     const place = patch && !same ? local(at) : undefined;
@@ -371,5 +350,56 @@ export function useCardInput(args: InputArgs) {
     }
   };
 
-  return { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef };
+  return { close, finish, outside, onClick, onKeyDown, onPointerMove, moveRef, pointerRef };
+}
+
+interface DismissArgs {
+  /** The card of the open cell has rows or links. */
+  open: boolean;
+  pinned: boolean;
+  finish: (action: CardAction) => void;
+  outside: () => void;
+  wrapperRef: RefObject<HTMLDivElement | null>;
+  cardRef: RefObject<HTMLDivElement | null>;
+}
+
+/**
+ * Esc closes the card. A pointer down outside the panel closes a pinned card. The card host runs it: the listeners
+ * follow the open card, and the panel view does not render for them.
+ */
+export function useCardDismiss({ open, pinned, finish, outside, wrapperRef, cardRef }: DismissArgs) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    // Capture phase: Esc closes the card only, Grafana does not also leave the panel view.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // a chart with a tooltip hides the tooltip first (ChartHover); the next Esc closes the card
+        if ((e.target as Element | null)?.closest?.('[data-tooltip-open="true"]')) {
+          return;
+        }
+        // an open warning list closes first (also when a press on its edge left the focus on the page); the next Esc
+        // closes the card
+        if (inPortalControl(e.target) || document.querySelector(`[${PORTAL_CONTROL_ATTR}]`)) {
+          return;
+        }
+        e.stopPropagation();
+        finish({ type: 'escape' });
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      // the sheet is in a portal outside the panel
+      if (pinned && !wrapperRef.current?.contains(t) && !cardRef.current?.contains(t) && !inPortalControl(t)) {
+        outside();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [open, pinned, finish, outside, wrapperRef, cardRef]);
 }

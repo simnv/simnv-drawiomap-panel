@@ -78,8 +78,11 @@ const getStyles = (theme: GrafanaTheme2) => ({
     color: ${theme.colors.text.primary};
     outline: none;
   `,
+  // The transform (placeAt) makes the floating card a containing block for a position: fixed child: such a child
+  // must render through a portal (the ChartHover tooltip does, SandboxPortal).
   hover: css`
     pointer-events: none;
+    will-change: transform;
   `,
   inline: css`
     position: static;
@@ -322,12 +325,20 @@ const Row = memo(function Row({
   );
 });
 
-/** Writes the place of the floating card for a pointer at (x, y) in the panel. The height is read before the writes. */
+/**
+ * The CSS transform that puts the floating card at (x, y) in the panel: its left and top stay 0. Whole pixels: a
+ * transform to a fraction of a pixel blurs the text.
+ */
+export const translate = (x: number, y: number) => `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+
+/**
+ * Writes the place of the floating card for a pointer at (x, y) in the panel. The height is read before the write. A
+ * transform moves the card with no layout of the page.
+ */
 function placeAt(el: HTMLElement, x: number, y: number, width: number, height: number) {
   const h = el.offsetHeight;
   const p = placeTooltip(x, y, W, h, width, height, EDGE, GAP);
-  el.style.left = `${p.x}px`;
-  el.style.top = `${p.y}px`;
+  el.style.transform = translate(p.x, p.y);
 }
 
 /**
@@ -361,6 +372,13 @@ export function Card({
   // before it (the pointer left the cell) pays for the texts only. A pinned card and the inline card of the popup
   // have the charts at once: the user asked for them, and they are not on a pointer path.
   const [chartsReady, setChartsReady] = useState(pinned || inline);
+  // The hover card stays mounted from cell to cell (a pin gives a new instance): a new cell starts again with the
+  // texts and the empty chart boxes.
+  const [shownCell, setShownCell] = useState(cellId);
+  if (shownCell !== cellId) {
+    setShownCell(cellId);
+    setChartsReady(pinned || inline);
+  }
   useEffect(() => {
     if (!chartsReady) {
       startTransition(() => setChartsReady(true));
@@ -393,8 +411,9 @@ export function Card({
     placeAt(el, at.x, at.y, width, height);
   });
 
-  // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes. The panel gives a
-  // new cell or a pin another instance (a React key), so no frame outlives the state it was queued for.
+  // The pointer moves inside the cell: place in a frame, no render. Reads come before the writes. A pin gets another
+  // instance (a React key), so no frame outlives the pin state it was queued for. A hover card keeps its instance from
+  // cell to cell: a frame of the last cell places it at the latest pointer, the place of the new cell too.
   const frame = useRef<number>();
   const latest = useRef({ target, width, height, floating: !sheet && !inline });
   useEffect(() => {
@@ -437,8 +456,11 @@ export function Card({
     }
   }, [pinned, inline, model.title]);
 
+  // A floating card is placed with a transform: a position: fixed child goes through a portal (see the hover style).
   const style: React.CSSProperties =
-    sheet || inline ? {} : { width: W, maxHeight: height - 2 * EDGE, left: x + GAP, top: y + GAP };
+    sheet || inline
+      ? {}
+      : { width: W, maxHeight: height - 2 * EDGE, left: 0, top: 0, transform: translate(x + GAP, y + GAP) };
 
   return (
     <div

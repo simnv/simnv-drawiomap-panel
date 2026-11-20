@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardReducer, type CardState } from './cardState';
+import { cardReducer, createCardStore, pinnedCellOf, type CardState } from './cardState';
 
 const at = { cellId: 'a', x: 10, y: 20 };
 const hover: CardState = { ...at, pinned: false };
@@ -46,5 +46,59 @@ describe('cardReducer', () => {
     for (const state of states) {
       expect(cardReducer(state, { type })).toBeNull();
     }
+  });
+});
+
+describe('createCardStore', () => {
+  const at = { cellId: 'a', x: 1, y: 2 };
+
+  it('notifies on a change of the state only', () => {
+    const store = createCardStore();
+    let calls = 0;
+    const off = store.subscribe(() => calls++);
+    store.dispatch({ type: 'leave' });
+    expect(calls).toBe(0);
+    store.dispatch({ type: 'hover', at });
+    expect(store.get()).toEqual({ ...at, pinned: false });
+    expect(calls).toBe(1);
+    off();
+    store.dispatch({ type: 'close' });
+    expect(calls).toBe(1);
+    expect(store.get()).toBeNull();
+  });
+
+  it('adjust changes the state with no notify (a state adjustment during a render)', () => {
+    const store = createCardStore();
+    store.dispatch({ type: 'pin', at });
+    let calls = 0;
+    store.subscribe(() => calls++);
+    store.adjust({ type: 'diagram-changed' });
+    expect(store.get()).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it('keeps the hover-open flag that the card host writes while the state has a hover card', () => {
+    const store = createCardStore();
+    store.setHoverOpen(true);
+    // no card: the flag of an old commit does not count
+    expect(store.hoverOpen()).toBe(false);
+    store.dispatch({ type: 'hover', at });
+    expect(store.hoverOpen()).toBe(true);
+    store.dispatch({ type: 'pin', at });
+    expect(store.hoverOpen()).toBe(false);
+  });
+
+  it('an adjust that drops the hover card turns the hover-open flag off before the host commits again', () => {
+    const store = createCardStore();
+    store.dispatch({ type: 'hover', at });
+    store.setHoverOpen(true);
+    store.adjust({ type: 'stale-cell' });
+    expect(store.hoverOpen()).toBe(false);
+  });
+
+  it('pinnedCellOf names only the cell of a pinned card', () => {
+    expect(pinnedCellOf(null)).toBeUndefined();
+    expect(pinnedCellOf({ ...at, pinned: false })).toBeUndefined();
+    expect(pinnedCellOf({ ...at, pinned: true })).toBe('a');
   });
 });

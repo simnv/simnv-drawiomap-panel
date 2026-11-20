@@ -477,6 +477,42 @@ describe('DrawioMapPanel hover card', () => {
       unmount();
     });
 
+    it('a hover switch between cells renders the card only, not the panel view', async () => {
+      let commits = 0;
+      const r = render(
+        <Profiler id="panel" onRender={() => commits++}>
+          <DrawioMapPanel {...props()} />
+        </Profiler>
+      );
+      await waitFor(() => expect(r.container.querySelector('polyline.dmap-half')).not.toBeNull());
+      const half = r.container.querySelector(`polyline.dmap-half[data-dmap-half="a2b"][data-dmap-cell="${linkId}"]`)!;
+      const node = r.container.querySelector('[data-cell-id="pg-node~rtr-b"]')!;
+      fireEvent.pointerMove(half, { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      await screen.findByRole('tooltip');
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 50));
+      });
+      const renders = work.viewRenders;
+      commits = 0;
+      const shown = screen.getByTestId('dmap-card');
+      const switches = 10;
+      for (let i = 0; i < switches; i++) {
+        const [target, label] = i % 2 === 0 ? [node, 'rtr-b'] : [half, 'ISP A'];
+        fireEvent.pointerMove(target, { pointerType: 'mouse', clientX: 10 + i, clientY: 10 });
+        await waitFor(() => expect(screen.getByRole('tooltip').getAttribute('aria-label')).toContain(label));
+      }
+      await act(async () => {
+        await new Promise((done) => setTimeout(done, 50));
+      });
+      // before the card host, each switch rendered the view once (10 here)
+      expect(work.viewRenders - renders).toBe(0);
+      // each switch commits the card twice: the texts, then the charts in a transition
+      expect(commits).toBeLessThanOrEqual(2 * switches);
+      // the card stays mounted: the next cell updates its content
+      expect(screen.getByTestId('dmap-card')).toBe(shown);
+      r.unmount();
+    });
+
     it('pointer moves inside one cell render the panel at most once', async () => {
       const { half, unmount } = await setup();
       fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 10, clientY: 10 });
@@ -674,6 +710,38 @@ describe('DrawioMapPanel hover card', () => {
       wrapper.dispatchEvent(new Event('pointerleave'));
     });
     expect(card()!.getAttribute('data-pinned')).toBe('true');
+  });
+
+  it('a new diagram closes a hover card, also when the cell is still there', async () => {
+    const p = props();
+    const { half, rerender } = await setup(p);
+    fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
+    await screen.findByRole('tooltip');
+    const diagram = { ...options.diagram!, hash: 'another-diagram' };
+    rerender(<DrawioMapPanel {...p} options={{ ...options, diagram }} />);
+    expect(card()).toBeNull();
+  });
+
+  it('new bindings that leave the hovered cell with no patch close its card', async () => {
+    const p = props();
+    const { half, rerender } = await setup(p);
+    fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
+    await screen.findByRole('tooltip');
+    rerender(<DrawioMapPanel {...p} options={{ ...options, config: undefined }} />);
+    expect(card()).toBeNull();
+    // the state went too: the same cell opens its card again with the bindings back
+    rerender(<DrawioMapPanel {...p} />);
+    expect(card()).toBeNull();
+    fireEvent.pointerMove(half(linkId), { pointerType: 'mouse', clientX: 5, clientY: 5 });
+    expect(await screen.findByRole('tooltip')).toBeTruthy();
+  });
+
+  it('Esc closes a hover card', async () => {
+    const { half } = await setup();
+    fireEvent.pointerMove(half(linkId), { pointerType: 'mouse' });
+    await screen.findByRole('tooltip');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(card()).toBeNull();
   });
 
   it('a new diagram closes a pinned card, also when the cell is still there', async () => {

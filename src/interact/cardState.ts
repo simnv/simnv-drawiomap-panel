@@ -47,3 +47,57 @@ export function cardReducer(state: CardState | null, action: CardAction): CardSt
       return null;
   }
 }
+
+/**
+ * The card state outside React: a hover writes it, and only the card host renders. The panel view reads only the
+ * pinned cell, so a hover from cell to cell does not render the panel.
+ */
+export interface CardStore {
+  get(): CardState | null;
+  subscribe(listener: () => void): () => void;
+  dispatch(action: CardAction): void;
+  /**
+   * The same action during a render of the panel (a state adjustment): no listener runs, because a listener would
+   * update another component during the render. The card host renders in the same pass and reads the new state.
+   */
+  adjust(action: CardAction): void;
+  /**
+   * True while a hover card with content is open, also when Shift hides it (the host writes it after each commit): the
+   * Shift key reads it when it goes down.
+   */
+  hoverOpen(): boolean;
+  setHoverOpen(open: boolean): void;
+}
+
+export function createCardStore(): CardStore {
+  let state: CardState | null = null;
+  let hoverOpen = false;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => state,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    dispatch(action) {
+      const next = cardReducer(state, action);
+      // an action that keeps the state (a pointer that leaves the panel with no card) renders nothing
+      if (next !== state) {
+        state = next;
+        listeners.forEach((l) => l());
+      }
+    },
+    adjust(action) {
+      state = cardReducer(state, action);
+    },
+    // the flag of the last host commit holds only while the state still has a hover card: an adjust in the same batch
+    // or a host that is gone (no diagram) cannot leave it on
+    hoverOpen: () => hoverOpen && state !== null && !state.pinned,
+    setHoverOpen(open) {
+      hoverOpen = open;
+    },
+  };
+}
+
+/** The cell of a pinned card, or undefined: the only part of the card state that the panel view reads. */
+export const pinnedCellOf = (state: CardState | null): string | undefined => (state?.pinned ? state.cellId : undefined);
