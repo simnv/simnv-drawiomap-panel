@@ -377,22 +377,26 @@ export function Card({
   // stayed on the cell for HOVER_CHART_DWELL_MS. A card that unmounts or moves to another cell before then (the
   // pointer passed over the cell) pays for the texts only. A pinned card and the inline card of the popup have the
   // charts at once: the user asked for them, and they are not on a pointer path.
-  const [chartsReady, setChartsReady] = useState(pinned || inline);
+  // `readyFor`: the cell whose dwell ended. A transition of an earlier cell that commits after the card moved on names
+  // that cell, so the new cell shows no charts before its own dwell ends.
+  const [readyFor, setReadyFor] = useState<{ cell: string | undefined } | null>(null);
+  const chartsReady = pinned || inline || (readyFor !== null && readyFor.cell === cellId);
   // The hover card stays mounted from cell to cell (a pin gives a new instance): a new cell starts again with the
   // texts and the empty chart boxes.
   const [shownCell, setShownCell] = useState(cellId);
   if (shownCell !== cellId) {
     setShownCell(cellId);
-    setChartsReady(pinned || inline);
+    setReadyFor(null);
   }
   useEffect(() => {
     if (chartsReady) {
       return;
     }
     // a new cell starts the time again
-    const timer = setTimeout(() => startTransition(() => setChartsReady(true)), HOVER_CHART_DWELL_MS);
+    const cell = cellId;
+    const timer = setTimeout(() => startTransition(() => setReadyFor({ cell })), HOVER_CHART_DWELL_MS);
     return () => clearTimeout(timer);
-  }, [chartsReady, shownCell]);
+  }, [chartsReady, cellId]);
 
   // The place in the panel. A hover card follows the latest pointer position of the panel (`pointerRef`, client
   // coordinates) and nothing else. A pinned card uses only its own x and y.

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { LEGEND_ROW_ATTR } from '../legend/symbolRows';
-import { CHART_LAYER_ATTR, focusCells, followView } from '../render/linkFocus';
-import { markNearLink } from '../render/overlay';
+import { CHART_LAYER_ATTR, focusCells, followView, markHover } from '../render/linkFocus';
 import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
@@ -30,28 +29,6 @@ const canHover = () => {
 
 /** A pointer on a chart region: a chart covers the links below it, so no link is near. */
 const onChart = (t: EventTarget | null): boolean => t instanceof Element && !!t.closest(`[${CHART_LAYER_ATTR}]`);
-
-/**
- * The near mark and the focus of the hovered cell `id` (undefined: none) under `root`; true when `id` is a link. With
- * no focus map (`focusOf` undefined) only the near mark changes. The focus comes first: it reads the layout (the page
- * colour and the transforms) before it writes, and the near class written before those reads would force a layout at
- * each hover switch. The class has no style, so the copies need not show it.
- */
-export function markHover(
-  root: SVGSVGElement,
-  index: CellIndex,
-  id: string | undefined,
-  focusOf: ((cellId: string) => string[]) | undefined
-): boolean {
-  const link = id !== undefined && !!index.get(id)?.line;
-  if (focusOf) {
-    // a cell with no links (a chart, a free shape) dims nothing
-    const kept = id === undefined ? [] : focusOf(id);
-    focusCells(root, index, link || kept.length ? id : undefined, kept);
-  }
-  markNearLink(root, link ? id : undefined);
-  return link;
-}
 
 /**
  * The card state of the panel: a store outside React (`createCardStore`). The panel view reads only the pinned cell;

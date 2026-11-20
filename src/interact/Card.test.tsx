@@ -478,6 +478,28 @@ describe('deferred charts', () => {
     runTransitions();
     expect(sparkline).not.toHaveBeenCalled();
   });
+  it('the transition of a cell that commits after the card moved on shows no charts for the new cell', () => {
+    queued();
+    vi.useFakeTimers();
+    const card = (cellId: string) => (
+      <Card model={threeRows()} cellId={cellId} pinned={false} x={20} y={20} width={800} height={600} />
+    );
+    const view = render(card('a'));
+    // the dwell on a ends; its transition waits while the pointer moves on to b
+    dwell();
+    expect(transitions.queue).toHaveLength(1);
+    view.rerender(card('b'));
+    runTransitions();
+    expect(sparkline).not.toHaveBeenCalled();
+    expect(boxes()).toEqual([
+      ['40px', 0],
+      ['80px', 0],
+    ]);
+    // b gets its charts after its own dwell
+    dwell();
+    runTransitions();
+    expect(sparkline).toHaveBeenCalled();
+  });
   it('a hover card that passes over cells mounts no chart until it stays on one for the dwell', () => {
     queued();
     vi.useFakeTimers();

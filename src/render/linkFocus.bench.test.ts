@@ -1,10 +1,9 @@
 import { createTheme } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
-import { markHover } from '../interact/useCardState';
 import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 import { LINK_LABEL_LAYER_CLASS } from './linkLabels';
-import { FOCUS_ACTIVE, FOCUS_LAYER, focusCells, focusMap, followView } from './linkFocus';
+import { FOCUS_ACTIVE, FOCUS_LAYER, focusCells, focusMap, followView, markHover } from './linkFocus';
 import { NEAR_CLASS, renderOverlay } from './overlay';
 
 /**

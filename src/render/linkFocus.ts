@@ -1,5 +1,6 @@
 import { alphaOf } from '../binding/color';
 import type { CellIndex } from '../types';
+import { markNearLink } from './overlay';
 
 /** The root while a link has the focus: the panel CSS shows the focus layer. */
 export const FOCUS_ACTIVE = 'dmap-link-focus';
@@ -304,6 +305,29 @@ export function followView(root: SVGSVGElement, cellId: string): boolean {
     focusCells(root, f.index, f.cellId, f.ends);
   }
   return true;
+}
+
+/**
+ * The near mark and the focus of the hovered cell `id` (undefined: none) under `root`; true when `id` is a link. With
+ * no focus map (`focusOf` undefined) only the near mark changes. The focus comes first: it reads the layout (the page
+ * colour and the transforms) before it writes, and the near class written before those reads would force a layout at
+ * each hover switch. So the copies of a new focus do not carry the near class of their link: that is right only while
+ * no CSS styles the near class (NEAR_CLASS); a rule for it would need the class in the copies too.
+ */
+export function markHover(
+  root: SVGSVGElement,
+  index: CellIndex,
+  id: string | undefined,
+  focusOf: ((cellId: string) => string[]) | undefined
+): boolean {
+  const link = id !== undefined && !!index.get(id)?.line;
+  if (focusOf) {
+    // a cell with no links (a chart, a free shape) dims nothing
+    const kept = id === undefined ? [] : focusOf(id);
+    focusCells(root, index, link || kept.length ? id : undefined, kept);
+  }
+  markNearLink(root, link ? id : undefined);
+  return link;
 }
 
 /**
