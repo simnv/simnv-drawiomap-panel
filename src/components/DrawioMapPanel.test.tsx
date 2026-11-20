@@ -1527,14 +1527,15 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(document.querySelector('svg.dmap-link-focus')).toBeNull();
     });
 
-    it('Shift hides the hover card and the focus while it is down; a pinned card stays', async () => {
+    it('Shift over a hover card hides the card and keeps the focus; a pinned card stays', async () => {
       render(<DrawioMapPanel {...structurePanel(ALL)} />);
       await near('bg', 75, 31);
       expect(await tooltip()).toBe('A ↔ B');
-      const wrapper = document.querySelector('[data-dmap-focus-hidden], [data-testid="dmap-panel"]')!;
+      const wrapper = screen.getByTestId('dmap-panel');
       fireEvent.keyDown(window, { key: 'Shift' });
       await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
-      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
       fireEvent.keyUp(window, { key: 'Shift' });
       expect(await tooltip()).toBe('A ↔ B');
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
@@ -1551,6 +1552,18 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(screen.getByRole('dialog')).toBeTruthy();
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
       fireEvent.keyUp(window, { key: 'Shift' });
+    });
+
+    it('Shift with no hover turns the focus off for the whole map; the hover card still shows', async () => {
+      render(<DrawioMapPanel {...structurePanel(ALL)} />);
+      const wrapper = screen.getByTestId('dmap-panel');
+      fireEvent.keyDown(window, { key: 'Shift' });
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      fireEvent.keyUp(window, { key: 'Shift' });
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
     });
 
     it('Hover focus With Shift: the focus shows only while Shift is down, and the card stays', async () => {
