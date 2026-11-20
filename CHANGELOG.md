@@ -7,6 +7,7 @@
 - Added the **Fit height** button: in dashboard edit mode, when the diagram leaves one grid row or more of free space in the panel, the button makes the panel lower to the diagram. See [Fit the panel height](docs/guide/zoom.md#fit-the-panel-height).
 - Added the chart fields `background: none` (no panel background under the chart) and `colors` (the colours of the lines of a `history` chart or row: a CSS colour, a Grafana colour name or `light-dark(light, dark)` for the light and the dark theme). See [Chart regions](docs/guide/bindings.md#chart-regions).
 - Fixed the chart regions in Safari: a sparkline or a gauge stood at the wrong place and size. The charts are now HTML over the diagram, placed from the matrix of their cell, in all browsers. A link or a label that crosses the box of a chart goes under it.
+- Fixed the hint of a `value` chart with no field minimum and maximum: it ran on after the value (`5.32%Set a meaningful…`). It is now a line of its own below the value, in the secondary colour; a long hint ends with an ellipsis and shows in full on hover.
 - Added `urlNewTab: false` (class) and `newTab: false` (`drilldown` row): the link of the card opens in the current tab. The default stays a new tab. See [Hover card](docs/guide/hover-card.md).
 
 ## 1.7.0
