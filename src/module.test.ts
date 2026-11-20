@@ -70,8 +70,8 @@ describe('Build id option', () => {
     diagram: { xml: '<mxfile/>', svg: '<svg/>', hash: 'h', updatedAt: '2026-10-29T00:00:00Z' },
   } as Partial<Options>;
   it('keeps options.build through the defaults', () => {
-    // the plugin has no migration handler that could drop a key
-    expect(plugin.onPanelMigration).toBeUndefined();
+    // the migration handler (a boolean Hover focus to its mode) keeps every other key
+    expect(plugin.onPanelMigration!({ options: saved } as never)).toMatchObject(saved);
     // the defaults step of Grafana; the stub has no option editors, which this test does not need
     const { options } = getPanelOptionsWithDefaults({
       plugin: { defaults: { zoom: { mode: 'fit' } }, fieldConfigDefaults: { defaults: {}, overrides: [] } } as never,

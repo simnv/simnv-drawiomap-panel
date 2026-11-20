@@ -49,7 +49,7 @@ import { lastSampleTime } from '../query/frames';
 import { panelStaleColor } from '../binding/color';
 import { linkWidthRange } from '../binding/linkWidth';
 import type { Box } from '../legend/position';
-import { SHIFT_ATTR, useShiftHeld } from '../interact/useShiftHeld';
+import { FOCUS_HIDDEN_ATTR, useShiftHeld } from '../interact/useShiftHeld';
 import { canFitGridHeight, fitGridHeight, freeRows, useDashboardEditing } from '../stage/gridHeight';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';
@@ -121,15 +121,15 @@ const styles = {
     & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
       display: inline;
     }
-    /* Shift held (an attribute of the panel wrapper): the focus hides, the diagram shows as it is */
-    [${SHIFT_ATTR}] & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
+    /* the Hover focus mode and Shift hide the focus (an attribute of the panel wrapper): the diagram shows as it is */
+    [${FOCUS_HIDDEN_ATTR}] & svg.${FOCUS_ACTIVE} > .${FOCUS_LAYER} {
       display: none;
     }
     /* the chart regions are HTML over the svg: they fade with the scrim, except the charts of the kept cells */
     & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] [data-dmap-chart]:not(.${FOCUS_KEPT}) {
       opacity: 0.25;
     }
-    [${SHIFT_ATTR}] & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] [data-dmap-chart] {
+    [${FOCUS_HIDDEN_ATTR}] & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] [data-dmap-chart] {
       opacity: 1;
     }
     /* the copies above the scrim take no pointer: the hover and the click hit the cells below */
@@ -531,8 +531,10 @@ function DrawioMapPanelView(props: ViewProps) {
     const ctx = endContextOf(diagramXml, stage.index);
     return focusMap(stage.index, ctx.ends, ctx.parents);
   }, [diagramXml, stage.index]);
-  // Shift held hides the hover (the card and the focus) while it stays down
-  const hoverHidden = useShiftHeld();
+  // Hover focus `on`: Shift held hides the focus and the hover card. `shift`: the focus shows only while Shift is
+  // held; the card stays. `off`: no focus, Shift does nothing.
+  const focusMode = opts.hover.focus;
+  const shiftHeld = useShiftHeld();
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
     ...cards,
     open,
@@ -546,8 +548,12 @@ function DrawioMapPanelView(props: ViewProps) {
     onControl,
     panZoom,
     // the hover focus option: off, nothing dims
-    focusOf: opts.hover.focus ? focusOf : undefined,
+    focusOf: focusMode === 'off' ? undefined : focusOf,
   });
+  // `on`: a pinned card keeps its focus and stays under Shift. `shift`: the focus shows only while Shift is held,
+  // also for a pinned card.
+  const cardHidden = focusMode === 'on' && shiftHeld && !pinned;
+  const focusHidden = focusMode === 'shift' ? !shiftHeld : cardHidden;
 
   if (!opts.diagram?.svg) {
     return (
@@ -581,8 +587,7 @@ function DrawioMapPanelView(props: ViewProps) {
     <div
       className={styles.wrapper}
       ref={attachWrapper}
-      // Shift held: the hover card and the focus hide, so the diagram under them shows; a pinned card stays
-      {...{ [SHIFT_ATTR]: hoverHidden && !pinned ? '' : undefined }}
+      {...{ [FOCUS_HIDDEN_ATTR]: focusHidden ? '' : undefined }}
       data-testid="dmap-panel"
       data-dmap-cells={stage.index.size}
       data-dmap-patched={result.patches.size}
@@ -657,7 +662,7 @@ function DrawioMapPanelView(props: ViewProps) {
         />
       )}
       {legend}
-      {open && model && card && !(hoverHidden && !pinned)
+      {open && model && card && !cardHidden
         ? portalSheet(
             <div ref={cardRef}>
               <Card

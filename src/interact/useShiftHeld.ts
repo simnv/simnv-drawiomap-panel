@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
-/** The panel wrapper while Shift hides the hover: the panel CSS hides the focus. */
-export const SHIFT_ATTR = 'data-dmap-shift';
+/** The panel wrapper while the focus must not show (Shift in the mode `on`, no Shift in `shift`): the CSS hides it. */
+export const FOCUS_HIDDEN_ATTR = 'data-dmap-focus-hidden';
 
 /** A text field or an editable element: a key there types. */
 const NOT_TYPED = ['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file', 'image'];
