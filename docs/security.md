@@ -127,8 +127,9 @@ shielded), runs `replaceVariables`, then checks the final text (`src/binding/url
 
 An `ssh://` link starts the SSH client of the viewer's system after a click and the prompt of the browser. A value of a
 series label can come from a party with less privilege than the dashboard editor, so the check refuses an `ssh` URL
-that a client could read as an option: the user and the host must not start with `-` (also after percent decoding),
-the host must be a name or an address, and `ssh:` without `//` is refused. The link opens in the current tab, because
+that a client could read as options. Only `ssh://[user@]host[:port]` is shown: the user and the host (after percent
+decoding) are names or addresses that do not start with `-`; a password, a path, a query, a fragment and `ssh:` without
+`//` are refused. The link opens in the current tab, because
 a new tab would stay blank. Accepted risk: a browser with no handler for `ssh` can show an error page in that tab.
 
 ## Trade-offs

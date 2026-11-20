@@ -10,11 +10,14 @@ function schemeOf(url: string): string | undefined {
 
 /** A host name, an IPv4 address or a bracketed IPv6 address: no `%`, no space, nothing that a shell or ssh reads. */
 const SSH_HOST = /^(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:.]+\])$/;
+/** A user name: name characters only, and not a leading `-`. */
+const SSH_USER = /^[A-Za-z0-9._][A-Za-z0-9._-]*$/;
 
 /**
- * An `ssh://` URL with a host that an SSH client cannot read as an option: the user and the host (also after percent
- * decoding) do not start with `-` (a value such as `-oProxyCommand=...` from a label must not reach the client as an
- * option), and the host is only a name or an address. `ssh:` without `//` has no host and is refused.
+ * An `ssh://` URL that an SSH client cannot read as options: `ssh://[user@]host[:port][/]` with no password, path,
+ * query or fragment. The user and the host (after percent decoding) are names or addresses that do not start with `-`:
+ * a value such as `-oProxyCommand=...` from a label must not reach the client as an option, also through a handler
+ * that does not quote its arguments. `ssh:` without `//` has no host and is refused.
  */
 function isSafeSsh(url: string): boolean {
   const s = cleaned(url);
@@ -25,7 +28,8 @@ function isSafeSsh(url: string): boolean {
     const u = new URL(s);
     const user = decodeURIComponent(u.username);
     const host = decodeURIComponent(u.hostname);
-    return SSH_HOST.test(host) && !host.startsWith('-') && !user.startsWith('-');
+    const bare = u.password === '' && (u.pathname === '' || u.pathname === '/') && u.search === '' && u.hash === '';
+    return bare && SSH_HOST.test(host) && !host.startsWith('-') && (user === '' || SSH_USER.test(user));
   } catch {
     return false;
   }
