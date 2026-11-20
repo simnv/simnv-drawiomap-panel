@@ -141,10 +141,12 @@ const getStyles = (theme: GrafanaTheme2) => ({
       text-decoration: none;
     }
   `,
-  // a row with a link: the whole row is the link; the focus ring comes from the theme
+  // a row with a link: the whole row is the link. One focus ring, inside the row so the card does not clip it: the
+  // Grafana ring of a link (a box shadow outside the box) is off.
   rowLink: css`
     cursor: pointer;
     &:focus-visible {
+      box-shadow: none;
       outline: 2px solid ${theme.colors.primary.border};
       outline-offset: -2px;
     }
@@ -218,6 +220,7 @@ const Row = memo(function Row({
   timeZone,
   pinned,
   linked,
+  cardTitle,
   styles,
   width,
   chartsReady,
@@ -228,6 +231,8 @@ const Row = memo(function Row({
   pinned: boolean;
   /** the row is a link (`row.href`): a pinned or an inline card; the hover card ignores the pointer */
   linked: boolean;
+  /** the title of the card: the link name of a row with no label and no text */
+  cardTitle: string;
   styles: ReturnType<typeof getStyles>;
   width: number;
   /** false in the first commit of a hover card: the chart rows show an empty box of their final height */
@@ -259,8 +264,15 @@ const Row = memo(function Row({
     }));
   }, [directions, lines, format]);
   const chartH = chartHeight(row);
-  // the name of the link: the row label, else its text (a metadata row may have an empty label)
-  const linkName = `Open ${row.title || row.text}`;
+  // the name of the link: the row label, else its text (a metadata row may have an empty label), else the card title
+  const linkName = `Open ${row.title || row.text || cardTitle}`;
+  // the aria-label hides the row content from a screen reader: it repeats the value (when the row has one), the
+  // stale state and the hidden lines
+  const linkLabel = [
+    row.title && row.text ? `${linkName}: ${row.text}` : linkName,
+    ...(stale ? ['Stale data'] : []),
+    ...(row.more ? [`+${row.more} more`] : []),
+  ].join(', ');
   const body = (
     <>
       <div className={styles.rowHead} title={linked ? linkName : undefined}>
@@ -355,8 +367,9 @@ const Row = memo(function Row({
       className={cx(styles.row, styles.rowLink)}
       href={row.href}
       target={row.target}
-      rel={row.target === '_blank' ? 'noopener noreferrer' : undefined}
-      aria-label={row.text ? `${linkName}: ${row.text}` : linkName}
+      rel="noopener noreferrer"
+      aria-label={linkLabel}
+      draggable={false}
       data-testid="dmap-card-row"
       data-link="true"
     >
@@ -540,6 +553,7 @@ export function Card({
           timeZone={timeZone}
           pinned={pinned}
           linked={(pinned || inline) && !!r.href}
+          cardTitle={model.title}
           styles={styles}
           width={Math.max(1, inline ? width - INLINE_CHROME : Math.min(W, width) - 16)}
           chartsReady={chartsReady}

@@ -295,6 +295,25 @@ describe('row links', () => {
     expect(plain.tagName).toBe('DIV');
     expect(followed(plain)).toBeNull();
   });
+  it('names the link with the label and the value, the stale state and the hidden lines; never an empty name', () => {
+    renderCard(
+      cardOf(
+        { ...valueRow({ stale: true }), href: '/d/a' },
+        historyRow({ key: 'h', title: 'Load', text: '', lines: [line([1]), line([2], 'b')], more: 3, href: '/d/b' }),
+        { key: 'm', kind: 'metadata', title: '', text: 'node-a', state: 'ready', stale: false, href: '/d/c' },
+        { key: 'e', kind: 'metadata', title: '', text: '', state: 'ready', stale: false, href: '/d/d' },
+        { ...updownRow(), key: 'u', href: '/d/e' }
+      )
+    );
+    expect(screen.getAllByTestId('dmap-card-row').map((r) => r.getAttribute('aria-label'))).toEqual([
+      'Open Temperature: 42 °C, Stale data',
+      // many lines: no value
+      'Open Load, +3 more',
+      'Open node-a',
+      'Open wan1',
+      'Open Traffic: ↑ 8  ↓ 1',
+    ]);
+  });
   it('reaches the row link with the keyboard; the chart in it takes no focus', () => {
     renderCard(cardOf(linkedHistory));
     const row = screen.getByTestId('dmap-card-row') as HTMLAnchorElement;
@@ -306,12 +325,13 @@ describe('row links', () => {
     expect(chart.hasAttribute('tabindex')).toBe(false);
     expect(chart.getAttribute('role')).toBeNull();
   });
-  it('opens the current tab with no rel for a row without a new tab', () => {
+  it('opens the current tab for a row without a new tab, with no referrer as the footer links', () => {
     renderCard(cardOf({ ...valueRow(), href: 'ssh://admin@node-a' }));
     const row = screen.getByTestId('dmap-card-row');
     expect(row.getAttribute('href')).toBe('ssh://admin@node-a');
     expect(row.hasAttribute('target')).toBe(false);
-    expect(row.hasAttribute('rel')).toBe(false);
+    expect(row.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(row.getAttribute('draggable')).toBe('false');
   });
   it('shows the chart tooltip of a linked row on a mouse hover, not on a press or a touch', () => {
     renderCard(cardOf(linkedHistory));

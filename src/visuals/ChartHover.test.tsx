@@ -194,14 +194,11 @@ describe('ChartHover keyboard, alignment, width', () => {
     hover(58); // 60 is nearest: down only
     expect(screen.getAllByTestId('series').map((r) => r.textContent)).toEqual(['up=–', 'down=5']);
   });
-  it('is focusable and the arrow keys move the sample, Escape hides, Enter follows the link', () => {
-    const click = vi.fn((e: React.MouseEvent) => e.preventDefault());
+  it('is focusable and the arrow keys move the sample, Escape hides', () => {
     render(
-      <a href="/x" onClick={click}>
-        <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange} label="Traffic">
-          <i />
-        </ChartHover>
-      </a>
+      <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange} label="Traffic">
+        <i />
+      </ChartHover>
     );
     const el = screen.getByTestId('dmap-chart-hover');
     el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 20, right: 100, bottom: 20 }) as DOMRect;
@@ -218,8 +215,25 @@ describe('ChartHover keyboard, alignment, width', () => {
     expect(el.getAttribute('data-tooltip-open')).toBe('true');
     fireEvent.keyDown(el, { key: 'Escape' });
     expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
-    fireEvent.keyDown(el, { key: 'Enter' });
-    expect(click).toHaveBeenCalledTimes(1);
+  });
+  it('linked: no Tab stop; a press, a pressed drag and a touch take no sample, a mouse or pen hover does', () => {
+    render(
+      <ChartHover enabled linked series={series(history([1, 2, 3], 'short'))} timeRange={timeRange} label="Traffic">
+        <i />
+      </ChartHover>
+    );
+    const el = screen.getByTestId('dmap-chart-hover');
+    el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 20, right: 100, bottom: 20 }) as DOMRect;
+    expect(el.hasAttribute('tabindex')).toBe(false);
+    expect(el.getAttribute('role')).toBeNull();
+    fireEvent.pointerDown(el, { clientX: 90, pointerType: 'mouse', buttons: 1 });
+    fireEvent.pointerMove(el, { clientX: 95, pointerType: 'mouse', buttons: 1 });
+    fireEvent.pointerMove(el, { clientX: 95, pointerType: 'touch' });
+    flushFrame();
+    expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
+    fireEvent.pointerMove(el, { clientX: 95, pointerType: 'pen', buttons: 0 });
+    flushFrame();
+    expect(screen.getByTestId('dmap-chart-tooltip')).toBeTruthy();
   });
 });
 

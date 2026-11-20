@@ -121,9 +121,10 @@ use it. The hostile inputs are in `src/render/sanitize.test.ts`.
 
 ## Card links
 
-The `url` of a class, the `drilldown` rows and the `url` of another card row are templates. All three take the same steps and the same check. The panel fills the cell values (percent-encoded and
-shielded), runs `replaceVariables`, then checks the final text (`src/binding/url.ts`). It shows a relative URL, an
-`http` or `https` URL, and an `ssh://` URL. Every other scheme is not shown.
+The `url` of a class, the `drilldown` rows and the `url` of another card row are templates. All three take the same
+steps and the same check. The panel fills the cell values (percent-encoded and shielded), runs `replaceVariables`,
+then checks the final text (`src/binding/url.ts`). It shows a relative URL, an `http` or `https` URL, and an `ssh://`
+URL. Every other scheme is not shown. A row link has `rel="noopener noreferrer"`, as the footer links.
 
 An `ssh://` link starts the SSH client of the viewer's system after a click and the prompt of the browser. A value of a
 series label can come from a party with less privilege than the dashboard editor, so the check refuses an `ssh` URL

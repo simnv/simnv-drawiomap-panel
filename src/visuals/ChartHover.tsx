@@ -38,7 +38,7 @@ export interface ChartHoverProps {
   more?: number;
   /**
    * The chart is in a row with a link: a click or a tap opens the link. The tooltip shows on a mouse or pen hover
-   * only: a press and a touch do not scrub, and the chart is not a stop of the Tab order (the row link is).
+   * only: a press, a pressed drag and a touch do not scrub, and the chart is not a stop of the Tab order (the row link is).
    */
   linked?: boolean;
   children: React.ReactNode;
@@ -254,8 +254,8 @@ interface Hover {
  * card chart. It reads the prepared history only and never changes the chart or its Y range. It adds no
  * click handler, so a click on the chart of a row with a link opens the link (`linked`). Off when the card is not
  * pinned.
- * Keyboard: the chart is focusable, Left and Right move the sample, Escape hides the tooltip, Enter follows
- * the row link.
+ * Keyboard: the chart is focusable, Left and Right move the sample, Escape hides the tooltip. A `linked` chart is
+ * not focusable: the row link around it takes the focus and Enter.
  */
 export function ChartHover({
   enabled,
@@ -366,8 +366,8 @@ export function ChartHover({
     setHover(next);
   };
   const move = (ev: React.PointerEvent) => {
-    // in a linked row a press or a finger is for the link: no sample
-    if (linked && (ev.pointerType === 'touch' || ev.type === 'pointerdown')) {
+    // in a linked row a press, a pressed drag or a finger is for the link: no sample
+    if (linked && (ev.pointerType === 'touch' || ev.type === 'pointerdown' || ev.buttons !== 0)) {
       return;
     }
     pending.current = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? 'touch' : 'mouse' };
@@ -388,11 +388,6 @@ export function ChartHover({
     setHover(undefined);
   };
   const key = (ev: React.KeyboardEvent) => {
-    if (ev.key === 'Enter') {
-      // the chart is focusable inside the row link: Enter still follows the link
-      (ev.currentTarget as HTMLElement).closest('a')?.click();
-      return;
-    }
     if (ev.key === 'Escape') {
       // a queued frame must not open the tooltip after Escape; the event goes on to close the card when nothing was open
       cancelFrame();

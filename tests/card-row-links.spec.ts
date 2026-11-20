@@ -32,8 +32,7 @@ function rowLinkConfig(): ConfigV4 {
 /** Opens a new tab with a click or a key, and checks its URL. */
 async function opensPopup(page: Page, action: () => Promise<void>, url: RegExp) {
   const [popup] = await Promise.all([page.waitForEvent('popup'), action()]);
-  await popup.waitForLoadState('domcontentloaded');
-  expect(popup.url()).toMatch(url);
+  await popup.waitForURL(url);
   await popup.close();
 }
 
@@ -61,6 +60,7 @@ test('a click on the label, the value or the chart of a pinned card row, or Ente
   await expect(cpu).toHaveAttribute('href', /var-job=node-rtr-a&var-metric=row-cpu/);
   await expect(cpu).toHaveAttribute('target', '_blank');
   await expect(cpu).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(cpu).toHaveAttribute('draggable', 'false');
   await expect(cpu.getByTestId('dmap-card-spark')).toBeVisible();
   const cpuUrl = /\/d\/drawiomap-demo.*var-job=node-rtr-a&var-metric=row-cpu/;
   await opensPopup(page, () => cpu.getByTestId('dmap-card-title').click(), cpuUrl);
@@ -71,13 +71,16 @@ test('a click on the label, the value or the chart of a pinned card row, or Ente
   await opensPopup(page, () => page.keyboard.press('Enter'), cpuUrl);
   await expect(dialog).toBeVisible();
 
-  // newTab: false opens the current tab; a row without a url is not a link
-  const load = dialog.getByRole('link', { name: /^Open load 1m/ });
-  await expect(load).toHaveAttribute('href', /var-metric=row-load/);
-  await expect(load).not.toHaveAttribute('target', /.+/);
+  // a row without a url is not a link; the footer keeps its links
   const state = dialog.getByTestId('dmap-card-row').filter({ hasText: 'state' });
   await expect(state).toHaveCount(1);
   expect(await state.evaluate((el) => el.tagName)).toBe('DIV');
-  // the footer keeps its links
   await expect(dialog.getByRole('link', { name: 'CPU details', exact: true })).toBeVisible();
+
+  // newTab: false opens the link in the current tab
+  const load = dialog.getByRole('link', { name: /^Open load 1m/ });
+  await expect(load).toHaveAttribute('href', /var-metric=row-load/);
+  await expect(load).not.toHaveAttribute('target', /.+/);
+  await load.getByTestId('dmap-card-title').click();
+  await page.waitForURL(/\/d\/drawiomap-demo.*var-job=node-rtr-a&var-metric=row-load/);
 });
