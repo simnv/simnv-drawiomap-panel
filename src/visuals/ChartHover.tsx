@@ -274,21 +274,6 @@ export function ChartHover({
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Hover>();
 
-  const kind = hover?.kind;
-  useEffect(() => {
-    if (kind !== 'touch') {
-      return;
-    }
-    // a touch tooltip stays after the finger lifts; the next touch outside the chart removes it
-    const away = (ev: PointerEvent) => {
-      if (!ref.current?.contains(ev.target as Node)) {
-        setHover(undefined);
-      }
-    };
-    document.addEventListener('pointerdown', away);
-    return () => document.removeEventListener('pointerdown', away);
-  }, [kind]);
-
   const from = timeRange.from.valueOf();
   const to = timeRange.to.valueOf();
   const ready = useMemo(
@@ -321,6 +306,21 @@ export function ChartHover({
     latest.current.hover = next;
     flushSync(() => setHover(next));
   }, []);
+  const kind = hover?.kind;
+  useEffect(() => {
+    if (kind !== 'touch') {
+      return;
+    }
+    // a touch tooltip stays after the finger lifts; the next touch outside the chart removes it
+    const away = (ev: PointerEvent) => {
+      if (!ref.current?.contains(ev.target as Node)) {
+        cancelFrame();
+        show(undefined);
+      }
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [kind, cancelFrame, show]);
   const rows = useMemo(() => {
     if (!enabled || !hover) {
       return undefined;
@@ -454,7 +454,9 @@ export function ChartHover({
       }}
       onPointerCancel={clear}
       onBlur={() => {
-        setHover((h) => (h?.kind === 'key' ? undefined : h));
+        if (latest.current.hover?.kind === 'key') {
+          show(undefined);
+        }
       }}
       onKeyDown={key}
     >
