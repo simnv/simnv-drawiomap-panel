@@ -385,6 +385,43 @@ export function randomMap(seed: number): LabelMap {
   return { obstacles, jobs };
 }
 
+/**
+ * `randomMap(seed)` with an obstacle at the border of every box that it places: a rect that touches one side of the
+ * bounds of the box, or a stroke whose clearance just reaches its top. Placed again, the boxes meet these obstacles
+ * exactly at the border, where touching is free and a hair more is not.
+ */
+export function touchingMap(seed: number, api: PlacementApi = live): LabelMap {
+  const base = randomMap(seed);
+  const extra: Obstacle[] = [];
+  runMap(base, api).forEach((p, i) => {
+    if (!p || !('centre' in p)) {
+      return;
+    }
+    const r = api.boundsOf(p.box);
+    const right = r.x + r.width;
+    const bottom = r.y + r.height;
+    const thick = 6;
+    const rects: Rect[] = [
+      { x: right, y: r.y, width: thick, height: r.height },
+      { x: r.x - thick, y: r.y, width: thick, height: r.height },
+      { x: r.x, y: bottom, width: r.width, height: thick },
+      { x: r.x, y: r.y - thick, width: r.width, height: thick },
+    ];
+    if (i % 5 === 4) {
+      extra.push({
+        kind: 'segment',
+        a: { x: r.x, y: r.y - 2 },
+        b: { x: right, y: r.y - 2 },
+        clearance: 2,
+        owner: 'edge',
+      });
+    } else {
+      extra.push({ kind: 'rect', rect: rects[i % 5], clearance: 0 });
+    }
+  });
+  return { obstacles: [...base.obstacles, ...extra], jobs: base.jobs };
+}
+
 /** The results as text that keeps every bit of every number (−0 too): two runs match when their texts match. */
 export function placementText(results: ReadonlyArray<Placement | undefined>): string {
   return JSON.stringify(results, (_key, value: unknown) =>

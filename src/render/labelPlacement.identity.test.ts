@@ -7,6 +7,7 @@ import {
   randomMap,
   runMap,
   singleBenchMap,
+  touchingMap,
   type LabelMap,
 } from './labelPlacementMaps';
 
@@ -14,7 +15,8 @@ import {
  * The placement of every label of the bench maps, of a crowded map and of random maps on a half-unit grid, as a
  * digest of the exact numbers (every place, side, rotation and drop). The digests were taken before the collision
  * tests got their fast paths: a change to the speed of the placement must keep them. A change to its rules changes
- * them on purpose; then take the new digests and say why in the commit.
+ * them on purpose; then take the new digests and say why in the commit. The touching maps put an obstacle at the
+ * border of each placed box and place again: the tests at the border (touching is free) decide there.
  */
 const digest = (map: LabelMap) => {
   const results = runMap(map);
@@ -117,6 +119,73 @@ describe('label placement identity', () => {
           "dropped": 2,
           "placed": 20,
           "sha": "0848e149cddae813",
+        },
+      }
+    `);
+  });
+
+  it('places random maps with obstacles at the borders of the boxes as before', () => {
+    expect(Object.fromEntries(SEEDS.map((seed) => [seed, digest(touchingMap(seed))]))).toMatchInlineSnapshot(`
+      {
+        "1": {
+          "dropped": 17,
+          "placed": 48,
+          "sha": "667a775fb7baeb15",
+        },
+        "13": {
+          "dropped": 2,
+          "placed": 20,
+          "sha": "fbc76ec24d37e7be",
+        },
+        "144": {
+          "dropped": 3,
+          "placed": 16,
+          "sha": "8843fa17e89e66f7",
+        },
+        "2": {
+          "dropped": 11,
+          "placed": 48,
+          "sha": "190b5b9e1ab98ec7",
+        },
+        "21": {
+          "dropped": 6,
+          "placed": 51,
+          "sha": "5caacaef9ae9bdae",
+        },
+        "233": {
+          "dropped": 1,
+          "placed": 14,
+          "sha": "c7a950f06c2ad88f",
+        },
+        "3": {
+          "dropped": 9,
+          "placed": 39,
+          "sha": "b3298648cdf2b02e",
+        },
+        "34": {
+          "dropped": 8,
+          "placed": 30,
+          "sha": "462e5cf74bfdd732",
+        },
+        "5": {
+          "dropped": 1,
+          "placed": 15,
+          "sha": "17b90d060e4e64e8",
+        },
+        "55": {
+          "dropped": 16,
+          "placed": 46,
+          "sha": "541e29737b0ceace",
+        },
+        "8": {
+          "dropped": 3,
+          "placed": 24,
+          "sha": "904193470e8e53f0",
+        },
+        "89": {
+          "dropped": 3,
+          "placed": 19,
+          "sha": "bbaea5104b00f956",
         },
       }
     `);
