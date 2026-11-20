@@ -157,7 +157,7 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         path: 'hover.focus',
         name: 'Hover focus',
         description:
-          'The rest of the diagram dims around the link or the node under the pointer: the link with its two ends, or the node with its links and their other ends, stay bright. On: Shift held hides the dim and the hover card. With Shift: the dim shows only while Shift is held.',
+          'The rest of the diagram dims around the link or the node under the pointer: the link with its two ends, or the node with its links and their other ends, stay bright. On: Shift over a hover card hides the card; Shift with no hover card turns the dim off for the whole map. With Shift: the dim shows only while Shift is held.',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.hover.focus,
         settings: {

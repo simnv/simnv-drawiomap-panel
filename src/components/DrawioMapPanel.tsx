@@ -539,8 +539,7 @@ function DrawioMapPanelView(props: ViewProps) {
     const ctx = endContextOf(diagramXml, stage.index);
     return focusMap(stage.index, ctx.ends, ctx.parents);
   }, [diagramXml, stage.index]);
-  // Hover focus `on`: Shift held hides the focus and the hover card. `shift`: the focus shows only while Shift is
-  // held; the card stays. `off`: no focus, Shift does nothing.
+  // Hover focus: `on`, `shift` (the focus only while Shift is held) or `off` (no focus, Shift does nothing)
   const focusMode = opts.hover.focus;
   const shiftHeld = useShiftHeld();
   const { pinned, close, onClick, onKeyDown, onPointerMove, moveRef, pointerRef } = useCardInput({
@@ -558,10 +557,20 @@ function DrawioMapPanelView(props: ViewProps) {
     // the hover focus option: off, nothing dims
     focusOf: focusMode === 'off' ? undefined : focusOf,
   });
-  // `on`: a pinned card keeps its focus and stays under Shift. `shift`: the focus shows only while Shift is held,
-  // also for a pinned card.
-  const cardHidden = focusMode === 'on' && shiftHeld && !pinned;
-  const focusHidden = focusMode === 'shift' ? !shiftHeld : cardHidden;
+  // `on`: what Shift does depends on the moment it goes down. A hover card open: Shift hides the hover cards and
+  // keeps the focus. No hover card: Shift turns the focus off for the whole map. A pinned card keeps its card and its
+  // focus. `shift`: the focus shows only while Shift is held, also for a pinned card.
+  const hoverCardOpen = open && !!model && !!card && !pinned;
+  const [shiftKind, setShiftKind] = useState<'card' | 'focus' | undefined>(undefined);
+  const [shiftSeen, setShiftSeen] = useState(false);
+  if (shiftSeen !== shiftHeld) {
+    // state from the change of the key (adjust state during render): the kind holds until the key goes up
+    setShiftSeen(shiftHeld);
+    setShiftKind(shiftHeld && focusMode === 'on' ? (hoverCardOpen ? 'card' : 'focus') : undefined);
+  }
+  // the kind applies only in the mode `on`: another mode while the key is down masks it
+  const cardHidden = focusMode === 'on' && shiftKind === 'card' && !pinned;
+  const focusHidden = focusMode === 'shift' ? !shiftHeld : focusMode === 'on' && shiftKind === 'focus' && !pinned;
 
   if (!opts.diagram?.svg) {
     return (
