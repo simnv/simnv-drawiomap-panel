@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createTheme } from '@grafana/data';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { cellAt, patchAt } from '../interact/hit';
@@ -543,6 +543,13 @@ describe('renderLinkLabels: the place of a label', () => {
     // a text of 14 units whose glyphs stand 1 left of the anchor 120: the box x 112..126, the centre 119; the box is
     // read again when the text changes (a font that arrives later goes through `watchLinkLabelFonts`)
     (text as unknown as { getBBox: () => unknown }).getBBox = () => ({ x: 112, y: 96, width: 14, height: 8 });
+    // the other half is measured too: a link with a text box that cannot be read is read again on the next pass
+    (byHalf(root, 'b2a') as unknown as { getBBox: () => unknown }).getBBox = () => ({
+      x: 273,
+      y: 96,
+      width: 14,
+      height: 8,
+    });
     render(root, index, shown('42%'));
     const [h1] = halvesOf(root);
     expect(gapsOn(h1)).toEqual([[110.5, 127.5]]);
@@ -739,6 +746,201 @@ describe('renderLinkLabels: the cut follows its label', () => {
     expect(gapsOf(one.root)).toEqual(gapsOf(two.root));
     expectNoMask(one.root);
     expectNoMask(two.root);
+  });
+});
+
+describe('renderLinkLabels: a refresh cuts only the links that changed', () => {
+  /** four links of 320 units, one above the other, 60 apart */
+  const FOUR = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" style="background-color: #1d2d3d">${[
+    1, 2, 3, 4,
+  ]
+    .map(
+      (i) =>
+        `<g data-cell-id="a${i}"><g><rect x="0" y="${i * 60 - 20}" width="40" height="40"/></g></g>` +
+        `<g data-cell-id="e${i}"><g><path d="M 40 ${i * 60} L 360 ${i * 60}" fill="none" stroke="#333" pointer-events="stroke"/></g></g>` +
+        `<g data-cell-id="b${i}"><g><rect x="360" y="${i * 60 - 20}" width="40" height="40"/></g></g>`
+    )
+    .join('')}</svg>`;
+  const value = (text: string, over: Partial<HalfState> = {}): HalfState =>
+    half({ display: { text, suffix: ' Mb/s', numeric: Number(text) }, ...over });
+  type Link = { a2b: HalfState; b2a: HalfState };
+  const patchesOf = (links: Link[]): PatchMap =>
+    new Map(links.map((l, i) => [`e${i + 1}`, linkPatch(`e${i + 1}`, { ...l, labelMode: 'value' })]));
+  /** a half with a reading but no text: no label shows */
+  const blank = (width: number): HalfState => half({ width, display: { text: '', numeric: 0 } });
+  const fresh = (): Link[] => [1, 2, 3, 4].map(() => ({ a2b: value('41'), b2a: value('41') }));
+  afterEach(() => {
+    Reflect.deleteProperty(SVGElement.prototype, 'getBBox');
+    Reflect.deleteProperty(document, 'fonts');
+  });
+  it('gives the dash patterns of a full pass, and reads the text boxes of the changed links only', () => {
+    let boxes = 0;
+    // the painted box of a text: 6 units per glyph, centred on its x
+    Object.assign(SVGElement.prototype, {
+      getBBox(this: SVGElement) {
+        boxes += this.localName === 'text' ? 1 : 0;
+        const w = 6 * (this.textContent ?? '').length;
+        return { x: Number(this.getAttribute('x') ?? 0) - w / 2, y: 0, width: w, height: 10 };
+      },
+    });
+    const font = Object.assign(new EventTarget(), { ready: new Promise<void>(() => {}) });
+    Object.defineProperty(document, 'fonts', { value: font, configurable: true });
+    const { root, index } = build(FOUR);
+    root.getBoundingClientRect = () => ({ width: 400, height: 260 }) as DOMRect;
+    const dashes = () =>
+      Array.from(
+        root.querySelectorAll('.dmap-half'),
+        (el) => `${el.getAttribute('data-dmap-cell')}:${el.getAttribute('stroke-dasharray')}`
+      );
+    const links = fresh();
+    links[3] = { ...links[3], b2a: blank(4) };
+    render(root, index, patchesOf(links));
+    const stop = watchLinkLabelFonts(root);
+    onTestFinished(stop);
+    /** a full pass over the same state (a font that arrives) gives the patterns that are drawn now */
+    const expectFull = (read: number) => {
+      const partial = dashes();
+      boxes = 0;
+      font.dispatchEvent(new Event('loadingdone'));
+      expect(boxes).toBeGreaterThan(read);
+      expect(dashes()).toEqual(partial);
+    };
+    // each step: a change, then the text boxes the refresh reads (the on-stroke labels of the changed links)
+    const steps: Array<[() => void, number]> = [
+      // the half of e4 that never had a text (no label, no place) gets wider: its points change, and the cut of its
+      // mate is read again
+      [() => (links[3] = { ...links[3], b2a: blank(9) }), 1],
+      // a text of e2 with the same slot
+      [() => (links[1] = { ...links[1], a2b: value('42') }), 2],
+      // a text of e2 one grain wider
+      [() => (links[1] = { ...links[1], b2a: value('4200') }), 2],
+      // a wider half of e3
+      [() => (links[2] = { ...links[2], b2a: value('41', { width: 9 }) }), 2],
+      // no data on a half of e4: its other half has no text, so no label of e4 is on the stroke
+      [() => (links[3] = { ...links[3], a2b: nodata() }), 0],
+      // a long text of e1
+      [() => (links[0] = { ...links[0], a2b: value('41000000000') }), 2],
+      // e4 back, e3 thin again
+      [
+        () => {
+          links[3] = { a2b: value('41'), b2a: value('41') };
+          links[2] = { a2b: value('41'), b2a: value('41') };
+        },
+        4,
+      ],
+      // no change: no read
+      [() => {}, 0],
+    ];
+    for (const [change, read] of steps) {
+      change();
+      boxes = 0;
+      render(root, index, patchesOf(links));
+      expect(boxes).toBe(read);
+      expectFull(read);
+    }
+    expect(dashes().filter((d) => !d.endsWith(':null')).length).toBeGreaterThan(4);
+    // a new theme repaints the labels and moves no cut
+    boxes = 0;
+    const light = { ...opts, theme: createTheme({ colors: { mode: 'light' } }) };
+    render(root, index, patchesOf(links), light);
+    expect(boxes).toBe(0);
+    expectFull(0);
+    // a hidden layer takes every cut off; a shown one puts them back, then a refresh reads one link again
+    root.getBoundingClientRect = () => ({ width: 80, height: 52 }) as DOMRect;
+    setLinkLabelScale(root);
+    expect(dashes().every((d) => d.endsWith(':null'))).toBe(true);
+    root.getBoundingClientRect = () => ({ width: 400, height: 260 }) as DOMRect;
+    setLinkLabelScale(root);
+    expectFull(0);
+    links[1] = { ...links[1], a2b: value('43') };
+    boxes = 0;
+    render(root, index, patchesOf(links), light);
+    expect(boxes).toBe(2);
+    expectFull(2);
+  });
+  /** a stage of four links with a font host and a text box of 6 units per glyph (none while `measure()` is false) */
+  function measuredStage(measure: () => boolean = () => true) {
+    const count = { boxes: 0 };
+    Object.assign(SVGElement.prototype, {
+      getBBox(this: SVGElement) {
+        count.boxes += this.localName === 'text' ? 1 : 0;
+        const w = measure() ? 6 * (this.textContent ?? '').length : 0;
+        return { x: Number(this.getAttribute('x') ?? 0) - w / 2, y: 0, width: w, height: 10 };
+      },
+    });
+    const font = Object.assign(new EventTarget(), { ready: new Promise<void>(() => {}) });
+    Object.defineProperty(document, 'fonts', { value: font, configurable: true });
+    const { root, index } = build(FOUR);
+    root.getBoundingClientRect = () => ({ width: 400, height: 260 }) as DOMRect;
+    const dashes = () =>
+      Array.from(
+        root.querySelectorAll('.dmap-half'),
+        (el) => `${el.getAttribute('data-dmap-cell')}:${el.getAttribute('stroke-dasharray')}`
+      );
+    /** the patterns drawn now equal those of a full pass (a font that arrives) */
+    const expectFull = () => {
+      const partial = dashes();
+      const stop = watchLinkLabelFonts(root);
+      font.dispatchEvent(new Event('loadingdone'));
+      stop();
+      expect(dashes()).toEqual(partial);
+    };
+    return { root, index, count, dashes, expectFull };
+  }
+  it('a read that throws during a sync leaves the change for the next sync', () => {
+    const { root, index, expectFull } = measuredStage();
+    const links = fresh();
+    render(root, index, patchesOf(links));
+    links[1] = { ...links[1], a2b: value('4200') };
+    renderOverlay(root, index, patchesOf(links), { theme, maxWidth: 10 });
+    // the points of a half of the changed link cannot be read once
+    const halfEl = halvesOf(root, 'e2')[0];
+    const read = halfEl.getAttribute.bind(halfEl);
+    let fail = true;
+    halfEl.getAttribute = (name: string) => {
+      if (name === 'points' && fail) {
+        fail = false;
+        throw new Error('no layout');
+      }
+      return read(name);
+    };
+    expect(() => renderLinkLabels(root, index, patchesOf(links), opts)).toThrow('no layout');
+    // the next refresh, with no new change, cuts the link
+    render(root, index, patchesOf(links));
+    expectFull();
+  });
+  it('a text box that cannot be read yet (the slot gives the cut) is read again on the next sync', () => {
+    let ready = false;
+    const { root, index, count, dashes, expectFull } = measuredStage(() => ready);
+    const links = fresh();
+    render(root, index, patchesOf(links));
+    const slotCuts = dashes();
+    ready = true;
+    count.boxes = 0;
+    render(root, index, patchesOf(links));
+    expect(count.boxes).toBe(8);
+    expect(dashes()).not.toEqual(slotCuts);
+    expectFull();
+    // every box is read: the next refresh with no change reads none
+    count.boxes = 0;
+    render(root, index, patchesOf(links));
+    expect(count.boxes).toBe(0);
+  });
+  it('reads the halo colour again on a new theme only, not on each refresh', () => {
+    const { root, index } = build(FOUR);
+    const links = fresh();
+    render(root, index, patchesOf(links));
+    const styles = vi.spyOn(globalThis, 'getComputedStyle');
+    try {
+      links[0] = { ...links[0], a2b: value('42') };
+      render(root, index, patchesOf(links));
+      expect(styles).not.toHaveBeenCalled();
+      render(root, index, patchesOf(links), { ...opts, theme: createTheme({ colors: { mode: 'light' } }) });
+      expect(styles).toHaveBeenCalledTimes(1);
+      expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe(DARK);
+    } finally {
+      styles.mockRestore();
+    }
   });
 });
 
