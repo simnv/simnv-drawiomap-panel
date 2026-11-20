@@ -168,7 +168,6 @@ function lineColor(theme: GrafanaTheme2, i: number): string {
 
 const hasValue = (values: ReadonlyArray<number | null>) => values.some((v) => v !== null && Number.isFinite(v));
 
-/** The target of a card link: a new tab, unless the config says `false` (the current tab). */
 /** A new tab by default; the current tab with `newTab: false`, and for a link that an app of the system opens (ssh). */
 const tabOf = (newTab: boolean | undefined, href: string): '_blank' | undefined =>
   newTab === false || opensApp(href) ? undefined : '_blank';

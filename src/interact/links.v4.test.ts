@@ -135,12 +135,35 @@ describe('resolveUrlV4', () => {
     expect(resolveUrlV4('file:///etc/passwd', cell({}), echo())).toBeNull();
     expect(resolveUrlV4(' \tvbscript:x', cell({}), echo())).toBeNull();
   });
+  it('refuses an ssh URL whose host or user an SSH client could read as an option, and ssh: without //', () => {
+    for (const url of [
+      'ssh://-oProxyCommand%3Dtouch%20x',
+      'ssh://%2DoProxyCommand=x',
+      'ssh://u@-oX',
+      'ssh://-oX@host',
+      'ssh://%2Do@host',
+      'ssh:host',
+      'ssh:-oProxyCommand=x',
+      'ssh:/x',
+      'ssh://',
+      'ssh://ho%20st',
+    ]) {
+      expect(resolveUrlV4(url, cell({}), echo())).toBeNull();
+    }
+    // a hostile value of the cell or of a variable cannot start the host with an option
+    expect(resolveUrlV4('ssh://${key}', cell({ key: '-oProxyCommand=touch /tmp/x' }), echo())).toBeNull();
+    expect(resolveUrlV4('ssh://$host', cell({}), () => 'ssh://-oProxyCommand=x')).toBeNull();
+    expect(resolveUrlV4('ssh://admin@${key}', cell({ key: 'rtr-a.example.net' }), echo())).toBe(
+      'ssh://admin@rtr-a.example.net'
+    );
+  });
   it('allows http, https, ssh and relative URLs', () => {
     for (const url of [
       'http://a.example/x',
       'HTTPS://a.example',
       'ssh://admin@192.0.2.1',
       ' SSH://h:22',
+      'ssh://[2001:db8::1]',
       '/d/x',
       'x?y=1',
     ]) {

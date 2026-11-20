@@ -158,7 +158,7 @@ describe('card links', () => {
       [frame('cpu', job, [1])]
     );
     expect(model.links.map((l) => [l.href, l.target])).toEqual([
-      [expect.stringMatching(/^ssh:\/\/admin@/), undefined],
+      ['ssh://admin@node-rtr-a', undefined],
       ['SSH://ops@192.0.2.10:2222', undefined],
     ]);
   });
