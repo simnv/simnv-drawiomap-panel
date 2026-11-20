@@ -16,7 +16,8 @@ import {
  * digest of the exact numbers (every place, side, rotation and drop). The digests were taken before the collision
  * tests got their fast paths: a change to the speed of the placement must keep them. A change to its rules changes
  * them on purpose; then take the new digests and say why in the commit. The touching maps put an obstacle at the
- * border of each placed box and place again: the tests at the border (touching is free) decide there.
+ * border of each placed box and place again: the tests at the border (touching is free) decide there. Their digests
+ * came with the fast paths, and a review checked them against the placement code from before (the same digests).
  */
 const digest = (map: LabelMap) => {
   const results = runMap(map);
