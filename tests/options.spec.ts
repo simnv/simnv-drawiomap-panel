@@ -196,18 +196,20 @@ test('the YAML option saves an empty class map as empty', async ({
   await expect(reloadedLines).not.toContainText('routers');
 });
 
-test(
-  'a panel saved with the earlier Hover focus switch (false) shows Off in the radio',
-  { tag: '@matrix' },
-  async ({ config, createDiagram, gotoPanelEditPage }) => {
-    const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
-    const uid = await createDiagram(config, {
-      pluginVersion: version,
-      options: { hover: { kinds: ['node', 'link', 'port', 'other'], focus: false } },
-    });
-    const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
-    const view = panelEditPage.getCustomOptions('View');
-    await view.expand();
-    await expect(view.getRadioGroup('Hover focus')).toHaveChecked('Off');
-  }
-);
+for (const saved of [false, 'shift'] as const) {
+  test(
+    `a panel saved with the earlier Hover focus ${JSON.stringify(saved)} shows Off in the radio`,
+    { tag: '@matrix' },
+    async ({ config, createDiagram, gotoPanelEditPage }) => {
+      const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+      const uid = await createDiagram(config, {
+        pluginVersion: version,
+        options: { hover: { kinds: ['node', 'link', 'port', 'other'], focus: saved } },
+      });
+      const panelEditPage = await gotoPanelEditPage({ dashboard: { uid }, id: '1' });
+      const view = panelEditPage.getCustomOptions('View');
+      await view.expand();
+      await expect(view.getRadioGroup('Hover focus')).toHaveChecked('Off');
+    }
+  );
+}

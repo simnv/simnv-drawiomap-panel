@@ -612,7 +612,7 @@ for (const [name, linkWidth, slow, fast] of [
   });
 }
 
-test('Hover focus off: a hovered link opens its card and nothing dims', async ({
+test('Hover focus saved as false (Off): a hovered link opens its card and nothing dims without Shift', async ({
   createDiagram,
   gotoDashboardPage,
   readProvisionedDataSource,
@@ -626,8 +626,8 @@ test('Hover focus off: a hovered link opens its card and nothing dims', async ({
   const box = await clientBox(label(panel, ISP_A, 'a2b'));
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
   await expect(panel.getByRole('tooltip')).toBeVisible();
-  await expect(panel.locator('svg.dmap-link-focus')).toHaveCount(0);
-  await expect(panel.locator('g.dmap-link-focus-layer')).toHaveCount(0);
+  // the focus is drawn for Shift, and hidden while Shift is up
+  await expect(panel.locator('g.dmap-link-focus-layer')).toHaveCSS('display', 'none');
 });
 
 test('Shift over a hover card hides the card and keeps the focus', async ({
@@ -670,7 +670,7 @@ test('Shift with no hover turns the focus off for the map; the hover card shows'
   await expect(panel.getByRole('tooltip')).toBeVisible();
 });
 
-test('Hover focus With Shift: the focus shows only while Shift is down; the card stays', async ({
+test('Hover focus Off: the focus shows only while Shift is down; the card stays', async ({
   createDiagram,
   gotoDashboardPage,
   readProvisionedDataSource,
@@ -679,7 +679,7 @@ test('Hover focus With Shift: the focus shows only while Shift is down; the card
   const { panel } = await openLabelled(
     'percent',
     { createDiagram, gotoDashboardPage, readProvisionedDataSource },
-    { options: { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'shift' } } }
+    { options: { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'off' } } }
   );
   const box = await clientBox(label(panel, ISP_A, 'a2b'));
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
