@@ -138,9 +138,15 @@ interface LabelLayout {
   cuts: Map<SVGElement, string>;
   /** the matrix of an overlay group into root units, read once per layout: a pan or a zoom does not change it */
   spaces: Map<Element, Matrix | undefined>;
-  /** the next sync reads every link: a new placement, a theme, a flip of the layer, a font, a rebuilt overlay */
+  /**
+   * the next sync reads every link: a new placement, a flip of the layer, a font, a rebuilt overlay (a theme changes
+   * the colours only, not a cut)
+   */
   allCutsStale: boolean;
-  /** the links with a change since the last sync that can move a cut: a text, a slot, a drawn width, a place */
+  /**
+   * the links with a change since the last sync that can move a cut: a text, a slot, a drawn width, a place; and the
+   * links whose text box could not be read (their cut uses the slot until a read succeeds)
+   */
   dirtyCuts: Set<string>;
   /** the links with a text on the stroke at the last sync: a link that comes onto that list is read */
   cutCells: Set<string>;
@@ -739,17 +745,17 @@ const CUT_PAD = 1.5;
  * rotation). The painted box of the glyphs when it can be read, else the slot centred on the anchor. The slot of a
  * percent label is the width of ">999%", so a short text such as "<1%" would get a cut that is too long.
  */
-function textSpan(rec: LabelRecord, at: Point): { centre: number; length: number } {
+function textSpan(rec: LabelRecord, at: Point): { centre: number; length: number; measured: boolean } {
   const el = rec.el as (SVGGraphicsElement & { getBBox?: () => DOMRect }) | undefined;
   try {
     const b = typeof el?.getBBox === 'function' ? el.getBBox() : undefined;
     if (b && b.width > 0 && Number.isFinite(b.x) && Number.isFinite(b.width)) {
-      return { centre: b.x + b.width / 2, length: b.width };
+      return { centre: b.x + b.width / 2, length: b.width, measured: true };
     }
   } catch {
     // no layout: the slot
   }
-  return { centre: at.x, length: rec.slot! };
+  return { centre: at.x, length: rec.slot!, measured: false };
 }
 
 /** Takes the cut off every half of the stage. The overlay never writes a dash pattern, so every one is a cut. */
@@ -843,14 +849,15 @@ export function cutPattern(cuts: Array<[number, number]>, total: number): string
  * attribute that did not change is not written. A pass after a refresh (`allCutsStale` false) reads the text boxes
  * of the links in `dirtyCuts` only, and of the links that were not cut before or whose halves have other points; the
  * cut of any other link is the one it has, so the patterns equal those of a full pass. A refresh runs the sync only
- * with a link in `dirtyCuts`: the overlay writes other points only for a new drawn width, which marks its link.
+ * with a link in `dirtyCuts`: the overlay writes other points only for a new drawn width, which marks its link. The
+ * flags are cleared only after the writes: a read that throws leaves them for the next sync. A link whose text box
+ * could not be read (no layout yet) stays in `dirtyCuts`, so the next sync measures it again.
  */
 function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
   const all = layout.allCutsStale;
   const dirty = layout.dirtyCuts;
-  layout.allCutsStale = false;
-  layout.dirtyCuts = new Set();
   const before = layout.cutCells;
+  const unmeasured = new Set<string>();
   const shown = layout.layer.getAttribute('visibility') !== 'hidden';
   const wanted = new Map<string, LabelRecord[]>();
   for (const rec of layout.records.values()) {
@@ -877,7 +884,6 @@ function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
       patterns.set(el, undefined);
     }
   }
-  layout.cutCells = new Set(wanted.keys());
   let base: Matrix | undefined;
   for (const [cell, recs] of wanted) {
     const els = overlayHalves(root, cell);
@@ -909,7 +915,10 @@ function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
     const ends = recs.map((rec) => {
       const placed = rec.placement as Placed;
       const at = drawnCentre(placed, rec.drawn);
-      const { centre, length } = textSpan(rec, at);
+      const { centre, length, measured } = textSpan(rec, at);
+      if (!measured) {
+        unmeasured.add(cell);
+      }
       const angle = (placed.degrees * Math.PI) / 180;
       const u = { x: Math.cos(angle), y: Math.sin(angle) };
       const mid = { x: at.x + (centre - at.x) * u.x, y: at.y + (centre - at.x) * u.y };
@@ -949,6 +958,9 @@ function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
       layout.cuts.set(el, el.getAttribute('data-dmap-cell') ?? '');
     }
   }
+  layout.allCutsStale = false;
+  layout.dirtyCuts = unmeasured;
+  layout.cutCells = new Set(wanted.keys());
 }
 
 /** Shows `text` in the element, or hides the element (its slot stays reserved) when there is none. */
@@ -1160,7 +1172,6 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
     if (layout.theme !== theme || layout.halo !== halo) {
       layout.theme = theme;
       layout.halo = halo;
-      layout.allCutsStale = true;
       for (const rec of layout.records.values()) {
         paint(rec, theme, halo);
       }
@@ -1184,8 +1195,10 @@ function refresh(layout: LabelLayout, slots: Slot[], theme: GrafanaTheme2, root:
       rec.drawn = drawn;
       rec.head = head;
       changed = true;
-      // the points of the half change: the cut of a text on the other half can lie on it too
-      layout.dirtyCuts.add(rec.cellId);
+      // the points of the half change: the cut of a text on the other half of a link with a cut can lie on it too
+      if (layout.cutCells.has(rec.cellId)) {
+        layout.dirtyCuts.add(rec.cellId);
+      }
       if (rec.placement && 'centre' in rec.placement) {
         draw(rec, rec.placement);
       }
