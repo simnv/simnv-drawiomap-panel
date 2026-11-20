@@ -39,7 +39,8 @@ const processors = new WeakMap<GrafanaTheme2, WeakMap<Field, DisplayProcessor>>(
 
 /**
  * `fieldDisplay` with a cache for a field without `display`: a processor is built once for each field object and
- * theme (a field is never changed after it is made). Grafana fields have `display` and skip the cache.
+ * theme. This holds only because a field is never changed after it is made (Grafana makes new field objects for
+ * each data event): a changed field would keep a stale format. Grafana fields have `display` and skip the cache.
  */
 export function cachedFieldDisplay(field: Field, theme: GrafanaTheme2): DisplayProcessor {
   if (field.display) {

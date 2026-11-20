@@ -226,6 +226,41 @@ describe('the segment grid', () => {
     }
   });
 
+  it('answers as the plain scan does at the cell borders, with rounding offsets and distances on the radius', () => {
+    const rand = rng(99);
+    const near = () =>
+      Math.round(rand() * 400 - 200) * 64 +
+      (rand() < 0.5 ? 0 : [1, -1][Math.floor(rand() * 2)] * 1e-12 * (1 + rand() * 4));
+    const segments: Segment[] = [{ cellId: 'known', ax: -11328, ay: 6336, bx: -11328.000000000002, by: -2368 }];
+    for (let i = 0; i < 300; i++) {
+      const ax = near();
+      const ay = near();
+      const kind = i % 3;
+      segments.push({
+        cellId: `b${i % 100}`,
+        ax,
+        ay,
+        bx: kind === 0 ? ax : near() * (kind === 1 ? 0.05 : 1) + ax * (kind === 1 ? 1 : 0),
+        by: kind === 1 ? ay : near() * 0.05 + ay,
+      });
+    }
+    const grid = new SegmentGrid(segments);
+    const all = () => true;
+    expect(grid.nearest({ x: -11228, y: 5020 }, 100, all)).toBe(
+      nearestLink(segments, { x: -11228, y: 5020 }, 100, all)
+    );
+    for (let n = 0; n < 6000; n++) {
+      const s = segments[Math.floor(rand() * segments.length)];
+      const radius = [8, 64, 100][n % 3];
+      // a pointer at the radius from the segment line, on a border-near coordinate
+      const p =
+        n % 2
+          ? { x: s.ax + (rand() < 0.5 ? radius : -radius), y: near() }
+          : { x: near(), y: s.ay + (rand() < 0.5 ? radius : -radius) };
+      expect(grid.nearest(p, radius, all), `${n}`).toBe(nearestLink(segments, p, radius, all));
+    }
+  });
+
   it('keeps a long diagonal out of the list that every query scans', () => {
     const grid = new SegmentGrid([{ cellId: 'diag', ax: 0, ay: 0, bx: 2000, by: 1500 }]);
     expect((grid as unknown as { wide: number[] }).wide).toHaveLength(0);
