@@ -18,6 +18,7 @@ import {
 } from './linkLabels';
 import { cornersOf, LINK_LABEL_GEOMETRY } from './labelPlacement';
 import type { Point } from './geometry';
+import { FOCUS_LAYER, focusCells } from './linkFocus';
 
 /** The status of a patch, as `statusViewOf` gives it. */
 type PatchStatus = NonNullable<CellPatch['statusView']>;
@@ -1487,6 +1488,25 @@ describe('watchLinkLabelFonts', () => {
     glyphs(root, 60);
     fonts.dispatchEvent(new Event('loadingdone'));
     expect(cutWidth(root)).toBe(43);
+  });
+  it('draws the copies of a focus again with the new cuts (a pinned card keeps its focus through a font)', () => {
+    const fonts = Object.assign(new EventTarget(), { ready: Promise.resolve() });
+    setFonts(fonts);
+    const { root, index } = build();
+    render(root, index, patches());
+    glyphs(root, 20);
+    const stop = watchLinkLabelFonts(root);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    focusCells(root, index, 'e1');
+    const dashes = (scope: string) =>
+      [...root.querySelectorAll(`${scope} polyline.dmap-half`)].map((el) => el.getAttribute('stroke-dasharray'));
+    const before = dashes(`g.${FOCUS_LAYER}`);
+    glyphs(root, 40);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    const after = dashes(`g.${FOCUS_LAYER}`);
+    expect(after).not.toEqual(before);
+    expect(after).toEqual(dashes(`[data-cell-id="e1"]`));
+    stop();
   });
   it('cuts again when document.fonts.ready resolves', async () => {
     let done!: () => void;

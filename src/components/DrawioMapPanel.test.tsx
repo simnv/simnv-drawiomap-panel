@@ -1516,6 +1516,11 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
       expect(await screen.findByRole('dialog')).toBeTruthy();
       expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
+      // a pan or a zoom keeps the focus and its copies: they move with the view box
+      const copies = [...document.querySelector('g.dmap-link-focus-layer')!.children];
+      fireEvent(document.querySelector('svg.dmap-link-focus')!, new Event('dmap-layout'));
+      expect([...document.querySelector('g.dmap-link-focus-layer')!.children]).toEqual(copies);
+      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
       // the pointer leaves the panel, or clicks the pinned link again: the focus stays
       fireEvent.pointerLeave(screen.getByTestId('dmap-panel'));
       expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();

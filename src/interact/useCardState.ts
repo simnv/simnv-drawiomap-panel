@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { LEGEND_ROW_ATTR } from '../legend/symbolRows';
-import { CHART_LAYER_ATTR, focusCells } from '../render/linkFocus';
+import { CHART_LAYER_ATTR, focusCells, followView } from '../render/linkFocus';
 import { markNearLink } from '../render/overlay';
 import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
@@ -126,8 +126,14 @@ export function useCardInput(args: InputArgs) {
     const onLayout = () => {
       finder.invalidate();
       const keep = pinnedId;
+      // A pinned cell keeps its mark and its focus. The copies of the focus lie in the svg and move with the view box:
+      // a pan or a zoom draws them again only when the value labels show or hide (followView), not at each step.
+      if (keep !== undefined && near.current === keep && (!focusOf || followView(root, keep))) {
+        return;
+      }
       if (keep !== undefined) {
-        // a pinned cell keeps its focus: draw it again at the new view
+        // a pinned cell that does not hold the mark yet, or that has no focus of its own (a cell with no links): mark it
+        // again at the new view; for a cell with no links the focus stays clear
         near.current = undefined;
       }
       setNear(keep);
@@ -142,7 +148,7 @@ export function useCardInput(args: InputArgs) {
       window.removeEventListener('resize', invalidate);
       finder.invalidate();
     };
-  }, [root, finder, setNear, pinnedId]);
+  }, [root, finder, setNear, pinnedId, focusOf]);
   useEffect(() => () => stopFrame(), [stopFrame]);
   // A pinned card holds the mark and the focus of its cell: the pointer does not hover while it stays. Its close
   // clears them; the next move of the pointer hovers again.
@@ -294,8 +300,13 @@ export function useCardInput(args: InputArgs) {
   };
   const moveRef = useRef<(() => void) | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  /** The pointer hovers `patch` (or no cell): the mark and the focus, then the card. */
   const hover = (patch: CellPatch | undefined, at: { clientX: number; clientY: number }) => {
-    if (patch && card?.cellId === patch.cellId) {
+    const same = !!patch && card?.cellId === patch.cellId;
+    // the place in the panel is read before the focus writes to the svg: a read after the writes forces a second layout
+    const place = patch && !same ? local(at) : undefined;
+    setNear(patch?.cellId);
+    if (same) {
       // the same cell: only the card moves, with no render
       moveRef.current?.();
       return;
@@ -303,7 +314,7 @@ export function useCardInput(args: InputArgs) {
     if (!patch && !card) {
       return;
     }
-    dispatch({ type: 'hover', at: patch ? { cellId: patch.cellId, ...local(at) } : null });
+    dispatch({ type: 'hover', at: patch && place ? { cellId: patch.cellId, ...place } : null });
   };
   // The near-link check runs at most once per frame. The first move runs it at once; the moves after it in the same
   // frame keep only their last position, and the next frame checks that one. A frame with no move ends the chain, so
@@ -319,9 +330,7 @@ export function useCardInput(args: InputArgs) {
       setNear(undefined);
       return;
     }
-    const patch = nearPatch(at.clientX, at.clientY, at.pointerType);
-    setNear(patch?.cellId);
-    hover(patch, at);
+    hover(nearPatch(at.clientX, at.clientY, at.pointerType), at);
   };
   const nearFrame = useRef(runNear);
   useLayoutEffect(() => {
@@ -352,7 +361,6 @@ export function useCardInput(args: InputArgs) {
     if (patch || !stageEl.contains(e.target as Node) || onChart(e.target)) {
       stopFrame();
       pending.current = null;
-      setNear(patch?.cellId);
       hover(patch, e);
       return;
     }

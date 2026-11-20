@@ -1,4 +1,4 @@
-import { FOCUS_LAYER, pageColour } from './linkFocus';
+import { FOCUS_LAYER, pageColour, redrawFocus } from './linkFocus';
 import { formattedValueToString, type GrafanaTheme2 } from '@grafana/data';
 import type { ArrowStyle, LinkLabelMode } from '../model/v4';
 import { hoverKind } from '../adapter/portograph';
@@ -278,6 +278,8 @@ export function watchLinkLabelFonts(root: SVGSVGElement): () => void {
     const layout = layouts.get(root);
     if (live && layout && layout.layer.parentNode === root) {
       syncCuts(root, layout);
+      // the copies of a focus show the cuts too
+      redrawFocus(root);
     }
   };
   fonts.addEventListener?.('loadingdone', resync);

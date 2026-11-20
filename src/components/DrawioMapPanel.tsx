@@ -140,8 +140,10 @@ const styles = {
     [${FOCUS_HIDDEN_ATTR}] & svg.${FOCUS_ACTIVE} ~ [${CHART_LAYER_ATTR}] [data-dmap-chart] {
       opacity: 1;
     }
-    /* the copies above the scrim take no pointer: the hover and the click hit the cells below */
-    & .${FOCUS_LAYER}, & .${FOCUS_LAYER} * {
+    /* the copies above the scrim take no pointer: the hover and the click hit the cells below. The copies inherit it
+       (linkFocus copyOf removes their own pointer-events); a rule for each element of the layer would be a selector
+       that the browser tests on each element of the stage */
+    & .${FOCUS_LAYER} {
       pointer-events: none !important;
     }
     & .${FOCUS_SCRIM} {
