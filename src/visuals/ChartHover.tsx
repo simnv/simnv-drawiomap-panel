@@ -347,8 +347,9 @@ export function ChartHover({
   }
   // A pointer event turns into a sample at once, and the new sample renders in the same event (flushSync). A wait
   // for a frame first, and a render that React schedules for a later task, put the crosshair and the values one or
-  // more frames behind the pointer (Safari). The state changes only when the sample changes, and at most one move
-  // renders in a frame: later moves of that frame render at the frame (see `frame`). True when the hover changed.
+  // more frames behind the pointer (Safari). The state changes only when the sample changes. After a render for a
+  // move, later moves render only at the next frame callback (see `frame`): about one render per frame, at most two.
+  // True when the hover changed.
   const place = (clientX: number, kind: 'mouse' | 'touch'): boolean => {
     const r = ref.current?.getBoundingClientRect();
     if (!r || r.width <= 0) {
@@ -422,6 +423,7 @@ export function ChartHover({
       return;
     }
     ev.preventDefault();
+    cancelFrame();
     const step = ev.key === 'ArrowRight' ? 1 : -1;
     const at = hover ? nearestIndex(times, hover.time) + step : times.length - 1;
     const t = times[Math.min(times.length - 1, Math.max(0, at))];
