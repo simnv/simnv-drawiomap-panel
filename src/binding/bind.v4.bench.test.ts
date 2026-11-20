@@ -1,4 +1,13 @@
-import { createTheme } from '@grafana/data';
+import {
+  createTheme,
+  dateTime,
+  type DataFrame,
+  type Field,
+  FieldType,
+  getDisplayProcessor,
+  LoadingState,
+  type PanelData,
+} from '@grafana/data';
 import { describe, expect, it } from 'vitest';
 import { buildBenchFixture, buildInferredBenchFixture } from '../fixtures/benchBind';
 import { validateConfig } from '../model/validate';
@@ -89,5 +98,62 @@ describe('the v4 bind bench', () => {
     } else {
       expect(result.report.map((entry) => entry.kind)).toEqual(['orphan-series']);
     }
+  });
+});
+
+describe('the v4 link-half bench', () => {
+  const links = 565;
+  const points = 600;
+  const theme = createTheme();
+  const ctx = bindContextFor({ theme, replaceVariables: (s) => s, timeZone: 'utc', linkWidth: { min: 2, max: 10 } });
+  const groups = ['<g data-cell-id="0" data-meta-pg-schema="1"></g>'];
+  for (let i = 0; i < links; i++) {
+    groups.push(
+      `<g data-cell-id="l${i}" data-meta-pg-kind="link" data-meta-pg-id="l${i}" data-meta-bind="lan" data-meta-key="sw-${i}" data-meta-cap="${i % 3 === 0 ? '10G' : '1G'}"><path d="M 0 0 L 50 0" fill="none" pointer-events="stroke"/></g>`
+    );
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">${groups.join('')}</svg>`;
+  const index = buildCellIndex(mountSvg(document.createElement('div'), svg));
+  const at = 1_700_000_000_000;
+  const from = dateTime(at - points * 1000);
+  const to = dateTime(at);
+  const frame = (refId: string, i: number): DataFrame => {
+    const field = {
+      name: 'Value',
+      type: FieldType.number,
+      config: { unit: 'bps' },
+      labels: { name: `sw-${i}` },
+      values: Array.from({ length: points }, (_, k) => ((i * 7 + k * 13) % 1000) * 1e5),
+    } as Field;
+    field.display = getDisplayProcessor({ field, theme, timeZone: 'utc' });
+    const times = Array.from({ length: points }, (_, k) => from.valueOf() + k * 1000);
+    return {
+      refId,
+      name: refId,
+      length: points,
+      fields: [{ name: 'Time', type: FieldType.time, config: {}, values: times }, field],
+    };
+  };
+  const data: PanelData = {
+    state: LoadingState.Done,
+    timeRange: { from, to, raw: { from, to } },
+    series: Array.from({ length: links }, (_, i) => [frame('tx', i), frame('rx', i)]).flat(),
+  };
+  const validated = validateConfig({
+    version: 4,
+    classes: { lan: { match: { key: 'name' }, up: 'tx', down: 'rx' } },
+  });
+
+  it('binds 565 links with two halves and 600 points, prints the median of 20 refreshes', () => {
+    const times: number[] = [];
+    for (let run = 0; run < 20; run++) {
+      const start = performance.now();
+      const result = bindV4({ index, validated, data: { ...data }, ctx });
+      times.push(performance.now() - start);
+      expect(result.patches.get('l0')?.link?.a2b).toMatchObject({ status: 'ok', capacity: 1e10 });
+    }
+    times.sort((a, b) => a - b);
+    const median = ((times[9] + times[10]) / 2).toFixed(3);
+    console.log(`v4 link halves: ${links} links x 2 halves x ${points} points; median ${median} ms`);
   });
 });
