@@ -27,7 +27,12 @@ export function BarGaugeView({
       <div>
         {hint}
         <span>{formattedValueToString(value)}</span>
-        {bounded ? null : <small role="status">Set a meaningful minimum and maximum to show a bar.</small>}
+        {/* a line of its own below the value, in the secondary text colour */}
+        {bounded ? null : (
+          <small role="status" style={{ display: 'block', color: theme.colors.text.secondary }}>
+            Set a meaningful minimum and maximum to show a bar.
+          </small>
+        )}
       </div>
     );
   }
