@@ -1,4 +1,4 @@
-import { type DisplayValue, type Field, formattedValueToString } from '@grafana/data';
+import { type DisplayValue, type Field, FieldType, formattedValueToString } from '@grafana/data';
 import type { BindContext, CapacitySource, HalfState, SeriesInfo } from '../types';
 import { colorFor, noDataColor } from './color';
 import { halfWidth } from './linkWidth';
@@ -58,6 +58,9 @@ function historySeries(model: Extract<HistoryModel, { state: 'ready' }>, refId: 
   return series;
 }
 
+/** A shared empty array for a series without history; frozen, so no reader can change it. */
+const NO_VALUES = Object.freeze([]) as unknown as number[];
+
 /** The identity of a series without its history: the display of a value reads the field only. */
 const withoutHistory = (series: SeriesInfo, field: Field = series.field): SeriesInfo => ({
   refId: series.refId,
@@ -68,7 +71,6 @@ const withoutHistory = (series: SeriesInfo, field: Field = series.field): Series
   times: NO_VALUES,
   frame: series.frame,
 });
-const NO_VALUES: number[] = [];
 
 const NO_DATA_LABEL = 'no data';
 
@@ -83,14 +85,20 @@ const capacityFields = new Map<string, Field>();
  */
 function capacityField(field: Field): Field {
   const { unit, mappings, noValue, min, max } = field.config ?? {};
-  const plain = !mappings?.length && noValue === undefined && min === undefined && max === undefined;
+  const plain =
+    field.type === FieldType.number &&
+    !field.config?.type &&
+    !mappings?.length &&
+    noValue === undefined &&
+    min === undefined &&
+    max === undefined;
   const key = `${field.type}|${unit ?? ''}`;
   const seen = plain ? capacityFields.get(key) : undefined;
   if (seen) {
     return seen;
   }
   if (plain) {
-    const shared: Field = { name: field.name, type: field.type, config: { unit }, values: [] };
+    const shared: Field = { name: 'capacity', type: field.type, config: { unit }, values: [] };
     capacityFields.set(key, shared);
     return shared;
   }

@@ -20,7 +20,8 @@ export interface ContextInputs {
 /**
  * Grafana attaches `field.display` (effective config with overrides) to panel data. Fall back for other data. The
  * fallback processor is built once for each field object: the theme and the time zone belong to this context, so the
- * cache dies with it and a theme change (a new context) builds new processors.
+ * cache dies with it and a theme change (a new context) builds new processors. It helps mainly the shared capacity
+ * fields: panel data fields carry their own display.
  */
 function displayOf({ theme, timeZone }: Pick<ContextInputs, 'theme' | 'timeZone'>) {
   const built = new WeakMap<Field, DisplayProcessor>();
