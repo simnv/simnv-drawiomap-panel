@@ -742,6 +742,106 @@ describe('renderLinkLabels: the cut follows its label', () => {
   });
 });
 
+describe('renderLinkLabels: a refresh cuts only the links that changed', () => {
+  /** four links of 320 units, one above the other, 60 apart */
+  const FOUR = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" style="background-color: #1d2d3d">${[
+    1, 2, 3, 4,
+  ]
+    .map(
+      (i) =>
+        `<g data-cell-id="a${i}"><g><rect x="0" y="${i * 60 - 20}" width="40" height="40"/></g></g>` +
+        `<g data-cell-id="e${i}"><g><path d="M 40 ${i * 60} L 360 ${i * 60}" fill="none" stroke="#333" pointer-events="stroke"/></g></g>` +
+        `<g data-cell-id="b${i}"><g><rect x="360" y="${i * 60 - 20}" width="40" height="40"/></g></g>`
+    )
+    .join('')}</svg>`;
+  const value = (text: string, over: Partial<HalfState> = {}): HalfState =>
+    half({ display: { text, suffix: ' Mb/s', numeric: Number(text) }, ...over });
+  type Link = { a2b: HalfState; b2a: HalfState };
+  const patchesOf = (links: Link[]): PatchMap =>
+    new Map(links.map((l, i) => [`e${i + 1}`, linkPatch(`e${i + 1}`, { ...l, labelMode: 'value' })]));
+  const fresh = (): Link[] => [1, 2, 3, 4].map(() => ({ a2b: value('41'), b2a: value('41') }));
+  afterEach(() => {
+    Reflect.deleteProperty(SVGElement.prototype, 'getBBox');
+    Reflect.deleteProperty(document, 'fonts');
+  });
+  it('gives the dash patterns of a full pass, and reads the text boxes of the changed links only', () => {
+    let boxes = 0;
+    // the painted box of a text: 6 units per glyph, centred on its x
+    Object.assign(SVGElement.prototype, {
+      getBBox(this: SVGElement) {
+        boxes += this.localName === 'text' ? 1 : 0;
+        const w = 6 * (this.textContent ?? '').length;
+        return { x: Number(this.getAttribute('x') ?? 0) - w / 2, y: 0, width: w, height: 10 };
+      },
+    });
+    const font = Object.assign(new EventTarget(), { ready: new Promise<void>(() => {}) });
+    Object.defineProperty(document, 'fonts', { value: font, configurable: true });
+    const { root, index } = build(FOUR);
+    root.getBoundingClientRect = () => ({ width: 400, height: 260 }) as DOMRect;
+    const dashes = () =>
+      Array.from(
+        root.querySelectorAll('.dmap-half'),
+        (el) => `${el.getAttribute('data-dmap-cell')}:${el.getAttribute('stroke-dasharray')}`
+      );
+    const links = fresh();
+    render(root, index, patchesOf(links));
+    const stop = watchLinkLabelFonts(root);
+    // each step: a change, then the text boxes the refresh reads (the on-stroke labels of the changed links)
+    const steps: Array<[() => void, number]> = [
+      // a text of e2 with the same slot
+      [() => (links[1] = { ...links[1], a2b: value('42') }), 2],
+      // a text of e2 one grain wider
+      [() => (links[1] = { ...links[1], b2a: value('4200') }), 2],
+      // a wider half of e3
+      [() => (links[2] = { ...links[2], b2a: value('41', { width: 9 }) }), 2],
+      // no data on a half of e4: the other half keeps its text
+      [() => (links[3] = { ...links[3], a2b: nodata() }), 1],
+      // a long text of e1
+      [() => (links[0] = { ...links[0], a2b: value('41000000000') }), 2],
+      // e4 back, e3 thin again
+      [
+        () => {
+          links[3] = { a2b: value('41'), b2a: value('41') };
+          links[2] = { a2b: value('41'), b2a: value('41') };
+        },
+        4,
+      ],
+      // no change: no read
+      [() => {}, 0],
+    ];
+    for (const [change, read] of steps) {
+      change();
+      boxes = 0;
+      render(root, index, patchesOf(links));
+      const partial = dashes();
+      expect(boxes).toBe(read);
+      // a font that arrives: every cut is read again
+      boxes = 0;
+      font.dispatchEvent(new Event('loadingdone'));
+      expect(boxes).toBeGreaterThan(read);
+      expect(dashes()).toEqual(partial);
+    }
+    expect(dashes().filter((d) => !d.endsWith(':null')).length).toBeGreaterThan(4);
+    stop();
+  });
+  it('reads the halo colour again on a new theme only, not on each refresh', () => {
+    const { root, index } = build(FOUR);
+    const links = fresh();
+    render(root, index, patchesOf(links));
+    const styles = vi.spyOn(globalThis, 'getComputedStyle');
+    try {
+      links[0] = { ...links[0], a2b: value('42') };
+      render(root, index, patchesOf(links));
+      expect(styles).not.toHaveBeenCalled();
+      render(root, index, patchesOf(links), { ...opts, theme: createTheme({ colors: { mode: 'light' } }) });
+      expect(styles).toHaveBeenCalledTimes(1);
+      expect(byHalf(root, 'a2b')!.getAttribute('stroke')).toBe(DARK);
+    } finally {
+      styles.mockRestore();
+    }
+  });
+});
+
 describe('renderLinkLabels: obstacles', () => {
   it('the obstacle of an arrow head is the head of the widest half, also while the half is thin', () => {
     const { root, index } = build();
