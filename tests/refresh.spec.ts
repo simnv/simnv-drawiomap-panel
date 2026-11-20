@@ -138,6 +138,9 @@ test.describe('popup open', () => {
           up: 'A',
           down: 'A',
           rows: [{ kind: 'value', label: 'Walk', query: 'A' }],
+          // a value label: each new value of the walk changes the picture of both stages (the walk has no
+          // capacity, so its colour and width can stay the same)
+          linkLabel: 'value',
         },
       },
     };
