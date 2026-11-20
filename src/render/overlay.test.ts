@@ -4,7 +4,7 @@ import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { ensureOverlay, headSize, linkSplit, renderOverlay, reservedHead, drawnWidth } from './overlay';
 import { statusColor } from '../binding/color';
-import { parsePathPoints, polylineLength, slicePolyline, type Point } from './geometry';
+import { parsePathPoints, pointAt, polylineLength, slicePolyline, type Point } from './geometry';
 
 /** The status of a patch, as `statusViewOf` gives it. */
 type PatchStatus = NonNullable<CellPatch['statusView']>;
@@ -723,14 +723,21 @@ describe('arrow tip position', () => {
     expect(tipOf(draw('M 0 0 L 20 0 L 20 100', { b2a: half() }), 'b2a')).toEqual({ x: 0, y: 0 });
   });
   /** The path measured by the engine (getTotalLength) with its own CTM; the overlay group draws in root units. */
-  const drawMeasured = (d: string, length: number, along: (d: number) => { x: number; y: number }, ctm: object) => {
+  const drawMeasured = (
+    d: string,
+    length: number,
+    along: (d: number) => { x: number; y: number },
+    ctm: object,
+    link: CellPatch['link'] = both,
+    options = opts
+  ) => {
     const { root, index } = build(d);
     Object.assign(index.get('e1')!.line!, { getTotalLength: () => length, getPointAtLength: along, getCTM: () => ctm });
     // an engine with getTotalLength has getCTM on every element
     const proto = SVGElement.prototype as unknown as { getCTM?: () => unknown };
     proto.getCTM = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
     try {
-      renderOverlay(root, index, new Map([['e1', patch('e1', { link: both })]]), opts);
+      renderOverlay(root, index, new Map([['e1', patch('e1', { link })]]), options);
     } finally {
       delete proto.getCTM;
     }
@@ -738,6 +745,38 @@ describe('arrow tip position', () => {
   };
   const pointsOf = (root: SVGSVGElement, cls: string) =>
     Array.from(root.querySelectorAll(`.${cls}`), (el) => el.getAttribute('points')!.split(' '));
+  it('keeps the point head whole on a diagonal bent path when the engine length differs by rounding', () => {
+    const d = 'M 10 10 L 200.7 60.2 L 215.3 30.1';
+    const pts = parsePathPoints(d);
+    const exact = polylineLength(pts);
+    const ident = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    const head = (length: number, width: number) => {
+      const root = drawMeasured(
+        d,
+        length,
+        (at) => pointAt(pts, at),
+        ident,
+        { arrow: 'point', a2b: half({ width }), b2a: half({ width }) },
+        { ...opts, maxWidth: width }
+      );
+      return Array.from(root.querySelectorAll('.dmap-arrow'), (el) => readPoints(el));
+    };
+    const area = (poly: Point[]) =>
+      Math.abs(
+        poly.reduce((sum, p, i) => sum + p.x * poly[(i + 1) % poly.length].y - poly[(i + 1) % poly.length].x * p.y, 0)
+      ) / 2;
+    for (const width of [4, 10, 20, 30, 40, 60, 80, 110]) {
+      const reference = head(exact, width);
+      for (const length of [Math.fround(exact), exact * (1 + 1e-8), exact * (1 - 1e-8)]) {
+        const heads = head(length, width);
+        expect(heads).toHaveLength(reference.length);
+        heads.forEach((h, i) => {
+          expect(area(h), `width ${width}`).toBeGreaterThan(area(reference[i]) * 0.99);
+          expect(area(h), `width ${width}`).toBeCloseTo(area(reference[i]), 1);
+        });
+      }
+    }
+  });
   it('measures the clearance in the units of the overlay when the path is scaled', () => {
     const along = (d: number) => (d <= 400 ? { x: d, y: 0 } : { x: 400, y: d - 400 });
     const root = drawMeasured('M 0 0 L 400 0 L 400 400', 800, along, { a: 0.25, b: 0, c: 0, d: 0.25, e: 0, f: 0 });
