@@ -1,6 +1,6 @@
 import React, { Profiler } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createTheme, dateTime, FieldType, type TimeRange } from '@grafana/data';
 import { ChartHover, formatSample, type HoverSeries } from './ChartHover';
 import type { HistoryModel } from '../query/frames';
@@ -24,7 +24,7 @@ vi.mock('@grafana/ui', () => ({
   },
 }));
 
-// a manual animation-frame queue: the hover coalesces pointer events to one update per frame
+// a manual animation-frame queue: a pointer move must not wait for a frame (the tests check that none is queued)
 let frames = new Map<number, FrameRequestCallback>();
 let nextFrame = 1;
 const flushFrame = () =>
@@ -253,15 +253,13 @@ describe('ChartHover cost while scrubbing', () => {
   const move = (el: HTMLElement, x: number) =>
     fireEvent.pointerMove(el, { clientX: x, clientY: 5, pointerType: 'mouse' });
 
-  it('50 moves in one frame cause at most one tooltip render, with the last position', () => {
+  it('a move renders its sample in the same event, with no frame between (Safari: values did not trail the pointer)', () => {
     const el = mount();
-    for (let x = 0; x < 50; x++) {
-      move(el, x);
-    }
-    expect(frames.size).toBe(1);
-    expect(counts.table).toBe(0);
-    flushFrame();
-    expect(counts.table).toBeLessThanOrEqual(1);
+    move(el, 10);
+    expect(frames.size).toBe(0);
+    expect(screen.getByTestId('series').textContent).toBe('up=1');
+    move(el, 49);
+    expect(frames.size).toBe(0);
     expect(screen.getByTestId('series').textContent).toBe('up=2'); // x=49: nearest sample is 50
   });
 
@@ -296,16 +294,12 @@ describe('ChartHover cost while scrubbing', () => {
     expect(renders).toBe(1);
   });
 
-  it('cancels the pending frame on leave and on unmount', () => {
+  it('the pointer leaving removes the tooltip at once', () => {
     const el = mount();
     move(el, 10);
-    expect(frames.size).toBe(1);
+    expect(screen.getByTestId('dmap-chart-tooltip')).toBeTruthy();
     fireEvent.pointerLeave(el, { pointerType: 'mouse' });
-    expect(frames.size).toBe(0);
-    move(el, 10);
-    expect(frames.size).toBe(1);
-    cleanup();
-    expect(frames.size).toBe(0);
+    expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
   });
 
   it('does not show a tooltip when a frame lands after the pointer left', () => {
@@ -383,22 +377,21 @@ describe('ChartHover frame races', () => {
   const moveTo = (el: HTMLElement, x: number) =>
     fireEvent.pointerMove(el, { clientX: x, clientY: 5, pointerType: 'mouse' });
 
-  it('uses the data and range of the latest render when a refresh lands before the frame', () => {
+  it('uses the data and range of the latest render after a refresh', () => {
     const view = render(
       <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
         <i />
       </ChartHover>
     );
     const el = box(screen.getByTestId('dmap-chart-hover'));
-    moveTo(el, 80);
-    // refresh: other samples (0, 80, 100) and a new range before the frame runs
+    // refresh: other samples (0, 80, 100), then a move
     const fresh = { ...history([7, 8, 9], 'short'), timestamps: [0, 80, 100] } as HistoryModel;
     view.rerender(
       <ChartHover enabled series={series(fresh)} timeRange={timeRange}>
         <i />
       </ChartHover>
     );
-    flushFrame();
+    moveTo(el, 80);
     expect(screen.getByTestId('series').textContent).toBe('up=8');
     expect(screen.getByTestId('dmap-chart-crosshair').style.left).toBe('80%');
     expect(screen.getByTestId('dmap-chart-tooltip').style.transform).toBe('translate(90px, 20px)');
@@ -421,7 +414,7 @@ describe('ChartHover frame races', () => {
     expect(tip.style.transform).toBe('translate(260px, 20px)');
   });
 
-  it('Escape before the first frame stops the frame from opening the tooltip', () => {
+  it('Escape closes a pointer tooltip', () => {
     render(
       <ChartHover enabled series={series(history([1, 2, 3], 'short'))} timeRange={timeRange}>
         <i />
@@ -429,10 +422,8 @@ describe('ChartHover frame races', () => {
     );
     const el = box(screen.getByTestId('dmap-chart-hover'));
     moveTo(el, 50);
-    expect(frames.size).toBe(1);
+    expect(screen.getByTestId('dmap-chart-tooltip')).toBeTruthy();
     fireEvent.keyDown(el, { key: 'Escape' });
-    expect(frames.size).toBe(0);
-    flushFrame();
     expect(screen.queryByTestId('dmap-chart-tooltip')).toBeNull();
   });
 });

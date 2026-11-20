@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { css } from '@emotion/css';
 import {
   createTheme,
@@ -272,17 +273,6 @@ export function ChartHover({
   const theme = useTheme2();
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Hover>();
-  const frame = useRef<number>();
-  const pending = useRef<{ clientX: number; kind: 'mouse' | 'touch' }>();
-
-  const cancelFrame = useCallback(() => {
-    if (frame.current !== undefined) {
-      cancelAnimationFrame(frame.current);
-      frame.current = undefined;
-    }
-    pending.current = undefined;
-  }, []);
-  useEffect(() => cancelFrame, [cancelFrame]);
 
   const kind = hover?.kind;
   useEffect(() => {
@@ -292,13 +282,12 @@ export function ChartHover({
     // a touch tooltip stays after the finger lifts; the next touch outside the chart removes it
     const away = (ev: PointerEvent) => {
       if (!ref.current?.contains(ev.target as Node)) {
-        cancelFrame();
         setHover(undefined);
       }
     };
     document.addEventListener('pointerdown', away);
     return () => document.removeEventListener('pointerdown', away);
-  }, [kind, cancelFrame]);
+  }, [kind]);
 
   const from = timeRange.from.valueOf();
   const to = timeRange.to.valueOf();
@@ -309,7 +298,7 @@ export function ChartHover({
       ),
     [series]
   );
-  // the frame callback reads the data, range and hover of the latest render, not those of the render that queued it
+  // the pointer handler reads the data, range and hover of the latest commit
   const latest = useRef({ ready, from, to, hover });
   useLayoutEffect(() => {
     latest.current = { ready, from, to, hover };
@@ -338,8 +327,10 @@ export function ChartHover({
   if (!enabled) {
     return <>{children}</>;
   }
-  // Pointer events only note the latest position. One animation frame turns it into a sample; the state
-  // changes only when the sample changes, so a fast scrub renders at most once per frame and once per sample.
+  // A pointer event turns into a sample at once, and the new sample renders in the same event (flushSync). The
+  // browsers already send at most one pointer move per frame; a wait for a frame here, and a render that React
+  // schedules for a later task, put the crosshair and the values one or more frames behind the pointer (Safari).
+  // The state changes only when the sample changes, so a fast scrub renders at most once per sample.
   const place = (clientX: number, kind: 'mouse' | 'touch') => {
     const r = ref.current?.getBoundingClientRect();
     if (!r || r.width <= 0) {
@@ -363,34 +354,21 @@ export function ChartHover({
     if (cur && cur.time === next.time && cur.kind === kind && cur.x === next.x && cur.y === next.y) {
       return;
     }
-    setHover(next);
+    flushSync(() => setHover(next));
   };
   const move = (ev: React.PointerEvent) => {
     // in a linked row a press, a pressed drag or a finger is for the link: no sample
     if (linked && (ev.pointerType === 'touch' || ev.type === 'pointerdown' || ev.buttons !== 0)) {
       return;
     }
-    pending.current = { clientX: ev.clientX, kind: ev.pointerType === 'touch' ? 'touch' : 'mouse' };
-    if (frame.current !== undefined) {
-      return;
-    }
-    frame.current = requestAnimationFrame(() => {
-      frame.current = undefined;
-      const p = pending.current;
-      pending.current = undefined;
-      if (p) {
-        place(p.clientX, p.kind);
-      }
-    });
+    place(ev.clientX, ev.pointerType === 'touch' ? 'touch' : 'mouse');
   };
   const clear = () => {
-    cancelFrame();
     setHover(undefined);
   };
   const key = (ev: React.KeyboardEvent) => {
     if (ev.key === 'Escape') {
       // a queued frame must not open the tooltip after Escape; the event goes on to close the card when nothing was open
-      cancelFrame();
       if (hover) {
         ev.stopPropagation();
         ev.preventDefault();
@@ -407,7 +385,6 @@ export function ChartHover({
       return;
     }
     ev.preventDefault();
-    cancelFrame();
     const step = ev.key === 'ArrowRight' ? 1 : -1;
     const at = hover ? nearestIndex(times, hover.time) + step : times.length - 1;
     const t = times[Math.min(times.length - 1, Math.max(0, at))];
@@ -430,13 +407,11 @@ export function ChartHover({
       onPointerMove={move}
       onPointerLeave={(ev) => {
         if (ev.pointerType !== 'touch') {
-          cancelFrame();
           setHover((h) => (h?.kind === 'key' ? h : undefined));
         }
       }}
       onPointerCancel={clear}
       onBlur={() => {
-        cancelFrame();
         setHover((h) => (h?.kind === 'key' ? undefined : h));
       }}
       onKeyDown={key}
