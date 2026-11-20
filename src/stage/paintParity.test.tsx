@@ -332,7 +332,8 @@ describe('the paint of the panel and the popup stage', () => {
     }
     const counts = { panel: panel(), popup: popup() };
     // the width change of a2b also rewrites the points of the half and of its head (the head grows with the width);
-    // the cut under a label is one attribute of a half (no mask element to build again)
-    expect(counts).toEqual({ panel: 90, popup: 106 });
+    // the cut under a label is one attribute of a half (no mask element to build again); a change of the width
+    // alone does not reset and write the link cell again (the apply key has no width)
+    expect(counts).toEqual({ panel: 80, popup: 92 });
   });
 });
