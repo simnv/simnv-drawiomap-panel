@@ -35,6 +35,29 @@ export function fieldDisplay(field: Field, theme: GrafanaTheme2 = createTheme(),
   return field.display ?? getDisplayProcessor({ field, theme, timeZone });
 }
 
+const processors = new WeakMap<GrafanaTheme2, WeakMap<Field, DisplayProcessor>>();
+
+/**
+ * `fieldDisplay` with a cache for a field without `display`: a processor is built once for each field object and
+ * theme (a field is never changed after it is made). Grafana fields have `display` and skip the cache.
+ */
+export function cachedFieldDisplay(field: Field, theme: GrafanaTheme2): DisplayProcessor {
+  if (field.display) {
+    return field.display;
+  }
+  let byField = processors.get(theme);
+  if (!byField) {
+    byField = new WeakMap();
+    processors.set(theme, byField);
+  }
+  let processor = byField.get(field);
+  if (!processor) {
+    processor = fieldDisplay(field, theme);
+    byField.set(field, processor);
+  }
+  return processor;
+}
+
 /** One numeric field of a result, with what the matchers and the model read from it, checked once. */
 interface Candidate {
   field: Field;

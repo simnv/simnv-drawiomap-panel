@@ -11,7 +11,7 @@ import type { CardContext, CellPatch } from '../types';
 import { defaultUrlTitle } from './links';
 import { halfState, type HalfContext } from '../binding/engine';
 import type { StatusView } from '../binding/status';
-import { fieldDisplay, type HistoryModel } from '../query/frames';
+import { cachedFieldDisplay, fieldDisplay, type HistoryModel } from '../query/frames';
 import { noDataColor, schemeColor } from '../binding/color';
 import { combinedTop, yDomain, type LowerBound } from '../visuals/domain';
 import type { BindInputV4, BindResultV4, PatchV4 } from '../binding/bindV4';
@@ -88,7 +88,7 @@ function halfContext(ctx: CardContext): HalfContext {
     theme: ctx.theme,
     fieldThresholds: ctx.fieldThresholds,
     linkWidth: { min: 0, max: 0 },
-    display: (series, value) => fieldDisplay(series.field, ctx.theme)(value),
+    display: (series, value) => cachedFieldDisplay(series.field, ctx.theme)(value),
   };
 }
 

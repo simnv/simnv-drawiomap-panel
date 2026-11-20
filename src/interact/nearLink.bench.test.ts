@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { parsePathPoints, pointAt, polylineLength, type Point } from '../render/geometry';
 import { clearFakeLayout, fakeLayout } from '../render/layoutTestKit';
-import { linkSegments, nearestLink, NearLinkFinder } from './nearLink';
+import { linkSegments, nearestLink, NearLinkFinder, SegmentGrid, type Segment } from './nearLink';
 import { nearStage } from './nearLink.testKit';
 
 /**
@@ -28,6 +28,54 @@ function l2Links(): Record<string, string> {
   }
   return links;
 }
+
+describe('near-link bench, diagonal links', () => {
+  it('keeps a move cheap on a map of 565 straight diagonal links, and equal to the plain scan', () => {
+    let x = 4242;
+    const rand = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    const segments: Segment[] = [];
+    for (let i = 0; i < 565; i++) {
+      // a point-to-point link: one straight diagonal of 300 to 3,000 units on a 5,000 square map
+      const ax = rand() * 5000;
+      const ay = rand() * 5000;
+      const len = 300 + rand() * 2700;
+      const angle = rand() * Math.PI * 2;
+      segments.push({ cellId: `l${i}`, ax, ay, bx: ax + Math.cos(angle) * len, by: ay + Math.sin(angle) * len });
+    }
+    const build0 = performance.now();
+    const grid = new SegmentGrid(segments);
+    const buildMs = performance.now() - build0;
+    const wide = (grid as unknown as { wide: number[] }).wide.length;
+    const pointers = Array.from({ length: 20000 }, () => ({ x: rand() * 5000, y: rand() * 5000 }));
+    const accept = () => true;
+    // the same pointers twice, to warm the code
+    for (const p of pointers) {
+      grid.nearest(p, 8, accept);
+    }
+    const t0 = performance.now();
+    let gridHits = 0;
+    for (const p of pointers) {
+      if (grid.nearest(p, 8, accept)) {
+        gridHits++;
+      }
+    }
+    const gridUs = ((performance.now() - t0) / pointers.length) * 1000;
+    const t1 = performance.now();
+    let plainHits = 0;
+    for (const p of pointers) {
+      if (nearestLink(segments, p, 8, accept)) {
+        plainHits++;
+      }
+    }
+    const plainUs = ((performance.now() - t1) / pointers.length) * 1000;
+    console.log(
+      `near-link bench, 565 diagonal links: build ${buildMs.toFixed(2)} ms, ${wide} wide segments, ` +
+        `${gridUs.toFixed(2)} us per move with the grid vs ${plainUs.toFixed(2)} us by the plain scan`
+    );
+    expect(gridHits).toBe(plainHits);
+    expect(gridUs).toBeLessThan(BUDGET_MS_PER_MOVE * 1000);
+  });
+});
 
 describe('near-link bench', () => {
   afterEach(() => {

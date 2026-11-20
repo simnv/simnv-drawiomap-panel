@@ -342,3 +342,41 @@ describe('halfState: the series of the state', () => {
     expect(series.frame.length).toBe(4);
   });
 });
+
+describe('halfState: the capacity text and the field bounds', () => {
+  const units = ['bps', 'Mbits', 'decbytes', 'percent', 'short', undefined];
+  const bounds: Array<Pick<Field['config'], 'min' | 'max'>> = [
+    {},
+    { min: 0 },
+    { max: 100 },
+    { min: 0, max: 1e9 },
+    { min: -5, max: 5 },
+  ];
+  const capacities = [1e5, 1e8, 1.5e9, 1e10, 123456789, 2.5e11];
+  it('has the same capacity text with and without min and max', () => {
+    for (const unit of units) {
+      for (const decimals of [undefined, 0, 3]) {
+        for (const capacity of capacities) {
+          const texts = bounds.map((b) => half({ unit, decimals, ...b }, 41e6, capacity).state.capacityDisplay?.text);
+          expect(new Set(texts).size, `${unit} ${decimals} ${capacity}`).toBe(1);
+        }
+      }
+    }
+  });
+  it('shares one capacity field for the halves of fields with min or max', () => {
+    const seen = new Set<Field>();
+    const spy: HalfContext = {
+      ...real,
+      display: (series, value) => {
+        if (series.field.name === 'capacity') {
+          seen.add(series.field);
+        }
+        return real.display(series, value);
+      },
+    };
+    for (const b of bounds) {
+      half({ unit: 'bps', ...b }, 41e6, 1e8, spy);
+    }
+    expect(seen.size).toBe(1);
+  });
+});

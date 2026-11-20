@@ -59,16 +59,67 @@ export function nearestLink(
 
 /** The side of a grid cell, in root user units. */
 const GRID_CELL = 64;
-/** A segment that covers more cells than this stays in the list that every query scans. */
-const MAX_CELLS_PER_SEGMENT = 64;
+/** A segment that crosses more cells than this stays in the list that every query scans. */
+const MAX_CELLS_PER_SEGMENT = 256;
 /** The cell index is clamped to this range, for the same clamp at insert and at query. */
 const GRID_LIMIT = 1 << 19;
+/** The coordinates at which the cell index is not clamped. */
+const GRID_EDGE = (GRID_LIMIT - 1) * GRID_CELL;
 
 const cellOf = (v: number): number => Math.max(-GRID_LIMIT, Math.min(GRID_LIMIT, Math.floor(v / GRID_CELL)));
 const cellKey = (cx: number, cy: number): number => (cx + GRID_LIMIT) * (2 * GRID_LIMIT + 1) + (cy + GRID_LIMIT);
 
 /**
- * A uniform grid of the segment boxes. `nearest` has the result of `nearestLink` over the same segments, but it
+ * The keys of the cells that the segment touches, or undefined when they are more than `MAX_CELLS_PER_SEGMENT`.
+ * A query takes the cells that cover the square of the radius around the pointer. A segment within the radius of
+ * the pointer has a point inside that square, and that point lies in a cell that the segment touches: so the
+ * segment shares a cell with the query, with no margin. The walk goes column by column: in the strip of one
+ * column the segment covers the cells from the lowest to the highest y that it has in the strip. The y range is
+ * widened by a tiny epsilon, so a rounding error adds a cell and never drops one.
+ */
+function cellsCrossed(s: Segment): number[] | undefined {
+  const minX = Math.min(s.ax, s.bx);
+  const maxX = Math.max(s.ax, s.bx);
+  if (!(Math.max(Math.abs(s.ax), Math.abs(s.bx), Math.abs(s.ay), Math.abs(s.by)) < GRID_EDGE)) {
+    return undefined; // beyond the cell range (or not finite): the cell index is clamped there
+  }
+  const x0 = cellOf(minX);
+  const x1 = cellOf(maxX);
+  if (x1 - x0 + 1 > MAX_CELLS_PER_SEGMENT) {
+    return undefined;
+  }
+  const dx = s.bx - s.ax;
+  const dy = s.by - s.ay;
+  const eps = 1e-9 * (Math.abs(s.ay) + Math.abs(s.by) + GRID_CELL);
+  const keys: number[] = [];
+  for (let cx = x0; cx <= x1; cx++) {
+    let lo: number;
+    let hi: number;
+    if (dx === 0) {
+      lo = Math.min(s.ay, s.by);
+      hi = Math.max(s.ay, s.by);
+    } else {
+      const xl = Math.max(minX, cx * GRID_CELL);
+      const xr = Math.min(maxX, (cx + 1) * GRID_CELL);
+      const yl = s.ay + ((xl - s.ax) * dy) / dx;
+      const yr = s.ay + ((xr - s.ax) * dy) / dx;
+      lo = Math.min(yl, yr) - eps;
+      hi = Math.max(yl, yr) + eps;
+    }
+    const y0 = cellOf(lo);
+    const y1 = cellOf(hi);
+    if (keys.length + (y1 - y0 + 1) > MAX_CELLS_PER_SEGMENT) {
+      return undefined;
+    }
+    for (let cy = y0; cy <= y1; cy++) {
+      keys.push(cellKey(cx, cy));
+    }
+  }
+  return keys;
+}
+
+/**
+ * A uniform grid of the segments. `nearest` has the result of `nearestLink` over the same segments, but it
  * reads only the segments in the cells around the point: the candidates are taken in the original order, so the
  * tie rule (the later of two equal distances wins) and the order of the `accept` calls stay the same.
  */
@@ -84,23 +135,17 @@ export class SegmentGrid {
       if (Number.isNaN(s.ax + s.ay + s.bx + s.by)) {
         return; // a segment with no position is never near
       }
-      const x0 = cellOf(Math.min(s.ax, s.bx));
-      const x1 = cellOf(Math.max(s.ax, s.bx));
-      const y0 = cellOf(Math.min(s.ay, s.by));
-      const y1 = cellOf(Math.max(s.ay, s.by));
-      if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_CELLS_PER_SEGMENT) {
+      const crossed = cellsCrossed(s);
+      if (!crossed) {
         this.wide.push(i);
         return;
       }
-      for (let cx = x0; cx <= x1; cx++) {
-        for (let cy = y0; cy <= y1; cy++) {
-          const key = cellKey(cx, cy);
-          const list = this.cells.get(key);
-          if (list) {
-            list.push(i);
-          } else {
-            this.cells.set(key, [i]);
-          }
+      for (const key of crossed) {
+        const list = this.cells.get(key);
+        if (list) {
+          list.push(i);
+        } else {
+          this.cells.set(key, [i]);
         }
       }
     });

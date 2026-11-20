@@ -18,6 +18,24 @@ export function shownField(field: Field, show: Show): Field {
   if (show.unit === undefined && show.decimals === undefined) {
     return field;
   }
+  // one shown field for each field object and format: the display caches key on the field object
+  const key = JSON.stringify([show.unit ?? null, show.decimals ?? null]);
+  let byKey = shown.get(field);
+  if (!byKey) {
+    byKey = new Map();
+    shown.set(field, byKey);
+  }
+  let made = byKey.get(key);
+  if (!made) {
+    made = shownFieldOf(field, show);
+    byKey.set(key, made);
+  }
+  return made;
+}
+
+const shown = new WeakMap<Field, Map<string, Field>>();
+
+function shownFieldOf(field: Field, show: Show): Field {
   const config = { ...field.config };
   if (show.unit !== undefined) {
     config.unit = show.unit;

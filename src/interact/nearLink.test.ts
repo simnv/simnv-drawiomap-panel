@@ -197,6 +197,42 @@ describe('the segment grid', () => {
     }
   });
 
+  it('answers as the plain scan does for diagonals: steep, shallow, long, on the cell lines and with huge values', () => {
+    const rand = rng(11);
+    const segments: Segment[] = [];
+    for (let i = 0; i < 150; i++) {
+      const ax = Math.round(rand() * 40) * 64 * (i % 3 === 0 ? 1 : 0.5) + (i % 5 === 0 ? 0 : rand() * 64);
+      const ay = Math.round(rand() * 40) * 32 + (i % 4 === 0 ? 0 : rand() * 64);
+      const kind = i % 6;
+      const bx = kind === 0 ? ax + 64 * 30 : kind === 1 ? ax + rand() * 40 : ax + (rand() - 0.5) * 2500;
+      const by = kind === 2 ? ay + 64 * 30 : kind === 3 ? ay - rand() * 40 : ay + (rand() - 0.5) * 2500;
+      segments.push({ cellId: `d${i % 50}`, ax, ay, bx, by });
+    }
+    segments.push(
+      { cellId: 'exact', ax: 0, ay: 0, bx: 640, by: 640 },
+      { cellId: 'huge', ax: -1e9, ay: -1e9, bx: 1e9, by: 1e9 },
+      { cellId: 'inf', ax: 0, ay: 0, bx: Infinity, by: Infinity }
+    );
+    const grid = new SegmentGrid(segments);
+    for (let n = 0; n < 4000; n++) {
+      const p = { x: rand() * 3000 - 300, y: rand() * 3000 - 300 };
+      const radius = [1, 4, 8, 16, 40][n % 5];
+      const plainCalls: string[] = [];
+      const gridCalls: string[] = [];
+      const plain = nearestLink(segments, p, radius, (id) => (plainCalls.push(id), true));
+      const fast = grid.nearest(p, radius, (id) => (gridCalls.push(id), true));
+      expect(fast).toBe(plain);
+      expect(gridCalls).toEqual(plainCalls);
+    }
+  });
+
+  it('keeps a long diagonal out of the list that every query scans', () => {
+    const grid = new SegmentGrid([{ cellId: 'diag', ax: 0, ay: 0, bx: 2000, by: 1500 }]);
+    expect((grid as unknown as { wide: number[] }).wide).toHaveLength(0);
+    expect(grid.nearest({ x: 1000, y: 750 }, 8, all)).toBe('diag');
+    expect(grid.nearest({ x: 1000, y: 1000 }, 8, all)).toBeUndefined();
+  });
+
   it('answers a radius bigger than the grid window and a point far outside by the plain result', () => {
     const segments = scene(rng(3));
     const grid = new SegmentGrid(segments);
