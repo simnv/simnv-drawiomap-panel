@@ -132,10 +132,10 @@ export interface Options {
   stale?: { color: string };
   /**
    * The cells that open a hover or pinned card (default: node, link, port, other), and the hover focus: the rest of
-   * the diagram dims around a hovered link or node (default: on). A panel saved before the Shift modes has a boolean
-   * focus: true is `on`, false is `off`.
+   * the diagram dims around a hovered link or node (default: on). An earlier saved focus: a boolean (true is `on`,
+   * false is `off`) or the development value `shift` (now `off`).
    */
-  hover?: { kinds: HoverKind[]; focus?: FocusMode | boolean };
+  hover?: { kinds: HoverKind[]; focus?: FocusMode | 'shift' | boolean };
   /** The colour legend in a corner of the panel and the last data timestamp. Default: shown, collapsed, bottom-right. */
   legend?: LegendOptions;
 }
@@ -179,23 +179,29 @@ export interface ResolvedOptions extends Options {
 }
 
 /**
- * The hover focus: `on` dims on hover and Shift held hides the dim and the hover card; `shift` dims only while Shift
- * is held; `off` never dims.
+ * The hover focus: `on` dims on hover (Shift over a hover card hides the card; Shift with no hover card stops the dim);
+ * `off` dims only while Shift is held.
  */
-export type FocusMode = 'on' | 'shift' | 'off';
+export type FocusMode = 'on' | 'off';
 
-/** The saved options with a boolean Hover focus written as its mode; other options as they are. */
+/**
+ * The saved options with an earlier Hover focus written as its mode (a boolean, or the earlier `shift` mode that is
+ * now `off`); other options as they are.
+ */
 export function migrateOptions(saved: Options | undefined): Options {
   const options = saved ?? ({} as Options);
   const focus = options.hover?.focus;
-  return typeof focus === 'boolean' && options.hover
+  return (typeof focus === 'boolean' || focus === 'shift') && options.hover
     ? { ...options, hover: { ...options.hover, focus: focusModeOf(focus) } }
     : options;
 }
 
-/** The focus mode of a saved value: a boolean of a panel saved before the Shift modes, or a mode. */
+/**
+ * The focus mode of a saved value: a boolean of a panel saved before the Shift modes, the earlier `shift` mode (the
+ * dim only while Shift is held, now `off`), or a mode.
+ */
 export function focusModeOf(value: unknown): FocusMode {
-  return value === false || value === 'off' ? 'off' : value === 'shift' ? 'shift' : 'on';
+  return value === false || value === 'off' || value === 'shift' ? 'off' : 'on';
 }
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {

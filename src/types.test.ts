@@ -40,12 +40,14 @@ describe('withDefaults', () => {
     // a panel saved before the Shift modes: true is on, false is off
     expect(withDefaults({ hover: { kinds: ['link'], focus: false } } as Options).hover.focus).toBe('off');
     expect(withDefaults({ hover: { kinds: ['link'], focus: true } } as Options).hover.focus).toBe('on');
-    expect(withDefaults({ hover: { kinds: ['link'], focus: 'shift' } } as Options).hover.focus).toBe('shift');
+    // the earlier mode With Shift (the dim only while Shift is held) is now Off
+    expect(withDefaults({ hover: { kinds: ['link'], focus: 'shift' } } as Options).hover.focus).toBe('off');
     expect(migrateOptions({ hover: { kinds: ['link'], focus: false } } as Options).hover).toEqual({
       kinds: ['link'],
       focus: 'off',
     });
-    const saved = { hover: { kinds: ['link'], focus: 'shift' } } as Options;
+    expect(migrateOptions({ hover: { kinds: ['link'], focus: 'shift' } } as Options).hover?.focus).toBe('off');
+    const saved = { hover: { kinds: ['link'], focus: 'off' } } as Options;
     expect(migrateOptions(saved)).toBe(saved);
     expect(migrateOptions(undefined)).toEqual({});
   });

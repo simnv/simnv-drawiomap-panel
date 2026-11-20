@@ -11,11 +11,14 @@ import { autoSpeed } from './binding/linkWidth';
 import { DEFAULT_OPTIONS, type HoverKind, migrateOptions, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
-  // a panel saved before the Shift modes has a boolean Hover focus: the radio shows its mode
+  // a panel saved with an earlier Hover focus (a boolean, or the development value `shift`): the radio shows its mode
   .setMigrationHandler(
     (panel) => migrateOptions(panel.options as Options),
-    // also at the same plugin version: a boolean pasted or provisioned with the current version
-    (panel) => typeof (panel.options as Options | undefined)?.hover?.focus === 'boolean'
+    // also at the same plugin version: a boolean or the earlier `shift` mode pasted or provisioned with this version
+    (panel) => {
+      const focus = (panel.options as Options | undefined)?.hover?.focus;
+      return typeof focus === 'boolean' || focus === 'shift';
+    }
   )
   .setNoPadding()
   .useFieldConfig({
@@ -157,13 +160,12 @@ export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
         path: 'hover.focus',
         name: 'Hover focus',
         description:
-          'The rest of the diagram dims around the link or the node under the pointer: the link with its two ends, or the node with its links and their other ends, stay bright. On: Shift over a hover card hides the card; Shift with no hover card turns the dim off for the whole map. With Shift: the dim shows only while Shift is held.',
+          'The rest of the diagram dims around the link or the node under the pointer: the link with its two ends, or the node with its links and their other ends, stay bright. On: Shift over a hover card hides the card; Shift with no hover card turns the dim off for the whole map. Off: the dim shows only while Shift is held.',
         category: ['View'],
         defaultValue: DEFAULT_OPTIONS.hover.focus,
         settings: {
           options: [
             { value: 'on', label: 'On' },
-            { value: 'shift', label: 'With Shift' },
             { value: 'off', label: 'Off' },
           ],
         },

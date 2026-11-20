@@ -543,7 +543,7 @@ function DrawioMapPanelView(props: ViewProps) {
     const ctx = endContextOf(diagramXml, stage.index);
     return focusMap(stage.index, ctx.ends, ctx.parents);
   }, [diagramXml, stage.index]);
-  // Hover focus: `on`, `shift` (the focus only while Shift is held) or `off` (no focus, Shift does nothing)
+  // Hover focus: `on`, or `off` (the focus only while Shift is held)
   const focusMode = opts.hover.focus;
   const shiftHeld = useShiftHeld();
   const input = useCardInput({
@@ -558,12 +558,11 @@ function DrawioMapPanelView(props: ViewProps) {
     cardable,
     onControl,
     panZoom,
-    // the hover focus option: off, nothing dims
-    focusOf: focusMode === 'off' ? undefined : focusOf,
+    focusOf,
   });
   // `on`: what Shift does depends on the moment it goes down. A hover card open: Shift hides the hover cards and
   // keeps the focus. No hover card: Shift turns the focus off for the whole map. A pinned card keeps its card and its
-  // focus. `shift`: the focus shows only while Shift is held, also for a pinned card.
+  // focus. `off`: the focus shows only while Shift is held, also for a pinned card.
   const pinned = openPinned !== undefined;
   const [shiftKind, setShiftKind] = useState<'card' | 'focus' | undefined>(undefined);
   const [shiftSeen, setShiftSeen] = useState(false);
@@ -575,7 +574,7 @@ function DrawioMapPanelView(props: ViewProps) {
   }
   // the kind applies only in the mode `on`: another mode while the key is down masks it
   const cardHidden = focusMode === 'on' && shiftKind === 'card' && !pinned;
-  const focusHidden = focusMode === 'shift' ? !shiftHeld : focusMode === 'on' && shiftKind === 'focus' && !pinned;
+  const focusHidden = focusMode === 'off' ? !shiftHeld : shiftKind === 'focus' && !pinned;
 
   if (!opts.diagram?.svg) {
     return (
