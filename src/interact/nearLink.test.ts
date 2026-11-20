@@ -2,7 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { clearFakeLayout, clientRect, fakeLayout } from '../render/layoutTestKit';
 import { createTheme } from '@grafana/data';
 import { markNearLink, NEAR_CLASS, renderOverlay } from '../render/overlay';
-import { catchRadius, nearestLink, NearLinkFinder, segmentDistance2, segmentsOf } from './nearLink';
+import {
+  catchRadius,
+  nearestLink,
+  NearLinkFinder,
+  SegmentGrid,
+  segmentDistance2,
+  segmentsOf,
+  type Segment,
+} from './nearLink';
 import { nearStage } from './nearLink.testKit';
 
 const all = () => true;
@@ -141,5 +149,70 @@ describe('markNearLink', () => {
     expect(layer('l2').classList.contains(NEAR_CLASS)).toBe(true);
     markNearLink(root, undefined);
     expect(root.querySelectorAll(`.${NEAR_CLASS}`)).toHaveLength(0);
+  });
+});
+
+describe('the segment grid', () => {
+  /** A small fixed pseudo-random sequence, so a failure repeats. */
+  function rng(seed: number) {
+    let x = seed;
+    return () => {
+      x = (x * 1664525 + 1013904223) % 4294967296;
+      return x / 4294967296;
+    };
+  }
+  function scene(rand: () => number): Segment[] {
+    const out: Segment[] = [];
+    for (let i = 0; i < 120; i++) {
+      const id = `l${i % 40}`; // several segments per link, some crossing and overlapping
+      const long = i % 15 === 0;
+      const ax = rand() * 1000 - 100;
+      const ay = rand() * 1000 - 100;
+      const horizontal = rand() < 0.5;
+      const len = (long ? 3000 : 20 + rand() * 300) * (rand() < 0.5 ? -1 : 1);
+      // some on shared coordinates, so that there are exact ties
+      const sx = Math.round(ax / 50) * 50;
+      const sy = Math.round(ay / 50) * 50;
+      out.push({ cellId: id, ax: sx, ay: sy, bx: horizontal ? sx + len : sx, by: horizontal ? sy : sy + len });
+    }
+    out.push({ cellId: 'diag', ax: 0, ay: 0, bx: 900, by: 700 }, { cellId: 'dot', ax: 500, ay: 500, bx: 500, by: 500 });
+    return out;
+  }
+
+  it('answers as the plain scan does, including the ties and the order of the accept calls', () => {
+    const rand = rng(7);
+    const segments = scene(rand);
+    const grid = new SegmentGrid(segments);
+    for (let n = 0; n < 3000; n++) {
+      const p = { x: rand() * 1200 - 150, y: rand() * 1200 - 150 };
+      const radius = [4, 8, 16, 40, 300][n % 5];
+      const refused = new Set([`l${n % 40}`, `l${(n * 7) % 40}`]);
+      const plainCalls: string[] = [];
+      const gridCalls: string[] = [];
+      const plain = nearestLink(segments, p, radius, (id) => (plainCalls.push(id), !refused.has(id)));
+      const fast = grid.nearest(p, radius, (id) => (gridCalls.push(id), !refused.has(id)));
+      expect(fast).toBe(plain);
+      // the plain scan asks for every segment in range; the grid for the same, in the same order
+      expect(gridCalls).toEqual(plainCalls);
+    }
+  });
+
+  it('answers a radius bigger than the grid window and a point far outside by the plain result', () => {
+    const segments = scene(rng(3));
+    const grid = new SegmentGrid(segments);
+    for (const p of [
+      { x: 1e9, y: -1e9 },
+      { x: 400, y: 400 },
+    ]) {
+      for (const radius of [5000, 1e12]) {
+        expect(grid.nearest(p, radius, all)).toBe(nearestLink(segments, p, radius, all));
+      }
+    }
+  });
+
+  it('skips a segment with no position and handles no segments', () => {
+    const grid = new SegmentGrid([{ cellId: 'bad', ax: NaN, ay: 0, bx: 1, by: 1 }]);
+    expect(grid.nearest({ x: 0, y: 0 }, 8, all)).toBeUndefined();
+    expect(new SegmentGrid([]).nearest({ x: 0, y: 0 }, 8, all)).toBeUndefined();
   });
 });

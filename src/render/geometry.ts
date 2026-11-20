@@ -129,6 +129,18 @@ export function parsePathPoints(d: string): Point[] {
   return pts;
 }
 
+/**
+ * True when `d` is one subpath of straight runs only (M, then L/H/V/Z, absolute or relative) that `parsePathPoints`
+ * reads exactly. Curves, arcs, a second subpath and any text the parser does not know are false: those keep the
+ * sampling of the browser.
+ */
+export function isStraightPath(d: string): boolean {
+  if (!/^\s*[Mm][\s\d.,eE+\-LHVZlhvz]*$/.test(d)) {
+    return false;
+  }
+  return !/[Zz]\s*[-.\d]/.test(d);
+}
+
 export function polylineLength(pts: Point[]): number {
   let l = 0;
   for (let i = 1; i < pts.length; i++) {
@@ -367,6 +379,10 @@ function localGeom(line: SVGPathElement): LocalGeom {
     const length = api.getTotalLength();
     // Bends come from the vertices of the d attribute. Curves count by their end points, so scale to the real length.
     const scale = parsedLength > 0 && length > 0 ? length / parsedLength : 1;
+    // The parsed vertices stand for the path only when the browser measures the same length (a safety net for
+    // a path the parser reads differently from the browser).
+    const straight =
+      isStraightPath(line.getAttribute('d') ?? '') && Math.abs(length - parsedLength) <= 1e-3 * Math.max(1, length);
     const points = new Map<number, Point>();
     const runs = new Map<string, Point[]>();
     const at = (d: number): Point => {
@@ -389,6 +405,10 @@ function localGeom(line: SVGPathElement): LocalGeom {
       bends: bendLengths(parsed).map((b) => b * scale),
       at,
       samples(from, to) {
+        if (straight) {
+          // straight runs: the vertices are the exact polyline, no sampling
+          return slicePolyline(parsed, from, to);
+        }
         const key = `${from},${to}`;
         let out = runs.get(key);
         if (!out) {
