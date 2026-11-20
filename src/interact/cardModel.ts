@@ -19,6 +19,7 @@ import { effectiveClass } from '../binding/classes';
 import { diagramTitle } from '../binding/diagramTitle';
 import { cadenceOf, freshnessMs, staleCheck } from '../binding/freshness';
 import { linkFeeds } from '../binding/linkFeeds';
+import { opensApp } from '../binding/url';
 import { directionHistory, isInstant, shownField, snapshotV4 } from '../binding/rowData';
 import { defaultReduce } from '../binding/units';
 import type { Use } from '../binding/uses';
@@ -167,8 +168,9 @@ function lineColor(theme: GrafanaTheme2, i: number): string {
 
 const hasValue = (values: ReadonlyArray<number | null>) => values.some((v) => v !== null && Number.isFinite(v));
 
-/** The target of a card link: a new tab, unless the config says `false` (the current tab). */
-const tabOf = (newTab: boolean | undefined): '_blank' | undefined => (newTab === false ? undefined : '_blank');
+/** A new tab by default; the current tab with `newTab: false`, and for a link that an app of the system opens (ssh). */
+const tabOf = (newTab: boolean | undefined, href: string): '_blank' | undefined =>
+  newTab === false || opensApp(href) ? undefined : '_blank';
 
 /** The data of one use for the cell: the snapshot of its refId, its series, or why the use has none. */
 interface UseData {
@@ -198,7 +200,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
     card.links.push({
       title: u.title ?? defaultUrlTitle(u.url, title),
       href: u.url,
-      target: tabOf(u.newTab),
+      target: tabOf(u.newTab, u.url),
       origin: patch,
     });
   }
@@ -237,7 +239,7 @@ export function buildCardV4(cellId: string, bound: BindResultV4, ctx: CardContex
         card.links.push({
           title: slot.label ?? defaultUrlTitle(href, title),
           href,
-          target: tabOf(slot.newTab),
+          target: tabOf(slot.newTab, href),
           origin: patch,
         });
       }

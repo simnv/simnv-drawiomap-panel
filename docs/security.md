@@ -119,6 +119,19 @@ differs from the tree of the mount. The gain is too small for that. `IN_PLACE` w
 document, where `innerHTML` serialises differently, so the mXSS checks of DOMPurify do not work as designed. Do not
 use it. The hostile inputs are in `src/render/sanitize.test.ts`.
 
+## Card links
+
+The `url` of a class and the `drilldown` rows are templates. The panel fills the cell values (percent-encoded and
+shielded), runs `replaceVariables`, then checks the final text (`src/binding/url.ts`). It shows a relative URL, an
+`http` or `https` URL, and an `ssh://` URL. Every other scheme is not shown.
+
+An `ssh://` link starts the SSH client of the viewer's system after a click and the prompt of the browser. A value of a
+series label can come from a party with less privilege than the dashboard editor, so the check refuses an `ssh` URL
+that a client could read as options. Only `ssh://[user@]host[:port]` is shown: the user and the host (after percent
+decoding) are names or addresses that do not start with `-`; a password, a path, a query, a fragment and `ssh:` without
+`//` are refused. The link opens in the current tab, because
+a new tab would stay blank. Accepted risk: a browser with no handler for `ssh` can show an error page in that tab.
+
 ## Trade-offs
 
 - draw.io cannot save its settings (`.drawio-config`) between two opens: the opaque origin has no localStorage.
