@@ -90,7 +90,9 @@ export function createCardStore(): CardStore {
     adjust(action) {
       state = cardReducer(state, action);
     },
-    hoverOpen: () => hoverOpen,
+    // the flag of the last host commit holds only while the state still has a hover card: an adjust in the same batch
+    // or a host that is gone (no diagram) cannot leave it on
+    hoverOpen: () => hoverOpen && state !== null && !state.pinned,
     setHoverOpen(open) {
       hoverOpen = open;
     },

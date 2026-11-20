@@ -42,6 +42,9 @@ interface CardHostProps {
 /**
  * The card of the panel. It reads the whole card state, so a hover from cell to cell renders this component only,
  * not the panel view. A hover card stays mounted from cell to cell; a pin gives a new instance.
+ *
+ * It must render in every pass of the panel view: no React.memo. The panel drops the state with `store.adjust`, which
+ * notifies nobody, and this host sees the drop only because it renders in the same pass.
  */
 export function CardHost(props: CardHostProps) {
   const { store, cardRef, pinnedCell, pinnedModel, bound, ctx, width, height } = props;

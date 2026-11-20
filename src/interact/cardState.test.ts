@@ -77,11 +77,23 @@ describe('createCardStore', () => {
     expect(calls).toBe(0);
   });
 
-  it('keeps the hover-open flag that the card host writes', () => {
+  it('keeps the hover-open flag that the card host writes while the state has a hover card', () => {
     const store = createCardStore();
-    expect(store.hoverOpen()).toBe(false);
     store.setHoverOpen(true);
+    // no card: the flag of an old commit does not count
+    expect(store.hoverOpen()).toBe(false);
+    store.dispatch({ type: 'hover', at });
     expect(store.hoverOpen()).toBe(true);
+    store.dispatch({ type: 'pin', at });
+    expect(store.hoverOpen()).toBe(false);
+  });
+
+  it('an adjust that drops the hover card turns the hover-open flag off before the host commits again', () => {
+    const store = createCardStore();
+    store.dispatch({ type: 'hover', at });
+    store.setHoverOpen(true);
+    store.adjust({ type: 'stale-cell' });
+    expect(store.hoverOpen()).toBe(false);
   });
 
   it('pinnedCellOf names only the cell of a pinned card', () => {

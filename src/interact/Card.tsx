@@ -78,6 +78,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     color: ${theme.colors.text.primary};
     outline: none;
   `,
+  // The transform (placeAt) makes the floating card a containing block for a position: fixed child: such a child
+  // must render through a portal (the ChartHover tooltip does, SandboxPortal).
   hover: css`
     pointer-events: none;
     will-change: transform;
@@ -454,6 +456,7 @@ export function Card({
     }
   }, [pinned, inline, model.title]);
 
+  // A floating card is placed with a transform: a position: fixed child goes through a portal (see the hover style).
   const style: React.CSSProperties =
     sheet || inline
       ? {}

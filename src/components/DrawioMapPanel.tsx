@@ -287,7 +287,8 @@ function DrawioMapPanelView(props: ViewProps) {
   if (viewHash !== hash) {
     setViewHash(hash);
     setView(null);
-    // the card host renders in this pass too and reads the dropped state
+    // the card host renders in this pass too and reads the dropped state. Limit: if React throws this render away (a
+    // transition, Suspense), the state is dropped already and the shown card stays until the next notify or render.
     cardStore.adjust({ type: 'diagram-changed' });
   }
   // A new panel size or a new zoom option resets the live view to the configured view.
@@ -362,7 +363,8 @@ function DrawioMapPanelView(props: ViewProps) {
   const bandRef = useRef<HTMLElement>(null);
 
   // The open card: the bindings or the diagram changed and its cell has no patch now. The card host renders in this
-  // pass too (its bind result is new) and reads the dropped state.
+  // pass too (its bind result is new) and reads the dropped state. The same limit as the diagram change above: a
+  // render that React throws away still drops the state.
   const openCard = cardStore.get();
   if (openCard && !result.patches.has(openCard.cellId)) {
     cardStore.adjust({ type: 'stale-cell' });
