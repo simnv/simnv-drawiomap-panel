@@ -270,7 +270,7 @@ A `${name:format}` in a `metadata` text is a `schema` entry: a `metadata` text r
 
 1. It replaces each placeholder of the scope table with the value, encoded with `encodeURIComponent`. A `$` in a cell value is shielded, so `replaceVariables` does not expand an attribute that holds `${site}`.
 2. It writes each bare variable `$name` as `${name:percentencode}`. A name that starts with `__` stays as it is: `$__url_time_range` gives `from=…&to=…`, unencoded. A `${name:format}` keeps its format.
-3. `replaceVariables` runs. Then the panel removes the shield and checks the final text. A URL that is not relative and not `http` or `https` is not shown.
+3. `replaceVariables` runs. Then the panel removes the shield and checks the final text. A URL that is not relative and not `http`, `https` or `ssh` is not shown.
 
 Thus `/d/host?var-job=$job` with the value `a&var-site=b` gives `var-job=a%26var-site%3Db`. A multi-value variable in the bare form gives one encoded value, not several parameters; the exact text is the output of the Grafana format `percentencode`. To get repeated parameters write `/d/host?${job:queryparam}`: the result is `var-job=a&var-job=b`. A cell attribute `job` and the variable `job` do not clash: `${job}` is the attribute, `$job` and `${job:queryparam}` are the variable.
 

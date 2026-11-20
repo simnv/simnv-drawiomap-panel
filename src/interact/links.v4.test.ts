@@ -132,6 +132,20 @@ describe('resolveUrlV4', () => {
     expect(resolveUrlV4('javascript:alert(1)', cell({}), echo())).toBeNull();
     expect(resolveUrlV4('${key}', cell({ key: 'javascript:alert(1)' }), echo())).toBe('javascript%3Aalert(1)');
     expect(resolveUrlV4('$target', cell({}), () => 'javascript:alert(1)')).toBeNull();
+    expect(resolveUrlV4('file:///etc/passwd', cell({}), echo())).toBeNull();
+    expect(resolveUrlV4(' \tvbscript:x', cell({}), echo())).toBeNull();
+  });
+  it('allows http, https, ssh and relative URLs', () => {
+    for (const url of [
+      'http://a.example/x',
+      'HTTPS://a.example',
+      'ssh://admin@192.0.2.1',
+      ' SSH://h:22',
+      '/d/x',
+      'x?y=1',
+    ]) {
+      expect(resolveUrlV4(url, cell({}), echo())).toBe(url);
+    }
   });
 });
 

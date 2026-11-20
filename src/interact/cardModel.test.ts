@@ -149,6 +149,19 @@ describe('card links', () => {
       ['https://example.com/x', '_blank'],
     ]);
   });
+  it('shows an ssh link and opens it in the current tab (the SSH client opens; a new tab would stay blank)', () => {
+    const model = card(
+      {
+        url: 'ssh://admin@${key}',
+        rows: [{ kind: 'drilldown', label: 'Shell', url: 'SSH://ops@192.0.2.10:2222' }],
+      },
+      [frame('cpu', job, [1])]
+    );
+    expect(model.links.map((l) => [l.href, l.target])).toEqual([
+      [expect.stringMatching(/^ssh:\/\/admin@/), undefined],
+      ['SSH://ops@192.0.2.10:2222', undefined],
+    ]);
+  });
   it('drops a drilldown whose url is not allowed after substitution', () => {
     const model = card({ rows: [{ kind: 'drilldown', label: 'Go', url: 'javascript:alert(1)' }] }, [
       frame('cpu', job, [1]),
