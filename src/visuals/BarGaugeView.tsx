@@ -28,7 +28,7 @@ export function BarGaugeView({
     return (
       <div>
         {hint}
-        <TextLine>{formattedValueToString(value)}</TextLine>
+        <TextLine title={formattedValueToString(value)}>{formattedValueToString(value)}</TextLine>
         {bounded ? null : (
           <TextLine role="status" title={NO_BOUNDS_HINT} color={theme.colors.text.secondary}>
             {NO_BOUNDS_HINT}
