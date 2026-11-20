@@ -1032,6 +1032,11 @@ describe('applyKey and the v4 status (Astra R1)', () => {
   ] as const)('a change of %s alone gives a new key', (_, over) => {
     expect(applyKey(v4(over), true)).not.toBe(applyKey(v4(), true));
   });
+  it('a change of the link half width alone keeps the key; a new colour gives a new key', () => {
+    const link = (a2b: HalfState): CellPatch => ({ ...patch('e1', {}), link: { a2b } });
+    expect(applyKey(link(ok({ width: 2.37 })), true)).toBe(applyKey(link(ok({ width: 4.91 })), true));
+    expect(applyKey(link(ok({ color: '#ff0000' })), true)).not.toBe(applyKey(link(ok()), true));
+  });
   it('a change of conditionKey alone keeps the key; a new reason gives a new key', () => {
     const view: PatchStatus = {
       state: 'down',
