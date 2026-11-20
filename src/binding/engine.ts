@@ -78,20 +78,17 @@ const NO_DATA_LABEL = 'no data';
 const withoutTrailingZeros = (shown: DisplayValue): DisplayValue =>
   /^-?\d+\.\d*0$/.test(shown.text) ? { ...shown, text: shown.text.replace(/\.?0+$/, '') } : shown;
 const capacityFields = new Map<string, Field>();
+/** The cap of `capacityFields`: a user who types unit strings in the editor must not grow it without end. */
+const MAX_CAPACITY_FIELDS = 256;
 /**
  * The field a capacity is formatted with: the unit of the values, automatic decimals, no cached processor. The text
- * of a capacity depends on the type, the unit, the mappings and the bounds only. A field without mappings and bounds
+ * of a capacity depends on the type, the unit, the mappings and the no-value text only: the bounds (`min`, `max`) feed
+ * the percent and the colour of a display value, never its text. A field without mappings and a no-value text
  * shares one capacity field per type and unit, so the display of the bind builds one processor for all link halves.
  */
 function capacityField(field: Field): Field {
-  const { unit, mappings, noValue, min, max } = field.config ?? {};
-  const plain =
-    field.type === FieldType.number &&
-    !field.config?.type &&
-    !mappings?.length &&
-    noValue === undefined &&
-    min === undefined &&
-    max === undefined;
+  const { unit, mappings, noValue } = field.config ?? {};
+  const plain = field.type === FieldType.number && !field.config?.type && !mappings?.length && noValue === undefined;
   const key = `${field.type}|${unit ?? ''}`;
   const seen = plain ? capacityFields.get(key) : undefined;
   if (seen) {
@@ -99,6 +96,9 @@ function capacityField(field: Field): Field {
   }
   if (plain) {
     const shared: Field = { name: 'capacity', type: field.type, config: { unit }, values: [] };
+    if (capacityFields.size >= MAX_CAPACITY_FIELDS) {
+      capacityFields.clear();
+    }
     capacityFields.set(key, shared);
     return shared;
   }

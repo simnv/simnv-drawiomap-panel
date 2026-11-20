@@ -13,11 +13,37 @@ import { defaultReduce } from './units';
 /** The value fields of a row, a text or a chart that format a value. */
 export type Show = { unit?: string; decimals?: number };
 
-/** The field with the `unit` and `decimals` of a use: a new display processor reads them (spec 3.7 "Format"). */
+/**
+ * The field with the `unit` and `decimals` of a use: a new display processor reads them (spec 3.7 "Format").
+ * The result is cached for each field object and format. This holds only because a field is never changed after it
+ * is made: Grafana makes new field objects for each data event. A changed field would show a stale format.
+ */
 export function shownField(field: Field, show: Show): Field {
   if (show.unit === undefined && show.decimals === undefined) {
     return field;
   }
+  // one shown field for each field object and format: the display caches key on the field object
+  const key = JSON.stringify([show.unit ?? null, show.decimals ?? null]);
+  let byKey = shown.get(field);
+  if (!byKey) {
+    byKey = new Map();
+    shown.set(field, byKey);
+  }
+  let made = byKey.get(key);
+  if (!made) {
+    if (byKey.size >= MAX_SHOWN_PER_FIELD) {
+      byKey.clear(); // a long-lived field (the shared capacity field) must not collect formats without end
+    }
+    made = shownFieldOf(field, show);
+    byKey.set(key, made);
+  }
+  return made;
+}
+
+const MAX_SHOWN_PER_FIELD = 16;
+const shown = new WeakMap<Field, Map<string, Field>>();
+
+function shownFieldOf(field: Field, show: Show): Field {
   const config = { ...field.config };
   if (show.unit !== undefined) {
     config.unit = show.unit;
