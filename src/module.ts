@@ -12,7 +12,11 @@ import { DEFAULT_OPTIONS, type HoverKind, migrateOptions, Options } from './type
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
   // a panel saved before the Shift modes has a boolean Hover focus: the radio shows its mode
-  .setMigrationHandler((panel) => migrateOptions(panel.options as Options))
+  .setMigrationHandler(
+    (panel) => migrateOptions(panel.options as Options),
+    // also at the same plugin version: a boolean pasted or provisioned with the current version
+    (panel) => typeof (panel.options as Options | undefined)?.hover?.focus === 'boolean'
+  )
   .setNoPadding()
   .useFieldConfig({
     standardOptions: {

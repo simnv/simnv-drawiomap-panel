@@ -185,8 +185,9 @@ export interface ResolvedOptions extends Options {
 export type FocusMode = 'on' | 'shift' | 'off';
 
 /** The saved options with a boolean Hover focus written as its mode; other options as they are. */
-export function migrateOptions(options: Options): Options {
-  const focus = options?.hover?.focus;
+export function migrateOptions(saved: Options | undefined): Options {
+  const options = saved ?? ({} as Options);
+  const focus = options.hover?.focus;
   return typeof focus === 'boolean' && options.hover
     ? { ...options, hover: { ...options.hover, focus: focusModeOf(focus) } }
     : options;

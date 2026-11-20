@@ -10,6 +10,8 @@ export const FOCUS_SCRIM = 'dmap-link-focus-scrim';
 export const CHART_LAYER_ATTR = 'data-dmap-chart-layer';
 /** A chart region of a kept cell: it does not fade with the focus. */
 export const FOCUS_KEPT = 'dmap-focus-kept';
+/** The panel wrapper while the focus must not show (Shift in the mode `on`, no Shift in `shift`): the CSS hides it. */
+export const FOCUS_HIDDEN_ATTR = 'data-dmap-focus-hidden';
 
 /** Marks the chart regions of the kept cells (`data-dmap-cell` in `ids`), and clears the others. */
 function markKeptCharts(root: SVGSVGElement, ids: ReadonlySet<string>): void {

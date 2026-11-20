@@ -71,7 +71,15 @@ describe('Build id option', () => {
   } as Partial<Options>;
   it('keeps options.build through the defaults', () => {
     // the migration handler (a boolean Hover focus to its mode) keeps every other key
-    expect(plugin.onPanelMigration!({ options: saved } as never)).toMatchObject(saved);
+    const legacy = { ...saved, hover: { kinds: ['link'], focus: true } };
+    expect(plugin.onPanelMigration!({ options: legacy } as never)).toEqual({
+      ...legacy,
+      hover: { kinds: ['link'], focus: 'on' },
+    });
+    expect(plugin.onPanelMigration!({ options: saved } as never)).toBe(saved);
+    // it runs also at the same plugin version, for a boolean only
+    expect(plugin.shouldMigrate!({ options: legacy } as never)).toBe(true);
+    expect(plugin.shouldMigrate!({ options: saved } as never)).toBe(false);
     // the defaults step of Grafana; the stub has no option editors, which this test does not need
     const { options } = getPanelOptionsWithDefaults({
       plugin: { defaults: { zoom: { mode: 'fit' } }, fieldConfigDefaults: { defaults: {}, overrides: [] } } as never,

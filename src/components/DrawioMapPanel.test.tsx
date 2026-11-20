@@ -1570,6 +1570,28 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       expect(await tooltip()).toBe('A ↔ B');
       fireEvent.keyUp(window, { key: 'Shift' });
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      // a card pinned with Shift held: the card stays, its focus hides when Shift goes up
+      fireEvent.keyDown(window, { key: 'Shift' });
+      fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      fireEvent.keyUp(window, { key: 'Shift' });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+    });
+
+    it('Hover focus Off: nothing dims, and Shift keeps the card', async () => {
+      render(
+        <DrawioMapPanel
+          {...structurePanel(ALL, { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'off' } })}
+        />
+      );
+      await near('bg', 75, 31);
+      expect(await tooltip()).toBe('A ↔ B');
+      expect(document.querySelector('svg.dmap-link-focus')).toBeNull();
+      fireEvent.keyDown(window, { key: 'Shift' });
+      expect(await tooltip()).toBe('A ↔ B');
+      fireEvent.keyUp(window, { key: 'Shift' });
     });
 
     it('the mark stays when the pointer moves from near the link onto it or its label', async () => {

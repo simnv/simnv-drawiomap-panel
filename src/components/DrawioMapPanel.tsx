@@ -12,7 +12,15 @@ import { Card, SHEET_BELOW } from '../interact/Card';
 import { hoverKind } from '../adapter/portograph';
 import { interactiveCells } from '../interact/hit';
 import { NEAR_ATTR, useCardInput, useCardState } from '../interact/useCardState';
-import { CHART_LAYER_ATTR, FOCUS_ACTIVE, FOCUS_KEPT, FOCUS_LAYER, FOCUS_SCRIM, focusMap } from '../render/linkFocus';
+import {
+  CHART_LAYER_ATTR,
+  FOCUS_ACTIVE,
+  FOCUS_HIDDEN_ATTR,
+  FOCUS_KEPT,
+  FOCUS_LAYER,
+  FOCUS_SCRIM,
+  focusMap,
+} from '../render/linkFocus';
 import { endContextOf } from '../binding/edgeEnds';
 import { INTERACTIVE_ATTR, type Marked, markInteractive } from '../render/applier';
 import type { ViewBox } from '../render/zoom';
@@ -49,7 +57,7 @@ import { lastSampleTime } from '../query/frames';
 import { panelStaleColor } from '../binding/color';
 import { linkWidthRange } from '../binding/linkWidth';
 import type { Box } from '../legend/position';
-import { FOCUS_HIDDEN_ATTR, useShiftHeld } from '../interact/useShiftHeld';
+import { useShiftHeld } from '../interact/useShiftHeld';
 import { canFitGridHeight, fitGridHeight, freeRows, useDashboardEditing } from '../stage/gridHeight';
 import { CornerControls, cornerRowHeight } from './CornerControls';
 import { Legend } from '../legend/Legend';

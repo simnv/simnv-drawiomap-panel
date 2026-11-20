@@ -47,6 +47,7 @@ describe('withDefaults', () => {
     });
     const saved = { hover: { kinds: ['link'], focus: 'shift' } } as Options;
     expect(migrateOptions(saved)).toBe(saved);
+    expect(migrateOptions(undefined)).toEqual({});
   });
 
   it('loads saved options with no zoom and no link width', () => {
