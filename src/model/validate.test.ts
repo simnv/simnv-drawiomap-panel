@@ -158,6 +158,26 @@ describe('validateConfig (S2.5 steps 1-4)', () => {
     ]);
   });
 
+  it('checks the url template of a query row and a metadata row', () => {
+    const { classes, report } = validateConfig(
+      config({
+        ok: { match: { key: 'job' }, rows: [{ kind: 'value', query: 'a', url: '/d/x?${job:queryparam}&h=${key}' }] },
+        bad: {
+          match: { key: 'job' },
+          rows: [
+            { kind: 'history', query: 'a', url: '/d/y?x=${key' },
+            { kind: 'metadata', label: 'Role', text: 'x', url: '/d/y?x=${}' },
+          ],
+        },
+      })
+    );
+    expect(report.map((e) => (e.kind === 'schema' ? e.path : e.kind))).toEqual([
+      'classes.bad.rows[0].url',
+      'classes.bad.rows[1].url',
+    ]);
+    expect(classes.has('ok')).toBe(true);
+  });
+
   it('allows an abstract class with no match', () => {
     const { classes, report } = validateConfig(config({ device: { rows: [{ kind: 'value', query: 'a' }] } }));
     expect(report).toEqual([]);

@@ -95,6 +95,12 @@ const updownShape = {
   ...show,
 };
 const metadataShape = { kind: literal('metadata'), label: string(), text: template };
+/** The link of a card row: a click on the row opens `url`. Not on a chart region and not on a `drilldown` row. */
+const rowLink = {
+  url: optional(template),
+  // false: the link opens in the current tab. Default: a new tab.
+  newTab: optional(boolean),
+};
 const drilldownShape = {
   kind: literal('drilldown'),
   label: optional(string()),
@@ -102,9 +108,10 @@ const drilldownShape = {
   // false: the link opens in the current tab. Default: a new tab.
   newTab: optional(boolean),
 };
-const history = object(historyShape);
-const value = object(valueShape);
-const updown = object(updownShape);
+const history = object({ ...historyShape, ...rowLink });
+const value = object({ ...valueShape, ...rowLink });
+const updown = object({ ...updownShape, ...rowLink });
+const metadata = object({ ...metadataShape, ...rowLink });
 type QueryRowV4 = Out<typeof history> | Out<typeof value> | Out<typeof updown>;
 /** The look of a chart region: `background: none` draws no panel background under the chart. */
 const look = { background: optional(oneOf(['panel', 'none'])) };
@@ -112,12 +119,12 @@ const chartHistory = object({ ...historyShape, ...look });
 const chartValue = object({ ...valueShape, ...look });
 const chartUpdown = object({ ...updownShape, ...look });
 export type ChartV4 = Out<typeof chartHistory> | Out<typeof chartValue> | Out<typeof chartUpdown>;
-export type RowV4 = QueryRowV4 | Infer<typeof metadataShape> | Infer<typeof drilldownShape>;
+export type RowV4 = QueryRowV4 | Out<typeof metadata> | Infer<typeof drilldownShape>;
 const row = discriminated<RowV4>({
   history,
   value,
   updown,
-  metadata: object(metadataShape),
+  metadata,
   drilldown: object(drilldownShape),
 });
 /** A9: a chart region fills the box of the cell. `value` draws a bar gauge. Same rules as the rows. */
@@ -158,10 +165,10 @@ export const schemaKeys = {
   text: Object.keys(textShape),
   /** The keys of each row kind. */
   row: keysOf({
-    history: historyShape,
-    value: valueShape,
-    updown: updownShape,
-    metadata: metadataShape,
+    history: { ...historyShape, ...rowLink },
+    value: { ...valueShape, ...rowLink },
+    updown: { ...updownShape, ...rowLink },
+    metadata: { ...metadataShape, ...rowLink },
     drilldown: drilldownShape,
   }),
   /** The keys of each chart kind. */

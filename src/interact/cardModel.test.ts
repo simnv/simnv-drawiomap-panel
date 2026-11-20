@@ -170,6 +170,39 @@ describe('card links', () => {
   });
 });
 
+describe('row links', () => {
+  it('gives a row with a url its href and target: a new tab by default, the current tab with newTab: false or ssh', () => {
+    const model = card(
+      {
+        url: '/d/vpn',
+        rows: [
+          { kind: 'metadata', label: 'Role', text: '${key}', url: 'https://example.com/${key}' },
+          { kind: 'value', query: 'cpu', url: '/d/cpu?var-job=${key}', newTab: false },
+          { kind: 'history', query: 'cpu', url: 'ssh://admin@${key}' },
+          { kind: 'value', query: 'cpu', label: 'Plain' },
+        ],
+      },
+      [frame('cpu', job, [40])]
+    );
+    expect(model.rows.map((r) => [r.title, r.href, r.target])).toEqual([
+      ['Role', 'https://example.com/node-rtr-a', '_blank'],
+      ['cpu', '/d/cpu?var-job=node-rtr-a', undefined],
+      ['cpu', 'ssh://admin@node-rtr-a', undefined],
+      ['Plain', undefined, undefined],
+    ]);
+    // a row link is not a footer link
+    expect(model.links.map((l) => l.href)).toEqual(['/d/vpn']);
+  });
+  it('keeps a row whose url is not allowed, with no link', () => {
+    const model = card({ rows: [{ kind: 'value', query: 'cpu', url: 'javascript:alert(1)' }] }, [
+      frame('cpu', job, [40]),
+    ]);
+    expect(model.rows).toHaveLength(1);
+    expect(model.rows[0]).not.toHaveProperty('href');
+    expect(model.links).toEqual([]);
+  });
+});
+
 describe('field data links', () => {
   /** A frame whose number field has the data links of its Grafana field config. */
   function linked(refId: string, values: Array<number | null>, links: Array<Pick<LinkModel, 'title' | 'href'>>) {

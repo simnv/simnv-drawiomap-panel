@@ -35,7 +35,8 @@ import { resolveTitleV4, resolveUrlV4 } from '../interact/links';
 /**
  * One row of the card of a cell, in the order of the rows of its effective class. A `metadata` row holds its
  * resolved text and a `drilldown` row its resolved URL; a row whose template does not resolve is not in the list
- * (spec 3.3). A query row holds only its path: its series are in `series` under the path of its use.
+ * (spec 3.3). A query row holds only its path: its series are in `series` under the path of its use. Another row
+ * with a `url` holds the resolved URL of its link; a URL that does not resolve drops the link, not the row.
  */
 export interface RowSlotV4 {
   path: UsePath;
@@ -43,7 +44,7 @@ export interface RowSlotV4 {
   label?: string;
   text?: string;
   url?: string;
-  /** a `drilldown` row with `newTab: false` opens in the current tab */
+  /** a row with `newTab: false` opens its link in the current tab */
   newTab?: boolean;
 }
 
@@ -778,7 +779,7 @@ export function bindV4(input: BindInputV4): BindResultV4 {
   }
 
   /**
-   * The templates of a cell (spec 3.3): the URL and its title, the `metadata` and `drilldown` rows. A template that
+   * The templates of a cell (spec 3.3): the URL and its title, the `metadata` and `drilldown` rows, the `url` of a row. A template that
    * reads an attribute the cell lacks gives `missing-attr`; `${labels.x}` or `${value}` with no single status series
    * gives `template-unresolved`. Such an item is not shown.
    */
@@ -816,11 +817,24 @@ export function bindV4(input: BindInputV4): BindResultV4 {
         });
       }
     }
+    // the link of a row that is not a drilldown: a URL that does not resolve drops the link, the row stays
+    const rowLink = (row: { url?: string; newTab?: boolean }, path: string): Pick<RowSlotV4, 'url' | 'newTab'> => {
+      const href = row.url === undefined ? null : url(row.url, `${path}.url`);
+      return href === null ? {} : { url: href, ...(row.newTab === false ? { newTab: false } : {}) };
+    };
     patch.rowsV4 = eff.rows.flatMap((row): RowSlotV4[] => {
       const path = row.origin;
       if (row.kind === 'metadata') {
         return resolves(row.text, `${path}.text`)
-          ? [{ path, kind: row.kind, label: row.label, text: resolveTemplateV4(row.text, scope).text }]
+          ? [
+              {
+                path,
+                kind: row.kind,
+                label: row.label,
+                text: resolveTemplateV4(row.text, scope).text,
+                ...rowLink(row, path),
+              },
+            ]
           : [];
       }
       if (row.kind === 'drilldown') {
@@ -839,7 +853,9 @@ export function bindV4(input: BindInputV4): BindResultV4 {
           },
         ];
       }
-      return uses.some((use) => use.path === path || use.path === `${path}.a2b`) ? [{ path, kind: row.kind }] : [];
+      return uses.some((use) => use.path === path || use.path === `${path}.a2b`)
+        ? [{ path, kind: row.kind, ...rowLink(row, path) }]
+        : [];
     });
   }
 

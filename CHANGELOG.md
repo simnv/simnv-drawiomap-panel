@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added row links: a `history`, `value`, `updown` or `metadata` row can have `url` (a template, with the same check as the class `url`) and `newTab`. In a pinned card a click on the row (its label, its value or its chart) or Enter on it opens the link. See [Rows](docs/guide/bindings.md#rows).
 - Added Shift to the **Hover focus** option. **On** (the default): Shift over a hover card hides the card and keeps the focus; Shift with no hover card turns the focus off for the whole map while the key is down; a pinned card stays. **Off**: no focus on hover; hold Shift to see it, also for a pinned card. A panel saved with the earlier switch keeps its value.
 - Changed the hover focus: a pinned card keeps the focus of its cell (the rest of the diagram stays dimmed) until the card closes. Before, the click that pinned the card cleared the focus.
 - Added the **Fit height** button: in dashboard edit mode, when the diagram leaves one grid row or more of free space in the panel, the button makes the panel lower to the diagram. See [Fit the panel height](docs/guide/zoom.md#fit-the-panel-height).
