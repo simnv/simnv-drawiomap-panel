@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
 import type { CellEntry, CellIndex } from '../types';
 import {
@@ -9,6 +9,7 @@ import {
   FOCUS_SCRIM,
   focusCells,
   focusMap,
+  followView,
   refreshFocus,
 } from './linkFocus';
 
@@ -17,11 +18,11 @@ function stage() {
   const host = document.createElement('div');
   host.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg"><g data-cell-id="layer">
     <g data-cell-id="zone"><rect class="zone"/>
-      <g data-cell-id="a"><rect class="a"/><g data-cell-id="a-port" role="button" tabindex="0"><rect class="a-port"/></g></g>
+      <g data-cell-id="a"><rect class="a" pointer-events="all"/><g data-cell-id="a-port" role="button" tabindex="0"><rect class="a-port"/></g></g>
       <g data-cell-id="L"><path class="L"/></g>
     </g>
     <g data-cell-id="b" id="own-id"><rect class="b"/></g>
-    <g data-cell-id="M"><path class="M"/><g data-cell-id="M-text"><foreignObject class="M-text"/></g></g>
+    <g data-cell-id="M"><path class="M" pointer-events="stroke"/><g data-cell-id="M-text"><foreignObject class="M-text" pointer-events="none"><div xmlns="http://www.w3.org/1999/xhtml" style="color: red; pointer-events: all;">M</div></foreignObject></g></g>
     <g data-cell-id="L-label"><text class="L-label">uplink</text></g>
     <g data-cell-id="a-icon"><image class="a-icon" href="data:image/png;base64,AA=="/><a href="https://example.com"><text>doc</text></a></g>
   </g>
@@ -75,6 +76,13 @@ describe('focusCells', () => {
     // a copy has no id, cell id, role or tab stop: the hit test and the screen reader see only the original
     expect(layer.querySelectorAll('[id], [data-cell-id], [data-dmap-cell], [role], [tabindex]')).toHaveLength(0);
     expect(root.querySelectorAll('#own-id')).toHaveLength(1);
+    // a copy has no pointer-events of its own (attribute or inline style): it inherits the none of the layer
+    expect(layer.querySelectorAll('[pointer-events]')).toHaveLength(0);
+    const html = layer.querySelector<HTMLElement>('foreignObject.M-text div')!;
+    expect(html.style.pointerEvents).toBe('');
+    expect(html.style.color).toBe('red');
+    expect(root.querySelector<HTMLElement>('[data-cell-id="M-text"] div')!.style.pointerEvents).toBe('all');
+    expect(layer.getAttribute('pointer-events')).toBe('none');
     // an icon keeps its picture; a link in a label is no tab stop
     expect(layer.querySelector('image')?.getAttribute('href')).toMatch(/^data:/);
     expect(layer.querySelector('a')?.hasAttribute('href')).toBe(false);
@@ -145,6 +153,65 @@ describe('focusCells labels', () => {
     root.querySelector('g.labels')!.setAttribute('visibility', 'hidden');
     focusCells(root, index, 'L');
     expect(copied()).toEqual(['L', 'L-label']);
+  });
+});
+
+describe('followView', () => {
+  it('keeps the copies at a new view, and copies again when the label layer shows or hides', () => {
+    const { root, index, copied } = stage();
+    focusCells(root, index, 'L');
+    const layer = root.querySelector(`g.${FOCUS_LAYER}`)!;
+    const copies = [...layer.children];
+    expect(followView(root, 'L')).toBe(true);
+    expect([...layer.children]).toEqual(copies);
+    // a zoom out hides the labels
+    root.querySelector('g.labels')!.setAttribute('visibility', 'hidden');
+    expect(followView(root, 'L')).toBe(true);
+    expect(copied()).toEqual(['L', 'L-label']);
+    // a zoom in shows them again
+    root.querySelector('g.labels')!.removeAttribute('visibility');
+    expect(followView(root, 'L')).toBe(true);
+    expect(copied()).toEqual(['L', 'L-label', '41%']);
+  });
+
+  it('is false for another cell or with no focus: the caller draws the focus', () => {
+    const { root, index } = stage();
+    expect(followView(root, 'L')).toBe(false);
+    focusCells(root, index, 'L');
+    expect(followView(root, 'M')).toBe(false);
+    focusCells(root, index, undefined);
+    expect(followView(root, 'L')).toBe(false);
+  });
+});
+
+describe('focusCells reads before writes', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(SVGElement.prototype, 'getCTM');
+  });
+
+  it('reads the transforms once for each kept element and the layer, all before the first write to the svg', () => {
+    const { root, index } = stage();
+    document.body.appendChild(root.parentElement!);
+    // the first focus makes the layer
+    focusCells(root, index, 'L');
+    const writes = new MutationObserver(() => {});
+    writes.observe(root, { subtree: true, childList: true, attributes: true });
+    let reads = 0;
+    let readAfterWrite = false;
+    const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    const m = { ...identity, isIdentity: true, inverse: () => m, multiply: () => m };
+    Object.assign(SVGElement.prototype, {
+      getCTM() {
+        reads++;
+        readAfterWrite ||= writes.takeRecords().length > 0;
+        return m;
+      },
+    });
+    focusCells(root, index, 'M', ['a', 'b']);
+    writes.disconnect();
+    expect(readAfterWrite).toBe(false);
+    // the layer, then the parent of each kept element: M, a, b, the icon of a and the label of M
+    expect(reads).toBe(6);
   });
 });
 

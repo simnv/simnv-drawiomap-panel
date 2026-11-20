@@ -13,11 +13,18 @@ export const FOCUS_KEPT = 'dmap-focus-kept';
 /** The panel wrapper while the focus must not show (in the mode `on`, Shift down with no hover card; in `shift`, no Shift): the CSS hides it. */
 export const FOCUS_HIDDEN_ATTR = 'data-dmap-focus-hidden';
 
-/** Marks the chart regions of the kept cells (`data-dmap-cell` in `ids`), and clears the others. */
+/**
+ * Marks the chart regions of the kept cells (`data-dmap-cell` in `ids`), and clears the others. The chart layer is a
+ * child of the stage: a search of the whole stage would go through each element of the svg at each hover.
+ */
 function markKeptCharts(root: SVGSVGElement, ids: ReadonlySet<string>): void {
-  const regions = root.parentElement?.querySelectorAll(`:scope > [${CHART_LAYER_ATTR}] [data-dmap-chart]`) ?? [];
-  for (const region of regions) {
-    region.classList.toggle(FOCUS_KEPT, ids.has(region.getAttribute('data-dmap-cell') ?? ''));
+  for (const layer of root.parentElement?.children ?? []) {
+    if (!layer.hasAttribute(CHART_LAYER_ATTR)) {
+      continue;
+    }
+    for (const region of layer.querySelectorAll('[data-dmap-chart]')) {
+      region.classList.toggle(FOCUS_KEPT, ids.has(region.getAttribute('data-dmap-cell') ?? ''));
+    }
   }
 }
 
@@ -38,9 +45,24 @@ export function pageColour(root: SVGSVGElement): string | undefined {
   return RGB.test(value) && alphaOf(value) === 1 ? value : undefined;
 }
 
+/** The focus layer of a root, or null: a child of the root, the last one unless a layer came after it. */
+function existingLayer(root: SVGSVGElement): SVGGElement | null {
+  const isLayer = (c: Element | null) => c?.localName === 'g' && c.classList.contains(FOCUS_LAYER);
+  const last = root.lastElementChild;
+  if (isLayer(last)) {
+    return last as SVGGElement;
+  }
+  for (const c of root.children) {
+    if (isLayer(c)) {
+      return c as SVGGElement;
+    }
+  }
+  return null;
+}
+
 /** The focus layer of a root, made at the first focus: hidden by the panel CSS until the root has FOCUS_ACTIVE. */
-function focusLayer(root: SVGSVGElement): SVGGElement {
-  let layer = root.querySelector<SVGGElement>(`:scope > g.${FOCUS_LAYER}`);
+function focusLayer(root: SVGSVGElement, existing: SVGGElement | null): SVGGElement {
+  let layer = existing;
   if (!layer) {
     layer = document.createElementNS(NS, 'g');
     layer.setAttribute('class', FOCUS_LAYER);
@@ -98,19 +120,35 @@ function keptGroups(index: CellIndex, cellId: string, ends: readonly string[]): 
 }
 
 /** The attributes that a copy must not carry: the hit test, the ids and the screen reader see only the original. */
-const COPY_DROPPED = ['id', 'data-cell-id', 'data-dmap-cell', 'role', 'tabindex', 'aria-label'];
+const COPY_DROPPED = new Set([
+  'id',
+  'data-cell-id',
+  'data-dmap-cell',
+  'role',
+  'tabindex',
+  'aria-label',
+  'pointer-events',
+]);
 
 /**
  * A clone of `el` in the focus layer, in the place of the original: the transforms of its ancestors apply. A clone,
  * not a `<use>`: a `<use>` instance does not draw a `foreignObject` (an HTML label), and its elements keep their own
- * `pointer-events`, so they would take the pointer from the cells below. The panel CSS gives each clone element
- * `pointer-events: none`.
+ * `pointer-events`, so they would take the pointer from the cells below. The copy has no `pointer-events` of its own
+ * (no attribute and no inline style; the sanitiser removes each `<style>` of a diagram), so each of its elements
+ * inherits the `none` of the focus layer.
  */
 function copyOf(el: Element, m: DOMMatrix | null): Element {
   const copy = el.cloneNode(true) as Element;
   for (const node of [copy, ...copy.querySelectorAll('*')]) {
-    for (const name of COPY_DROPPED) {
-      node.removeAttribute(name);
+    // one pass over the attributes of the node, not one lookup for each dropped name
+    for (const name of node.getAttributeNames()) {
+      if (COPY_DROPPED.has(name)) {
+        node.removeAttribute(name);
+      }
+    }
+    // draw.io writes `pointer-events: all` in the style of an HTML label
+    if (node.getAttribute('style')?.includes('pointer-events')) {
+      (node as HTMLElement | SVGElement).style.removeProperty('pointer-events');
     }
     // a link in a label is no second tab stop (an <image> keeps its href: it is the picture)
     if (node.localName === 'a') {
@@ -127,15 +165,64 @@ function copyOf(el: Element, m: DOMMatrix | null): Element {
   return copy;
 }
 
-/** The transform from the parent of `el` to the focus layer (`to`: the screen transform of the layer). */
-function placeOf(el: Element, to: DOMMatrix | null): DOMMatrix | null {
+/** The transform from the parent of `el` to the focus layer (`back`: the inverse of the screen transform of the layer). */
+function placeOf(el: Element, back: DOMMatrix | null): DOMMatrix | null {
   const parent = el.parentElement as unknown as SVGGraphicsElement | null;
   const from = typeof parent?.getCTM === 'function' ? parent.getCTM() : null;
-  return from && to ? to.inverse().multiply(from) : null;
+  return from && back ? back.multiply(from) : null;
 }
 
-/** The focus of each root, so that a paint can draw the copies again with the new state of the cells. */
-const focused = new WeakMap<SVGSVGElement, { index: CellIndex; cellId: string; ends: readonly string[] }>();
+/**
+ * The value labels of the cells `ids` (linkLabels: a `text` with `data-dmap-cell` in a layer of the root), and the
+ * number of hidden layers of the root. A label layer hidden at this zoom (too small to read) keeps the labels of the
+ * link hidden too. Only the layers of the root and their children are read, not the whole svg.
+ */
+function valueLabels(root: SVGSVGElement, layer: Element, ids: ReadonlySet<string>) {
+  const labels: Element[] = [];
+  let hidden = 0;
+  for (const group of root.children) {
+    if (group === layer) {
+      continue;
+    }
+    if (group.getAttribute('visibility') === 'hidden') {
+      hidden++;
+      continue;
+    }
+    for (const t of group.children) {
+      if (t.localName === 'text' && ids.has(t.getAttribute('data-dmap-cell') ?? '')) {
+        labels.push(t);
+      }
+    }
+  }
+  return { labels, hidden };
+}
+
+/** The number of hidden layers of the root (the label layer at a small zoom): a change shows or hides the labels. */
+function hiddenLayers(root: SVGSVGElement, layer: Element | null): number {
+  let hidden = 0;
+  for (const group of root.children) {
+    if (group !== layer && group.getAttribute('visibility') === 'hidden') {
+      hidden++;
+    }
+  }
+  return hidden;
+}
+
+/** Removes the copies from the focus layer; the scrim stays. */
+function clearCopies(layer: SVGGElement | null): void {
+  while (layer?.lastElementChild && !layer.lastElementChild.classList.contains(FOCUS_SCRIM)) {
+    layer.lastElementChild.remove();
+  }
+}
+
+/**
+ * The focus of each root, so that a paint can draw the copies again with the new state of the cells. `hidden`: the
+ * hidden layers of the root when the copies were made (see followView).
+ */
+const focused = new WeakMap<
+  SVGSVGElement,
+  { index: CellIndex; cellId: string; ends: readonly string[]; hidden: number }
+>();
 
 /**
  * Dims the diagram around the cell `cellId` (a link or a node) and the cells kept with it (`ends`: for a link its two
@@ -145,6 +232,9 @@ const focused = new WeakMap<SVGSVGElement, { index: CellIndex; cellId: string; e
  * cost grows with the kept cells (a node with many links keeps them all), not with the cells that dim: no class goes
  * on the other cells, so the browser restyles and repaints no other cell. The copies take no pointer: the hover still hits the cells
  * below. Undefined, or a cell not in the index, clears.
+ *
+ * All reads come before all writes (the page colour, the kept elements and their transforms; then the copies, the
+ * scrim colour and the classes): a hover switch forces at most one layout, not one for each read.
  */
 export function focusCells(
   root: SVGSVGElement,
@@ -152,36 +242,55 @@ export function focusCells(
   cellId: string | undefined,
   ends: readonly string[] = []
 ): void {
-  const existing = root.querySelector(`:scope > g.${FOCUS_LAYER}`);
-  while (existing && existing.lastElementChild && !existing.lastElementChild.classList.contains(FOCUS_SCRIM)) {
-    existing.lastElementChild.remove();
-  }
+  const existing = existingLayer(root);
   if (cellId === undefined || !index.has(cellId)) {
+    clearCopies(existing);
     focused.delete(root);
     root.classList.remove(FOCUS_ACTIVE);
     markKeptCharts(root, new Set());
     return;
   }
-  focused.set(root, { index, cellId, ends });
-  const layer = focusLayer(root);
+  // the one write before the reads, and only at the first focus or after a new label layer: the layer goes last
+  const layer = focusLayer(root, existing);
   // a scrim in the page colour looks the same as the cells at 25% opacity, at the cost of one rect: opacity on the
   // large groups of the diagram makes the browser draw them again at each repaint
-  layer.querySelector<SVGElement>(`:scope > .${FOCUS_SCRIM}`)?.style.setProperty('fill', pageColour(root) ?? null);
-  // a label layer hidden at this zoom (too small to read) keeps the labels of the link hidden too
+  const fill = pageColour(root) ?? '';
   const ids = new Set([cellId, ...ends]);
-  const labels = [...root.querySelectorAll('text[data-dmap-cell]')].filter(
-    (t) => ids.has(t.getAttribute('data-dmap-cell') ?? '') && t.parentElement?.getAttribute('visibility') !== 'hidden'
-  );
-  // all transforms first, then all writes: a node with many links forces one layout, not one for each copy
+  const { labels, hidden } = valueLabels(root, layer, ids);
   const to = typeof layer.getCTM === 'function' ? layer.getCTM() : null;
-  const kept = [...keptGroups(index, cellId, ends), ...labels].map((el) => ({ el, m: placeOf(el, to) }));
+  const back = to ? to.inverse() : null;
+  const kept = [...keptGroups(index, cellId, ends), ...labels].map((el) => ({ el, m: placeOf(el, back) }));
+  // the writes
   const batch = document.createDocumentFragment();
   for (const { el, m } of kept) {
     batch.appendChild(copyOf(el, m));
   }
+  clearCopies(layer);
+  const scrim = layer.firstElementChild as SVGElement | null;
+  if (scrim?.classList.contains(FOCUS_SCRIM) && scrim.style.getPropertyValue('fill') !== fill) {
+    scrim.style.setProperty('fill', fill || null);
+  }
   layer.appendChild(batch);
   markKeptCharts(root, ids);
   root.classList.add(FOCUS_ACTIVE);
+  focused.set(root, { index, cellId, ends, hidden });
+}
+
+/**
+ * A new view (a pan, a zoom, a new size) with the focus on `cellId`: the copies lie in the svg, so they move with the
+ * view box and stay. Only a layer of the root that shows or hides at the new zoom (the value labels) draws them again:
+ * the copies of the labels, and the cuts in the strokes under the labels. False when the root has no focus on
+ * `cellId`.
+ */
+export function followView(root: SVGSVGElement, cellId: string): boolean {
+  const f = focused.get(root);
+  if (f?.cellId !== cellId) {
+    return false;
+  }
+  if (hiddenLayers(root, existingLayer(root)) !== f.hidden) {
+    focusCells(root, f.index, f.cellId, f.ends);
+  }
+  return true;
 }
 
 /**
