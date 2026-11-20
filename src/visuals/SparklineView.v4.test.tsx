@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createTheme, dateTime, FieldColorModeId, getDefaultTimeRange, ThemeContext } from '@grafana/data';
 import { SparklineView, type ChartLine } from './SparklineView';
-import { Card } from '../interact/Card';
+import { Card, HOVER_CHART_DWELL_MS } from '../interact/Card';
 import type { CardModelV4, HistoryRowV4 } from '../interact/cardModel';
 
 const { sparkline } = vi.hoisted(() => ({
@@ -148,10 +148,21 @@ describe('Card: a history row with N lines', () => {
     ...over,
   });
   const cardOf = (r: HistoryRowV4): CardModelV4 => ({ title: 'AP 1', rows: [r], links: [] });
+  /** A hover card after the pointer stayed on its cell: the charts mount after the dwell. */
+  const renderHover = (ui: React.ReactElement) => {
+    vi.useFakeTimers();
+    try {
+      const view = render(ui);
+      act(() => vi.advanceTimersByTime(HOVER_CHART_DWELL_MS));
+      return view;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
 
   it('draws the lines of the row and "+N more"', () => {
     sparkline.mockClear();
-    render(<Card model={cardOf(row())} pinned={false} x={0} y={0} width={800} height={600} />);
+    renderHover(<Card model={cardOf(row())} pinned={false} x={0} y={0} width={800} height={600} />);
     expect(screen.getAllByTestId('grafana-sparkline')).toHaveLength(2);
     expect(screen.getByText('+1 more')).toBeTruthy();
   });
@@ -210,7 +221,7 @@ describe('Card: a history row with N lines', () => {
 
   it('gives the field config of the row to the sparkline', () => {
     sparkline.mockClear();
-    render(
+    renderHover(
       <Card model={cardOf(row({ config: { unit: 'percent', decimals: 1 } }))} pinned={false} width={800} height={600} />
     );
     expect(calls()[0].config).toMatchObject({ unit: 'percent', decimals: 1 });

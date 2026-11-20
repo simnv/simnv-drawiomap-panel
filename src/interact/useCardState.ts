@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { LEGEND_ROW_ATTR } from '../legend/symbolRows';
-import { CHART_LAYER_ATTR, focusCells, followView } from '../render/linkFocus';
-import { markNearLink } from '../render/overlay';
+import { CHART_LAYER_ATTR, focusCells, followView, markHover } from '../render/linkFocus';
 import { paintedClientBox } from '../render/paintedBox';
 import { LAYOUT_EVENT } from '../stage/useStageLayout';
 import type { CellIndex, CellPatch, PatchMap } from '../types';
@@ -61,8 +60,8 @@ interface InputArgs extends ReturnType<typeof useCardState> {
   panZoom: { takeClick: () => boolean; busy: () => boolean };
   /**
    * The cells that stay bright with a hovered cell while the rest of the diagram dims: for a link its two ends, for a
-   * node its links and their other ends. Undefined: no focus map, nothing dims (the panel always passes one; the
-   * option Off hides the focus with CSS while Shift is up).
+   * node its links and their other ends. Undefined: no focus map, nothing dims (the panel passes none in the mode Off
+   * while Shift is up, so a hover there draws no focus).
    */
   focusOf?: (cellId: string) => string[];
 }
@@ -79,6 +78,12 @@ export function useCardInput(args: InputArgs) {
   // the pointer. The finder caches the segments and the screen transform; the events below make it read them again.
   const [finder] = useState(() => new NearLinkFinder());
   const near = useRef<string | undefined>(undefined);
+  // setNear reads the focus map of now: a change of the map (Shift in the mode Off) does not make a new setNear, so the
+  // effects that call setNear on a new setNear do not run (one of them clears the hover)
+  const focusRef = useRef(focusOf);
+  useLayoutEffect(() => {
+    focusRef.current = focusOf;
+  }, [focusOf]);
   // a new stage has no mark yet; the stage element outlives its root and keeps the cursor attribute
   useEffect(() => {
     near.current = undefined;
@@ -94,30 +99,27 @@ export function useCardInput(args: InputArgs) {
         return;
       }
       near.current = id;
-      const link = id !== undefined && !!index.get(id)?.line;
-      if (root) {
-        markNearLink(root, link ? id : undefined);
-        if (focusOf) {
-          // a cell with no links (a chart, a free shape) dims nothing
-          const kept = id === undefined ? [] : focusOf(id);
-          focusCells(root, index, link || kept.length ? id : undefined, kept);
-        }
-      }
+      const link = root ? markHover(root, index, id, focusRef.current) : id !== undefined && !!index.get(id)?.line;
       stageRef.current?.toggleAttribute(NEAR_ATTR, link);
     },
-    [root, stageRef, index, focusOf, pinnedId]
+    [root, stageRef, index, pinnedId]
   );
-  // no focus map any more: a focus that is on goes
+  // no focus map any more (the mode Off with Shift up): a focus that is on goes, and the hover draws none
   useEffect(() => {
     if (!focusOf && root) {
       focusCells(root, index, undefined);
     }
   }, [focusOf, root, index]);
-  // the hover focus switched on again while a card is pinned: its cell gets the focus back
+  // The focus map came back (Shift down in the mode Off): the hovered or pinned cell gets the focus at once. A pinned
+  // card also gets its focus back at a new setNear (a new stage or index): the new index has no focus yet.
+  const focusWas = useRef(focusOf);
   useEffect(() => {
-    if (focusOf && pinnedId !== undefined) {
+    const turnedOn = focusOf !== undefined && focusWas.current === undefined;
+    focusWas.current = focusOf;
+    const active = pinnedId ?? (turnedOn ? near.current : undefined);
+    if (focusOf && active !== undefined) {
       near.current = undefined;
-      setNear(pinnedId);
+      setNear(active);
     }
   }, [focusOf, pinnedId, setNear]);
   const frame = useRef<number | undefined>(undefined);

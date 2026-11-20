@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { colorManipulator, createTheme, getDefaultTimeRange } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Card } from './Card';
+import { Card, HOVER_CHART_DWELL_MS } from './Card';
 import type { CardModelV4, CardRowV4, HistoryRowV4 } from './cardModel';
 import { statusTextColor } from '../binding/color';
 import type { StatusView } from '../binding/status';
@@ -393,9 +393,11 @@ it('places the floating card with a transform and clamps it to the panel', () =>
 });
 it('keeps a hover card mounted from cell to cell and defers the charts of the new cell again', () => {
   transitions.queue = [];
+  vi.useFakeTimers();
   try {
     const model = cardOf(historyRow({ key: 'h', title: 'CPU', text: '2 %' }));
     const view = render(<Card model={model} cellId="a" pinned={false} x={20} y={20} width={800} height={600} />);
+    act(() => vi.advanceTimersByTime(HOVER_CHART_DWELL_MS));
     act(() => {
       transitions.queue?.splice(0).forEach((cb) => cb());
     });
@@ -404,14 +406,16 @@ it('keeps a hover card mounted from cell to cell and defers the charts of the ne
     view.rerender(<Card model={{ ...model }} cellId="b" pinned={false} x={40} y={40} width={800} height={600} />);
     expect(screen.getByTestId('dmap-card')).toBe(shown);
     expect(shown.getAttribute('data-dmap-cell')).toBe('b');
-    // the first commit of the new cell has the empty chart box; the chart comes in the transition
+    // the first commit of the new cell has the empty chart box; the chart comes in the transition after the dwell
     expect(screen.getByTestId('dmap-card-spark').childElementCount).toBe(0);
+    act(() => vi.advanceTimersByTime(HOVER_CHART_DWELL_MS));
     act(() => {
       transitions.queue?.splice(0).forEach((cb) => cb());
     });
     expect(screen.getByTestId('dmap-card-spark').childElementCount).toBeGreaterThan(0);
   } finally {
     transitions.queue = null;
+    vi.useRealTimers();
   }
 });
 it.each([
@@ -430,16 +434,19 @@ describe('deferred charts', () => {
   };
   afterEach(() => {
     transitions.queue = null;
+    vi.useRealTimers();
   });
   const runTransitions = () =>
     act(() => {
       transitions.queue?.splice(0).forEach((cb) => cb());
     });
+  const dwell = (ms = HOVER_CHART_DWELL_MS) => act(() => vi.advanceTimersByTime(ms));
   const threeRows = (): CardModelV4 =>
     cardOf(historyRow({ key: 'h', title: 'CPU', text: '2 %' }), { ...updownRow(), key: 'c' }, valueRow());
   const boxes = () => screen.getAllByTestId('dmap-card-spark').map((el) => [el.style.height, el.childElementCount]);
   it('a hover card has the texts and empty chart boxes in the first commit; the charts come in the transition', () => {
     queued();
+    vi.useFakeTimers();
     render(<Card model={threeRows()} pinned={false} x={20} y={20} width={800} height={600} />);
     expect(screen.getByText('CPU')).toBeTruthy();
     expect(screen.getByText('2 %')).toBeTruthy();
@@ -450,6 +457,10 @@ describe('deferred charts', () => {
     ]);
     expect(sparkline).not.toHaveBeenCalled();
     expect(screen.queryByTestId('dmap-mirror-spark')).toBeNull();
+    // the transition waits for the dwell on the cell
+    dwell(HOVER_CHART_DWELL_MS - 1);
+    expect(transitions.queue).toEqual([]);
+    dwell(1);
     expect(transitions.queue).toHaveLength(1);
     runTransitions();
     expect(sparkline).toHaveBeenCalled();
@@ -466,6 +477,52 @@ describe('deferred charts', () => {
     unmount();
     runTransitions();
     expect(sparkline).not.toHaveBeenCalled();
+  });
+  it('the transition of a cell that commits after the card moved on shows no charts for the new cell', () => {
+    queued();
+    vi.useFakeTimers();
+    const card = (cellId: string) => (
+      <Card model={threeRows()} cellId={cellId} pinned={false} x={20} y={20} width={800} height={600} />
+    );
+    const view = render(card('a'));
+    // the dwell on a ends; its transition waits while the pointer moves on to b
+    dwell();
+    expect(transitions.queue).toHaveLength(1);
+    view.rerender(card('b'));
+    runTransitions();
+    expect(sparkline).not.toHaveBeenCalled();
+    expect(boxes()).toEqual([
+      ['40px', 0],
+      ['80px', 0],
+    ]);
+    // b gets its charts after its own dwell
+    dwell();
+    runTransitions();
+    expect(sparkline).toHaveBeenCalled();
+  });
+  it('a hover card that passes over cells mounts no chart until it stays on one for the dwell', () => {
+    queued();
+    vi.useFakeTimers();
+    const card = (cellId: string) => (
+      <Card model={threeRows()} cellId={cellId} pinned={false} x={20} y={20} width={800} height={600} />
+    );
+    const view = render(card('a'));
+    for (const cellId of ['b', 'c', 'd']) {
+      dwell(HOVER_CHART_DWELL_MS - 10);
+      view.rerender(card(cellId));
+    }
+    // each new cell started the time again: no transition and no chart yet
+    dwell(HOVER_CHART_DWELL_MS - 10);
+    expect(transitions.queue).toEqual([]);
+    expect(sparkline).not.toHaveBeenCalled();
+    dwell(10);
+    runTransitions();
+    expect(sparkline).toHaveBeenCalled();
+    // a card that unmounts during the dwell leaves no timer behind
+    view.rerender(card('e'));
+    view.unmount();
+    dwell();
+    expect(transitions.queue).toEqual([]);
   });
   it.each([
     ['pinned', { pinned: true, variant: 'floating' }],

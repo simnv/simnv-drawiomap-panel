@@ -1,8 +1,10 @@
+import { createTheme } from '@grafana/data';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cellMetaFromAttrs } from '../adapter/portograph';
-import type { CellEntry, CellIndex } from '../types';
+import type { CellEntry, CellIndex, CellPatch, PatchMap } from '../types';
 import { LINK_LABEL_LAYER_CLASS } from './linkLabels';
-import { FOCUS_LAYER, focusCells, focusMap, followView } from './linkFocus';
+import { FOCUS_ACTIVE, FOCUS_LAYER, focusCells, focusMap, followView, markHover } from './linkFocus';
+import { NEAR_CLASS, renderOverlay } from './overlay';
 
 /**
  * The cost bound of the hover focus on a large map: 565 links between 200 nodes (a core node with 40 links), a port
@@ -131,6 +133,21 @@ function largeMap() {
   return { root, index, focusOf: focusMap(index, ends) };
 }
 
+/** The large map with the overlay of the panel drawn on each link: the hover writes its near class there. */
+function largeMapWithOverlay() {
+  const map = largeMap();
+  const half = { status: 'ok', color: '#00ff00', width: 2, label: '', stepIndex: 0 } as const;
+  const patches: PatchMap = new Map();
+  for (const [id, entry] of map.index) {
+    if (entry.line) {
+      const patch: CellPatch = { cellId: id, scope: { cell: {} }, urls: [], link: { a2b: half, b2a: half } };
+      patches.set(id, patch);
+    }
+  }
+  renderOverlay(map.root, map.index, patches, { theme: createTheme(), maxWidth: 10 });
+  return map;
+}
+
 /**
  * A browser-like layout in jsdom: each svg element has a screen transform, and a read of the layout (a transform or a
  * computed style) after a write to the svg counts as a forced layout. `frame()` ends a frame: the browser lays out.
@@ -202,6 +219,62 @@ describe('hover focus bench', () => {
       `hover focus bench: ${perSwitch.toFixed(3)} ms per switch, ${forced} forced layouts in ${switches} switches, ${copies} copies for the core node`
     );
     expect(copies).toBeGreaterThan(2 * CORE_LINKS);
+    expect(forced).toBe(0);
+    expect(perSwitch).toBeLessThan(BUDGET_MS_PER_SWITCH);
+  });
+
+  it('runs the hover sequence of the panel (the focus, then the near class) with no forced layout and no write of an unchanged root class', () => {
+    const { root, index, focusOf } = largeMapWithOverlay();
+    const probe = layoutProbe(root);
+    const rootClass = new MutationObserver(() => {});
+    rootClass.observe(root, { attributes: true, attributeFilter: ['class'] });
+    const hover = (id: string | undefined) => markHover(root, index, id, focusOf);
+    // the first focus makes the layer (a write before the reads, once)
+    hover('link-1');
+    hover(undefined);
+    probe.frame();
+    rootClass.takeRecords();
+    const firstForced = probe.forced();
+    const order = (i: number) => [`link-${100 + i}`, `link-${300 + i}`, `link-${400 + i}`, 'node-0', undefined];
+    let switches = 0;
+    let rootWrites = 0;
+    let start = performance.now();
+    for (let i = 0; i < ROUNDS; i++) {
+      for (const id of order(i)) {
+        hover(id);
+        rootWrites += rootClass.takeRecords().length;
+        // the browser draws a frame between two pointer moves
+        probe.frame();
+        switches++;
+      }
+    }
+    const perSwitch = (performance.now() - start) / switches;
+    const forced = probe.forced() - firstForced;
+    expect(root.querySelectorAll(`.${NEAR_CLASS}`)).toHaveLength(0);
+    hover('link-5');
+    expect(root.querySelector(`[data-cell-id="link-5"] .${NEAR_CLASS}`)).not.toBeNull();
+    expect(root.classList.contains(FOCUS_ACTIVE)).toBe(true);
+    hover(undefined);
+    probe.frame();
+    // the mode Off with Shift up: no focus map, the hover writes only its near class
+    start = performance.now();
+    for (let i = 0; i < ROUNDS; i++) {
+      for (const id of order(i)) {
+        markHover(root, index, id, undefined);
+        probe.frame();
+      }
+    }
+    const offSwitch = (performance.now() - start) / (ROUNDS * order(0).length);
+    markHover(root, index, 'node-0', undefined);
+    expect(root.querySelector(`g.${FOCUS_LAYER}`)!.childElementCount).toBe(1);
+    expect(root.classList.contains(FOCUS_ACTIVE)).toBe(false);
+    rootClass.disconnect();
+    probe.stop();
+    console.log(
+      `hover sequence bench: ${perSwitch.toFixed(3)} ms per switch, ${forced} forced layouts and ${rootWrites} root class writes in ${switches} switches; with no focus map ${offSwitch.toFixed(4)} ms per switch`
+    );
+    // the root class changes only at the first focus of a round and at its clear
+    expect(rootWrites).toBe(2 * ROUNDS);
     expect(forced).toBe(0);
     expect(perSwitch).toBeLessThan(BUDGET_MS_PER_SWITCH);
   });

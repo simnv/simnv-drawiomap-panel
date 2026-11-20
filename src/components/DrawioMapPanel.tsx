@@ -558,7 +558,8 @@ function DrawioMapPanelView(props: ViewProps) {
     cardable,
     onControl,
     panZoom,
-    focusOf,
+    // `off` with Shift up draws no focus at all: a hover pays for no copies, and a paint copies nothing again
+    focusOf: focusMode === 'off' && !shiftHeld ? undefined : focusOf,
   });
   // `on`: what Shift does depends on the moment it goes down. A hover card open: Shift hides the hover cards and
   // keeps the focus. No hover card: Shift turns the focus off for the whole map. A pinned card keeps its card and its

@@ -1573,7 +1573,8 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       await near('bg', 75, 31);
       expect(await tooltip()).toBe('A ↔ B');
       expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(true);
-      // the focus is drawn for Shift; the wrapper hides it while Shift is up
+      // no focus is drawn while Shift is up; the wrapper keeps its hidden mark
+      expect(document.querySelector('svg.dmap-link-focus')).toBeNull();
       expect(screen.getByTestId('dmap-panel').hasAttribute('data-dmap-focus-hidden')).toBe(true);
     });
 
@@ -1676,31 +1677,80 @@ describe('DrawioMapPanel cards only for cells with content', () => {
       fireEvent.keyUp(window, { key: 'Shift' });
     });
 
-    it('Hover focus Off: the focus shows only while Shift is down, and the card stays', async () => {
+    it('Hover focus Off: the focus is drawn only while Shift is down, and the card stays', async () => {
       render(
         <DrawioMapPanel
           {...structurePanel(ALL, { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'off' } })}
         />
       );
+      const copies = () => document.querySelector('g.dmap-link-focus-layer')?.childElementCount ?? 0;
+      const focused = () => document.querySelector('svg.dmap-link-focus') !== null;
       await near('bg', 75, 31);
       expect(await tooltip()).toBe('A ↔ B');
       const wrapper = screen.getByTestId('dmap-panel');
-      // the focus is drawn, the wrapper hides it until Shift goes down
-      expect(document.querySelector('svg.dmap-link-focus')).not.toBeNull();
+      // Shift up: no focus and no copies, only the near mark
+      expect(focused()).toBe(false);
+      expect(copies()).toBeLessThanOrEqual(1);
+      expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(true);
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      // Shift down draws the focus of the hovered link at once, with no move of the pointer
       fireEvent.keyDown(window, { key: 'Shift' });
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      await waitFor(() => expect(focused()).toBe(true));
+      expect(copies()).toBeGreaterThan(1);
       expect(await tooltip()).toBe('A ↔ B');
+      // Shift up clears it; the hover card and the near mark stay
       fireEvent.keyUp(window, { key: 'Shift' });
+      await waitFor(() => expect(focused()).toBe(false));
+      expect(copies()).toBeLessThanOrEqual(1);
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
-      // a card pinned with Shift held: the card stays, its focus hides when Shift goes up
+      expect(screen.getByRole('tooltip')).toBeTruthy();
+      expect(screen.getByTestId('dmap-stage').hasAttribute(NEAR_ATTR)).toBe(true);
+      // Shift down again over the same cell, still with no move: the focus comes back
       fireEvent.keyDown(window, { key: 'Shift' });
+      await waitFor(() => expect(focused()).toBe(true));
+      // a hover with Shift held moves the focus to the new cell
+      await hover('na');
+      expect((await screen.findByRole('tooltip')).getAttribute('aria-label')).toBe('A');
+      expect(focused()).toBe(true);
+      fireEvent.keyUp(window, { key: 'Shift' });
+      await waitFor(() => expect(focused()).toBe(false));
+    });
+
+    it('Hover focus Off: a pinned card gets its focus while Shift is down, and the card stays', async () => {
+      render(
+        <DrawioMapPanel
+          {...structurePanel(ALL, { hover: { kinds: ['node', 'link', 'port', 'other'], focus: 'off' } })}
+        />
+      );
+      const focused = () => document.querySelector('svg.dmap-link-focus') !== null;
+      const wrapper = screen.getByTestId('dmap-panel');
+      await near('bg', 75, 31);
       fireEvent.click(await at('bg'), { clientX: 75, clientY: 31 });
       expect(await screen.findByRole('dialog')).toBeTruthy();
+      expect(focused()).toBe(false);
+      expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      fireEvent.keyDown(window, { key: 'Shift' });
+      await waitFor(() => expect(focused()).toBe(true));
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(false);
+      // a pan or a zoom keeps the copies while Shift is down
+      const kept = [...document.querySelector('g.dmap-link-focus-layer')!.children];
+      fireEvent(document.querySelector('svg.dmap-link-focus')!, new Event('dmap-layout'));
+      expect([...document.querySelector('g.dmap-link-focus-layer')!.children]).toEqual(kept);
       fireEvent.keyUp(window, { key: 'Shift' });
+      await waitFor(() => expect(focused()).toBe(false));
       expect(screen.getByRole('dialog')).toBeTruthy();
       expect(wrapper.hasAttribute('data-dmap-focus-hidden')).toBe(true);
+      // a pan with Shift up draws no focus
+      fireEvent(screen.getByTestId('dmap-stage').querySelector('svg')!, new Event('dmap-layout'));
+      expect(focused()).toBe(false);
+      // a card pinned with Shift held keeps its focus until the key goes up
+      fireEvent.keyDown(window, { key: 'Shift' });
+      await waitFor(() => expect(focused()).toBe(true));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(focused()).toBe(false);
+      fireEvent.keyUp(window, { key: 'Shift' });
     });
 
     it('the mark stays when the pointer moves from near the link onto it or its label', async () => {
