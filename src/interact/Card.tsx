@@ -27,6 +27,11 @@ const GAP = 14;
 const EDGE = 4;
 /** Padding (8 px each side) and border (1 px each side) of the card: the charts of an inline card are narrower by this. */
 const INLINE_CHROME = 18;
+/**
+ * The time a hover card stays on one cell before its charts mount: a pointer that passes over cells on its way makes
+ * no uPlot chart for each of them. Short enough that a card the user stops at shows its charts with no felt delay.
+ */
+export const HOVER_CHART_DWELL_MS = 70;
 
 /** The card input: the card model of `buildCardV4`. */
 export type CardView = CardModelV4;
@@ -368,9 +373,10 @@ export function Card({
   const rowTimeRange = timeRange ?? getDefaultTimeRange();
 
   // A hover card renders in two commits. The first, in the pointer task, has the texts and an empty box of the final
-  // height per chart row, so the card is placed once. The charts (uPlot) come in a transition. A card that unmounts
-  // before it (the pointer left the cell) pays for the texts only. A pinned card and the inline card of the popup
-  // have the charts at once: the user asked for them, and they are not on a pointer path.
+  // height per chart row, so the card is placed once. The charts (uPlot) come in a transition after the pointer
+  // stayed on the cell for HOVER_CHART_DWELL_MS. A card that unmounts or moves to another cell before then (the
+  // pointer passed over the cell) pays for the texts only. A pinned card and the inline card of the popup have the
+  // charts at once: the user asked for them, and they are not on a pointer path.
   const [chartsReady, setChartsReady] = useState(pinned || inline);
   // The hover card stays mounted from cell to cell (a pin gives a new instance): a new cell starts again with the
   // texts and the empty chart boxes.
@@ -380,10 +386,13 @@ export function Card({
     setChartsReady(pinned || inline);
   }
   useEffect(() => {
-    if (!chartsReady) {
-      startTransition(() => setChartsReady(true));
+    if (chartsReady) {
+      return;
     }
-  }, [chartsReady]);
+    // a new cell starts the time again
+    const timer = setTimeout(() => startTransition(() => setChartsReady(true)), HOVER_CHART_DWELL_MS);
+    return () => clearTimeout(timer);
+  }, [chartsReady, shownCell]);
 
   // The place in the panel. A hover card follows the latest pointer position of the panel (`pointerRef`, client
   // coordinates) and nothing else. A pinned card uses only its own x and y.
