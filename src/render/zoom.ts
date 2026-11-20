@@ -18,16 +18,20 @@ export interface Layout {
   align: ZoomAlign;
 }
 
+/** A viewBox value: four numbers with a size > 0; undefined for a value that the browser does not apply. */
+export function parseViewBox(value: string | null): ViewBox | undefined {
+  const [x, y, w, h] = (value ?? '')
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  return [x, y, w, h].every(Number.isFinite) && w > 0 && h > 0 ? { x, y, w, h } : undefined;
+}
+
+/** The viewBox of the root; the size of the svg (or 100 × 100) when it has none that is valid. */
 export function readViewBox(root: SVGSVGElement): ViewBox {
-  const vb = root.getAttribute('viewBox');
+  const vb = parseViewBox(root.getAttribute('viewBox'));
   if (vb) {
-    const [x, y, w, h] = vb
-      .trim()
-      .split(/[\s,]+/)
-      .map(Number);
-    if ([x, y, w, h].every(Number.isFinite) && w > 0 && h > 0) {
-      return { x, y, w, h };
-    }
+    return vb;
   }
   const w = parseFloat(root.getAttribute('width') ?? '0') || 100;
   const h = parseFloat(root.getAttribute('height') ?? '0') || 100;

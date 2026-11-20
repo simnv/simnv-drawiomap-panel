@@ -14,7 +14,7 @@ import {
   type ChartAnchor,
   type Matrix,
 } from '../render/geometry';
-import type { ViewBox } from '../render/zoom';
+import { parseViewBox, type ViewBox } from '../render/zoom';
 import type { CellEntry, CellIndex } from '../types';
 import type { BindResultV4 } from '../binding/bindV4';
 import type { UsePath } from '../binding/report';
@@ -224,6 +224,9 @@ function createStageWatch(root: SVGSVGElement, viewport: HTMLElement): StageWatc
   let observer: MutationObserver | undefined;
   // a shape and each node above it; a node that a removed region left keeps its observation: its records hit no region
   const observeShape = (shape: Element) => {
+    if (!root.contains(shape)) {
+      return;
+    }
     for (let node: Element | null = shape; node; node = node === root ? null : node.parentElement) {
       observer?.observe(node, SHAPE_ATTRS);
     }
@@ -382,18 +385,12 @@ function viewBoxTransform(vb: ViewBox, align: string, width: number, height: num
   };
 }
 
+/** viewBox writes closer than this belong to one gesture (a drag, a wheel stream); the first of a gesture reads. */
+const GESTURE_GAP_MS = 150;
+
 const alignOf = (root: SVGSVGElement) => root.getAttribute('preserveAspectRatio') ?? '';
-/**
- * The viewBox of the root, parsed as `readViewBox` does; undefined when the browser applies none (absent, or not
- * 4 numbers with a size > 0), where `readViewBox` falls back to the size of the svg.
- */
-function viewOf(root: SVGSVGElement): ViewBox | undefined {
-  const [x, y, w, h] = (root.getAttribute('viewBox') ?? '')
-    .trim()
-    .split(/[\s,]+/)
-    .map(Number);
-  return [x, y, w, h].every(Number.isFinite) && w > 0 && h > 0 ? { x, y, w, h } : undefined;
-}
+/** The viewBox that the browser applies; undefined for none (`readViewBox` would fall back to the svg size). */
+const viewOf = (root: SVGSVGElement) => parseViewBox(root.getAttribute('viewBox'));
 
 /**
  * The frame of a plane transform `m` read with the current viewBox in the svg box `box`. Undefined when `m` is not
@@ -479,8 +476,14 @@ function useRegionPlane(root: SVGSVGElement | undefined, viewport: HTMLElement |
       write(inner, 'transform', m ? css(m) : '');
       frame = m ? frameOf(root, m, box) : undefined;
     };
+    let lastPan = -Infinity;
     const pan = () => {
-      const m = frame && planeFor(root, frame);
+      // the first frame of a gesture reads again: a change that no observer reports (a move of an ancestor) is
+      // repaired before the frames that follow it use the frame
+      const now = performance.now();
+      const first = now - lastPan > GESTURE_GAP_MS;
+      lastPan = now;
+      const m = !first && frame && planeFor(root, frame);
       if (m) {
         write(inner, 'transform', css(m));
       } else {

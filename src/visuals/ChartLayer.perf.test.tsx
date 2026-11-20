@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, render } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CoreApp,
   createTheme,
@@ -149,7 +149,14 @@ function mapStage() {
 
 type Stage = ReturnType<typeof mapStage>;
 let open: Stage | undefined;
+/** The clock of the plane: a test steps it by one frame (16 ms) between the viewBox writes of a gesture. */
+let now = 0;
+beforeEach(() => {
+  now = 1000;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+});
 afterEach(() => {
+  vi.restoreAllMocks();
   pad = 0;
   open?.view.unmount();
   open?.host.remove();
@@ -179,24 +186,37 @@ describe('ChartLayer cost on the hot paths (10 chart regions)', () => {
         i <= 5 ? [-i * 7.5, i * 3.25, 800, 400] : [100 + i, 50 - i, 800 / (1 + i * 0.13), 400 / (1 + i * 0.13)]
       );
     }
-    s.reads.layout = 0;
     s.reads.bbox = 0;
+    const perFrame: number[] = [];
     for (const [x, y, w, h] of frames) {
+      now += 16;
+      s.reads.layout = 0;
       await act(async () => {
         s.root.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
       });
+      perFrame.push(s.reads.layout);
       const got = planeOf(s);
       expectedPlane(s.root).forEach((v, k) => expect(got[k]).toBeCloseTo(v, 9));
     }
-    console.info(`pan/zoom: ${s.reads.layout} layout reads in ${frames.length} frames, ${s.reads.bbox} region reads`);
-    expect(s.reads.layout).toBe(0);
+    console.info(`pan/zoom: layout reads per frame ${perFrame.join(' ')}, ${s.reads.bbox} region reads`);
+    // the first frame of the gesture reads once (it repairs a read that went stale between gestures), the rest none
+    expect(perFrame[0]).toBeGreaterThan(0);
+    expect(perFrame.slice(1)).toEqual(frames.slice(1).map(() => 0));
     expect(s.reads.bbox).toBe(0);
+    // a pause starts a new gesture: its first frame reads again
+    now += 500;
+    s.reads.layout = 0;
+    await act(async () => {
+      s.root.setAttribute('viewBox', '0 0 800 400');
+    });
+    expect(s.reads.layout).toBeGreaterThan(0);
     // a new alignment (a layout of the panel) reads the screen CTM again, and the frames after it follow it
     await act(async () => {
       s.root.setAttribute('preserveAspectRatio', 'xMidYMin meet');
     });
     expect(s.reads.layout).toBeGreaterThan(0);
     s.reads.layout = 0;
+    now += 16;
     await act(async () => {
       s.root.setAttribute('viewBox', '10 20 300 400');
     });
@@ -290,6 +310,7 @@ describe('ChartLayer cost on the hot paths (10 chart regions)', () => {
     pad = 6;
     const s = (open = mapStage());
     for (const vb of ['-20 10 800 400', '5 5 400 200']) {
+      now += 16;
       s.reads.layout = 0;
       await act(async () => {
         s.root.setAttribute('viewBox', vb);
@@ -306,6 +327,7 @@ describe('ChartLayer cost on the hot paths (10 chart regions)', () => {
       s.root.setAttribute('viewBox', '0 0 0 0');
     });
     s.reads.layout = 0;
+    now += 16;
     await act(async () => {
       s.root.setAttribute('viewBox', '0 0 800 400');
     });

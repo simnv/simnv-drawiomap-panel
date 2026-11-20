@@ -173,11 +173,44 @@ test('a chart region follows a nested affine anchor through fit, resize, pan and
   await page.mouse.wheel(0, -100);
   await expect.poll(async () => (await read()).viewBox).not.toBe(resized.viewBox);
   const zoomed = await verify();
+  /**
+   * Mid-gesture: a pan or zoom frame moves the plane of the regions from its last read and the new viewBox (no layout
+   * read in the frame). After each live viewBox write the region stays on its cell: the quads and the client boxes.
+   */
+  const onCell = async (last: string | null) => {
+    await expect.poll(async () => (await read()).viewBox).not.toBe(last);
+    const g = await read();
+    expect(g.error).toBeLessThan(0.5);
+    const boxes = await panel.evaluate((el) => {
+      const anchor = el.querySelector<SVGRectElement>('[data-cell-id="chart-1"] rect')!.getBoundingClientRect();
+      const region = el.querySelector<HTMLElement>('[data-dmap-chart="chart-1"]')!.getBoundingClientRect();
+      return [
+        [anchor.left, region.left],
+        [anchor.top, region.top],
+        [anchor.right, region.right],
+        [anchor.bottom, region.bottom],
+      ];
+    });
+    for (const [cell, region] of boxes) {
+      expect(Math.abs(cell - region)).toBeLessThan(0.5);
+    }
+    return g.viewBox;
+  };
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + 35, box.y + 110, { steps: 5 });
+  let last = zoomed.viewBox;
+  for (let i = 1; i <= 4; i++) {
+    await page.mouse.move(box.x + box.width / 2 + 9 * i, box.y + 100 + 3 * i);
+    last = await onCell(last);
+  }
   await page.mouse.up();
   await expect.poll(async () => (await read()).viewBox).not.toBe(zoomed.viewBox);
   await verify();
+  // between the steps of a wheel stream
+  for (let i = 0; i < 3; i++) {
+    const before = (await read()).viewBox;
+    await page.mouse.wheel(0, -40);
+    await onCell(before);
+  }
   await panel.getByRole('button', { name: 'Reset zoom' }).click();
   await expect.poll(async () => (await read()).viewBox).toBe(resized.viewBox);
   await verify();
