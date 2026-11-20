@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createTheme } from '@grafana/data';
 import type { CellIndex, CellPatch, HalfState, PatchMap } from '../types';
 import { cellAt, patchAt } from '../interact/hit';
@@ -786,6 +786,15 @@ describe('renderLinkLabels: a refresh cuts only the links that changed', () => {
     const links = fresh();
     render(root, index, patchesOf(links));
     const stop = watchLinkLabelFonts(root);
+    onTestFinished(stop);
+    /** a full pass over the same state (a font that arrives) gives the patterns that are drawn now */
+    const expectFull = (read: number) => {
+      const partial = dashes();
+      boxes = 0;
+      font.dispatchEvent(new Event('loadingdone'));
+      expect(boxes).toBeGreaterThan(read);
+      expect(dashes()).toEqual(partial);
+    };
     // each step: a change, then the text boxes the refresh reads (the on-stroke labels of the changed links)
     const steps: Array<[() => void, number]> = [
       // a text of e2 with the same slot
@@ -813,16 +822,27 @@ describe('renderLinkLabels: a refresh cuts only the links that changed', () => {
       change();
       boxes = 0;
       render(root, index, patchesOf(links));
-      const partial = dashes();
       expect(boxes).toBe(read);
-      // a font that arrives: every cut is read again
-      boxes = 0;
-      font.dispatchEvent(new Event('loadingdone'));
-      expect(boxes).toBeGreaterThan(read);
-      expect(dashes()).toEqual(partial);
+      expectFull(read);
     }
     expect(dashes().filter((d) => !d.endsWith(':null')).length).toBeGreaterThan(4);
-    stop();
+    // a new theme reads every link
+    boxes = 0;
+    const light = { ...opts, theme: createTheme({ colors: { mode: 'light' } }) };
+    render(root, index, patchesOf(links), light);
+    expect(boxes).toBe(8);
+    // a hidden layer takes every cut off; a shown one puts them back, then a refresh reads one link again
+    root.getBoundingClientRect = () => ({ width: 80, height: 52 }) as DOMRect;
+    setLinkLabelScale(root);
+    expect(dashes().every((d) => d.endsWith(':null'))).toBe(true);
+    root.getBoundingClientRect = () => ({ width: 400, height: 260 }) as DOMRect;
+    setLinkLabelScale(root);
+    expectFull(0);
+    links[1] = { ...links[1], a2b: value('43') };
+    boxes = 0;
+    render(root, index, patchesOf(links), light);
+    expect(boxes).toBe(2);
+    expectFull(2);
   });
   it('reads the halo colour again on a new theme only, not on each refresh', () => {
     const { root, index } = build(FOUR);

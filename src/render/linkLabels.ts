@@ -842,7 +842,8 @@ export function cutPattern(cuts: Array<[number, number]>, total: number): string
  * whose points changed, a new width, gets its pattern again); a cut that is no longer wanted is taken off; an
  * attribute that did not change is not written. A pass after a refresh (`allCutsStale` false) reads the text boxes
  * of the links in `dirtyCuts` only, and of the links that were not cut before or whose halves have other points; the
- * cut of any other link is the one it has, so the patterns equal those of a full pass.
+ * cut of any other link is the one it has, so the patterns equal those of a full pass. A refresh runs the sync only
+ * with a link in `dirtyCuts`: the overlay writes other points only for a new drawn width, which marks its link.
  */
 function syncCuts(root: SVGSVGElement, layout: LabelLayout): void {
   const all = layout.allCutsStale;

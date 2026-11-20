@@ -66,6 +66,8 @@ describe('link labels bench: the cuts of a refresh', () => {
     Reflect.deleteProperty(SVGElement.prototype, 'getBBox');
     Reflect.deleteProperty(document, 'fonts');
     vi.restoreAllMocks();
+    // the logic project shares one document between its files
+    document.body.replaceChildren();
   });
 
   it(`a text change of one link reads the boxes of that link only, under ${BUDGET_MS_PER_REFRESH} ms`, () => {
