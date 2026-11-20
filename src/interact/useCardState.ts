@@ -61,7 +61,8 @@ interface InputArgs extends ReturnType<typeof useCardState> {
   panZoom: { takeClick: () => boolean; busy: () => boolean };
   /**
    * The cells that stay bright with a hovered cell while the rest of the diagram dims: for a link its two ends, for a
-   * node its links and their other ends. Undefined: no hover focus (the option is off), nothing dims.
+   * node its links and their other ends. Undefined: no focus map, nothing dims (the panel always passes one; the
+   * option Off hides the focus with CSS while Shift is up).
    */
   focusOf?: (cellId: string) => string[];
 }
@@ -106,7 +107,7 @@ export function useCardInput(args: InputArgs) {
     },
     [root, stageRef, index, focusOf, pinnedId]
   );
-  // the hover focus switched off: a focus that is on goes
+  // no focus map any more: a focus that is on goes
   useEffect(() => {
     if (!focusOf && root) {
       focusCells(root, index, undefined);

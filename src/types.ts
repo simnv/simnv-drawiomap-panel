@@ -132,8 +132,8 @@ export interface Options {
   stale?: { color: string };
   /**
    * The cells that open a hover or pinned card (default: node, link, port, other), and the hover focus: the rest of
-   * the diagram dims around a hovered link or node (default: on). A panel saved before the Shift modes has a boolean
-   * focus: true is `on`, false is `off`.
+   * the diagram dims around a hovered link or node (default: on). An earlier saved focus: a boolean (true is `on`,
+   * false is `off`) or the development value `shift` (now `off`).
    */
   hover?: { kinds: HoverKind[]; focus?: FocusMode | 'shift' | boolean };
   /** The colour legend in a corner of the panel and the last data timestamp. Default: shown, collapsed, bottom-right. */

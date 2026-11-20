@@ -28,7 +28,7 @@ A link under the pointer or caught by distance gets the focus: the rest of the d
 - **On** (the default): the focus shows on hover. What **Shift** does depends on the moment you press it. With a hover card open, Shift hides the card and keeps the focus: you see the dimmed diagram without the card. With no hover card open, Shift turns the focus off for the whole map while the key is down: the hover card shows, but the diagram stays bright. Release Shift and all comes back. A pinned card and its focus do not hide.
 - **Off**: the diagram stays bright on hover. Hold **Shift** to see the focus; release it and the diagram is bright again. This is also true for the focus of a pinned card. The card, the near-link catch and the hand cursor work as usual.
 
-Shift in a text field (a capital letter) changes nothing. A panel saved with the earlier on/off switch keeps its value: on is **On**, off is **Off**. A panel saved with the earlier value **With Shift** gets **Off**, which works the same.
+Shift in a text field (a capital letter) changes nothing. A panel saved with the earlier on/off switch keeps its value: on is **On**, off is **Off**.
 
 A node under the pointer gets the focus in the same way: the node, the links that end on it or on its ports, and the cells at their other ends (with the nodes that hold them) stay bright. A port under the pointer keeps its node and only its own links. Only a cell that opens a card (see [Which cells open a card](#which-cells-open-a-card)) gets the focus, and a cell with no link, such as a chart, dims nothing.
 

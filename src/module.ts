@@ -11,7 +11,7 @@ import { autoSpeed } from './binding/linkWidth';
 import { DEFAULT_OPTIONS, type HoverKind, migrateOptions, Options } from './types';
 
 export const plugin = new PanelPlugin<Options>(DrawioMapPanel)
-  // a panel saved before the Shift modes has a boolean Hover focus: the radio shows its mode
+  // a panel saved with an earlier Hover focus (a boolean, or the development value `shift`): the radio shows its mode
   .setMigrationHandler(
     (panel) => migrateOptions(panel.options as Options),
     // also at the same plugin version: a boolean or the earlier `shift` mode pasted or provisioned with this version
