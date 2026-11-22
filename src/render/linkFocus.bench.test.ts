@@ -183,7 +183,10 @@ function layoutProbe(root: SVGSVGElement) {
   };
 }
 
-describe('hover focus bench', () => {
+// each case builds the 565-link map and runs many switches: on a slow CI runner it takes longer than the default 5 s
+const CASE_TIMEOUT_MS = 5_000 * BUDGET_SCALE;
+
+describe('hover focus bench', { timeout: CASE_TIMEOUT_MS }, () => {
   afterEach(() => {
     vi.restoreAllMocks();
     Reflect.deleteProperty(SVGElement.prototype, 'getCTM');
