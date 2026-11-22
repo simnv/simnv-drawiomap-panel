@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8.0
 
 - Added row links: a `history`, `value`, `updown` or `metadata` row can have `url` (a template, with the same check as the class `url`) and `newTab`. In a pinned card a click on the row (its label, its value or its chart) or Enter on it opens the link. The chart of a linked row shows its tooltip on mouse hover. See [Rows](docs/guide/bindings.md#rows).
 - Added `ssh://` links: the `url` of a class, a `drilldown` row and a row link may use `ssh://[user@]host[:port]` (for example `ssh://admin@${key}`). The link opens the SSH client of the system, in the current tab. A user or a host that is not a plain name or address is not shown. Other schemes stay blocked, as before. See [Hover card](docs/guide/hover-card.md).
