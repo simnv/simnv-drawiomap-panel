@@ -248,20 +248,28 @@ async function ringGapsInWheelSteps(scope: Locator, cellId: string, steps: numbe
         const r = svg.getBoundingClientRect();
         const at = { clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
         svg.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true, ...at }));
-        await frame();
-        await frame();
-        const ring = el.querySelector('[data-testid="dmap-cell-focus"]')?.getBoundingClientRect();
-        const g = group.getBoundingClientRect();
-        out.push(
-          ring
+        const gap = () => {
+          const ring = el.querySelector('[data-testid="dmap-cell-focus"]')?.getBoundingClientRect();
+          const g = group.getBoundingClientRect();
+          return ring
             ? Math.max(
                 Math.abs(ring.left - g.left),
                 Math.abs(ring.top - g.top),
                 Math.abs(ring.right - g.right),
                 Math.abs(ring.bottom - g.bottom)
               )
-            : Infinity
-        );
+            : Infinity;
+        };
+        // the ring moves in a React render of its own task: a slow runner can run it after the second frame, so
+        // give each step a few frames (still well before the next step)
+        let last = Infinity;
+        for (let f = 0; f < 6 && last > 0.5; f++) {
+          await frame();
+          if (f >= 1) {
+            last = gap();
+          }
+        }
+        out.push(last);
         await new Promise((done) => setTimeout(done, ms));
       }
       return out;
